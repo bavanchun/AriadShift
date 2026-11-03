@@ -75,6 +75,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/compose/.env}
       # Network logins authenticate with SCRAM; the socket stays in-container.
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      PGCTLTIMEOUT: "180"
     volumes:
       # PostgreSQL 18 images keep PGDATA in a versioned directory below this.
       - postgres-data:/var/lib/postgresql
@@ -190,8 +191,12 @@ services:
       # Account creation is an explicit opt-in; password email is unverified.
       AUTH_ALLOW_SIGN_UP: ${AUTH_ALLOW_SIGN_UP:-false}
       AUTH_TURNSTILE_SECRET: ${ARIAD_TURNSTILE_SECRET:-}
+      AUTH_TURNSTILE_SITE_KEY: ${ARIAD_TURNSTILE_SITE_KEY:-}
       # LAN HTTP is an explicit opt-in and always disables remote MCP OAuth.
       AUTH_ALLOW_INSECURE_HTTP: ${AUTH_ALLOW_INSECURE_HTTP:-false}
+      AUTH_CIMD_ENABLED: ${AUTH_CIMD_ENABLED:-false}
+      AUTH_CIMD_ALLOWED_HOSTS: ${AUTH_CIMD_ALLOWED_HOSTS:-}
+      AUTH_CIMD_DENIED_HOSTS: ${AUTH_CIMD_DENIED_HOSTS:-}
       # The API's public origin. OAuth access tokens for remote MCP carry
       # <ARIAD_PUBLIC_URL>/mcp as their audience, the resource the API checks.
       ARIAD_PUBLIC_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}

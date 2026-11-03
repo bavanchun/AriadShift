@@ -1,0 +1,58 @@
+%PDF-1.4
+%¿÷¢þ
+1 0 obj
+<< /Lang (en) /Pages 3 0 R /Type /Catalog >>
+endobj
+2 0 obj
+<< /Author (AriadShift contributors) /CreationDate (D:20231114221320Z) /Creator (AriadShift fixture generator) /ModDate (D:20231114221320Z) /Producer (AriadShift fixture generator) /Title (Archive Ledger \(Revision 1\)) >>
+endobj
+3 0 obj
+<< /Count 1 /Kids [ 4 0 R ] /Type /Pages >>
+endobj
+4 0 obj
+<< /Contents 5 0 R /MediaBox [ 0 0 595.28 841.89 ] /Parent 3 0 R /Resources 6 0 R /Type /Page >>
+endobj
+5 0 obj
+<< /compress false /Length 161 >>
+stream
+BT
+/F1 12 Tf
+1 0 0 1 72.00 760.00 Tm (Archive Ledger \(Revision 1\)) Tj
+1 0 0 1 72.00 742.00 Tm (Initial revision entry recorded before incremental save.) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Font << /F1 7 0 R >> >>
+endobj
+7 0 obj
+<< /BaseFont /Helvetica /Subtype /Type1 /Type /Font >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000075 00000 n 
+0000000313 00000 n 
+0000000372 00000 n 
+0000000484 00000 n 
+0000000712 00000 n 
+0000000755 00000 n 
+trailer << /Info 2 0 R /Root 1 0 R /Size 8 /ID [<a9dd65f739625e9ddb6818832a91e882><a9dd65f739625e9ddb6818832a91e882>] >>
+startxref
+825
+%%EOF
+8 0 obj
+<< /Title (Archive Ledger (Revision 2)) /Author (AriadShift contributors) /Creator (AriadShift fixture generator) /Producer (AriadShift fixture generator) /CreationDate (D:20231114221320Z) /ModDate (D:20231115000000Z) >>
+endobj
+xref
+0 1
+0000000000 65535 f 
+8 1
+0000001135 00000 n 
+trailer
+<< /Size 9 /Root 1 0 R /Info 8 0 R /Prev 825 /ID [<A9DD65F739625E9DDB6818832A91E882> <A9DD65F739625E9DDB6818832A91E882>] >>
+startxref
+1371
+%%EOF

@@ -12,7 +12,7 @@
 # capabilities and writes nothing, so it runs with a read-only root filesystem.
 
 # Same Node.js LTS image and pnpm release as infra/docker/web.Dockerfile.
-ARG NODE=node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+ARG NODE=node:26.13.0-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39
 
 FROM ${NODE} AS deploy
 ARG PNPM_VERSION=12.9.1

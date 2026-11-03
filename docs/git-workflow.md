@@ -8,10 +8,14 @@ How changes move into this repository. It applies to people and AI agents alike.
   - `dev` is the integration branch. All work lands here.
   - `main` is the stable branch. It receives `dev` only through a promotion, and urgent fixes through a hotfix (see [Promotion and hotfixes](#promotion-and-hotfixes)). Release tags (`v*`) are cut on `main` only.
 - Both must always build, and `just ci` must stay green on Linux, macOS and Windows.
-- Small, verified steps land directly on `dev`. Use a short-lived branch from `dev` and a pull request into `dev` when you want CI to pass before the change merges: a risky refactor, a toolchain or CI change, or anything you cannot verify on your own OS.
-- Branch names follow `<type>/<short-kebab-topic>`, for example `feat/markdown-reader`, `fix/windows-temp-cleanup` or `ci/pin-actions`. Delete the branch after it merges with `gh pr merge --rebase --delete-branch`. The repository does not delete head branches automatically, because that would also delete `dev` when a promotion merges.
+- Work in a plan run or feature uses a short-lived branch from `origin/dev` (one branch and one pull request per phase) and merges into `dev` as soon as GitHub allows. Small, verified standalone steps may also land directly on `dev` when authorized.
+- Branch names follow `<type>/<short-kebab-topic>`, for example `feat/markdown-reader`, `fix/windows-temp-cleanup` or `ci/pin-actions`.
+- Repository ruleset and branch settings:
+  - The `protect-main-dev` ruleset blocks branch deletion and force-pushes on `main` and `dev`.
+  - Repository `delete_branch_on_merge` is `false` so that promoting `dev` into `main` can never delete `dev`.
+  - Task and phase branches are therefore deleted explicitly when merging into `dev` with `gh pr merge --rebase --delete-branch`. Promotions never pass `--delete-branch`.
 - GitHub's default branch stays `main`, so always pass the base explicitly: `gh pr create --base dev`.
-- Never force-push `main` or `dev`, and never rewrite history that has already been pushed.
+- Never force-push `main` or `dev`, never pass `--admin`, never weaken or edit branch protection or rulesets, and never rewrite history that has already been pushed.
 
 ## Commit often
 
@@ -73,11 +77,11 @@ docs: record the ashift binary name in ARCHITECTURE.md
 
 ## Before you commit
 
-1. Run the narrowest check for what you touched, then broaden it:
-   - Rust: `cargo fmt --all`, then `cargo clippy --workspace --all-targets` and `cargo nextest run -p <crate>`.
-   - Brand: `pnpm --dir brand build`, then check `brand/preview.png` (see AGENTS.md).
-   - Shared contracts (IR, engine protocol, schemas, CI): `just ci`.
-2. Before a push, run `just ci` and `just lint-commits`. They are the same checks CI runs ([ci.md](ci.md)). This includes documentation-only commits: `typos` also checks Markdown, so a plan or a report alone can turn CI red.
+1. Run only one heavy build or test command at a time on the host: every `cargo`, `just`, `pnpm`, `uv` or `fixtures` command run by a worker or the coordinator must go through `.run/coord/build-lock.sh`.
+2. Run the narrowed local gate for the crates and apps you touched instead of running full `just ci` locally:
+   - Rust: `cargo fmt --all -- --check`, then `cargo clippy` and `cargo nextest run` scoped to the changed crates.
+   - Web / brand: the touched package's build, lint and test recipes (for `brand/`, run `pnpm --dir brand build` and check `brand/preview.png`; see AGENTS.md).
+   - Spelling and commits: `just spell` and `just lint-commits`. `typos` also checks Markdown, so a documentation, plan or report edit alone can turn CI red.
 3. Check `git status` for stray files: editor backups, `.tools/`, `target/`, `node_modules/`.
 
 ## Staging
@@ -96,8 +100,9 @@ Never commit `.env*` files, credentials, private keys, tokens, `node_modules/`, 
 
 ## Pushing
 
-- Push after a group of green commits, and at least at the end of each working session, so CI checks your work early.
-- After the push, watch the run with `gh run watch`. If CI turns red on `dev` or `main`, fixing that branch comes first. Push a fix, or revert the commit with `git revert <sha>`. Do not stack new work on a red branch.
+- Push after the narrowed local gate passes so GitHub Actions runs on the branch.
+- CI is not awaited before merging or moving on. If a CI run turns red after merge, file a deduplicated GitHub issue (label `v1.x`) with the run URL, the failing step and the first error lines, and continue current work.
+- Fixing a red `dev` or `main` comes before any new stacked work: a red `dev` must be repaired (push a fix or revert with `git revert <sha>`) before any new phase worktree branches from it. Do not stack new work on a red branch.
 - To fix an unpushed commit, use `git commit --amend` for the latest one. Once a commit is pushed, fix it with a new commit.
 - Commit hooks are never skipped with `--no-verify`.
 
@@ -105,34 +110,45 @@ Never commit `.env*` files, credentials, private keys, tokens, `node_modules/`, 
 
 When you use a branch:
 
-- Keep the PR to a single purpose. Its title follows the commit-message format.
-- In the description, state what changed, why, and how it was verified.
-- Merge only when all three OS jobs are green. Rebase onto the base branch instead of merging it in. Merge into `dev` with "Rebase and merge" so each commit stays on its own; squash only when the branch commits are noise.
+- Keep the PR to a single purpose (one branch and one pull request per plan phase). Its title follows the commit-message format.
+- In the description, state what changed, why, and how it was verified locally.
+- Do not wait for CI jobs to finish. Rebase onto the base branch instead of merging it in, and merge into `dev` as soon as GitHub allows using a rebase-merge (`gh pr merge --rebase --delete-branch`, squash only when the branch commits are noise) so each commit stays on its own and the task branch is deleted. Never pass `--admin` and never change branch protection or rulesets.
+- If the post-merge CI run is red, record a deduplicated GitHub issue (`v1.x` label) with the run URL, the failing step and the first error lines, and fix `dev` before branching the next phase worktree from it.
 
 ## Promotion and hotfixes
 
-- **Promotion.** When `dev` is stable (CI green on all three OSes, no known regression) and the maintainer agrees, open a pull request from `dev` into `main` titled `chore: promote dev to main`. Merge it with a merge commit (`gh pr merge --merge`, never with `--delete-branch`), never squash or rebase, so the promoted commits keep their SHAs and the next promotion stays a clean merge. Afterwards `dev` and `main` hold the same tree.
+- **Promotion.** When `dev` is stable and the maintainer gives written go-ahead, open a pull request from `dev` into `main` titled `chore: promote dev to main`. Merge it with a merge commit (`gh pr merge --merge`, never with `--delete-branch`), never squash or rebase, so the promoted commits keep their SHAs and the next promotion stays a clean merge. Verify immediately afterwards that `dev` still exists on the remote and that `main^2` equals `origin/dev` (`git rev-parse main^2` matches `git rev-parse origin/dev`).
 - **Release.** Bump the version on `dev` through the usual flow, promote, then tag `vX.Y.Z` on the resulting `main` commit. The release workflow runs only from that tag.
-- **Hotfix.** Branch `fix/<topic>` from `main`, open the pull request into `main`, and merge it once CI is green. Then merge `main` back into `dev` (`git switch dev && git merge main`, then push) so the fix is not lost at the next promotion.
-- Promotions, hotfixes into `main` and tags are outward-facing. Agents perform them only on the maintainer's explicit go-ahead for that action.
+- **Hotfix.** Branch `fix/<topic>` from `main`, open the pull request into `main`, and merge it. Then merge `main` back into `dev` (`git switch dev && git merge main`, then push) so the fix is not lost at the next promotion.
+- Promotions, hotfixes into `main`, release tags and public deploys are outward-facing and always require the maintainer's written go-ahead.
 
 ## Working through a plan
 
-Plans live under `plans/`. When a plan phase is implemented:
+Plans live under `plans/`. A plan run uses one branch and one pull request per phase:
 
-- Commit after each logical step of the phase, following the rules above. A phase normally produces several commits, not one.
-- Commit the phase status update (`plan.md` table row, ticked phase checklist) after the phase is verified, as `docs(plans): …`.
-- Run artifacts under `plans/**/reports/herdr-cook-runs/` are ignored by their own `.gitignore` and are never committed.
+### Roles and mailbox
 
-A plan run executed wave by wave (one or two phases at a time) uses one branch and one pull request per wave:
+- **Mac PM session (Opus):** makes design and scope decisions, scouts and updates phase files before dispatch, writes phase briefs, and approves or rejects each phase gate.
+- **Coordinator session (Sonnet):** turns each brief into worker tasks, dispatches workers, inspects worker tabs, reviews every diff and test output, runs the narrowed local gate sequentially, and reports through the mailbox.
+- **Implementation workers (Rex tabs):** implement one task each inside the files they own, commit their changes locally, and never push or merge.
+- **Git worker (low-effort model):** runs exact git commands for branch creation, rebasing, pushing, pull request creation, merging and worktree/branch cleanup.
+- **Mailbox:** lives at `.run/coord/from-mac/` (briefs, directives, answers and approvals from the PM) and `.run/coord/to-mac/` (questions and gate reports from the coordinator), excluded from git via `.git/info/exclude`. Every mailbox message starts with a `status: <state>` first line.
 
-1. Before dispatching a wave, the coordinator creates a branch from the current `dev`, named after the wave's topic (for example `feat/engine-protocol-revision`).
-2. The phases of the wave commit on that branch. A second, parallel phase works in its own worktree and is rebased onto the wave branch once accepted.
-3. When every phase of the wave is accepted and `just ci` passes on the integrated branch, the coordinator pushes it, opens a pull request into `dev`, and rebase-merges it once all three OS jobs are green. A red job is repaired on the same branch before the next wave starts.
-4. The coordinator deletes the branch, updates its local `dev` (`git pull --ff-only`) and starts the next wave from there.
+### Per-phase execution and cleanup
 
-A plan run never promotes `dev` to `main` and never tags a release on its own.
+1. **Check `dev`.** Before branching a new phase, check `dev` CI. If `dev` is red, fix `dev` first before creating a new phase worktree from it.
+2. **One worktree per phase.** Branch from `origin/dev` into a dedicated phase worktree at `../01-AriadShift-wt-<slug>` (for example `git worktree add ../01-AriadShift-wt-<slug> -b <type>/<topic> origin/dev`).
+3. **Waves and file ownership.** Tasks inside a wave own disjoint files. Workers commit after each logical step (`docs(plans): …` for the phase status and checklist update once verified). Run artifacts under `plans/**/reports/herdr-cook-runs/` and `.run/` are git-excluded and never committed.
+4. **Build serialization and narrowed local gate.** Every `cargo`, `just`, `pnpm`, `uv` or `fixtures` command run by a worker or the coordinator executes through `.run/coord/build-lock.sh` so only one heavy build runs at a time. The coordinator regenerates shared or generated files once per wave and runs the phase's narrowed verification commands for the changed crates and apps; full `just ci` is not run locally.
+5. **Cleanup after each worker.** As soon as a worker's task is accepted (or abandoned):
+   - close its Rex tab;
+   - stop only the background processes that worker started (using its reported PIDs and processes bound to its worktree path);
+   - remove its worktree once its commits are merged, and delete merged task and `agent-rex/*` branches locally and on the remote;
+   - check unmerged branches with `git cherry origin/dev <branch>`: any branch that is not provably merged is never deleted automatically and is instead recorded on a delete list for the maintainer.
+6. **Gate report and merge.** Each gate report lists what was cleaned up and what was kept (with the reason). Once the Mac PM approves the phase gate, the git worker pushes the phase branch, opens a pull request into `dev`, and merges immediately with `gh pr merge --rebase --delete-branch` as soon as GitHub allows (never `--admin`). If the post-merge CI run fails, the coordinator files a deduplicated GitHub issue (`v1.x` label) with the run URL, failing step and first error lines, and work continues.
+
+A plan run never promotes `dev` to `main`, never tags a release, and never triggers a public deploy on its own.
 
 ## AI agents
 
-AGENTS.md says agents commit or push only when the user asks. Running an authorized plan counts as that request for commits inside the plan's scope. Pushes, repository settings and anything else outward-facing still need the user's explicit go-ahead; the user can grant pushes and pull request merges into `dev` for a whole plan run, and the plan records that grant. Agents follow every rule in this file. They stage explicit paths only, and they never put AI or tool references in commit messages.
+[AGENTS.md](../AGENTS.md) summarises these rules. Commit and push permissions (including opening and rebase-merging pull requests into `dev`) follow an authorized plan run, where the plan or the maintainer's directive records the grant. Promotions to `main`, release tags, public deploys and repository or ruleset settings always require the maintainer's explicit written go-ahead. Agents stage explicit paths only, never commit secrets or private documents, and never put AI or tool references in commit messages.

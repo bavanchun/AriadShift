@@ -320,6 +320,29 @@ fn a_crash_mid_session_is_reported_and_the_next_job_starts_fresh() {
 }
 
 #[test]
+fn a_session_crash_reports_the_active_memory_ceiling() {
+    let pool = pool(quick_config());
+    let limits = Limits {
+        max_memory_mb: Some(256),
+        ..Limits::local()
+    };
+    let crashed = run_job_with(&pool, "crash", &[], limits, CancellationToken::new());
+    let error = crashed.result.expect_err("probe crashes");
+    assert!(matches!(
+        &error,
+        RunError::Crash {
+            memory_limit_mb: Some(256),
+            ..
+        }
+    ));
+    assert!(
+        error
+            .to_string()
+            .contains("may have hit its memory limit (256 MiB)")
+    );
+}
+
+#[test]
 fn a_second_result_is_a_protocol_violation() {
     let pool = pool(quick_config());
     let warm = run_job(&pool, "ok");

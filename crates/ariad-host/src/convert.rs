@@ -259,6 +259,10 @@ pub enum ConvertError {
     Interrupted,
     UnsupportedIrVersion,
     InvalidCapabilities(String),
+    /// A generic engine failure while a memory ceiling was active.
+    FailedWithMemoryHint {
+        limit_mb: u32,
+    },
     Failed,
 }
 
@@ -306,6 +310,10 @@ impl std::fmt::Display for ConvertError {
             Self::Interrupted => write!(f, "conversion was interrupted"),
             Self::UnsupportedIrVersion => write!(f, "unsupported IR version"),
             Self::InvalidCapabilities(err) => write!(f, "invalid capabilities: {err}"),
+            Self::FailedWithMemoryHint { limit_mb } => write!(
+                f,
+                "conversion failed. The engine may have hit its memory limit ({limit_mb} MiB)."
+            ),
             Self::Failed => write!(f, "conversion failed"),
         }
     }
@@ -346,6 +354,7 @@ impl ConvertError {
             | Self::OutputIo
             | Self::UnsupportedIrVersion
             | Self::InvalidCapabilities(_)
+            | Self::FailedWithMemoryHint { .. }
             | Self::Failed => 1,
         }
     }
@@ -368,15 +377,21 @@ impl ConvertError {
             Self::OutputIo => "output_io",
             Self::UnsupportedIrVersion => "unsupported_ir_version",
             Self::InvalidCapabilities(_) => "invalid_capabilities",
-            Self::Failed => "failed",
+            Self::Failed | Self::FailedWithMemoryHint { .. } => "failed",
         }
     }
 
     /// The error reported when an engine's tool is unavailable.
     #[must_use]
     pub fn missing_engine(engine: &str) -> Self {
-        if engine == engines::docling::ENGINE_ID {
-            return Self::DoclingMissing;
+        if let Some(spec) = engines::pack_spec(engine) {
+            if spec.id == engines::docling::ENGINE_ID {
+                return Self::DoclingMissing;
+            }
+            return Self::EngineMissing {
+                engine: spec.id.to_owned(),
+                hint: spec.install_hint.to_owned(),
+            };
         }
         match engines::spec(engine) {
             Some(spec) if spec.id != engines::PANDOC.id => Self::EngineMissing {
@@ -531,10 +546,14 @@ where
 }
 
 /// Converts a supported document into the requested target format using capability-based promotion.
+///
+/// Images referenced by a Markdown or HTML input resolve beneath `asset_base`, never through
+/// `request.asset_base_dir` or the input's path, so they stay within the authorized directory.
 pub fn convert_confined<F>(
     request: &ConvertRequest,
     destination_parent: &cap_std::fs::Dir,
     file_name: &Path,
+    asset_base: &AssetBase,
     cancel: CancellationToken,
     on_event: F,
 ) -> Result<ConvertReport, ConvertError>
@@ -547,7 +566,7 @@ where
         Some(Confinement {
             destination_parent,
             file_name,
-            asset_base: None,
+            asset_base,
         }),
         &invocation,
         None,
@@ -560,41 +579,9 @@ where
 
 /// Converts like [`convert_confined`], taking engine processes from `pool`.
 ///
-/// Retains the original image resolution policy and call signature. Call
-/// [`convert_confined_assets_in`] to bind image reads to a confined directory handle.
-pub fn convert_confined_in<F>(
-    pool: &SessionPool,
-    request: &ConvertRequest,
-    destination_parent: &cap_std::fs::Dir,
-    file_name: &Path,
-    cancel: CancellationToken,
-    on_event: F,
-) -> Result<ConvertReport, ConvertError>
-where
-    F: FnMut(ConvertEvent),
-{
-    let invocation = EngineInvocation::new(&request.engine_program);
-    convert_executor(
-        request,
-        Some(Confinement {
-            destination_parent,
-            file_name,
-            asset_base: None,
-        }),
-        &invocation,
-        None,
-        Limits::local(),
-        Engines::Pool(pool),
-        cancel,
-        on_event,
-    )
-}
-
-/// Converts like [`convert_confined`], taking engine processes from `pool`.
-///
 /// Images referenced by a Markdown or HTML input resolve beneath `asset_base`, never through
 /// `request.asset_base_dir` or the input's path, so they stay within the authorized directory.
-pub fn convert_confined_assets_in<F>(
+pub fn convert_confined_in<F>(
     pool: &SessionPool,
     request: &ConvertRequest,
     destination_parent: &cap_std::fs::Dir,
@@ -612,12 +599,36 @@ where
         Some(Confinement {
             destination_parent,
             file_name,
-            asset_base: Some(asset_base),
+            asset_base,
         }),
         &invocation,
         None,
         Limits::local(),
         Engines::Pool(pool),
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts like [`convert_confined_in`], binding image reads to `asset_base`.
+pub fn convert_confined_assets_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    destination_parent: &cap_std::fs::Dir,
+    file_name: &Path,
+    asset_base: &AssetBase,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    convert_confined_in(
+        pool,
+        request,
+        destination_parent,
+        file_name,
+        asset_base,
         cancel,
         on_event,
     )
@@ -867,8 +878,8 @@ enum Stage {
 struct Confinement<'a> {
     destination_parent: &'a cap_std::fs::Dir,
     file_name: &'a Path,
-    /// Base for images referenced by the source document; `None` resolves them by path.
-    asset_base: Option<&'a AssetBase>,
+    /// Base for images referenced by the source document.
+    asset_base: &'a AssetBase,
 }
 
 /// State shared by the steps of one route execution.
@@ -962,19 +973,14 @@ where
                     ),
                     Stage::Ir(_) => return Err(ConvertError::Failed),
                 };
-                let confined_base = if matches!(stage, Stage::Source) {
-                    self.asset_base
-                } else {
-                    None
-                };
                 let read = read_document_to_ir(path, step.from, self.limits)?;
                 self.warnings.extend(read.warnings);
                 let mut document = read.document;
                 if self.cancel.is_cancelled() {
                     return Err(ConvertError::Interrupted);
                 }
-                // A confined source resolves images only through its authorized handle.
-                let asset_warnings = match confined_base {
+                // A confined conversion resolves images only through its authorized handle.
+                let asset_warnings = match self.asset_base {
                     Some(base) => assets::resolve_in(&mut document, base, self.limits),
                     None => assets::resolve(&mut document, base_dir, self.limits)
                         .map_err(|_| ConvertError::InputIo)?,
@@ -1017,15 +1023,15 @@ where
     }
 
     fn engine_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
-        let docling = if step.engine == engines::docling::ENGINE_ID {
-            Some(engines::docling::resolve().ok_or(ConvertError::DoclingMissing)?)
+        let (command, mut options) = if engines::is_pack_engine(&step.engine) {
+            engines::resolve_pack_with_options(&step.engine, Some(self.invocation.program))
+                .map_err(|_| ConvertError::missing_engine(&step.engine))?
         } else {
-            None
+            (
+                self.invocation.command_for(&step.engine),
+                std::collections::BTreeMap::new(),
+            )
         };
-        let command = docling.as_ref().map_or_else(
-            || self.invocation.command_for(&step.engine),
-            |command| command.runner_command(self.invocation.program),
-        );
         let mut lease = self.engines.lease(command, self.cancel)?;
         let mut workspace = lease.workspace().map_err(|_| ConvertError::Failed)?;
         let input_path = match stage {
@@ -1047,7 +1053,6 @@ where
             }
         };
 
-        let mut options = docling.map(|command| command.options).unwrap_or_default();
         options.insert(
             "profile".to_owned(),
             serde_json::Value::String(self.request.profile.as_str().to_owned()),
@@ -1293,7 +1298,7 @@ where
     };
     let mut run = RouteRun {
         request,
-        asset_base: confinement.and_then(|confinement| confinement.asset_base),
+        asset_base: confinement.map(|confinement| confinement.asset_base),
         invocation,
         engines,
         limits: &limits,
@@ -1847,13 +1852,15 @@ pub(crate) fn map_run_error(error: RunError) -> ConvertError {
 }
 
 fn map_engine_error(engine: &str, error: RunError) -> ConvertError {
-    if engine == engines::docling::ENGINE_ID {
+    if engines::is_pack_engine(engine) {
         match &error {
             RunError::EngineFailed {
                 code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
                 ..
-            } => return ConvertError::DoclingToolMissing,
-            RunError::Spawn(_) => return ConvertError::DoclingMissing,
+            } if engine == engines::docling::ENGINE_ID => {
+                return ConvertError::DoclingToolMissing;
+            }
+            RunError::Spawn(_) => return ConvertError::missing_engine(engine),
             _ => {}
         }
     }
@@ -1874,6 +1881,10 @@ fn map_engine_error(engine: &str, error: RunError) -> ConvertError {
             code: ErrorCode::LimitExceeded,
             ..
         } => ConvertError::LimitExceeded,
+        RunError::Crash {
+            memory_limit_mb: Some(limit_mb),
+            ..
+        } => ConvertError::FailedWithMemoryHint { limit_mb },
         _ => ConvertError::Failed,
     }
 }
@@ -1945,6 +1956,25 @@ mod tests {
         limits::Limits,
         warning::{Warning, WarningCode},
     };
+
+    #[test]
+    fn generic_engine_failure_keeps_conversion_code_with_memory_hint() {
+        let error = super::map_engine_error(
+            "pandoc",
+            crate::runner::RunError::Crash {
+                exit: Some(9),
+                stderr_tail: String::new(),
+                memory_limit_mb: Some(256),
+            },
+        );
+        assert_eq!(error.code(), "failed");
+        assert_eq!(error.exit_code(), 1);
+        assert!(
+            error
+                .to_string()
+                .contains("may have hit its memory limit (256 MiB)")
+        );
+    }
 
     #[cfg(unix)]
     #[test]

@@ -174,7 +174,7 @@ Upload completion returns `409 conflict` while another call in the same API proc
 | `GET` | `/v1/limits` | optional | The caller's plan, conversion limits, retention, and each quota's limit, use and remainder |
 | `GET` | `/healthz`, `/readyz` | none | Liveness, and readiness of the database and storage |
 
-"Optional" means the endpoint accepts a JWT, an API key, or no credential (the anonymous plan). With S3 storage the presigned URLs point at the object store. With the local file store they are `PUT` and `GET /v1/blobs/{token}` on the API, where the signed token is the only credential; a bad or expired token returns `403 forbidden`.
+"Optional" means the endpoint accepts a JWT, an API key, or no credential (the anonymous plan). With S3 storage the presigned URLs point at the object store. With the local file store they are `PUT` and `GET /v1/blobs/{token}` on the API, where the signed token is the only credential; a bad or expired token returns `403 forbidden`. Each local-store transfer of `N` bytes is allowed `max(15 minutes, N / ARIAD_BLOB_MIN_RATE_BPS)` (where `ARIAD_BLOB_MIN_RATE_BPS` defaults to `1048576` bytes/s, 1 MiB/s, and must be greater than zero), capped at a hard maximum of two hours and the signed URL's expiry, with a 15-second idle timeout between chunks; a slower or stalled transfer fails with `408 transfer_timeout`.
 
 The web client probes these capabilities and handles `404`, `405` and `501` responses from older deployments. When listing jobs is unavailable, jobs remain manageable through this browser's recorded history; an upload without a job remains subject to server expiry when direct deletion is unavailable.
 

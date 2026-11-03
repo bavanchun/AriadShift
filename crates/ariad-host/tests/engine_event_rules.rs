@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 #[test]
 fn confined_artifacts_are_recorded_once_and_rejections_preserve_the_list() {
-    let output = std::env::temp_dir().join("ariad-event-rules").join("out");
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("out");
+    std::fs::create_dir(&output).unwrap();
     let directory = output.to_str().unwrap();
     let line = |path: &std::path::Path| {
         serde_json::json!({
@@ -15,6 +17,7 @@ fn confined_artifacts_are_recorded_once_and_rejections_preserve_the_list() {
         .to_string()
     };
     let inside = output.join("document.docx");
+    std::fs::write(&inside, b"document").unwrap();
     let mut artifacts = Vec::new();
     assert!(matches!(
         parse_event(line(&inside).as_bytes(), Some(directory), &mut artifacts),

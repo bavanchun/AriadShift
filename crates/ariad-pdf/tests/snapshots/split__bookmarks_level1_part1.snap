@@ -1,0 +1,72 @@
+---
+source: crates/ariad-pdf/tests/split.rs
+expression: report
+---
+{
+  "version": "1.5",
+  "page_count": 5,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 2,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 3,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 4,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 5,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "metadata": {
+    "title": "Twenty-Page Survey Manual",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20041230071238Z",
+    "mod_date": "D:20041230071238Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_javascript": false,
+  "outline_count": 2,
+  "repaired_xref": false
+}

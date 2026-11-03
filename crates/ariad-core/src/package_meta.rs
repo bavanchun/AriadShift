@@ -39,6 +39,18 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
     timestamp: &str,
 ) -> Result<W, PackageMetaError> {
     let archive = ZipArchive::new(input)?;
+    // An EOCD signature in the preserved comment can be selected as a false
+    // directory end after rewriting changes the archive layout.
+    if archive
+        .comment()
+        .windows(4)
+        .any(|bytes| bytes == b"PK\x05\x06")
+    {
+        return Err(zip::result::ZipError::InvalidArchive(
+            "archive comment contains an ambiguous end record".into(),
+        )
+        .into());
+    }
     let indexed_count = archive.len();
     let directory_start = archive.central_directory_start();
     let mut input = archive.into_inner();
@@ -62,7 +74,8 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
             name == CORE_PROPERTIES
         };
         if !target {
-            writer.raw_copy_file(entry)?;
+            // Re-encode the decoded name so EFS describes the name the ZIP reader decoded.
+            writer.raw_copy_file_rename(entry, name)?;
             continue;
         }
         // Only the XML being rewritten is buffered; unrelated entries are copied raw.
@@ -272,6 +285,22 @@ mod tests {
         let entry = archive.by_name(name).unwrap();
         let start = entry.data_start().unwrap() as usize;
         &bytes[start..start + entry.compressed_size() as usize]
+    }
+
+    #[test]
+    fn rejects_crash_seed_with_ambiguous_archive_comment() {
+        let input = include_bytes!("../../../fuzz/seeds/docx_meta/embedded-eocd-comment.zip");
+        let archive = ZipArchive::new(Cursor::new(input)).unwrap();
+        assert!(
+            archive
+                .comment()
+                .windows(4)
+                .any(|bytes| bytes == b"PK\x05\x06")
+        );
+        assert!(matches!(
+            stamp_bytes(input, false, TIMESTAMP),
+            Err(PackageMetaError::Archive(_))
+        ));
     }
 
     #[test]

@@ -27,6 +27,7 @@
 # 22. Crates publishing: invokes reusable workflow with explicit secret passing, persist-credentials: false, and with: plan removed.
 # 23. Action pinning: all GitHub Actions pinned to full commit SHAs with # vX version tag comments documented.
 # 24. Comment cleanup: removed default dist explanatory comment blocks.
+# 25. Product release tags exclude packs and must point to an ancestor of main.
 #
 # Copyright 2022-2024, axodotdev
 # SPDX-License-Identifier: MIT or Apache-2.0
@@ -54,6 +55,7 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
       - '!toolchain-torch-*'
       - '!toolchain-wheels-*'
+      - '!pack-*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -75,6 +77,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          fetch-depth: 0
+      - name: Verify release commit is on main
+        if: github.event_name == 'push'
+        run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
       # Pinned cargo-dist v0.33.0 archive with SHA-256 integrity verification.
       # To refresh the checksum when bumping cargo-dist-version:
       #   gh release view v<VERSION> --repo axodotdev/cargo-dist --json assets
@@ -184,7 +190,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $binDir
 
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-auditable@0.7.7
 

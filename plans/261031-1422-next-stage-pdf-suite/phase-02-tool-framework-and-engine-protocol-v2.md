@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Tool framework and engine protocol v2 (walking skeleton: pdf.info)"
-status: pending
+status: completed
 priority: P1
 effort: "8 tasks, ~9-11 worker-days"
 dependencies: [1]
@@ -149,13 +149,13 @@ Fuzzing runs on Linux CI (`just fuzz` is Linux-only); link the CI run in the gat
 
 ## Acceptance
 
-- [ ] `ashift tool pdf.info` equals the truth file for every corpus file; owner-password-only input reports `encrypted: true` and is never saved decrypted.
-- [ ] Identical JSON from CLI, local MCP `run_doc_tool` and WASM `runTool`.
-- [ ] `/1` golden request/event snapshots unchanged; v2 conformance passes; v2 jobs are killed by `timeout_s` and `max_memory_mb`.
-- [ ] Atomic publish, confinement and secret-scrubbing tests pass; a recipe with a literal secret is rejected; an imported recipe needs confirmation.
-- [ ] Tampered pack file is refused at resolve; unknown engine fails closed.
-- [ ] Exit codes 8-12 documented and tested; MCP tests updated for the two new tools.
-- [ ] Publish order and CI scope include the new crates; `check-release-workflow` passes.
+- [x] `ashift tool pdf.info` equals the truth file for every corpus file; owner-password-only input reports `encrypted: true` and is never saved decrypted (`pdf.info` equals the truth file for all 22 corpus files through the CLI; test `tool_pdf_info_matches_all_corpus_truth_files_and_never_writes_decrypted_copy`).
+- [x] Identical JSON from CLI, local MCP `run_doc_tool` and WASM `runTool` (CLI, MCP `run_doc_tool` and WASM `runTool` identical; `mcp_stdio` `test_list_doc_tools_and_run_doc_tool_round_trip` and the 13 `ariad-wasm` host tests).
+- [x] `/1` golden request/event snapshots unchanged; v2 conformance passes; v2 jobs are killed by `timeout_s` and `max_memory_mb` (`/1` golden snapshots byte-identical, `/2` conformance, v2 jobs killed by `timeout_s` and `max_memory_mb` in `tool_runner_limits`).
+- [x] Atomic publish, confinement and secret-scrubbing tests pass; a recipe with a literal secret is rejected; an imported recipe needs confirmation (atomic publish, confinement, secret scrubbing, literal secret in a recipe rejected, imported recipe needs confirmation in `tool_publish_atomic` and `tool_secrets`).
+- [x] Tampered pack file is refused at resolve; unknown engine fails closed (tampered pack refused at resolve against the signed manifest, unknown engine fails closed in `pack_resolve_verify`).
+- [x] Exit codes 8-12 documented and tested; MCP tests updated for the two new tools (exit codes 8-12 documented in `docs/cli.md` and tested, MCP tests updated in `tools_cli` and `mcp_stdio`).
+- [x] Publish order and CI scope include the new crates; `check-release-workflow` passes (publish order and CI scope include the new crates, `check-release-workflow` passes).
 
 ## Risks
 
@@ -165,3 +165,5 @@ Fuzzing runs on Linux CI (`just fuzz` is Linux-only); link the CI run in the gat
 | Re-verifying packs on every resolve is slow | Cache verified state by inode+mtime+size; re-hash only on change. |
 | lopdf write support gaps | T3 step 1 reports before coding; escalate to the PM if a fork/upgrade is needed. |
 | WASM size growth | Report delta; `ariad-pdf` has no heavy deps. |
+
+Security review fixes applied 2026-11-01: bounded decoding and trailer scan, overwrite backup and rollback, duplicate and extension checks, engine artifact confinement, secret handling, signed-manifest pack verification; jsonschema is now a runtime dependency of ariad-host (MIT-0 accepted).

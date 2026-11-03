@@ -2,6 +2,71 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
+## 0.3.0 (unreleased)
+
+Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium rendering and image tools, and optimize and security operations. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. The `ariad-engine/1` and `ariad-ir/1` contracts are unchanged. The desktop and web interfaces do not yet offer tool screens; the CLI and local MCP server expose the tools.
+
+### Upgrade notes
+
+- **OAuth signup challenge configuration.** When signup is enabled and `AUTH_TURNSTILE_SECRET` is set, auth requires its paired `AUTH_TURNSTILE_SITE_KEY`. Deployments with signup disabled can set the secret without the site key.
+
+- **Two new crates are published.** `ariad-pdf` (pure-Rust PDF manipulation) and `ariad-engine-io` (shared engine protocol helpers) join `ariad-core`, `ariad-typst`, `ariad-host` and `ariad-cli` on crates.io. `ariad-host` now depends on both, so a source build or `cargo install ariad-cli` pulls them in.
+- **New exit codes `8` to `12`.** Tool commands report an unknown tool (8), invalid parameters (9), wrong input count or format (10), a tool not allowed by the caller's tier (11) and encrypted input (12). Codes `0` to `6` and `130` keep their meaning. See [cli.md](cli.md#exit-codes) and [tools.md](tools.md#tool-error-exit-codes).
+- **Tools never overwrite silently.** A destination that already exists fails with exit 6 unless `--overwrite` is passed. With `--overwrite`, the previous file is moved aside first and restored byte-identical if publication fails, so a multi-file result is published completely or not at all.
+- **Encrypted PDFs are refused, never stripped.** Structural tools exit with code 12 on encrypted input. `pdf.decrypt` requires the qpdf pack, which is not shipped in 0.3.0.
+
+### Added
+
+- **25 structural PDF tools**, plus the `pdf.info` inspection tool, all in the free tier and runnable on the CLI and the local MCP server. They need no rendering or engine pack, except pixel-based blank-page detection in `pdf.split`, which needs PDFium. The full contract is in [tools.md](tools.md) and one runnable example per tool is in [cli.md](cli.md#ashift-tool):
+  - Page sets: `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.alternate_mix`, `pdf.insert_blank`.
+  - Page geometry: `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.scale`, `pdf.single_page`, `pdf.decompress`.
+  - Imposition and layout: `pdf.nup`, `pdf.booklet`, `pdf.overlay`, `pdf.divide_pages`, `pdf.posterize`.
+  - Document structure: `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.portfolio`, `pdf.layers`.
+- **`ashift tools`, `ashift tool` and `ashift recipe run`.** List the registry, run one tool on one or more inputs, or run an `ariad-recipe/1` pipeline. Parameters come from `--param KEY=VALUE`, `--params-json` or a recipe, and are validated against the tool's JSON Schema before anything runs. See [cli.md](cli.md#ashift-tools).
+- **Local MCP tools `list_doc_tools` and `run_doc_tool`.** They run the same registry under the server's `--allow-dir` confinement and limits, and publish outputs atomically as resource links. See [mcp.md](mcp.md).
+- **Deterministic output.** The same inputs and parameters give byte-identical PDFs. `SOURCE_DATE_EPOCH` fixes the document dates and `/ID`, and object numbers follow traversal order.
+- **Repaired-input warning.** A PDF with a damaged cross-reference table is inspected and processed after reconstruction, the tool prints `warning[repaired_xref]`, and the saved file is a fully rewritten valid PDF.
+- **`ariad-engine/2` and the tool contracts.** A second engine protocol version carries `op = "run_tool"` for out-of-process tool engines, next to the frozen `ariad-engine/1`. The machine-readable contracts are [`schemas/tools.v1.json`](../schemas/tools.v1.json), [`schemas/recipe.v1.json`](../schemas/recipe.v1.json) and [`schemas/engine-protocol.v2.json`](../schemas/engine-protocol.v2.json).
+- **Browser bindings.** `ariad-wasm` exposes `listTools` and `runTool` for the same in-process tools. No page in the web app uses them yet.
+- **PDFium engine pack.** Render PDF pages as images, make thumbnails, extract images, crop whitespace, remove blank pages, detect scanned pages and inspect text layout. Image-to-PDF runs in-process. PDFium tools run locally out of process; install the pack with `ashift engines install pdfium`. (#177, #178, #185)
+- **Optimize and security tools.** In-process `pdf.compress` and `pdf.grayscale`, plus `pdf.sanitize` and `pdf.unlock_forms`; compression supports levels, presets and a target size. Local MCP supports single-use secret handles. Repair, linearization, encryption, decryption and permissions require the qpdf pack. (#188)
+
+### Changed
+
+- **Output format inference.** `ashift convert` infers the target format from the `-o` file extension when `--to` is omitted. (#133)
+- **Confined conversion API.** `convert_confined` and `convert_confined_in` now require an explicit `&AssetBase`; this is a breaking `ariad-host` API change. Windows asset resolution is also tightened. (#144)
+- **Streaming cloud downloads.** Large web downloads can stream to a file, and the SDK adds `downloadToStream` with size and SHA-256 verification. (#148)
+- **Cloud authorization.** OAuth supports signup during authorization, client ID metadata documents remain disabled by default, users can manage consents, and token-refresh errors are handled explicitly. (#149, #150, #151, #162, #165)
+- **DOCX conversion.** List tightness and metadata stamping are corrected. (#135, #161)
+- **Node.js.** Web and desktop builds use Node.js 26 LTS. (#147)
+- **`ariad_pdf::ToolCtx` construction.** Create contexts with `ToolCtx::new`,
+  `with_cancel` or `with_deadline`, and use `with_max_pages` to set a page limit.
+  The struct is non-exhaustive so future fields can be added without breaking callers.
+- **Updated Rust dependencies.** `jsonschema` moves to 0.59.0, `libc` to 0.2.191 and `unicode-normalization` to 0.1.26. `ariad-host` now uses `jsonschema` at run time to validate tool parameters. The licence policy additionally allows `MIT-0` ([deny.toml](../deny.toml)).
+
+### Security
+
+- **PDFium image pre-flight.** A bounded, strictly loaded object graph is serialized before PDFium reads it; ambiguous cross-references are rejected, and nested Type3 resources are accounted for. Image extraction also refuses repaired cross-references; other PDFium tools warn and continue. (#185)
+- **Yanked dependency removed.** The workspace no longer resolves the yanked `async-executor` version. (#195, #197)
+- **Bounded PDF work.** One per-document budget caps stream decompression across object streams, page content, form XObjects and XMP metadata. The trailer scan is linear, and page loops honour the deadline and cancellation of the running tool.
+- **Confined tool artifacts.** Engine-reported output files are checked with symlink-safe handles, confined to the job's output directory and size-capped before they are read. Inputs staged for MCP tools are never reopened by path after confinement.
+- **Secrets stay out of messages.** Secret parameters are matched case-insensitively and recursively, scrubbed from errors and debug output, and scoped per recipe step. `params_file` must live inside the job directory.
+- **Pack verification at resolve time.** Installed engine packs are re-verified against a digest record bound to the minisign-verified manifest, and unlisted executables or extra files in a pack root are rejected.
+- **Fuzz coverage.** CI adds four fuzz targets for page ranges, recipes, bounded PDF opening and the structural tools, for 22 targets in all.
+
+### Known limitations
+
+- **Docling pack.** The Docling engine pack is not yet published; `ashift engines install docling` cannot resolve it until a later release. (#204)
+- **qpdf pack does not ship in 0.3.0.** Its release gate refuses distribution until the GNU runtime review is complete. qpdf-dependent tools require a separately available compatible pack. (#188)
+- **Signed PDFs.** Rewriting a signed PDF raises a warning and does not preserve existing signatures; incremental-update support remains open. (#186)
+- **Compression.** Six of ten corpus files met or beat Stirling level 6 with the specified similarity criterion, below the original seven-of-ten target. Text-heavy parity remains open. (#187)
+- **Engine memory limits.** macOS and Windows use the process-tree watchdog but lack a hard engine memory ceiling. (#189)
+- **PDFium follow-ups.** Real-world canonicalization benchmarking, resource-named inline image colour spaces and unified pre-flight cost models remain open. (#192, #193, #194)
+- **CI follow-up.** Two CLI tests have shown intermittent Windows runner timeouts. (#201)
+- **Pack notices.** Making installed engine pack notices accessible through the CLI and apps remains open. (#196)
+- **Additional tools.** OCR, annotations, form editing, redaction and signing are planned for later previews.
+- **No desktop or web screens for the tools.** The desktop app and the web app keep their conversion-only interfaces in this release.
+
 ## 0.2.0 (2026-10-31)
 
 Roadmap 1b. `ashift` adds PDF, Office, OCR and image routes, signed engine packs, and a Linux engine sandbox. This release also adds the desktop app and the in-browser converter. The `ariad-engine/1` engine protocol and the `ariad-ir/1` document schema are now frozen. The self-hosted cloud product, its web mode and the remote MCP endpoint are a **preview**: they are not part of the release archives or the desktop installers, and the [Known limitations](#known-limitations) list what is open.

@@ -1,0 +1,18 @@
+---
+source: crates/ariad-pdf/tests/attachments.rs
+expression: value
+---
+[
+  {
+    "media_type": "text/csv",
+    "name": "inventory.csv",
+    "sha256": "4bf5d898d549769c8a21c446f46dcaa777e56d0f70e57c02de1995a897823c86",
+    "size": 33
+  },
+  {
+    "media_type": "text/plain",
+    "name": "notes.txt",
+    "sha256": "2e9c24d267f792dd2671008eefb9f7452cd2bc334393c0b2e9996e678a4aed0c",
+    "size": 43
+  }
+]

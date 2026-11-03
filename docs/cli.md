@@ -18,6 +18,9 @@ All conversion and transformation logic lives in `ariad-host` and `ariad-core`; 
   - [`ashift engines remove`](#ashift-engines-remove)
   - [`ashift engines verify`](#ashift-engines-verify)
   - [`ashift doctor`](#ashift-doctor)
+  - [`ashift tools`](#ashift-tools)
+  - [`ashift tool`](#ashift-tool)
+  - [`ashift recipe run`](#ashift-recipe-run)
 - [Profiles](#profiles)
 - [Environment Variables](#environment-variables)
 
@@ -37,12 +40,17 @@ All CLI commands adhere to a single unified exit-code table:
 | Exit Code | Name | Meaning |
 |---|---|---|
 | `0` | Success | Command completed successfully. All required checks passed for `doctor`. |
-| `1` | Failure | Conversion or operation failed, input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive or I/O failure, or `engines verify` found differences. |
+| `1` | Failure | Conversion or operation failed, input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive, rejected manifest (including an `engine_protocol` that differs from the engine's) or I/O failure, or `engines verify` found differences. |
 | `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
 | `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
 | `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
-| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. |
+| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. PDFium tools (`pdf.render` and the other tools of the `pdfium` engine): the `pdfium` pack is not installed or fails verification at resolve (damaged files, a mismatched `engine_protocol`, or an entrypoint outside the pack root); the error carries the install hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
+| `8` | Unknown Tool | Requested tool ID (`ashift tool <id>`) is not in the tool registry (`error[unknown_tool]`). |
+| `9` | Invalid Params | Tool parameters failed JSON Schema validation, violated `x-ariad-secret` rules (such as an inline secret on `--param` or `--params-json`), or an imported recipe was not confirmed (`error[invalid_params]`). |
+| `10` | Wrong Input | Input file count or sniffed document format does not match the tool's `ToolSpec` (`error[wrong_input]`). |
+| `11` | Tier Not Allowed | Requested tool requires `Tier::Pro` or a batch/recipe run exceeds Free-plan quotas (`error[tier_not_allowed]`). |
+| `12` | Encrypted Input | Input PDF is encrypted and requires a password or `pdf.decrypt` (`error[encrypted_input]`). |
 | `130` | Interrupted | Interrupted by signal (SIGINT / Ctrl-C on Unix, Ctrl-C / Ctrl-Break on Windows). Temporary workspaces and partial files are cleaned up. |
 
 ---
@@ -67,14 +75,14 @@ All CLI commands adhere to a single unified exit-code table:
 Converts Markdown, HTML, DOCX and EPUB to/from IR JSON (`json`), reads PDF text, writes PDF through Typst, and uses system LibreOffice for legacy Office and ODF routes. With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
 
 ```bash
-ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
+ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 ```
 
 #### Arguments and Options
 
 - `<INPUT>...`: One or more input document paths, processed in order.
-- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input.
-- `-o, --output <OUTPUT>`: With one input, an explicit output file path. With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
+- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
+- `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
@@ -85,6 +93,9 @@ ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
 ```bash
 # Convert Markdown to DOCX (default output: draft.docx)
 ashift convert draft.md --to docx
+
+# Convert Markdown to DOCX, inferring the target format from -o
+ashift convert draft.md -o out.docx
 
 # Convert DOCX to Markdown with explicit output path
 ashift convert report.docx --to md -o output/report.md
@@ -320,6 +331,7 @@ ashift engines <install|remove|verify> ...
 - Reports native in-process engine `ariad-core` as `ready`.
 - Reports the built-in `pdf` reader and `typst` writer, probes Pandoc (`>=3.12,<4`) and optional LibreOffice (`>=24.2`), and lists their routes. A build with a disabled feature reports that engine as missing.
 - Lists `docling` as `not installed` (note `available in v0.2`) until its pack is installed. When `ASHIFT_DOCLING_ENGINE` is set, the `docling` row comes from that engine's `describe` (its Docling version, `ready` once it answers) with the note `development override`. A docling engine without Tesseract 5 is still `ready`, with a note that OCR is unavailable, because digital documents convert without it.
+- Lists `pdfium` the same way, with the install hint as its note (`run 'ashift engines install pdfium' to install the pdfium engine pack`) while no pack is installed. Once installed, the row shows the pack version, `ready`, and the note `protocol ariad-engine/2`. The pack is separate from the engines above and is described in [packs.md](packs.md#the-pdfium-pack).
 - For every resolved engine pack (installed, or an `ASHIFT_PACK_<NAME>` development directory) runs the engine's `describe` through the pack entrypoint and reports its status. The row carries a `pack` object; routes come from the capabilities registry, or from `describe` for engines the registry does not know. A pack that is installed but cannot be used (damaged receipt, other platform, other `ashift` range) is listed as `missing` with a note pointing at `ashift doctor`.
 
 #### Human Output Example (excerpt)
@@ -506,6 +518,7 @@ ashift doctor [OPTIONS]
 7. **Sandbox**: Reports effective mode, Landlock ABI and seccomp availability on Linux, or Seatbelt availability and enforcement on macOS. Missing isolation is an optional failed check in best-effort mode and a required failure in required mode. Required mode needs Linux isolation or usable macOS Seatbelt.
 8. **Docling engine** (`docling_engine`, not required): the engine from `ASHIFT_DOCLING_ENGINE` or the `docling` pack answers `describe`; the message lists the Docling version and the models found. Without an engine the check fails and the hint says how to install one.
 9. **Tesseract** (`tesseract`, not required; only when the Docling engine answered): Tesseract 5 is on `PATH` for Vietnamese OCR. Otherwise Vietnamese OCR is unavailable and the hint gives the install command.
+10. **pdfium engine** (`pdfium_engine`, not required): resolves the `pdfium` pack (signature and file digests when installed, or the `ASHIFT_PACK_PDFIUM` development directory) and runs a `describe` round trip over `ariad-engine/2`. Without the pack the check fails with the message `pdfium engine is not installed` and the install hint; with it, the message gives the engine version and the protocol (`ariad-engine/2`). A pack that does not verify, declares the wrong protocol, or cannot start under the sandbox fails the check with the cause. `doctor` never fails because of it.
 
 #### macOS engine sandbox
 
@@ -646,6 +659,159 @@ No local filesystem paths are exposed in the JSON output. Sandbox values depend 
 
 ---
 
+### `ashift tools`
+
+Lists all registered document manipulation tools from `ariad-core::tools`, optionally filtered by functional group. See [tools.md](tools.md) for the full tool contract.
+
+```bash
+ashift tools [--group <GROUP>] [--json]
+```
+
+#### Options
+
+- `--group <GROUP>`: Filter tools by group (`organize`, `convert`, `optimize`, `security`, `overlay`, `ocr`, `annotate`, `forms`, `sign`, `redact`, `compare`, `edit`, `ai`, `automation`). Unknown group names fail with exit code `2` (`error[usage]`).
+- `--json`: Emit the array of `ToolDescriptor` objects as JSON (including resolved Draft 2020-12 `params_schema`, `tier`, `runtimes`, `engine`, and `secret_params`).
+
+---
+
+### `ashift tool`
+
+Executes a single registered document manipulation tool on one or more input files.
+
+```bash
+ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--params-json <FILE|->] [--secret <NAME=@FILE|->]... [--overwrite] [--json]
+```
+
+#### Arguments and Options
+
+- `<ID>`: Canonical `<domain>.<action>` tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
+- `<INPUT>...`: One or more input document paths.
+- `-o, --output <DIR_OR_FILE>`: Explicit output file or directory. When omitted, single-output and multi-output tools publish beside the first input using default naming, while `pdf.info` prints its inspection summary (or structured JSON with `--json`) without writing a file to disk.
+- `--param <KEY=VALUE>`: Repeatable parameter override (`VALUE` is parsed as JSON when valid, otherwise as a string).
+- `--params-json <FILE|->`: Read the tool parameter JSON object from a file or `-` (stdin). Explicit `--param` flags override keys from `--params-json`.
+- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Secrets are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
+- `--overwrite`: Replace existing destination file(s).
+- `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
+
+#### Examples
+
+```bash
+# Inspect PDF structure, page boxes, metadata, forms, and xref repair status as JSON
+ashift tool pdf.info fixtures/pdf-tools/multipage-20.pdf --json
+
+# Write pdf.info output to a file
+ashift tool pdf.info report.pdf -o report.info.json
+
+# Merge PDFs with per-file bookmarks and continuous page numbering (-> rotated-pages.merged.pdf)
+ashift tool pdf.merge fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param outline=per-file --param page_labels=renumber -o out/
+
+# Split a PDF every 2 pages (-> rotated-pages.part-001.pdf, rotated-pages.part-002.pdf)
+ashift tool pdf.split fixtures/pdf-tools/rotated-pages.pdf --param mode=every --param every=2 -o out/
+
+# Extract pages 1-3 into a new PDF (-> multipage-20.extracted.pdf)
+ashift tool pdf.extract_pages fixtures/pdf-tools/multipage-20.pdf --param pages=1-3 -o out/
+
+# Delete pages 2 and 4 (-> rotated-pages.trimmed.pdf)
+ashift tool pdf.delete_pages fixtures/pdf-tools/rotated-pages.pdf --param pages=2,4 -o out/
+
+# Reverse page order (-> rotated-pages.reordered.pdf)
+ashift tool pdf.reorder fixtures/pdf-tools/rotated-pages.pdf --param order=reverse -o out/
+
+# Interleave two PDFs for duplex scanning, reversing the second document (-> rotated-pages.mixed.pdf)
+ashift tool pdf.alternate_mix fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param reverse_second=true -o out/
+
+# Insert 2 blank pages matching the preceding page size after page 1 (-> rotated-pages.inserted.pdf)
+ashift tool pdf.insert_blank fixtures/pdf-tools/rotated-pages.pdf --param after=1-1 --param count=2 --param size=same -o out/
+
+# Rotate page 1 by 90 degrees clockwise via /Rotate (-> rotated-pages.rotated.pdf)
+ashift tool pdf.rotate fixtures/pdf-tools/rotated-pages.pdf --param pages=1-1 --param angle=90 -o out/
+
+# Set /CropBox to 0.5-inch (36 pt) margins on a US Letter page (-> rotated-pages.cropped.pdf)
+ashift tool pdf.crop fixtures/pdf-tools/rotated-pages.pdf --param pages=all --param 'box={"left":36,"bottom":36,"right":576,"top":756}' --param target=crop -o out/
+
+# Scale pages to A4 while preserving aspect ratio (-> mixed-sizes.scaled.pdf)
+ashift tool pdf.scale fixtures/pdf-tools/mixed-sizes.pdf --param pages=all --param to=A4 --param fit=contain -o out/
+
+# Stitch all pages vertically into a single continuous page (-> rotated-pages.single-page.pdf)
+ashift tool pdf.single_page fixtures/pdf-tools/rotated-pages.pdf -o out/
+
+# Rotate page 1 content stream by 45 degrees and expand the page box (-> rotated-pages.rotated-content.pdf)
+ashift tool pdf.rotate_content fixtures/pdf-tools/rotated-pages.pdf --param pages=1-1 --param angle_deg=45 --param expand=true -o out/
+
+# Decompress content streams and expand PDF 1.5+ /ObjStm object streams (-> object-streams.decompressed.pdf)
+ashift tool pdf.decompress fixtures/pdf-tools/object-streams.pdf --param object_streams=expand -o out/
+
+# Impose 2 pages per A4 sheet in row order (-> rotated-pages.nup.pdf)
+ashift tool pdf.nup fixtures/pdf-tools/rotated-pages.pdf --param per_sheet=2 --param sheet=A4 --param order=row -o out/
+
+# Impose pages as a saddle-stitch booklet on A4 sheets (-> rotated-pages.booklet.pdf)
+ashift tool pdf.booklet fixtures/pdf-tools/rotated-pages.pdf --param sheet=A4 --param binding=left --param creep_pt=0 -o out/
+
+# Stamp the first page of an overlay PDF over all pages of a base PDF (-> rotated-pages.overlay.pdf)
+ashift tool pdf.overlay fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/watermark-layer.pdf --param overlay_pages=first --param position=over --param pages=all -o out/
+
+# Subdivide each page into a 2x2 grid of smaller pages (-> rotated-pages.divided.pdf)
+ashift tool pdf.divide_pages fixtures/pdf-tools/rotated-pages.pdf --param pages=all --param cols=2 --param rows=2 --param order=row -o out/
+
+# Tile a page across a 2x2 grid of A4 sheets with 10 mm overlap and crop marks (-> annotations.posterized.pdf)
+ashift tool pdf.posterize fixtures/pdf-tools/annotations.pdf --param 'tiles={"cols":2,"rows":2}' --param sheet=A4 --param overlap_mm=10 --param crop_marks=true -o out/
+
+# Update PDF Info dictionary and XMP metadata fields (-> rotated-pages.metadata.pdf)
+ashift tool pdf.metadata fixtures/pdf-tools/rotated-pages.pdf --param 'set={"title":"Golden Title","author":"AriadShift"}' -o out/
+
+# Clear the bookmark (/Outlines) tree (-> multipage-20.outline.pdf)
+ashift tool pdf.outline fixtures/pdf-tools/multipage-20.pdf --param action=clear -o out/
+
+# Embed an attachment into the PDF /EmbeddedFiles name tree (-> rotated-pages.attachments.pdf)
+ashift tool pdf.attachments fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param action=add -o out/
+
+# Attach any file type, such as a CSV, and keep its name and bytes (-> rotated-pages.attachments.pdf)
+ashift tool pdf.attachments fixtures/pdf-tools/rotated-pages.pdf inventory.csv --param action=add -o out/
+
+# List embedded files as JSON on stdout; no file is written (add -o list.json to save it)
+ashift tool pdf.attachments out/rotated-pages.attachments.pdf --param action=list
+
+# Extract embedded files unchanged (-> out/extracted/rotated-pages.attachments.attachment-001.inventory.csv)
+ashift tool pdf.attachments out/rotated-pages.attachments.pdf --param action=extract -o out/extracted/
+
+# Print the bookmark tree as JSON on stdout; no file is written
+ashift tool pdf.outline out/rotated-pages.merged.pdf --param action=export
+
+# Configure /PageLabels numbering ranges (-> multipage-20.labeled.pdf)
+ashift tool pdf.page_labels fixtures/pdf-tools/multipage-20.pdf --param 'ranges=[{"from":1,"style":"roman-lower"},{"from":5,"style":"decimal","prefix":"p-","start":1}]' -o out/
+
+# Set /ViewerPreferences layout and window options (-> rotated-pages.prefs.pdf)
+ashift tool pdf.viewer_prefs fixtures/pdf-tools/rotated-pages.pdf --param page_layout=two-column-left --param fit_window=true -o out/
+
+# Create a PDF portfolio (/Collection) from multiple files (-> rotated-pages.portfolio.pdf)
+ashift tool pdf.portfolio fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param action=create --param view=details -o out/
+
+# Remove a named optional-content layer (/OCProperties) and its marked content (-> watermark-layer.layers.pdf)
+ashift tool pdf.layers fixtures/pdf-tools/watermark-layer.pdf --param action=remove --param 'names=["AriadShift Watermark"]' -o out/
+```
+
+---
+
+### `ashift recipe run`
+
+Executes a multi-step `ariad-recipe/1` JSON pipeline (`Step::Tool` and `Step::Convert`) inside an isolated workspace and atomically publishes the final step's outputs into the target directory.
+
+```bash
+ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--overwrite] [--json]
+```
+
+#### Arguments and Options
+
+- `<RECIPE.JSON>`: Path to a recipe file conforming to `schemas/recipe.v1.json` (`"version": "ariad-recipe/1"`).
+- `<INPUT>...`: Input files fed into step 1 of the recipe. On the Free plan, batch runs are capped at 25 files and 250 MB total (`exit_code: 11`, `error[tier_not_allowed]`).
+- `-o, --output <DIR>`: Destination directory for published outputs.
+- `--yes`: Confirm running an imported recipe without an interactive terminal prompt. Recipes loaded from `.json` files are classified as `Imported`, print their step summary to stderr, forbid `watch` and network-fetch tools (`pdf.from_url`, `web.to_pdf`), and require `--yes` in non-interactive scripts (otherwise exiting with code `9`, `error[invalid_params]`).
+- Recipe secret prompt references read one line per distinct secret field from stdin in alphabetical field order, or use hidden terminal prompts. Repeated references to the same field share its value.
+- `--overwrite`: Replace existing destination files in `<DIR>`.
+- `--json`: Emit the `RecipeOutcome` JSON report to stdout.
+
+---
+
 ## Profiles
 
 The `--profile` flag guides route selection when multiple routes connect a format pair:
@@ -663,7 +829,7 @@ The `--profile` flag guides route selection when multiple routes connect a forma
 - `ASHIFT_DOCLING_ENGINE`: Development override for the Docling engine: a command line that starts it, for example `"$PWD/.tools/docling/python-env/bin/python" -I -m ariad_docling` (double quotes group words). It is tried before any installed pack; see [docling.md](docling.md#running-it-from-a-checkout).
 - `ASHIFT_SOFFICE`: Selects a system LibreOffice executable. It overrides `PATH` and the standard install locations.
 - `ASHIFT_DATA_DIR`: Data directory for engine packs (packs live under `<dir>/packs`). Defaults to the platform's local data directory for `com.ariadnev.ariadshift`; see [packs.md](packs.md#layout).
-- `ASHIFT_PACK_<NAME>`: Uses an unpacked development pack directory (holding an unsigned `pack.toml`) instead of the installed pack `<name>`; the name is upper-cased with `-` written as `_`.
+- `ASHIFT_PACK_<NAME>`: Uses an unpacked development pack directory (holding an unsigned `pack.toml`) instead of the installed pack `<name>`; the name is upper-cased with `-` written as `_`. For example `ASHIFT_PACK_PDFIUM` selects an unpacked `pdfium` pack; its manifest must declare `engine_protocol = "ariad-engine/2"` and its entrypoint must stay inside the directory.
 - `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`: Proxy settings for pack downloads.
 - `SSL_CERT_FILE`, `SSL_CERT_DIR`: Trusted CA certificates for pack downloads on Linux, when the system store is not in a standard location.
 - `ASHIFT_SANDBOX`: `off`, `best-effort` (CLI default), or `required`. Linux engines run through Landlock and seccomp with workspace write access and declared runtime read/execute access. Missing kernel confinement support produces `warning[sandbox_unavailable]` in best-effort mode; required mode refuses it with exit 5. Launcher enforcement errors, including namespace setup denial for a discovered LibreOffice installation, are fatal in every mode except `off` (`sandbox_unavailable`, exit 5). On Ubuntu, allow `userns` for `ashift` in AppArmor or use `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`; default container seccomp profiles also block setup. `ASHIFT_SANDBOX=off` explicitly trades engine isolation for running without the launcher. Unknown values fail closed. macOS uses [Seatbelt when available](#macos-engine-sandbox) and retains process groups; Windows retains Job Objects and cannot satisfy required mode.

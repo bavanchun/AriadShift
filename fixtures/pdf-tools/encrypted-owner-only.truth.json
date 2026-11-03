@@ -1,0 +1,111 @@
+{
+  "version": "ariad-truth/0",
+  "id": "encrypted-owner-only",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.7",
+  "page_count": 1,
+  "encrypted": true,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "Encrypted Document (Owner Password Only)",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "field_names": [],
+  "form_fields": [],
+  "has_annotations": false,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.7",
+    "page_count": 1,
+    "encrypted": true,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Encrypted Document (Owner Password Only)",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": false,
+    "has_annotations": false,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Encrypted Document (Owner Password Only)\nPlaintext source for test-time encrypted-owner-only (AES-256, R=6).",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "generated_at_test_time": true,
+  "plaintext_source": "fixtures/pdf-tools/encrypted-owner-only.plaintext.pdf",
+  "plaintext_sha256": "977ef82da8406ecb205b416e3955ce89b687d5cb59256a3618e1c5c469199fcb",
+  "target_path": "fixtures/pdf-tools/encrypted-owner-only.pdf",
+  "encryption": {
+    "algorithm": "AES-256",
+    "revision": 6,
+    "version": 5,
+    "needs_user_password": false,
+    "has_owner_password": true,
+    "empty_user_password": true,
+    "permissions": {
+      "print": false,
+      "extract": false
+    }
+  }
+}

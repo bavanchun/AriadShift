@@ -124,7 +124,7 @@ Run an MCP server over standard I/O for AI assistants (such as Claude Code, Clau
 ashift mcp --allow-dir ~/Documents
 ```
 
-The server exposes 4 tools (`list_engines`, `inspect`, `plan`, and `convert`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
+The server exposes 6 tools (`list_engines`, `inspect`, `plan`, `convert`, `list_doc_tools`, and `run_doc_tool`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
 
 ## Desktop app
 
@@ -136,7 +136,7 @@ for development or `just desktop-build` for installers. See
 ## Development
 
 Install Rust 1.99.0 with the `rustfmt`, `clippy`, and
-`wasm32-unknown-unknown` components, `just` 1.58.0, Node.js 24.21.0, pnpm
+`wasm32-unknown-unknown` components, `just` 1.58.0, Node.js 26.13.0, pnpm
 12.9.1, Python 3.14 or newer, and uv 0.12.23. The Rust and Node versions are
 recorded in [`rust-toolchain.toml`](rust-toolchain.toml) and
 [`.node-version`](.node-version); uv's required version is in

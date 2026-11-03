@@ -50,3 +50,14 @@ Deliver the gem on the web: open any PDF/scan and edit it like Word (Document mo
 - [ ] Page mode edits Vietnamese text in `vi-diacritics-subset-font.pdf` without broken glyphs (substitution warning shown when needed).
 - [ ] No document leaves the device without an explicit consent dialog (e2e asserts zero network requests carrying document bytes in offline mode).
 - [ ] Web preview 0.6.0 (owner GO).
+
+## Design reference (owner-approved direction, 2026-11-01)
+
+Approved design: Figma file "AriadShift Web — UI/UX v2" (https://www.figma.com/design/IZG7gPWIECWf6dQmcrn82W): page *Design system* holds the tokens (Color and Color Dark collections, Spacing, Radius), 17 text styles, Lucide 1.61 icons and the shadcn/ui-aligned components; page *Screens* holds one section per screen (01 Home, 02 File insights, 03 Organise pages, 04 Tool result, 05 Command palette, 06 Run on your computer, 07 Compress studio, 08 Recipes & batch, 09 Editor Document + AI, 10 Editor Page mode, 11 Home dark, 12 Drag and drop, 13 Processing, 14 Locked PDF, 15 Recipes empty, 16 Settings; phase-15 tool panels 17 Imposition booklet, 18 Crop, 19 Security, 20 Watermark add, 21 Watermark remove, 22 OCR studio, 23 Annotate, 24 Fill form, 25 Redact mark, 26 Redaction verified, 27 Sign, 28 Signature validation, 29 Compare, 30 Convert), each in English and in Vietnamese (`· VI` sections); the Design system page also documents Foundations, interaction states (hover, pressed, focus, disabled, loading, error), toast, tooltip and the `DocPage` thumbnails. Implement them faithfully with `packages/ui` tokens and `lucide-react`; map the Figma variable names to CSS custom properties as their code syntax says (`var(--color-bg-canvas)` and so on). The earlier claude.ai canvas is superseded. Binding UX principles:
+
+- Intent first: after a drop, read the file locally and offer the next steps (file insights screen), never an empty form.
+- Honest runtime: every tool shows Browser, Desktop or Cloud, and a persistent "on this device · 0 bytes uploaded" indicator.
+- No dead ends: every result card offers download, open in editor, continue with another tool, save as recipe, and undo.
+- Live before/after previews with the outcome stated in numbers (size, pages, fidelity).
+- The golden thread (brand motif) marks multi-step progress: recipes, batches, pipelines.
+- Keyboard-first: ⌘K palette that understands plain sentences and turns them into a recipe.

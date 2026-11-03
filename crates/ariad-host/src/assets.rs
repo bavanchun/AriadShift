@@ -212,7 +212,8 @@ fn resolve_reference(
     let mut failure_reason = "image file could not be read from the input directory";
     for candidate in candidates {
         let read = match base.policy {
-            AssetPolicy::Standard => read_image(&base.directory, &candidate, max_asset_bytes),
+            AssetPolicy::Standard => read_image(&base.directory, &candidate, max_asset_bytes)
+                .map_err(ReadNofollowError::Image),
             AssetPolicy::Confined => {
                 read_image_nofollow(&base.directory, &candidate, max_asset_bytes)
             }
@@ -224,20 +225,24 @@ fn resolve_reference(
                 *reference = AssetRef::Asset { id };
                 return;
             }
-            Err(ReadImageError::Missing) => continue,
-            Err(ReadImageError::NotRegularFile) => {
+            Err(ReadNofollowError::Image(ReadImageError::Missing)) => continue,
+            Err(ReadNofollowError::Hidden) => {
+                failure_reason = "href contains a hidden path component";
+                break;
+            }
+            Err(ReadNofollowError::Image(ReadImageError::NotRegularFile)) => {
                 failure_reason = "image path is not a regular file";
                 break;
             }
-            Err(ReadImageError::TooLarge) => {
+            Err(ReadNofollowError::Image(ReadImageError::TooLarge)) => {
                 failure_reason = "image exceeds max_asset_bytes";
                 break;
             }
-            Err(ReadImageError::NotImage) => {
+            Err(ReadNofollowError::Image(ReadImageError::NotImage)) => {
                 failure_reason = "file does not contain a supported image format";
                 break;
             }
-            Err(ReadImageError::Io) => break,
+            Err(ReadNofollowError::Image(ReadImageError::Io)) => break,
         }
     }
     warn_not_embedded(warnings, failure_reason);
@@ -331,6 +336,51 @@ fn has_hidden_component(path: &Path) -> bool {
     })
 }
 
+#[cfg(any(windows, test))]
+const WINDOWS_FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+
+/// Returns `true` when `name` looks like a Windows 8.3 short-name alias
+/// (a non-empty stem prefix followed by `~` and ASCII digits before the extension).
+#[cfg(any(windows, test))]
+fn looks_like_windows_short_name(name: &str) -> bool {
+    let stem = name.split_once('.').map_or(name, |(stem, _)| stem);
+    let rstem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+    has_short_alias_tilde(stem) || has_short_alias_tilde(rstem)
+}
+
+#[cfg(any(windows, test))]
+fn has_short_alias_tilde(stem: &str) -> bool {
+    let Some((prefix, digits)) = stem.rsplit_once('~') else {
+        return false;
+    };
+    !prefix.is_empty() && !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Pure Windows hidden-component decision for a single path component.
+///
+/// Rejects:
+/// - a component whose requested or long name starts with `.`;
+/// - an entry carrying `FILE_ATTRIBUTE_HIDDEN` (`0x2`);
+/// - a component that looks like an 8.3 short alias (`~` followed by digits before the
+///   extension), unless it matches `long_name` (case-insensitively).
+#[cfg(any(windows, test))]
+fn is_windows_hidden_component(
+    requested_name: &str,
+    long_name: Option<&str>,
+    file_attributes: u32,
+) -> bool {
+    if requested_name.starts_with('.') || long_name.is_some_and(|actual| actual.starts_with('.')) {
+        return true;
+    }
+    if file_attributes & WINDOWS_FILE_ATTRIBUTE_HIDDEN != 0 {
+        return true;
+    }
+    if looks_like_windows_short_name(requested_name) {
+        return !long_name.is_some_and(|actual| actual.eq_ignore_ascii_case(requested_name));
+    }
+    false
+}
+
 pub(crate) fn has_url_scheme(value: &str) -> bool {
     let Some((scheme, _)) = value.split_once(':') else {
         return false;
@@ -362,6 +412,19 @@ pub(crate) enum ReadImageError {
     TooLarge,
     NotImage,
     Io,
+}
+
+#[derive(Debug)]
+enum ReadNofollowError {
+    #[cfg_attr(not(windows), allow(dead_code))]
+    Hidden,
+    Image(ReadImageError),
+}
+
+impl From<ReadImageError> for ReadNofollowError {
+    fn from(error: ReadImageError) -> Self {
+        Self::Image(error)
+    }
 }
 
 pub(crate) fn read_image(
@@ -396,27 +459,92 @@ fn read_image_nofollow(
     directory: &Dir,
     path: &Path,
     max_asset_bytes: Option<u64>,
-) -> Result<Asset, ReadImageError> {
+) -> Result<Asset, ReadNofollowError> {
     let file_name = path.file_name().ok_or(ReadImageError::Missing)?;
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
-    let parent = crate::confine::open_dir_nofollow(directory, parent).map_err(open_error)?;
+    let parent = open_confined_asset_dir(directory, parent)?;
 
     let entry = parent.symlink_metadata(file_name).map_err(open_error)?;
     if !entry.is_file() {
-        return Err(ReadImageError::NotRegularFile);
+        return Err(ReadImageError::NotRegularFile.into());
     }
     let file = crate::confine::open_entry_nofollow(&parent, Path::new(file_name), false)
         .map_err(open_error)?;
     let opened = file.metadata().map_err(|_| ReadImageError::Io)?;
     let entry = parent.symlink_metadata(file_name).map_err(open_error)?;
     if crate::confine::is_reparse_point(&entry) || !entry.is_file() || !opened.is_file() {
-        return Err(ReadImageError::NotRegularFile);
+        return Err(ReadImageError::NotRegularFile.into());
     }
     #[cfg(unix)]
     if !crate::confine::same_inode(&entry, &opened) {
-        return Err(ReadImageError::NotRegularFile);
+        return Err(ReadImageError::NotRegularFile.into());
     }
-    read_open_image(file, max_asset_bytes)
+    #[cfg(windows)]
+    {
+        use cap_std::fs::MetadataExt;
+        let long_name = resolve_windows_component_long_name(&parent, file_name)?;
+        let attributes = entry.file_attributes() | opened.file_attributes();
+        if is_windows_hidden_component(
+            &file_name.to_string_lossy(),
+            long_name.as_deref(),
+            attributes,
+        ) {
+            return Err(ReadNofollowError::Hidden);
+        }
+    }
+    Ok(read_open_image(file, max_asset_bytes)?)
+}
+
+fn open_confined_asset_dir(root_dir: &Dir, relative: &Path) -> Result<Dir, ReadNofollowError> {
+    #[cfg(not(windows))]
+    {
+        Ok(crate::confine::open_dir_nofollow(root_dir, relative).map_err(open_error)?)
+    }
+    #[cfg(windows)]
+    {
+        use cap_std::fs::MetadataExt;
+        let mut current = root_dir.try_clone().map_err(|_| ReadImageError::Io)?;
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                return Err(ReadImageError::Io.into());
+            };
+            let next =
+                crate::confine::open_dir_nofollow(&current, Path::new(name)).map_err(open_error)?;
+            let entry = current.symlink_metadata(name).map_err(open_error)?;
+            let opened = next.dir_metadata().map_err(|_| ReadImageError::Io)?;
+            let long_name = resolve_windows_component_long_name(&current, name)?;
+            let attributes = entry.file_attributes() | opened.file_attributes();
+            if is_windows_hidden_component(
+                &name.to_string_lossy(),
+                long_name.as_deref(),
+                attributes,
+            ) {
+                return Err(ReadNofollowError::Hidden);
+            }
+            current = next;
+        }
+        Ok(current)
+    }
+}
+
+#[cfg(windows)]
+fn resolve_windows_component_long_name(
+    parent: &Dir,
+    name: &std::ffi::OsStr,
+) -> Result<Option<String>, ReadImageError> {
+    let requested = name.to_string_lossy();
+    if !looks_like_windows_short_name(&requested) {
+        return Ok(None);
+    }
+    for entry in parent.entries().map_err(|_| ReadImageError::Io)? {
+        let entry = entry.map_err(|_| ReadImageError::Io)?;
+        let file_name = entry.file_name();
+        let actual = file_name.to_string_lossy();
+        if actual.eq_ignore_ascii_case(&requested) {
+            return Ok(Some(actual.into_owned()));
+        }
+    }
+    Ok(None)
 }
 
 fn open_error(error: io::Error) -> ReadImageError {
@@ -513,5 +641,132 @@ mod nofollow_tests {
             read.is_err(),
             "a swapped-in link to hidden bytes was accepted"
         );
+    }
+}
+
+#[cfg(test)]
+mod windows_hidden_tests {
+    use super::*;
+
+    #[test]
+    fn windows_short_name_detection_identifies_tilde_digit_aliases() {
+        for alias in [
+            "PRIVAT~1",
+            "PHOTO~1.PNG",
+            "DOCUME~12.txt",
+            "archive~1.tar.gz",
+        ] {
+            assert!(
+                looks_like_windows_short_name(alias),
+                "{alias} should look like a Windows 8.3 short alias"
+            );
+        }
+        for normal in [
+            "photo.png",
+            "my~photo.png",
+            "photo~.png",
+            "~1.png",
+            "photo.png~1",
+        ] {
+            assert!(
+                !looks_like_windows_short_name(normal),
+                "{normal} should not be treated as a Windows 8.3 short alias"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_hidden_component_rejects_hidden_attribute_and_unmatched_short_aliases() {
+        const FILE_ATTRIBUTE_ARCHIVE: u32 = 0x20;
+        const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+
+        // Files carrying FILE_ATTRIBUTE_HIDDEN are always rejected.
+        assert!(is_windows_hidden_component(
+            "photo.png",
+            Some("photo.png"),
+            WINDOWS_FILE_ATTRIBUTE_HIDDEN
+        ));
+        assert!(is_windows_hidden_component(
+            "photo.png",
+            None,
+            FILE_ATTRIBUTE_ARCHIVE | WINDOWS_FILE_ATTRIBUTE_HIDDEN
+        ));
+        assert!(is_windows_hidden_component(
+            "notes~1.png",
+            Some("notes~1.png"),
+            WINDOWS_FILE_ATTRIBUTE_HIDDEN
+        ));
+
+        // 8.3 short aliases that do not match the long name are rejected.
+        assert!(is_windows_hidden_component("PRIVAT~1", Some(".private"), 0));
+        assert!(is_windows_hidden_component("PRIVAT~1", None, 0));
+        assert!(is_windows_hidden_component(
+            "PHOTO~1.PNG",
+            Some(".photo.png"),
+            0
+        ));
+        assert!(is_windows_hidden_component(
+            "PHOTO~1.PNG",
+            Some("photograph.png"),
+            0
+        ));
+
+        // A component that looks like an 8.3 alias is allowed when it matches the long name.
+        assert!(!is_windows_hidden_component(
+            "notes~1.png",
+            Some("notes~1.png"),
+            FILE_ATTRIBUTE_NORMAL
+        ));
+        assert!(!is_windows_hidden_component(
+            "NOTES~1.PNG",
+            Some("notes~1.png"),
+            FILE_ATTRIBUTE_NORMAL
+        ));
+
+        // Ordinary visible names are allowed, while dot-prefixed names are rejected.
+        assert!(!is_windows_hidden_component(
+            "photo.png",
+            None,
+            FILE_ATTRIBUTE_NORMAL
+        ));
+        assert!(!is_windows_hidden_component(
+            "my~photo.png",
+            None,
+            FILE_ATTRIBUTE_NORMAL
+        ));
+        assert!(is_windows_hidden_component(".photo.png", None, 0));
+        assert!(is_windows_hidden_component(
+            "photo.png",
+            Some(".photo.png"),
+            0
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_confined_read_rejects_hidden_attribute_and_allows_matching_tilde_name() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = Dir::open_ambient_dir(temp.path(), ambient_authority()).unwrap();
+
+        let hidden_path = temp.path().join("hidden.png");
+        let mut hidden_file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .attributes(WINDOWS_FILE_ATTRIBUTE_HIDDEN)
+            .open(&hidden_path)
+            .unwrap();
+        io::Write::write_all(&mut hidden_file, b"\x89PNG\r\n\x1a\nhidden").unwrap();
+        drop(hidden_file);
+
+        assert!(matches!(
+            read_image_nofollow(&root, Path::new("hidden.png"), None),
+            Err(ReadNofollowError::Hidden)
+        ));
+
+        let literal_tilde = temp.path().join("notes~1.png");
+        fs::write(&literal_tilde, b"\x89PNG\r\n\x1a\nvisible").unwrap();
+        assert!(read_image_nofollow(&root, Path::new("notes~1.png"), None).is_ok());
     }
 }

@@ -259,7 +259,12 @@ fn the_engine_conforms_to_the_protocol() {
         .expect("an artifact event");
     assert_eq!(artifact["format"], "docling+json");
     let path = PathBuf::from(artifact["path"].as_str().unwrap());
-    assert!(path.starts_with(directory.path().join("out")), "{path:?}");
+    assert!(
+        fs::canonicalize(&path)
+            .unwrap()
+            .starts_with(fs::canonicalize(directory.path().join("out")).unwrap()),
+        "{path:?}"
+    );
     let document: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     assert_eq!(document["schema_name"], "DoclingDocument");
     assert_eq!(events.last().unwrap()["ok"], true);

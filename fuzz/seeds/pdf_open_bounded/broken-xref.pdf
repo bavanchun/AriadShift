@@ -1,0 +1,45 @@
+%PDF-1.4
+%¿÷¢þ
+1 0 obj
+<< /Lang (en) /Pages 3 0 R /Type /Catalog >>
+endobj
+2 0 obj
+<< /Author (AriadShift contributors) /CreationDate (D:20231114221320Z) /Creator (AriadShift fixture generator) /ModDate (D:20231114221320Z) /Producer (AriadShift fixture generator) /Title (Repairable Cross-Reference Document) >>
+endobj
+3 0 obj
+<< /Count 1 /Kids [ 4 0 R ] /Type /Pages >>
+endobj
+4 0 obj
+<< /Contents 5 0 R /MediaBox [ 0 0 595.28 841.89 ] /Parent 3 0 R /Resources 6 0 R /Type /Page >>
+endobj
+5 0 obj
+<< /compress false /Length 178 >>
+stream
+BT
+/F1 12 Tf
+1 0 0 1 72.00 760.00 Tm (Repairable Cross-Reference Document) Tj
+1 0 0 1 72.00 742.00 Tm (This PDF has corrupted xref byte offsets that qpdf can reconstruct.) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Font << /F1 7 0 R >> >>
+endobj
+7 0 obj
+<< /BaseFont /Helvetica /Subtype /Type1 /Type /Font >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000999999 00000 n 
+0000999999 00000 n 
+0000999999 00000 n 
+0000999999 00000 n 
+0000999999 00000 n 
+0000999999 00000 n 
+0000999999 00000 n 
+trailer << /Info 2 0 R /Root 1 0 R /Size 8 /ID [<e8c6bc6e2c9a0642bda44729e4ee9686><e8c6bc6e2c9a0642bda44729e4ee9686>] >>
+startxref
+999999
+%%EOF

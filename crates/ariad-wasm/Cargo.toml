@@ -13,10 +13,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ariad-core = { workspace = true, features = ["pdf"] }
+ariad-pdf.workspace = true
 js-sys.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 wasm-bindgen.workspace = true
+
+[dev-dependencies]
+lopdf.workspace = true
 
 [package.metadata.dist]
 dist = false

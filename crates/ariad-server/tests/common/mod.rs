@@ -35,6 +35,7 @@ use url::Url;
 use uuid::Uuid;
 
 pub static SECRET: LazyLock<String> = LazyLock::new(|| hex::encode(random_signing_key()));
+const DROP_DATABASE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The admin connection string, or `None` to skip.
 pub fn admin_url(test: &str) -> Option<String> {
@@ -115,22 +116,56 @@ impl TestDb {
         admin.close().await;
     }
 
+    /// Disposes the per-test database and any temporary runtime login roles
+    /// within [`DROP_DATABASE_TIMEOUT`].
+    ///
+    /// Teardown failures and timeouts are logged to stderr rather than panicked
+    /// or returned as a `#[must_use] Result` so admin connection, `DROP DATABASE`,
+    /// or `DROP ROLE` errors remain visible in test logs without turning post-test
+    /// disposal into a flaky failure after all assertions have passed.
     pub async fn drop_database(self) {
-        self.pool.close().await;
-        if let Ok(admin) = PgPool::connect(&self.admin).await {
-            let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-                "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
-                self.name
+        let Self {
+            pool,
+            name,
+            admin,
+            runtime_logins,
+            ..
+        } = self;
+        let cleanup = async {
+            pool.close().await;
+            let admin_pool = match PgPool::connect(&admin).await {
+                Ok(admin_pool) => admin_pool,
+                Err(error) => {
+                    eprintln!("failed to connect to admin database to drop {name}: {error}");
+                    return;
+                }
+            };
+            if let Err(error) = sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"
             )))
-            .execute(&admin)
-            .await;
-            for login in self.runtime_logins {
-                sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP ROLE \"{login}\"")))
-                    .execute(&admin)
-                    .await
-                    .expect("drop runtime login");
+            .execute(&admin_pool)
+            .await
+            {
+                eprintln!("failed to drop test database {name}: {error}");
             }
-            admin.close().await;
+            for login in runtime_logins {
+                if let Err(error) =
+                    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP ROLE \"{login}\"")))
+                        .execute(&admin_pool)
+                        .await
+                {
+                    eprintln!("failed to drop runtime login {login} for {name}: {error}");
+                }
+            }
+            admin_pool.close().await;
+        };
+        if tokio::time::timeout(DROP_DATABASE_TIMEOUT, cleanup)
+            .await
+            .is_err()
+        {
+            eprintln!(
+                "timed out after {DROP_DATABASE_TIMEOUT:?} while dropping test database {name}"
+            );
         }
     }
 }

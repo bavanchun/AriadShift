@@ -80,7 +80,12 @@ describe.skipIf(!databaseUrl)("PostgreSQL signup policy", () => {
       BETTER_AUTH_TRUSTED_ORIGINS: baseConfig.trustedOrigins.join(","),
       ARIAD_PUBLIC_URL: "http://localhost:8080",
       AUTH_ALLOW_SIGN_UP: String(allowSignUp),
-      ...(challenged ? { AUTH_TURNSTILE_SECRET: "test-verifier-secret" } : {}),
+      ...(challenged
+        ? {
+            AUTH_TURNSTILE_SECRET: "test-verifier-secret",
+            AUTH_TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+          }
+        : {}),
     });
     const options = buildAuthOptions(config, pool);
     const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: false } });

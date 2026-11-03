@@ -1,0 +1,90 @@
+---
+source: crates/ariad-pdf/tests/alternate_mix.rs
+expression: rev_info
+---
+{
+  "version": "1.5",
+  "page_count": 7,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 2,
+      "width_pt": 1190.55,
+      "height_pt": 841.89,
+      "paper": "A3",
+      "orientation": "landscape",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 3,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 90,
+      "blank": false
+    },
+    {
+      "page": 4,
+      "width_pt": 612.0,
+      "height_pt": 792.0,
+      "paper": "Letter",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 5,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 180,
+      "blank": false
+    },
+    {
+      "page": 6,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 7,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 270,
+      "blank": false
+    }
+  ],
+  "metadata": {
+    "title": "Rotated Pages Inspection Sheet",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20271021223821Z",
+    "mod_date": "D:20271021223821Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_javascript": false,
+  "outline_count": 0,
+  "repaired_xref": false
+}

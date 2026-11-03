@@ -19,22 +19,41 @@ env.update({
     "BETTER_AUTH_SECRET": "compose-test-auth-secret-at-least-32-bytes",
     "ARIAD_SECRET": "compose-test-api-secret-at-least-32-bytes",
 })
-for configured in (False, True):
+
+
+def check_auth_site_key(services, site_key):
+    assert services["auth"]["environment"].get("AUTH_TURNSTILE_SITE_KEY") == site_key, (
+        "auth must receive the shared Turnstile site key, including the empty local default"
+    )
+
+
+def render_services(configured):
     secret = "compose-test-turnstile-secret" if configured else ""
     site_key = "compose-test-turnstile-site-key" if configured else ""
     settings = {**env, "ARIAD_TURNSTILE_SECRET": secret,
                 "ARIAD_TURNSTILE_SITE_KEY": site_key,
-                "AUTH_TURNSTILE_SECRET": "must-not-override-shared-secret"}
+                "AUTH_TURNSTILE_SECRET": "must-not-override-shared-secret",
+                "AUTH_TURNSTILE_SITE_KEY": "must-not-override-shared-site-key"}
     result = subprocess.run(
         ["docker", "compose", "--env-file", "/dev/null", "-f",
          str(ROOT / "infra/compose/docker-compose.yml"), "--profile", "core",
          "config", "--format", "json"],
         env=settings, check=True, capture_output=True, text=True,
     )
-    services = json.loads(result.stdout)["services"]
-    assert services["api"]["environment"]["ARIAD_TURNSTILE_SECRET"] == secret
-    assert services["web"]["build"]["args"]["NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY"] == site_key
-    assert services["auth"]["environment"].get("AUTH_TURNSTILE_SECRET") == secret, (
-        "auth must receive the shared Turnstile secret, including the empty local default"
-    )
-print("Rendered Compose Turnstile configuration passed (configured and local defaults)")
+    return json.loads(result.stdout)["services"], secret, site_key
+
+
+def main():
+    for configured in (False, True):
+        services, secret, site_key = render_services(configured)
+        check_auth_site_key(services, site_key)
+        assert services["api"]["environment"]["ARIAD_TURNSTILE_SECRET"] == secret
+        assert services["web"]["build"]["args"]["NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY"] == site_key
+        assert services["auth"]["environment"].get("AUTH_TURNSTILE_SECRET") == secret, (
+            "auth must receive the shared Turnstile secret, including the empty local default"
+        )
+    print("Rendered Compose Turnstile configuration passed (configured and local defaults)")
+
+
+if __name__ == "__main__":
+    main()

@@ -15,6 +15,7 @@ pub mod pandoc_bin;
 pub mod runner;
 pub mod sandbox;
 pub mod session;
+pub mod tools;
 #[cfg(feature = "typst")]
 pub mod typst_render;
 pub mod watchdog;

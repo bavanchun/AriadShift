@@ -2,7 +2,14 @@
 // Uppy, complete it, create the job, follow its events, download and delete.
 // The controller owns the requests and the abort signal; the panel renders its
 // state and calls its actions.
-import type { AriadClient, Job, OutputFile, Upload } from "@ariadshift/sdk";
+import {
+  AriadApiError,
+  type AriadClient,
+  type DownloadStreamTarget,
+  type Job,
+  type OutputFile,
+  type Upload,
+} from "@ariadshift/sdk";
 import { type JobHistoryEntry, rememberJob } from "@/components/account/job-history";
 import type { CloudApi } from "./api";
 import {
@@ -61,7 +68,8 @@ type Client = Pick<
   | "outputs"
   | "download"
   | "deleteJob"
->;
+> &
+  Partial<Pick<AriadClient, "downloadToStream">>;
 
 /** A file whose server copy is still there after `discard`. */
 export interface ServerCopy {
@@ -88,8 +96,39 @@ const loadUppyTransfer: Transfer = async (file, presigned, options) => {
   return uppyTransfer(file, presigned, options);
 };
 
+/** Outputs at or below this size use the in-memory `download` + `saveBlob` path. */
+export const STREAM_DOWNLOAD_THRESHOLD_BYTES = 16 * 1024 * 1024;
+/** Largest output accepted by the bounded in-memory fallback when no writable stream target is available. */
+export const FALLBACK_DOWNLOAD_LIMIT_BYTES = 64 * 1024 * 1024;
+
+interface SaveFilePickerWindow {
+  showSaveFilePicker?: (options?: {
+    suggestedName?: string;
+    types?: Array<{ description?: string; accept: Record<string, string[]> }>;
+  }) => Promise<FileSystemFileHandle>;
+}
+
+type WritableOpfsFileHandle = FileSystemFileHandle & {
+  createWritable?: () => Promise<FileSystemWritableFileStream>;
+};
+
+export interface SaveOutputOptions {
+  /** Custom blob saver; defaults to {@link saveBlob}. */
+  save?: (blob: Blob, filename: string) => void;
+  /** Size threshold above which downloads stream; defaults to {@link STREAM_DOWNLOAD_THRESHOLD_BYTES}. */
+  thresholdBytes?: number;
+  /** Maximum size for the bounded in-memory fallback; defaults to {@link FALLBACK_DOWNLOAD_LIMIT_BYTES}. */
+  fallbackLimitBytes?: number;
+  /** Optional stream target factory (for example File System Access API); auto-detected by default. */
+  openTarget?: (output: OutputFile) => Promise<{
+    target: DownloadStreamTarget | WritableStream<Uint8Array>;
+    commit?: () => Promise<void> | void;
+  } | null>;
+  signal?: AbortSignal;
+}
+
 /** Saves a blob through a temporary object URL and an `<a download>` click. */
-export function saveBlob(blob: Blob, filename: string) {
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -101,6 +140,183 @@ export function saveBlob(blob: Blob, filename: string) {
   link.remove();
   // Revoke later: some browsers read the URL after the click returns.
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function fileExtension(filename: string): string | null {
+  const dot = filename.lastIndexOf(".");
+  if (dot <= 0 || dot === filename.length - 1) {
+    return null;
+  }
+  const ext = filename.slice(dot).toLowerCase();
+  return /^\.[a-z0-9]+$/.test(ext) ? ext : null;
+}
+
+async function openFileSystemSaveTarget(output: OutputFile): Promise<{
+  target: DownloadStreamTarget | WritableStream<Uint8Array>;
+  commit?: () => Promise<void> | void;
+} | null> {
+  if (typeof window !== "undefined") {
+    const picker = (window as unknown as SaveFilePickerWindow).showSaveFilePicker;
+    if (typeof picker === "function") {
+      const ext = fileExtension(output.filename);
+      const mediaType =
+        output.media_type && /^[\w.+-]+\/[\w.+-]+$/.test(output.media_type)
+          ? output.media_type
+          : "application/octet-stream";
+      const handle = await picker({
+        suggestedName: output.filename,
+        ...(ext ? { types: [{ accept: { [mediaType]: [ext] } }] } : {}),
+      });
+      return { target: await handle.createWritable() };
+    }
+  }
+  if (typeof navigator !== "undefined" && typeof navigator.storage?.getDirectory === "function") {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dir = await root.getDirectoryHandle("ariadshift-downloads", { create: true });
+      const tempName = `download-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const handle = (await dir.getFileHandle(tempName, {
+        create: true,
+      })) as WritableOpfsFileHandle;
+      if (typeof handle.createWritable === "function") {
+        const writable = await handle.createWritable();
+        const cleanup = async () => {
+          try {
+            await dir.removeEntry(tempName);
+          } catch {
+            // Ignore cleanup failure if already removed.
+          }
+        };
+        return {
+          target: {
+            write: (chunk: Uint8Array<ArrayBuffer>) => writable.write(chunk),
+            close: () => writable.close(),
+            abort: async (reason?: unknown) => {
+              try {
+                await writable.abort(reason);
+              } finally {
+                await cleanup();
+              }
+            },
+          },
+          commit: async () => {
+            try {
+              const file = await handle.getFile();
+              saveBlob(file, output.filename);
+            } finally {
+              setTimeout(() => void cleanup(), 60_000);
+            }
+          },
+        };
+      }
+      await dir.removeEntry(tempName).catch(() => undefined);
+    } catch {
+      // Fall through to bounded fallback when OPFS writable streams are unavailable.
+    }
+  }
+  return null;
+}
+
+function createBoundedMemoryTarget(
+  output: OutputFile,
+  limitBytes: number,
+  save: (blob: Blob, filename: string) => void,
+): { target: DownloadStreamTarget; commit: () => void } {
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let buffered = 0;
+  let aborted = false;
+  let closed = false;
+  const checkLimit = (size: number) => {
+    if (size > limitBytes) {
+      throw new AriadApiError(
+        413,
+        "download_failed",
+        `the output is ${output.size} bytes, exceeding the ${limitBytes}-byte in-memory download limit`,
+      );
+    }
+  };
+  checkLimit(output.size);
+  return {
+    target: {
+      write(chunk) {
+        if (aborted) {
+          throw new Error("the download stream was aborted");
+        }
+        buffered += chunk.byteLength;
+        checkLimit(buffered);
+        chunks.push(chunk.slice());
+      },
+      close() {
+        if (!aborted) {
+          closed = true;
+        }
+      },
+      abort() {
+        aborted = true;
+        closed = false;
+        chunks.length = 0;
+        buffered = 0;
+      },
+    },
+    commit() {
+      if (!aborted && closed) {
+        const blob = new Blob(chunks, {
+          type: output.media_type || "application/octet-stream",
+        });
+        chunks.length = 0;
+        save(blob, output.filename);
+      }
+    },
+  };
+}
+
+/**
+ * Downloads and saves a cloud output. Below `thresholdBytes` (or when the client
+ * only provides `download`) it uses the in-memory `Blob` path; for larger files it
+ * streams through `downloadToStream` into a File System Access / OPFS writable stream
+ * or a bounded in-memory fallback. Returns `false` if the user canceled the file picker.
+ */
+export async function downloadAndSaveOutput(
+  client: Pick<AriadClient, "download"> & Partial<Pick<AriadClient, "downloadToStream">>,
+  output: OutputFile,
+  options: SaveOutputOptions = {},
+): Promise<boolean> {
+  const save = options.save ?? saveBlob;
+  const threshold = options.thresholdBytes ?? STREAM_DOWNLOAD_THRESHOLD_BYTES;
+  const fallbackLimit = options.fallbackLimitBytes ?? FALLBACK_DOWNLOAD_LIMIT_BYTES;
+
+  if (
+    typeof client.downloadToStream !== "function" ||
+    (output.size <= threshold && options.openTarget === undefined)
+  ) {
+    const blob = await client.download(output, {
+      verifySha256: true,
+      signal: options.signal,
+    });
+    save(blob, output.filename);
+    return true;
+  }
+
+  let opened: {
+    target: DownloadStreamTarget | WritableStream<Uint8Array>;
+    commit?: () => Promise<void> | void;
+  } | null = null;
+  try {
+    opened = await (options.openTarget ?? openFileSystemSaveTarget)(output);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return false;
+    }
+    throw error;
+  }
+
+  const sink = opened ?? createBoundedMemoryTarget(output, fallbackLimit, save);
+  await client.downloadToStream(output, sink.target, {
+    verifySha256: true,
+    signal: options.signal,
+  });
+  await sink.commit?.();
+  return true;
 }
 
 function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
@@ -499,13 +715,18 @@ export class CloudJob {
     if (!job) {
       return;
     }
+    let saved = false;
     try {
       const { outputs } = await this.#client.outputs(job.id);
       const fresh = outputs.find((candidate) => candidate.id === output.id) ?? output;
-      const blob = await this.#client.download(fresh, { verifySha256: true });
-      (this.#deps.save ?? saveBlob)(blob, fresh.filename);
+      saved = await downloadAndSaveOutput(this.#client, fresh, {
+        save: this.#deps.save,
+      });
     } catch (error) {
       this.#fail(error);
+      return;
+    }
+    if (!saved) {
       return;
     }
     const downloaded = [...new Set([...this.#state.downloaded, output.id])];

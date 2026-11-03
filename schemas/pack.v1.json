@@ -10,6 +10,13 @@
       "type": "string",
       "default": ""
     },
+    "engine_protocol": {
+      "description": "Wire protocol the pack's engine speaks (`\"ariad-engine/1\"` or `\"ariad-engine/2\"`).\nAbsent means `\"ariad-engine/1\"`. Install and resolve refuse a pack whose value differs\nfrom the protocol the host registers for the engine of the same name.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "license": {
       "description": "SPDX licence summary of everything the pack contains.",
       "type": "string"
@@ -141,6 +148,13 @@
           "description": "Allow-listed engine environment variables; values may contain `{root}`.",
           "type": "object",
           "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "executables": {
+          "description": "Executable paths inside archive components, relative to the install root.\nWhen absent or empty, resolve allows only `entrypoint[0]` and `unpack = \"file\"`\ncomponents with `executable = true`.",
+          "type": "array",
+          "items": {
             "type": "string"
           }
         },

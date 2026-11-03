@@ -7,3 +7,9 @@ name = "docling"
 version = "0.2.0"
 description = "Docling: PDF, scanned documents, Office files and images, with OCR"
 manifest = "https://github.com/bavanchun/AriadShift/releases/download/pack-{name}-v{version}/pack.toml"
+
+[[packs]]
+name = "pdfium"
+version = "0.1.0"
+description = "PDFium: PDF rendering, image extraction and text layout"
+manifest = "https://github.com/bavanchun/AriadShift/releases/download/pack-{name}-v{version}/pack.toml"

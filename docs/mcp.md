@@ -106,7 +106,7 @@ Copies live beneath a per-process directory named `ashift-mcp-stage-<pid>-<rando
 
 ## Tools Reference
 
-The server exposes 4 tools:
+The server exposes 6 tools:
 
 ### 1. `list_engines`
 
@@ -144,6 +144,34 @@ Executes a document conversion in an isolated workspace, promotes the output to 
   - Text content block containing the JSON summary.
   - Inline Markdown: For Markdown targets where output size is `<= 256 KiB`, the complete text is inlined in the response. If output exceeds 256 KiB, the raw text is omitted with an explanatory note and can be read via `resources/read`.
   - Registered `file://` resource for the generated output file.
+
+### 5. `list_doc_tools`
+
+Lists registered document manipulation tools (`ariad-core::tools`) whose supported runtimes include `local`, optionally filtered by functional group, together with the live availability status (`engine_status`: `available`, `missing`, `incompatible`) of each tool's backing engine.
+- **Parameters**:
+  - `group` (string, optional): Filter tools by group (`organize`, `convert`, `optimize`, `security`, `overlay`, `ocr`, `annotate`, `forms`, `sign`, `redact`, `compare`, `edit`, `ai`, `automation`).
+- **Returns**: Array of tool descriptors (`id`, `version`, `group`, `summary`, `inputs`, `input_formats`, `output_format`, `params_schema`, `tier`, `runtimes`, `engine`, `engine_status`, `secret_params`).
+
+### 6. `run_doc_tool`
+
+Executes a registered document manipulation tool under the same `--allow-dir` path confinement, `Limits`, and capability-based atomic output publishing rules as `convert`.
+- **Parameters**:
+  - `tool` (string, required): Canonical tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
+  - `inputs` (array of strings, required): Input file paths or `file://` URIs within allowed directories.
+  - `output_dir` (string, optional): Destination directory within allowed directories for published outputs (defaults to the first input's parent directory).
+  - `output` (string, optional): Explicit output file or directory path within allowed directories.
+  - `params` (object, optional): Tool parameters matching the tool's `params_schema`. For fields marked `x-ariad-secret`, pass `{"$secret":"sec_<id>"}` using a handle returned by `secret_put`. Literal secrets and prompt references are rejected with `invalid_params` (`exit_code: 9`).
+  - `overwrite` (boolean, optional): Set to `true` to replace existing destination files (only honoured when the server was launched with `--allow-overwrite`). Defaults to `false`.
+- **Returns**:
+  - `structuredContent` matching `ToolOutcome` (`tool`, `version`, `engine`, `artifacts`, `warnings`, `metrics`, and `inline_json` for JSON-emitting tools such as `pdf.info` when `<= 256 KiB`).
+  - One `resource_link` content block (`file://` URI, `mime_type`, byte `size`) per published output artifact, registered in the session's resource store for `resources/read`.
+  - On failure, returns `isError: true` with `code`, `exit_code` (`8` `unknown_tool`, `9` `invalid_params`, `10` `wrong_input`, `11` `tier_not_allowed`, `12` `encrypted_input`, `6` `destination_exists`, `5` `tool_missing`/`sandbox_unavailable`, `4` `limit_exceeded`, `2` `usage`, `1` `engine_failure`/`io`, `130` `interrupted`), and `message`.
+
+### 7. `secret_put`
+
+Stores a secret in the local stdio server's memory and returns a single-use handle for `run_doc_tool`. The value must be nonempty UTF-8 and at most 4096 bytes. Up to 32 unexpired handles are held per server; each expires after 300 seconds and is consumed atomically by the first call that resolves it. A handle may be used for multiple secret fields in that same call. Nothing is persisted, and shutdown discards all handles. The stdio server disables tracing so request arguments cannot enter debug logs. This tool is not exposed by remote MCP.
+
+Call `secret_put` with `{"value":"<secret>"}`. The result is `{"handle":"sec_<id>","expires_in_s":300}`. Pass the returned handle as, for example, `{"password":{"$secret":"sec_<id>"}}` in `run_doc_tool` parameters. Unknown, expired, used, and malformed handles fail with `invalid_params` (exit 9).
 
 ---
 
@@ -203,12 +231,23 @@ authorization flow needs only the URL:
    protected-resource metadata.
 2. It reads the authorization server's RFC 8414 metadata at
    `<BETTER_AUTH_URL>/.well-known/oauth-authorization-server` (OpenID
-   discovery is at `/.well-known/openid-configuration`).
-3. It registers itself at the advertised `registration_endpoint` (RFC 7591
-   dynamic client registration; no account is needed to register). The service
-   allows at most 20 registrations per address within an hour, and a
-   registration body may be at most 8 KiB. MCP clients register once and reuse
-   their client id. Registration URLs with trailing slashes return `404`.
+   discovery is at `/.well-known/openid-configuration`). Both documents advertise `registration_endpoint`. When the operator enables
+   client metadata URLs, they also advertise `client_id_metadata_document_supported: true`.
+3. When enabled, it can identify itself by passing an `https://` Client ID Metadata
+   Document URL (`draft-ietf-oauth-client-id-metadata-document`, with a
+   non-root path and no credentials or fragment) directly as `client_id` at
+   the authorization endpoint, or by registering at the advertised
+   `registration_endpoint` (RFC 7591 dynamic client registration; no account
+   is needed to register). For a metadata-document URL, the auth service
+   resolves DNS first, refuses non-public IPv4 and IPv6 addresses, fetches the
+   `application/json` document over HTTPS without redirects or credentials
+   (5-second deadline, 16 KiB body cap), verifies that `client_id` in the
+   document matches the URL and that `redirect_uris` are valid, and caches the
+   document for at least one minute and at most 24 hours. Metadata clients and
+   dynamic registration share a budget of at most 20 registrations per address
+   within an hour. Dynamic registration bodies are capped at 8 KiB, and
+   trailing-slash registration URLs return `404`. MCP clients register once
+   and reuse their client id.
 4. It opens the browser at the authorization endpoint with PKCE (`S256` only;
    requests without PKCE or with `plain` are refused) and
    `resource=<ARIAD_PUBLIC_URL>/mcp` (RFC 8707). The `redirect_uri` must match

@@ -14,6 +14,7 @@ pub mod pipeline;
 pub mod planner;
 pub mod protocol;
 pub mod reader;
+pub mod tools;
 pub mod warning;
 pub mod writer;
 

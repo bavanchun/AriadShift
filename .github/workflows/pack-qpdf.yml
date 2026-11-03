@@ -1,0 +1,221 @@
+name: qpdf pack
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - engines/qpdf/**
+      - scripts/pack/**
+      - scripts/test-pack-qpdf.sh
+      - justfile
+      - .github/workflows/pack-qpdf.yml
+  push:
+    tags: ['pack-qpdf-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  tooling:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: shellcheck engines/qpdf/pack/*.sh scripts/test-pack-qpdf.sh
+      - run: bash scripts/test-pack-qpdf.sh
+
+  source-build:
+    name: Source build (${{ matrix.slug }})
+    needs: tooling
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {slug: linux-x64, os: ubuntu-26.04, kind: glibc, image: 'quay.io/pypa/manylinux_2_28_x86_64@sha256:f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f'}
+          - {slug: linux-arm64, os: ubuntu-26.04-arm, kind: glibc, image: 'quay.io/pypa/manylinux_2_28_aarch64@sha256:54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676'}
+          - {slug: linux-musl-x64, os: ubuntu-26.04, kind: musl, image: 'alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a'}
+          - {slug: linux-musl-arm64, os: ubuntu-26.04-arm, kind: musl, image: 'alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a'}
+          - {slug: mac-arm64, os: macos-26, kind: mac, image: ''}
+          - {slug: mac-x64, os: macos-26-intel, kind: mac, image: ''}
+    env:
+      SLUG: ${{ matrix.slug }}
+      IMAGE: ${{ matrix.image }}
+      QPDF_BUILD_JOBS: '4'
+      APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - name: Install Linux tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
+      - name: Install macOS tools
+        if: runner.os == 'macOS'
+        run: brew install cmake pkgconf zstd gnu-tar
+      - name: Download pinned inputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/qpdf-input"
+          curl -fsSL --retry 3 --max-time 180 https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz -o "$RUNNER_TEMP/qpdf-input/qpdf.tar.gz"
+          curl -fsSL --retry 3 --max-time 180 https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz -o "$RUNNER_TEMP/qpdf-input/jpeg.tar.gz"
+          curl -fsSL --retry 3 --max-time 180 https://zlib.net/zlib-1.3.2.tar.gz -o "$RUNNER_TEMP/qpdf-input/zlib.tar.gz"
+      - name: Build Linux qpdf
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          mkdir -p "$RUNNER_TEMP/qpdf-output/receipt"
+          printf '%s\n' "$IMAGE" > "$RUNNER_TEMP/qpdf-output/receipt/image.txt"
+          cp engines/qpdf/pack/runtime-sources.txt "$RUNNER_TEMP/qpdf-output/receipt/runtime-sources.txt"
+          docker pull "$IMAGE"
+          docker image inspect --format '{{.Id}}' "$IMAGE" > "$RUNNER_TEMP/qpdf-output/receipt/image-id.txt"
+          if [ '${{ matrix.kind }}' = musl ]; then
+            docker run --rm -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP/qpdf-output:/output" "$IMAGE" \
+              sh -c 'mkdir -p /output/receipt/apks && apk add --cache-dir /output/receipt/apks --cache-packages bash build-base cmake pkgconf binutils libgcc-static && apk fix --reinstall --cache-dir /output/receipt/apks --cache-packages $(apk info) && { if ! ls /output/receipt/apks/build-base-*.apk >/dev/null 2>&1; then apk fetch --from repositories -o /output/receipt/apks build-base; fi; case "$(uname -m)" in x86_64) expected=3ac72e74e96150995e8d797b6c33fc3b46d69e3667c47bd0ff25ce89f9fc4eaf ;; aarch64) expected=c7ca776b4dc4044d34a9f089d4c78ac787fbc937485f7680d43b6edf4c22b386 ;; *) exit 1 ;; esac; find /output/receipt/apks -name "build-base-*.apk" -type f -exec sha256sum {} + | grep -q "^$expected  "; } && bash /work/engines/qpdf/pack/record-inputs.sh /output/receipt && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'
+          else
+            docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP/qpdf-output:/output" "$IMAGE" \
+              bash -c 'bash /work/engines/qpdf/pack/record-inputs.sh /output/receipt && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'
+          fi
+          (cd "$RUNNER_TEMP/qpdf-output" && sha256sum bin/qpdf > receipt/qpdf-sha256.txt)
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/qpdf-output"
+      - name: Upload Linux input receipts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qpdf-input-receipts-${{ matrix.slug }}
+          path: ${{ runner.temp }}/qpdf-output/receipt/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+      - name: Build macOS qpdf
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        run: >-
+          bash engines/qpdf/pack/compile-qpdf.sh "$RUNNER_TEMP/qpdf-input/qpdf.tar.gz"
+          "$RUNNER_TEMP/qpdf-input/jpeg.tar.gz" "$RUNNER_TEMP/qpdf-input/zlib.tar.gz"
+          "$RUNNER_TEMP/qpdf-output"
+      - name: Build manifest tool
+        run: cargo build -p ariad-cli --bin ashift
+      - name: Assemble and verify unsigned pack
+        run: |
+          bash engines/qpdf/pack/make.sh pack "$SLUG" "$RUNNER_TEMP/qpdf-output" "$GITHUB_WORKSPACE/target/debug/ashift" "$RUNNER_TEMP/qpdf-pack"
+          bash engines/qpdf/pack/make.sh verify "$RUNNER_TEMP/qpdf-pack"
+          QPDF_TEST_PACK="$RUNNER_TEMP/qpdf-pack" bash scripts/test-pack-qpdf.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qpdf-pack-${{ matrix.slug }}
+          path: ${{ runner.temp }}/qpdf-pack-dist/*.tar.zst
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+
+  manifest:
+    needs: source-build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: qpdf-pack-*
+          path: pack-dist
+          merge-multiple: true
+      - run: cargo build -p ariad-cli --bin ashift
+      - run: bash engines/qpdf/pack/make.sh merge pack-dist "$GITHUB_WORKSPACE/target/debug/ashift"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qpdf-manifest
+          path: pack-dist/pack.toml
+          if-no-files-found: error
+
+  release:
+    needs: manifest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/pack-qpdf-v')
+    runs-on: ubuntu-26.04
+    environment: release
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      PACK_SIGNING_KEY_ID: ${{ vars.PACK_SIGNING_KEY_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the trusted public key
+        run: |
+          [[ "$PACK_SIGNING_KEY_ID" =~ ^[0-9A-Fa-f]{16}$ ]]
+          echo "PUBLIC_KEY=crates/ariad-host/data/pack-keys/${PACK_SIGNING_KEY_ID,,}.pub" >> "$GITHUB_ENV"
+      - name: Check component review
+        run: bash engines/qpdf/pack/check-release.sh --review-only
+      - name: Require approval and stable branch ancestry
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign zstd
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: qpdf-pack-*
+          path: pack-dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qpdf-manifest
+          path: pack-dist
+      - name: Download Linux input receipts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: qpdf-input-receipts-*
+          path: receipts
+      - name: Download corresponding sources
+        run: |
+          mkdir -p sources
+          while read -r digest name url; do
+            case "$url" in
+              https://github.com/alpinelinux/aports.git\#*)
+                revision=${url#*#}
+                commit=${revision%:*}; tree=${revision#*:}
+                git init -q "$RUNNER_TEMP/aports"
+                git -C "$RUNNER_TEMP/aports" fetch --depth=1 https://github.com/alpinelinux/aports.git "$commit"
+                test "$(git -C "$RUNNER_TEMP/aports" rev-parse "FETCH_HEAD^{tree}")" = "$tree"
+                git -C "$RUNNER_TEMP/aports" archive --format=tar --mtime=1970-01-01T00:00:00Z "$tree" | gzip -n -9 > "sources/$name"
+                ;;
+              *) curl -fsSL --retry 3 --max-time 900 "$url" -o "sources/$name" ;;
+            esac
+            printf '%s  %s\n' "$digest" "sources/$name" | sha256sum --check
+          done < engines/qpdf/pack/runtime-sources.txt
+      - name: Verify release evidence
+        run: bash engines/qpdf/pack/check-release.sh receipts sources pack-dist
+      - name: Archive receipts
+        run: |
+          for dir in receipts/qpdf-input-receipts-*; do
+            tar -czf "pack-dist/$(basename "$dir").tar.gz" -C "$dir" .
+          done
+      - name: Sign and publish
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.PACK_MINISIGN_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.PACK_MINISIGN_KEY_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/pack/sign-pack.sh --name qpdf --version 0.1.0 --manifest pack-dist/pack.toml --public-key "$PUBLIC_KEY"
+          cp sources/* pack-dist/
+          (cd pack-dist && sha256sum qpdf-input-receipts-*.tar.gz "${PWD%/pack-dist}"/sources/* | sed "s|  .*/sources/|  |" > SHA256SUMS)
+          key_dir=$(mktemp -d "$RUNNER_TEMP/qpdf-sign.XXXXXX")
+          trap 'rm -rf "$key_dir"' EXIT
+          chmod 700 "$key_dir"
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key_dir/key"
+          chmod 600 "$key_dir/key"
+          printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key_dir/key" -m pack-dist/SHA256SUMS -t "qpdf evidence $TAG"
+          minisign -V -p "$PUBLIC_KEY" -m pack-dist/SHA256SUMS
+          (cd pack-dist && sha256sum --check SHA256SUMS)
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes 'Signed qpdf engine pack.' pack-dist/pack.toml pack-dist/pack.toml.minisig pack-dist/*.tar.zst pack-dist/qpdf-input-receipts-*.tar.gz pack-dist/SHA256SUMS pack-dist/SHA256SUMS.minisig sources/*

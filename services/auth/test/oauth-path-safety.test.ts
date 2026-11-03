@@ -26,11 +26,19 @@ function service() {
 }
 
 describe("OAuth path safety", () => {
-  it("keeps serialized paths aligned with the public OAuth contract", () => {
+  it("keeps serialized paths aligned with the OAuth token and revocation contract", () => {
     expect([...SERIALIZED_OAUTH_PATHS].sort()).toEqual(
-      [`${BASE_PATH}/oauth2/revoke`, TOKEN_PATH].sort(),
+      [
+        `${BASE_PATH}/oauth2/delete-client`,
+        `${BASE_PATH}/oauth2/delete-consent`,
+        `${BASE_PATH}/oauth2/revoke`,
+        TOKEN_PATH,
+      ].sort(),
     );
-    for (const path of SERIALIZED_OAUTH_PATHS) expect(PUBLIC_OAUTH_PATHS.has(path)).toBe(true);
+    expect(PUBLIC_OAUTH_PATHS.has(TOKEN_PATH)).toBe(true);
+    expect(PUBLIC_OAUTH_PATHS.has(`${BASE_PATH}/oauth2/revoke`)).toBe(true);
+    expect(PUBLIC_OAUTH_PATHS.has(`${BASE_PATH}/oauth2/delete-consent`)).toBe(false);
+    expect(PUBLIC_OAUTH_PATHS.has(`${BASE_PATH}/oauth2/delete-client`)).toBe(false);
   });
   it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
     "refuses the inherited asset key %s",

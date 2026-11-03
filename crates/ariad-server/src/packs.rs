@@ -20,6 +20,14 @@ pub enum Pack {
     Docling,
 }
 
+/// An engine that no worker pack is known to provide.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("engine '{engine}' is not provided by any server worker pack")]
+pub struct UnknownEngine {
+    /// The engine id that has no pack.
+    pub engine: String,
+}
+
 impl Pack {
     pub const ALL: [Self; 3] = [Self::Core, Self::Office, Self::Docling];
 
@@ -52,26 +60,27 @@ impl Pack {
         }
     }
 
-    /// The pack whose image provides an engine. Engines that no heavier pack
-    /// claims ship with the base install.
-    #[must_use]
-    pub fn for_engine(engine: &str) -> Self {
+    /// The pack whose image provides an engine. Fails closed: an engine that no
+    /// worker image is known to contain is an error, never the base install.
+    pub fn for_engine(engine: &str) -> Result<Self, UnknownEngine> {
         match engine {
-            "docling" => Self::Docling,
-            "libreoffice" => Self::Office,
-            _ => Self::Core,
+            "ariad-core" | "pandoc" | "pdf" | "typst" => Ok(Self::Core),
+            "libreoffice" => Ok(Self::Office),
+            "docling" => Ok(Self::Docling),
+            other => Err(UnknownEngine {
+                engine: other.to_owned(),
+            }),
         }
     }
 
     /// The pack that can run every step of a route. Heavier images contain
     /// the base install, so the heaviest step decides.
-    #[must_use]
-    pub fn for_route(steps: &[PlanStep]) -> Self {
-        steps
-            .iter()
-            .map(|step| Self::for_engine(&step.engine))
-            .max()
-            .unwrap_or(Self::Core)
+    pub fn for_route(steps: &[PlanStep]) -> Result<Self, UnknownEngine> {
+        let mut heaviest = Self::Core;
+        for step in steps {
+            heaviest = heaviest.max(Self::for_engine(&step.engine)?);
+        }
+        Ok(heaviest)
     }
 }
 
@@ -114,17 +123,48 @@ mod tests {
     fn heaviest_engine_decides_the_pack() {
         assert_eq!(
             Pack::for_route(&[step("ariad-core"), step("pandoc")]),
-            Pack::Core
+            Ok(Pack::Core)
         );
         assert_eq!(
             Pack::for_route(&[step("libreoffice"), step("pandoc")]),
-            Pack::Office
+            Ok(Pack::Office)
         );
         assert_eq!(
             Pack::for_route(&[step("libreoffice"), step("docling")]),
-            Pack::Docling
+            Ok(Pack::Docling)
         );
-        assert_eq!(Pack::for_route(&[]), Pack::Core);
+        assert_eq!(Pack::for_route(&[]), Ok(Pack::Core));
+    }
+
+    #[test]
+    fn every_registered_conversion_engine_has_a_pack() {
+        for engine in [
+            "ariad-core",
+            "pandoc",
+            "pdf",
+            "typst",
+            "libreoffice",
+            "docling",
+        ] {
+            assert!(Pack::for_engine(engine).is_ok(), "{engine}");
+        }
+    }
+
+    #[test]
+    fn unknown_engines_fail_closed_instead_of_joining_the_base_install() {
+        // The pdfium pack has no cloud mapping yet, so it must not run on a core worker.
+        for engine in ["pdfium", "qpdf", "tesseract", "no-such-engine", ""] {
+            assert_eq!(
+                Pack::for_engine(engine),
+                Err(UnknownEngine {
+                    engine: engine.to_owned()
+                }),
+                "{engine:?}"
+            );
+        }
+        let error = Pack::for_route(&[step("pandoc"), step("pdfium")]).unwrap_err();
+        assert_eq!(error.engine, "pdfium");
+        assert!(error.to_string().contains("'pdfium'"), "{error}");
     }
 
     #[test]

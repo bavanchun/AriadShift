@@ -1,0 +1,12 @@
+---
+source: crates/ariad-pdf/tests/viewer_prefs.rs
+expression: value
+---
+{
+  "display_doc_title": true,
+  "fit_window": true,
+  "hide_toolbar": true,
+  "open_page": 7,
+  "page_layout": "TwoColumnLeft",
+  "page_mode": "UseOutlines"
+}

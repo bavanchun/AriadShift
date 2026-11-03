@@ -859,11 +859,15 @@ fn test_convert_confined_parent_swap_race() {
                 asset_base_dir: None,
                 reader_engine: None,
             };
+            let asset_base = ariad_host::assets::AssetBase::confined(
+                in_confined.parent_dir.try_clone().unwrap(),
+            );
             let cancel = tokio_util::sync::CancellationToken::new();
             if let Ok(report) = ariad_host::convert::convert_confined(
                 &request,
                 &out_confined.parent_dir,
                 Path::new(&out_confined.file_name),
+                &asset_base,
                 cancel,
                 |_| {},
             ) {
@@ -988,42 +992,146 @@ fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
 }
 
 #[test]
-fn pooled_confined_conversion_keeps_the_existing_call_signature() {
+fn confined_conversions_resolve_assets_only_within_explicit_asset_base() {
     use ariad_host::{
-        convert::{ConvertRequest, convert_confined_in},
+        assets::AssetBase,
+        convert::{ConvertRequest, convert_confined, convert_confined_in},
         session::{PoolConfig, SessionPool},
     };
+    use sha2::{Digest, Sha256};
+
+    const INSIDE_PNG: &[u8] = b"\x89PNG\r\n\x1a\ninside asset base";
+    const OUTSIDE_PNG: &[u8] = b"\x89PNG\r\n\x1a\noutside asset base";
+
     let temp = tempdir().unwrap();
-    let input = temp.path().join("note.md");
-    fs::write(&input, "# Compatible").unwrap();
-    let parent =
-        cap_std::fs::Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
-    let request = ConvertRequest {
-        input,
-        output: temp.path().join("note.json"),
-        target_format: "json".into(),
-        profile: ariad_core::planner::Profile::Editable,
-        overwrite: false,
-        engine_program: std::env::current_exe().unwrap(),
-        title_fallback: None,
-        asset_base_dir: None,
-        reader_engine: None,
-    };
-    let pool = SessionPool::new(PoolConfig::default());
-    convert_confined_in(
-        &pool,
-        &request,
-        &parent,
-        Path::new("note.json"),
-        tokio_util::sync::CancellationToken::new(),
-        |_| {},
+    let base_dir = temp.path().join("base");
+    let outside_dir = temp.path().join("outside");
+    let out_dir = temp.path().join("out");
+    fs::create_dir(&base_dir).unwrap();
+    fs::create_dir(&outside_dir).unwrap();
+    fs::create_dir(&out_dir).unwrap();
+
+    fs::write(base_dir.join("inside.png"), INSIDE_PNG).unwrap();
+    fs::write(outside_dir.join("outside.png"), OUTSIDE_PNG).unwrap();
+
+    // Put the input document in `outside_dir` and set `asset_base_dir` to `outside_dir`
+    // so that any fallback to `request.asset_base_dir` or `request.input.parent()` would
+    // resolve `outside.png`.
+    let input_outside_ref = outside_dir.join("outside_ref.md");
+    fs::write(
+        &input_outside_ref,
+        "# Doc\n\n![ambient](outside.png)\n\n![traversal](../outside/outside.png)\n",
     )
     .unwrap();
-    assert!(
-        fs::read_to_string(request.output)
-            .unwrap()
-            .contains("Compatible")
+
+    let input_inside_ref = outside_dir.join("inside_ref.md");
+    fs::write(&input_inside_ref, "# Doc\n\n![inside](inside.png)\n").unwrap();
+
+    let asset_base = AssetBase::confined(
+        cap_std::fs::Dir::open_ambient_dir(&base_dir, cap_std::ambient_authority()).unwrap(),
     );
+    let out_parent =
+        cap_std::fs::Dir::open_ambient_dir(&out_dir, cap_std::ambient_authority()).unwrap();
+    let pool = SessionPool::new(PoolConfig::default());
+
+    let inside_hash = hex::encode(Sha256::digest(INSIDE_PNG));
+    let outside_hash = hex::encode(Sha256::digest(OUTSIDE_PNG));
+
+    for (use_pool, out_outside_name, out_inside_name) in [
+        (false, "oneshot_outside.json", "oneshot_inside.json"),
+        (true, "pooled_outside.json", "pooled_inside.json"),
+    ] {
+        let outside_request = ConvertRequest {
+            input: input_outside_ref.clone(),
+            output: out_dir.join(out_outside_name),
+            target_format: "json".into(),
+            profile: ariad_core::planner::Profile::Editable,
+            overwrite: false,
+            engine_program: std::env::current_exe().unwrap(),
+            title_fallback: None,
+            asset_base_dir: Some(outside_dir.clone()),
+            reader_engine: None,
+        };
+        let outside_report = if use_pool {
+            convert_confined_in(
+                &pool,
+                &outside_request,
+                &out_parent,
+                Path::new(out_outside_name),
+                &asset_base,
+                tokio_util::sync::CancellationToken::new(),
+                |_| {},
+            )
+            .unwrap()
+        } else {
+            convert_confined(
+                &outside_request,
+                &out_parent,
+                Path::new(out_outside_name),
+                &asset_base,
+                tokio_util::sync::CancellationToken::new(),
+                |_| {},
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            outside_report
+                .warnings
+                .iter()
+                .filter(|w| w.code == "image_not_embedded")
+                .count(),
+            2,
+            "assets outside the given base must fail to embed (use_pool={use_pool})"
+        );
+        let outside_ir = fs::read_to_string(&outside_request.output).unwrap();
+        assert!(
+            !outside_ir.contains(&outside_hash),
+            "outside asset must never be embedded (use_pool={use_pool})"
+        );
+
+        let inside_request = ConvertRequest {
+            input: input_inside_ref.clone(),
+            output: out_dir.join(out_inside_name),
+            target_format: "json".into(),
+            profile: ariad_core::planner::Profile::Editable,
+            overwrite: false,
+            engine_program: std::env::current_exe().unwrap(),
+            title_fallback: None,
+            asset_base_dir: Some(outside_dir.clone()),
+            reader_engine: None,
+        };
+        let inside_report = if use_pool {
+            convert_confined_in(
+                &pool,
+                &inside_request,
+                &out_parent,
+                Path::new(out_inside_name),
+                &asset_base,
+                tokio_util::sync::CancellationToken::new(),
+                |_| {},
+            )
+            .unwrap()
+        } else {
+            convert_confined(
+                &inside_request,
+                &out_parent,
+                Path::new(out_inside_name),
+                &asset_base,
+                tokio_util::sync::CancellationToken::new(),
+                |_| {},
+            )
+            .unwrap()
+        };
+        assert!(
+            inside_report.warnings.is_empty(),
+            "asset within the given base must embed without warnings (use_pool={use_pool})"
+        );
+        let inside_ir = fs::read_to_string(&inside_request.output).unwrap();
+        assert!(
+            inside_ir.contains(&inside_hash),
+            "asset within the given base must be embedded (use_pool={use_pool})"
+        );
+    }
 }
 
 #[cfg(unix)]

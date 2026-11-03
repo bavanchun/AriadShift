@@ -55,7 +55,7 @@ pub fn output_extension(format: Format) -> &'static str {
 pub fn deployable_engines(caps: &Capabilities, packs: &[Pack]) -> Vec<String> {
     caps.registered_engines()
         .into_iter()
-        .filter(|engine| packs.contains(&Pack::for_engine(engine)))
+        .filter(|engine| Pack::for_engine(engine).is_ok_and(|pack| packs.contains(&pack)))
         .collect()
 }
 
@@ -134,7 +134,7 @@ mod tests {
             &[Pack::Core],
         )
         .expect("route");
-        assert_eq!(Pack::for_route(&plan.steps), Pack::Core);
+        assert_eq!(Pack::for_route(&plan.steps), Ok(Pack::Core));
         assert_eq!(plan.steps.first().map(|s| s.from), Some(Format::Markdown));
         assert_eq!(plan.steps.last().map(|s| s.to), Some(Format::Docx));
     }
@@ -147,7 +147,7 @@ mod tests {
         ] {
             let route =
                 plan(Format::Pdf, Format::Markdown, Profile::Editable, &packs).expect("PDF route");
-            assert_eq!(Pack::for_route(&route.steps), expected);
+            assert_eq!(Pack::for_route(&route.steps), Ok(expected));
             assert_eq!(route.steps[0].engine, reader);
         }
     }

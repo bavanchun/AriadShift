@@ -54,6 +54,18 @@ fn has_docx_document(path: &Path) -> bool {
     archive.by_name("word/document.xml").is_ok()
 }
 
+fn assert_printed_path(stdout: &[u8], expected: &Path) {
+    let text = std::str::from_utf8(stdout).expect("stdout is UTF-8");
+    let mut lines = text.lines();
+    let path = lines.next().expect("one output path");
+    assert!(lines.next().is_none(), "stdout contains more than one line");
+    assert!(text.ends_with('\n'), "stdout must end with a newline");
+    assert_eq!(
+        fs::canonicalize(path).unwrap(),
+        fs::canonicalize(expected).unwrap()
+    );
+}
+
 #[test]
 fn converts_to_default_and_explicit_output_paths_with_stdout_only_containing_the_path() {
     let directory = tempdir().expect("create test directory");
@@ -68,20 +80,14 @@ fn converts_to_default_and_explicit_output_paths_with_stdout_only_containing_the
         .output()
         .expect("start ashift");
     assert!(default_result.status.success());
-    assert_eq!(
-        default_result.stdout,
-        format!("{}\n", default_output.display()).as_bytes()
-    );
+    assert_printed_path(&default_result.stdout, &default_output);
     assert!(default_result.stderr.is_empty());
     assert!(has_docx_document(&default_output));
 
     let explicit_output = directory.path().join("named-output.docx");
     let explicit_result = run_convert(&input, &explicit_output);
     assert!(explicit_result.status.success());
-    assert_eq!(
-        explicit_result.stdout,
-        format!("{}\n", explicit_output.display()).as_bytes()
-    );
+    assert_printed_path(&explicit_result.stdout, &explicit_output);
     assert!(explicit_result.stderr.is_empty());
     assert!(has_docx_document(&explicit_output));
 }
@@ -457,10 +463,7 @@ fn default_output_uses_target_format_extension() {
     assert!(result_html.status.success());
     let expected_html = directory.path().join("doc.html");
     assert!(expected_html.is_file());
-    assert_eq!(
-        String::from_utf8_lossy(&result_html.stdout).trim(),
-        expected_html.to_string_lossy()
-    );
+    assert_printed_path(&result_html.stdout, &expected_html);
 
     // Convert md -> epub with default output (if pandoc available)
     if let Ok(pandoc) = std::env::var("ASHIFT_PANDOC") {
@@ -1202,7 +1205,7 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::OutputIo => {}
             ConvertError::UnsupportedIrVersion => {}
             ConvertError::InvalidCapabilities(_) => {}
-            ConvertError::Failed => {}
+            ConvertError::Failed | ConvertError::FailedWithMemoryHint { .. } => {}
             ConvertError::DestinationSameAsInput => {}
             ConvertError::UnsupportedRoute { .. } => {}
             ConvertError::LimitExceeded => {}
@@ -1215,5 +1218,100 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::DestinationExists => {}
             ConvertError::Interrupted => {}
         }
+    }
+}
+
+#[test]
+fn target_format_inferred_from_output_extension_and_overridden_by_to_flag() {
+    let directory = tempdir().expect("create test directory");
+    let input = directory.path().join("draft.md");
+    fs::write(&input, "# Inferred Heading\n\nBody text.\n").expect("write draft.md");
+
+    // 1. -o out.docx without --to infers docx from the output extension.
+    let out_docx = directory.path().join("out.docx");
+    let inferred = cli()
+        .args(["convert"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&out_docx)
+        .output()
+        .expect("start ashift convert -o out.docx");
+    assert!(
+        inferred.status.success(),
+        "expected -o out.docx without --to to succeed, stderr: {}",
+        String::from_utf8_lossy(&inferred.stderr)
+    );
+    assert_printed_path(&inferred.stdout, &out_docx);
+    assert!(inferred.stderr.is_empty());
+    assert!(has_docx_document(&out_docx));
+
+    // 2. --to overrides a conflicting or unknown output extension.
+    let conflict_out = directory.path().join("conflict.docx");
+    let overridden = cli()
+        .args(["convert"])
+        .arg(&input)
+        .args(["--to", "html", "-o"])
+        .arg(&conflict_out)
+        .output()
+        .expect("start ashift convert --to html -o conflict.docx");
+    assert!(
+        overridden.status.success(),
+        "expected --to html to override .docx extension, stderr: {}",
+        String::from_utf8_lossy(&overridden.stderr)
+    );
+    let html_text = fs::read_to_string(&conflict_out).expect("read HTML written to conflict.docx");
+    assert!(html_text.contains("<h1"));
+    assert!(html_text.contains("Inferred Heading"));
+
+    // 3. Unknown extension without --to fails with exit code 2 and suggests --to.
+    let unknown_out = directory.path().join("out.unknown_ext");
+    let unknown_res = cli()
+        .args(["convert"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&unknown_out)
+        .output()
+        .expect("start ashift convert -o out.unknown_ext");
+    assert_eq!(unknown_res.status.code(), Some(2));
+    let unknown_stderr = String::from_utf8_lossy(&unknown_res.stderr);
+    assert!(
+        unknown_stderr.contains("--to"),
+        "expected usage error suggesting --to, got: {unknown_stderr}"
+    );
+    assert!(!unknown_out.exists());
+
+    // 4. Missing -o and missing --to fails with exit code 2 and suggests --to.
+    let missing_both = cli()
+        .args(["convert"])
+        .arg(&input)
+        .output()
+        .expect("start ashift convert without --to or -o");
+    assert_eq!(missing_both.status.code(), Some(2));
+    let missing_stderr = String::from_utf8_lossy(&missing_both.stderr);
+    assert!(
+        missing_stderr.contains("--to"),
+        "expected usage error suggesting --to, got: {missing_stderr}"
+    );
+
+    // 5. Batch (several inputs) without --to fails with exit code 2 and suggests --to.
+    let second_input = directory.path().join("second.md");
+    fs::write(&second_input, "# Second\n").expect("write second.md");
+    let batch_dir = directory.path().join("batch_out");
+    fs::create_dir(&batch_dir).expect("create batch_out");
+
+    for extra_args in [vec![], vec!["-o", batch_dir.to_str().unwrap()]] {
+        let batch_res = cli()
+            .args(["convert"])
+            .arg(&input)
+            .arg(&second_input)
+            .args(&extra_args)
+            .output()
+            .expect("start ashift batch convert without --to");
+        assert_eq!(batch_res.status.code(), Some(2));
+        let batch_stderr = String::from_utf8_lossy(&batch_res.stderr);
+        assert!(
+            batch_stderr.contains("--to"),
+            "expected batch usage error suggesting --to, got: {batch_stderr}"
+        );
     }
 }

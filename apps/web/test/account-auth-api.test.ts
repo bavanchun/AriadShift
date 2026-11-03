@@ -118,6 +118,99 @@ describe("Better Auth adapter", () => {
     expect(failure.message).toContain("does not allow deleting accounts");
   });
 
+  it("detects whether an account has a password credential and supports passwordless deletion", async () => {
+    let providerId = "github";
+    const { calls, fetchImpl } = fakeFetch({
+      "GET /api/auth/list-accounts": () => Response.json([{ id: "acc-1", providerId }]),
+      "POST /api/auth/delete-user": () => Response.json({ success: true, message: "User deleted" }),
+    });
+    const auth = createBetterAuthApi(AUTH, fetchImpl);
+    expect(await auth.hasPassword()).toBe(false);
+    providerId = "credential";
+    expect(await auth.hasPassword()).toBe(true);
+
+    await auth.deleteAccount();
+    const deleteCall = calls.find((call) => call.url === `${AUTH}/api/auth/delete-user`);
+    expect(deleteCall?.body).toEqual({});
+  });
+
+  it("maps a stale session on account deletion to reauth_required", async () => {
+    const { fetchImpl } = fakeFetch({
+      "POST /api/auth/delete-user": () =>
+        Response.json(
+          { code: "reauth_required", message: "Sign in again before deleting your account." },
+          { status: 400 },
+        ),
+    });
+    const failure = await createBetterAuthApi(AUTH, fetchImpl)
+      .deleteAccount()
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AuthError);
+    expect(failure).toMatchObject({
+      message: "Sign in again before deleting your account.",
+      status: 400,
+      code: "reauth_required",
+    });
+  });
+
+  it("lists and revokes OAuth consents and registered clients", async () => {
+    const { calls, fetchImpl } = fakeFetch({
+      "GET /api/auth/oauth2/get-consents": () =>
+        Response.json([
+          {
+            id: "consent-1",
+            clientId: "client-1",
+            clientName: "Claude Code",
+            scopes: ["openid", "offline_access"],
+            createdAt: "2026-10-30T10:00:00.000Z",
+            updatedAt: "2026-10-30T11:00:00.000Z",
+          },
+        ]),
+      "POST /api/auth/oauth2/delete-consent": () => Response.json(null),
+      "GET /api/auth/oauth2/get-clients": () =>
+        Response.json([
+          {
+            client_id: "client-2",
+            client_name: "Cursor MCP",
+            redirect_uris: ["http://127.0.0.1:33418/callback"],
+            scope: "openid offline_access",
+            client_id_issued_at: 1_761_818_400,
+          },
+        ]),
+      "POST /api/auth/oauth2/delete-client": () => Response.json(null),
+    });
+    const auth = createBetterAuthApi(AUTH, fetchImpl);
+
+    await expect(auth.listOAuthConsents()).resolves.toEqual([
+      {
+        id: "consent-1",
+        clientId: "client-1",
+        clientName: "Claude Code",
+        scopes: ["openid", "offline_access"],
+        createdAt: "2026-10-30T10:00:00.000Z",
+        updatedAt: "2026-10-30T11:00:00.000Z",
+      },
+    ]);
+    await auth.deleteOAuthConsent("consent-1");
+    expect(
+      calls.find((call) => call.url === `${AUTH}/api/auth/oauth2/delete-consent`)?.body,
+    ).toEqual({ id: "consent-1" });
+
+    await expect(auth.listOAuthClients()).resolves.toEqual([
+      {
+        clientId: "client-2",
+        clientName: "Cursor MCP",
+        redirectUris: ["http://127.0.0.1:33418/callback"],
+        scopes: ["openid", "offline_access"],
+        createdAt: new Date(1_761_818_400 * 1000).toISOString(),
+      },
+    ]);
+    await auth.deleteOAuthClient("client-2");
+    expect(
+      calls.find((call) => call.url === `${AUTH}/api/auth/oauth2/delete-client`)?.body,
+    ).toEqual({ client_id: "client-2" });
+  });
+
   it("maps the session's user", async () => {
     const { fetchImpl } = fakeFetch({
       "GET /api/auth/get-session": () =>
@@ -159,10 +252,80 @@ describe("Better Auth adapter", () => {
     expect(await auth.apiToken()).toBe("jwt-2");
   });
 
-  it("has no API token without a session", async () => {
-    const { fetchImpl } = fakeFetch({
-      "GET /api/auth/token": () => Response.json({ message: "unauthorized" }, { status: 401 }),
+  it("distinguishes 401 session expiry from 503, 429 and network failures on token refresh", async () => {
+    const unauthorizedFetch = fakeFetch({
+      "GET /api/auth/token": () => new Response(null, { status: 401 }),
     });
-    await expect(createBetterAuthApi(AUTH, fetchImpl).apiToken()).resolves.toBeUndefined();
+    const unauthorized = await createBetterAuthApi(AUTH, unauthorizedFetch.fetchImpl)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(unauthorized).toBeInstanceOf(AuthError);
+    expect(unauthorized).toMatchObject({
+      message: "Your session has ended. Sign in again.",
+      status: 401,
+      code: "unauthorized",
+    });
+
+    const unavailableFetch = fakeFetch({
+      "GET /api/auth/token": () => new Response(null, { status: 503 }),
+    });
+    const unavailable = await createBetterAuthApi(AUTH, unavailableFetch.fetchImpl)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(unavailable).toBeInstanceOf(AuthError);
+    expect(unavailable).toMatchObject({
+      message: "The server cannot verify your sign-in right now. Try again shortly.",
+      status: 503,
+      code: "unavailable",
+    });
+
+    const rateLimitedFetch = fakeFetch({
+      "GET /api/auth/token": () => new Response(null, { status: 429 }),
+    });
+    const rateLimited = await createBetterAuthApi(AUTH, rateLimitedFetch.fetchImpl)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(rateLimited).toBeInstanceOf(AuthError);
+    expect(rateLimited).toMatchObject({
+      message: "Too many requests. Try again shortly.",
+      status: 429,
+      code: "rate_limited",
+    });
+
+    const networkFailure = await createBetterAuthApi(AUTH, (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(networkFailure).toBeInstanceOf(AuthError);
+    expect(networkFailure).toMatchObject({
+      message: "The sign-in service cannot be reached. Check your connection and try again.",
+      status: undefined,
+      code: "network_error",
+    });
+  });
+
+  it("throws a typed AuthError when the token endpoint returns a malformed body", async () => {
+    let step = 0;
+    const { fetchImpl } = fakeFetch({
+      "GET /api/auth/token": () => {
+        step += 1;
+        if (step === 1) {
+          return new Response("not-json", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return Response.json({ token: "" });
+      },
+    });
+    const auth = createBetterAuthApi(AUTH, fetchImpl);
+    const nonJson = await auth.apiToken().catch((error: unknown) => error);
+    expect(nonJson).toBeInstanceOf(AuthError);
+    expect(nonJson).toMatchObject({ status: 200, code: "invalid_token_response" });
+
+    const missingToken = await auth.apiToken().catch((error: unknown) => error);
+    expect(missingToken).toBeInstanceOf(AuthError);
+    expect(missingToken).toMatchObject({ status: 200, code: "invalid_token_response" });
   });
 });

@@ -82,6 +82,25 @@ mod tests {
     }
 
     #[test]
+    fn shipping_packs_resolve_their_recommended_manifests() {
+        // Index entries are platform-independent; the signed manifest selects the target.
+        for (name, version) in [("docling", "0.2.0"), ("pdfium", "0.1.0")] {
+            assert_eq!(
+                entries().iter().filter(|entry| entry.name == name).count(),
+                1
+            );
+            let entry = lookup(name).unwrap();
+            assert_eq!(entry.version, version);
+            assert_eq!(
+                entry.manifest_url(&entry.version),
+                format!(
+                    "https://github.com/bavanchun/AriadShift/releases/download/pack-{name}-v{version}/pack.toml"
+                )
+            );
+        }
+    }
+
+    #[test]
     fn docling_manifest_url_follows_the_release_tag_scheme() {
         let docling = lookup("docling").unwrap();
         assert_eq!(

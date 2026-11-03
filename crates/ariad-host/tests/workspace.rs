@@ -55,6 +55,33 @@ fn replaces_an_existing_destination_when_overwrite_is_enabled() {
     assert_eq!(fs::read_dir(destination_dir.path()).unwrap().count(), 1);
 }
 
+#[cfg(unix)]
+#[test]
+fn canonical_artifact_under_symlinked_workspace_is_confined() {
+    use std::os::unix::fs::symlink;
+    let temp = tempfile::tempdir().unwrap();
+    let real = temp.path().join("real");
+    fs::create_dir(&real).unwrap();
+    let alias = temp.path().join("alias");
+    symlink(&real, &alias).unwrap();
+    let workspace = Workspace::new_in(&alias).unwrap();
+    let artifact = workspace.output_dir().join("document.docx");
+    fs::write(&artifact, b"data").unwrap();
+    let canonical = fs::canonicalize(&artifact).unwrap();
+    assert!(workspace.open_artifact(&canonical).is_ok());
+    let outside = temp.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("escape"), b"data").unwrap();
+    let link = workspace.output_dir().join("escape");
+    symlink(&outside, &link).unwrap();
+    assert!(workspace.open_artifact(&link.join("escape")).is_err());
+    assert!(
+        workspace
+            .open_artifact(&workspace.output_dir().join("..").join("in").join("escape"))
+            .is_err()
+    );
+}
+
 #[test]
 fn refuses_artifacts_that_resolve_outside_output() {
     let workspace = Workspace::new().expect("create workspace");

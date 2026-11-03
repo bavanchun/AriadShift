@@ -4,7 +4,9 @@
 // operations; presigned URLs are followed as returned and never receive
 // credentials, since with S3 storage they point at the object store rather
 // than at `/v1/blobs`.
-import { errorFromBody, errorFromResponse, retryAfterSeconds } from "./errors";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+import { AriadApiError, errorFromBody, errorFromResponse, retryAfterSeconds } from "./errors";
 import {
   type CreateJobRequest,
   completeUpload as completeUploadOperation,
@@ -97,6 +99,41 @@ export interface DownloadOptions {
   signal?: AbortSignal;
   /** Check the SHA-256 of the downloaded bytes. The size is always checked. */
   verifySha256?: boolean;
+  /** Called after each chunk with the bytes downloaded so far and the expected total. */
+  onProgress?: (downloaded: number, total: number) => void;
+}
+
+/**
+ * Writable sink for streaming downloads, compatible with `WritableStreamDefaultWriter`
+ * and `FileSystemWritableFileStream`.
+ */
+export interface DownloadStreamTarget {
+  write(chunk: Uint8Array<ArrayBuffer>): Promise<void> | void;
+  close(): Promise<void> | void;
+  abort(reason?: unknown): Promise<void> | void;
+}
+
+export type DownloadIntegrityErrorCode = "download_size_mismatch" | "download_hash_mismatch";
+
+/**
+ * Thrown when a downloaded output's byte length or SHA-256 digest does not match
+ * the expected metadata from the API. Extends `AriadApiError` with code
+ * `"download_failed"` so error handlers map it to download failure copy.
+ */
+export class DownloadIntegrityError extends AriadApiError {
+  constructor(
+    readonly reason: DownloadIntegrityErrorCode,
+    message: string,
+    readonly expected: number | string,
+    readonly actual: number | string,
+  ) {
+    super(undefined as unknown as number, "download_failed", message);
+    Object.defineProperty(this, "name", {
+      value: "DownloadIntegrityError",
+      enumerable: true,
+      configurable: true,
+    });
+  }
 }
 
 /** Event kinds a job emits, in the order they can occur. */
@@ -180,6 +217,15 @@ export interface AriadClient {
     output: Pick<OutputFile, "url">,
     signal?: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>>;
+  /**
+   * Streams an output through `target`, checking size and (unless disabled)
+   * incremental SHA-256 before closing `target`, or aborting `target` on failure.
+   */
+  downloadToStream(
+    output: Pick<OutputFile, "url" | "size" | "sha256">,
+    target: DownloadStreamTarget | WritableStream<Uint8Array>,
+    options?: DownloadOptions,
+  ): Promise<void>;
   /** Cancels the job if it is still running and deletes its input and outputs now. */
   deleteJob(jobId: string, signal?: AbortSignal): Promise<void>;
 }
@@ -253,6 +299,30 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+function isWritableStream(
+  target: DownloadStreamTarget | WritableStream<Uint8Array>,
+): target is WritableStream<Uint8Array> {
+  return (
+    typeof WritableStream !== "undefined" &&
+    target instanceof WritableStream &&
+    !("write" in target && typeof target.write === "function")
+  );
+}
+
+function asStreamTarget(
+  target: DownloadStreamTarget | WritableStream<Uint8Array>,
+): DownloadStreamTarget {
+  if (isWritableStream(target) || (!("write" in target) && "getWriter" in target)) {
+    const writer = (target as WritableStream<Uint8Array>).getWriter();
+    return {
+      write: (chunk) => writer.write(chunk),
+      close: () => writer.close(),
+      abort: (reason) => writer.abort(reason),
+    };
+  }
+  return target as DownloadStreamTarget;
 }
 
 /** Creates a client for one AriadShift API deployment. */
@@ -501,14 +571,26 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
       }
       const blob = await response.blob();
       if (blob.size !== output.size) {
-        throw new Error(`downloaded ${blob.size} bytes, expected ${output.size}`);
+        throw new DownloadIntegrityError(
+          "download_size_mismatch",
+          `downloaded ${blob.size} bytes, expected ${output.size}`,
+          output.size,
+          blob.size,
+        );
       }
-      if (
-        downloadOptions.verifySha256 &&
-        (await sha256Hex(blob, { signal: downloadOptions.signal })) !== output.sha256.toLowerCase()
-      ) {
-        throw new Error("the downloaded file does not match its SHA-256");
+      if (downloadOptions.verifySha256) {
+        const digest = await sha256Hex(blob, { signal: downloadOptions.signal });
+        const expected = output.sha256.toLowerCase();
+        if (digest !== expected) {
+          throw new DownloadIntegrityError(
+            "download_hash_mismatch",
+            "the downloaded file does not match its SHA-256",
+            expected,
+            digest,
+          );
+        }
       }
+      downloadOptions.onProgress?.(blob.size, output.size);
       return blob;
     },
 
@@ -521,6 +603,89 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
         throw new Error("the download has no body");
       }
       return response.body;
+    },
+
+    async downloadToStream(output, target, downloadOptions = {}) {
+      const { signal, onProgress } = downloadOptions;
+      const verifySha256 = downloadOptions.verifySha256 ?? true;
+      const sink = asStreamTarget(target);
+      const abortSink = async (reason: unknown) => {
+        try {
+          await sink.abort(reason);
+        } catch {
+          // Best-effort abort so the original download error surfaces.
+        }
+      };
+
+      let stream: ReadableStream<Uint8Array>;
+      try {
+        stream = await client.downloadStream(output, signal);
+      } catch (error) {
+        await abortSink(error);
+        throw error;
+      }
+
+      const reader = stream.getReader();
+      const hash = verifySha256 ? sha256.create() : null;
+      let received = 0;
+
+      try {
+        for (;;) {
+          signal?.throwIfAborted();
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          if (value.byteLength === 0) {
+            continue;
+          }
+          received += value.byteLength;
+          if (received > output.size) {
+            throw new DownloadIntegrityError(
+              "download_size_mismatch",
+              `downloaded ${received} bytes, expected ${output.size}`,
+              output.size,
+              received,
+            );
+          }
+          hash?.update(value);
+          await sink.write(value as Uint8Array<ArrayBuffer>);
+          onProgress?.(received, output.size);
+        }
+
+        signal?.throwIfAborted();
+        if (received !== output.size) {
+          throw new DownloadIntegrityError(
+            "download_size_mismatch",
+            `downloaded ${received} bytes, expected ${output.size}`,
+            output.size,
+            received,
+          );
+        }
+        if (hash) {
+          const digest = bytesToHex(hash.digest());
+          const expected = output.sha256.toLowerCase();
+          if (digest !== expected) {
+            throw new DownloadIntegrityError(
+              "download_hash_mismatch",
+              "the downloaded file does not match its SHA-256",
+              expected,
+              digest,
+            );
+          }
+        }
+        await sink.close();
+      } catch (error) {
+        try {
+          await reader.cancel(error);
+        } catch {
+          // Best-effort reader cancellation.
+        }
+        await abortSink(error);
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
     },
 
     async deleteJob(jobId, signal) {

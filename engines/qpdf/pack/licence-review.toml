@@ -1,0 +1,12 @@
+# This exception applies only to unmodified libjpeg-turbo in the qpdf pack.
+pack = "qpdf"
+component = "libjpeg-turbo"
+version = "3.2.1"
+modified = false
+license = "IJG AND BSD-3-Clause AND Zlib"
+source = "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz"
+sha256 = "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f"
+# Approved by owner delegation to the Mac PM, 2026-11-03.
+pending_owner_approval = false
+# Static GNU C++/GCC runtime notices and provenance need review on each Linux target.
+runtime_review_complete = false

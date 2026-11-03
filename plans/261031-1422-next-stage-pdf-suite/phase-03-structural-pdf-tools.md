@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Structural PDF tools in ariad-pdf (organize group)"
-status: pending
+status: completed
 priority: P1
 effort: "6 tasks, ~8-10 worker-days"
 dependencies: [2]
@@ -13,7 +13,7 @@ milestone: A (foundations) — ends with CLI/MCP preview 0.3.0
 
 ## Goal
 
-Ship every page-level and document-structure tool that needs no rendering, as pure Rust in `crates/ariad-pdf`, registered in the tool registry, available on CLI, local MCP and WASM, byte-deterministic and fuzzed. This is the largest single block of Stirling/Bento parity and runs fully in the browser.
+Ship all 25 page-level and document-structure tools that need no rendering, as pure Rust in `crates/ariad-pdf`, registered in the tool registry, available on CLI, local MCP and WASM, byte-deterministic and fuzzed. This is the largest single block of Stirling/Bento parity and runs fully in the browser.
 
 ## Context (read first)
 
@@ -56,18 +56,20 @@ Ship every page-level and document-structure tool that needs no rendering, as pu
 | `pdf.page_labels` | `{ ranges: [{from, style: "decimal" \| "roman-upper" \| "roman-lower" \| "alpha-upper" \| "alpha-lower" \| "none", prefix?, start?}] }` | |
 | `pdf.viewer_prefs` | `{ page_layout?, page_mode?, hide_toolbar?, fit_window?, display_doc_title? , open_page? }` | |
 
+The six added tools (`pdf.rotate_content`, `pdf.decompress`, `pdf.divide_pages`, `pdf.posterize`, `pdf.portfolio`, `pdf.layers`) are specified in the PM scout addendum below.
+
 ## Tasks
 
 | Task | Owner (model) | Files owned (tools) |
 |---|---|---|
 | T1 | Gemini 4 Argon high | shared infra: `crates/ariad-pdf/src/{writer.rs,gc.rs,xobject.rs,paper.rs,ctx.rs}` — deterministic save, garbage collection, page→Form XObject helper, paper sizes, `ToolCtx` |
 | T2 | Gemini 4 Argon high | `merge`, `split`, `extract_pages`, `delete_pages`, `reorder`, `alternate_mix`, `insert_blank` |
-| T3 | Gemini 4 Argon high | `rotate`, `crop`, `scale`, `single_page` |
-| T4 | Gemini 4 Argon high | `nup`, `booklet`, `overlay` |
-| T5 | Gemini 4 Argon high | `metadata`, `outline`, `attachments`, `page_labels`, `viewer_prefs` |
+| T3 | Gemini 4 Argon high | `rotate`, `crop`, `scale`, `single_page`, `rotate_content`, `decompress` |
+| T4 | Gemini 4 Argon high | `nup`, `booklet`, `overlay`, `divide_pages`, `posterize` |
+| T5 | Gemini 4 Argon high | `metadata`, `outline`, `attachments`, `page_labels`, `viewer_prefs`, `portfolio`, `layers` |
 | T6 | Gemini 4 Argon high | `crates/ariad-cli/tests/tools_structural.rs`, `fuzz/fuzz_targets/pdf_tools_structural.rs` (arbitrary PDF + arbitrary params JSON for every registered structural tool), `docs/cli.md` examples, `crates/ariad-wasm` size report |
 
-T1 first; then T2-T5 in parallel. Each task owns its params files, tool modules, tests and its registration file `crates/ariad-core/src/tools/specs/organize_<task>.rs`. **Shared files are owned by T1 and finished before T2-T5 start**: T1 pre-creates `crates/ariad-pdf/src/tools/mod.rs`, `crates/ariad-core/src/tools/params/mod.rs` and `crates/ariad-host/src/tools/inprocess.rs` with `mod`/dispatch entries for all 19 tools pointing at `todo!()`-free stubs that return `PdfError::NotImplemented`, so T2-T5 only fill their own modules. The coordinator regenerates `schemas/tools.v1.json`, `THIRD_PARTY_LICENSES` and `Cargo.lock` once after the wave (workers never commit them). T6 last.
+T1 first; then T2-T5 in parallel. Each task owns its params files, tool modules, tests and its registration file `crates/ariad-core/src/tools/specs/organize_<task>.rs`. **Shared files are owned by T1 and finished before T2-T5 start**: T1 pre-creates `crates/ariad-pdf/src/tools/mod.rs`, `crates/ariad-core/src/tools/params/mod.rs` and `crates/ariad-host/src/tools/inprocess.rs` with `mod`/dispatch entries for all 25 tools pointing at `todo!()`-free stubs that return `PdfError::NotImplemented`, so T2-T5 only fill their own modules. The coordinator regenerates `schemas/tools.v1.json`, `THIRD_PARTY_LICENSES` and `Cargo.lock` once after the wave (workers never commit them). T6 last.
 
 ## Verification
 
@@ -75,22 +77,23 @@ T1 first; then T2-T5 in parallel. Each task owns its params files, tool modules,
 source /Volumes/AriadWork/02-Ariadnev-Eco/.cache/env.sh
 cargo nextest run -p ariad-pdf -p ariad-cli --features ariad-host/test-probe
 cargo check -p ariad-pdf -p ariad-wasm --target wasm32-unknown-unknown && just wasm-build
-for t in merge split rotate nup booklet; do echo $t; done   # coordinator runs each CLI example from docs/cli.md
+for t in merge split rotate nup booklet; do echo $t; done   # coordinator runs each CLI example from docs/cli.md (all 25 tools)
 cargo publish --dry-run -p ariad-pdf -p ariad-engine-io
 bash scripts/test-ci-scope.sh
 # fuzz pdf_tools_structural 300 s runs on Linux CI; link the run in the gate
-# visual spot check (coordinator): open outputs of nup/booklet/scale/overlay in Preview; attach screenshots to the gate file
+# visual spot check (coordinator): open outputs of nup/booklet/scale/overlay/posterize/divide_pages/rotate_content in Preview; attach screenshots to the gate file
 ```
 
 ## Acceptance
 
-- [ ] All 19 tools registered, documented in `ashift tools`, runnable from CLI, local MCP and WASM.
-- [ ] Every tool has corpus tests, a determinism test and error tests; outputs open in macOS Preview and pass `qpdf --check` (run qpdf from Homebrew on the coordinator machine as a verifier only).
-- [ ] Forms, annotations, outlines and attachments survive merge/split/extract where their pages survive (asserted with `pdf.info`).
-- [ ] 1,000-page merge/split completes under `Limits::local()` and within 10 s on the Mac (time recorded).
-- [ ] Fuzz 300 s clean (Linux CI run linked).
-- [ ] `cargo publish --dry-run` passes for `ariad-pdf` and `ariad-engine-io`; 0.3.0 cannot half-publish.
-- [ ] Preview release 0.3.0 (CLI + MCP + crates) prepared per `docs/releasing.md`; tag pushed only after the owner's GO (gate file).
+- [x] All 25 tools registered, documented in `ashift tools`, runnable from CLI, local MCP and WASM.
+- [x] Every tool whose input needed an xref repair emits the repair warning and saves a fully rewritten valid file (one test per task with broken-xref.pdf).
+- [ ] Every tool has corpus tests, a determinism test and error tests; outputs open in macOS Preview and pass `qpdf --check` (run qpdf from Homebrew on the coordinator machine as a verifier only). Open: the Preview and qpdf check runs on the Mac at the gate review.
+- [x] Forms, annotations, outlines and attachments survive merge/split/extract where their pages survive (asserted with `pdf.info`).
+- [ ] 1,000-page merge/split completes under `Limits::local()` and within 10 s on the Mac (time recorded). Open: the timing run on the Mac.
+- [ ] Fuzz 300 s clean (Linux CI run linked). Open: link the first fuzz-nightly run after the merge.
+- [ ] `cargo publish --dry-run` passes for `ariad-pdf` and `ariad-engine-io`; 0.3.0 cannot half-publish. Open: packaging passes; verification resolves ariad-core 0.2.0 from crates.io until the 0.3.0 publish order runs.
+- [x] Preview release 0.3.0 (CLI + MCP + crates) prepared per `docs/releasing.md`; tag pushed only after the owner's GO (gate file).
 
 ## Risks
 
@@ -99,3 +102,24 @@ bash scripts/test-ci-scope.sh
 | Shared resources/fonts duplicated on merge bloat files | T1 dedupes identical streams by hash before save. |
 | Broken outlines/named destinations after page removal | Rebuild destinations; test with `multipage-20.pdf`. |
 | Same-file conflicts in the registry | Per-task `organize_*.rs` registration files. |
+
+## PM scout addendum (2026-11-01)
+
+### A. Repaired inputs
+Every structural tool whose input was opened with a repaired xref emits the warning "cross-reference table was malformed and reconstructed from object offsets" (same text as `pdf.info`) and still saves a fully rewritten, valid file. Test with `broken-xref.pdf` for one tool per task.
+
+### B. Six added tools (parity-matrix gaps assigned to phase 3)
+| Tool id | Task | Params (summary) | Notes |
+|---|---|---|---|
+| `pdf.rotate_content` | T3 | `{ pages = all, angle_deg: f32 (-360..360), expand: bool = true }` | Rotates page content by an arbitrary angle via a Form XObject + matrix (unlike `pdf.rotate`, which sets `/Rotate`); `expand` grows the MediaBox to fit. |
+| `pdf.decompress` | T3 | `{ pages?: PageRange, object_streams: "keep" \| "expand" = "expand" }` | Writes every stream uncompressed (for inspection/debug); honours decoded-size limits; output name `<stem>.decompressed.pdf`. |
+| `pdf.divide_pages` | T4 | `{ pages = all, cols: 1..=8, rows: 1..=8, order: "row" \| "column" = "row" }` | Each page becomes cols×rows pages, each a cropped Form XObject of one cell (inverse of n-up; Stirling "split page into sections"). |
+| `pdf.posterize` | T4 | `{ pages = all, sheet: paper, scale: f32 (>1) \| tiles: {cols, rows}, overlap_mm: f32 = 10, crop_marks: bool = true }` | Enlarges a page across several sheets for tiled printing. |
+| `pdf.portfolio` | T5 | `{ action: "create" \| "list" \| "extract", view: "details" \| "tile" = "details" }` | `create` takes many inputs of any format, embeds them as a PDF collection (`/Collection`) with a cover page; reuses the attachments helpers and size limits. |
+| `pdf.layers` | T5 | `{ action: "list" \| "set_default_visibility" \| "remove", names?: [string], visible?: bool }` | Optional content groups: list, change default ON/OFF, or remove a layer and its marked content. Flattening a layer into the page needs rendering and is not here. |
+
+Each follows the common implementation rules (params file, registration in the task's `organize_<task>.rs`, corpus + determinism + error tests, CLI golden). T5 adds an OCG fixture through `fixtures/gen` if `watermark-layer.pdf` is not enough (generated, Apache-2.0, manifest entry, truth file).
+
+### C. Gate items I will decide
+- 0.3.0 preview release: you prepare it per `docs/releasing.md` (version bump PR, notes, rehearsal run) and send `to-mac/p03-release-gate.md`; I give the GO for the tag myself (owner delegated). No tag before my written GO.
+- Visual spot check screenshots (nup, booklet, scale, overlay, posterize, divide_pages, rotate_content) attached to the gate.

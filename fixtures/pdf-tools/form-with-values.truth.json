@@ -1,0 +1,170 @@
+{
+  "version": "ariad-truth/0",
+  "id": "form-with-values",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 1,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "Filled Form Carrying Personal Data",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": true,
+  "field_names": [
+    "applicant_name",
+    "national_id",
+    "contact_email",
+    "contact_phone"
+  ],
+  "form_fields": [
+    {
+      "name": "applicant_name",
+      "type": "text",
+      "value": "Nguyen Van An",
+      "default_value": "Nguyen Van An",
+      "tooltip": "Field applicant_name: Nguyen Van An",
+      "page": 1,
+      "rect": [
+        180,
+        680,
+        440,
+        704
+      ]
+    },
+    {
+      "name": "national_id",
+      "type": "text",
+      "value": "CCCD-079203001234",
+      "default_value": "CCCD-079203001234",
+      "tooltip": "Field national_id: CCCD-079203001234",
+      "page": 1,
+      "rect": [
+        180,
+        640,
+        440,
+        664
+      ]
+    },
+    {
+      "name": "contact_email",
+      "type": "text",
+      "value": "nguyen.van.an@example.vi",
+      "default_value": "nguyen.van.an@example.vi",
+      "tooltip": "Field contact_email: nguyen.van.an@example.vi",
+      "page": 1,
+      "rect": [
+        180,
+        600,
+        440,
+        624
+      ]
+    },
+    {
+      "name": "contact_phone",
+      "type": "text",
+      "value": "+84-912-345-678",
+      "default_value": "+84-912-345-678",
+      "tooltip": "Field contact_phone: +84-912-345-678",
+      "page": 1,
+      "rect": [
+        180,
+        560,
+        440,
+        584
+      ]
+    }
+  ],
+  "has_annotations": true,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 1,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Filled Form Carrying Personal Data",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": true,
+    "has_annotations": true,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Filled Form Carrying Personal Data\nSummary line: Nguyen Van An (CCCD-079203001234)",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "redaction_targets": [
+    "Nguyen Van An",
+    "CCCD-079203001234",
+    "nguyen.van.an@example.vi",
+    "+84-912-345-678"
+  ],
+  "form_pii_locations": [
+    "/V",
+    "/DV",
+    "/TU",
+    "/AP/N",
+    "content_stream"
+  ]
+}

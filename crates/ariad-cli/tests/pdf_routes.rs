@@ -195,8 +195,8 @@ fn batch_pdf_routes_use_the_shared_executor_and_canonical_extensions() {
         assert_eq!(report["results"][index]["route"][0]["engine"], "pdf");
         let json = directory.path().join(format!("{name}.json"));
         assert_eq!(
-            report["results"][index]["output"],
-            json.to_string_lossy().as_ref()
+            std::fs::canonicalize(report["results"][index]["output"].as_str().unwrap()).unwrap(),
+            std::fs::canonicalize(&json).unwrap()
         );
         assert!(json.is_file());
     }

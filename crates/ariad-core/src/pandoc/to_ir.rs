@@ -179,6 +179,7 @@ impl<'a> ToIrMapper<'a> {
             }
             Block::OrderedList((start, _style, _delim), items) => {
                 self.check_block_budget()?;
+                let tight = is_tight_list(items);
                 let mut mapped_items = Vec::with_capacity(items.len());
                 for item_blocks in items {
                     let blocks = self.map_blocks(item_blocks, depth.saturating_add(1))?;
@@ -190,12 +191,13 @@ impl<'a> ToIrMapper<'a> {
                 Ok(vec![IrBlock::List {
                     ordered: true,
                     start: Some(*start),
-                    tight: false,
+                    tight,
                     items: mapped_items,
                 }])
             }
             Block::BulletList(items) => {
                 self.check_block_budget()?;
+                let tight = is_tight_list(items);
                 let mut mapped_items = Vec::with_capacity(items.len());
                 for item_blocks in items {
                     let mut blocks = self.map_blocks(item_blocks, depth.saturating_add(1))?;
@@ -205,7 +207,7 @@ impl<'a> ToIrMapper<'a> {
                 Ok(vec![IrBlock::List {
                     ordered: false,
                     start: None,
-                    tight: false,
+                    tight,
                     items: mapped_items,
                 }])
             }
@@ -234,6 +236,8 @@ impl<'a> ToIrMapper<'a> {
                         blocks,
                     });
                 }
+                // Each definition entry expands into a strong-term paragraph plus
+                // definition block(s), so the resulting multi-block list is loose.
                 Ok(vec![IrBlock::List {
                     ordered: false,
                     start: None,
@@ -575,6 +579,24 @@ impl<'a> ToIrMapper<'a> {
     }
 }
 
+/// Pandoc 3.12 emits `Plain` blocks for tight list items (written to and read
+/// from DOCX via the `Compact` paragraph style) and `Para` blocks for loose
+/// list items. Derive `tight = true` when the list is non-empty and every item
+/// contains at least one `Plain` block plus optional nested bullet or ordered
+/// sublists, with no `Para` or other block kinds.
+fn is_tight_list(items: &[Vec<Block>]) -> bool {
+    !items.is_empty()
+        && items.iter().all(|item| {
+            item.iter().any(|block| matches!(block, Block::Plain(_)))
+                && item.iter().all(|block| {
+                    matches!(
+                        block,
+                        Block::Plain(_) | Block::BulletList(_) | Block::OrderedList(_, _)
+                    )
+                })
+        })
+}
+
 fn coalesce_inlines(inlines: Vec<IrInline>) -> Vec<IrInline> {
     let mut coalesced = Vec::with_capacity(inlines.len());
     for inline in inlines {
@@ -842,5 +864,139 @@ fn map_metadata(meta: &std::collections::BTreeMap<String, MetaValue>, max_depth:
         subject,
         keywords,
         source_format: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::{
+        ir::Block as IrBlock,
+        limits::Limits,
+        pandoc::ast::{Block, Inline, ListNumberDelim, ListNumberStyle, Pandoc},
+    };
+
+    use super::to_ir;
+
+    fn pandoc_doc(blocks: Vec<Block>) -> Pandoc {
+        Pandoc {
+            pandoc_api_version: vec![1, 23, 1, 2],
+            meta: BTreeMap::new(),
+            blocks,
+        }
+    }
+
+    #[test]
+    fn maps_tight_and_loose_bullet_and_ordered_lists() {
+        let doc = pandoc_doc(vec![
+            Block::BulletList(vec![
+                vec![Block::Plain(vec![Inline::Str("alpha".to_owned())])],
+                vec![Block::Plain(vec![Inline::Str("beta".to_owned())])],
+            ]),
+            Block::BulletList(vec![
+                vec![Block::Para(vec![Inline::Str("alpha".to_owned())])],
+                vec![Block::Para(vec![Inline::Str("beta".to_owned())])],
+            ]),
+            Block::OrderedList(
+                (1, ListNumberStyle::Decimal, ListNumberDelim::Period),
+                vec![
+                    vec![Block::Plain(vec![Inline::Str("first".to_owned())])],
+                    vec![Block::Plain(vec![Inline::Str("second".to_owned())])],
+                ],
+            ),
+            Block::OrderedList(
+                (1, ListNumberStyle::Decimal, ListNumberDelim::Period),
+                vec![
+                    vec![Block::Para(vec![Inline::Str("first".to_owned())])],
+                    vec![Block::Para(vec![Inline::Str("second".to_owned())])],
+                ],
+            ),
+        ]);
+
+        let out = to_ir(&doc, &Limits::local()).expect("map lists to IR");
+        assert!(matches!(
+            &out.document.body[0],
+            IrBlock::List {
+                ordered: false,
+                tight: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &out.document.body[1],
+            IrBlock::List {
+                ordered: false,
+                tight: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &out.document.body[2],
+            IrBlock::List {
+                ordered: true,
+                tight: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &out.document.body[3],
+            IrBlock::List {
+                ordered: true,
+                tight: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn preserves_tightness_for_nested_lists_and_rejects_mixed_items() {
+        let doc = pandoc_doc(vec![
+            Block::BulletList(vec![
+                vec![
+                    Block::Plain(vec![Inline::Str("parent".to_owned())]),
+                    Block::OrderedList(
+                        (1, ListNumberStyle::Decimal, ListNumberDelim::Period),
+                        vec![
+                            vec![Block::Plain(vec![Inline::Str("child1".to_owned())])],
+                            vec![Block::Plain(vec![Inline::Str("child2".to_owned())])],
+                        ],
+                    ),
+                ],
+                vec![Block::Plain(vec![Inline::Str("sibling".to_owned())])],
+            ]),
+            Block::BulletList(vec![
+                vec![Block::Plain(vec![Inline::Str("plain".to_owned())])],
+                vec![Block::Para(vec![Inline::Str("para".to_owned())])],
+            ]),
+        ]);
+
+        let out = to_ir(&doc, &Limits::local()).expect("map nested and mixed lists to IR");
+        let IrBlock::List {
+            tight: outer_tight,
+            items: outer_items,
+            ..
+        } = &out.document.body[0]
+        else {
+            panic!("expected outer bullet list");
+        };
+        assert!(*outer_tight);
+        assert!(matches!(
+            &outer_items[0].blocks[1],
+            IrBlock::List {
+                ordered: true,
+                tight: true,
+                ..
+            }
+        ));
+
+        assert!(matches!(
+            &out.document.body[1],
+            IrBlock::List {
+                ordered: false,
+                tight: false,
+                ..
+            }
+        ));
     }
 }

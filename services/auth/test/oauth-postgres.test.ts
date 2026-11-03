@@ -7,14 +7,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildAuthOptions, createPool } from "../src/auth.ts";
+import { buildAuthOptions, createAuth, createPool } from "../src/auth.ts";
 import { migrate } from "../src/migrate.ts";
 import {
   OAUTH_TOKEN_LIMITS,
   OAUTH_TOKEN_LOCK_KEY,
   serializedOAuthHandler,
 } from "../src/oauth-lock.ts";
-import { browserFlow, config, createService, json, token } from "./oauth-helpers.ts";
+import {
+  authorizeUrl,
+  browserFlow,
+  config,
+  createService,
+  json,
+  pkce,
+  post,
+  REDIRECT_URI,
+  token,
+} from "./oauth-helpers.ts";
 
 const databaseUrl = process.env.ARIAD_TEST_DATABASE_URL?.trim();
 if (process.env.ARIAD_TEST_REQUIRE_DATABASE === "1" && !databaseUrl) {
@@ -110,6 +120,98 @@ describe.skipIf(!databaseUrl)("PostgreSQL OAuth serialization across replicas", 
 
   const waiting = (key: string) => lockPid(key, false);
 
+  it("does not hold the token lock while a metadata lookup is slow", async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const lookupStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = createService(first, false, {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        started();
+        await gate;
+        return { status: 404, headers: {}, body: "" };
+      },
+    });
+    const id = "https://slow.example/client.json";
+    const { challenge } = pkce();
+    const authorization = service.app.request(
+      authorizeUrl(id, { code_challenge: challenge, code_challenge_method: "S256" }),
+    );
+    try {
+      await lookupStarted;
+      const response = await Promise.race([
+        token(service.app, {
+          grant_type: "authorization_code",
+          client_id: id,
+          code: "invalid",
+          code_verifier: "a".repeat(43),
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("token waited for metadata")), 1_000),
+        ),
+      ]);
+      expect(response.status).not.toBe(503);
+    } finally {
+      release();
+      await authorization;
+    }
+  });
+
+  it("rejects stale CIMD refresh grants without fetching metadata", async () => {
+    const id = "https://postgres-cimd.example/client.json";
+    let fetches = 0;
+    const cimd = {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        fetches++;
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            client_id: id,
+            redirect_uris: [REDIRECT_URI],
+            token_endpoint_auth_method: "none",
+            grant_types: ["authorization_code", "refresh_token"],
+          }),
+        };
+      },
+    } satisfies import("../src/cimd.ts").CimdFetcherOptions;
+    const service = createService(first, false, cimd);
+    const flow = await browserFlow(service.app, id);
+    const issued = await flow.issue();
+    backup("before-cimd-stale");
+    await observer.query(
+      `UPDATE auth."oauthClient" SET "updatedAt" = now() - interval '25 hours' WHERE "clientId" = $1`,
+      [id],
+    );
+    const priorFetches = fetches;
+    const handler = serializedOAuthHandler(
+      first,
+      service.auth.handler,
+      (database) => createAuth(buildAuthOptions(config, database, cimd)).handler,
+    );
+    const response = await handler(
+      new Request(`${config.baseUrl}/api/auth/oauth2/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: id,
+          refresh_token: issued.refresh_token as string,
+          resource: config.mcpResource,
+        }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await json(response)).toMatchObject({ error: "invalid_grant" });
+    expect(fetches).toBe(priorFetches);
+  });
+
   it("returns the identical refresh response to simultaneous retries on two replicas", async () => {
     const one = createService(first);
     const two = createService(second);
@@ -176,6 +278,67 @@ describe.skipIf(!databaseUrl)("PostgreSQL OAuth serialization across replicas", 
         [flow.clientId],
       );
       expect(remaining.rows[0].n).toBe(0);
+    },
+  );
+
+  it.each(["delete-consent", "delete-client"] as const)(
+    "serializes %s with refresh so no working refresh token survives without its consent",
+    async (endpoint) => {
+      const one = createService(first);
+      const two = createService(second);
+      const flow = await browserFlow(one.app);
+      const issued = await flow.issue();
+      const consentRow = await observer.query(
+        'SELECT id, "userId" FROM auth."oauthConsent" WHERE "clientId"=$1',
+        [flow.clientId],
+      );
+      const consentId = consentRow.rows[0].id as string;
+      const userId = consentRow.rows[0].userId as string;
+      await observer.query('UPDATE auth."oauthClient" SET "userId"=$1 WHERE "clientId"=$2', [
+        userId,
+        flow.clientId,
+      ]);
+
+      const gate = await observer.connect();
+      await gate.query("SELECT pg_advisory_lock($1)", [GATE]);
+      await observer.query("INSERT INTO auth.test_gate VALUES ('INSERT')");
+      let refreshing: Promise<Response> | undefined;
+      let revoking: Promise<Response> | undefined;
+      try {
+        refreshing = flow.refresh(issued.refresh_token as string);
+        await waiting(GATE);
+        revoking = Promise.resolve(
+          post(
+            two.app,
+            `/api/auth/oauth2/${endpoint}`,
+            endpoint === "delete-consent" ? { id: consentId } : { client_id: flow.clientId },
+            flow.jar.header(),
+          ),
+        );
+        await waiting(OAUTH_TOKEN_LOCK_KEY);
+      } finally {
+        await observer.query("DELETE FROM auth.test_gate");
+        await gate.query("SELECT pg_advisory_unlock($1)", [GATE]);
+        gate.release();
+      }
+      const [refreshRes, revokeRes] = await Promise.all([
+        refreshing as Promise<Response>,
+        revoking as Promise<Response>,
+      ]);
+      expect(refreshRes.status).toBe(200);
+      expect(revokeRes.status).toBe(200);
+      const rotated = (await json(refreshRes)).refresh_token as string;
+      expect((await flow.refresh(rotated)).status).toBe(400);
+      const consents = await observer.query(
+        'SELECT count(*)::int AS n FROM auth."oauthConsent" WHERE "clientId"=$1',
+        [flow.clientId],
+      );
+      expect(consents.rows[0].n).toBe(0);
+      const refreshTokens = await observer.query(
+        'SELECT count(*)::int AS n FROM auth."oauthRefreshToken" WHERE "clientId"=$1',
+        [flow.clientId],
+      );
+      expect(refreshTokens.rows[0].n).toBe(0);
     },
   );
 

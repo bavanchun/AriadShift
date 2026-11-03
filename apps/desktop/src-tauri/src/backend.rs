@@ -717,12 +717,14 @@ mod tests {
             .collect();
         let jobs = app.backend.enqueue(request(paths)).unwrap();
         let last = jobs.last().unwrap();
-        app.backend
-            .cancel(IdRequest {
-                id: last.id.clone(),
-            })
-            .unwrap();
-        let done = wait(&app.backend, 100);
+        for job in jobs.iter().skip(1).rev() {
+            app.backend
+                .cancel(IdRequest { id: job.id.clone() })
+                .unwrap();
+        }
+        let snap = app.backend.snapshot(Empty {}).unwrap();
+        assert_eq!(snap.jobs.last().unwrap().status, JobStatus::Cancelled);
+        let done = wait(&app.backend, jobs.len());
         assert_eq!(done.last().unwrap().status, JobStatus::Cancelled);
         assert!(!Path::new(&last.output).exists());
     }

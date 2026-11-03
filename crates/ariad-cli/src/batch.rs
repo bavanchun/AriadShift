@@ -42,6 +42,13 @@ struct BatchError {
 }
 
 pub(crate) fn run(args: ConvertArgs) -> ExitCode {
+    let Some(target_format) = args.target_format else {
+        let _ = writeln!(
+            io::stderr(),
+            "ashift: with several inputs, --to <FORMAT> is required"
+        );
+        return ExitCode::from(2);
+    };
     if let Some(directory) = &args.output
         && !directory.is_dir()
     {
@@ -51,7 +58,7 @@ pub(crate) fn run(args: ConvertArgs) -> ExitCode {
         );
         return ExitCode::from(2);
     }
-    let extension = target_extension(&args.target_format).to_owned();
+    let extension = target_extension(&target_format).to_owned();
     let outputs: Vec<PathBuf> = args
         .inputs
         .iter()
@@ -86,7 +93,7 @@ pub(crate) fn run(args: ConvertArgs) -> ExitCode {
         .map(|(input, output)| ConvertRequest {
             input: input.clone(),
             output,
-            target_format: args.target_format.clone(),
+            target_format: target_format.clone(),
             profile: args.profile.into(),
             overwrite: args.overwrite,
             engine_program: engine_program.clone(),

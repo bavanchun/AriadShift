@@ -17,6 +17,12 @@ pub const MIN_SECRET_BYTES: usize = 32;
 /// Default fleet ceiling, configured independently of worker concurrency.
 pub const DEFAULT_GLOBAL_ACTIVE_JOBS: u32 = 64;
 
+/// Default minimum average rate for local signed blob transfers (1 MiB/s).
+pub const DEFAULT_BLOB_MIN_RATE_BPS: u64 = 1024 * 1024;
+
+/// Hard maximum duration for a single local signed blob transfer (2 hours).
+pub const MAX_BLOB_TRANSFER_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
+
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
     #[error("{0} is required")]
@@ -154,6 +160,15 @@ pub enum StorageConfig {
     },
     /// A local directory. The API signs and serves object URLs itself.
     Local { root: PathBuf },
+}
+
+fn parse_blob_min_rate_bps(env: &Env) -> Result<u64, ConfigError> {
+    const NAME: &str = "ARIAD_BLOB_MIN_RATE_BPS";
+    let rate: u64 = env.parse_or(NAME, DEFAULT_BLOB_MIN_RATE_BPS)?;
+    if rate == 0 {
+        return Err(invalid(NAME, "must be greater than zero"));
+    }
+    Ok(rate)
 }
 
 impl StorageConfig {
@@ -363,6 +378,8 @@ pub struct ApiConfig {
     pub sweep_batch: i64,
     /// Fleet-wide queued plus running ceiling, shared by REST and MCP.
     pub global_active_jobs: u32,
+    /// Minimum average transfer rate (bytes/s) for size-aware local blob deadlines.
+    pub blob_min_rate_bps: u64,
     pub storage: StorageConfig,
 }
 
@@ -376,6 +393,7 @@ impl ApiConfig {
                 format!("must be at least {MIN_SECRET_BYTES} bytes"),
             ));
         }
+        let blob_min_rate_bps = parse_blob_min_rate_bps(env)?;
         let storage = StorageConfig::from_env(env)?;
         let public_url = match env.get("ARIAD_PUBLIC_URL") {
             Some(raw) => {
@@ -415,6 +433,7 @@ impl ApiConfig {
             sweep_interval: env.secs_or("ARIAD_SWEEP_INTERVAL_S", 60)?,
             sweep_batch,
             global_active_jobs,
+            blob_min_rate_bps,
             storage,
         })
     }
@@ -553,6 +572,7 @@ mod tests {
         assert!(config.auth.anonymous);
         assert_eq!(config.auth.api_key_config_ids, vec!["default".to_owned()]);
         assert_eq!(config.request_timeout, Duration::from_secs(30));
+        assert_eq!(config.blob_min_rate_bps, DEFAULT_BLOB_MIN_RATE_BPS);
         match config.storage {
             StorageConfig::S3 { bucket, prefix, .. } => {
                 assert_eq!(bucket, "bucket");
@@ -656,6 +676,24 @@ mod tests {
     fn boolean_values_are_strict() {
         let pairs = with(base(), "ARIAD_ANONYMOUS", "maybe");
         assert!(ApiConfig::from_env(&Env::from_pairs(pairs)).is_err());
+    }
+
+    #[test]
+    fn blob_min_rate_requires_a_positive_integer() {
+        for bad in ["0", "-1", "not-a-number"] {
+            let pairs = with(base(), "ARIAD_BLOB_MIN_RATE_BPS", bad);
+            let err = ApiConfig::from_env(&Env::from_pairs(pairs)).expect_err(bad);
+            assert!(matches!(
+                err,
+                ConfigError::Invalid {
+                    name: "ARIAD_BLOB_MIN_RATE_BPS",
+                    ..
+                }
+            ));
+        }
+        let pairs = with(base(), "ARIAD_BLOB_MIN_RATE_BPS", "524288");
+        let config = ApiConfig::from_env(&Env::from_pairs(pairs)).expect("valid rate");
+        assert_eq!(config.blob_min_rate_bps, 524_288);
     }
 }
 

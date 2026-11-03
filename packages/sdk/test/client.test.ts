@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AriadApiError, createAriadClient, sha256Hex } from "../src/index";
+import {
+  AriadApiError,
+  createAriadClient,
+  DownloadIntegrityError,
+  type DownloadStreamTarget,
+  sha256Hex,
+} from "../src/index";
 import {
   apiError,
   BASE_URL,
@@ -7,6 +13,7 @@ import {
   jobBody,
   json,
   mockFetch,
+  streamOf,
   UPLOAD_ID,
   uploadBody,
 } from "./mock-fetch";
@@ -303,6 +310,88 @@ describe("download", () => {
       status: 403,
       code: "forbidden",
     });
+  });
+
+  it("streams a multi-chunk body with incremental SHA-256 and closes the target", async () => {
+    const mock = mockFetch(() => new Response(streamOf("he", "ll", "o")));
+    const client = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch });
+    const chunks: Uint8Array[] = [];
+    const progress: Array<[number, number]> = [];
+    let closed = false;
+    let aborted = false;
+    const target: DownloadStreamTarget = {
+      write(chunk) {
+        chunks.push(chunk.slice());
+      },
+      close() {
+        closed = true;
+      },
+      abort() {
+        aborted = true;
+      },
+    };
+
+    await client.downloadToStream(output, target, {
+      onProgress: (done, total) => progress.push([done, total]),
+    });
+
+    const combined = new Uint8Array(chunks.reduce((sum, item) => sum + item.byteLength, 0));
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    expect(new TextDecoder().decode(combined)).toBe("hello");
+    expect(await sha256Hex(combined)).toBe(HELLO_SHA256);
+    expect(progress).toEqual([
+      [2, 5],
+      [4, 5],
+      [5, 5],
+    ]);
+    expect(closed).toBe(true);
+    expect(aborted).toBe(false);
+  });
+
+  it("aborts the stream target and throws DownloadIntegrityError on a corrupted chunk", async () => {
+    const mock = mockFetch(
+      () => new Response(streamOf("je", "ll", "o")),
+      () => new Response(streamOf("he", "ll")),
+      () => new Response(streamOf("he", "ll", "o!")),
+    );
+    const client = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch });
+
+    for (const expectedReason of [
+      "download_hash_mismatch",
+      "download_size_mismatch",
+      "download_size_mismatch",
+    ] as const) {
+      let saved: Uint8Array | null = new Uint8Array(0);
+      let closed = false;
+      let abortedWith: unknown;
+      const target: DownloadStreamTarget = {
+        write(chunk) {
+          saved = chunk.slice();
+        },
+        close() {
+          closed = true;
+        },
+        abort(reason) {
+          abortedWith = reason;
+          saved = null;
+        },
+      };
+
+      const error = await client.downloadToStream(output, target).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(DownloadIntegrityError);
+      expect(error).toBeInstanceOf(AriadApiError);
+      expect(error).toMatchObject({
+        code: "download_failed",
+        reason: expectedReason,
+      });
+      expect(closed).toBe(false);
+      expect(abortedWith).toBe(error);
+      expect(saved).toBeNull();
+    }
   });
 });
 

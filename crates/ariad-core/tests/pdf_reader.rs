@@ -713,3 +713,23 @@ fn font_transform_geometry_survives_json_round_trips() {
     let output = pdf::read(bytes, &Limits::local()).unwrap();
     assert_well_formed(&output);
 }
+
+#[test]
+fn broken_xref_is_rejected_by_converter_and_flagged_by_bounded_loader() {
+    let broken = fixture("pdf-tools/broken-xref.pdf");
+    assert_eq!(
+        pdf::read(&broken, &Limits::local()).err(),
+        Some(ReadError::Malformed)
+    );
+
+    let loaded = pdf::load_bounded(&broken, &Limits::local())
+        .expect("load_bounded repairs repairable cross-reference table");
+    assert!(loaded.repaired_xref);
+    assert_eq!(loaded.document.page_iter().count(), 1);
+
+    let well_formed = fixture("pdf-tools/multipage-20.pdf");
+    let clean = pdf::load_bounded(&well_formed, &Limits::local())
+        .expect("load_bounded opens well-formed PDF strictly");
+    assert!(!clean.repaired_xref);
+    assert_eq!(clean.document.page_iter().count(), 20);
+}

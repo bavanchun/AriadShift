@@ -40,8 +40,8 @@ wasm-bindgen-tool:
 # Builds the browser module into packages/ariad-wasm/pkg (not committed).
 wasm-build: wasm-bindgen-tool
     cargo build -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown --profile wasm-release
-    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
-    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg target/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm"
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm"
 
 test:
     cargo nextest run --workspace --features ariad-host/test-probe
@@ -242,6 +242,12 @@ test-server:
             | grep -q 'created bucket' && break
         sleep 1
     done
+    if ! docker exec "$s3" sh -c 'echo "s3.bucket.list" | weed shell' 2>/dev/null \
+        | grep -Eq '(^|[[:space:]>])ariad-test([[:space:]]|$)'; then
+        docker logs "$s3" >&2
+        echo "test SeaweedFS did not become ready within 60 seconds" >&2
+        exit 1
+    fi
     cargo build -p ariad-cli --bin ashift
     ARIAD_TEST_DATABASE_URL=postgres://postgres:ariad@127.0.0.1:55442/postgres \
     ARIAD_TEST_REQUIRE_DATABASE=1 \
@@ -306,6 +312,31 @@ pack-docling-verify out="target/pack-docling" input="fixtures/scan/vi-garden-300
 pack-docling-test out="target/pack-docling":
     uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance --out "{{out}}"
 
+# Build the unsigned pdfium engine pack for this host into target/packs/pdfium, an unpacked
+# development pack: `export ASHIFT_PACK_PDFIUM=$PWD/target/packs/pdfium`. The components go to
+# target/packs/pdfium-dist. Downloads the pinned PDFium archive unless PDFIUM_ARCHIVE names a copy.
+pack-pdfium out="target/packs/pdfium":
+    cargo build -p ariad-pdfium-engine -p ariad-cli --bin ariad-pdfium-engine --bin ashift
+    bash engines/pdfium/pack/make.sh dev --engine "{{justfile_directory()}}/target/debug/ariad-pdfium-engine" --ashift "{{justfile_directory()}}/target/debug/ashift" --out "{{out}}-dist" --unpack-dir "{{out}}"
+    bash engines/pdfium/pack/make.sh verify --pack "{{out}}"
+
+# Check the layout, manifest and notices of the pack that `just pack-pdfium` built.
+pack-pdfium-verify out="target/packs/pdfium":
+    bash engines/pdfium/pack/make.sh verify --pack "{{out}}"
+
+# Assemble and check an unsigned qpdf development pack for this host.
+pack-qpdf qpdf_dir out="target/packs/qpdf":
+    cargo build -p ariad-cli --bin ashift
+    bash engines/qpdf/pack/make.sh dev "{{qpdf_dir}}" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
+    bash engines/qpdf/pack/make.sh verify "{{out}}"
+
+pack-qpdf-verify out="target/packs/qpdf":
+    bash engines/qpdf/pack/make.sh verify "{{out}}"
+
+# Test the shared pack builder, the pdfium wrapper and the signing guard (offline).
+pack-tooling-test:
+    bash scripts/pack/test-pack-tooling.sh
+
 # Run fuzz targets on Linux (default: all targets, 60 s each)
 [linux]
 fuzz target="" seconds="60":
@@ -325,7 +356,7 @@ fuzz target="" seconds="60":
         mkdir -p "fuzz/corpus/$t"
         build_options=()
         case "$t" in
-            pdf_reader) build_options=(--dev --features pdf-reader) ;;
+            pdf_reader|pdf_open_bounded|pdf_tools_structural) build_options=(--dev --features pdf-reader) ;;
             typst_writer) build_options=(--dev --features typst-writer) ;;
         esac
         cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048

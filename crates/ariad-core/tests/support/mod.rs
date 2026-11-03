@@ -3,11 +3,16 @@ use std::path::PathBuf;
 use schemars::generate::SchemaSettings;
 use serde_json::json;
 
-use ariad_core::{ir::Document, protocol::Message};
+use ariad_core::{
+    ir::Document,
+    protocol::{Message, v2::MessageV2},
+};
 
 pub const IR_SCHEMA_ID: &str = "https://ariadshift.ariadnev.com/schemas/ir.v1.json";
 pub const ENGINE_PROTOCOL_SCHEMA_ID: &str =
     "https://ariadshift.ariadnev.com/schemas/engine-protocol.v1.json";
+pub const ENGINE_PROTOCOL_V2_SCHEMA_ID: &str =
+    "https://ariadshift.ariadnev.com/schemas/engine-protocol.v2.json";
 pub const CAPABILITIES_SCHEMA_ID: &str =
     "https://ariadshift.ariadnev.com/schemas/capabilities.v0.json";
 
@@ -26,6 +31,11 @@ pub fn ir_schema_path() -> PathBuf {
 #[allow(dead_code)]
 pub fn engine_protocol_schema_path() -> PathBuf {
     repository_root().join("schemas/engine-protocol.v1.json")
+}
+
+#[allow(dead_code)]
+pub fn engine_protocol_v2_schema_path() -> PathBuf {
+    repository_root().join("schemas/engine-protocol.v2.json")
 }
 
 #[allow(dead_code)]
@@ -60,6 +70,21 @@ pub fn generated_engine_protocol_schema() -> String {
         .expect("engine protocol schema is an object");
     object.insert("$id".to_owned(), json!(ENGINE_PROTOCOL_SCHEMA_ID));
     object.insert("x-status".to_owned(), json!("final"));
+    let mut contents = serde_json::to_string_pretty(&schema).expect("schema serializes to JSON");
+    contents.push('\n');
+    contents
+}
+
+#[allow(dead_code)]
+pub fn generated_engine_protocol_v2_schema() -> String {
+    let mut schema = SchemaSettings::draft2020_12()
+        .into_generator()
+        .into_root_schema_for::<MessageV2>();
+    let object = schema
+        .as_object_mut()
+        .expect("engine protocol v2 schema is an object");
+    object.insert("$id".to_owned(), json!(ENGINE_PROTOCOL_V2_SCHEMA_ID));
+    object.insert("x-status".to_owned(), json!("draft"));
     let mut contents = serde_json::to_string_pretty(&schema).expect("schema serializes to JSON");
     contents.push('\n');
     contents

@@ -1,0 +1,18 @@
+---
+source: crates/ariad-pdf/tests/portfolio.rs
+expression: value
+---
+[
+  {
+    "media_type": "application/pdf",
+    "name": "annotations.pdf",
+    "sha256": "5409773dd5dabf9a0992fe234ff1783d8d5836f295b9e6427f9685a4776f416f",
+    "size": 1911
+  },
+  {
+    "media_type": "application/pdf",
+    "name": "rotated-pages.pdf",
+    "sha256": "73f1e7e2e19cd160134331eda1c894702ae9eb39a10b44f14f89d71a2c6b5509",
+    "size": 2055
+  }
+]

@@ -76,4 +76,31 @@ executable = true
     let instance = serde_json::to_value(&manifest).expect("manifest to JSON");
     let validator = jsonschema::validator_for(&schema).expect("compile schema");
     assert!(validator.is_valid(&instance));
+
+    let with_executables = ariad_host::packs::Manifest::parse(
+        r#"
+schema = "ariad-pack/1"
+name = "sample"
+version = "1.0.0"
+license = "MIT"
+requires_ashift = ">=0.1.0"
+
+[[targets]]
+triple = "x86_64-unknown-linux-gnu"
+entrypoint = ["bin/engine"]
+executables = ["bin/engine", "bin/helper"]
+
+[[targets.components]]
+name = "runtime"
+url = "runtime.tar.zst"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+size = 100
+unpack = "tar.zst"
+unpacked_size = 200
+entries = 3
+"#,
+    )
+    .expect("parse manifest with executables");
+    let exec_instance = serde_json::to_value(&with_executables).expect("manifest to JSON");
+    assert!(validator.is_valid(&exec_instance));
 }

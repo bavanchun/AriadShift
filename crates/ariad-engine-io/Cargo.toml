@@ -1,0 +1,26 @@
+[package]
+name = "ariad-engine-io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared NDJSON engine protocol helpers and path validation for AriadShift engines"
+readme = "../../README.md"
+keywords = ["document-conversion", "pdf", "protocol", "ndjson", "sandbox"]
+categories = ["text-processing", "command-line-utilities"]
+publish = true
+
+[dependencies]
+ariad-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true

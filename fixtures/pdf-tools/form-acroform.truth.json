@@ -1,0 +1,180 @@
+{
+  "version": "ariad-truth/0",
+  "id": "form-acroform",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 1,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "AcroForm Interactive Registration Sheet",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": true,
+  "field_names": [
+    "full_name",
+    "subscribe_news",
+    "delivery_mode",
+    "department",
+    "approver_signature"
+  ],
+  "form_fields": [
+    {
+      "name": "full_name",
+      "type": "text",
+      "value": "",
+      "page": 1,
+      "rect": [
+        180,
+        706,
+        440,
+        730
+      ]
+    },
+    {
+      "name": "subscribe_news",
+      "type": "checkbox",
+      "value": "Off",
+      "page": 1,
+      "rect": [
+        180,
+        664,
+        198,
+        682
+      ]
+    },
+    {
+      "name": "delivery_mode",
+      "type": "radio",
+      "value": "standard",
+      "options": [
+        "standard",
+        "express"
+      ],
+      "page": 1,
+      "rects": [
+        [
+          180,
+          622,
+          198,
+          640
+        ],
+        [
+          260,
+          622,
+          278,
+          640
+        ]
+      ]
+    },
+    {
+      "name": "department",
+      "type": "combo",
+      "value": "Cartography",
+      "options": [
+        "Archive",
+        "Cartography",
+        "Conservation"
+      ],
+      "page": 1,
+      "rect": [
+        180,
+        578,
+        360,
+        602
+      ]
+    },
+    {
+      "name": "approver_signature",
+      "type": "signature",
+      "value": null,
+      "signed": false,
+      "page": 1,
+      "rect": [
+        180,
+        514,
+        400,
+        558
+      ]
+    }
+  ],
+  "has_annotations": true,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 1,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "AcroForm Interactive Registration Sheet",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": true,
+    "has_annotations": true,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "AcroForm Interactive Registration Sheet\nFull Name:\nSubscribe to bulletin:\nDelivery mode:\nDepartment:\nApprover signature:",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  }
+}

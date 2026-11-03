@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "PDFium engine pack: render, thumbnails, images, text with positions, blank/whitespace detection"
-status: pending
+status: completed
 priority: P1
 effort: "6 tasks, ~8-10 worker-days"
 dependencies: [2]
