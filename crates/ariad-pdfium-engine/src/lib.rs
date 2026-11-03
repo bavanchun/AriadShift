@@ -17,6 +17,7 @@ pub mod detect_scanned;
 pub mod dispatch;
 mod execution_budget;
 pub mod extract_images;
+pub mod forms_detect;
 pub mod library;
 pub mod output;
 pub mod render;
