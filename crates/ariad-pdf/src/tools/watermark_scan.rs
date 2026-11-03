@@ -28,6 +28,12 @@ const MAX_MARK_DEPTH: usize = 128;
 const MAX_GROUP_COMPARISONS: usize = 2_000_000;
 const MAX_CANDIDATES: usize = 10_000;
 
+#[derive(Default)]
+pub(super) struct ScanWork {
+    form_visits: usize,
+    comparisons: usize,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Matrix([f64; 6]);
 impl Matrix {
@@ -436,7 +442,7 @@ struct Scanner<'a> {
     budget: &'a mut DecodeBudget,
     decoder: PdfTextDecoder<'a>,
     active_forms: HashSet<ObjectId>,
-    form_visits: &'a mut usize,
+    work: &'a mut ScanWork,
     drawables: Vec<Drawable>,
     image_cache: HashMap<ObjectId, Option<Vec<u8>>>,
     unsupported_images: usize,
@@ -919,8 +925,8 @@ impl<'a> Scanner<'a> {
                             }
                         }
                         if subtype == b"Form" {
-                            *self.form_visits += 1;
-                            if *self.form_visits > MAX_FORM_VISITS {
+                            self.work.form_visits += 1;
+                            if self.work.form_visits > MAX_FORM_VISITS {
                                 return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
                                     limit: MAX_FORM_VISITS,
                                 }));
@@ -1313,19 +1319,21 @@ fn repeated_groups(
     selected_count: usize,
     ratio: f32,
     ctx: &ToolCtx,
+    work: &mut ScanWork,
+    budget: &mut DecodeBudget,
 ) -> Result<Vec<Vec<Drawable>>, PdfError> {
     type Clusters = BTreeMap<(Vec<u8>, [u8; 32]), Vec<Vec<Drawable>>>;
     let mut keyed: Clusters = BTreeMap::new();
-    let mut comparisons = 0_usize;
-    for item in items {
+    for (index, item) in items.into_iter().enumerate() {
         let clusters = keyed.entry((item.key.clone(), item.context)).or_default();
-        comparisons = comparisons.saturating_add(clusters.len());
-        if comparisons > MAX_GROUP_COMPARISONS {
+        work.comparisons = work.comparisons.saturating_add(clusters.len());
+        budget.charge(clusters.len().saturating_mul(8))?;
+        if work.comparisons > MAX_GROUP_COMPARISONS {
             return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
                 limit: MAX_GROUP_COMPARISONS,
             }));
         }
-        if comparisons.is_multiple_of(1024) {
+        if index.is_multiple_of(1024) {
             ctx.check()?;
         }
         if let Some(cluster) = clusters
@@ -1359,7 +1367,7 @@ pub(super) fn scan(
     ctx: &ToolCtx,
 ) -> Result<Detection, PdfError> {
     let mut budget = pdf.decode_budget();
-    let mut form_visits = 0;
+    let mut work = ScanWork::default();
     scan_with_budget(
         pdf,
         input_hash,
@@ -1368,7 +1376,7 @@ pub(super) fn scan(
         limits,
         ctx,
         &mut budget,
-        &mut form_visits,
+        &mut work,
     )
 }
 
@@ -1382,7 +1390,7 @@ pub(super) fn scan_with_budget(
     limits: &Limits,
     ctx: &ToolCtx,
     budget: &mut DecodeBudget,
-    form_visits: &mut usize,
+    work: &mut ScanWork,
 ) -> Result<Detection, PdfError> {
     params
         .validate()
@@ -1398,7 +1406,7 @@ pub(super) fn scan_with_budget(
         budget,
         decoder: PdfTextDecoder::new(doc, input_len, limits),
         active_forms: HashSet::new(),
-        form_visits,
+        work,
         drawables: Vec::new(),
         image_cache: HashMap::new(),
         unsupported_images: 0,
@@ -1526,7 +1534,14 @@ pub(super) fn scan_with_budget(
                 .push(drawable),
         }
     }
-    let mut xobject_groups = repeated_groups(xobjects, selected.len(), params.min_page_ratio, ctx)?;
+    let mut xobject_groups = repeated_groups(
+        xobjects,
+        selected.len(),
+        params.min_page_ratio,
+        ctx,
+        scanner.work,
+        scanner.budget,
+    )?;
     let parent_paths: HashSet<_> = xobject_groups
         .iter()
         .flatten()
@@ -1567,6 +1582,8 @@ pub(super) fn scan_with_budget(
         selected.len(),
         params.min_page_ratio,
         ctx,
+        scanner.work,
+        scanner.budget,
     )?);
     if groups.len() > MAX_CANDIDATES {
         return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
@@ -1606,6 +1623,42 @@ pub(super) fn scan_with_budget(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grouping_comparison_limit_is_shared_between_scans() {
+        let drawable = Drawable {
+            kind: "repeated_text",
+            key: b"same".to_vec(),
+            context: [0; 32],
+            occurrence: Occurrence {
+                page: 1,
+                stream: (1, 0),
+                slot: 0,
+                path: vec![],
+                start: 0,
+                end: 1,
+                annotation: None,
+                own_stream: false,
+                ambiguous: false,
+            },
+            bbox: [0.0, 0.0, 10.0, 10.0],
+            ctm: Matrix::IDENTITY,
+            alpha: 1.0,
+            size: 10.0,
+            label: None,
+        };
+        let mut work = ScanWork {
+            comparisons: MAX_GROUP_COMPARISONS - 1,
+            ..ScanWork::default()
+        };
+        let mut budget = DecodeBudget::from_limits(1024, &Limits::local());
+        let items = || vec![drawable.clone(), drawable.clone()];
+        repeated_groups(items(), 1, 0.5, &ToolCtx::new(), &mut work, &mut budget).unwrap();
+        assert!(matches!(
+            repeated_groups(items(), 1, 0.5, &ToolCtx::new(), &mut work, &mut budget),
+            Err(PdfError::LimitExceeded(ReadError::TooManyObjects { .. }))
+        ));
+    }
     #[test]
     fn detects_corpus_watermark_kinds() {
         for (name, kind) in [

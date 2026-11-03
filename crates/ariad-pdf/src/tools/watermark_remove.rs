@@ -528,7 +528,7 @@ pub fn run_inputs(
     }
     let mut found: BTreeMap<String, Candidate> = BTreeMap::new();
     let mut budget = original.decode_budget();
-    let mut form_visits = 0;
+    let mut scan_work = watermark_scan::ScanWork::default();
     for query in queries.values() {
         ctx.check()?;
         let detection = watermark_scan::scan_with_budget(
@@ -539,7 +539,7 @@ pub fn run_inputs(
             &inputs[0].limits,
             ctx,
             &mut budget,
-            &mut form_visits,
+            &mut scan_work,
         )?;
         for candidate in detection.candidates {
             found.insert(candidate.id.clone(), candidate);
