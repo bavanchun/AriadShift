@@ -109,7 +109,9 @@ jobs:
           ARIAD_TEST_PDFIUM_PACK: ${{ runner.temp }}/pdfium-pack
           ARIAD_TEST_PDFIUM_DIR: ${{ runner.temp }}/pdfium-pack/bin
         run: |
-          cargo test --locked -p ariad-host --features test-probe --lib
+          for filter in engines::tesseract packs::languages packs::install::sweep_tests tools::ocr; do
+            cargo test --locked -p ariad-host --features test-probe --lib "$filter"
+          done
           cargo test --locked -p ariad-host --features test-probe --test tesseract_adapter --test ocr_pipeline
           cargo test --locked -p ariad-pdfium-engine --test scan_tools --test scan_render
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
