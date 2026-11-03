@@ -38,6 +38,26 @@ fn pdf_fixture(name: &str) -> PathBuf {
     repository_root().join("fixtures/pdf-tools").join(name)
 }
 
+#[test]
+fn page_numbers_format_is_a_template_not_an_output_extension() {
+    let tmp = TempDir::new().unwrap();
+    let output = tmp.path().join("numbered.pdf");
+    let result = ashift_cmd()
+        .args(["tool", "pdf.page_numbers"])
+        .arg(pdf_fixture("mixed-sizes.pdf"))
+        .arg("-o")
+        .arg(&output)
+        .args(["--param", "format=Page {n}/{total}", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(output.is_file());
+}
+
 fn read_truth_pdf_info(stem: &str) -> Value {
     let truth_path = pdf_fixture(&format!("{stem}.truth.json"));
     let raw = fs::read_to_string(&truth_path).expect("read truth file");
