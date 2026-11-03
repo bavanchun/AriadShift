@@ -1,4 +1,8 @@
 {
+  "version": "ariad-truth/0",
+  "id": "scan-photos-3",
+  "unscored": true,
+  "unscored_reason": "PDF scan tools test corpus fixture (routes = [])",
   "count": 3,
   "regions": [
     {

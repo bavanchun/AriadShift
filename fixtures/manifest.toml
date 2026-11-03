@@ -4578,7 +4578,7 @@ pages = 1
 tags = ["scan"]
 phase = "7"
 routes = []
-companions = [{ path = "fixtures/pdf-tools/scan-photos-3.truth.json", sha256 = "5d3cacacc793cadd015c82de1d7033324aac9a21ee243ce784cb6d8d10ff6d1f" }]
+companions = [{ path = "fixtures/pdf-tools/scan-photos-3.truth.json", sha256 = "26d6888c0cb04b975dcbf293d1c39bd8ea6da34390ff42511ca0b6e7a864506d" }]
 
 [[fixture]]
 id = "scan-rotated-90-vi"
@@ -4597,7 +4597,7 @@ pages = 1
 tags = ["scan"]
 phase = "7"
 routes = []
-companions = [{ path = "fixtures/pdf-tools/scan-rotated-90-vi.truth.json", sha256 = "4dbc14a945c410a8dc6deda06d35b1cf85114392ee54f748d5eca92a46d872cb" }]
+companions = [{ path = "fixtures/pdf-tools/scan-rotated-90-vi.truth.json", sha256 = "86c02f323456334d55c3e26bd04800a505f5395d9c0c6a00100f538014cd97c6" }]
 
 [[fixture]]
 id = "scan-mixed-text-vi"
@@ -4616,7 +4616,7 @@ pages = 3
 tags = ["scan"]
 phase = "7"
 routes = []
-companions = [{ path = "fixtures/pdf-tools/scan-mixed-text-vi.truth.json", sha256 = "5737ab8f799fa670d5d224f778965b4d24cb29893bc7d69387dc892e1bd54d71" }]
+companions = [{ path = "fixtures/pdf-tools/scan-mixed-text-vi.truth.json", sha256 = "84738d39ab25610cd0716a047aaa31ebf59a484cdd692e580033d17da86ac60a" }]
 
 [[fixture]]
 id = "scan-dirty-vi"
@@ -4635,7 +4635,7 @@ pages = 1
 tags = ["scan"]
 phase = "7"
 routes = []
-companions = [{ path = "fixtures/pdf-tools/scan-dirty-vi.truth.json", sha256 = "d04edd71195f8ee36c46c31e24afde402a59e2732daa7138ac5400e5114e14d3" }]
+companions = [{ path = "fixtures/pdf-tools/scan-dirty-vi.truth.json", sha256 = "9e95da22f619595b6f74190a6a5d786a7c4881d7a9d1c9fa943ea73e8081d35d" }]
 
 [[fixture]]
 id = "invalid-name-escape-pdf"

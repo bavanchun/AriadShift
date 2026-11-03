@@ -73,7 +73,14 @@ def main() -> None:
         if len(pdf) >= 600_000:
             raise ValueError(f'{name} exceeds 600 KB: {len(pdf)}')
         (OUT / f'{name}.pdf').write_bytes(pdf)
-        (OUT / f'{name}.truth.json').write_text(json.dumps(truth, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        companion = {
+            'version': 'ariad-truth/0',
+            'id': name,
+            'unscored': True,
+            'unscored_reason': 'PDF scan tools test corpus fixture (routes = [])',
+            **truth,
+        }
+        (OUT / f'{name}.truth.json').write_text(json.dumps(companion, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
         print(name, len(pdf), hashlib.sha256(pdf).hexdigest())
 
 

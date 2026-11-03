@@ -1,3 +1,7 @@
 {
+  "version": "ariad-truth/0",
+  "id": "scan-rotated-90-vi",
+  "unscored": true,
+  "unscored_reason": "PDF scan tools test corpus fixture (routes = [])",
   "correction_cw": 270
 }
