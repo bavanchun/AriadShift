@@ -107,6 +107,11 @@ jobs:
           RANGE: ${{ needs.scope.outputs.range }}
         run: just lint-commits "$RANGE"
 
+      - name: Check PDF codec feature variants
+        run: |
+          cargo check --locked -p ariad-pdf --no-default-features
+          cargo check --locked -p ariad-pdf --no-default-features --features codecs
+
       - name: Run static checks
         env:
           GH_TOKEN: ${{ github.token }}
