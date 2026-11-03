@@ -21,9 +21,14 @@ fn root() -> PathBuf {
         .into()
 }
 fn library() -> Option<PathBuf> {
-    std::env::var_os("ARIAD_TEST_PDFIUM_DIR")
+    let library = std::env::var_os("ARIAD_TEST_PDFIUM_DIR")
         .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
+        .map(PathBuf::from);
+    assert!(
+        library.is_some() || std::env::var_os("ARIAD_REQUIRE_PDFIUM_PACK").is_none(),
+        "ARIAD_TEST_PDFIUM_DIR is required"
+    );
+    library
 }
 fn run(fixture: &str, mode: FormsDetectMode, lib: &Path) -> Value {
     let workspace = tempfile::tempdir().unwrap();

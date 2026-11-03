@@ -23,9 +23,14 @@ use serde_json::json;
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
 fn library() -> Option<PathBuf> {
-    std::env::var_os("ARIAD_TEST_PDFIUM_DIR")
+    let library = std::env::var_os("ARIAD_TEST_PDFIUM_DIR")
         .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+        .map(PathBuf::from);
+    assert!(
+        library.is_some() || std::env::var_os("ARIAD_REQUIRE_PDFIUM_PACK").is_none(),
+        "ARIAD_TEST_PDFIUM_DIR is required"
+    );
+    library
 }
 fn render_page(bytes: &[u8], library: &std::path::Path) -> RgbaImage {
     let temp = tempfile::tempdir().unwrap();

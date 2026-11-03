@@ -149,6 +149,13 @@ jobs:
           ARIAD_TEST_PDFIUM_DIR: ${{ env.PACK_DEV }}/bin
         run: cargo test --locked -p ariad-pdfium-engine --test render golden_renders_match_embedded_font_document_pages_1_and_2
 
+      - name: Verify form detection and flattening renders
+        if: matrix.slug == 'mac-arm64'
+        env:
+          ARIAD_TEST_PDFIUM_DIR: ${{ env.PACK_DEV }}/bin
+          ARIAD_REQUIRE_PDFIUM_PACK: '1'
+        run: cargo test --locked -p ariad-pdfium-engine --test forms_detect --test forms_render
+
       # The engine must find libpdfium next to itself and answer a describe request.
       - name: Smoke test the engine on the runner
         if: "!matrix.musl"
