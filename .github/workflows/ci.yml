@@ -462,13 +462,13 @@ jobs:
 
       - name: Run fuzz targets
         run: |
-          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned"
+          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned"
           for t in $targets; do
             echo "=== Running fuzz target: $t ==="
             mkdir -p "fuzz/corpus/$t"
             build_options=()
             case "$t" in
-              pdf_reader|pdf_draw_params) build_options=(--dev --features pdf-reader) ;;
+              pdf_reader|pdf_draw_params|pdf_form_interchange|pdf_form_structure) build_options=(--dev --features pdf-reader) ;;
               typst_writer) build_options=(--dev --features typst-writer) ;;
             esac
             cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048

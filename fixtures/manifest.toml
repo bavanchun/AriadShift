@@ -5522,6 +5522,76 @@ phase = "8"
 routes = []
 companions = [{ path = "fixtures/pdf-forms/annotations-all-types.truth.json", sha256 = "d44971b7fcff8663602145c2345cf0d4803c03a1ec63b9c87e214ffb4314d9d7" }]
 
+[[fuzz_seed]]
+id = "fuzz-pdf-form-interchange-fdf"
+target = "pdf_form_interchange"
+path = "fuzz/seeds/pdf_form_interchange/fdf.seed"
+sha256 = "b49b30b31a0008cde37ddd1d2568e00db3cc08011833d73829474af323a858aa"
+source = "Original synthetic form and annotation fixture data."
+license = "Apache-2.0"
+license_basis = "Original project fixture and synthetic data under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-form-interchange-xfdf"
+target = "pdf_form_interchange"
+path = "fuzz/seeds/pdf_form_interchange/xfdf.seed"
+sha256 = "4428f4b91c837df84e8cdf0ff3fcd3615dc9b762b0e6c629e96ba3c99e797ef6"
+source = "Original synthetic form and annotation fixture data."
+license = "Apache-2.0"
+license_basis = "Original project fixture and synthetic data under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-form-interchange-annotations"
+target = "pdf_form_interchange"
+path = "fuzz/seeds/pdf_form_interchange/annotations.seed"
+sha256 = "9caebbfb991904a6cc8ff05f615fa4082cbcf2732a2ec57ae4b8a32fba7d02f1"
+source = "Original synthetic form and annotation fixture data."
+license = "Apache-2.0"
+license_basis = "Original project fixture and synthetic data under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-form-interchange-json"
+target = "pdf_form_interchange"
+path = "fuzz/seeds/pdf_form_interchange/json.seed"
+sha256 = "f4c24315da2c4b6121c1bee7a2a2225b24d3102e287dbc214c8111c0ab07bb91"
+source = "Original synthetic form and annotation fixture data."
+license = "Apache-2.0"
+license_basis = "Original project fixture and synthetic data under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-form-interchange-csv"
+target = "pdf_form_interchange"
+path = "fuzz/seeds/pdf_form_interchange/csv.seed"
+sha256 = "db6dfd24ae5dc6778e6f89633169a014eee2ece928e83871b8032ac5f58bae6a"
+source = "Original synthetic form and annotation fixture data."
+license = "Apache-2.0"
+license_basis = "Original project fixture and synthetic data under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-form-structure-form"
+target = "pdf_form_structure"
+path = "fuzz/seeds/pdf_form_structure/form.pdf"
+sha256 = "e7a2fcf27dabc1ab9776c24557c759fc781666aff91bf8bd9918af0c601b8a9e"
+source = "Original synthetic form and annotation fixture data."
+license = "Apache-2.0"
+license_basis = "Original project fixture and synthetic data under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-form-interchange-annotations-json"
+target = "pdf_form_interchange"
+path = "fuzz/seeds/pdf_form_interchange/annotations-json.seed"
+sha256 = "cf9e014d0b4b325ebbea0cd1afc6ed87f9e31254101bf6085044ebaf5816188f"
+source = "Original synthetic form and annotation fixture data."
+license = "Apache-2.0"
+license_basis = "Original project fixture and synthetic data under the repository license."
+attribution = "AriadShift contributors"
+
 [[fixture]]
 id = "detect-underlines"
 path = "fixtures/pdf-forms-detect/underlines.pdf"
