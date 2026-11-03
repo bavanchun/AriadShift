@@ -151,13 +151,18 @@ jobs:
       contents: write
     env:
       TAG: ${{ github.ref_name }}
-      PUBLIC_KEY: crates/ariad-host/data/pack-keys/${{ vars.PACK_SIGNING_KEY_ID }}.pub
+      PACK_SIGNING_KEY_ID: ${{ vars.PACK_SIGNING_KEY_ID }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+      - name: Select the trusted public key
+        run: |
+          [[ "$PACK_SIGNING_KEY_ID" =~ ^[0-9A-Fa-f]{16}$ ]]
+          echo "PUBLIC_KEY=crates/ariad-host/data/pack-keys/${PACK_SIGNING_KEY_ID,,}.pub" >> "$GITHUB_ENV"
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -168,11 +173,14 @@ jobs:
         with:
           name: tesseract-manifest
           path: pack-dist
-      - name: Sign and publish
+      - name: Sign the manifest
         env:
-          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
-          GH_TOKEN: ${{ github.token }}
+          MINISIGN_SECRET_KEY: ${{ secrets.PACK_MINISIGN_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.PACK_MINISIGN_KEY_PASSWORD }}
         run: |
           bash scripts/pack/sign-pack.sh --name tesseract --version 0.1.0 --manifest pack-dist/pack.toml --public-key "$PUBLIC_KEY"
+      - name: Verify the signed manifest
+        run: minisign -V -p "$PUBLIC_KEY" -m pack-dist/pack.toml -x pack-dist/pack.toml.minisig
+      - name: Publish the release
+        run: |
           gh release create "$TAG" --verify-tag --title "$TAG" --notes 'Signed Tesseract engine pack.' pack-dist/pack.toml pack-dist/pack.toml.minisig pack-dist/*.tar.zst
