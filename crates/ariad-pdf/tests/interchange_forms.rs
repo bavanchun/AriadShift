@@ -175,6 +175,72 @@ fn batch_rejects_input_size_times_record_count_over_budget() {
 }
 
 #[test]
+fn csv_form_export_and_import_preserve_guarded_values() {
+    use ariad_core::{
+        limits::Limits,
+        tools::params::forms::{FormsExportParams, FormsImportParams},
+    };
+    use ariad_pdf::{
+        document,
+        forms::{
+            fill::{self, FillOptions},
+            list,
+        },
+        interchange::run,
+        tools::{InputDoc, OutputPayload},
+    };
+    let ctx = ToolCtx::new();
+    let bytes = include_bytes!("../../../fixtures/pdf-forms/forms-all-types.pdf").to_vec();
+    let mut pdf = document::open(&bytes, &Limits::local()).unwrap();
+    let values = std::collections::BTreeMap::from([
+        ("name".into(), FormValue::Text("+84901234567".into())),
+        ("person.name".into(), FormValue::Text("-5".into())),
+    ]);
+    fill::fill(
+        &mut pdf,
+        &values,
+        &FillOptions { strict: true },
+        &Limits::local(),
+        &ctx,
+    )
+    .unwrap();
+    let export: FormsExportParams =
+        serde_json::from_value(serde_json::json!({"format":"csv"})).unwrap();
+    let (_, exported) =
+        run::forms_export(&[InputDoc::from_doc("filled.pdf", pdf)], &export, &ctx).unwrap();
+    let OutputPayload::Bytes(csv_bytes) = &exported[0].payload else {
+        panic!("expected CSV")
+    };
+    let import: FormsImportParams = serde_json::from_value(serde_json::json!({})).unwrap();
+    let (_, imported) = run::forms_import(
+        &[
+            InputDoc::new("form.pdf", bytes),
+            InputDoc::new("data.csv", csv_bytes.clone()),
+        ],
+        &import,
+        &ctx,
+    )
+    .unwrap();
+    let OutputPayload::Bytes(result) = &imported[0].payload else {
+        panic!("expected PDF")
+    };
+    let pdf = document::open(result, &Limits::local()).unwrap();
+    let fields = list::list(&pdf, &[1, 2], true, &Limits::local(), &ctx)
+        .unwrap()
+        .fields;
+    for (name, expected) in values {
+        assert_eq!(
+            fields
+                .iter()
+                .find(|field| field.name == name)
+                .unwrap()
+                .value,
+            expected
+        );
+    }
+}
+
+#[test]
 fn xfdf_export_drops_invalid_xml_controls_and_warns() {
     use ariad_core::{limits::Limits, tools::params::forms::FormsExportParams};
     use ariad_pdf::{
