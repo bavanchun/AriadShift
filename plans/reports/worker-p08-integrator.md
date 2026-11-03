@@ -1,0 +1,15 @@
+# Annotations and forms integration report
+
+Status: incomplete; handed off for remaining validation and integration. The draft pull request is https://github.com/bavanchun/AriadShift/pull/216. The feature branch incorporates origin/dev through `0d89c271`. Approved decisions D1–D13 govern the implementation; editing and interchange run in `ariad-pdf`, and detection uses the out-of-process PDFium pack.
+
+The implementation was produced in one worktree, so separate slice heads do not exist. Contract work began at `09d95851`, fixture commits at `c83671d1` through `2e6a9ec3`, in-process annotation and form implementation at `9c24997b`, PDFium detection at `e4502d84`, fuzz targets at `bdc25d7f`, and integration routing at `75fbdf85`. The complete history and the pull request identify subsequent fixes and integration tests.
+
+The maintainer-side review replaced the originally proposed Argon review. Its findings are being addressed on this branch: pack test registration and CI coverage `74b562c5`; web formatting `ad0d5e10` and Clippy changes `1c644a42`; batch bounds and CSV/XFDF fixes `ca502bf9`, with additional multi-select coverage `683f60b4`; duplicate field handling `ad30189a` and `ca502bf9`; chained action inspection `0743e3ac`; Decision Log identifier `84a0db1c`.
+
+During development, 16 form workflow tests, seven annotation-operation tests, four annotation interchange tests, six form interchange tests and two security tests passed before the review changes. The real PDFium detection evaluation reported precision 1.000 and recall 0.955, and the render comparison reported mean channel delta 0.0000 and changed-pixel fraction 0.000000. After the review changes, the annotation listing suite passed 5/5, form workflow passed 17/17, and form interchange passed 10/10. The first interchange run failed because its XML-control test attempted to render an unsupported glyph; commit `beeb46f4` constructs the input PDF value directly and the rerun passed. These are development results, not final-head gate evidence.
+
+The corpus totals 24,413,626 bytes, including 185,901 bytes of phase-specific fixtures and seeds. The pack archive was signature verified and had SHA-256 `d0ee00350f11ce35ea1202c0363ed562a2414fdfad32c16adbe72b21f36cc18c`.
+
+The schema generator passed and its output was committed in `f6aecf12`; the registry verification is pending. The CLI snapshot, surface and WebAssembly execution tests, warnings-denied lint, licences, final-head gate and manual viewer checks remain pending. The final result must state exact commands and outcomes and must not treat skipped tests as passes. The machine-specific build lock is `/Volumes/AriadWork/02-Ariadnev-Eco/01-AriadShift/.run/coord/build-lock.sh`; the signed PDFium pack is under `.run/coord/pdfium-pack` in the main checkout.
+
+MCP form/annotation discovery, form publication and read-back coverage were added in `b58632a2` and `b92bf0c0`; execution is pending. `git diff --check origin/dev...HEAD` reports the intentionally CRLF-terminated CSV fixture and matching fuzz seed as trailing whitespace, so that command did not pass.
