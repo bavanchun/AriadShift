@@ -380,7 +380,7 @@ fn prepare(
             if !(info.field_type == Some(FieldType::Combo) && info.flags.editable)
                 && requested
                     .iter()
-                    .any(|item| !info.options.iter().any(|o| o.export == *item))
+                    .any(|item| !item.is_empty() && !info.options.iter().any(|o| o.export == *item))
             {
                 return Err(PdfError::InvalidParams(
                     "choice is not an available option".into(),
