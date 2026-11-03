@@ -59,6 +59,43 @@ pub fn execute(
     let command =
         resolve_engine_command(effective_engine, engine_program, engine_command_override)?;
 
+    if effective_engine == "tesseract" && spec.id == "ocr.recognize" {
+        let params: ariad_core::tools::params::OcrRecognizeParams =
+            serde_json::from_value(engine_params.clone())
+                .map_err(|_| ToolError::EngineFailure("invalid OCR parameters".into()))?;
+        for language in params.languages {
+            if command.install_root.as_ref().is_some_and(|root| {
+                root.join("tessdata")
+                    .join(format!("{language}.traineddata"))
+                    .is_file()
+            }) {
+                continue;
+            }
+            let context =
+                crate::packs::PackContext::from_env().map_err(|_| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: "OCR language cache is unavailable".into(),
+                })?;
+            let source = crate::packs::languages::verified_path(&context, &language, &cancel)
+                .map_err(|error| match error {
+                    crate::packs::PackError::Interrupted => ToolError::Interrupted,
+                    _ => ToolError::ToolMissing {
+                        engine: "tesseract".into(),
+                        hint: format!("OCR language '{language}' could not be verified"),
+                    },
+                })?
+                .ok_or_else(|| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: format!("OCR language '{language}' is not installed; run 'ashift engines languages install {language}'"),
+                })?;
+            let directory = workspace.work_dir().join("ocr-models");
+            fs::create_dir_all(&directory)
+                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+            fs::copy(source, directory.join(format!("{language}.traineddata")))
+                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+        }
+    }
+
     let inputs: Vec<Input> = staged_inputs
         .iter()
         .map(|(path, format)| Input {
@@ -75,7 +112,7 @@ pub fn execute(
         None
     };
 
-    let effective_limits = pdfium_limits(effective_engine, limits);
+    let effective_limits = engine_limits(effective_engine, limits);
     let request = RequestV2::RunTool {
         protocol: PROTOCOL_V2.to_owned(),
         job: format!("tool-{}", Uuid::new_v4()),
@@ -162,9 +199,9 @@ pub fn execute(
     })
 }
 
-fn pdfium_limits(engine: &str, limits: &Limits) -> Limits {
+fn engine_limits(engine: &str, limits: &Limits) -> Limits {
     let mut effective = limits.clone();
-    if engine == "pdfium" {
+    if matches!(engine, "pdfium" | "tesseract") {
         let defaults = Limits::cloud();
         effective.timeout_s = effective.timeout_s.or(defaults.timeout_s);
         effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);
@@ -384,7 +421,7 @@ mod pdfium_limit_tests {
     fn local_pdfium_uses_default_ceilings_without_overriding_explicit_limits() {
         let local = Limits::local();
         let defaults = Limits::cloud();
-        let effective = pdfium_limits("pdfium", &local);
+        let effective = engine_limits("pdfium", &local);
         assert_eq!(effective.timeout_s, defaults.timeout_s);
         assert_eq!(effective.max_memory_mb, defaults.max_memory_mb);
         let explicit = Limits {
@@ -392,7 +429,9 @@ mod pdfium_limit_tests {
             max_memory_mb: Some(512),
             ..local.clone()
         };
-        assert_eq!(pdfium_limits("pdfium", &explicit), explicit);
-        assert_eq!(pdfium_limits("qpdf", &local), local);
+        assert_eq!(engine_limits("pdfium", &explicit), explicit);
+        assert_eq!(engine_limits("tesseract", &local).max_memory_mb, Some(4096));
+        assert_eq!(engine_limits("tesseract", &explicit), explicit);
+        assert_eq!(engine_limits("qpdf", &local), local);
     }
 }

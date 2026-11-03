@@ -2612,7 +2612,7 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let listed = list_resp["result"]["structuredContent"]
         .as_array()
         .expect("list_doc_tools array");
-    assert_eq!(listed.len(), 59);
+    assert_eq!(listed.len(), 65);
     assert_eq!(listed[0]["id"], "pdf.info");
     assert_eq!(listed[0]["group"], "organize");
     assert_eq!(listed[0]["engine"], "ariad-pdf");
@@ -2743,6 +2743,108 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let read_resp = client.read_response(707);
     assert!(read_resp.get("result").is_some(), "{read_resp}");
 
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_ocr_and_scan_tools_with_development_packs() {
+    let (Some(tesseract), Some(pdfium)) = (
+        std::env::var_os("ARIAD_TEST_TESSERACT_PACK"),
+        std::env::var_os("ARIAD_TEST_PDFIUM_PACK"),
+    ) else {
+        eprintln!("skipping: development OCR packs are unavailable");
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    let mut client = McpTestClient::spawn_with_env(
+        &["--allow-dir", dir.path().to_str().unwrap()],
+        Vec::new(),
+        &[
+            ("ASHIFT_PACK_TESSERACT", &tesseract),
+            ("ASHIFT_PACK_PDFIUM", &pdfium),
+        ],
+    );
+    client.initialize();
+    for (index, (tool, source)) in [
+        ("pdf.ocr", "fixtures/scan/vi-garden-300dpi.pdf"),
+        ("image.ocr", "fixtures/scan/vi-garden-300dpi.png"),
+        (
+            "pdf.auto_rotate",
+            "fixtures/pdf-tools/scan-rotated-90-vi.pdf",
+        ),
+        ("pdf.deskew", "fixtures/pdf-tools/scanned-skewed-vi.pdf"),
+        ("pdf.scan_split", "fixtures/pdf-tools/scan-photos-3.pdf"),
+        ("pdf.scanner_effect", "fixtures/scan/vi-garden-300dpi.pdf"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let extension = std::path::Path::new(source).extension().unwrap();
+        let input = dir
+            .path()
+            .join(format!("input-{index}"))
+            .with_extension(extension);
+        fs::copy(repository_root().join(source), &input).unwrap();
+        let output = dir.path().join(format!("output-{index}"));
+        fs::create_dir(&output).unwrap();
+        let id = 920 + index as u64;
+        client.send_request(
+            id,
+            "tools/call",
+            json!({"name":"run_doc_tool", "arguments": {
+                "tool":tool, "inputs":[input], "output_dir":output, "params":{"dpi":150}
+            }}),
+        );
+        let response = client.read_response(id);
+        assert_eq!(response["result"]["isError"], false, "{tool}: {response}");
+        let path = fs::read_dir(output)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert!(fs::read(path).unwrap().starts_with(b"%PDF-"), "{tool}");
+    }
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_image_ocr_with_development_pack() {
+    let Some(pack) = std::env::var_os("ARIAD_TEST_TESSERACT_PACK") else {
+        eprintln!("skipping: development Tesseract pack is unavailable");
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("scan.png");
+    fs::copy(
+        repository_root().join("fixtures/scan/vi-garden-300dpi.png"),
+        &input,
+    )
+    .unwrap();
+    let output = dir.path().join("out");
+    fs::create_dir(&output).unwrap();
+    let mut client = McpTestClient::spawn_with_env(
+        &["--allow-dir", dir.path().to_str().unwrap()],
+        Vec::new(),
+        &[("ASHIFT_PACK_TESSERACT", &pack)],
+    );
+    client.initialize();
+    client.send_request(
+        900,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {"tool": "image.ocr", "inputs": [input], "output_dir": output,
+                "params": {"output": "txt"}}
+        }),
+    );
+    let response = client.read_response(900);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let text = fs::read_dir(output)
+        .unwrap()
+        .map(|entry| fs::read_to_string(entry.unwrap().path()).unwrap())
+        .collect::<String>();
+    assert!(text.contains("Khu vườn đọc sách"), "{text}");
     client.close_and_assert_purity();
 }
 

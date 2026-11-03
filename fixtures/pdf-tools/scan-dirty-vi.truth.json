@@ -1,0 +1,9 @@
+{
+  "version": "ariad-truth/0",
+  "id": "scan-dirty-vi",
+  "unscored": true,
+  "unscored_reason": "PDF scan tools test corpus fixture (routes = [])",
+  "grey_background": true,
+  "speckles": true,
+  "black_border": true
+}

@@ -21,8 +21,12 @@ pub(super) fn isolate(workspace: &Path, program: &Path, policy: &SandboxPolicy) 
     if workspace.parent().is_none() || workspace == system_tmp {
         return Err(io::Error::other("invalid private temporary workspace"));
     }
-    let private = workspace.join(".sandbox-tmp");
-    fs::create_dir(&private)?;
+    // A composite job can invoke several engines with the same output directory.
+    // Each launcher needs its own mount tree; the enclosing workspace removes it.
+    let private = tempfile::Builder::new()
+        .prefix(".sandbox-tmp-")
+        .tempdir_in(&workspace)?
+        .keep();
 
     let mut paths = BTreeMap::new();
     let mut aliases = Vec::new();

@@ -4,10 +4,12 @@ Changes in each AriadShift release, newest first. Installation commands and down
 
 ## 0.4.0 (unreleased)
 
-Overlay and watermark tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools in `ariad-pdf`. They run through `ashift tool`, `ashift tools`, `ashift recipe run`, the local MCP server, and `ariad-wasm`. (#206)
+Overlay, watermark, OCR and scan tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools, plus local OCR and scan operations. (#206, #212)
 
 ### Added
 
+- **OCR and scan tools.** `pdf.ocr` and `image.ocr` add searchable PDF, text and hOCR outputs; `pdf.auto_rotate`, `pdf.deskew`, `pdf.scan_split` and `pdf.scanner_effect` prepare or transform scanned pages. The CLI, recipes and local MCP expose these tools. OCR uses the out-of-process Tesseract pack and PDF operations also use PDFium. See [ocr.md](ocr.md). (#212)
+- **Opt-in OCR languages.** The Tesseract pack includes English, Vietnamese and orientation data; additional verified models can be installed explicitly with `ashift engines languages install`. (#212)
 - **15 overlay and watermark PDF tools**, all in the Free tier and runnable on the CLI, local MCP server, and in the browser via `ariad-wasm`. All 15 run in-process in `ariad-pdf` with no external engine packs:
   - Page marks: `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`.
   - Page furniture: `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`.
@@ -26,6 +28,7 @@ Overlay and watermark tools for the PDF suite. `ashift` gains 15 in-process PDF 
 
 ### Known limitations
 
+- **Tesseract pack availability.** The pack is not yet published; Windows and musl systems are deferred. See [packs.md](packs.md#the-tesseract-pack). (#202, #212)
 - **Watermark removal limits.** `pdf.watermark_remove` acts strictly on explicit, user-selected candidate identifiers returned by `pdf.watermark_detect`; wildcard selections, blank candidate lists, or automatic "remove all" operations are refused. A removal request supports at most eight distinct detection queries and at most 1,000 selected candidate identifiers per invocation. Detection and removal share a single decode and work budget within the request; near the decode limit, detection can succeed while removal fails with a limit error. Unsupported image formats or uninspected image objects are reported as warnings and not removed. Removing third-party watermarks emits a warning.
 
 ## 0.3.0 (unreleased)

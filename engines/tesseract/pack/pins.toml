@@ -1,0 +1,20 @@
+[tesseract]
+version = "5.5.4"
+tag_object = "c5065e4c17df16a75960a0e0fa50e4399df1ac74"
+commit = "7e548e6eff172f38f97664afe7f7ce40db36c8d6"
+url = "https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/7e548e6eff172f38f97664afe7f7ce40db36c8d6"
+sha256 = "445603ab1d0a63df552e193a600d9d5c4021aff36e144f3091af149e5efb381a"
+license = "Apache-2.0"
+
+[leptonica]
+version = "1.87.0"
+url = "https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz"
+size = 14802808
+sha256 = "c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7"
+license = "BSD-2-Clause"
+
+[tessdata]
+revision = "e12c65a915945e4c28e237a9b52bc4a8f39a0cec"
+source = "https://github.com/tesseract-ocr/tessdata_best"
+license = "Apache-2.0"
+pins = "engines/docling/pack/pins.toml"

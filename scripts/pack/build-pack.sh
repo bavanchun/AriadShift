@@ -25,6 +25,8 @@
 #                            --engine-protocol VALUE`; the script checks the written pack.toml
 #                            has the top-level key `engine_protocol = "VALUE"`
 #   --component-name NAME    component name in the manifest (default: engine)
+#   --shared-component NAME=FILE  additional target-independent component (repeat)
+#   --target-env KEY=VALUE   allow-listed target environment (repeat)
 #   --url-prefix URL         prefix for component URLs (default: bare file names)
 #
 # build options:
@@ -154,6 +156,8 @@ notices_dir=''
 codesign=1
 unpack_dir=''
 merge_archives=()
+shared_components=()
+target_env=()
 
 workdir=''
 cleanup() {
@@ -174,7 +178,7 @@ parse_args() {
             continue
             ;;
         --name | --version | --ashift | --out | --description | --license | --requires-ashift | \
-            --entrypoint | --engine-protocol | --component-name | --url-prefix | --triple | \
+            --entrypoint | --engine-protocol | --component-name | --shared-component | --target-env | --url-prefix | --triple | \
             --engine | --engine-dest | --archive-url | --archive | --archive-sha256 | \
             --from-archive | --extra | --executable | --notices | --unpack-dir) ;;
         *) die "unknown option '$flag'" ;;
@@ -193,6 +197,8 @@ parse_args() {
         --entrypoint) entrypoint+=("$value") ;;
         --engine-protocol) engine_protocol=$value ;;
         --component-name) component_name=$value ;;
+        --shared-component) shared_components+=("$value") ;;
+        --target-env) target_env+=("$value") ;;
         --url-prefix) url_prefix=$value ;;
         --triple) triple=$value ;;
         --engine) engine=$value ;;
@@ -239,6 +245,17 @@ validate_common() {
         printf '%s\n' "$engine_protocol" | grep -Eq '^[a-z][a-z0-9-]*/[0-9]+$' ||
             die "engine protocol '$engine_protocol' must look like ariad-engine/2"
     fi
+    local pair
+    for pair in ${shared_components[@]+"${shared_components[@]}"}; do
+        split_pair "$pair" "--shared-component"
+        case $pair_left in '' | *[!A-Za-z0-9._-]*) die "invalid component name" ;; esac
+        [ -f "$pair_right" ] || die "shared component '$pair_right' is not a file"
+    done
+    for pair in ${target_env[@]+"${target_env[@]}"}; do
+        split_pair "$pair" "--target-env"
+        case $pair_left in '' | *[!A-Z0-9_]*) die "invalid environment variable" ;; esac
+        plain_text "$pair_right" "--target-env value"
+    done
     [ -x "$ashift" ] || die "--ashift '$ashift' is not an executable file"
 }
 
@@ -277,7 +294,27 @@ write_base_manifest() {
             printf '    "%s",\n' "$line"
         done <"$notice_list"
         printf ']\n'
-        printf 'targets = []\n'
+        if [ "${#target_env[@]}" -eq 0 ]; then
+            printf 'targets = []\n'
+        else
+            local target pair
+            local target_triples=()
+            if [ -n "$triple" ]; then
+                target_triples+=("$triple")
+            else
+                split_pair "${merge_archives[0]}" "--archive"
+                target_triples+=("$pair_left")
+            fi
+            for target in "${target_triples[@]}"; do
+                printf '%s\n' "$target" | grep -Eq '^[a-z0-9_]+(-[A-Za-z0-9_.]+){2,3}$' ||
+                    die "target triple '$target' is not well formed"
+                printf '\n[[targets]]\ntriple = "%s"\nentrypoint = []\n[targets.env]\n' "$target"
+                for pair in "${target_env[@]}"; do
+                    split_pair "$pair" "--target-env"
+                    printf '%s = "%s"\n' "$pair_left" "$pair_right"
+                done
+            done
+        fi
     } >"$base"
 }
 
@@ -298,6 +335,7 @@ run_manifest() {
         args+=(--url-prefix "$url_prefix")
     fi
     args+=("$component")
+    args+=(${shared_components[@]+"${shared_components[@]}"})
     "$ashift" "${args[@]}"
 }
 
@@ -545,12 +583,24 @@ cmd_merge() {
     write_base_manifest "$base" "" "$notice_list"
     cp "$base" "$current"
     local next=$workdir/next.toml
+    local first=1 env_pair
     for pair in "${merge_archives[@]}"; do
         split_pair "$pair" "--archive"
         [ -f "$pair_right" ] || die "component '$pair_right' is not a file"
-        run_manifest "$current" "$next" "$pair_left" "$component_name=$pair_right"
+        local target=$pair_left archive=$pair_right
+        if [ "$first" -eq 0 ] && [ "${#target_env[@]}" -gt 0 ]; then
+            printf '%s\n' "$target" | grep -Eq '^[a-z0-9_]+(-[A-Za-z0-9_.]+){2,3}$' ||
+                die "target triple '$target' is not well formed"
+            printf '\n[[targets]]\ntriple = "%s"\nentrypoint = []\n[targets.env]\n' "$target" >>"$current"
+            for env_pair in "${target_env[@]}"; do
+                split_pair "$env_pair" "--target-env"
+                printf '%s = "%s"\n' "$pair_left" "$pair_right" >>"$current"
+            done
+        fi
+        run_manifest "$current" "$next" "$target" "$component_name=$archive"
         check_manifest_output "$next"
         mv "$next" "$current"
+        first=0
     done
     mkdir -p "$out"
     cp "$current" "$out/pack.toml"

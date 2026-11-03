@@ -343,7 +343,12 @@ pub fn doctor(
 
     // 6. The pdfium engine pack. It is optional.
     checks.push(pdfium_check(engine_program, cancel.clone()));
-    checks.push(qpdf_check(engine_program, cancel));
+    checks.push(pack_v2_check(
+        engine_program,
+        &engines::QPDF,
+        cancel.clone(),
+    ));
+    checks.push(pack_v2_check(engine_program, &engines::TESSERACT, cancel));
 
     Ok(DoctorReport {
         checks,
@@ -355,10 +360,13 @@ pub fn doctor(
     })
 }
 
-fn qpdf_check(engine_program: &Path, cancel: CancellationToken) -> DoctorCheck {
-    let spec = &engines::QPDF;
+fn pack_v2_check(
+    engine_program: &Path,
+    spec: &engines::EngineSpec,
+    cancel: CancellationToken,
+) -> DoctorCheck {
     let make = |ok: bool, message: String, hint: String| DoctorCheck {
-        id: "qpdf_engine".to_owned(),
+        id: format!("{}_engine", spec.id),
         ok,
         required: false,
         message,
@@ -369,7 +377,7 @@ fn qpdf_check(engine_program: &Path, cancel: CancellationToken) -> DoctorCheck {
         Err(error) => {
             return make(
                 false,
-                format!("qpdf engine cannot be used: {error}"),
+                format!("{} engine cannot be used: {error}", spec.id),
                 error.hint().unwrap_or(spec.install_hint).to_owned(),
             );
         }
@@ -381,7 +389,8 @@ fn qpdf_check(engine_program: &Path, cancel: CancellationToken) -> DoctorCheck {
             make(
                 true,
                 format!(
-                    "qpdf {} passes describe round trip; protocol {protocol}",
+                    "{} {} passes describe round trip; protocol {protocol}",
+                    spec.id,
                     tool.version.unwrap_or_else(|| "unknown".to_owned())
                 ),
                 String::new(),
@@ -389,12 +398,15 @@ fn qpdf_check(engine_program: &Path, cancel: CancellationToken) -> DoctorCheck {
         }
         Ok(_) => make(
             false,
-            "qpdf engine is not ready or reports an incompatible protocol".to_owned(),
+            format!(
+                "{} engine is not ready or reports an incompatible protocol",
+                spec.id
+            ),
             spec.install_hint.to_owned(),
         ),
         Err(error) => make(
             false,
-            format!("qpdf engine describe round trip failed: {error}"),
+            format!("{} engine describe round trip failed: {error}", spec.id),
             spec.install_hint.to_owned(),
         ),
     }

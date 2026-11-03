@@ -310,6 +310,15 @@ impl<'a> ToolContext<'a> {
         crate::canonical::canonicalize_selected(self, &mut doc, bytes.len(), pages)
     }
 
+    /// Build a structural PDF context sharing this job's deadline and cancellation flag.
+    #[must_use]
+    pub fn pdf_tool_context(&self) -> PdfToolCtx {
+        let mut ctx = PdfToolCtx::with_cancel(Arc::clone(&self.cancel.0))
+            .with_max_pages(self.limits.max_pages);
+        ctx.deadline = self.deadline;
+        ctx
+    }
+
     /// Resolves `range` against `total_pages` with [`DuplicatePolicy::Reject`] and enforces
     /// `limits.max_pages` on the selected page count.
     pub fn resolve_pages(

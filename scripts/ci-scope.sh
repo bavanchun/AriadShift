@@ -25,7 +25,7 @@ js_paths='^(apps|packages|services|brand)/|^(package\.json|pnpm-lock\.yaml|pnpm-
 e2e_paths='^infra/test/e2e/|^\.github/workflows/cloud-e2e\.yml$'
 # The pdfium engine pack scripts and workflow; the pack-pdfium workflow tests and builds them,
 # so the multi-OS Rust jobs have nothing to check.
-pack_paths='^(engines/(pdfium|qpdf)/|scripts/pack/)|^scripts/test-pack-qpdf\.sh$|^\.github/workflows/pack-(pdfium|qpdf)\.yml$'
+pack_paths='^(engines/(pdfium|qpdf|tesseract)/|scripts/pack/)|^scripts/test-pack-(qpdf|tesseract)\.sh$|^\.github/workflows/pack-(pdfium|qpdf|tesseract)\.yml$'
 # Everything the web job builds or depends on, including the Rust code compiled to wasm
 # and the OpenAPI document the SDK is generated from.
 web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|pdf|engine-io|wasm|typst)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$|^schemas/openapi\.v1\.json$'

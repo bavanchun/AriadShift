@@ -333,6 +333,32 @@ pack-qpdf qpdf_dir out="target/packs/qpdf":
 pack-qpdf-verify out="target/packs/qpdf":
     bash engines/qpdf/pack/make.sh verify "{{out}}"
 
+# Build a host Tesseract development pack from verified source and model inputs.
+pack-tesseract out="target/packs/tesseract":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    inputs=${TESSERACT_INPUT_DIR:-$work/input}
+    if [ -z "${TESSERACT_INPUT_DIR:-}" ]; then
+        python3 engines/tesseract/pack/fetch-inputs.py "$inputs"
+    fi
+    bash engines/tesseract/pack/compile-tesseract.sh "$inputs/tesseract.tar.gz" "$inputs/leptonica.tar.gz" "$work/runtime"
+    cargo build -p ariad-cli --bin ashift
+    PACK_REQUIRES_ASHIFT='>=0.2.0, <2.0.0' bash engines/tesseract/pack/make.sh pack "$(bash engines/tesseract/pack/make.sh slug)" "$work/runtime" "$inputs/tessdata" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
+    bash engines/tesseract/pack/make.sh verify "{{out}}"
+
+pack-tesseract-verify out="target/packs/tesseract":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash engines/tesseract/pack/make.sh verify "{{out}}"
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    export XDG_DATA_HOME="$work"
+    export ASHIFT_PACK_TESSERACT="$(cd "{{out}}" && pwd -P)"
+    export ARIAD_TEST_TESSERACT_PACK="$ASHIFT_PACK_TESSERACT"
+    cargo test -p ariad-host --features test-probe --test tesseract_adapter
+
 # Test the shared pack builder, the pdfium wrapper and the signing guard (offline).
 pack-tooling-test:
     bash scripts/pack/test-pack-tooling.sh

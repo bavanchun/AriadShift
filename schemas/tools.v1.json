@@ -6293,6 +6293,491 @@
       "summary": "Unlock PDF form fields.",
       "tier": "free",
       "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "ocr",
+      "id": "pdf.ocr",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf",
+        "txt",
+        "hocr"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "OcrParams",
+        "description": "Searchable PDF OCR options.",
+        "type": "object",
+        "properties": {
+          "auto_rotate": {
+            "description": "Correct orientation.",
+            "type": "boolean",
+            "default": false
+          },
+          "clean": {
+            "description": "Clean eligible image-only pages.",
+            "type": "boolean",
+            "default": false
+          },
+          "deskew": {
+            "description": "Correct skew.",
+            "type": "boolean",
+            "default": false
+          },
+          "dpi": {
+            "description": "Render resolution.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 300,
+            "maximum": 600,
+            "minimum": 150
+          },
+          "languages": {
+            "description": "Recognition languages.",
+            "type": "array",
+            "default": [
+              "vie",
+              "eng"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "description": "Existing text policy.",
+            "$ref": "#/$defs/OcrMode",
+            "default": "skip-text"
+          },
+          "output": {
+            "description": "Requested artifacts.",
+            "$ref": "#/$defs/OcrOutput",
+            "default": "pdf"
+          },
+          "pages": {
+            "description": "Pages to recognize.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "OcrMode": {
+            "description": "Policy for pages with existing text.",
+            "type": "string",
+            "enum": [
+              "skip-text",
+              "force",
+              "redo"
+            ]
+          },
+          "OcrOutput": {
+            "description": "Output artifacts for PDF OCR.",
+            "type": "string",
+            "enum": [
+              "pdf",
+              "pdf+txt",
+              "pdf+hocr"
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Recognize text on PDF pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "ocr",
+      "id": "image.ocr",
+      "input_formats": [
+        "png",
+        "jpeg",
+        "webp",
+        "tiff",
+        "bmp"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 200,
+        "min": 1
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf",
+        "txt",
+        "hocr"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ImageOcrParams",
+        "description": "Image recognition parameters.",
+        "type": "object",
+        "properties": {
+          "dpi": {
+            "description": "Resolution passed to the OCR engine.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 300,
+            "maximum": 1200,
+            "minimum": 70
+          },
+          "languages": {
+            "description": "Recognition languages.",
+            "type": "array",
+            "default": [
+              "vie",
+              "eng"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "output": {
+            "description": "Requested output format.",
+            "$ref": "#/$defs/ImageOcrOutput",
+            "default": "pdf"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "ImageOcrOutput": {
+            "description": "Requested image OCR output.",
+            "type": "string",
+            "enum": [
+              "pdf",
+              "txt",
+              "hocr"
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Recognize text in images.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "ocr",
+      "id": "pdf.auto_rotate",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AutoRotateParams",
+        "description": "Parameters for the auto_rotate operation.",
+        "type": "object",
+        "properties": {
+          "dpi": {
+            "description": "dpi.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 300,
+            "maximum": 600,
+            "minimum": 150
+          },
+          "min_confidence": {
+            "description": "min confidence.",
+            "type": "number",
+            "format": "float",
+            "default": 2.0,
+            "maximum": 100.0,
+            "minimum": 0.0
+          },
+          "pages": {
+            "description": "Selected pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Correct page orientation.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "pdfium",
+      "group": "ocr",
+      "id": "pdf.deskew",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "DeskewParams",
+        "description": "Parameters for the deskew operation.",
+        "type": "object",
+        "properties": {
+          "dpi": {
+            "description": "dpi.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 150,
+            "maximum": 300,
+            "minimum": 72
+          },
+          "max_angle_deg": {
+            "description": "max angle deg.",
+            "type": "number",
+            "format": "float",
+            "default": 10.0,
+            "maximum": 45.0,
+            "minimum": 0.5
+          },
+          "min_angle_deg": {
+            "description": "min angle deg.",
+            "type": "number",
+            "format": "float",
+            "default": 0.10000000149011612,
+            "maximum": 5.0,
+            "minimum": 0.0
+          },
+          "pages": {
+            "description": "Selected pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Correct page skew.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "pdfium",
+      "group": "ocr",
+      "id": "pdf.scan_split",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ScanSplitParams",
+        "description": "Parameters for the scan_split operation.",
+        "type": "object",
+        "properties": {
+          "dpi": {
+            "description": "dpi.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 150,
+            "maximum": 300,
+            "minimum": 72
+          },
+          "min_area_ratio": {
+            "description": "min area ratio.",
+            "type": "number",
+            "format": "float",
+            "default": 0.019999999552965164,
+            "maximum": 0.9,
+            "minimum": 0.001
+          },
+          "padding_pt": {
+            "description": "padding pt.",
+            "type": "number",
+            "format": "float",
+            "default": 4.0,
+            "maximum": 72.0,
+            "minimum": 0.0
+          },
+          "pages": {
+            "description": "Selected pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "straighten": {
+            "description": "straighten.",
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Split scanned regions into pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "pdfium",
+      "group": "overlay",
+      "id": "pdf.scanner_effect",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ScannerEffectParams",
+        "description": "Parameters for the scanner_effect operation.",
+        "type": "object",
+        "properties": {
+          "blur": {
+            "description": "blur.",
+            "type": "number",
+            "format": "float",
+            "default": 0.5,
+            "maximum": 3.0,
+            "minimum": 0.0
+          },
+          "brightness": {
+            "description": "brightness.",
+            "type": "number",
+            "format": "float",
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0
+          },
+          "contrast": {
+            "description": "contrast.",
+            "type": "number",
+            "format": "float",
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0
+          },
+          "dpi": {
+            "description": "dpi.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 150,
+            "maximum": 300,
+            "minimum": 72
+          },
+          "grayscale": {
+            "description": "grayscale.",
+            "type": "boolean",
+            "default": true
+          },
+          "noise": {
+            "description": "noise.",
+            "type": "number",
+            "format": "float",
+            "default": 0.15000000596046448,
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          "pages": {
+            "description": "Selected pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "quality": {
+            "description": "quality.",
+            "type": "integer",
+            "format": "uint8",
+            "default": 75,
+            "maximum": 100,
+            "minimum": 10
+          },
+          "seed": {
+            "description": "seed.",
+            "type": "integer",
+            "format": "uint64",
+            "default": 0,
+            "minimum": 0
+          },
+          "skew_deg": {
+            "description": "skew deg.",
+            "type": "number",
+            "format": "float",
+            "default": 0.5,
+            "maximum": 5.0,
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Apply a scanner effect.",
+      "tier": "free",
+      "version": "1"
     }
   ],
   "x-status": "draft",

@@ -68,6 +68,9 @@ pub fn tool_suffix(tool_id: &str) -> &'static str {
         "pdf.sanitize" => "sanitized",
         "pdf.remove_blank" => "remove-blank",
         "pdf.crop_whitespace" => "cropped",
+        "pdf.deskew" => "deskewed",
+        "pdf.scan_split" => "scan-split",
+        "pdf.scanner_effect" => "scanner-effect",
         "image.to_pdf" => "to-pdf",
         _ => "output",
     }

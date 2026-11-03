@@ -56,14 +56,14 @@ impl Wake for ThreadWaker {
 }
 
 /// Bridges a [`CancellationToken`] into the `Arc<AtomicBool>` polled by [`ariad_pdf::ToolCtx`].
-struct CancelBridge {
-    flag: Arc<AtomicBool>,
+pub(super) struct CancelBridge {
+    pub(super) flag: Arc<AtomicBool>,
     stop: CancellationToken,
     worker: Option<JoinHandle<()>>,
 }
 
 impl CancelBridge {
-    fn new(cancel: &CancellationToken) -> Self {
+    pub(super) fn new(cancel: &CancellationToken) -> Self {
         let initially_cancelled = cancel.is_cancelled();
         let flag = Arc::new(AtomicBool::new(initially_cancelled));
         let stop = cancel.child_token();
@@ -138,7 +138,7 @@ pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> Result<ToolCt
     Ok(build_tool_ctx_with_clock(limits, cancel, capture_clock()?))
 }
 
-fn build_tool_ctx_with_clock(
+pub(crate) fn build_tool_ctx_with_clock(
     limits: &Limits,
     cancel: Arc<AtomicBool>,
     clock: HostClock,

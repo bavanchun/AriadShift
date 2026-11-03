@@ -30,6 +30,16 @@ pub fn run(
             inputs.len()
         )));
     }
+    run_owned(inputs[0].clone(), params, ctx)
+}
+
+/// Rotate an owned document without cloning it.
+pub fn run_owned(
+    mut doc: PdfDoc,
+    params: &RotateParams,
+    ctx: &ToolCtx,
+) -> Result<Vec<OutputDoc>, PdfError> {
+    ctx.check()?;
     if !matches!(params.angle, 90 | 180 | 270 | -90) {
         return Err(PdfError::InvalidParams(format!(
             "invalid rotation angle {}: expected 90, 180, 270, or -90",
@@ -37,7 +47,6 @@ pub fn run(
         )));
     }
 
-    let mut doc = inputs[0].clone();
     let page_ids = collect_page_ids(doc.inner(), ctx)?;
     let page_count = u32::try_from(page_ids.len()).unwrap_or(u32::MAX);
 

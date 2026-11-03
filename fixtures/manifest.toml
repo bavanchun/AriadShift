@@ -4562,6 +4562,82 @@ routes = []
 companions = []
 
 [[fixture]]
+id = "scan-photos-3"
+path = "fixtures/pdf-tools/scan-photos-3.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "scan-photos-3"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan_tools.py"
+license = "Apache-2.0"
+license_basis = "Generated from the AriadShift garden scan."
+attribution = "AriadShift contributors"
+sha256 = "761d3b88afbae1d7bb7d221ca1ad88a402fe2b133fa82dd9fd3ea89f249b5c7d"
+pages = 1
+tags = ["scan"]
+phase = "7"
+routes = []
+companions = [{ path = "fixtures/pdf-tools/scan-photos-3.truth.json", sha256 = "26d6888c0cb04b975dcbf293d1c39bd8ea6da34390ff42511ca0b6e7a864506d" }]
+
+[[fixture]]
+id = "scan-rotated-90-vi"
+path = "fixtures/pdf-tools/scan-rotated-90-vi.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "scan-rotated-90-vi"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan_tools.py"
+license = "Apache-2.0"
+license_basis = "Generated from the AriadShift garden scan."
+attribution = "AriadShift contributors"
+sha256 = "bd89d70e0ed285ba384a2d240675b55b89740b64e135f6253501429cbbb376e9"
+pages = 1
+tags = ["scan"]
+phase = "7"
+routes = []
+companions = [{ path = "fixtures/pdf-tools/scan-rotated-90-vi.truth.json", sha256 = "86c02f323456334d55c3e26bd04800a505f5395d9c0c6a00100f538014cd97c6" }]
+
+[[fixture]]
+id = "scan-mixed-text-vi"
+path = "fixtures/pdf-tools/scan-mixed-text-vi.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "scan-mixed-text-vi"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan_tools.py"
+license = "Apache-2.0"
+license_basis = "Generated from the AriadShift garden scan."
+attribution = "AriadShift contributors"
+sha256 = "7813f99f78def14f9d1cadca90e6dd35f46d483270694289faf8da086f4e1ad9"
+pages = 3
+tags = ["scan"]
+phase = "7"
+routes = []
+companions = [{ path = "fixtures/pdf-tools/scan-mixed-text-vi.truth.json", sha256 = "84738d39ab25610cd0716a047aaa31ebf59a484cdd692e580033d17da86ac60a" }]
+
+[[fixture]]
+id = "scan-dirty-vi"
+path = "fixtures/pdf-tools/scan-dirty-vi.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "scan-dirty-vi"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan_tools.py"
+license = "Apache-2.0"
+license_basis = "Generated from the AriadShift garden scan."
+attribution = "AriadShift contributors"
+sha256 = "ad6fd430dfdbbac7d08b0e5aef28dd990168d3337cef67ee051d10a450b9caf1"
+pages = 1
+tags = ["scan"]
+phase = "7"
+routes = []
+companions = [{ path = "fixtures/pdf-tools/scan-dirty-vi.truth.json", sha256 = "9e95da22f619595b6f74190a6a5d786a7c4881d7a9d1c9fa943ea73e8081d35d" }]
+
+[[fixture]]
 id = "invalid-name-escape-pdf"
 path = "fixtures/pdf/invalid-name-escape.pdf"
 format = "pdf"

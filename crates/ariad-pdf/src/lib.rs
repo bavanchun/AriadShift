@@ -20,11 +20,14 @@ pub mod image_to_pdf;
 pub mod images;
 pub mod info;
 pub mod naming;
+pub mod ocr_layer;
 #[cfg(feature = "codecs")]
 pub mod optimize;
 pub mod paper;
 #[cfg(feature = "codecs")]
 pub mod recolor;
+pub mod scan_pages;
+pub mod scan_text;
 pub mod tools;
 pub mod writer;
 pub mod xobject;

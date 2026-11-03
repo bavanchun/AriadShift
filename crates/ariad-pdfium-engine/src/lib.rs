@@ -20,6 +20,7 @@ pub mod extract_images;
 pub mod library;
 pub mod output;
 pub mod render;
+pub mod scan;
 pub mod text_layout;
 pub mod thumbnails;
 

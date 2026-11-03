@@ -140,9 +140,9 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
 | `pdf.ocr` (browser `tesseract.js` for small jobs, phase 14/15; `clean` replaces unpaper, which is GPL) | ocr | S13 OCR (searchable, force, skip-text, languages); S14 clean up scans | OCR PDF | 7 | tesseract, pdfium, ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.deskew` | ocr | S13 deskew | Deskew PDF | 7 | tesseract, ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.auto_rotate` | ocr | S02 auto rotate | — | 7 | tesseract, ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.scan_split` | ocr | S02 detect and split scanned photos | — | 7 | ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.deskew` | ocr | S13 deskew | Deskew PDF | 7 | pdfium, ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.auto_rotate` | ocr | S02 auto rotate | — | 7 | tesseract, pdfium, ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.scan_split` | ocr | S02 detect and split scanned photos | — | 7 | pdfium, ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
 | `image.ocr` | ocr | — | — | 7 | tesseract | wasm, local, cloud | Free | CLI, MCP, web, mac |
 
 ### annotate and forms

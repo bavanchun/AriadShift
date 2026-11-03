@@ -1,3 +1,4 @@
+mod adapter;
 pub mod common;
 pub mod docling;
 pub mod libreoffice;
@@ -6,6 +7,9 @@ pub mod pdf;
 pub mod qpdf;
 pub mod resolve;
 pub mod sandbox;
+pub mod tesseract;
+mod tesseract_hocr;
+pub(crate) mod tesseract_image;
 pub mod typst;
 
 pub use resolve::{ResolveError, resolve_pack, resolve_pack_in, resolve_pack_with_options};
@@ -54,11 +58,14 @@ pub fn serve_builtin(
     output: impl std::io::Write,
 ) -> std::process::ExitCode {
     match engine {
+        #[cfg(feature = "test-probe")]
+        TEST_PROTOCOL_PROBE_ID => test_pack_engine::serve(&TEST_PROTOCOL_PROBE, input, output),
         "pandoc" => pandoc::serve(input, output),
         "pdf" => pdf::serve(input, output),
         "typst" => typst::serve(input, output),
         "libreoffice" => libreoffice::serve(input, output),
         "qpdf" => qpdf::serve(input, output),
+        "tesseract" => tesseract::serve(input, output),
         _ => {
             // A pack engine is served by the pack's own executable. Only test-probe builds
             // answer for one, with a stand-in that never runs real tool code.
@@ -71,6 +78,16 @@ pub fn serve_builtin(
         }
     }
 }
+
+/// Identifier reserved for the synthetic protocol engine in test-probe builds.
+#[cfg(feature = "test-probe")]
+pub const TEST_PROTOCOL_PROBE_ID: &str = "__protocol_probe";
+
+#[cfg(feature = "test-probe")]
+const TEST_PROTOCOL_PROBE: EngineSpec = EngineSpec {
+    id: TEST_PROTOCOL_PROBE_ID,
+    ..QPDF
+};
 
 /// Runs the protocol probe for a pack engine in test-probe builds.
 #[cfg(feature = "test-probe")]
@@ -338,6 +355,7 @@ mod test_pack_engine {
             let default_tool = match engine_id {
                 "pdfium" => Some(("pdf.render", "1")),
                 "qpdf" => Some(("pdf.linearize", "1")),
+                super::TEST_PROTOCOL_PROBE_ID => Some(("pdf.linearize", "1")),
                 "tesseract" => Some(("ocr.recognize", "1")),
                 "sign" => Some(("pdf.sign", "1")),
                 "verapdf" => Some(("pdf.validate_pdfa", "1")),
@@ -535,7 +553,7 @@ pub const TESSERACT: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
-    pack_program_env: None,
+    pack_program_env: Some("ASHIFT_TESSERACT_PROGRAM"),
 };
 
 /// PAdES digital signing and verification pack (`ariad-engine/2`).
@@ -895,6 +913,36 @@ mod tests {
 
 #[cfg(test)]
 mod dispatch_tests {
+    #[cfg(feature = "test-probe")]
+    #[test]
+    fn synthetic_protocol_engine_has_a_reserved_id() {
+        let id = super::TEST_PROTOCOL_PROBE_ID;
+        assert!(super::spec(id).is_none());
+        assert!(super::pack_spec(id).is_none());
+        let request = b"{\"op\":\"describe\",\"protocol\":\"ariad-engine/2\",\"job\":\"d\"}\n";
+        let mut output = Vec::new();
+        assert_eq!(
+            super::serve_builtin(id, std::io::Cursor::new(request), &mut output),
+            std::process::ExitCode::SUCCESS
+        );
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("\"engine\":\"__protocol_probe\"")
+        );
+    }
+
+    #[cfg(not(feature = "test-probe"))]
+    #[test]
+    fn production_builds_reject_the_synthetic_protocol_engine() {
+        let mut output = Vec::new();
+        assert_eq!(
+            super::serve_builtin("__protocol_probe", std::io::Cursor::new([]), &mut output),
+            std::process::ExitCode::from(2)
+        );
+        assert!(output.is_empty());
+    }
+
     #[cfg(not(feature = "test-probe"))]
     #[test]
     fn production_builds_never_answer_for_a_direct_pack_engine() {

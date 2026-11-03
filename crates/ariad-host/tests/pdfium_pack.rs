@@ -29,6 +29,9 @@ const PDFIUM_TOOLS: &[&str] = &[
     "pdf.remove_blank",
     "pdf.crop_whitespace",
     "pdf.detect_scanned",
+    "pdf.deskew",
+    "pdf.scan_split",
+    "pdf.scanner_effect",
 ];
 
 /// Returns `true` inside the child process. In the parent it re-runs `test` in a child with the

@@ -820,11 +820,7 @@ where
         };
         (writable, ipc)
     };
-    let memory_limit = if command.engine == "pdfium" {
-        request.limits().and_then(|limits| limits.max_memory_mb)
-    } else {
-        None
-    };
+    let memory_limit = engine_memory_limit(&command.engine, request.limits());
     let (program, args, sandbox) =
         prepare_launch_with_limit(command, &writable, &read_only, memory_limit)?;
     let tmp_dir = request.work_dir().map_or_else(
@@ -1027,6 +1023,14 @@ pub(crate) fn prepare_launch_with_read_only(
     prepare_launch_with_limit(command, writable, read_only, None)
 }
 
+fn engine_memory_limit(engine: &str, limits: Option<&ariad_core::limits::Limits>) -> Option<u32> {
+    if matches!(engine, "pdfium" | "tesseract") {
+        limits.and_then(|limits| limits.max_memory_mb)
+    } else {
+        None
+    }
+}
+
 fn prepare_launch_with_limit(
     command: &EngineCommand,
     writable: &[PathBuf],
@@ -1042,7 +1046,7 @@ fn prepare_launch_with_limit(
         #[cfg(target_os = "linux")]
         if let Some(limit_mb) = memory_limit_mb {
             let launcher = command.launcher.as_ref().ok_or_else(|| {
-                RunError::SandboxUnavailable("PDFium requires a resource-limit launcher".to_owned())
+                RunError::SandboxUnavailable("Engine requires a resource-limit launcher".to_owned())
             })?;
             let mut policy = SandboxPolicy::default();
             policy
@@ -1794,6 +1798,21 @@ mod tests {
     };
 
     use super::{EngineCommand, writable_paths};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn tesseract_memory_limit_reaches_launcher() {
+        let mut command = EngineCommand::builtin(std::path::Path::new("/bin/true"), "tesseract");
+        command.sandbox = Some(super::SandboxMode::Off);
+        let limits = Limits {
+            max_memory_mb: Some(512),
+            ..Limits::local()
+        };
+        let limit = super::engine_memory_limit(&command.engine, Some(&limits));
+        let (_, args, _) = super::prepare_launch_with_limit(&command, &[], &[], limit).unwrap();
+        assert!(args.iter().any(|arg| arg == "as=536870912"));
+        assert!(args.iter().any(|arg| arg == "--rlimit"));
+    }
 
     #[test]
     fn encrypted_input_is_rejected_for_v1_and_accepted_for_v2() {

@@ -10,6 +10,7 @@ mod extract;
 mod fetch;
 mod index;
 mod install;
+pub mod languages;
 pub mod manifest;
 mod signature;
 mod zstd;
