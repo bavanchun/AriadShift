@@ -1,6 +1,9 @@
 //! Fill existing AcroForm fields without executing their actions.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::Arc,
+};
 
 use ariad_core::{
     limits::Limits,
@@ -37,6 +40,8 @@ pub(super) struct FieldRef {
     pub font_size: f64,
     pub default_appearance: String,
     pub standard_font: Option<Object>,
+    pub resources: Option<Arc<Object>>,
+    pub has_appearance_font: bool,
 }
 use super::resolve;
 
@@ -74,6 +79,7 @@ struct Locator<'a> {
     seen: HashSet<ObjectId>,
     count: u32,
     fields: HashMap<String, FieldRef>,
+    resources: HashMap<*const Object, Arc<Object>>,
 }
 impl Locator<'_> {
     fn visit(
@@ -175,6 +181,22 @@ impl Locator<'_> {
             }
         }
         if !name.is_empty() && (fields.is_empty() || !widgets.is_empty()) {
+            let has_appearance_font = appearance::font_exists(
+                self.doc,
+                &default_appearance,
+                resources,
+                self.limits.max_nesting_depth,
+            );
+            let shared_resources = if has_appearance_font {
+                None
+            } else {
+                resources.map(|resource| {
+                    self.resources
+                        .entry(std::ptr::from_ref(resource))
+                        .or_insert_with(|| Arc::new(resource.clone()))
+                        .clone()
+                })
+            };
             if self
                 .fields
                 .insert(
@@ -191,6 +213,8 @@ impl Locator<'_> {
                             resources,
                             self.limits.max_nesting_depth,
                         ),
+                        resources: shared_resources,
+                        has_appearance_font,
                     },
                 )
                 .is_some()
@@ -233,15 +257,28 @@ pub(super) fn locate(
         seen: HashSet::new(),
         count: 0,
         fields: HashMap::new(),
+        resources: HashMap::new(),
     };
     let mut calculations = None;
     if let Some(form) = form {
         if let Ok(order) = form.get(b"CO") {
-            let order = resolve(doc, order, limits.max_nesting_depth).ok().and_then(|value| value.as_array().ok());
-            if order.is_some_and(|items| items.len() > limits.max_blocks as usize || items.len() > MAX_FIELDS) {
-                return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks { limit: limits.max_blocks.min(MAX_FIELDS as u32) }));
+            let order = resolve(doc, order, limits.max_nesting_depth)
+                .ok()
+                .and_then(|value| value.as_array().ok());
+            if order.is_some_and(|items| {
+                items.len() > limits.max_blocks as usize || items.len() > MAX_FIELDS
+            }) {
+                return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks {
+                    limit: limits.max_blocks.min(MAX_FIELDS as u32),
+                }));
             }
-            calculations = Some(order.into_iter().flatten().filter_map(|item| item.as_reference().ok()).collect());
+            calculations = Some(
+                order
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|item| item.as_reference().ok())
+                    .collect(),
+            );
         }
         if let Some(fields) =
             get(doc, form, b"Fields", limits.max_nesting_depth).and_then(|v| v.as_array().ok())
@@ -311,6 +348,74 @@ fn encoded(value: &FormValue) -> Object {
         FormValue::Null(()) => Object::Null,
     }
 }
+fn install_fallback_font(
+    doc: &mut Document,
+    field: &FieldRef,
+    limit: u16,
+    form_installed: &mut bool,
+    resource_cache: &mut HashMap<*const Object, ObjectId>,
+) -> Result<(), PdfError> {
+    if !*form_installed {
+        let catalog_id = catalog_object_id(doc)?;
+        let form_object = doc
+            .get_dictionary(catalog_id)
+            .map_err(|_| PdfError::Malformed)?
+            .get(b"AcroForm")
+            .map_err(|_| PdfError::Malformed)?
+            .clone();
+        let mut form = resolve(doc, &form_object, limit)?
+            .as_dict()
+            .map_err(|_| PdfError::Malformed)?
+            .clone();
+        super::create::add_default_resources(doc, &mut form, limit)?;
+        if let Object::Reference(id) = form_object {
+            *doc.get_object_mut(id).map_err(|_| PdfError::Malformed)? = Object::Dictionary(form);
+        } else {
+            doc.get_dictionary_mut(catalog_id)
+                .map_err(|_| PdfError::Malformed)?
+                .set("AcroForm", form);
+        }
+        *form_installed = true;
+    }
+    let local_resource = if let Some(resources) = &field.resources {
+        let key = Arc::as_ptr(resources);
+        if let Some(id) = resource_cache.get(&key) {
+            Some(*id)
+        } else {
+            let mut local = lopdf::Dictionary::new();
+            local.set("DR", resources.as_ref().clone());
+            super::create::add_default_resources(doc, &mut local, limit)?;
+            let value = local.get(b"DR").map_err(|_| PdfError::Malformed)?.clone();
+            let id = doc.add_object(value);
+            resource_cache.insert(key, id);
+            Some(id)
+        }
+    } else {
+        None
+    };
+    let mut tokens: Vec<_> = field
+        .default_appearance
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    if let Some(index) = tokens
+        .windows(3)
+        .rposition(|parts| parts[2] == "Tf" && parts[0].starts_with('/'))
+    {
+        tokens[index] = "/Helv".into();
+    } else {
+        tokens.extend(["/Helv".into(), field.font_size.to_string(), "Tf".into()]);
+    }
+    let dictionary = doc
+        .get_dictionary_mut(field.id)
+        .map_err(|_| PdfError::Malformed)?;
+    dictionary.set("DA", Object::string_literal(tokens.join(" ")));
+    if let Some(id) = local_resource {
+        dictionary.set("DR", Object::Reference(id));
+    }
+    Ok(())
+}
+
 fn value_len(value: &FormValue) -> usize {
     match value {
         FormValue::Text(s) => s.len(),
@@ -461,14 +566,36 @@ pub fn fill(
         .map(|info| (info.name.clone(), info))
         .collect();
     let (refs, has_calculations) = locate(edited.inner(), limits, ctx)?;
-    if let Some(order) = has_calculations {
-        let order: HashSet<_> = order.into_iter().collect();
-        let mut names: Vec<_> = refs.iter().filter(|(_, field)| order.contains(&field.id)).map(|(name, _)| name.as_str()).collect();
-        names.sort_unstable();
-        names.truncate(10);
-        let detail = if names.is_empty() { String::new() } else { format!(" for {}", names.join(", ")) };
-        report.warnings.push(format!("calculation_not_run: form calculations were not executed{detail}"));
+    let order: HashSet<_> = has_calculations
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .copied()
+        .collect();
+    let mut calculation_names: Vec<_> = infos
+        .iter()
+        .filter_map(|(name, info)| {
+            let has_action = info.actions.kinds.iter().any(|kind| kind == "calculate");
+            let is_ordered = refs
+                .get(name)
+                .is_some_and(|field| order.contains(&field.id));
+            (has_action || is_ordered).then_some(name.as_str())
+        })
+        .collect();
+    if has_calculations.is_some() || !calculation_names.is_empty() {
+        calculation_names.sort_unstable();
+        calculation_names.truncate(10);
+        let detail = if calculation_names.is_empty() {
+            String::new()
+        } else {
+            format!(" for {}", calculation_names.join(", "))
+        };
+        report.warnings.push(format!(
+            "calculation_not_run: form calculations were not executed{detail}"
+        ));
     }
+    let mut form_font_installed = false;
+    let mut fallback_resources = HashMap::new();
     for (name, input) in values {
         ctx.check()?;
         let Some(info) = infos.get(name) else {
@@ -500,6 +627,19 @@ pub fn fill(
             .get(name)
             .ok_or_else(|| PdfError::InvalidParams("field cannot be updated".into()))?;
         let doc = edited.inner_mut()?;
+        if matches!(
+            info.field_type,
+            Some(FieldType::Text | FieldType::Combo | FieldType::List)
+        ) && !reference.has_appearance_font
+        {
+            install_fallback_font(
+                doc,
+                reference,
+                limits.max_nesting_depth,
+                &mut form_font_installed,
+                &mut fallback_resources,
+            )?;
+        }
         let mut stored = encoded(&value);
         if matches!(
             info.field_type,

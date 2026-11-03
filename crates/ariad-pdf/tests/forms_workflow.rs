@@ -522,10 +522,14 @@ fn creates_list_with_multiple_default_selections() {
         "type": "list", "name": "multi_default", "page": 1, "rect": [40, 80, 200, 140],
         "options": [{"export": "a", "display": "Alpha"}, {"export": "b", "display": "Beta"}],
         "default": ["a", "b"]
-    })).unwrap();
+    }))
+    .unwrap();
     create::create(&mut pdf, &[field], false, &Limits::local(), &ToolCtx::new()).unwrap();
     let fields = list_fields(&pdf);
-    let result = fields.iter().find(|field| field.name == "multi_default").unwrap();
+    let result = fields
+        .iter()
+        .find(|field| field.name == "multi_default")
+        .unwrap();
     assert!(result.flags.multi_select);
     assert_eq!(result.value, FormValue::Multi(vec!["a".into(), "b".into()]));
 }
@@ -533,12 +537,41 @@ fn creates_list_with_multiple_default_selections() {
 #[test]
 fn regenerates_button_appearances_for_a_known_nonstandard_state() {
     let mut pdf = open(&fixture("forms-no-appearance.pdf"));
-    let id = *pdf.inner().objects.iter().find(|(_, object)| object.as_dict().ok().is_some_and(|dict| dict.get(b"T").ok().and_then(|value| value.as_str().ok()) == Some(b"check"))).unwrap().0;
-    pdf.inner_mut().unwrap().get_dictionary_mut(id).unwrap().set("AS", lopdf::Object::Name(b"Approved".to_vec()));
-    fill::fill(&mut pdf, &BTreeMap::from([("check".into(), FormValue::Bool(true))]), &FillOptions { strict: true }, &Limits::local(), &ToolCtx::new()).unwrap();
+    let id = *pdf
+        .inner()
+        .objects
+        .iter()
+        .find(|(_, object)| {
+            object.as_dict().ok().is_some_and(|dict| {
+                dict.get(b"T").ok().and_then(|value| value.as_str().ok()) == Some(b"check")
+            })
+        })
+        .unwrap()
+        .0;
+    pdf.inner_mut()
+        .unwrap()
+        .get_dictionary_mut(id)
+        .unwrap()
+        .set("AS", lopdf::Object::Name(b"Approved".to_vec()));
+    fill::fill(
+        &mut pdf,
+        &BTreeMap::from([("check".into(), FormValue::Bool(true))]),
+        &FillOptions { strict: true },
+        &Limits::local(),
+        &ToolCtx::new(),
+    )
+    .unwrap();
     let widget = pdf.inner().get_dictionary(id).unwrap();
     assert_eq!(widget.get(b"AS").unwrap().as_name().unwrap(), b"Approved");
-    let states = widget.get(b"AP").unwrap().as_dict().unwrap().get(b"N").unwrap().as_dict().unwrap();
+    let states = widget
+        .get(b"AP")
+        .unwrap()
+        .as_dict()
+        .unwrap()
+        .get(b"N")
+        .unwrap()
+        .as_dict()
+        .unwrap();
     assert!(states.has(b"Off"));
     assert!(states.has(b"Approved"));
     assert!(!states.has(b"Yes"));
@@ -547,7 +580,140 @@ fn regenerates_button_appearances_for_a_known_nonstandard_state() {
 #[test]
 fn reports_calculation_fields_without_executing_them() {
     let mut pdf = open(&fixture("forms-js-actions.pdf"));
-    let report = fill::fill(&mut pdf, &BTreeMap::from([("js_source".into(), FormValue::Text("changed".into()))]), &FillOptions { strict: true }, &Limits::local(), &ToolCtx::new()).unwrap();
-    assert!(report.warnings.iter().any(|warning| warning.starts_with("calculation_not_run:") && warning.contains("js_target")));
-    assert_eq!(list_fields(&pdf).iter().find(|field| field.name == "js_target").unwrap().value, FormValue::Text(String::new()));
+    let report = fill::fill(
+        &mut pdf,
+        &BTreeMap::from([("js_source".into(), FormValue::Text("changed".into()))]),
+        &FillOptions { strict: true },
+        &Limits::local(),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    assert!(report.warnings.iter().any(
+        |warning| warning.starts_with("calculation_not_run:") && warning.contains("js_target")
+    ));
+    assert_eq!(
+        list_fields(&pdf)
+            .iter()
+            .find(|field| field.name == "js_target")
+            .unwrap()
+            .value,
+        FormValue::Text(String::new())
+    );
+}
+
+#[test]
+fn reports_calculate_action_even_without_calculation_order() {
+    let mut pdf = open(&fixture("forms-js-actions.pdf"));
+    let doc = pdf.inner_mut().unwrap();
+    let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    let form = doc
+        .get_dictionary(root)
+        .unwrap()
+        .get(b"AcroForm")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    doc.get_dictionary_mut(form).unwrap().remove(b"CO");
+    let report = fill::fill(
+        &mut pdf,
+        &BTreeMap::from([("js_source".into(), FormValue::Text("changed".into()))]),
+        &FillOptions { strict: true },
+        &Limits::local(),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    assert!(report.warnings.iter().any(
+        |warning| warning.starts_with("calculation_not_run:") && warning.contains("js_target")
+    ));
+}
+
+#[test]
+fn fills_a_field_with_a_missing_default_font_resource() {
+    let mut pdf = open(&fixture("forms-all-types.pdf"));
+    let id = *pdf
+        .inner()
+        .objects
+        .iter()
+        .find(|(_, object)| {
+            object.as_dict().ok().is_some_and(|dict| {
+                dict.get(b"T").ok().and_then(|value| value.as_str().ok()) == Some(b"name")
+            })
+        })
+        .unwrap()
+        .0;
+    let other = *pdf
+        .inner()
+        .objects
+        .iter()
+        .find(|(_, object)| {
+            object.as_dict().ok().is_some_and(|dict| {
+                dict.get(b"T").ok().and_then(|value| value.as_str().ok()) == Some(b"multiline")
+            })
+        })
+        .unwrap()
+        .0;
+    for widget in [id, other] {
+        pdf.inner_mut()
+            .unwrap()
+            .get_dictionary_mut(widget)
+            .unwrap()
+            .set("DA", lopdf::Object::string_literal("/Missing 11 Tf 0.25 g"));
+    }
+    fill::fill(
+        &mut pdf,
+        &BTreeMap::from([
+            ("name".into(), FormValue::Text("An".into())),
+            ("multiline".into(), FormValue::Text("Binh".into())),
+        ]),
+        &FillOptions { strict: true },
+        &Limits::local(),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let doc = pdf.inner();
+    let field = doc.get_dictionary(id).unwrap();
+    let da = field.get(b"DA").unwrap().as_str().unwrap();
+    assert_eq!(da, b"/Helv 11 Tf 0.25 g");
+    let resource_id = field.get(b"DR").unwrap().as_reference().unwrap();
+    assert_eq!(
+        doc.get_dictionary(other)
+            .unwrap()
+            .get(b"DR")
+            .unwrap()
+            .as_reference()
+            .unwrap(),
+        resource_id
+    );
+    let resources = doc.get_dictionary(resource_id).unwrap();
+    assert!(
+        resources
+            .get(b"Font")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .has(b"Helv")
+    );
+    let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    let form = doc
+        .get_dictionary(root)
+        .unwrap()
+        .get(b"AcroForm")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let resources = doc
+        .get_dictionary(form)
+        .unwrap()
+        .get(b"DR")
+        .unwrap()
+        .as_dict()
+        .unwrap();
+    assert!(
+        resources
+            .get(b"Font")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .has(b"Helv")
+    );
 }

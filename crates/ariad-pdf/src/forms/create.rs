@@ -152,7 +152,7 @@ fn default_text(field: &NewField) -> (String, Vec<usize>) {
     };
     (text, Vec::new())
 }
-fn add_default_resources(
+pub(super) fn add_default_resources(
     doc: &mut Document,
     form: &mut Dictionary,
     limit: u16,
@@ -169,11 +169,37 @@ fn add_default_resources(
         .map(|v| dictionary(doc, v, limit))
         .transpose()?
         .unwrap_or_default();
-    if !fonts.has(b"Helv") {
+    if !fonts
+        .get(b"Helv")
+        .ok()
+        .and_then(|value| resolve(doc, value, limit).ok())
+        .is_some_and(|value| {
+            value
+                .as_dict()
+                .ok()
+                .and_then(|font| font.get(b"Subtype").ok())
+                .and_then(|subtype| resolve(doc, subtype, limit).ok())
+                .and_then(|subtype| subtype.as_name().ok())
+                .is_some()
+        })
+    {
         let id = doc.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding" });
         fonts.set("Helv", Object::Reference(id));
     }
-    if !fonts.has(b"ZaDb") {
+    if !fonts
+        .get(b"ZaDb")
+        .ok()
+        .and_then(|value| resolve(doc, value, limit).ok())
+        .is_some_and(|value| {
+            value
+                .as_dict()
+                .ok()
+                .and_then(|font| font.get(b"Subtype").ok())
+                .and_then(|subtype| resolve(doc, subtype, limit).ok())
+                .and_then(|subtype| subtype.as_name().ok())
+                .is_some()
+        })
+    {
         let id = doc.add_object(
             dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "ZapfDingbats" },
         );
@@ -191,7 +217,9 @@ fn flags(field: &NewField) -> i64 {
     if field.multiline {
         flags |= 1 << 12;
     }
-    if field.field_type == FieldType::List && matches!(field.default.as_ref(), Some(FormValue::Multi(_))) {
+    if field.field_type == FieldType::List
+        && matches!(field.default.as_ref(), Some(FormValue::Multi(_)))
+    {
         flags |= 1 << 21;
     }
     match field.field_type {
@@ -244,7 +272,15 @@ fn base_field(field: &NewField) -> Result<Dictionary, PdfError> {
     if field.field_type == FieldType::List && field.default.is_some() {
         let (_, selected) = default_text(field);
         if !selected.is_empty() {
-            out.set("I", Object::Array(selected.into_iter().map(|index| Object::Integer(index as i64)).collect()));
+            out.set(
+                "I",
+                Object::Array(
+                    selected
+                        .into_iter()
+                        .map(|index| Object::Integer(index as i64))
+                        .collect(),
+                ),
+            );
         }
     }
     if let Some(default) = default_value(

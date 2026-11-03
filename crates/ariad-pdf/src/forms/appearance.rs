@@ -126,6 +126,44 @@ fn default_text_color(da: &str) -> Option<[f64; 3]> {
     }
     color
 }
+/// Return whether the default appearance names a resolvable font resource.
+pub(crate) fn font_exists(
+    doc: &Document,
+    da: &str,
+    resources: Option<&Object>,
+    depth: u16,
+) -> bool {
+    let tokens: Vec<_> = da.split_whitespace().take(256).collect();
+    let name = tokens.windows(3).rev().find_map(|parts| {
+        (parts[2] == "Tf")
+            .then(|| parts[0].strip_prefix('/'))
+            .flatten()
+    });
+    name.zip(resources)
+        .and_then(|(name, resources)| {
+            crate::forms::resolve(doc, resources, depth)
+                .ok()?
+                .as_dict()
+                .ok()?
+                .get(b"Font")
+                .ok()
+                .and_then(|o| crate::forms::resolve(doc, o, depth).ok())?
+                .as_dict()
+                .ok()?
+                .get(name.as_bytes())
+                .ok()
+                .and_then(|o| crate::forms::resolve(doc, o, depth).ok())?
+                .as_dict()
+                .ok()?
+                .get(b"Subtype")
+                .ok()
+                .and_then(|o| crate::forms::resolve(doc, o, depth).ok())?
+                .as_name()
+                .ok()
+        })
+        .is_some()
+}
+
 /// Resolve a safe Standard-14 font from inherited form resources.
 pub(crate) fn standard_font(
     doc: &Document,
