@@ -237,6 +237,10 @@ mod tests {
     #[test]
     fn cached_model_lifecycle_rechecks_and_removes_only_the_selected_file() {
         let Some(root) = std::env::var_os("ARIAD_TEST_TESSERACT_DIR") else {
+            assert!(
+                std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+                "ARIAD_TEST_TESSERACT_DIR is required"
+            );
             eprintln!("skipping: development Tesseract model is absent");
             return;
         };

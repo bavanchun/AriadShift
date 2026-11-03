@@ -7,6 +7,10 @@ use std::{fs, path::PathBuf};
 #[test]
 fn renders_grayscale_pages_and_metadata() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: ARIAD_TEST_PDFIUM_DIR is not set");
         return;
     };
@@ -54,6 +58,10 @@ fn renders_grayscale_pages_and_metadata() {
 #[test]
 fn detects_the_three_scan_bed_regions() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: ARIAD_TEST_PDFIUM_DIR is not set");
         return;
     };

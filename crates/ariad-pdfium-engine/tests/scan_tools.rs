@@ -55,6 +55,10 @@ fn images(pdf: &lopdf::Document) -> Vec<Vec<u8>> {
 #[test]
 fn scanner_effect_accepts_large_internal_images_under_input_limit() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: PDFium pack absent");
         return;
     };
@@ -87,6 +91,10 @@ fn scanner_effect_accepts_large_internal_images_under_input_limit() {
 #[test]
 fn split_scans_preserves_source_image_bytes() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: PDFium pack absent");
         return;
     };
@@ -143,6 +151,10 @@ fn split_scans_preserves_source_image_bytes() {
 #[test]
 fn deskew_warns_for_signed_input() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: PDFium pack absent");
         return;
     };
@@ -168,6 +180,10 @@ fn deskew_warns_for_signed_input() {
 #[test]
 fn deskew_reduces_angle_without_reencoding() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: PDFium pack absent");
         return;
     };
@@ -248,6 +264,10 @@ fn scan_tools_honor_cancellation_and_deadline() {
 #[test]
 fn split_retains_unselected_and_blank_pages() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: PDFium pack absent");
         return;
     };
@@ -280,6 +300,10 @@ fn split_retains_unselected_and_blank_pages() {
 #[test]
 fn scanner_effect_changes_only_selected_page_and_keeps_source_images() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_PDFIUM_DIR is required"
+        );
         eprintln!("skipping: PDFium pack absent");
         return;
     };

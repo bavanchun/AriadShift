@@ -476,6 +476,10 @@ mod tests {
     #[test]
     fn changed_staged_model_is_refused_after_verification() {
         let Some(root) = std::env::var_os("ARIAD_TEST_TESSERACT_DIR") else {
+            assert!(
+                std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+                "ARIAD_TEST_TESSERACT_DIR is required"
+            );
             eprintln!("skipping: development Tesseract model is absent");
             return;
         };
@@ -528,6 +532,10 @@ mod tests {
         .unwrap_err();
         assert_eq!(absent.code, ErrorCode::ToolMissing);
         let Some(root) = std::env::var_os("ARIAD_TEST_TESSERACT_DIR") else {
+            assert!(
+                std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+                "ARIAD_TEST_TESSERACT_DIR is required"
+            );
             eprintln!("skipping deadline check: development Tesseract is absent");
             return;
         };
@@ -539,6 +547,10 @@ mod tests {
     #[test]
     fn real_tesseract_recognizes_vietnamese_and_orientation() {
         let Some(root) = std::env::var_os("ARIAD_TEST_TESSERACT_DIR") else {
+            assert!(
+                std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+                "ARIAD_TEST_TESSERACT_DIR is required"
+            );
             eprintln!("skipping: development Tesseract is absent");
             return;
         };
