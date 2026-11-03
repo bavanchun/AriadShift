@@ -104,7 +104,6 @@ pub fn forms_import(
             "form import requires a PDF and one data file".into(),
         ));
     }
-    let pdf = inputs[0].open_for_mutation(ctx)?;
     let payload = raw_payload(&inputs[1])?;
     let format = sniff::sniff(payload)?;
     interchange::limits::check(payload, format, params.delimiter, &inputs[1].limits, ctx)?;
@@ -134,14 +133,26 @@ pub fn forms_import(
             "invalid number of import records".into(),
         ));
     }
+    let input_bytes = match &inputs[0].source {
+        InputSource::Bytes(bytes) => bytes.len() as u64,
+        InputSource::Doc(doc) => doc.source_len(),
+    };
+    let byte_limit = inputs[0].limits.max_decompressed_bytes;
+    if input_bytes.saturating_mul(records.len() as u64) > byte_limit {
+        return Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge {
+            limit: byte_limit,
+        }));
+    }
+    let pdf = inputs[0].open_for_mutation(ctx)?;
     let pages = all_pages(&pdf, ctx)?;
-    let metadata: HashMap<_, _> = fields(&pdf, inputs, &pages, ctx)?
-        .into_iter()
-        .map(|field| (field.name.clone(), field))
-        .collect();
+    let mut metadata = HashMap::new();
+    for field in fields(&pdf, inputs, &pages, ctx)? {
+        metadata.entry(field.name.clone()).or_insert(field);
+    }
     let total = records.len();
     let mut names = BatchNames::default();
     let mut outputs = Vec::with_capacity(total);
+    let mut output_bytes = 0u64;
     let mut unknown_seen = HashSet::new();
     for (index, record) in records.iter_mut().enumerate() {
         ctx.check()?;
@@ -163,6 +174,14 @@ pub fn forms_import(
             if let Some(field) = metadata.get(name) {
                 if field.field_type == Some(FieldType::Checkbox) {
                     checkbox_value(value);
+                }
+                if format == DataFormat::Csv
+                    && field.field_type == Some(FieldType::List)
+                    && field.flags.multi_select
+                {
+                    if let FormValue::Text(text) = value {
+                        *value = FormValue::Multi(text.split('|').map(str::to_owned).collect());
+                    }
                 }
             } else if unknown_seen.insert(name.clone()) {
                 unknown_warnings.push("unknown_field: field was not found".to_owned());
@@ -195,14 +214,20 @@ pub fn forms_import(
         } else {
             None
         };
-        let mut out = if total == 1 {
-            OutputDoc::unnamed_pdf(result)
+        let bytes = crate::writer::save(&mut result, ctx)?;
+        drop(result);
+        output_bytes = output_bytes.saturating_add(bytes.len() as u64);
+        if output_bytes > byte_limit {
+            return Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge {
+                limit: byte_limit,
+            }));
+        }
+        let name = if total == 1 {
+            String::new()
         } else {
-            OutputDoc::from_pdf(
-                names.allocate(filename.as_deref(), &inputs[0].stem, index + 1, total),
-                result,
-            )
+            names.allocate(filename.as_deref(), &inputs[0].stem, index + 1, total)
         };
+        let mut out = OutputDoc::from_bytes(name, "pdf", bytes);
         if index == 0 {
             coded(&mut out, parse_warnings.clone(), None);
         }
@@ -267,6 +292,7 @@ pub fn forms_export(
         state_record.insert(field.name.clone(), state);
         record.insert(field.name, field.value);
     }
+    let mut dropped_xml_chars = false;
     let (format, bytes) = match params.format {
         FormsExportFormat::Json => ("json", interchange::json::write_forms(&record)?),
         FormsExportFormat::Csv => ("csv", interchange::csv::write_forms(&record)?),
@@ -274,17 +300,26 @@ pub fn forms_export(
             "fdf",
             interchange::fdf::write_forms_with_names(&state_record, &state_fields)?,
         ),
-        FormsExportFormat::Xfdf => (
-            "xfdf",
-            interchange::xfdf::write_forms(&state_record, &inputs[0].stem)?,
-        ),
+        FormsExportFormat::Xfdf => {
+            let (bytes, dropped) =
+                interchange::xfdf::write_forms_with_warnings(&state_record, &inputs[0].stem)?;
+            dropped_xml_chars = dropped;
+            ("xfdf", bytes)
+        }
     };
-    let output = if format == "json" {
+    let mut output = if format == "json" {
         let value = serde_json::from_slice(&bytes).map_err(|_| PdfError::Malformed)?;
         OutputDoc::from_json(String::new(), value)?
     } else {
         OutputDoc::from_bytes(String::new(), format, bytes)
     };
+    if dropped_xml_chars {
+        coded(
+            &mut output,
+            ["invalid_xml_characters: XML-invalid characters were dropped".into()],
+            None,
+        );
+    }
     Ok((vec![pdf], vec![output]))
 }
 

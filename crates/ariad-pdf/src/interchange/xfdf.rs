@@ -213,28 +213,42 @@ struct Tree {
     value: Option<FormValue>,
     children: BTreeMap<String, Tree>,
 }
-fn valid_xml(text: &str) -> bool {
-    text.chars().all(|c| {
-        matches!(c, '\u{9}' | '\u{a}' | '\u{d}')
-            || ('\u{20}'..='\u{d7ff}').contains(&c)
-            || ('\u{e000}'..='\u{fffd}').contains(&c)
-            || ('\u{10000}'..='\u{10ffff}').contains(&c)
-    })
+fn valid_xml(c: char) -> bool {
+    matches!(c, '\u{9}' | '\u{a}' | '\u{d}')
+        || ('\u{20}'..='\u{d7ff}').contains(&c)
+        || ('\u{e000}'..='\u{fffd}').contains(&c)
+        || ('\u{10000}'..='\u{10ffff}').contains(&c)
 }
-fn escaped(text: &str, output: &mut String) -> Result<(), PdfError> {
-    if !valid_xml(text) || text.len() > MAX_DATA_STRING_BYTES {
+fn escaped(text: &str, output: &mut String, dropped: &mut bool) -> Result<(), PdfError> {
+    if text.len() > MAX_DATA_STRING_BYTES {
         return Err(invalid());
     }
-    output.push_str(&quick_xml::escape::escape(text));
+    let sanitized: String = text
+        .chars()
+        .filter(|&c| {
+            if valid_xml(c) {
+                true
+            } else {
+                *dropped = true;
+                false
+            }
+        })
+        .collect();
+    output.push_str(&quick_xml::escape::escape(&sanitized));
     Ok(())
 }
-fn emit(tree: &BTreeMap<String, Tree>, output: &mut String, depth: usize) -> Result<(), PdfError> {
+fn emit(
+    tree: &BTreeMap<String, Tree>,
+    output: &mut String,
+    depth: usize,
+    dropped: &mut bool,
+) -> Result<(), PdfError> {
     if depth > MAX_DATA_DEPTH {
         return Err(invalid());
     }
     for (name, node) in tree {
         output.push_str("<field name=\"");
-        escaped(name, output)?;
+        escaped(name, output, dropped)?;
         output.push_str("\">");
         if let Some(value) = &node.value {
             let parts: Vec<String> = match value {
@@ -245,11 +259,11 @@ fn emit(tree: &BTreeMap<String, Tree>, output: &mut String, depth: usize) -> Res
             };
             for part in parts {
                 output.push_str("<value>");
-                escaped(&part, output)?;
+                escaped(&part, output, dropped)?;
                 output.push_str("</value>");
             }
         }
-        emit(&node.children, output, depth + 1)?;
+        emit(&node.children, output, depth + 1, dropped)?;
         output.push_str("</field>");
         if output.len() > MAX_DATA_BYTES {
             return Err(invalid());
@@ -259,6 +273,14 @@ fn emit(tree: &BTreeMap<String, Tree>, output: &mut String, depth: usize) -> Res
 }
 /// Write a deterministic XFDF record with a filename-only source reference.
 pub fn write_forms(record: &FormRecord, filename: &str) -> Result<Vec<u8>, PdfError> {
+    Ok(write_forms_with_warnings(record, filename)?.0)
+}
+
+/// Write XFDF and report whether XML-invalid characters were dropped.
+pub fn write_forms_with_warnings(
+    record: &FormRecord,
+    filename: &str,
+) -> Result<(Vec<u8>, bool), PdfError> {
     if record.len() > MAX_FIELDS {
         return Err(invalid());
     }
@@ -283,12 +305,13 @@ pub fn write_forms(record: &FormRecord, filename: &str) -> Result<Vec<u8>, PdfEr
     let mut output = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xfdf xmlns=\"http://ns.adobe.com/xfdf/\" xml:space=\"preserve\"><f href=\"",
     );
-    escaped(basename, &mut output)?;
+    let mut dropped = false;
+    escaped(basename, &mut output, &mut dropped)?;
     output.push_str("\"/><fields>");
-    emit(&root.children, &mut output, 0)?;
+    emit(&root.children, &mut output, 0, &mut dropped)?;
     output.push_str("</fields></xfdf>");
     check_data_size(output.as_bytes())?;
-    Ok(output.into_bytes())
+    Ok((output.into_bytes(), dropped))
 }
 
 #[cfg(test)]

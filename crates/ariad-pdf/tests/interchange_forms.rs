@@ -86,16 +86,124 @@ fn imports_batch_and_exports_each_requested_format() {
     let (_, outputs) = run::forms_import(&[pdf.clone(), input], &params, &ctx).unwrap();
     assert_eq!(outputs.len(), 2);
     assert_ne!(outputs[0].name, outputs[1].name);
-    let OutputPayload::Pdf(filled) = &outputs[0].payload else {
+    let OutputPayload::Bytes(filled) = &outputs[0].payload else {
         panic!("expected PDF")
     };
-    let filled = InputDoc::from_doc("filled.pdf", (**filled).clone());
+    let filled = InputDoc::new("filled.pdf", filled.clone());
     for format in ["json", "csv", "fdf", "xfdf"] {
         let params: FormsExportParams = serde_json::from_value(value!({"format":format})).unwrap();
         let (_, outputs) = run::forms_export(std::slice::from_ref(&filled), &params, &ctx).unwrap();
         assert_eq!(outputs[0].format, format);
         assert_eq!(outputs[0].json.is_some(), format == "json");
     }
+}
+
+#[test]
+fn csv_preserves_text_pipes_and_reverses_formula_guard() {
+    use ariad_core::{limits::Limits, tools::params::forms::FormsImportParams};
+    use ariad_pdf::{
+        document,
+        forms::list,
+        interchange::run,
+        tools::{InputDoc, OutputPayload},
+    };
+    let ctx = ToolCtx::new();
+    let fields = ariad_pdf::interchange::FormRecord::from([
+        ("name".into(), FormValue::Text("12 Lê Lợi | Q1".into())),
+        ("phone".into(), FormValue::Text("+84901234567".into())),
+        ("balance".into(), FormValue::Text("-5".into())),
+    ]);
+    let csv_bytes = csv::write_forms(&fields).unwrap();
+    assert_eq!(
+        csv::read_forms(&csv_bytes, None, EmptyCell::Skip, 1, &ctx).unwrap()[0],
+        fields
+    );
+    let input = InputDoc::new(
+        "form.pdf",
+        include_bytes!("../../../fixtures/pdf-forms/forms-all-types.pdf").to_vec(),
+    );
+    let params: FormsImportParams = serde_json::from_value(serde_json::json!({})).unwrap();
+    let (_, outputs) = run::forms_import(
+        &[input, InputDoc::new("data.csv", csv_bytes)],
+        &params,
+        &ctx,
+    )
+    .unwrap();
+    let OutputPayload::Bytes(bytes) = &outputs[0].payload else {
+        panic!("expected PDF")
+    };
+    let pdf = document::open(bytes, &Limits::local()).unwrap();
+    let listing = list::list(&pdf, &[1], true, &Limits::local(), &ctx).unwrap();
+    assert_eq!(
+        listing
+            .fields
+            .iter()
+            .find(|f| f.name == "name")
+            .unwrap()
+            .value,
+        fields["name"]
+    );
+}
+
+#[test]
+fn batch_rejects_input_size_times_record_count_over_budget() {
+    use ariad_core::tools::params::forms::FormsImportParams;
+    use ariad_pdf::{PdfError, interchange::run, tools::InputDoc};
+    let bytes = include_bytes!("../../../fixtures/pdf-forms/forms-all-types.pdf").to_vec();
+    let mut pdf = InputDoc::new("form.pdf", bytes.clone());
+    pdf.limits.max_decompressed_bytes = (bytes.len() as u64).saturating_mul(2).saturating_sub(1);
+    let params: FormsImportParams = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = run::forms_import(
+        &[
+            pdf,
+            InputDoc::new("batch.csv", b"name\nAn\nBinh\n".to_vec()),
+        ],
+        &params,
+        &ToolCtx::new(),
+    );
+    assert!(matches!(result, Err(PdfError::LimitExceeded(_))));
+}
+
+#[test]
+fn xfdf_export_drops_invalid_xml_controls_and_warns() {
+    use ariad_core::{limits::Limits, tools::params::forms::FormsExportParams};
+    use ariad_pdf::{
+        document,
+        forms::fill::{self, FillOptions},
+        interchange::run,
+        tools::{InputDoc, OutputPayload},
+    };
+    let ctx = ToolCtx::new();
+    let mut pdf = document::open(
+        include_bytes!("../../../fixtures/pdf-forms/forms-all-types.pdf"),
+        &Limits::local(),
+    )
+    .unwrap();
+    fill::fill(
+        &mut pdf,
+        &std::collections::BTreeMap::from([("name".into(), FormValue::Text("a\u{1}b".into()))]),
+        &FillOptions { strict: true },
+        &Limits::local(),
+        &ctx,
+    )
+    .unwrap();
+    let params: FormsExportParams =
+        serde_json::from_value(serde_json::json!({"format":"xfdf"})).unwrap();
+    let (_, outputs) =
+        run::forms_export(&[InputDoc::from_doc("form.pdf", pdf)], &params, &ctx).unwrap();
+    assert!(
+        outputs[0]
+            .coded_warnings
+            .iter()
+            .any(|w| w.code == "invalid_xml_characters")
+    );
+    let OutputPayload::Bytes(bytes) = &outputs[0].payload else {
+        panic!("expected XFDF")
+    };
+    assert_eq!(
+        xfdf::read_forms(bytes, &ctx).unwrap().0["name"],
+        FormValue::Text("ab".into())
+    );
 }
 
 #[test]
@@ -171,11 +279,12 @@ fn empty_choice_values_survive_export_and_reimport() {
     let data = InputDoc::new("data.json", bytes.clone());
     let import: FormsImportParams = serde_json::from_value(serde_json::json!({})).unwrap();
     let (_, outputs) = run::forms_import(&[pdf, data], &import, &ctx).unwrap();
-    let OutputPayload::Pdf(filled) = &outputs[0].payload else {
+    let OutputPayload::Bytes(bytes) = &outputs[0].payload else {
         panic!("expected PDF")
     };
+    let filled = ariad_pdf::document::open(bytes, &ariad_core::limits::Limits::local()).unwrap();
     let listed = ariad_pdf::forms::list::list(
-        filled,
+        &filled,
         &[1, 2],
         true,
         &ariad_core::limits::Limits::local(),

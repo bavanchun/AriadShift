@@ -51,7 +51,7 @@ pub fn read_forms(
         return Err(invalid("invalid CSV column count"));
     }
     let mut names = HashSet::new();
-    for name in &header {
+    for name in header.iter().map(unguard) {
         if name.is_empty() || name.len() > MAX_DATA_STRING_BYTES || !names.insert(name) {
             return Err(invalid("CSV header names must be nonempty and unique"));
         }
@@ -70,7 +70,7 @@ pub fn read_forms(
             )));
         }
         let mut record = FormRecord::new();
-        for (name, cell) in header.iter().zip(row.iter()) {
+        for (name, cell) in header.iter().map(unguard).zip(row.iter().map(unguard)) {
             if cell.len() > MAX_DATA_STRING_BYTES {
                 return Err(invalid("CSV value is too long"));
             }
@@ -79,8 +79,6 @@ pub fn read_forms(
                     EmptyCell::Skip => continue,
                     EmptyCell::Clear => FormValue::Null(()),
                 }
-            } else if cell.contains('|') {
-                FormValue::Multi(cell.split('|').map(str::to_owned).collect())
             } else {
                 FormValue::Text(cell.to_owned())
             };
@@ -89,6 +87,14 @@ pub fn read_forms(
         records.push(record);
     }
     Ok(records)
+}
+
+// Reverse exactly the apostrophe added by our spreadsheet formula guard.
+fn unguard(value: &str) -> &str {
+    match value.strip_prefix('\'') {
+        Some(rest) if rest.starts_with(['=', '+', '-', '@', '\t', '\r']) => rest,
+        _ => value,
+    }
 }
 
 // Count separators in the first logical record, ignoring delimiters inside quoted cells.
