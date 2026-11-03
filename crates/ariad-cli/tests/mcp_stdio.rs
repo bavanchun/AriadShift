@@ -2788,6 +2788,31 @@ fn test_mcp_lists_and_inspects_forms_and_annotations() {
     let response = client.read_response(802);
     assert_eq!(response["result"]["isError"], false, "{response}");
     assert!(response["result"]["structuredContent"]["inline_json"]["annotations"].is_array());
+    let output = temp_dir.path().join("output");
+    fs::create_dir(&output).unwrap();
+    client.send_request(803, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.forms_fill", "inputs":[input], "output_dir":output, "params":{"values":{"name":"An Nguyễn"}}}}));
+    let response = client.read_response(803);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let filled = fs::read_dir(&output)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    client.send_request(
+        804,
+        "tools/call",
+        json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.forms_list", "inputs":[filled]}}),
+    );
+    let response = client.read_response(804);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    assert!(
+        response["result"]["structuredContent"]["inline_json"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field["name"] == "name" && field["value"] == "An Nguyễn")
+    );
     client.close_and_assert_purity();
 }
 
