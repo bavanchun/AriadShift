@@ -81,6 +81,13 @@ expression: normalize_doctor_json_stdout(&output)
       "required": false,
       "message": "qpdf engine cannot be used: tool_missing: engine pack 'qpdf' is not installed; run 'ashift engines install qpdf' to install the qpdf engine pack",
       "hint": "run 'ashift engines install qpdf' to install the qpdf engine pack"
+    },
+    {
+      "id": "tesseract_engine",
+      "ok": false,
+      "required": false,
+      "message": "tesseract engine cannot be used: tool_missing: engine pack 'tesseract' is not installed; run 'ashift engines install tesseract' to install the tesseract engine pack",
+      "hint": "run 'ashift engines install tesseract' to install the tesseract engine pack"
     }
   ],
   "stale_workspaces": 0
