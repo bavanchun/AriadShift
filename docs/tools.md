@@ -4,6 +4,8 @@ This document specifies the normative contract for AriadShift document tools (`a
 
 All tool registration, parameter validation, access control, page-range parsing, and recipe definitions live in `ariad-core::tools`. Structural PDF operations run in-process inside `ariad-pdf` (including on `wasm32`), while rendering, encryption, OCR, signing, validation, and AI tools run out of process over `ariad-engine/2` orchestrated by `ariad-host`. Product surfaces (`ashift` CLI, MCP servers, `apps/web`, `apps/macos`) carry no document manipulation logic.
 
+The native host and browser build enable `ariad-pdf`'s `codecs` feature for font, QR and image colour operations. Library consumers that disable it omit codec-dependent tools and dependencies; `image.to_pdf` remains available.
+
 ## Table of Contents
 
 - [1. Architecture Boundary: Tools vs. Conversions](#1-architecture-boundary-tools-vs-conversions)
@@ -85,7 +87,7 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
 | `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.grayscale`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize`, `pdf.unlock_forms` |
-| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark`, `pdf.watermark_detect`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
+| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.replace_color`, `pdf.adjust_colors`, `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`, `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`, `pdf.watermark_detect`, `pdf.watermark_remove` |
 | `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
 | `forms` | AcroForm field inspection, filling, creation, and flattening | `pdf.forms_inspect`, `pdf.forms_fill`, `pdf.forms_flatten` |
@@ -139,11 +141,11 @@ All parameter structs live in `ariad-core::tools::params::*` (pure `serde` + `sc
 
 ### Multi-Format Tools (`output_format` and `output_formats`)
 
-`pdf.watermark_detect` returns candidates with input-bound identifiers, page numbers and bounding boxes. Image objects it cannot inspect are counted in `unsupported_images` and reported in a warning; they are not candidates. `pdf.watermark_remove` requires explicit candidate identifiers from that input; it rejects empty, wildcard, unknown or ambiguous selections. It publishes a PDF and also returns an inline JSON report of removed and unselected candidates. The host and MCP expose that report as `inline_json`, the CLI includes it in `--json` output, and WASM exposes it as `data`. Removing third-party marks emits a warning.
+`pdf.watermark_detect` returns candidates with input-bound identifiers, page numbers and bounding boxes. Image objects it cannot inspect are counted in `unsupported_images` and reported in a warning; they are not candidates. `pdf.watermark_remove` requires explicit candidate identifiers from that input; it rejects empty, wildcard, unknown or ambiguous selections. A removal request supports at most eight distinct detection queries and shares one work budget across detection and removal. It publishes a PDF and also returns an inline JSON report of removed and unselected candidates. The host and MCP expose that report as `inline_json`, the CLI includes it in `--json` output, and WASM exposes it as `data`. Removing third-party marks emits a warning.
 
 Text and image marks use the bundled Libertinus fonts and visual page coordinates. Image marks take the image as the second input; bytes determine its type. AriadShift watermarks use a removable marked-content and optional-content layer. Pagination marks use Header or Footer artifacts, while background and inversion use private artifact markers. Inversion uses Difference blending and does not invert annotations. Colour adjustment may skip unsupported image encodings with a warning.
 
-Page numbering and headers support page labels. Headers and footers expand `{filename}`, `{date}`, `{n}`, `{total}` and `{label}`; the original Unicode filename is cleaned of path components and control characters. The date comes from an explicit parameter, then `SOURCE_DATE_EPOCH`, then the clock injected into `ToolCtx` by the host. Contents pages derive from the document outline, keep links to original pages and shift page labels; generation is bounded to 50 pages.
+Page numbering and headers support page labels. Headers and footers expand `{filename}`, `{date}`, `{n}`, `{total}` and `{label}`; the original Unicode filename is cleaned of path components and control characters. The date comes from an explicit parameter or the clock injected into `ToolCtx` by the host. Contents pages derive from the document outline, keep links to original pages and shift page labels; generation is bounded to 50 pages.
 
 Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"png"`, or `"json"`). Tools that can emit artifacts in more than one format additionally declare a non-empty `output_formats` allowlist (serialized in `schemas/tools.v1.json` only when non-empty so single-format descriptors remain unchanged):
 
@@ -475,10 +477,12 @@ For every in-process tool in `ariad-pdf` (and deterministic native writers), run
 Golden tests and CI determinism checks run every in-process tool twice under a fixed `SOURCE_DATE_EPOCH` and assert `sha256(run_1) == sha256(run_2)`.
 
 The PDF drawing API resolves a `{date}` token from an explicit ISO date first,
-then `SOURCE_DATE_EPOCH` in UTC, then the optional `ToolCtx` clock in its supplied
-local offset. If none is available, it reports an invalid-parameter error. Native
-and browser tool hosts supply the clock; the PDF library itself does not read the
-wall clock. An invalid explicit date or epoch is an error rather than a fallback.
+then the caller-supplied `ToolCtx` clock. Native hosts parse `SOURCE_DATE_EPOCH`
+once per run and supply it as a UTC clock and reproducible serialization epoch;
+otherwise they supply the current UTC clock. Recipe steps and output naming use
+the same clock. Browser hosts supply their clock, and embedders may supply an
+explicit UTC offset. The PDF library reads neither the environment nor the wall
+clock for dates. An invalid explicit date or epoch is an error rather than a fallback.
 
 ---
 
