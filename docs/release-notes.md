@@ -4,7 +4,7 @@ Changes in each AriadShift release, newest first. Installation commands and down
 
 ## 0.3.0 (unreleased)
 
-Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium rendering and image tools, and optimize and security operations. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. Conversions, `ariad-engine/1` and `ariad-ir/1` are unchanged. The desktop and web interfaces do not yet offer tool screens; the CLI and local MCP server expose the tools.
+Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium rendering and image tools, and optimize and security operations. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. The `ariad-engine/1` and `ariad-ir/1` contracts are unchanged. The desktop and web interfaces do not yet offer tool screens; the CLI and local MCP server expose the tools.
 
 ### Upgrade notes
 
@@ -33,6 +33,12 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 
 ### Changed
 
+- **Output format inference.** `ashift convert` infers the target format from the `-o` file extension when `--to` is omitted. (#133)
+- **Confined conversion API.** `convert_confined` and `convert_confined_in` now require an explicit `&AssetBase`; this is a breaking `ariad-host` API change. Windows asset resolution is also tightened. (#144)
+- **Streaming cloud downloads.** Large web downloads can stream to a file, and the SDK adds `downloadToStream` with size and SHA-256 verification. (#148)
+- **Cloud authorization.** OAuth supports signup during authorization, client ID metadata documents remain disabled by default, users can manage consents, and token-refresh errors are handled explicitly. (#149, #150, #151, #162, #165)
+- **DOCX conversion.** List tightness and metadata stamping are corrected. (#135, #161)
+- **Node.js.** Web and desktop builds use Node.js 26 LTS. (#147)
 - **`ariad_pdf::ToolCtx` construction.** Create contexts with `ToolCtx::new`,
   `with_cancel` or `with_deadline`, and use `with_max_pages` to set a page limit.
   The struct is non-exhaustive so future fields can be added without breaking callers.
