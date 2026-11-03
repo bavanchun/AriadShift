@@ -320,11 +320,13 @@ name = "ariad-pdf"
 version = "0.3.0"
 dependencies = [
  "ariad-core",
+ "csv",
  "flate2",
  "image",
  "lopdf",
  "oxiarc-jpeg",
  "qrcode",
+ "quick-xml 0.42.0",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -332,6 +334,7 @@ dependencies = [
  "thiserror 2.0.21",
  "ttf-parser",
  "unicode-normalization",
+ "unicode-segmentation",
  "zune-core",
  "zune-jpeg",
 ]

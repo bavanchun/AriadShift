@@ -157,6 +157,7 @@ impl NewField {
                     .options
                     .as_ref()
                     .is_some_and(|options| options.iter().any(|option| &option.export == value)),
+                (FieldType::List, FormValue::Multi(values)) => self.options.as_ref().is_some_and(|options| values.iter().all(|value| options.iter().any(|option| &option.export == value))),
                 _ => false,
             };
             if !valid {
@@ -320,7 +321,11 @@ mod tests {
     #[test]
     fn validates_field_defaults_against_type_and_options() {
         let field = |value| serde_json::from_value::<NewField>(value).unwrap();
-        assert!(field(json!({"type":"text","name":"x","page":1,"rect":[0,0,10,10],"default":true})).validate().is_err());
+        assert!(
+            field(json!({"type":"text","name":"x","page":1,"rect":[0,0,10,10],"default":true}))
+                .validate()
+                .is_err()
+        );
         assert!(field(json!({"type":"checkbox","name":"x","page":1,"rect":[0,0,10,10],"export_value":"Approved","default":"Yes"})).validate().is_err());
         assert!(field(json!({"type":"checkbox","name":"x","page":1,"rect":[0,0,10,10],"export_value":"Approved","default":"Approved"})).validate().is_ok());
         assert!(field(json!({"type":"combo","name":"x","page":1,"rect":[0,0,10,10],"options":[{"export":"a","display":"A"}],"default":"b"})).validate().is_err());

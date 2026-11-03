@@ -16,6 +16,16 @@ pub(crate) const INPUT_STEM_TRAILER_KEY: &[u8] = b"AriadInputStem";
 #[must_use]
 pub fn tool_suffix(tool_id: &str) -> &'static str {
     match tool_id {
+        "pdf.annotations" => "annotations",
+        "pdf.annotations_import" => "annotated",
+        "pdf.annotations_export" => "annotations",
+        "pdf.forms_list" => "fields",
+        "pdf.forms_fill" => "filled",
+        "pdf.forms_create" => "form",
+        "pdf.forms_flatten" => "flattened",
+        "pdf.forms_detect" => "detected-fields",
+        "pdf.forms_import" => "filled",
+        "pdf.forms_export" => "form-data",
         "pdf.info" => "info",
         "pdf.merge" => "merged",
         "pdf.split" => "part",
@@ -221,5 +231,38 @@ mod tests {
             part_output_name("book.pdf", 1000, 1000),
             "book.part-1000.pdf"
         );
+    }
+}
+
+/// Derive a portable ASCII field identifier from a human-readable label.
+#[must_use]
+pub fn field_name_from_label(label: &str) -> String {
+    use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+    let mut result = String::new();
+    let mut separator = false;
+    for ch in label.nfd() {
+        if is_combining_mark(ch) {
+            continue;
+        }
+        let ch = match ch {
+            'đ' | 'Đ' => 'd',
+            _ => ch.to_ascii_lowercase(),
+        };
+        if ch.is_ascii_alphanumeric() {
+            if separator && !result.is_empty() && result.len() < 40 {
+                result.push('_');
+            }
+            separator = false;
+            if result.len() < 40 {
+                result.push(ch);
+            }
+        } else {
+            separator = true;
+        }
+    }
+    if result.is_empty() {
+        "field".into()
+    } else {
+        result.trim_end_matches('_').into()
     }
 }

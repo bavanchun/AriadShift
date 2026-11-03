@@ -771,7 +771,7 @@ fn deref<'a>(
     Ok(value)
 }
 
-fn prune_fields(
+pub(crate) fn prune_fields(
     doc: &mut Document,
     flattened: &[ObjectId],
     flattened_direct: &[Dictionary],

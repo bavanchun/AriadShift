@@ -400,7 +400,8 @@ mod tests {
 
     #[test]
     fn bounds_annotation_strings() {
-        let mut item: AnnotationItem = serde_json::from_value(json!({"page":1,"type":"note","rect":[0,0,10,10]})).unwrap();
+        let mut item: AnnotationItem =
+            serde_json::from_value(json!({"page":1,"type":"note","rect":[0,0,10,10]})).unwrap();
         item.contents = Some("x".repeat(MAX_ANNOTATION_STRING_BYTES));
         assert!(item.validate().is_ok());
         item.contents = Some("x".repeat(MAX_ANNOTATION_STRING_BYTES + 1));
