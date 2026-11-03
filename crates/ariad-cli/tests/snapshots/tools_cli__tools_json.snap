@@ -6693,5 +6693,997 @@ expression: tools_json
     "summary": "Apply a scanner effect.",
     "tier": "free",
     "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "annotate",
+    "id": "pdf.annotations",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "output_formats": [
+      "pdf",
+      "json"
+    ],
+    "params_schema": {
+      "$defs": {
+        "AnnotationFlags": {
+          "additionalProperties": false,
+          "description": "Annotation visibility and protection flags.",
+          "properties": {
+            "hidden": {
+              "default": false,
+              "type": "boolean"
+            },
+            "locked": {
+              "default": false,
+              "type": "boolean"
+            },
+            "no_rotate": {
+              "default": false,
+              "type": "boolean"
+            },
+            "no_view": {
+              "default": false,
+              "type": "boolean"
+            },
+            "print": {
+              "default": true,
+              "type": "boolean"
+            },
+            "read_only": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "AnnotationItem": {
+          "additionalProperties": false,
+          "description": "An annotation to add or update, using 1-based page numbers.",
+          "properties": {
+            "author": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "color": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "contents": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "dest_page": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "fill": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "flags": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AnnotationFlags"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "font_size": {
+              "default": 12.0,
+              "format": "double",
+              "type": "number"
+            },
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "line_width": {
+              "default": 1.0,
+              "format": "double",
+              "type": "number"
+            },
+            "opacity": {
+              "default": 1.0,
+              "format": "double",
+              "type": "number"
+            },
+            "page": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "points": {
+              "default": null,
+              "items": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "quads": {
+              "default": null,
+              "items": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "rect": {
+              "default": null,
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "stamp": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StampName"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "strokes": {
+              "default": null,
+              "items": {
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "subject": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "$ref": "#/$defs/AnnotationType"
+            },
+            "uri": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "page",
+            "type"
+          ],
+          "type": "object"
+        },
+        "AnnotationType": {
+          "description": "Supported annotation types.",
+          "enum": [
+            "highlight",
+            "underline",
+            "strikeout",
+            "squiggly",
+            "note",
+            "free_text",
+            "ink",
+            "line",
+            "arrow",
+            "rectangle",
+            "ellipse",
+            "polygon",
+            "polyline",
+            "stamp",
+            "link"
+          ],
+          "type": "string"
+        },
+        "AnnotationsAction": {
+          "description": "Annotation operation.",
+          "enum": [
+            "list",
+            "add",
+            "update",
+            "delete",
+            "flatten"
+          ],
+          "type": "string"
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        },
+        "StampName": {
+          "description": "Standard stamp names from ISO 32000-1.",
+          "enum": [
+            "approved",
+            "experimental",
+            "not_approved",
+            "as_is",
+            "expired",
+            "not_for_public_release",
+            "confidential",
+            "final",
+            "sold",
+            "departmental",
+            "for_comment",
+            "top_secret",
+            "draft",
+            "for_public_release"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Selection and payload for the annotation operation.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/AnnotationsAction"
+        },
+        "all": {
+          "default": false,
+          "type": "boolean"
+        },
+        "ids": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "items": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/AnnotationItem"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all"
+        },
+        "types": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/AnnotationType"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "AnnotationsParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "List or edit PDF annotations.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "annotate",
+    "id": "pdf.annotations_import",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "many",
+      "max": 2,
+      "min": 2
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Controls whether an import replaces existing annotations.",
+      "properties": {
+        "replace": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "title": "AnnotationsImportParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Import PDF annotations from XFDF or JSON.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "annotate",
+    "id": "pdf.annotations_export",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "xfdf",
+    "output_formats": [
+      "xfdf",
+      "json"
+    ],
+    "params_schema": {
+      "$defs": {
+        "AnnotationsExportFormat": {
+          "description": "Annotation data output format.",
+          "enum": [
+            "xfdf",
+            "json"
+          ],
+          "type": "string"
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Selects annotations and their export format.",
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/AnnotationsExportFormat",
+          "default": "xfdf"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all"
+        }
+      },
+      "title": "AnnotationsExportParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Export PDF annotations as XFDF or JSON.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "forms",
+    "id": "pdf.forms_list",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$defs": {
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Selects fields to list.",
+      "properties": {
+        "include_values": {
+          "default": true,
+          "type": "boolean"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all"
+        }
+      },
+      "title": "FormsListParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "List PDF form fields and their properties.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "forms",
+    "id": "pdf.forms_fill",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "FormValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A form value; null requests that the existing value be cleared."
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Values to apply to a document.",
+      "properties": {
+        "flatten": {
+          "default": false,
+          "type": "boolean"
+        },
+        "strict": {
+          "default": false,
+          "type": "boolean"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FormValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "title": "FormsFillParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Fill PDF form fields.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "forms",
+    "id": "pdf.forms_create",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "ChoiceOption": {
+          "additionalProperties": false,
+          "description": "The stored and displayed values of a choice field option.",
+          "properties": {
+            "display": {
+              "type": "string"
+            },
+            "export": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "export",
+            "display"
+          ],
+          "type": "object"
+        },
+        "FieldType": {
+          "description": "PDF form field types exposed by the tool API.",
+          "enum": [
+            "text",
+            "checkbox",
+            "radio",
+            "combo",
+            "list",
+            "button",
+            "signature"
+          ],
+          "type": "string"
+        },
+        "FormValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A form value; null requests that the existing value be cleared."
+        },
+        "NewField": {
+          "additionalProperties": false,
+          "description": "A new field or radio-group widget, in PDF page coordinates.",
+          "properties": {
+            "default": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FormValue"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "export_value": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "font_size": {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            "max_length": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "multiline": {
+              "default": false,
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "options": {
+              "default": null,
+              "items": {
+                "$ref": "#/$defs/ChoiceOption"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "page": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "read_only": {
+              "default": false,
+              "type": "boolean"
+            },
+            "rect": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            },
+            "required": {
+              "default": false,
+              "type": "boolean"
+            },
+            "tab_order": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "tooltip": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "$ref": "#/$defs/FieldType"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "page",
+            "rect"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Fields to add to an AcroForm.",
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/NewField"
+          },
+          "type": "array"
+        },
+        "replace_existing": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "title": "FormsCreateParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Create fillable PDF form fields.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "forms",
+    "id": "pdf.forms_flatten",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Selects form fields to flatten.",
+      "properties": {
+        "fields": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "include_annotations": {
+          "default": false,
+          "type": "boolean"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all"
+        }
+      },
+      "title": "FormsFlattenParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Flatten PDF form fields into page content.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "forms",
+    "id": "pdf.forms_detect",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$defs": {
+        "FormsDetectMode": {
+          "description": "Detection strategy.",
+          "enum": [
+            "auto",
+            "vector",
+            "raster"
+          ],
+          "type": "string"
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Detection selection and threshold.",
+      "properties": {
+        "min_confidence": {
+          "default": 0.5,
+          "format": "double",
+          "type": "number"
+        },
+        "mode": {
+          "$ref": "#/$defs/FormsDetectMode",
+          "default": "auto"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all"
+        }
+      },
+      "title": "FormsDetectParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Propose form fields from page content.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "forms",
+    "id": "pdf.forms_import",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "many",
+      "max": 2,
+      "min": 2
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "EmptyCell": {
+          "description": "Treatment of empty cells during import.",
+          "enum": [
+            "skip",
+            "clear"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Form-data import options.",
+      "properties": {
+        "delimiter": {
+          "default": null,
+          "maxLength": 1,
+          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "empty": {
+          "$ref": "#/$defs/EmptyCell",
+          "default": "skip"
+        },
+        "flatten": {
+          "default": false,
+          "type": "boolean"
+        },
+        "max_records": {
+          "default": 1000,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name_column": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "strict": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "title": "FormsImportParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Import PDF form values from data files.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "forms",
+    "id": "pdf.forms_export",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "output_formats": [
+      "json",
+      "fdf",
+      "xfdf",
+      "csv"
+    ],
+    "params_schema": {
+      "$defs": {
+        "FormsExportFormat": {
+          "description": "Form-data export format.",
+          "enum": [
+            "fdf",
+            "xfdf",
+            "json",
+            "csv"
+          ],
+          "type": "string"
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Form-data export options.",
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/FormsExportFormat",
+          "default": "json"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all"
+        }
+      },
+      "title": "FormsExportParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Export PDF form values.",
+    "tier": "free",
+    "version": "1"
   }
 ]
