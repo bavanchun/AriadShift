@@ -31,7 +31,7 @@ pub struct ImageOcrParams {
     /// Requested output format.
     #[serde(default)]
     pub output: ImageOcrOutput,
-    /// Resolution used if the image has none.
+    /// Resolution passed to the OCR engine.
     #[serde(default = "default_dpi", deserialize_with = "image_dpi")]
     #[schemars(range(min = 70, max = 1200))]
     pub dpi: u32,

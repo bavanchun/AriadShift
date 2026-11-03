@@ -4034,7 +4034,7 @@ expression: tools_json
       "properties": {
         "dpi": {
           "default": 300,
-          "description": "Resolution used if the image has none.",
+          "description": "Resolution passed to the OCR engine.",
           "format": "uint32",
           "maximum": 1200,
           "minimum": 70,

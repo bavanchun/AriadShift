@@ -4108,7 +4108,7 @@
         "type": "object",
         "properties": {
           "dpi": {
-            "description": "Resolution used if the image has none.",
+            "description": "Resolution passed to the OCR engine.",
             "type": "integer",
             "format": "uint32",
             "default": 300,
