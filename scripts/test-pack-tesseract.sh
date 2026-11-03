@@ -12,6 +12,14 @@ if bash "$repo/engines/tesseract/pack/compile-tesseract.sh" \
 fi
 grep -q 'hash mismatch:' "$work/log"
 [ ! -e "$work/out/bin/tesseract" ]
+checker="$repo/engines/tesseract/pack/check-linux-dependencies.sh"
+printf '%s\n' ' (NEEDED) Shared library: [ld-linux-aarch64.so.1]' | bash "$checker" aarch64
+if printf '%s\n' ' (NEEDED) Shared library: [ld-linux-aarch64.so.1]' | bash "$checker" x86_64; then
+    echo 'foreign loader was accepted' >&2; exit 1
+fi
+if printf '%s\n' ' (NEEDED) Shared library: [libunexpected.so]' | bash "$checker" aarch64; then
+    echo 'unexpected dependency was accepted' >&2; exit 1
+fi
 for notice in tesseract-LICENSE.txt leptonica-LICENSE.txt tessdata-LICENSE.txt; do
     [ -s "$repo/engines/tesseract/pack/notices/$notice" ] || {
         echo "missing notice: $notice" >&2

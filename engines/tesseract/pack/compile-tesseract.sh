@@ -43,9 +43,9 @@ if [ "$(uname -s)" = Darwin ]; then
     }
 else
     dependencies=$(readelf -d "$binary")
-    printf '%s\n' "$dependencies" | awk '
-        /\(NEEDED\)/ && $0 !~ /\[(libc\.so\.6|libm\.so\.6|libpthread\.so\.0|libdl\.so\.2|libstdc\+\+\.so\.6|libgcc_s\.so\.1)\]/ { exit 1 }
-    ' || { echo "unexpected dynamic dependencies: $dependencies" >&2; exit 1; }
+    printf '%s\n' "$dependencies" | bash "$(dirname "$0")/check-linux-dependencies.sh" "$(uname -m)" || {
+        echo "unexpected dynamic dependencies: $dependencies" >&2; exit 1;
+    }
 fi
 mkdir -p "$out/bin"
 cp "$binary" "$out/bin/tesseract"

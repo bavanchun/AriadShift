@@ -65,7 +65,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p "$RUNNER_TEMP/tesseract-first" "$RUNNER_TEMP/tesseract-second"
-          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/cmake:/cmake:ro" -v "$RUNNER_TEMP/tesseract-input:/input:ro" -v "$RUNNER_TEMP/tesseract-first:/first" -v "$RUNNER_TEMP/tesseract-second:/second" "$IMAGE" bash -c '
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/cmake:/cmake:ro" -v "$RUNNER_TEMP/tesseract-input:/input:ro" -v "$RUNNER_TEMP/tesseract-first:/first" -v "$RUNNER_TEMP/tesseract-second:/second" "$IMAGE" bash -e -o pipefail -c '
             export PATH=/cmake/bin:$PATH
             bash /work/engines/tesseract/pack/compile-tesseract.sh /input/tesseract.tar.gz /input/leptonica.tar.gz /first
             bash /work/engines/tesseract/pack/compile-tesseract.sh /input/tesseract.tar.gz /input/leptonica.tar.gz /second
