@@ -137,6 +137,32 @@ impl NewField {
         {
             return Err("field value is too large".into());
         }
+        if (self.multiline || self.max_length.is_some()) && self.field_type != FieldType::Text {
+            return Err("multiline and max_length apply only to text fields".into());
+        }
+        if self.options.is_some() && !matches!(self.field_type, FieldType::Combo | FieldType::List)
+        {
+            return Err("options apply only to choice fields".into());
+        }
+        if let Some(default) = &self.default {
+            let valid = match (self.field_type, default) {
+                (_, FormValue::Null(())) => true,
+                (FieldType::Text, FormValue::Text(_)) => true,
+                (FieldType::Checkbox, FormValue::Bool(_)) => true,
+                (FieldType::Checkbox, FormValue::Text(value)) => {
+                    value == "Off" || self.export_value.as_ref() == Some(value)
+                }
+                (FieldType::Radio, FormValue::Text(_)) => true,
+                (FieldType::Combo | FieldType::List, FormValue::Text(value)) => self
+                    .options
+                    .as_ref()
+                    .is_some_and(|options| options.iter().any(|option| &option.export == value)),
+                _ => false,
+            };
+            if !valid {
+                return Err("default value does not match the field type or options".into());
+            }
+        }
         if !self.font_size.is_finite() || self.font_size < 0.0 {
             return Err("font_size must be finite and nonnegative".into());
         }
@@ -290,6 +316,15 @@ fn default_max_records() -> usize {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn validates_field_defaults_against_type_and_options() {
+        let field = |value| serde_json::from_value::<NewField>(value).unwrap();
+        assert!(field(json!({"type":"text","name":"x","page":1,"rect":[0,0,10,10],"default":true})).validate().is_err());
+        assert!(field(json!({"type":"checkbox","name":"x","page":1,"rect":[0,0,10,10],"export_value":"Approved","default":"Yes"})).validate().is_err());
+        assert!(field(json!({"type":"checkbox","name":"x","page":1,"rect":[0,0,10,10],"export_value":"Approved","default":"Approved"})).validate().is_ok());
+        assert!(field(json!({"type":"combo","name":"x","page":1,"rect":[0,0,10,10],"options":[{"export":"a","display":"A"}],"default":"b"})).validate().is_err());
+    }
 
     #[test]
     fn defaults_and_validation() {

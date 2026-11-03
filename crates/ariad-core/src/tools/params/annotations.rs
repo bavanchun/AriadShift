@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use super::form_model::ActionSummary;
 use crate::tools::PageRange;
 
+/// Maximum UTF-8 bytes in an annotation string.
+pub const MAX_ANNOTATION_STRING_BYTES: usize = 1024 * 1024;
+
 /// Maximum annotations submitted in one request.
 pub const MAX_ANNOTATION_ITEMS: usize = 5_000;
 /// Maximum points in one annotation.
@@ -137,6 +140,22 @@ pub struct AnnotationItem {
 impl AnnotationItem {
     /// Validate geometry, sizes and link destinations.
     pub fn validate(&self) -> Result<(), String> {
+        if [
+            &self.id,
+            &self.color,
+            &self.fill,
+            &self.contents,
+            &self.author,
+            &self.subject,
+            &self.text,
+            &self.uri,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| value.len() > MAX_ANNOTATION_STRING_BYTES)
+        {
+            return Err("annotation string exceeds the size limit".into());
+        }
         if self.page == 0
             || !self.opacity.is_finite()
             || !(0.0..=1.0).contains(&self.opacity)
@@ -378,6 +397,15 @@ pub struct AnnotationsExportParams {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn bounds_annotation_strings() {
+        let mut item: AnnotationItem = serde_json::from_value(json!({"page":1,"type":"note","rect":[0,0,10,10]})).unwrap();
+        item.contents = Some("x".repeat(MAX_ANNOTATION_STRING_BYTES));
+        assert!(item.validate().is_ok());
+        item.contents = Some("x".repeat(MAX_ANNOTATION_STRING_BYTES + 1));
+        assert!(item.validate().is_err());
+    }
 
     #[test]
     fn validates_geometry_for_each_annotation_type() {
