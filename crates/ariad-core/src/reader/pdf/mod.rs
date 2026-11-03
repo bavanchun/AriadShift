@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub use interpreter::{MAX_FORM_DEPTH, MAX_PAGE_GLYPHS, MAX_PAGE_OPERATORS};
-pub use text_decode::PdfTextDecoder;
+pub use text_decode::{PdfDecodedGlyph, PdfTextDecoder};
 
 use self::{
     assemble::{PageBlocks, assemble},

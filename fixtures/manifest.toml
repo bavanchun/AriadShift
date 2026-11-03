@@ -5743,3 +5743,33 @@ tags = ["pdf-tools", "digital-pdf", "forms"]
 phase = "8"
 routes = []
 companions = [{ path = "fixtures/pdf-forms-detect/prose.truth.json", sha256 = "ab67628ee66b7e23ad53ce32cb05a405e85f34b9402022388f1e4e3af705cfed" }]
+
+[[fuzz_seed]]
+id = "fuzz-pdf-redact-params-exact"
+target = "pdf_redact_params"
+path = "fuzz/seeds/pdf_redact_params/exact.json"
+sha256 = "dce5ce574db1ab64e8825bd079622a4997aa6413a7bf302c143a999c2e80abfd"
+source = "Original synthetic redaction parameters JSON seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-redact-params-rectangle"
+target = "pdf_redact_params"
+path = "fuzz/seeds/pdf_redact_params/rectangle.json"
+sha256 = "8a1b155cce5a987a8024f3e0a6fc3e66753d8ad999a98e809cdac111dd85ebe9"
+source = "Original synthetic redaction parameters JSON seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-redact-params-regex"
+target = "pdf_redact_params"
+path = "fuzz/seeds/pdf_redact_params/regex.json"
+sha256 = "4532ec49a6bf09ff3d4ec1ca708570bd30640c83b3e8e64cac11a011f460bd67"
+source = "Original synthetic redaction parameters JSON seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"

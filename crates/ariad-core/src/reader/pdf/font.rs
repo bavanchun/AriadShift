@@ -128,6 +128,19 @@ impl Font {
         }
     }
 
+    /// Splits a code without the reader's permissive single-byte fallback.
+    pub(super) fn next_code_strict(&self, bytes: &[u8]) -> Option<(u32, usize)> {
+        match &self.codes {
+            Codes::OneByte => bytes.first().map(|byte| (u32::from(*byte), 1)),
+            Codes::TwoByte => match bytes {
+                [high, low, ..] => Some((u32::from(u16::from_be_bytes([*high, *low])), 2)),
+                _ => None,
+            },
+            Codes::Encoding(cmap) => cmap.next_code_strict(bytes),
+            Codes::ToUnicodeCodespace => self.to_unicode.as_ref()?.next_code_strict(bytes),
+        }
+    }
+
     /// Appends the Unicode text of a code to `out`; returns whether the code mapped.
     pub(super) fn decode(&self, code: u32, len: usize, out: &mut String) -> bool {
         let start = out.len();
@@ -151,6 +164,20 @@ impl Font {
             return true;
         }
         false
+    }
+
+    /// Decodes without silently falling back when a declared ToUnicode map lacks a code.
+    pub(super) fn decode_strict(&self, code: u32, len: usize, out: &mut String) -> bool {
+        if let Some(cmap) = &self.to_unicode {
+            let before = out.len();
+            let mapped = cmap.lookup_strict(code, len as u8, out) && out.len() > before;
+            if !mapped {
+                out.truncate(before);
+            }
+            mapped
+        } else {
+            self.decode(code, len, out)
+        }
     }
 
     /// Horizontal displacement of a code in text-space units per unit of font size.
