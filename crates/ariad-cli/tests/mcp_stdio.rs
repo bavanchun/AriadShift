@@ -2612,7 +2612,7 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let listed = list_resp["result"]["structuredContent"]
         .as_array()
         .expect("list_doc_tools array");
-    assert_eq!(listed.len(), 65);
+    assert_eq!(listed.len(), 75);
     assert_eq!(listed[0]["id"], "pdf.info");
     assert_eq!(listed[0]["group"], "organize");
     assert_eq!(listed[0]["engine"], "ariad-pdf");
@@ -2743,6 +2743,51 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let read_resp = client.read_response(707);
     assert!(read_resp.get("result").is_some(), "{read_resp}");
 
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_lists_and_inspects_forms_and_annotations() {
+    let temp_dir = TempDir::new().unwrap();
+    let input = temp_dir.path().join("form.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-forms/forms-all-types.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", temp_dir.path().to_str().unwrap()],
+        Vec::new(),
+    );
+    client.initialize();
+    client.send_request(
+        800,
+        "tools/call",
+        json!({"name":"list_doc_tools", "arguments":{"group":"forms"}}),
+    );
+    let response = client.read_response(800);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let tools = response["result"]["structuredContent"].as_array().unwrap();
+    assert!(tools.iter().any(|tool| tool["id"] == "pdf.forms_list"));
+    assert!(tools.iter().any(|tool| tool["id"] == "pdf.forms_detect"));
+    client.send_request(
+        801,
+        "tools/call",
+        json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.forms_list", "inputs":[input]}}),
+    );
+    let response = client.read_response(801);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    assert!(
+        response["result"]["structuredContent"]["inline_json"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field["name"] == "name")
+    );
+    client.send_request(802, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.annotations", "inputs":[input], "params":{"action":"list"}}}));
+    let response = client.read_response(802);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    assert!(response["result"]["structuredContent"]["inline_json"]["annotations"].is_array());
     client.close_and_assert_purity();
 }
 
