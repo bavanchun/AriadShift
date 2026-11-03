@@ -707,39 +707,6 @@ fn sweep(layout: &Layout, name: &str) {
     }
 }
 
-#[cfg(test)]
-mod sweep_tests {
-    use super::*;
-
-    #[test]
-    fn stale_language_cache_survives_sweep() {
-        let temp = tempfile::tempdir().unwrap();
-        let context = PackContext {
-            data_dir: temp.path().to_owned(),
-            keys: super::super::TrustedKeys::compiled(),
-            targets: vec![],
-            fetch: super::super::FetchPolicy::default(),
-        };
-        let layout = Layout::new(&context);
-        let languages = layout.cache().join("tesseract-languages");
-        fs::create_dir_all(&languages).unwrap();
-        fs::write(languages.join("model"), b"keep").unwrap();
-        fs::File::open(&languages)
-            .unwrap()
-            .set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 3600))
-            .unwrap();
-        let stale = layout.cache().join("old.part");
-        fs::write(&stale, b"remove").unwrap();
-        fs::File::open(&stale)
-            .unwrap()
-            .set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 3600))
-            .unwrap();
-        sweep(&layout, "tesseract");
-        assert!(languages.join("model").exists());
-        assert!(!stale.exists());
-    }
-}
-
 fn sha256_bytes(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(Sha256::digest(bytes))
@@ -1613,4 +1580,37 @@ pub fn remove(
         removed: targets,
         active,
     })
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+
+    #[test]
+    fn stale_language_cache_survives_sweep() {
+        let temp = tempfile::tempdir().unwrap();
+        let context = PackContext {
+            data_dir: temp.path().to_owned(),
+            keys: super::super::TrustedKeys::compiled(),
+            targets: vec![],
+            fetch: super::super::FetchPolicy::default(),
+        };
+        let layout = Layout::new(&context);
+        let languages = layout.cache().join("tesseract-languages");
+        fs::create_dir_all(&languages).unwrap();
+        fs::write(languages.join("model"), b"keep").unwrap();
+        fs::File::open(&languages)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 3600))
+            .unwrap();
+        let stale = layout.cache().join("old.part");
+        fs::write(&stale, b"remove").unwrap();
+        fs::File::open(&stale)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 3600))
+            .unwrap();
+        sweep(&layout, "tesseract");
+        assert!(languages.join("model").exists());
+        assert!(!stale.exists());
+    }
 }
