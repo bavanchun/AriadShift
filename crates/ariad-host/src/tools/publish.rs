@@ -576,9 +576,24 @@ pub fn render_naming_template(
     stem: &str,
     index_1_based: usize,
 ) -> Result<String, NamingTemplateError> {
+    let clock = super::inprocess::capture_clock().map_err(|_| NamingTemplateError::InvalidDate)?;
+    render_naming_template_with_clock(template, stem, index_1_based, clock.clock, None)
+}
+
+pub(crate) fn render_naming_template_with_clock(
+    template: &str,
+    stem: &str,
+    index_1_based: usize,
+    clock: ariad_pdf::ToolClock,
+    explicit_date: Option<&str>,
+) -> Result<String, NamingTemplateError> {
     validate_naming_template(template)?;
     let clean_stem = sanitize_stem(stem);
-    let date_str = current_utc_date_string();
+    let date_str = ariad_pdf::draw::tokens::resolve_date(
+        explicit_date,
+        &ariad_pdf::ToolCtx::new().with_clock(clock),
+    )
+    .map_err(|_| NamingTemplateError::InvalidDate)?;
     let n_str = format!("{index_1_based:03}");
 
     let rendered = template
@@ -612,21 +627,6 @@ fn sanitize_stem(raw: &str) -> String {
     } else {
         trimmed.to_owned()
     }
-}
-
-fn current_utc_date_string() -> String {
-    let ts = std::env::var("SOURCE_DATE_EPOCH")
-        .ok()
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .and_then(|secs| jiff::Timestamp::from_second(secs).ok())
-        .unwrap_or_else(jiff::Timestamp::now);
-    let zoned = ts.to_zoned(jiff::tz::TimeZone::UTC);
-    format!(
-        "{:04}-{:02}-{:02}",
-        zoned.year(),
-        zoned.month(),
-        zoned.day()
-    )
 }
 
 /// Validates that `path` contains no parent-directory (`..`) traversal components.
@@ -991,6 +991,33 @@ fn rollback_batch(workspace: &Workspace, dest_cap_dir: &Dir, entries: &[BatchEnt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn naming_uses_the_supplied_clock_and_explicit_date() {
+        let clock = ariad_pdf::ToolClock {
+            epoch_secs: 0,
+            utc_offset_secs: -3600,
+        };
+        assert_eq!(
+            render_naming_template_with_clock("{stem}-{date}.pdf", "a", 1, clock, None).unwrap(),
+            "a-1969-12-31.pdf"
+        );
+        assert_eq!(
+            render_naming_template_with_clock(
+                "{stem}-{date}.pdf",
+                "a",
+                1,
+                clock,
+                Some("2024-02-29")
+            )
+            .unwrap(),
+            "a-2024-02-29.pdf"
+        );
+        assert!(
+            render_naming_template_with_clock("{stem}-{date}.pdf", "a", 1, clock, Some("invalid"))
+                .is_err()
+        );
+    }
 
     #[test]
     fn staged_artifact_suffix_replaces_control_and_bidi_characters() {

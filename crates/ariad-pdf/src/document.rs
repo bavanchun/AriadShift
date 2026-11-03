@@ -64,6 +64,8 @@ pub struct ToolCtx {
     pub max_pages: Option<u32>,
     /// Optional caller-supplied clock for date tokens.
     pub clock: Option<ToolClock>,
+    /// Optional reproducible timestamp supplied by the host.
+    pub source_date_epoch: Option<i64>,
 }
 
 impl ToolCtx {
@@ -81,6 +83,7 @@ impl ToolCtx {
             cancel: Arc::new(AtomicBool::new(false)),
             max_pages: None,
             clock: None,
+            source_date_epoch: None,
         }
     }
 
@@ -92,6 +95,7 @@ impl ToolCtx {
             cancel,
             max_pages: None,
             clock: None,
+            source_date_epoch: None,
         }
     }
 
@@ -106,6 +110,19 @@ impl ToolCtx {
     #[must_use]
     pub const fn with_clock(mut self, clock: ToolClock) -> Self {
         self.clock = Some(clock);
+        self
+    }
+
+    /// Sets the host-supplied reproducible timestamp for PDF serialization.
+    #[must_use]
+    pub const fn with_source_date_epoch(mut self, epoch: Option<i64>) -> Self {
+        self.source_date_epoch = epoch;
+        if let Some(epoch_secs) = epoch {
+            self.clock = Some(ToolClock {
+                epoch_secs,
+                utc_offset_secs: 0,
+            });
+        }
         self
     }
 
@@ -173,6 +190,7 @@ impl DecodeBudget {
     }
 
     /// Releases temporary memory after a cached-image decode finishes.
+    #[cfg(feature = "codecs")]
     pub(crate) fn release_temporary(&mut self, bytes: usize) {
         self.decoded = self.decoded.saturating_sub(bytes as u64);
     }

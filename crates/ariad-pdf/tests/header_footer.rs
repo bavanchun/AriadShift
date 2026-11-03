@@ -53,11 +53,11 @@ fn empty_templates_are_invalid_and_skip_is_safe() {
 
 #[cfg(unix)]
 #[test]
-fn source_date_epoch_controls_header_date() {
+fn injected_clock_controls_header_date_even_when_environment_differs() {
     const CHILD: &str = "ARIAD_HEADER_DATE_TEST_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let status = std::process::Command::new("sh")
-            .args(["-c", "ARIAD_HEADER_DATE_TEST_CHILD=1 SOURCE_DATE_EPOCH=1700000000 exec \"$1\" --exact source_date_epoch_controls_header_date", "test"])
+            .args(["-c", "ARIAD_HEADER_DATE_TEST_CHILD=1 SOURCE_DATE_EPOCH=0 exec \"$1\" --exact injected_clock_controls_header_date_even_when_environment_differs", "test"])
             .arg(std::env::current_exe().unwrap())
             .status().unwrap();
         assert!(status.success());
@@ -65,7 +65,7 @@ fn source_date_epoch_controls_header_date() {
     }
     let input = InputDoc::new("Báo cáo quý 3.pdf", marks::fixture("multipage-20.pdf"));
     let ctx = ToolCtx::new().with_clock(ToolClock {
-        epoch_secs: 0,
+        epoch_secs: 1_700_000_000,
         utc_offset_secs: 0,
     });
     let out = run_tool(

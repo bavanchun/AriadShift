@@ -101,20 +101,55 @@ impl Drop for CancelBridge {
     }
 }
 
-/// Builds an [`ariad_pdf::ToolCtx`] from `limits.timeout_s` and a shared cancellation flag.
-#[must_use]
-pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> ToolCtx {
+#[derive(Clone, Copy)]
+pub(crate) struct HostClock {
+    pub clock: ToolClock,
+    pub source_date_epoch: Option<i64>,
+}
+
+pub(crate) fn capture_clock() -> Result<HostClock, ToolError> {
+    let source_date_epoch = match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(raw) => {
+            let seconds = raw
+                .trim()
+                .parse::<i64>()
+                .map_err(|_| ToolError::InvalidParams("invalid SOURCE_DATE_EPOCH".into()))?;
+            if !(-62_135_596_800..=253_402_300_799).contains(&seconds) {
+                return Err(ToolError::InvalidParams("invalid SOURCE_DATE_EPOCH".into()));
+            }
+            Some(seconds)
+        }
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(ToolError::InvalidParams("invalid SOURCE_DATE_EPOCH".into()));
+        }
+    };
+    Ok(HostClock {
+        clock: ToolClock {
+            epoch_secs: source_date_epoch.unwrap_or_else(|| jiff::Timestamp::now().as_second()),
+            utc_offset_secs: 0,
+        },
+        source_date_epoch,
+    })
+}
+
+/// Builds an [`ariad_pdf::ToolCtx`] from limits, cancellation and the host clock.
+pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> Result<ToolCtx, ToolError> {
+    Ok(build_tool_ctx_with_clock(limits, cancel, capture_clock()?))
+}
+
+fn build_tool_ctx_with_clock(
+    limits: &Limits,
+    cancel: Arc<AtomicBool>,
+    clock: HostClock,
+) -> ToolCtx {
     let deadline = limits
         .timeout_s
         .and_then(|secs| Instant::now().checked_add(Duration::from_secs(secs)));
     let mut ctx = ToolCtx::with_cancel(cancel).with_max_pages(limits.max_pages);
     ctx.deadline = deadline;
-    let now = jiff::Timestamp::now();
-    let local = now.to_zoned(jiff::tz::TimeZone::system());
-    ctx.with_clock(ToolClock {
-        epoch_secs: now.as_second(),
-        utc_offset_secs: local.offset().seconds(),
-    })
+    ctx.with_clock(clock.clock)
+        .with_source_date_epoch(clock.source_date_epoch)
 }
 
 /// Executes an in-process `ariad-pdf` tool on the staged input files inside `workspace`.
@@ -165,8 +200,33 @@ pub fn execute_with_names(
     cancel: &CancellationToken,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
+    execute_with_names_and_clock(
+        spec,
+        staged_inputs,
+        params,
+        workspace,
+        limits,
+        scrubber,
+        cancel,
+        on_event,
+        capture_clock()?,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_with_names_and_clock(
+    spec: &ToolSpec,
+    staged_inputs: &[(PathBuf, String)],
+    params: &Value,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+    clock: HostClock,
+) -> Result<RawToolExecution, ToolError> {
     let bridge = CancelBridge::new(cancel);
-    let ctx = build_tool_ctx(limits, Arc::clone(&bridge.flag));
+    let ctx = build_tool_ctx_with_clock(limits, Arc::clone(&bridge.flag), clock);
 
     ctx.check().map_err(|err| map_pdf_error(err, scrubber))?;
 
@@ -420,13 +480,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tool_context_supplies_a_local_clock() {
+    fn tool_context_supplies_a_utc_clock() {
         let before = jiff::Timestamp::now().as_second();
-        let context = build_tool_ctx(&Limits::local(), Arc::new(AtomicBool::new(false)));
+        let context = build_tool_ctx(&Limits::local(), Arc::new(AtomicBool::new(false))).unwrap();
         let after = jiff::Timestamp::now().as_second();
         let clock = context.clock().expect("host supplies a clock");
         assert!((before..=after).contains(&clock.epoch_secs));
-        assert!((-86_400..=86_400).contains(&clock.utc_offset_secs));
+        assert_eq!(clock.utc_offset_secs, 0);
     }
 
     fn sample_pdf() -> PathBuf {

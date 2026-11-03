@@ -21,46 +21,27 @@ pub struct TokenContext<'a> {
     pub date_format: DateFormat,
 }
 
-/// Resolve a date without consulting the wall clock.
-///
-/// An explicit date takes precedence over `SOURCE_DATE_EPOCH`, which takes
-/// precedence over the injected clock. Invalid supplied values are rejected.
+/// Resolve a date using only the explicit date or the caller-supplied clock.
 pub fn resolve_date(explicit: Option<&str>, ctx: &ToolCtx) -> Result<String, PdfError> {
-    if explicit.is_some() {
-        return resolve_date_with_epoch(explicit, None, ctx.clock());
-    }
-    let epoch = match std::env::var("SOURCE_DATE_EPOCH") {
-        Ok(value) => Some(value),
-        Err(std::env::VarError::NotPresent) => None,
-        Err(std::env::VarError::NotUnicode(_)) => return Err(invalid_date()),
-    };
-    resolve_date_with_epoch(None, epoch.as_deref(), ctx.clock())
+    resolve_date_with_clock(explicit, ctx.clock())
 }
 
 fn invalid_date() -> PdfError {
     PdfError::InvalidParams("date must be a valid YYYY-MM-DD or an available clock date".into())
 }
 
-fn resolve_date_with_epoch(
+fn resolve_date_with_clock(
     explicit: Option<&str>,
-    source_epoch: Option<&str>,
     clock: Option<ToolClock>,
 ) -> Result<String, PdfError> {
     if let Some(date) = explicit {
         return validate_date(date);
     }
-    let seconds = if let Some(raw) = source_epoch {
-        raw.trim().parse::<i64>().map_err(|_| invalid_date())?
-    } else if let Some(clock) = clock {
-        clock
-            .epoch_secs
-            .checked_add(i64::from(clock.utc_offset_secs))
-            .ok_or_else(invalid_date)?
-    } else {
-        return Err(PdfError::InvalidParams(
-            "date is required when no clock is available".into(),
-        ));
-    };
+    let clock = clock.ok_or_else(invalid_date)?;
+    let seconds = clock
+        .epoch_secs
+        .checked_add(i64::from(clock.utc_offset_secs))
+        .ok_or_else(invalid_date)?;
     // Restrict to four-digit ISO years, and do not silently clamp invalid input.
     if !(-62_135_596_800..=253_402_300_799).contains(&seconds) {
         return Err(invalid_date());
@@ -188,26 +169,43 @@ mod tests {
             utc_offset_secs: -3600,
         });
         assert_eq!(
-            resolve_date_with_epoch(Some("2024-02-29"), Some("0"), clock).unwrap(),
+            resolve_date_with_clock(Some("2024-02-29"), clock).unwrap(),
             "2024-02-29"
         );
         assert_eq!(
-            resolve_date_with_epoch(None, Some("0"), clock).unwrap(),
+            resolve_date_with_clock(
+                None,
+                Some(ToolClock {
+                    epoch_secs: 0,
+                    utc_offset_secs: 0
+                })
+            )
+            .unwrap(),
             "1970-01-01"
         );
+        assert_eq!(resolve_date_with_clock(None, clock).unwrap(), "1969-12-31");
+        assert!(resolve_date_with_clock(Some("2023-02-29"), clock).is_err());
+        assert!(resolve_date_with_clock(None, None).is_err());
         assert_eq!(
-            resolve_date_with_epoch(None, None, clock).unwrap(),
-            "1969-12-31"
-        );
-        assert!(resolve_date_with_epoch(Some("2023-02-29"), None, clock).is_err());
-        assert!(resolve_date_with_epoch(None, Some("invalid"), clock).is_err());
-        assert!(resolve_date_with_epoch(None, None, None).is_err());
-        assert_eq!(
-            resolve_date_with_epoch(None, Some("-62135596800"), None).unwrap(),
+            resolve_date_with_clock(
+                None,
+                Some(ToolClock {
+                    epoch_secs: -62_135_596_800,
+                    utc_offset_secs: 0
+                })
+            )
+            .unwrap(),
             "0001-01-01"
         );
         assert_eq!(
-            resolve_date_with_epoch(None, Some("253402300799"), None).unwrap(),
+            resolve_date_with_clock(
+                None,
+                Some(ToolClock {
+                    epoch_secs: 253_402_300_799,
+                    utc_offset_secs: 0
+                })
+            )
+            .unwrap(),
             "9999-12-31"
         );
     }

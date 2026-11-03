@@ -24,17 +24,10 @@ fn tool_context() -> ToolCtx {
     {
         let date = js_sys::Date::new_0();
         let seconds = (date.get_time() / 1000.0).floor();
-        let offset = -date.get_timezone_offset() * 60.0;
-        if seconds.is_finite()
-            && offset.is_finite()
-            && seconds >= i64::MIN as f64
-            && seconds < i64::MAX as f64
-            && offset >= i32::MIN as f64
-            && offset <= i32::MAX as f64
-        {
+        if seconds.is_finite() && seconds >= i64::MIN as f64 && seconds < i64::MAX as f64 {
             return ToolCtx::new().with_clock(ariad_pdf::ToolClock {
                 epoch_secs: seconds as i64,
-                utc_offset_secs: offset as i32,
+                utc_offset_secs: 0,
             });
         }
     }
