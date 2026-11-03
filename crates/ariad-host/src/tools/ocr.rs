@@ -54,6 +54,11 @@ struct Sidecar<'a> {
     cap: usize,
 }
 
+fn ocr_timeout(pages: usize, explicit: Option<u64>) -> u64 {
+    let scaled = 600u64.saturating_add((pages as u64).saturating_mul(15));
+    explicit.map_or(scaled, |limit| scaled.min(limit))
+}
+
 impl Write for Sidecar<'_> {
     fn write(&mut self, input: &[u8]) -> io::Result<usize> {
         if input.len() > self.cap.saturating_sub(self.bytes.len()) {
@@ -101,6 +106,8 @@ impl Job<'_> {
             .checked_duration_since(Instant::now())
             .ok_or(ToolError::LimitExceeded)?;
         let mut limits = self.limits.clone();
+        // Inputs have already passed admission; intermediates are bounded by their own limits.
+        limits.max_input_bytes = None;
         limits.timeout_s = Some(
             remaining
                 .as_secs()
@@ -278,7 +285,7 @@ fn rotate(
         pages: range,
         angle: i32::from(degrees),
     };
-    let mut result = ariad_pdf::tools::rotate::run(&[doc], &params, ctx)?;
+    let mut result = ariad_pdf::tools::rotate::run_owned(doc, &params, ctx)?;
     match result.pop().ok_or(ariad_pdf::PdfError::Malformed)?.payload {
         OutputPayload::Pdf(pdf) => Ok(*pdf),
         _ => Err(ariad_pdf::PdfError::Malformed),
@@ -316,8 +323,9 @@ pub(super) fn execute(
     events: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
     let bridge = CancelBridge::new(cancel);
-    let deadline = Instant::now()
-        .checked_add(Duration::from_secs(limits.timeout_s.unwrap_or(600)))
+    let started = Instant::now();
+    let deadline = started
+        .checked_add(Duration::from_secs(ocr_timeout(0, limits.timeout_s)))
         .ok_or(ToolError::LimitExceeded)?;
     let mut ctx = inprocess::build_tool_ctx(limits, Arc::clone(&bridge.flag));
     ctx.deadline = Some(deadline);
@@ -355,19 +363,33 @@ pub(super) fn execute(
         "image.ocr" => {
             let options: ImageOcrParams = serde_json::from_value(params.clone())
                 .map_err(|e| ToolError::InvalidParams(e.to_string()))?;
-            let mut images = Vec::with_capacity(inputs.len());
-            for (path, _) in inputs {
-                images.push(read_bounded_file(path, limits.max_input_bytes).map_err(input_error)?);
-            }
-            let pdf_bytes = ariad_pdf::image_to_pdf::run_with_ctx(
-                &images,
-                &Default::default(),
-                limits,
-                &job.ctx,
-            )
-            .map_err(|e| pdf_error(&job, e))?;
-            let doc = ariad_pdf::document::open_with_ctx(&pdf_bytes, limits, &job.ctx)
+            let doc = if options.output == ImageOcrOutput::Pdf {
+                let mut images = Vec::with_capacity(inputs.len());
+                let mut total = 0u64;
+                for (path, _) in inputs {
+                    let remaining = limits.max_input_bytes.map(|cap| cap.saturating_sub(total));
+                    let bytes = read_bounded_file(path, remaining).map_err(input_error)?;
+                    total = total
+                        .checked_add(bytes.len() as u64)
+                        .ok_or(ToolError::LimitExceeded)?;
+                    images.push(bytes);
+                }
+                let pdf_bytes = ariad_pdf::image_to_pdf::run_with_ctx(
+                    &images,
+                    &Default::default(),
+                    limits,
+                    &job.ctx,
+                )
                 .map_err(|e| pdf_error(&job, e))?;
+                let mut internal_limits = limits.clone();
+                internal_limits.max_input_bytes = None;
+                Some(
+                    ariad_pdf::document::open_with_ctx(&pdf_bytes, &internal_limits, &job.ctx)
+                        .map_err(|e| pdf_error(&job, e))?,
+                )
+            } else {
+                None
+            };
             let count = u32::try_from(inputs.len()).map_err(|_| ToolError::LimitExceeded)?;
             let output = match options.output {
                 ImageOcrOutput::Pdf => "pdf",
@@ -411,7 +433,7 @@ pub(super) fn execute(
                     OcrOutput::PdfHocr => "pdf+hocr",
                 };
                 (
-                    original.clone(),
+                    Some(original.clone()),
                     Some(original),
                     output,
                     pages,
@@ -431,7 +453,7 @@ pub(super) fn execute(
                     .expand(count, DuplicatePolicy::Reject)
                     .map_err(|e| ToolError::InvalidParams(e.to_string()))?;
                 (
-                    original.clone(),
+                    Some(original.clone()),
                     Some(original),
                     "pdf",
                     pages,
@@ -447,6 +469,13 @@ pub(super) fn execute(
         }
         _ => return Err(ToolError::UnknownTool(spec.id.into())),
     };
+    job.deadline = started
+        .checked_add(Duration::from_secs(ocr_timeout(
+            pages.len(),
+            limits.timeout_s,
+        )))
+        .ok_or(ToolError::LimitExceeded)?;
+    job.ctx.deadline = Some(job.deadline);
     if output_kind == "hocr" || output_kind == "pdf+hocr" {
         Sidecar { bytes: &mut sidecar, cap: sidecar_cap }.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?><html xmlns=\"http://www.w3.org/1999/xhtml\"><body>\n").map_err(|_| ToolError::LimitExceeded)?;
     }
@@ -454,8 +483,12 @@ pub(super) fn execute(
     for page in pages {
         job.check()?;
         if spec.id == "pdf.ocr" {
-            let presence = ariad_pdf::scan_text::classify_text(&doc, page, &job.ctx)
-                .map_err(|e| pdf_error(&job, e))?;
+            let presence = ariad_pdf::scan_text::classify_text(
+                doc.as_ref().expect("PDF input"),
+                page,
+                &job.ctx,
+            )
+            .map_err(|e| pdf_error(&job, e))?;
             match mode {
                 OcrMode::SkipText if presence.any() => {
                     job.warn(
@@ -474,8 +507,12 @@ pub(super) fn execute(
                     ));
                 }
                 OcrMode::Redo if presence.invisible => {
-                    ariad_pdf::scan_text::remove_invisible_text(&mut doc, page, &job.ctx)
-                        .map_err(|e| pdf_error(&job, e))?;
+                    ariad_pdf::scan_text::remove_invisible_text_in_place(
+                        doc.as_mut().expect("PDF input"),
+                        page,
+                        &job.ctx,
+                    )
+                    .map_err(|e| pdf_error(&job, e))?;
                 }
                 _ => {}
             }
@@ -485,7 +522,7 @@ pub(super) fn execute(
     selected.sort_unstable();
     let staged_pdf = workspace.input_dir().join("ocr-document.pdf");
     if deskew && !selected.is_empty() {
-        write_pdf(&job, &mut doc, &staged_pdf)?;
+        write_pdf(&job, doc.as_mut().expect("PDF input"), &staged_pdf)?;
         let range = selected
             .iter()
             .map(u32::to_string)
@@ -509,31 +546,25 @@ pub(super) fn execute(
         let bytes = job.read_artifact(&result.artifacts[0].0, limits.max_decompressed_bytes)?;
         fs::remove_file(&result.artifacts[0].0)
             .map_err(|_| ToolError::OutputIo("could not remove deskew intermediate".into()))?;
-        doc = ariad_pdf::document::open_with_ctx(&bytes, limits, &job.ctx)
-            .map_err(|e| pdf_error(&job, e))?;
+        let mut internal_limits = limits.clone();
+        internal_limits.max_input_bytes = None;
+        doc = Some(
+            ariad_pdf::document::open_with_ctx(&bytes, &internal_limits, &job.ctx)
+                .map_err(|e| pdf_error(&job, e))?,
+        );
+    }
+    if spec.id != "image.ocr" && !selected.is_empty() {
+        write_pdf(&job, doc.as_mut().expect("PDF input"), &staged_pdf)?;
     }
     let total = selected.len() as u64;
-    for (index, page) in selected.into_iter().enumerate() {
-        job.check()?;
-        let mut image = if spec.id == "image.ocr" {
-            inputs[(page - 1) as usize].0.clone()
-        } else {
-            write_pdf(&job, &mut doc, &staged_pdf)?;
-            job.scan(&staged_pdf, page, dpi, clean, events)?
-        };
-        let mut format = if spec.id == "image.ocr" {
-            inputs[(page - 1) as usize].1.clone()
-        } else {
-            "png".into()
-        };
-        if auto_rotate {
-            let osd: OcrOrientation = job.json(
-                "ocr.orientation",
-                &image,
-                &format,
-                json!({"dpi":dpi}),
-                events,
-            )?;
+    if auto_rotate {
+        let mut rotated = false;
+        for (index, &page) in selected.iter().enumerate() {
+            let image = job.scan(&staged_pdf, page, dpi, clean, events)?;
+            let osd: OcrOrientation =
+                job.json("ocr.orientation", &image, "png", json!({"dpi":dpi}), events)?;
+            fs::remove_file(&image)
+                .map_err(|_| ToolError::OutputIo("could not remove scan intermediate".into()))?;
             if !matches!(osd.rotation_cw, 0 | 90 | 180 | 270)
                 || !osd.confidence.is_finite()
                 || osd.confidence < 0.0
@@ -543,23 +574,49 @@ pub(super) fn execute(
                 ));
             }
             if osd.confidence > 0.0 && osd.confidence >= min_confidence && osd.rotation_cw != 0 {
-                doc =
-                    rotate(doc, page, osd.rotation_cw, &job.ctx).map_err(|e| pdf_error(&job, e))?;
-                if spec.id == "pdf.ocr" {
-                    fs::remove_file(&image).map_err(|_| {
-                        ToolError::OutputIo("could not remove scan intermediate".into())
-                    })?;
-                    write_pdf(&job, &mut doc, &staged_pdf)?;
-                    image = job.scan(&staged_pdf, page, dpi, clean, events)?;
-                    format = "png".into();
-                }
+                doc = Some(
+                    rotate(
+                        doc.take().expect("PDF input"),
+                        page,
+                        osd.rotation_cw,
+                        &job.ctx,
+                    )
+                    .map_err(|e| pdf_error(&job, e))?,
+                );
+                rotated = true;
             } else if osd.confidence <= 0.0 || osd.confidence < min_confidence {
                 job.warn(
                     "orientation_uncertain",
                     "No reliable page orientation was detected.",
                 );
             }
+            if spec.id == "pdf.auto_rotate" {
+                events(ToolEvent::Progress {
+                    stage: "ocr".into(),
+                    done: Some(index as u64 + 1),
+                    total: Some(total),
+                });
+            }
         }
+        if rotated && spec.id == "pdf.ocr" {
+            write_pdf(&job, doc.as_mut().expect("PDF input"), &staged_pdf)?;
+        }
+    }
+    for (index, page) in selected.into_iter().enumerate() {
+        if spec.id == "pdf.auto_rotate" {
+            continue;
+        }
+        job.check()?;
+        let image = if spec.id == "image.ocr" {
+            inputs[(page - 1) as usize].0.clone()
+        } else {
+            job.scan(&staged_pdf, page, dpi, clean, events)?
+        };
+        let format = if spec.id == "image.ocr" {
+            inputs[(page - 1) as usize].1.clone()
+        } else {
+            "png".into()
+        };
         if spec.id != "pdf.auto_rotate" {
             let result: OcrPage = job.json(
                 "ocr.recognize",
@@ -580,13 +637,13 @@ pub(super) fn execute(
                 job.warn("ocr_no_text", "No text was recognized on a selected page.");
             }
             if clean && spec.id == "pdf.ocr" {
-                let decoded = crate::engines::tesseract_image::decode(&image, limits, deadline)
+                let decoded = crate::engines::tesseract_image::decode(&image, limits, job.deadline)
                     .map_err(|e| match e.code {
                         ariad_core::protocol::ErrorCode::LimitExceeded => ToolError::LimitExceeded,
                         _ => ToolError::EngineFailure("invalid cleaned scan".into()),
                     })?;
                 if !ariad_pdf::scan_pages::replace_with_cleaned_image(
-                    &mut doc,
+                    doc.as_mut().expect("PDF input"),
                     page,
                     decoded.width(),
                     decoded.height(),
@@ -602,8 +659,13 @@ pub(super) fn execute(
                 }
             }
             if matches!(output_kind, "pdf" | "pdf+txt" | "pdf+hocr") {
-                ariad_pdf::ocr_layer::add_text_layer(&mut doc, page, &result, &job.ctx)
-                    .map_err(|e| pdf_error(&job, e))?;
+                ariad_pdf::ocr_layer::add_text_layer_in_place(
+                    doc.as_mut().expect("PDF output"),
+                    page,
+                    &result,
+                    &job.ctx,
+                )
+                .map_err(|e| pdf_error(&job, e))?;
             }
             if matches!(output_kind, "txt" | "pdf+txt") {
                 ocr_text::text_page(
@@ -650,7 +712,7 @@ pub(super) fn execute(
     }
     let mut outputs = Vec::new();
     if matches!(output_kind, "pdf" | "pdf+txt" | "pdf+hocr") {
-        outputs.push(OutputDoc::from_pdf("output.pdf", doc));
+        outputs.push(OutputDoc::from_pdf("output.pdf", doc.expect("PDF output")));
     }
     if matches!(output_kind, "txt" | "pdf+txt") {
         outputs.push(OutputDoc::from_bytes("output.txt", "txt", sidecar));
@@ -691,4 +753,16 @@ pub(super) fn execute(
         metrics: result.metrics,
         inline_json: None,
     })
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::ocr_timeout;
+
+    #[test]
+    fn timeout_scales_with_pages_and_respects_caller_limit() {
+        assert_eq!(ocr_timeout(50, None), 1350);
+        assert_eq!(ocr_timeout(50, Some(900)), 900);
+        assert_eq!(ocr_timeout(1, Some(900)), 615);
+    }
 }

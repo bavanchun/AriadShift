@@ -24,7 +24,7 @@ struct ScanPage {
 
 /// Render selected pages as grayscale images and emit a scan metadata index.
 pub fn run(ctx: &mut ToolContext<'_>, params: ScanRenderParams) -> ToolResult {
-    let bytes = ctx.load_validated_pdf_bytes()?;
+    let bytes = ctx.load_validated_pdf_bytes_for_pages(Some(&params.pages))?;
     let pdfium = ctx.pdfium()?;
     let doc = pdfium
         .load_pdf_from_byte_slice(&bytes, None)

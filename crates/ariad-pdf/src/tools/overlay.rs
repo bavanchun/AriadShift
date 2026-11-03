@@ -41,8 +41,17 @@ pub fn run(
         )));
     }
 
-    let base_pdf = &inputs[0];
-    let mut ov_pdf = inputs[1].clone();
+    run_owned(inputs[0].clone(), inputs[1].clone(), params, ctx)
+}
+
+/// Overlay an owned base without cloning the complete document.
+pub fn run_owned(
+    base_pdf: PdfDoc,
+    mut ov_pdf: PdfDoc,
+    params: &OverlayParams,
+    ctx: &ToolCtx,
+) -> Result<Vec<OutputDoc>, PdfError> {
+    ctx.check()?;
 
     let base_pages = collect_ordered_page_ids(base_pdf.inner(), ctx)?;
     let ov_pages = collect_ordered_page_ids(ov_pdf.inner(), ctx)?;
@@ -53,7 +62,6 @@ pub fn run(
         .expand(base_count, DuplicatePolicy::Reject)
         .map_err(|e| PdfError::InvalidParams(e.to_string()))?;
 
-    let mut out_pdf = base_pdf.clone();
     let mut base_budget = base_pdf.decode_budget();
     let mut ov_budget = ov_pdf.decode_budget();
     let mut copier = ObjectCopier::new();
@@ -62,6 +70,7 @@ pub fn run(
     let base_ver = effective_version(base_pdf.inner());
     let ov_ver = effective_version(ov_pdf.inner());
     let merged_ver = if ov_ver > base_ver { ov_ver } else { base_ver };
+    let mut out_pdf = base_pdf;
 
     let ov_doc_mut = ov_pdf.inner_mut()?;
     materialize_inferred_rotations(ov_doc_mut, &ov_pages, ctx)?;

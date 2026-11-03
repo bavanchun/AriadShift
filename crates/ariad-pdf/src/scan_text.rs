@@ -270,6 +270,18 @@ pub fn remove_invisible_text(
     page_number: u32,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
+    let mut output = pdf.clone();
+    remove_invisible_text_in_place(&mut output, page_number, ctx)?;
+    *pdf = output;
+    Ok(())
+}
+
+/// Remove a layer without cloning the document; discard it if an error occurs.
+pub fn remove_invisible_text_in_place(
+    pdf: &mut PdfDoc,
+    page_number: u32,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
     let presence = classify_text(pdf, page_number, ctx)?;
     if !presence.invisible {
         return Ok(());
@@ -279,10 +291,7 @@ pub fn remove_invisible_text(
             "cannot safely remove this text layer".into(),
         ));
     }
-    let mut output = pdf.clone();
-    remove_page_text(&mut output, page_number, ctx)?;
-    *pdf = output;
-    Ok(())
+    remove_page_text(pdf, page_number, ctx)
 }
 
 fn remove_page_text(pdf: &mut PdfDoc, page_number: u32, ctx: &ToolCtx) -> Result<(), PdfError> {

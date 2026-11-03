@@ -51,6 +51,39 @@ fn images(pdf: &lopdf::Document) -> Vec<Vec<u8>> {
         })
         .collect()
 }
+
+#[test]
+fn scanner_effect_accepts_large_internal_images_under_input_limit() {
+    let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        eprintln!("skipping: PDFium pack absent");
+        return;
+    };
+    let mut pdf = lopdf::Document::with_version("1.4");
+    let pages = pdf.new_object_id();
+    let page = pdf.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => dictionary! {},
+    });
+    pdf.objects.insert(
+        pages,
+        dictionary! {"Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1}.into(),
+    );
+    let catalog = pdf.add_object(dictionary! {"Type" => "Catalog", "Pages" => pages});
+    pdf.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    pdf.save_to(&mut bytes).unwrap();
+    let ws = workspace("scan.pdf", &bytes);
+    let mut events = Vec::new();
+    let limits = Limits {
+        max_input_bytes: Some(50_000),
+        ..Limits::local()
+    };
+    let mut ctx = ToolContext::new("test", "pdf.scanner_effect", ws.paths, limits, &mut events)
+        .with_library_dir(pdfium);
+    let params = serde_json::from_value(serde_json::json!({"dpi": 150, "noise": 0.2})).unwrap();
+    tools::scanner_effect(&mut ctx, params).unwrap();
+}
 #[test]
 fn split_scans_preserves_source_image_bytes() {
     let Some(pdfium) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {

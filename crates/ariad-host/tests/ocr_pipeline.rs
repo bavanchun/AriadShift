@@ -16,6 +16,10 @@ fn child(name: &str) -> bool {
         std::env::var_os("ARIAD_TEST_TESSERACT_PACK"),
         std::env::var_os("ARIAD_TEST_PDFIUM_PACK"),
     ) else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "both development packs are required"
+        );
         eprintln!("skipping: development packs are unavailable");
         return false;
     };
@@ -111,6 +115,46 @@ fn image_ocr_produces_hocr() {
     let html = std::fs::read_to_string(&result.artifacts[0].path).unwrap();
     assert!(html.contains("ocrx_word"));
     assert!(html.contains("vườn"));
+}
+
+#[test]
+fn image_ocr_sidecars_and_combined_pdf_input_budget() {
+    if !child("image_ocr_sidecars_and_combined_pdf_input_budget") {
+        return;
+    }
+    let output = tempfile::tempdir().unwrap();
+    let input = fixture("vi-garden-300dpi.png");
+    let size = std::fs::metadata(&input).unwrap().len();
+    let limits = ariad_core::limits::Limits {
+        max_input_bytes: Some(size + size / 2),
+        ..Default::default()
+    };
+    for format in ["txt", "hocr", "pdf"] {
+        let dir = output.path().join(format);
+        std::fs::create_dir(&dir).unwrap();
+        let request = ToolRequest::new(
+            "image.ocr",
+            vec![InputRef::new(input.clone()), InputRef::new(input.clone())],
+            OutputTarget::Directory(dir),
+        )
+        .with_params(json!({"output":format}))
+        .with_limits(limits.clone())
+        .with_engine_program(env!("CARGO_BIN_EXE_engine-probe"));
+        let result = run_tool(&request);
+        if format == "pdf" {
+            assert!(matches!(
+                result,
+                Err(ariad_host::tools::ToolError::LimitExceeded)
+            ));
+        } else {
+            let result = result.unwrap();
+            assert!(
+                std::fs::read_to_string(&result.artifacts[0].path)
+                    .unwrap()
+                    .contains("vườn")
+            );
+        }
+    }
 }
 
 #[test]

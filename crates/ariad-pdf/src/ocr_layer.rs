@@ -119,6 +119,18 @@ pub fn add_text_layer(
     Ok(())
 }
 
+/// Add a layer without cloning the document. On error the caller must discard the document.
+pub fn add_text_layer_in_place(
+    pdf: &mut crate::PdfDoc,
+    page_number: u32,
+    page: &OcrPage,
+    ctx: &crate::ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
+    let encoding = TextEncoding::new(page)?;
+    add_text_layer_inner(pdf, page_number, page, &encoding, ctx)
+}
+
 fn add_text_layer_inner(
     pdf: &mut crate::PdfDoc,
     page_number: u32,

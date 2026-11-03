@@ -1,7 +1,7 @@
 //! Page-preserving scan split and deskew tools.
 use super::{effect, regions, skew};
 use crate::{
-    blank::{map_pdf_error, open_structural_pdf},
+    blank::{map_pdf_error, open_structural_pdf, read_bounded_input},
     output::{ToolContext, ToolResult, map_pdfium_open_error},
     render::{compute_page_pixels, render_page_rgba},
 };
@@ -56,7 +56,7 @@ fn render_gray(
 }
 
 fn rotate_page(
-    doc: &PdfDoc,
+    doc: PdfDoc,
     page: usize,
     clockwise: f32,
     ctx: &ToolCtx,
@@ -68,8 +68,7 @@ fn rotate_page(
         angle_deg: clockwise,
         expand: true,
     };
-    let mut output =
-        rotate_content::run(std::slice::from_ref(doc), &params, ctx).map_err(map_pdf_error)?;
+    let mut output = rotate_content::run_owned(doc, &params, ctx).map_err(map_pdf_error)?;
     match output
         .pop()
         .ok_or_else(EngineFailure::invalid_request)?
@@ -117,11 +116,12 @@ pub fn deskew(ctx: &mut ToolContext<'_>, params: DeskewParams) -> ToolResult {
     if params.min_angle_deg > params.max_angle_deg {
         return Err(EngineFailure::invalid_request());
     }
-    let bytes = ctx.load_validated_pdf_bytes()?;
+    let bytes = read_bounded_input(ctx)?;
     let original = open_structural_pdf(ctx, &bytes)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut original.clone(), bytes.len())?;
     let pdfium = ctx.pdfium()?;
     let document = pdfium
-        .load_pdf_from_byte_slice(&bytes, None)
+        .load_pdf_from_byte_slice(&canonical, None)
         .map_err(map_pdfium_open_error)?;
     let selected = ctx.resolve_pages(
         &params.pages,
@@ -135,7 +135,7 @@ pub fn deskew(ctx: &mut ToolContext<'_>, params: DeskewParams) -> ToolResult {
             Some(value)
                 if value.confidence >= 0.02 && value.angle_deg.abs() >= params.min_angle_deg =>
             {
-                output = rotate_page(&output, page, value.angle_deg, &pdf_ctx)?;
+                output = rotate_page(output, page, value.angle_deg, &pdf_ctx)?;
             }
             Some(value) if value.confidence >= 0.02 => {}
             _ => ctx.warn(
@@ -150,11 +150,12 @@ pub fn deskew(ctx: &mut ToolContext<'_>, params: DeskewParams) -> ToolResult {
 
 /// Split detected scan regions into pages while retaining the original image data.
 pub fn scan_split(ctx: &mut ToolContext<'_>, params: ScanSplitParams) -> ToolResult {
-    let bytes = ctx.load_validated_pdf_bytes()?;
+    let bytes = read_bounded_input(ctx)?;
     let original = open_structural_pdf(ctx, &bytes)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut original.clone(), bytes.len())?;
     let pdfium = ctx.pdfium()?;
     let document = pdfium
-        .load_pdf_from_byte_slice(&bytes, None)
+        .load_pdf_from_byte_slice(&canonical, None)
         .map_err(map_pdfium_open_error)?;
     let total = usize::try_from(document.pages().len()).unwrap_or(0);
     let selected: HashSet<usize> = ctx
@@ -221,12 +222,14 @@ pub fn scan_split(ctx: &mut ToolContext<'_>, params: ScanSplitParams) -> ToolRes
     }
     let pdf_ctx = ctx.pdf_tool_context();
     let mut result = split_regions(&original, &selections, &pdf_ctx).map_err(map_pdf_error)?;
-    if let OutputPayload::Pdf(ref mut doc) = result.payload {
+    if let OutputPayload::Pdf(doc) = result.payload {
+        let mut doc = *doc;
         for (index, angle) in angles.into_iter().enumerate() {
             if angle.abs() >= 0.1 {
-                **doc = rotate_page(doc, index + 1, angle, &pdf_ctx)?;
+                doc = rotate_page(doc, index + 1, angle, &pdf_ctx)?;
             }
         }
+        result.payload = OutputPayload::Pdf(Box::new(doc));
     } else {
         return Err(EngineFailure::invalid_request());
     }
@@ -235,11 +238,12 @@ pub fn scan_split(ctx: &mut ToolContext<'_>, params: ScanSplitParams) -> ToolRes
 
 /// Apply a deterministic scan-like raster overlay to selected pages.
 pub fn scanner_effect(ctx: &mut ToolContext<'_>, params: ScannerEffectParams) -> ToolResult {
-    let bytes = ctx.load_validated_pdf_bytes()?;
+    let bytes = read_bounded_input(ctx)?;
     let original = open_structural_pdf(ctx, &bytes)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut original.clone(), bytes.len())?;
     let pdfium = ctx.pdfium()?;
     let document = pdfium
-        .load_pdf_from_byte_slice(&bytes, None)
+        .load_pdf_from_byte_slice(&canonical, None)
         .map_err(map_pdfium_open_error)?;
     let selected = ctx.resolve_pages(
         &params.pages,
@@ -286,15 +290,17 @@ pub fn scanner_effect(ctx: &mut ToolContext<'_>, params: ScannerEffectParams) ->
         if jpeg.len() as u64 > ctx.limits().max_decompressed_bytes {
             return Err(EngineFailure::limit_exceeded());
         }
+        let mut internal_limits = ctx.limits().clone();
+        internal_limits.max_input_bytes = None;
         let overlay_bytes = ariad_pdf::image_to_pdf::run_with_ctx(
             [jpeg],
             &ImageToPdfParams::default(),
-            ctx.limits(),
+            &internal_limits,
             &pdf_ctx,
         )
         .map_err(map_pdf_error)?;
         let overlay_doc =
-            ariad_pdf::document::open_with_ctx(&overlay_bytes, ctx.limits(), &pdf_ctx)
+            ariad_pdf::document::open_with_ctx(&overlay_bytes, &internal_limits, &pdf_ctx)
                 .map_err(map_pdf_error)?;
         let range = PageRange::parse(&page_number.to_string())
             .map_err(|_| EngineFailure::invalid_request())?;
@@ -303,7 +309,7 @@ pub fn scanner_effect(ctx: &mut ToolContext<'_>, params: ScannerEffectParams) ->
             ..OverlayParams::default()
         };
         let mut result =
-            overlay::run(&[output, overlay_doc], &options, &pdf_ctx).map_err(map_pdf_error)?;
+            overlay::run_owned(output, overlay_doc, &options, &pdf_ctx).map_err(map_pdf_error)?;
         output = match result
             .pop()
             .ok_or_else(EngineFailure::invalid_request)?
