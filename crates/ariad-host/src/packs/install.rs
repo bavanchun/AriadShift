@@ -1586,6 +1586,23 @@ pub fn remove(
 mod sweep_tests {
     use super::*;
 
+    fn make_stale(path: &Path) {
+        #[cfg(unix)]
+        let file = fs::File::open(path).unwrap();
+        #[cfg(windows)]
+        let file = {
+            use std::os::windows::fs::OpenOptionsExt;
+            let mut options = fs::OpenOptions::new();
+            options.access_mode(0x100); // FILE_WRITE_ATTRIBUTES
+            if path.is_dir() {
+                options.custom_flags(0x0200_0000); // FILE_FLAG_BACKUP_SEMANTICS
+            }
+            options.open(path).unwrap()
+        };
+        file.set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 3600))
+            .unwrap();
+    }
+
     #[test]
     fn stale_language_cache_survives_sweep() {
         let temp = tempfile::tempdir().unwrap();
@@ -1599,16 +1616,10 @@ mod sweep_tests {
         let languages = layout.cache().join("tesseract-languages");
         fs::create_dir_all(&languages).unwrap();
         fs::write(languages.join("model"), b"keep").unwrap();
-        fs::File::open(&languages)
-            .unwrap()
-            .set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 3600))
-            .unwrap();
+        make_stale(&languages);
         let stale = layout.cache().join("old.part");
         fs::write(&stale, b"remove").unwrap();
-        fs::File::open(&stale)
-            .unwrap()
-            .set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 3600))
-            .unwrap();
+        make_stale(&stale);
         sweep(&layout, "tesseract");
         assert!(languages.join("model").exists());
         assert!(!stale.exists());
