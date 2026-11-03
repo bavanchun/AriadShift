@@ -114,6 +114,10 @@ impl ToolCtx {
     }
 
     /// Sets the host-supplied reproducible timestamp for PDF serialization.
+    ///
+    /// A `Some` value also sets the date-token clock to that epoch in UTC,
+    /// replacing any clock previously supplied with [`Self::with_clock`]. To use
+    /// a different clock, call `with_clock` after this method.
     #[must_use]
     pub const fn with_source_date_epoch(mut self, epoch: Option<i64>) -> Self {
         self.source_date_epoch = epoch;

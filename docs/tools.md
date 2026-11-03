@@ -141,7 +141,7 @@ All parameter structs live in `ariad-core::tools::params::*` (pure `serde` + `sc
 
 ### Multi-Format Tools (`output_format` and `output_formats`)
 
-`pdf.watermark_detect` returns candidates with input-bound identifiers, page numbers and bounding boxes. Image objects it cannot inspect are counted in `unsupported_images` and reported in a warning; they are not candidates. `pdf.watermark_remove` requires explicit candidate identifiers from that input; it rejects empty, wildcard, unknown or ambiguous selections. A removal request supports at most eight distinct detection queries and shares one work budget across detection and removal. It publishes a PDF and also returns an inline JSON report of removed and unselected candidates. The host and MCP expose that report as `inline_json`, the CLI includes it in `--json` output, and WASM exposes it as `data`. Removing third-party marks emits a warning.
+`pdf.watermark_detect` returns candidates with input-bound identifiers, page numbers and bounding boxes. Image objects it cannot inspect are counted in `unsupported_images` and reported in a warning; they are not candidates. `pdf.watermark_remove` requires explicit candidate identifiers from that input; it rejects empty, wildcard, unknown or ambiguous selections. A removal request supports at most eight distinct detection queries and shares one work budget across detection and removal. Near the decode limit, detection can succeed while removal fails with the standard limit error because the rewrite also consumes that budget. It publishes a PDF and also returns an inline JSON report of removed and unselected candidates. The host and MCP expose that report as `inline_json`, the CLI includes it in `--json` output, and WASM exposes it as `data`. Removing third-party marks emits a warning.
 
 Text and image marks use the bundled Libertinus fonts and visual page coordinates. Image marks take the image as the second input; bytes determine its type. AriadShift watermarks use a removable marked-content and optional-content layer. Pagination marks use Header or Footer artifacts, while background and inversion use private artifact markers. Inversion uses Difference blending and does not invert annotations. Colour adjustment may skip unsupported image encodings with a warning.
 
@@ -482,7 +482,9 @@ once per run and supply it as a UTC clock and reproducible serialization epoch;
 otherwise they supply the current UTC clock. Recipe steps and output naming use
 the same clock. Browser hosts supply their clock, and embedders may supply an
 explicit UTC offset. The PDF library reads neither the environment nor the wall
-clock for dates. An invalid explicit date or epoch is an error rather than a fallback.
+clock for dates. An invalid explicit date is an error rather than a fallback. If
+`SOURCE_DATE_EPOCH` is invalid or set to an empty value, every native tool,
+recipe and MCP tool call fails with `invalid SOURCE_DATE_EPOCH`.
 
 ---
 
