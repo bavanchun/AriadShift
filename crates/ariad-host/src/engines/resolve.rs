@@ -123,10 +123,56 @@ fn reinstall_hint(id: &str) -> String {
 }
 
 fn install_hint(id: &str) -> String {
+    if id == "tesseract" {
+        if let Some(hint) =
+            tesseract_unsupported_hint(packs::build_target(), &packs::host_targets())
+        {
+            return hint.to_owned();
+        }
+    }
     super::pack_spec(id).map_or_else(
         || format!("run 'ashift engines install {id}' to install the {id} engine pack"),
         |spec| spec.install_hint.to_owned(),
     )
+}
+
+fn tesseract_unsupported_hint(triple: &str, targets: &[String]) -> Option<&'static str> {
+    if triple.contains("-windows-") {
+        Some(
+            "Tesseract packs are unavailable on Windows; see https://github.com/bavanchun/AriadShift/issues/202",
+        )
+    } else if triple.contains("-linux-")
+        && !targets.iter().any(|target| target.ends_with("-linux-gnu"))
+    {
+        Some(
+            "Tesseract packs require glibc on Linux; see https://github.com/bavanchun/AriadShift/issues/202",
+        )
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tesseract_target_tests {
+    use super::tesseract_unsupported_hint;
+
+    #[test]
+    fn support_depends_on_system_targets_not_binary_linkage() {
+        let musl = vec!["x86_64-unknown-linux-musl".to_owned()];
+        let gnu = vec!["x86_64-unknown-linux-gnu".to_owned(), musl[0].clone()];
+        assert!(
+            tesseract_unsupported_hint("x86_64-pc-windows-msvc", &[])
+                .unwrap()
+                .contains("Windows")
+        );
+        assert!(
+            tesseract_unsupported_hint(&musl[0], &musl)
+                .unwrap()
+                .contains("glibc")
+        );
+        assert_eq!(tesseract_unsupported_hint(&musl[0], &gnu), None);
+        assert_eq!(tesseract_unsupported_hint(&gnu[0], &gnu), None);
+    }
 }
 
 /// Locates the host sandbox launcher binary (`ashift` or `engine-probe`) when a caller does not

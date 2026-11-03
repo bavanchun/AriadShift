@@ -27,7 +27,7 @@ const INSUFFICIENT_ORIENTATION_TEXT: &str = "Not enough text to detect orientati
 
 fn pack() -> Result<(PathBuf, PathBuf), EngineFailure> {
     let missing = || EngineFailure::tool_missing("The verified Tesseract pack is unavailable.");
-    if cfg!(any(target_os = "windows", target_env = "musl")) {
+    if cfg!(target_os = "windows") {
         return Err(missing());
     }
     let (program, root) = adapter::program(
