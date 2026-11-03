@@ -106,6 +106,11 @@ def _case(stem: str) -> tuple[bytes, bytes]:
             ("signature", "Signature", 600),
         ]:
             line(name, text, 200, y)
+        label("Nickname", 95, 552)
+        label("__________", 200, 550)
+        expected.append(
+            {"name": "nickname", "type": "text", "rect": [200, 548, 267, 562.4]}
+        )
     elif stem == "boxes":
         for name, text, y in [
             ("name", "Name", 700),
@@ -113,6 +118,16 @@ def _case(stem: str) -> tuple[bytes, bytes]:
             ("city", "City", 600),
         ]:
             box(name, text, 200, y, 180, 24)
+        label("Phone", 95, 503)
+        ops.extend(
+            [
+                "200 500 m 380 500 l S",
+                "200 524 m 380 524 l S",
+                "200 500 m 200 524 l S",
+                "380 500 m 380 524 l S",
+            ]
+        )
+        expected.append({"name": "phone", "type": "text", "rect": [201, 501, 379, 523]})
         label("Occupied", 95, 553)
         ops.append("200 550 180 24 re S")
         label("filled", 205, 557)
