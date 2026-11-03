@@ -157,7 +157,13 @@ impl NewField {
                     .options
                     .as_ref()
                     .is_some_and(|options| options.iter().any(|option| &option.export == value)),
-                (FieldType::List, FormValue::Multi(values)) => self.options.as_ref().is_some_and(|options| values.iter().all(|value| options.iter().any(|option| &option.export == value))),
+                (FieldType::List, FormValue::Multi(values)) => {
+                    self.options.as_ref().is_some_and(|options| {
+                        values
+                            .iter()
+                            .all(|value| options.iter().any(|option| &option.export == value))
+                    })
+                }
                 _ => false,
             };
             if !valid {

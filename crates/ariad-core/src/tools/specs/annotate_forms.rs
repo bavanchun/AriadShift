@@ -183,6 +183,26 @@ pub fn specs() -> Vec<ToolSpec> {
 mod tests {
     use super::*;
     #[test]
+    fn action_and_export_formats_enforce_selected_defaults() {
+        use serde_json::json;
+        assert!(PDF_ANNOTATIONS_SPEC.allows_artifact_format("json", &json!({"action":"list"})));
+        assert!(!PDF_ANNOTATIONS_SPEC.allows_artifact_format("pdf", &json!({"action":"list"})));
+        assert!(PDF_ANNOTATIONS_SPEC.allows_artifact_format("pdf", &json!({"action":"add"})));
+        assert!(PDF_ANNOTATIONS_EXPORT_SPEC.allows_artifact_format("xfdf", &json!({})));
+        assert!(!PDF_ANNOTATIONS_EXPORT_SPEC.allows_artifact_format("json", &json!({})));
+        assert!(
+            PDF_ANNOTATIONS_EXPORT_SPEC.allows_artifact_format("json", &json!({"format":"json"}))
+        );
+        assert!(PDF_FORMS_EXPORT_SPEC.allows_artifact_format("json", &json!({})));
+        assert!(!PDF_FORMS_EXPORT_SPEC.allows_artifact_format("csv", &json!({})));
+        assert!(PDF_FORMS_EXPORT_SPEC.allows_artifact_format("csv", &json!({"format":"CSV"})));
+        assert!(!PDF_FORMS_EXPORT_SPEC.allows_artifact_format("csv", &json!({"format":"bogus"})));
+        for format in ["fdf", "xfdf", "csv"] {
+            assert_eq!(crate::tools::normalize_tool_format(format), Some(format));
+        }
+    }
+
+    #[test]
     fn specifications_are_valid() {
         let specs = specs();
         assert_eq!(specs.len(), 10);

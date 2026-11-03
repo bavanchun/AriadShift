@@ -489,6 +489,11 @@ pub struct ToolSpec {
 #[must_use]
 pub fn normalize_tool_format(raw: &str) -> Option<&'static str> {
     let trimmed = raw.trim().trim_start_matches('.');
+    for format in ["fdf", "xfdf", "csv"] {
+        if trimmed.eq_ignore_ascii_case(format) {
+            return Some(format);
+        }
+    }
     if trimmed.eq_ignore_ascii_case("bmp") {
         return Some("bmp");
     }
@@ -580,6 +585,28 @@ impl ToolSpec {
     ) -> bool {
         let norm = normalize_tool_format(artifact_format)
             .unwrap_or_else(|| artifact_format.trim().trim_start_matches('.'));
+        if self.id == "pdf.annotations" {
+            let expected =
+                if params.get("action").and_then(serde_json::Value::as_str) == Some("list") {
+                    "json"
+                } else {
+                    "pdf"
+                };
+            return norm.eq_ignore_ascii_case(expected);
+        }
+        if matches!(self.id, "pdf.annotations_export" | "pdf.forms_export") {
+            let expected = match params.get("format") {
+                Some(value) => match value.as_str() {
+                    Some(format) => format,
+                    None => return false,
+                },
+                None if self.id == "pdf.annotations_export" => "xfdf",
+                None => "json",
+            };
+            return self.accepts_output_format(expected)
+                && normalize_tool_format(expected)
+                    .is_some_and(|format| norm.eq_ignore_ascii_case(format));
+        }
         if self.id == "pdf.outline"
             && params.get("action").and_then(serde_json::Value::as_str) == Some("export")
         {

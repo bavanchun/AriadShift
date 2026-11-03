@@ -1002,7 +1002,18 @@ mod tests {
 
     #[test]
     fn form_and_annotation_tools_use_their_documented_suffixes() {
-        for (id, suffix) in [("pdf.annotations", "annotations"), ("pdf.annotations_import", "annotated"), ("pdf.annotations_export", "annotations"), ("pdf.forms_list", "fields"), ("pdf.forms_fill", "filled"), ("pdf.forms_create", "form"), ("pdf.forms_flatten", "flattened"), ("pdf.forms_detect", "detected-fields"), ("pdf.forms_import", "filled"), ("pdf.forms_export", "form-data")] {
+        for (id, suffix) in [
+            ("pdf.annotations", "annotations"),
+            ("pdf.annotations_import", "annotated"),
+            ("pdf.annotations_export", "annotations"),
+            ("pdf.forms_list", "fields"),
+            ("pdf.forms_fill", "filled"),
+            ("pdf.forms_create", "form"),
+            ("pdf.forms_flatten", "flattened"),
+            ("pdf.forms_detect", "detected-fields"),
+            ("pdf.forms_import", "filled"),
+            ("pdf.forms_export", "form-data"),
+        ] {
             assert_eq!(default_tool_suffix(id), suffix);
         }
     }

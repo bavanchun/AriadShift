@@ -618,7 +618,8 @@ fn run_tool_inner(
     }
 
     // 8. Pre-validate output target confinement and engine availability before staging or running.
-    let emits_json = spec.output_format.eq_ignore_ascii_case("json")
+    let emits_json = (spec.id != "pdf.forms_export"
+        && spec.output_format.eq_ignore_ascii_case("json"))
         || tool_action_emits_json(spec.id, &resolved_secrets.schema_params);
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
@@ -851,7 +852,18 @@ fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
     let action = params.get("action").and_then(Value::as_str);
     match spec_id {
         "pdf.outline" => action == Some("export"),
-        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" => action == Some("list"),
+        "pdf.forms_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .unwrap_or("json")
+            .eq_ignore_ascii_case("json"),
+        "pdf.annotations_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .is_some_and(|format| format.eq_ignore_ascii_case("json")),
+        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" | "pdf.annotations" => {
+            action == Some("list")
+        }
         _ => false,
     }
 }
@@ -866,6 +878,7 @@ fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: 
     match spec_id {
         "pdf.attachments" => action == Some("add") && input_index >= 1,
         "pdf.portfolio" => action == Some("create"),
+        "pdf.annotations_import" | "pdf.forms_import" => input_index >= 1,
         _ => false,
     }
 }
@@ -1304,11 +1317,15 @@ fn publish_tool_outputs(
                 params.get("date").and_then(Value::as_str),
             )
             .map_err(PublishError::from)?
-        } else if extracts_attachments {
+        } else if extracts_attachments || (spec.id == "pdf.forms_import" && multi) {
             staged_path
                 .file_name()
                 .and_then(|s| s.to_str())
-                .unwrap_or("attachment.bin")
+                .unwrap_or(if extracts_attachments {
+                    "attachment.bin"
+                } else {
+                    "output.pdf"
+                })
                 .to_owned()
         } else if is_out_of_process
             && let Some(engine_named) = replace_staged_input_stem(staged_path, first_input)
@@ -1405,6 +1422,31 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
     };
 
     match tool_id {
+        "pdf.annotations" => {
+            let p: ariad_core::tools::params::annotations::AnnotationsParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_fill" => {
+            let p: ariad_core::tools::params::forms::FormsFillParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_create" => {
+            let p: ariad_core::tools::params::forms::FormsCreateParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_detect" => {
+            let p: ariad_core::tools::params::forms::FormsDetectParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_import" => {
+            let p: ariad_core::tools::params::forms::FormsImportParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
         "pdf.split" => {
             let p: SplitParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
@@ -1474,5 +1516,38 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
                 .map_err(|e| e.to_string())
         }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod annotation_form_routing_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn import_payload_and_annotation_list_are_routed_by_action() {
+        let empty = json!({});
+        for id in ["pdf.forms_import", "pdf.annotations_import"] {
+            assert!(!tool_input_is_attachment_payload(id, &empty, 0));
+            assert!(tool_input_is_attachment_payload(id, &empty, 1));
+        }
+        assert!(tool_action_emits_json(
+            "pdf.annotations",
+            &json!({"action":"list"})
+        ));
+        assert!(!tool_action_emits_json(
+            "pdf.annotations",
+            &json!({"action":"add"})
+        ));
+        assert!(tool_action_emits_json("pdf.forms_export", &empty));
+        assert!(!tool_action_emits_json(
+            "pdf.forms_export",
+            &json!({"format":"csv"})
+        ));
+        assert!(tool_action_emits_json(
+            "pdf.annotations_export",
+            &json!({"format":"json"})
+        ));
+        assert!(!tool_action_emits_json("pdf.annotations_export", &empty));
+        assert!(validate_semantic_params("pdf.forms_import", &json!({"max_records":0})).is_err());
     }
 }
