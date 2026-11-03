@@ -2,6 +2,32 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
+## 0.4.0 (unreleased)
+
+Overlay and watermark tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools in `ariad-pdf`. They run through `ashift tool`, `ashift tools`, `ashift recipe run`, the local MCP server, and `ariad-wasm`. (#206)
+
+### Added
+
+- **15 overlay and watermark PDF tools**, all in the Free tier and runnable on the CLI, local MCP server, and in the browser via `ariad-wasm`. All 15 run in-process in `ariad-pdf` with no external engine packs:
+  - Page marks: `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`.
+  - Page furniture: `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`.
+  - Colour adjustment: `pdf.replace_color`, `pdf.adjust_colors`.
+  - Watermark inspection and removal: `pdf.watermark_detect`, `pdf.watermark_remove`.
+- **Removable watermark markers.** AriadShift watermarks and stamps wrap drawing streams in an Optional Content Group named "AriadShift Watermark" and tag page content with `/Artifact /Watermark` marked content, allowing AriadShift-added marks to be cleanly identified and removed without touching original page content.
+- **Embedded subset fonts.** Pure-Rust subsetting and embedding of bundled Libertinus regular and bold fonts with full Unicode and Vietnamese diacritics coverage, ensuring deterministic visual rendering and accurate text extraction across PDF viewers.
+- **Page geometry and tokens.** Drawing operations position content deterministically in visual page space, respecting `/Rotate`, `CropBox`, and `UserUnit`. Running headers, footers, stamps, and page numbers support `{n}`, `{total}`, `{label}`, `{filename}`, and `{date}` tokens with escaping.
+- **Vector QR codes.** `pdf.qr` renders vector paths directly into the page content stream without rasterization, preserving sharp edges at any scale.
+- **Watermark detection and reporting.** `pdf.watermark_detect` scans for OCG watermarks, marked artifacts, annotations, and repeated XObjects or text runs, returning opaque input-bound candidate identifiers with bounding boxes, confidence scores, and an inline JSON report exposed across CLI, MCP, and WASM surfaces.
+
+### Changed
+
+- **Strict `SOURCE_DATE_EPOCH` validation.** An invalid, empty, non-numeric, or out-of-range `SOURCE_DATE_EPOCH` environment variable now immediately fails every tool invocation, recipe execution (`ashift recipe run`), and local MCP call with an invalid-parameters error (`ToolError::InvalidParams`), ensuring reproducible runs fail fast rather than continuing with nondeterministic output.
+- **New dependencies `qrcode` and `ttf-parser`.** `ariad-pdf` adds pure-Rust dependencies `qrcode` (0.14.1) for vector QR code generation and `ttf-parser` (0.25.1) for TrueType font parsing and subsetting. `deny.toml` ignores advisory RUSTSEC-2026-0192 under the strict condition that `ttf-parser` parses only bundled, hash-pinned fonts, never untrusted user PDF streams or system fonts; replacing the unmaintained crate is tracked in #205.
+
+### Known limitations
+
+- **Watermark removal limits.** `pdf.watermark_remove` acts strictly on explicit, user-selected candidate identifiers returned by `pdf.watermark_detect`; wildcard selections, blank candidate lists, or automatic "remove all" operations are refused. A removal request supports at most eight distinct detection queries and at most 1,000 selected candidate identifiers per invocation. Detection and removal share a single decode and work budget within the request; near the decode limit, detection can succeed while removal fails with a limit error. Unsupported image formats or uninspected image objects are reported as warnings and not removed. Removing third-party watermarks emits a warning.
+
 ## 0.3.0 (unreleased)
 
 Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium rendering and image tools, and optimize and security operations. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. Conversions, `ariad-engine/1` and `ariad-ir/1` are unchanged. The desktop and web interfaces do not yet offer tool screens; the CLI and local MCP server expose the tools.
