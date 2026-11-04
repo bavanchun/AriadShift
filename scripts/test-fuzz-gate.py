@@ -37,9 +37,18 @@ class FuzzGateTests(unittest.TestCase):
         campaign = steps[campaign_index]["run"]
         for required in [
             "cargo fuzz run", '"fuzz/corpus/$t"', '"fuzz/seeds/$t"',
-            "-max_total_time=60",
+            "-max_total_time=60", "-max_total_time=10",
+            "-timeout=10", "-rss_limit_mb=2048",
         ]:
             self.assertIn(required, campaign)
+        self.assertRegex(
+            campaign,
+            re.compile(r'github\.event_name.*?==\s*[\'"]pull_request[\'"].*?-max_total_time=10', re.DOTALL),
+        )
+        self.assertRegex(
+            campaign,
+            re.compile(r'else.*?-max_total_time=60', re.DOTALL),
+        )
 
     def test_local_fuzz_runs_units_before_selecting_targets(self):
         justfile = (ROOT / "justfile").read_text()

@@ -402,7 +402,9 @@ jobs:
     needs: scope
     if: needs.scope.outputs.heavy == 'true'
     runs-on: ubuntu-26.04
-    # 19 targets x 60 s of fuzzing plus three feature builds on a possibly cold fuzz/target cache.
+    # Pull requests run a 5-minute smoke across all targets (10 s per target, 210 s fuzzing budget).
+    # Pushes to dev/main run the full 60 s per target (1260 s / 21 min total fuzzing).
+    # Nightly AddressSanitizer fuzzing (fuzz-nightly.yml) covers all targets for 600 s each.
     timeout-minutes: 45
     permissions:
       contents: read
@@ -462,16 +464,28 @@ jobs:
 
       - name: Run fuzz targets
         run: |
+          # Pull requests run a fast smoke with a 5-minute maximum total fuzzing
+          # budget across all targets (10 s per target = 210 s total fuzzing time).
+          # Pushes to dev/main run the full 60 s per target (1260 s / 21 min total).
+          # Nightly ASan fuzzing (fuzz-nightly.yml) covers all targets for 600 s each.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            fuzz_seconds=10
+            fuzz_args=(-- -max_total_time=10 -timeout=10 -rss_limit_mb=2048)
+          else
+            fuzz_seconds=60
+            fuzz_args=(-- -max_total_time=60 -timeout=10 -rss_limit_mb=2048)
+          fi
+          echo "Running fuzz targets with max_total_time=${fuzz_seconds}s per target"
           targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned"
           for t in $targets; do
-            echo "=== Running fuzz target: $t ==="
+            echo "=== Running fuzz target: $t (${fuzz_seconds}s) ==="
             mkdir -p "fuzz/corpus/$t"
             build_options=()
             case "$t" in
               pdf_reader|pdf_draw_params|pdf_form_interchange|pdf_form_structure) build_options=(--dev --features pdf-reader) ;;
               typst_writer) build_options=(--dev --features typst-writer) ;;
             esac
-            cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048
+            cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" "${fuzz_args[@]}"
           done
 
       - name: Save fuzz target cache

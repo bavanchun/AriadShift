@@ -102,7 +102,7 @@ Never commit `.env*` files, credentials, private keys, tokens, `node_modules/`, 
 
 - Push after the narrowed local gate passes so GitHub Actions runs on the branch.
 - CI is not awaited before merging or moving on. If a CI run turns red after merge, file a deduplicated GitHub issue (label `v1.x`) with the run URL, the failing step and the first error lines, and continue current work.
-- Fixing a red `dev` or `main` comes before any new stacked work: a red `dev` must be repaired (push a fix or revert with `git revert <sha>`) before any new phase worktree branches from it. Do not stack new work on a red branch.
+- Fixing a red `dev` or `main` comes before any new stacked work: a red `dev` (`ci.yml` failing `CI passed`) must be repaired (push a fix or revert with `git revert <sha>`) before any new phase worktree branches from it. Do not stack new work on a red branch.
 - To fix an unpushed commit, use `git commit --amend` for the latest one. Once a commit is pushed, fix it with a new commit.
 - Commit hooks are never skipped with `--no-verify`.
 
@@ -136,7 +136,7 @@ Plans live under `plans/`. A plan run uses one branch and one pull request per p
 
 ### Per-phase execution and cleanup
 
-1. **Check `dev`.** Before branching a new phase, check `dev` CI. If `dev` is red, fix `dev` first before creating a new phase worktree from it.
+1. **Check `dev`.** Before branching a new phase, check `dev` CI. "dev is green" for branching a new phase worktree is defined strictly as the `ci.yml` aggregate (`CI passed`) on the `dev` head. If `ci.yml` is red, fix `dev` first before creating a new phase worktree from it. The heavy workflows (Docling pack `pack-docling.yml`, Cloud E2E `cloud-e2e.yml`, Release `release.yml`, and pack workflows `pack-*`) do not block creating a worktree, but must be green before any release tag or `dev` to `main` promotion and before a PR that depends on their output.
 2. **One worktree per phase.** Branch from `origin/dev` into a dedicated phase worktree at `../01-AriadShift-wt-<slug>` (for example `git worktree add ../01-AriadShift-wt-<slug> -b <type>/<topic> origin/dev`).
 3. **Waves and file ownership.** Tasks inside a wave own disjoint files. Workers commit after each logical step (`docs(plans): …` for the phase status and checklist update once verified). Run artifacts under `plans/**/reports/herdr-cook-runs/` and `.run/` are git-excluded and never committed.
 4. **Build serialization and narrowed local gate.** Every `cargo`, `just`, `pnpm`, `uv` or `fixtures` command run by a worker or the coordinator executes through `.run/coord/build-lock.sh` so only one heavy build runs at a time. The coordinator regenerates shared or generated files once per wave and runs the phase's narrowed verification commands for the changed crates and apps; full `just ci` is not run locally.
