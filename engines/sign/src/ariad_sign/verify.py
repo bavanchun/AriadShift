@@ -16,6 +16,7 @@ try:
     from pyhanko.sign.validation import (
         ValidationContext,
         validate_pdf_signature,
+        validate_pdf_timestamp,
     )
     from pyhanko.sign.validation.status import SignatureCoverageLevel
 
@@ -58,8 +59,14 @@ def run_verify(request: RunToolRequest, writer: Writer) -> None:
             embedded_sigs = reader.embedded_signatures
 
             for sig_field in embedded_sigs:
+                is_timestamp = (sig_field.sig_object_type == "/DocTimeStamp")
                 try:
-                    status = validate_pdf_signature(sig_field, vc)
+                    if is_timestamp:
+                        status = validate_pdf_timestamp(
+                            sig_field, validation_context=vc
+                        )
+                    else:
+                        status = validate_pdf_signature(sig_field, vc)
                 except Exception as sig_exc:
                     signatures_report.append(
                         {
@@ -107,7 +114,13 @@ def run_verify(request: RunToolRequest, writer: Writer) -> None:
 
                 # Extract timestamp info
                 timestamp_info = None
-                if status.timestamp_validity is not None:
+                if is_timestamp and getattr(status, "timestamp", None) is not None:
+                    timestamp_info = {
+                        "timestamp": status.timestamp.isoformat(),
+                        "integrity": status.intact,
+                        "valid": status.valid,
+                    }
+                elif getattr(status, "timestamp_validity", None) is not None:
                     ts_val = status.timestamp_validity
                     ts = (
                         ts_val.timestamp.isoformat()
@@ -122,7 +135,9 @@ def run_verify(request: RunToolRequest, writer: Writer) -> None:
 
                 # Signing time
                 signing_time = None
-                if status.signer_reported_dt is not None:
+                if is_timestamp and getattr(status, "timestamp", None) is not None:
+                    signing_time = status.timestamp.isoformat()
+                elif getattr(status, "signer_reported_dt", None) is not None:
                     signing_time = status.signer_reported_dt.isoformat()
 
                 # Revocation status
@@ -159,18 +174,30 @@ def run_verify(request: RunToolRequest, writer: Writer) -> None:
                         else [],
                     }
 
+                bottom_line = getattr(status, "bottom_line", None)
+                if bottom_line is None and is_timestamp:
+                    bottom_line = bool(
+                        status.intact
+                        and status.valid
+                        and getattr(status, "docmdp_ok", True)
+                    )
                 modifications = {
-                    "docmdp_ok": status.docmdp_ok,
-                    "bottom_line": status.bottom_line,
+                    "docmdp_ok": getattr(status, "docmdp_ok", True),
+                    "bottom_line": bottom_line,
                     "modification_level": mod_level_str,
                     "diff_summary": diff_summary,
                 }
 
+                is_valid = bool(
+                    status.intact
+                    and status.valid
+                    and (bottom_line if bottom_line is not None else True)
+                )
                 sig_entry = {
                     "field_name": sig_field.field_name,
                     "signer": signer_info,
                     "integrity": status.intact,
-                    "valid": status.valid,
+                    "valid": is_valid,
                     "coverage": coverage_str,
                     "certificate_status": cert_status,
                     "timestamp": timestamp_info,
@@ -265,6 +292,9 @@ def _build_validation_context(
         if not parsed:
             try:
                 crl_obj = crl.CertificateList.load(data)
+                _ = crl_obj["tbs_cert_list"]
+                _ = crl_obj["signature_algorithm"]
+                _ = crl_obj["signature"]
                 crls.append(crl_obj)
                 parsed = True
             except Exception:  # noqa: S110
@@ -273,6 +303,7 @@ def _build_validation_context(
         if not parsed:
             try:
                 ocsp_obj = ocsp.OCSPResponse.load(data)
+                _ = ocsp_obj["response_status"]
                 ocsps.append(ocsp_obj)
                 parsed = True
             except Exception:  # noqa: S110
@@ -289,7 +320,7 @@ def _build_validation_context(
         if not parsed:
             raise EngineError(
                 "invalid_request",
-                f"unrecognized or unparseable offline evidence file: {ev_path}",
+                f"unrecognized or unparsable offline evidence file: {ev_path}",
             )
 
     return ValidationContext(

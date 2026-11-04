@@ -31,16 +31,55 @@ class PreComputedTimeStamper(timestamps.TimeStamper):
     def __init__(self, token_bytes: bytes) -> None:
         super().__init__()
         self.token_bytes = token_bytes
+        try:
+            content_info = cms.ContentInfo.load(token_bytes)
+            signed_data = content_info["content"]
+            encap = signed_data["encap_content_info"]
+            content = encap["content"]
+            raw_tst = (
+                content.parsed
+                if hasattr(content, "parsed")
+                else tsp.TSTInfo.load(content.native)
+            )
+            if not isinstance(raw_tst, tsp.TSTInfo):
+                raw_tst = tsp.TSTInfo.load(content.native)
+            self._tst_info = raw_tst
+            self._content_info = content_info
+        except Exception as exc:
+            raise EngineError(
+                "invalid_request",
+                f"failed to parse timestamp token: {exc}",
+            ) from exc
+
+    def _verify_imprint(self, message_digest: bytes, md_algorithm: str) -> None:
+        imprint = self._tst_info["message_imprint"]
+        token_digest = imprint["hashed_message"].native
+        token_algo = imprint["hash_algorithm"]["algorithm"].native
+
+        if token_digest != message_digest:
+            raise EngineError(
+                "invalid_request",
+                f"RFC 3161 timestamp token imprint mismatch: expected {message_digest.hex()}, got {token_digest.hex()}",
+            )
+        norm_req_algo = md_algorithm.lower().replace("-", "")
+        norm_tok_algo = token_algo.lower().replace("-", "")
+        if norm_req_algo != norm_tok_algo:
+            raise EngineError(
+                "invalid_request",
+                f"RFC 3161 timestamp token hash algorithm mismatch: expected {md_algorithm}, got {token_algo}",
+            )
 
     async def async_timestamp(
         self, message_digest: bytes, md_algorithm: str
     ) -> cms.ContentInfo:
-        return cms.ContentInfo.load(self.token_bytes)
+        self._verify_imprint(message_digest, md_algorithm)
+        return self._content_info
 
     def timestamp(
         self, message_digest: bytes, md_algorithm: str
     ) -> cms.ContentInfo:
-        return cms.ContentInfo.load(self.token_bytes)
+        self._verify_imprint(message_digest, md_algorithm)
+        return self._content_info
 
 
 class HostBrokeredTimeStamper(timestamps.TimeStamper):
@@ -58,9 +97,15 @@ class HostBrokeredTimeStamper(timestamps.TimeStamper):
         err_file = self.work_dir / "tsa_err.txt"
 
         if resp_file.exists():
-            resp_file.unlink()
+            try:
+                resp_file.unlink()
+            except OSError:
+                pass
         if err_file.exists():
-            err_file.unlink()
+            try:
+                err_file.unlink()
+            except OSError:
+                pass
 
         req_file.write_bytes(req.dump())
         self.writer.progress("tsa_request", 0, 1)
@@ -88,7 +133,7 @@ class HostBrokeredTimeStamper(timestamps.TimeStamper):
             "TSA broker request timed out waiting for host response",
         )
 
-    def timestamp(self, message_digest: bytes, md_algorithm: str) -> bytes:
+    def timestamp(self, message_digest: bytes, md_algorithm: str) -> cms.ContentInfo:
         return asyncio.run(self.async_timestamp(message_digest, md_algorithm))
 
 
@@ -352,16 +397,6 @@ def _build_validation_context(
                 "invalid_request",
                 f"failed to parse OCSP response {p}: {exc}",
             ) from exc
-
-    # In testing with self-signed certificate and no external trust roots, trust the signer cert
-    if (
-        not trust_roots
-        and signer is not None
-        and getattr(signer, "signing_cert", None) is not None
-    ):
-        cert = signer.signing_cert
-        if cert.issuer == cert.subject:
-            trust_roots.append(cert)
 
     return ValidationContext(
         trust_roots=trust_roots if trust_roots else None,

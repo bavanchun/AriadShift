@@ -125,21 +125,18 @@ class PKCS11TokenBackend(TokenSignerBackend):
 
 
 def load_token_signer(params: dict[str, Any]) -> signers.Signer:
-    """Loads a token signer using either software mock or PKCS#11 backend."""
-    module = params.get("module", "")
-    is_mock = (
-        not module
-        or module in ("mock", "software", "test")
-        or params.get("mock") is True
-        or not module.endswith((".so", ".dylib", ".dll"))
+    """Loads a token signer using either test software backend or PKCS#11 backend."""
+    import os
+
+    # Software mock backend is strictly test-only behind explicit environment variable
+    if os.environ.get("ARIAD_TEST_SOFTWARE_TOKEN") == "1":
+        return MockSoftwareTokenBackend().create_signer(params)
+
+    # In production, PKCS#11 extra is deferred; hardware token signing is not available
+    raise EngineError(
+        "tool_missing",
+        "PKCS#11 hardware token signing is not available in this release (deferred)",
     )
-
-    if is_mock:
-        backend = MockSoftwareTokenBackend()
-    else:
-        backend = PKCS11TokenBackend()
-
-    return backend.create_signer(params)
 
 
 def run_sign_token(request: RunToolRequest, writer: Writer) -> None:
@@ -164,24 +161,23 @@ def run_sign_token(request: RunToolRequest, writer: Writer) -> None:
     needs_ts = level in ("b_t", "b_lt", "b_lta")
     needs_lt = level in ("b_lt", "b_lta")
     work_dir = Path(request.work_dir)
+    tsa_url = params.get("tsa_url")
+    offline_evidence = params.get("offline_evidence") or {}
 
-    timestamper = _resolve_timestamper(params, work_dir, writer) if needs_ts else None
+    timestamper = (
+        _resolve_timestamper(offline_evidence, str(work_dir), tsa_url, writer)
+        if needs_ts
+        else None
+    )
     if needs_ts and timestamper is None:
         raise EngineError(
             "invalid_request",
-            f"level '{level}' requires tsa_url or timestamp_token",
+            f"level '{level}' requires tsa_url or timestamp_token; silent downgrade is prohibited",
         )
 
     vc = None
     if needs_lt:
-        trust_anchors = params.get("trust_anchors") or []
-        crl_files = params.get("crl_files") or []
-        ocsp_responses = params.get("ocsp_responses") or []
-        vc = _build_validation_context(
-            trust_anchors=trust_anchors,
-            crl_files=crl_files,
-            ocsp_responses=ocsp_responses,
-        )
+        vc = _build_validation_context(offline_evidence, signer)
 
     field_name = params.get("field_name") or "TokenSignature"
     reason = params.get("reason")
