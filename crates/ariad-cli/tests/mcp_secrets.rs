@@ -2,6 +2,7 @@
 use serde_json::{Value, json};
 use std::{
     io::{BufRead, BufReader, Write},
+    path::PathBuf,
     process::{Command, Stdio},
 };
 
@@ -462,6 +463,171 @@ fn secret_put_certificate_allows_large_payload() {
             .unwrap()
             .starts_with("sec_")
     );
+    drop(stdin);
+    let _ = child.wait().unwrap();
+}
+
+#[test]
+fn secret_put_binary_certificate_end_to_end_pdf_sign() {
+    let py = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engines/sign/.venv/bin/python3");
+    if !py.is_file() {
+        if std::env::var_os("ARIAD_REQUIRE_SIGN_PACK").is_some() {
+            panic!("ARIAD_REQUIRE_SIGN_PACK set but sign venv is missing");
+        }
+        eprintln!("skipping: sign engine venv missing");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let p12_path = dir.path().join("signer.p12");
+    let script = format!(
+        r#"
+from datetime import datetime, timedelta, timezone
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import BestAvailableEncryption, pkcs12
+from cryptography.x509.oid import NameOID
+
+key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "MCP Signer")])
+now = datetime.now(timezone.utc)
+cert = (
+    x509.CertificateBuilder()
+    .subject_name(subject)
+    .issuer_name(issuer)
+    .public_key(key.public_key())
+    .serial_number(x509.random_serial_number())
+    .not_valid_before(now - timedelta(days=1))
+    .not_valid_after(now + timedelta(days=365))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .sign(key, hashes.SHA256())
+)
+p12 = pkcs12.serialize_key_and_certificates(
+    name=b"mcp-signer",
+    key=key,
+    cert=cert,
+    cas=None,
+    encryption_algorithm=BestAvailableEncryption("mcppass".encode("utf-8")),
+)
+with open(r"{out_path}", "wb") as f:
+    f.write(p12)
+"#,
+        out_path = p12_path.display()
+    );
+    let status = Command::new(&py).args(["-c", &script]).status().unwrap();
+    assert!(status.success());
+
+    use base64::Engine;
+    let p12_bytes = std::fs::read(&p12_path).unwrap();
+    let p12_b64 = base64::engine::general_purpose::STANDARD.encode(&p12_bytes);
+
+    let input_pdf = dir.path().join("input.pdf");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf-tools/annotations.pdf"),
+        &input_pdf,
+    )
+    .unwrap();
+
+    let engine_override = format!("{} -I -m ariad_sign", py.display());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .arg("mcp")
+        .arg("--allow-dir")
+        .arg(dir.path())
+        .env("ASHIFT_SIGN_ENGINE", &engine_override)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    fn send(stdin: &mut impl Write, value: Value) {
+        writeln!(stdin, "{value}").unwrap();
+        stdin.flush().unwrap();
+    }
+    fn response(stdout: &mut impl BufRead, stdin: &mut impl Write, id: u64) -> Value {
+        loop {
+            let mut line = String::new();
+            stdout.read_line(&mut line).unwrap();
+            let value: Value = serde_json::from_str(&line).unwrap();
+            if value.get("id").and_then(Value::as_u64) == Some(id) {
+                return value;
+            }
+            if value["method"] == "roots/list" {
+                writeln!(
+                    stdin,
+                    "{}",
+                    json!({"jsonrpc":"2.0","id":value["id"],"result":{"roots":[]}})
+                )
+                .unwrap();
+                stdin.flush().unwrap();
+            }
+        }
+    }
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{"roots":{"listChanged":true}},"clientInfo":{"name":"test","version":"1"}}}),
+    );
+    response(&mut stdout, &mut stdin, 1);
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+    );
+
+    // 1. Store base64 certificate via secret_put
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":p12_b64,"certificate":true}}}),
+    );
+    let cert_resp = response(&mut stdout, &mut stdin, 2);
+    let cert_handle = cert_resp["result"]["structuredContent"]["handle"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // 2. Store password via secret_put
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":"mcppass"}}}),
+    );
+    let pass_resp = response(&mut stdout, &mut stdin, 3);
+    let pass_handle = pass_resp["result"]["structuredContent"]["handle"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // 3. Call run_doc_tool with pdf.sign
+    let out_dir = dir.path().join("mcp_out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "run_doc_tool",
+                "arguments": {
+                    "tool": "pdf.sign",
+                    "inputs": [input_pdf.to_string_lossy()],
+                    "output_dir": out_dir.to_string_lossy(),
+                    "params": {
+                        "certificate": {"$secret": cert_handle},
+                        "password": {"$secret": pass_handle}
+                    }
+                }
+            }
+        }),
+    );
+    let sign_resp = response(&mut stdout, &mut stdin, 4);
+    assert_eq!(sign_resp["result"]["isError"], false);
+    let out_files: Vec<_> = std::fs::read_dir(&out_dir).unwrap().collect();
+    assert!(!out_files.is_empty());
+
     drop(stdin);
     let _ = child.wait().unwrap();
 }

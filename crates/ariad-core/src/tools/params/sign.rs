@@ -177,6 +177,9 @@ pub struct OfflineEvidence {
     /// Optional paths to pre-fetched CRL (Certificate Revocation List) files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub crl_files: Vec<String>,
+    /// Optional paths to trusted root CA certificates (PEM/DER format).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trust_anchors: Vec<String>,
 }
 
 /// PKCS#11 hardware token backend interface.

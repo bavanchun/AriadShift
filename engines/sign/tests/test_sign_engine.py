@@ -458,6 +458,154 @@ def test_sign_token_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert v_res["metrics"]["signatures_count"] == 1
 
 
+def test_sign_token_pades_b_t_lt_lta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test pdf.sign_token with PAdES B-T, B-LT, and B-LTA conformance levels."""
+    ca_path, p12_path, crl_path, ocsp_paths, dummy_tsa = generate_ca_and_evidence(tmp_path)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(get_sample_pdf_bytes())
+
+    # 1. Without explicit test flag, token tool returns tool_missing (deferred in production)
+    work0 = tmp_path / "work_fail"
+    out0 = tmp_path / "out_fail"
+    work0.mkdir()
+    out0.mkdir()
+    req0 = RunToolRequest(
+        job="job-fail",
+        tool="pdf.sign_token",
+        inputs=[{"path": str(pdf_path), "format": "pdf"}],
+        output_dir=str(out0),
+        work_dir=str(work0),
+        params={"module": "mock", "level": "B-T", "tsa_url": "http://127.0.0.1:8080/tsa"},
+    )
+    w0 = InMemoryWriter()
+    handle(req0, w0)
+    res0 = next(e for e in w0.events if e["type"] == "result")
+    assert res0["ok"] is False
+    assert res0["error"]["code"] == "tool_missing"
+
+    # 2. With ARIAD_TEST_SOFTWARE_TOKEN=1, mock software token backend is enabled
+    monkeypatch.setenv("ARIAD_TEST_SOFTWARE_TOKEN", "1")
+
+    # B-T
+    work_bt = tmp_path / "work_token_bt"
+    out_bt = tmp_path / "out_token_bt"
+    work_bt.mkdir()
+    out_bt.mkdir()
+    req_bt = RunToolRequest(
+        job="job-token-bt",
+        tool="pdf.sign_token",
+        inputs=[{"path": str(pdf_path), "format": "pdf"}],
+        output_dir=str(out_bt),
+        work_dir=str(work_bt),
+        params={
+            "module": "mock",
+            "key_label": "Mock Token Key",
+            "level": "B-T",
+            "tsa_url": "http://127.0.0.1:8080/tsa",
+        },
+    )
+    w_bt = AutoRespondingWriter(work_bt, dummy_tsa)
+    handle(req_bt, w_bt)
+    res_bt = next(e for e in w_bt.events if e["type"] == "result")
+    assert res_bt["ok"] is True
+    bt_pdf = Path(next(e for e in w_bt.events if e["type"] == "artifact")["path"])
+    assert bt_pdf.is_file()
+    assert b"/DSS" not in bt_pdf.read_bytes()
+
+    # B-LT
+    work_blt = tmp_path / "work_token_blt"
+    out_blt = tmp_path / "out_token_blt"
+    work_blt.mkdir()
+    out_blt.mkdir()
+    req_blt = RunToolRequest(
+        job="job-token-blt",
+        tool="pdf.sign_token",
+        inputs=[{"path": str(pdf_path), "format": "pdf"}],
+        output_dir=str(out_blt),
+        work_dir=str(work_blt),
+        params={
+            "module": "mock",
+            "key_label": "Mock Token Key",
+            "level": "B-LT",
+            "tsa_url": "http://127.0.0.1:8080/tsa",
+            "offline_evidence": {
+                "trust_anchors": [str(ca_path)],
+                "crl_files": [str(crl_path)],
+                "ocsp_responses": ocsp_paths,
+            },
+        },
+    )
+    w_blt = AutoRespondingWriter(work_blt, dummy_tsa)
+    handle(req_blt, w_blt)
+    res_blt = next(e for e in w_blt.events if e["type"] == "result")
+    assert res_blt["ok"] is True
+    blt_pdf = Path(next(e for e in w_blt.events if e["type"] == "artifact")["path"])
+    assert blt_pdf.is_file()
+    assert b"/DSS" in blt_pdf.read_bytes()
+
+    # B-LTA
+    work_blta = tmp_path / "work_token_blta"
+    out_blta = tmp_path / "out_token_blta"
+    work_blta.mkdir()
+    out_blta.mkdir()
+    req_blta = RunToolRequest(
+        job="job-token-blta",
+        tool="pdf.sign_token",
+        inputs=[{"path": str(pdf_path), "format": "pdf"}],
+        output_dir=str(out_blta),
+        work_dir=str(work_blta),
+        params={
+            "module": "mock",
+            "key_label": "Mock Token Key",
+            "level": "B-LTA",
+            "tsa_url": "http://127.0.0.1:8080/tsa",
+            "offline_evidence": {
+                "trust_anchors": [str(ca_path)],
+                "crl_files": [str(crl_path)],
+                "ocsp_responses": ocsp_paths,
+            },
+        },
+    )
+    w_blta = AutoRespondingWriter(work_blta, dummy_tsa)
+    handle(req_blta, w_blta)
+    res_blta = next(e for e in w_blta.events if e["type"] == "result")
+    assert res_blta["ok"] is True
+    blta_pdf = Path(next(e for e in w_blta.events if e["type"] == "artifact")["path"])
+    assert blta_pdf.is_file()
+    assert b"/DSS" in blta_pdf.read_bytes()
+
+    # Verify B-LTA signature with trust anchor extracted from token cert
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    r = PdfFileReader(open(blta_pdf, "rb"), strict=False)
+    token_cert_bytes = r.embedded_signatures[0].signer_cert.dump()
+    token_cert_path = tmp_path / "token_cert.crt"
+    token_cert_path.write_bytes(token_cert_bytes)
+
+    v_out = tmp_path / "v_token_blta"
+    v_out.mkdir()
+    v_req = RunToolRequest(
+        job="job-v-token-blta",
+        tool="pdf.sign_verify",
+        inputs=[{"path": str(blta_pdf), "format": "pdf"}],
+        output_dir=str(v_out),
+        work_dir=str(work_blta),
+        params={
+            "trust_anchors": [str(ca_path), str(token_cert_path)],
+            "offline_evidence": [str(crl_path)] + ocsp_paths,
+        },
+    )
+    vw = InMemoryWriter()
+    handle(v_req, vw)
+    rep = json.loads(Path(next(e for e in vw.events if e["type"] == "artifact")["path"]).read_text("utf-8"))
+    assert rep["integrity"] is True
+    assert rep["valid"] is True
+    assert len(rep["signatures"]) == 2
+    assert rep["signatures"][0]["valid"] is True
+    assert rep["signatures"][0]["timestamp"]["valid"] is True
+    assert rep["signatures"][1]["valid"] is True
+    assert rep["signatures"][1]["timestamp"]["valid"] is True
+
+
 def test_sign_remove_multi_signature_warning(tmp_path: Path):
     pdf_path = tmp_path / "doc.pdf"
     pdf_path.write_bytes(get_sample_pdf_bytes())
@@ -521,13 +669,12 @@ def test_sign_remove_multi_signature_warning(tmp_path: Path):
     assert res3["ok"] is True
 
 
-def test_pdf_timestamp_rejects_unbound_token(tmp_path: Path):
+def test_pdf_timestamp_brokered_success(tmp_path: Path):
+    """Test positive pdf.timestamp tool execution via brokered TSA exchange."""
     from asn1crypto import keys as asn1_keys
-    from asn1crypto import tsp
     from asn1crypto import x509 as asn1_x509
     from cryptography.hazmat.primitives import serialization
     from pyhanko.sign.timestamps import DummyTimeStamper
-    import base64
 
     pdf_path = tmp_path / "doc.pdf"
     pdf_path.write_bytes(get_sample_pdf_bytes())
@@ -559,36 +706,50 @@ def test_pdf_timestamp_rejects_unbound_token(tmp_path: Path):
     key_asn1 = asn1_keys.PrivateKeyInfo.load(key_der)
     d = DummyTimeStamper(tsa_cert=cert_asn1, tsa_key=key_asn1)
 
-    # Token with mismatched imprint (b"0"*32) must be rejected with invalid_request
-    req = tsp.TimeStampReq(
-        {
-            "version": 1,
-            "message_imprint": tsp.MessageImprint(
-                {
-                    "hash_algorithm": {"algorithm": "sha256"},
-                    "hashed_message": b"0" * 32,
-                }
-            ),
-        }
-    )
-    resp = d.request_tsa_response(req)
-    tok_b64 = base64.b64encode(resp["time_stamp_token"].dump()).decode("ascii")
+    work = tmp_path / "work_ts"
+    out = tmp_path / "out_ts"
+    work.mkdir()
+    out.mkdir()
 
     ts_req = RunToolRequest(
         job="job-ts",
         tool="pdf.timestamp",
         inputs=[{"path": str(pdf_path), "format": "pdf"}],
-        output_dir=str(tmp_path / "ts_out"),
-        work_dir=str(tmp_path / "work"),
-        params={"timestamp_token": tok_b64},
+        output_dir=str(out),
+        work_dir=str(work),
+        params={"tsa_url": "http://127.0.0.1:8080/tsa"},
     )
-    writer = InMemoryWriter()
+    writer = AutoRespondingWriter(work, d)
     handle(ts_req, writer)
 
     res = next(e for e in writer.events if e["type"] == "result")
-    assert res["ok"] is False
-    assert res["error"]["code"] == "invalid_request"
-    assert "imprint mismatch" in res["error"]["message"].lower()
+    assert res["ok"] is True
+    art = next(e for e in writer.events if e["type"] == "artifact")
+    ts_pdf = Path(art["path"])
+    assert ts_pdf.is_file()
+
+    # Verify timestamp with sign_verify
+    ts_cert_file = tmp_path / "tsa.crt"
+    ts_cert_file.write_bytes(cert.public_bytes(serialization.Encoding.DER))
+
+    v_out = tmp_path / "v_ts_out"
+    v_out.mkdir()
+    v_req = RunToolRequest(
+        job="job-v-ts",
+        tool="pdf.sign_verify",
+        inputs=[{"path": str(ts_pdf), "format": "pdf"}],
+        output_dir=str(v_out),
+        work_dir=str(work),
+        params={"trust_anchors": [str(ts_cert_file)]},
+    )
+    vw = InMemoryWriter()
+    handle(v_req, vw)
+    v_art = next(e for e in vw.events if e["type"] == "artifact")
+    rep = json.loads(Path(v_art["path"]).read_text("utf-8"))
+    assert rep["integrity"] is True
+    assert rep["valid"] is True
+    assert len(rep["signatures"]) == 1
+    assert rep["signatures"][0]["timestamp"]["valid"] is True
 
 
 class AutoRespondingWriter(Writer):
@@ -841,6 +1002,11 @@ def test_sign_pades_b_t_lt_lta(tmp_path: Path):
     rep1 = json.loads(Path(next(e for e in vw1.events if e["type"] == "artifact")["path"]).read_text("utf-8"))
     assert rep1["integrity"] is True
     assert rep1["signatures"][0]["integrity"] is True
+    assert rep1["signatures"][0]["timestamp"]["valid"] is True
+    assert rep1["signatures"][0]["valid"] is True
+    assert len(rep1["signatures"]) == 1
+    # B-T has no DSS validation info embedded (downgrade check)
+    assert b"/DSS" not in bt_pdf.read_bytes()
 
     # 2. PAdES B-LT
     work2 = tmp_path / "work_blt"
@@ -870,6 +1036,8 @@ def test_sign_pades_b_t_lt_lta(tmp_path: Path):
     res2 = next(e for e in w2.events if e["type"] == "result")
     assert res2["ok"] is True
     blt_pdf = Path(next(e for e in w2.events if e["type"] == "artifact")["path"])
+    # B-LT embeds validation info in DSS
+    assert b"/DSS" in blt_pdf.read_bytes()
 
     # Verify B-LT
     v2_out = tmp_path / "v2_out"
@@ -889,7 +1057,11 @@ def test_sign_pades_b_t_lt_lta(tmp_path: Path):
     handle(v_req2, vw2)
     rep2 = json.loads(Path(next(e for e in vw2.events if e["type"] == "artifact")["path"]).read_text("utf-8"))
     assert rep2["integrity"] is True
+    assert rep2["valid"] is True
     assert rep2["signatures"][0]["integrity"] is True
+    assert rep2["signatures"][0]["valid"] is True
+    assert rep2["signatures"][0]["timestamp"]["valid"] is True
+    assert len(rep2["signatures"]) == 1
 
     # 3. PAdES B-LTA
     work3 = tmp_path / "work_blta"
@@ -919,6 +1091,8 @@ def test_sign_pades_b_t_lt_lta(tmp_path: Path):
     res3 = next(e for e in w3.events if e["type"] == "result")
     assert res3["ok"] is True
     blta_pdf = Path(next(e for e in w3.events if e["type"] == "artifact")["path"])
+    # B-LTA embeds DSS and an archive timestamp
+    assert b"/DSS" in blta_pdf.read_bytes()
 
     # Verify B-LTA
     v3_out = tmp_path / "v3_out"
@@ -938,7 +1112,11 @@ def test_sign_pades_b_t_lt_lta(tmp_path: Path):
     handle(v_req3, vw3)
     rep3 = json.loads(Path(next(e for e in vw3.events if e["type"] == "artifact")["path"]).read_text("utf-8"))
     assert rep3["integrity"] is True
-    assert rep3["signatures"][0]["integrity"] is True
+    assert rep3["valid"] is True
+    assert len(rep3["signatures"]) == 2
+    assert rep3["signatures"][0]["valid"] is True
+    assert rep3["signatures"][1]["timestamp"]["valid"] is True
+    assert rep3["signatures"][1]["valid"] is True
 
 
 def test_sign_tampered_pdf(tmp_path: Path):

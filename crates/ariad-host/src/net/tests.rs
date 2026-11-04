@@ -835,3 +835,255 @@ fn test_cross_origin_307_post_body_dropped() {
     assert_eq!(reqs[1].0, Method::Get);
     assert_eq!(reqs[1].2, None);
 }
+
+#[test]
+fn test_loopback_bounded_trailers_success_and_overflow() {
+    // 1. Valid trailer within bounds
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut req_buf = [0u8; 1024];
+            let _ = stream.read(&mut req_buf);
+            let resp = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\ntest\r\n0\r\nX-Trailer: valid-trailer\r\n\r\n";
+            let _ = stream.write_all(resp.as_bytes());
+        });
+
+        let client = Client::builder()
+            .allow_loopback(true)
+            .https_only(false)
+            .allowed_ports(vec![port])
+            .build()
+            .unwrap();
+
+        let url = Url::parse(&format!("http://127.0.0.1:{port}/trailer-ok")).unwrap();
+        let resp = client
+            .get(url)
+            .expect("chunked response with trailer should succeed");
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body, b"test");
+        handle.join().unwrap();
+    }
+
+    // 2. Trailer overflowing MAX_HEADERS_BYTES (64 KiB)
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut req_buf = [0u8; 1024];
+            let _ = stream.read(&mut req_buf);
+            let chunk_head =
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\ntest\r\n0\r\n";
+            let _ = stream.write_all(chunk_head.as_bytes());
+            let trailer_line = format!("X-Large-Trailer: {}\r\n", "A".repeat(1000));
+            for _ in 0..70 {
+                if stream.write_all(trailer_line.as_bytes()).is_err() {
+                    break;
+                }
+            }
+            let _ = stream.write_all(b"\r\n");
+        });
+
+        let client = Client::builder()
+            .allow_loopback(true)
+            .https_only(false)
+            .allowed_ports(vec![port])
+            .build()
+            .unwrap();
+
+        let url = Url::parse(&format!("http://127.0.0.1:{port}/trailer-overflow")).unwrap();
+        let err = client.get(url).expect_err("overflowing trailers must fail");
+        match err {
+            NetError::HeadersTooLarge { limit } => {
+                assert_eq!(limit, 64 * 1024);
+            }
+            other => panic!("expected HeadersTooLarge error, got {other:?}"),
+        }
+        handle.join().unwrap();
+    }
+}
+
+#[derive(Debug)]
+struct SleepingResolver(Duration);
+impl Resolver for SleepingResolver {
+    fn resolve(
+        &self,
+        _host: &str,
+        _port: u16,
+        timeout: Duration,
+    ) -> Result<Vec<SocketAddr>, NetError> {
+        if self.0 > timeout {
+            std::thread::sleep(timeout);
+            return Err(NetError::Timeout);
+        }
+        std::thread::sleep(self.0);
+        Ok(vec![SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
+            _port,
+        )])
+    }
+}
+
+#[test]
+fn test_dns_resolver_budget_sleep_timeout() {
+    let resolver = Arc::new(SleepingResolver(Duration::from_millis(200)));
+    let client = Client::builder()
+        .resolver(resolver)
+        .connect_timeout(Duration::from_millis(30))
+        .build()
+        .unwrap();
+
+    let url = Url::parse("https://example.com/test-dns-timeout").unwrap();
+    let err = client.get(url).expect_err("DNS timeout should fail");
+    assert!(
+        matches!(err, NetError::Timeout),
+        "expected NetError::Timeout, got {err:?}"
+    );
+}
+
+#[test]
+fn test_port_policy_with_allow_loopback() {
+    let client = Client::builder()
+        .allow_loopback(true)
+        .https_only(false)
+        .build()
+        .unwrap();
+
+    let url = Url::parse("http://127.0.0.1:8080/forbidden-port").unwrap();
+    let err = client
+        .get(url)
+        .expect_err("non-standard port must be rejected");
+    match err {
+        NetError::PortNotAllowed { port } => assert_eq!(port, 8080),
+        other => panic!("expected PortNotAllowed, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_sni_server_name_assertion() {
+    let url = Url::parse("https://tsa.example.com/query").unwrap();
+    let req = HttpRequest::get(url);
+    let sni = req.sni_name().expect("sni name should resolve");
+    match sni {
+        rustls::pki_types::ServerName::DnsName(dns) => {
+            assert_eq!(dns.as_ref(), "tsa.example.com");
+        }
+        _ => panic!("expected DnsName"),
+    }
+
+    let ip_url = Url::parse("https://127.0.0.1/query").unwrap();
+    let ip_req = HttpRequest::get(ip_url);
+    let ip_sni = ip_req.sni_name().expect("ip sni name should resolve");
+    match ip_sni {
+        rustls::pki_types::ServerName::IpAddress(ip) => match ip {
+            rustls::pki_types::IpAddr::V4(v4) => assert_eq!(v4, [127, 0, 0, 1].into()),
+            _ => panic!("expected V4"),
+        },
+        _ => panic!("expected IpAddress"),
+    }
+}
+
+#[test]
+fn test_sni_client_hello_wire_assertion() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let n = stream.read(&mut buf).unwrap();
+        tx.send(buf[..n].to_vec()).unwrap();
+    });
+
+    let resolver = Arc::new(MockResolver::new());
+    resolver.insert(
+        "tsa.test.local",
+        vec![SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            port,
+        )],
+    );
+
+    let client = Client::builder()
+        .resolver(resolver)
+        .allow_loopback(true)
+        .allowed_ports(vec![port])
+        .build()
+        .unwrap();
+
+    let url = Url::parse(&format!("https://tsa.test.local:{port}/query")).unwrap();
+    let _ = client.get(url);
+    handle.join().unwrap();
+
+    let wire_bytes = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("received ClientHello");
+    assert!(wire_bytes.len() > 5);
+    assert_eq!(wire_bytes[0], 0x16); // Handshake
+    assert_eq!(wire_bytes[1], 0x03); // Major version 3
+
+    let wire_str = String::from_utf8_lossy(&wire_bytes);
+    assert!(
+        wire_str.contains("tsa.test.local"),
+        "ClientHello wire bytes must contain SNI host"
+    );
+}
+
+#[test]
+fn test_tsa_allowlist_matching() {
+    use crate::tools::sign::matches_tsa_allowlist;
+
+    let target_good = Url::parse("https://tsa.example.com/tsa").unwrap();
+    let target_evil = Url::parse("https://tsa.example.com.evil.com/tsa").unwrap();
+    let target_sub = Url::parse("https://sub.tsa.example.com/tsa").unwrap();
+    let target_http = Url::parse("http://tsa.example.com/tsa").unwrap();
+    let target_port8443 = Url::parse("https://tsa.example.com:8443/tsa").unwrap();
+
+    let allowlist = "https://tsa.example.com";
+    assert!(matches_tsa_allowlist(&target_good, allowlist));
+    assert!(!matches_tsa_allowlist(&target_evil, allowlist));
+    assert!(!matches_tsa_allowlist(&target_sub, allowlist));
+    assert!(!matches_tsa_allowlist(&target_http, allowlist));
+    assert!(!matches_tsa_allowlist(&target_port8443, allowlist));
+
+    let multi = "https://tsa1.example.com, https://tsa.example.com, https://tsa2.example.com";
+    assert!(matches_tsa_allowlist(&target_good, multi));
+    assert!(!matches_tsa_allowlist(&target_evil, multi));
+
+    let path_allow = "https://tsa.example.com/tsa";
+    let other_path = Url::parse("https://tsa.example.com/admin").unwrap();
+    assert!(matches_tsa_allowlist(&target_good, path_allow));
+    assert!(!matches_tsa_allowlist(&other_path, path_allow));
+}
+
+#[test]
+fn test_cloud_default_deny_tsa_timestamp() {
+    use crate::tools::sign::check_tsa_policy;
+
+    let target = Url::parse("https://tsa.example.com/tsa").unwrap();
+
+    // 1. Cloud mode without allowlist -> denied
+    let err =
+        check_tsa_policy(&target, None, true).expect_err("cloud mode without allowlist must fail");
+    assert!(
+        err.to_string()
+            .contains("TSA requests are disabled in cloud unless an allowlist is configured")
+    );
+
+    // 2. Non-cloud mode without allowlist -> permitted
+    assert!(check_tsa_policy(&target, None, false).is_ok());
+
+    // 3. Cloud mode with matching allowlist -> permitted
+    assert!(check_tsa_policy(&target, Some("https://tsa.example.com"), true).is_ok());
+
+    // 4. Cloud mode with non-matching allowlist -> denied
+    let err2 = check_tsa_policy(&target, Some("https://other.example.com"), true)
+        .expect_err("mismatched allowlist must fail");
+    assert!(
+        err2.to_string()
+            .contains("TSA URL is not in the allowed TSA list")
+    );
+}

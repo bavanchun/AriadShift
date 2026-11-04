@@ -8632,6 +8632,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "trust_anchors": {
+                "description": "Optional paths to trusted root CA certificates (PEM/DER format).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "additionalProperties": false
@@ -8897,6 +8904,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "trust_anchors": {
+                "description": "Optional paths to trusted root CA certificates (PEM/DER format).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "additionalProperties": false
@@ -9046,6 +9060,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "trust_anchors": {
+                "description": "Optional paths to trusted root CA certificates (PEM/DER format).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "additionalProperties": false

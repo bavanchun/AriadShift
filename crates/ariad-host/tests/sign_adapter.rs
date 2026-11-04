@@ -118,6 +118,147 @@ with open(r"{out_path}", "wb") as f:
         .status()
         .expect("failed to generate test certificate");
     assert!(status.success(), "failed to generate p12 bundle");
+
+    let cert_pem_script = format!(
+        r#"
+from cryptography.hazmat.primitives.serialization import pkcs12, Encoding
+with open(r"{out_path}", "rb") as f:
+    key, cert, cas = pkcs12.load_key_and_certificates(f.read(), "{password}".encode("utf-8"))
+with open(r"{out_path}".replace(".p12", ".crt"), "wb") as f:
+    f.write(cert.public_bytes(Encoding.PEM))
+"#,
+        out_path = out_path.display(),
+        password = password,
+    );
+    let _ = Command::new(&py).args(["-c", &cert_pem_script]).status();
+}
+
+fn generate_test_pki_and_evidence(dir: &Path) {
+    let py = python_bin();
+    let script = r#"
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import BestAvailableEncryption, pkcs12
+from cryptography.x509 import ocsp
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+out_dir = Path(sys.argv[1])
+now = datetime.now(timezone.utc)
+
+# 1. Root CA
+ca_key = rsa.generate_private_key(65537, 2048)
+ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Test Root CA")])
+ca_cert = (
+    x509.CertificateBuilder()
+    .subject_name(ca_name)
+    .issuer_name(ca_name)
+    .public_key(ca_key.public_key())
+    .serial_number(1)
+    .not_valid_before(now - timedelta(days=1))
+    .not_valid_after(now + timedelta(days=365))
+    .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+    .add_extension(x509.KeyUsage(True, False, False, False, False, True, True, False, False), critical=True)
+    .sign(ca_key, hashes.SHA256())
+)
+(out_dir / "ca.crt").write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
+
+# 2. Signer Certificate
+signer_key = rsa.generate_private_key(65537, 2048)
+signer_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Test Signer")])
+signer_cert = (
+    x509.CertificateBuilder()
+    .subject_name(signer_name)
+    .issuer_name(ca_name)
+    .public_key(signer_key.public_key())
+    .serial_number(2)
+    .not_valid_before(now - timedelta(days=1))
+    .not_valid_after(now + timedelta(days=365))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .add_extension(x509.KeyUsage(True, True, False, False, False, False, False, False, False), critical=True)
+    .sign(ca_key, hashes.SHA256())
+)
+p12_bytes = pkcs12.serialize_key_and_certificates(
+    name=b"test-signer",
+    key=signer_key,
+    cert=signer_cert,
+    cas=[ca_cert],
+    encryption_algorithm=BestAvailableEncryption(b"pass123"),
+)
+(out_dir / "signer.p12").write_bytes(p12_bytes)
+(out_dir / "signer.crt").write_bytes(signer_cert.public_bytes(serialization.Encoding.PEM))
+
+# 3. TSA Certificate
+tsa_key = rsa.generate_private_key(65537, 2048)
+tsa_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Test TSA")])
+tsa_cert = (
+    x509.CertificateBuilder()
+    .subject_name(tsa_name)
+    .issuer_name(ca_name)
+    .public_key(tsa_key.public_key())
+    .serial_number(3)
+    .not_valid_before(now - timedelta(days=1))
+    .not_valid_after(now + timedelta(days=365))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.TIME_STAMPING]), critical=True)
+    .sign(ca_key, hashes.SHA256())
+)
+(out_dir / "tsa.crt").write_bytes(tsa_cert.public_bytes(serialization.Encoding.PEM))
+(out_dir / "tsa.key").write_bytes(tsa_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+
+# 4. CRL
+crl = (
+    x509.CertificateRevocationListBuilder()
+    .issuer_name(ca_name)
+    .last_update(now - timedelta(hours=1))
+    .next_update(now + timedelta(days=30))
+    .sign(ca_key, hashes.SHA256())
+)
+(out_dir / "ca.crl").write_bytes(crl.public_bytes(serialization.Encoding.DER))
+
+# 5. OCSP responses
+ocsp_signer = (
+    ocsp.OCSPResponseBuilder()
+    .add_response(
+        cert=signer_cert,
+        issuer=ca_cert,
+        algorithm=hashes.SHA256(),
+        cert_status=ocsp.OCSPCertStatus.GOOD,
+        this_update=now - timedelta(hours=1),
+        next_update=now + timedelta(days=7),
+        revocation_time=None,
+        revocation_reason=None,
+    )
+    .responder_id(ocsp.OCSPResponderEncoding.HASH, ca_cert)
+    .sign(ca_key, hashes.SHA256())
+)
+(out_dir / "signer.ocsp").write_bytes(ocsp_signer.public_bytes(serialization.Encoding.DER))
+
+ocsp_tsa = (
+    ocsp.OCSPResponseBuilder()
+    .add_response(
+        cert=tsa_cert,
+        issuer=ca_cert,
+        algorithm=hashes.SHA256(),
+        cert_status=ocsp.OCSPCertStatus.GOOD,
+        this_update=now - timedelta(hours=1),
+        next_update=now + timedelta(days=7),
+        revocation_time=None,
+        revocation_reason=None,
+    )
+    .responder_id(ocsp.OCSPResponderEncoding.HASH, ca_cert)
+    .sign(ca_key, hashes.SHA256())
+)
+(out_dir / "tsa.ocsp").write_bytes(ocsp_tsa.public_bytes(serialization.Encoding.DER))
+"#;
+    let status = Command::new(&py)
+        .args(["-c", script, &dir.to_string_lossy()])
+        .status()
+        .expect("failed to generate PKI test evidence");
+    assert!(status.success(), "PKI evidence generation failed");
 }
 
 #[test]
@@ -398,11 +539,38 @@ fn test_sign_token() {
 struct TestTsaServer {
     child: std::process::Child,
     port: u16,
+    #[allow(dead_code)]
+    cert_path: Option<PathBuf>,
 }
 
 impl TestTsaServer {
     fn spawn() -> Self {
+        Self::spawn_internal(None, None, None)
+    }
+
+    fn spawn_with_cert(cert_path: &Path) -> Self {
+        Self::spawn_internal(Some(cert_path), None, None)
+    }
+
+    fn spawn_with_keys(tsa_cert: &Path, tsa_key: &Path) -> Self {
+        Self::spawn_internal(None, Some(tsa_cert), Some(tsa_key))
+    }
+
+    fn spawn_internal(
+        cert_out: Option<&Path>,
+        tsa_cert: Option<&Path>,
+        tsa_key: Option<&Path>,
+    ) -> Self {
         let py = python_bin();
+        let cert_out_str = cert_out
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let tsa_cert_str = tsa_cert
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let tsa_key_str = tsa_key
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
         let script = r#"
 import http.server, sys
 from asn1crypto import keys, tsp, x509
@@ -413,23 +581,46 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from pyhanko.sign.timestamps import DummyTimeStamper
 
-key = rsa.generate_private_key(65537, 2048)
-name = cx509.Name([cx509.NameAttribute(NameOID.COMMON_NAME, 'Test TSA')])
-now = datetime.now(timezone.utc)
-cert = (
-    cx509.CertificateBuilder()
-    .subject_name(name)
-    .issuer_name(name)
-    .public_key(key.public_key())
-    .serial_number(1)
-    .not_valid_before(now - timedelta(days=1))
-    .not_valid_after(now + timedelta(days=365))
-    .add_extension(cx509.ExtendedKeyUsage([cx509.oid.ExtendedKeyUsageOID.TIME_STAMPING]), critical=True)
-    .sign(key, hashes.SHA256())
-)
-cert_asn1 = x509.Certificate.load(cert.public_bytes(serialization.Encoding.DER))
-key_der = key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
-key_asn1 = keys.PrivateKeyInfo.load(key_der)
+cert_out = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
+tsa_cert_in = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
+tsa_key_in = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
+
+if tsa_cert_in and tsa_key_in:
+    cert_bytes = open(tsa_cert_in, 'rb').read()
+    if b'-----BEGIN CERTIFICATE-----' in cert_bytes:
+        parsed_cert = cx509.load_pem_x509_certificate(cert_bytes)
+        cert_asn1 = x509.Certificate.load(parsed_cert.public_bytes(serialization.Encoding.DER))
+    else:
+        cert_asn1 = x509.Certificate.load(cert_bytes)
+    key_bytes = open(tsa_key_in, 'rb').read()
+    if b'-----BEGIN' in key_bytes:
+        parsed_key = serialization.load_pem_private_key(key_bytes, password=None)
+        der_key = parsed_key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+        key_asn1 = keys.PrivateKeyInfo.load(der_key)
+    else:
+        key_asn1 = keys.PrivateKeyInfo.load(key_bytes)
+else:
+    key = rsa.generate_private_key(65537, 2048)
+    name = cx509.Name([cx509.NameAttribute(NameOID.COMMON_NAME, 'Test TSA')])
+    now = datetime.now(timezone.utc)
+    cert = (
+        cx509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(1)
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=365))
+        .add_extension(cx509.ExtendedKeyUsage([cx509.oid.ExtendedKeyUsageOID.TIME_STAMPING]), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    if cert_out:
+        with open(cert_out, 'wb') as cf:
+            cf.write(cert.public_bytes(serialization.Encoding.PEM))
+    cert_asn1 = x509.Certificate.load(cert.public_bytes(serialization.Encoding.DER))
+    key_der = key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    key_asn1 = keys.PrivateKeyInfo.load(key_der)
+
 d = DummyTimeStamper(tsa_cert=cert_asn1, tsa_key=key_asn1)
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -452,7 +643,7 @@ sys.stdout.flush()
 server.serve_forever()
 "#;
         let mut child = Command::new(&py)
-            .args(["-c", script])
+            .args(["-c", script, &cert_out_str, &tsa_cert_str, &tsa_key_str])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()
@@ -465,7 +656,11 @@ server.serve_forever()
         reader.read_line(&mut line).expect("read port line");
         let port: u16 = line.trim().parse().expect("parse port");
 
-        Self { child, port }
+        Self {
+            child,
+            port,
+            cert_path: cert_out.map(|p| p.to_path_buf()),
+        }
     }
 }
 
@@ -481,12 +676,14 @@ fn test_pades_b_t_with_brokered_tsa() {
     let Some(cmd) = engine_command() else {
         return;
     };
-    let tsa = TestTsaServer::spawn();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tsa_cert_path = tmp.path().join("tsa.crt");
+    let tsa = TestTsaServer::spawn_with_cert(&tsa_cert_path);
     let tsa_url = format!("http://127.0.0.1:{}/", tsa.port);
 
-    let tmp = tempfile::tempdir().expect("tempdir");
     let p12_path = tmp.path().join("test_cert.p12");
     generate_test_p12(&p12_path, "pass123");
+    let signer_cert_path = p12_path.with_extension("crt");
 
     let signed_dir = tmp.path().join("signed_bt");
     fs::create_dir_all(&signed_dir).unwrap();
@@ -520,7 +717,7 @@ fn test_pades_b_t_with_brokered_tsa() {
     assert_eq!(sign_res.artifacts.len(), 1);
     let signed_pdf = sign_res.artifacts[0].path.clone();
 
-    // Verify B-T signature
+    // Verify B-T signature, asserting both overall valid and timestamp.valid == true
     let verify_dir = tmp.path().join("verified_bt");
     fs::create_dir_all(&verify_dir).unwrap();
     let verify_req = ToolRequest::new(
@@ -529,7 +726,12 @@ fn test_pades_b_t_with_brokered_tsa() {
         OutputTarget::Directory(verify_dir),
     )
     .with_spec(spec("pdf.sign_verify"))
-    .with_params(json!({}))
+    .with_params(json!({
+        "trust_anchors": [
+            signer_cert_path.to_str().unwrap(),
+            tsa_cert_path.to_str().unwrap(),
+        ],
+    }))
     .with_engine_command(cmd);
 
     let verify_res = run_tool(&verify_req).expect("verify B-T should succeed");
@@ -537,6 +739,274 @@ fn test_pades_b_t_with_brokered_tsa() {
         serde_json::from_slice(&fs::read(&verify_res.artifacts[0].path).unwrap()).unwrap();
     assert_eq!(verify_data["integrity"], true);
     assert_eq!(verify_data["signatures"][0]["integrity"], true);
+    assert_eq!(verify_data["signatures"][0]["valid"], true);
+    assert_eq!(verify_data["signatures"][0]["timestamp"]["valid"], true);
+}
+
+#[test]
+fn test_pades_b_lt_and_b_lta_with_brokered_tsa() {
+    let Some(cmd) = engine_command() else {
+        return;
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    generate_test_pki_and_evidence(tmp.path());
+
+    let ca_crt = tmp.path().join("ca.crt");
+    let signer_p12 = tmp.path().join("signer.p12");
+    let ca_crl = tmp.path().join("ca.crl");
+    let signer_ocsp = tmp.path().join("signer.ocsp");
+    let tsa_ocsp = tmp.path().join("tsa.ocsp");
+    let tsa_crt = tmp.path().join("tsa.crt");
+    let tsa_key = tmp.path().join("tsa.key");
+
+    let tsa = TestTsaServer::spawn_with_keys(&tsa_crt, &tsa_key);
+    let tsa_url = format!("http://127.0.0.1:{}/", tsa.port);
+
+    let client = Client::builder()
+        .allow_loopback(true)
+        .https_only(false)
+        .allowed_ports(vec![tsa.port])
+        .build()
+        .unwrap();
+
+    let offline_ev = json!({
+        "trust_anchors": [ca_crt.to_str().unwrap()],
+        "crl_files": [ca_crl.to_str().unwrap()],
+        "ocsp_responses": [signer_ocsp.to_str().unwrap(), tsa_ocsp.to_str().unwrap()]
+    });
+
+    // 1. PAdES B-LT signing
+    let out_blt = tmp.path().join("out_blt");
+    fs::create_dir_all(&out_blt).unwrap();
+    let mut bag_blt = SecretBag::new();
+    let _ = bag_blt.insert("certificate", signer_p12.to_str().unwrap());
+    let _ = bag_blt.insert("password", "pass123");
+
+    let req_blt = ToolRequest::new(
+        "pdf.sign",
+        vec![InputRef::new(fixture_pdf())],
+        OutputTarget::Directory(out_blt),
+    )
+    .with_spec(spec("pdf.sign"))
+    .with_params(json!({
+        "level": "B-LT",
+        "tsa_url": tsa_url,
+        "offline_evidence": offline_ev,
+    }))
+    .with_secrets(bag_blt)
+    .with_engine_command(cmd.clone());
+
+    let res_blt = with_test_tsa_client(client.clone(), || run_tool(&req_blt))
+        .expect("PAdES B-LT through brokered TSA should succeed");
+    assert_eq!(res_blt.artifacts.len(), 1);
+    let blt_pdf = res_blt.artifacts[0].path.clone();
+
+    // Verify DSS presence in B-LT output PDF via lopdf
+    let lopdf_blt = lopdf::Document::load(&blt_pdf).expect("load B-LT with lopdf");
+    let catalog_blt = lopdf_blt.catalog().expect("catalog");
+    assert!(
+        catalog_blt.get(b"DSS").is_ok(),
+        "B-LT PDF must contain /DSS in catalog"
+    );
+
+    // Verify B-LT through pdf.sign_verify
+    let verify_blt_dir = tmp.path().join("v_blt");
+    fs::create_dir_all(&verify_blt_dir).unwrap();
+    let v_req_blt = ToolRequest::new(
+        "pdf.sign_verify",
+        vec![InputRef::new(&blt_pdf)],
+        OutputTarget::Directory(verify_blt_dir),
+    )
+    .with_spec(spec("pdf.sign_verify"))
+    .with_params(json!({
+        "trust_anchors": [ca_crt.to_str().unwrap()],
+        "offline_evidence": [
+            ca_crl.to_str().unwrap(),
+            signer_ocsp.to_str().unwrap(),
+            tsa_ocsp.to_str().unwrap(),
+        ],
+    }))
+    .with_engine_command(cmd.clone());
+
+    let v_res_blt = run_tool(&v_req_blt).expect("verify B-LT should succeed");
+    let v_data_blt: Value =
+        serde_json::from_slice(&fs::read(&v_res_blt.artifacts[0].path).unwrap()).unwrap();
+    assert_eq!(v_data_blt["integrity"], true);
+    assert_eq!(v_data_blt["signatures"][0]["integrity"], true);
+    assert_eq!(v_data_blt["signatures"][0]["valid"], true);
+    assert_eq!(v_data_blt["signatures"][0]["timestamp"]["valid"], true);
+
+    // 2. PAdES B-LTA signing
+    let out_blta = tmp.path().join("out_blta");
+    fs::create_dir_all(&out_blta).unwrap();
+    let mut bag_blta = SecretBag::new();
+    let _ = bag_blta.insert("certificate", signer_p12.to_str().unwrap());
+    let _ = bag_blta.insert("password", "pass123");
+
+    let req_blta = ToolRequest::new(
+        "pdf.sign",
+        vec![InputRef::new(fixture_pdf())],
+        OutputTarget::Directory(out_blta),
+    )
+    .with_spec(spec("pdf.sign"))
+    .with_params(json!({
+        "level": "B-LTA",
+        "tsa_url": tsa_url,
+        "offline_evidence": offline_ev,
+    }))
+    .with_secrets(bag_blta)
+    .with_engine_command(cmd.clone());
+
+    let res_blta = with_test_tsa_client(client.clone(), || run_tool(&req_blta))
+        .expect("PAdES B-LTA through brokered TSA should succeed");
+    assert_eq!(res_blta.artifacts.len(), 1);
+    let blta_pdf = res_blta.artifacts[0].path.clone();
+
+    // Verify DSS presence in B-LTA output PDF via lopdf
+    let lopdf_blta = lopdf::Document::load(&blta_pdf).expect("load B-LTA with lopdf");
+    let catalog_blta = lopdf_blta.catalog().expect("catalog");
+    assert!(
+        catalog_blta.get(b"DSS").is_ok(),
+        "B-LTA PDF must contain /DSS in catalog"
+    );
+
+    // Verify B-LTA through pdf.sign_verify: contains 2 signatures (signer + DocTimeStamp)
+    let verify_blta_dir = tmp.path().join("v_blta");
+    fs::create_dir_all(&verify_blta_dir).unwrap();
+    let v_req_blta = ToolRequest::new(
+        "pdf.sign_verify",
+        vec![InputRef::new(&blta_pdf)],
+        OutputTarget::Directory(verify_blta_dir),
+    )
+    .with_spec(spec("pdf.sign_verify"))
+    .with_params(json!({
+        "trust_anchors": [ca_crt.to_str().unwrap()],
+        "offline_evidence": [
+            ca_crl.to_str().unwrap(),
+            signer_ocsp.to_str().unwrap(),
+            tsa_ocsp.to_str().unwrap(),
+        ],
+    }))
+    .with_engine_command(cmd.clone());
+
+    let v_res_blta = run_tool(&v_req_blta).expect("verify B-LTA should succeed");
+    let v_data_blta: Value =
+        serde_json::from_slice(&fs::read(&v_res_blta.artifacts[0].path).unwrap()).unwrap();
+    assert_eq!(v_data_blta["integrity"], true);
+    assert_eq!(v_data_blta["signatures_count"], 2);
+    assert_eq!(v_data_blta["signatures"][0]["integrity"], true);
+    assert_eq!(v_data_blta["signatures"][1]["integrity"], true);
+    assert_eq!(v_data_blta["signatures"][0]["timestamp"]["valid"], true);
+
+    // 3. Downgrade test: B-T document has no DSS and no secondary DocTimeStamp
+    let out_bt = tmp.path().join("out_bt_downgrade");
+    fs::create_dir_all(&out_bt).unwrap();
+    let mut bag_bt = SecretBag::new();
+    let _ = bag_bt.insert("certificate", signer_p12.to_str().unwrap());
+    let _ = bag_bt.insert("password", "pass123");
+
+    let req_bt = ToolRequest::new(
+        "pdf.sign",
+        vec![InputRef::new(fixture_pdf())],
+        OutputTarget::Directory(out_bt),
+    )
+    .with_spec(spec("pdf.sign"))
+    .with_params(json!({
+        "level": "B-T",
+        "tsa_url": tsa_url,
+    }))
+    .with_secrets(bag_bt)
+    .with_engine_command(cmd.clone());
+
+    let res_bt =
+        with_test_tsa_client(client, || run_tool(&req_bt)).expect("B-T sign should succeed");
+    let bt_pdf = res_bt.artifacts[0].path.clone();
+
+    let lopdf_bt = lopdf::Document::load(&bt_pdf).expect("load B-T with lopdf");
+    assert!(
+        lopdf_bt.catalog().expect("catalog").get(b"DSS").is_err(),
+        "downgraded/non-LT document must not contain DSS"
+    );
+
+    let verify_bt_dir = tmp.path().join("v_bt_downgrade");
+    fs::create_dir_all(&verify_bt_dir).unwrap();
+    let v_req_bt = ToolRequest::new(
+        "pdf.sign_verify",
+        vec![InputRef::new(&bt_pdf)],
+        OutputTarget::Directory(verify_bt_dir),
+    )
+    .with_spec(spec("pdf.sign_verify"))
+    .with_params(json!({}))
+    .with_engine_command(cmd.clone());
+
+    let v_res_bt = run_tool(&v_req_bt).expect("verify B-T downgrade");
+    let v_data_bt: Value =
+        serde_json::from_slice(&fs::read(&v_res_bt.artifacts[0].path).unwrap()).unwrap();
+    assert_eq!(
+        v_data_bt["signatures_count"], 1,
+        "downgraded PDF must not have archival DocTimeStamp"
+    );
+}
+
+#[test]
+fn test_pdf_timestamp_brokered() {
+    let Some(cmd) = engine_command() else {
+        return;
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let tsa_cert_path = tmp.path().join("tsa.crt");
+    let tsa = TestTsaServer::spawn_with_cert(&tsa_cert_path);
+    let tsa_url = format!("http://127.0.0.1:{}/", tsa.port);
+
+    let ts_dir = tmp.path().join("timestamped");
+    fs::create_dir_all(&ts_dir).unwrap();
+
+    let req = ToolRequest::new(
+        "pdf.timestamp",
+        vec![InputRef::new(fixture_pdf())],
+        OutputTarget::Directory(ts_dir),
+    )
+    .with_spec(spec("pdf.timestamp"))
+    .with_params(json!({
+        "tsa_url": tsa_url,
+    }))
+    .with_engine_command(cmd.clone());
+
+    let client = Client::builder()
+        .allow_loopback(true)
+        .https_only(false)
+        .allowed_ports(vec![tsa.port])
+        .build()
+        .unwrap();
+
+    let res = with_test_tsa_client(client, || run_tool(&req))
+        .expect("pdf.timestamp through broker should succeed");
+
+    assert_eq!(res.artifacts.len(), 1);
+    let ts_pdf = &res.artifacts[0].path;
+
+    // Verify timestamp with pdf.sign_verify
+    let verify_dir = tmp.path().join("verify_ts");
+    fs::create_dir_all(&verify_dir).unwrap();
+    let v_req = ToolRequest::new(
+        "pdf.sign_verify",
+        vec![InputRef::new(ts_pdf)],
+        OutputTarget::Directory(verify_dir),
+    )
+    .with_spec(spec("pdf.sign_verify"))
+    .with_params(json!({
+        "trust_anchors": [tsa_cert_path.to_str().unwrap()],
+    }))
+    .with_engine_command(cmd);
+
+    let v_res = run_tool(&v_req).expect("verify timestamped PDF should succeed");
+    let v_data: Value =
+        serde_json::from_slice(&fs::read(&v_res.artifacts[0].path).unwrap()).unwrap();
+    eprintln!("v_data: {}", serde_json::to_string_pretty(&v_data).unwrap());
+    assert_eq!(v_data["integrity"], true);
+    assert_eq!(v_data["signatures_count"], 1);
+    assert_eq!(v_data["signatures"][0]["integrity"], true);
+    assert_eq!(v_data["signatures"][0]["valid"], true);
 }
 
 #[test]
@@ -662,20 +1132,30 @@ fn test_second_incremental_signature() {
 
 #[test]
 fn test_sign_engine_sandbox_network_denial() {
+    let require_pack = std::env::var("ARIAD_REQUIRE_SIGN_PACK").as_deref() == Ok("1");
     let support = ariad_host::sandbox::support();
     if !support.landlock_network && !support.seccomp {
-        eprintln!(
-            "skipping network denial test: no Landlock network rules and no seccomp on this platform"
-        );
+        let msg = "no Landlock network rules and no seccomp on this platform";
+        if require_pack && cfg!(target_os = "linux") {
+            panic!("failing under ARIAD_REQUIRE_SIGN_PACK=1: {msg}");
+        }
+        eprintln!("skipping: {msg}");
         return;
     }
 
     let Some(mut cmd) = engine_command() else {
+        if require_pack {
+            panic!("failing under ARIAD_REQUIRE_SIGN_PACK=1: sign engine command not found");
+        }
+        eprintln!("skipping: sign engine command not found");
         return;
     };
 
     let launcher = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
     if !launcher.is_file() {
+        if require_pack && cfg!(target_os = "linux") {
+            panic!("failing under ARIAD_REQUIRE_SIGN_PACK=1: engine-probe launcher not found");
+        }
         eprintln!("skipping: engine-probe launcher not found");
         return;
     }
@@ -713,8 +1193,14 @@ fn test_sign_engine_sandbox_network_denial() {
                 "sandboxed network connection was denied (exit 42)"
             );
         }
+        Err(runner::RunError::SandboxUnavailable(err)) => {
+            panic!("sandbox setup unavailable instead of executing network denial: {err}");
+        }
+        Err(runner::RunError::SandboxLaunchFailed(err)) => {
+            panic!("launcher failed instead of executing network denial: {err}");
+        }
         Err(err) => {
-            eprintln!("sandboxed process failed as expected: {:?}", err);
+            panic!("unexpected runner error: {err:?}");
         }
         Ok(_) => {
             panic!("sandboxed network connection unexpectedly succeeded");
@@ -724,6 +1210,7 @@ fn test_sign_engine_sandbox_network_denial() {
 
 #[test]
 fn test_sign_engine_pades_b_t_succeeds_under_sandbox() {
+    let require_pack = std::env::var("ARIAD_REQUIRE_SIGN_PACK").as_deref() == Ok("1");
     let support = ariad_host::sandbox::support();
     let mode = if support.gaps().is_empty() {
         SandboxMode::Required
@@ -732,11 +1219,19 @@ fn test_sign_engine_pades_b_t_succeeds_under_sandbox() {
     };
 
     let Some(mut cmd) = engine_command() else {
+        if require_pack {
+            panic!("failing under ARIAD_REQUIRE_SIGN_PACK=1: sign engine command not found");
+        }
+        eprintln!("skipping: sign engine command not found");
         return;
     };
 
     let launcher = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
     if !launcher.is_file() {
+        if require_pack && cfg!(target_os = "linux") {
+            panic!("failing under ARIAD_REQUIRE_SIGN_PACK=1: engine-probe launcher not found");
+        }
+        eprintln!("skipping: engine-probe launcher not found");
         return;
     }
     cmd.sandbox = Some(mode);

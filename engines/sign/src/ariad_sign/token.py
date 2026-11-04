@@ -17,7 +17,7 @@ try:
     from cryptography.x509.oid import NameOID
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.pdf_utils.reader import PdfFileReader
-    from pyhanko.sign import signers
+    from pyhanko.sign import fields, signers
     from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata, PdfSigner
 
     PYHANKO_AVAILABLE = True
@@ -189,6 +189,7 @@ def run_sign_token(request: RunToolRequest, writer: Writer) -> None:
         reason=reason,
         location=location,
         contact_info=contact_info,
+        subfilter=fields.SigSeedSubFilter.PADES,
         validation_context=vc if needs_lt else None,
         embed_validation_info=needs_lt,
         use_pades_lta=(level == "b_lta"),

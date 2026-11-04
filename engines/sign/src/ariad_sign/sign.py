@@ -59,14 +59,16 @@ class PreComputedTimeStamper(timestamps.TimeStamper):
         if token_digest != message_digest:
             raise EngineError(
                 "invalid_request",
-                f"RFC 3161 timestamp token imprint mismatch: expected {message_digest.hex()}, got {token_digest.hex()}",
+                f"RFC 3161 timestamp token imprint mismatch: "
+                f"expected {message_digest.hex()}, got {token_digest.hex()}",
             )
         norm_req_algo = md_algorithm.lower().replace("-", "")
         norm_tok_algo = token_algo.lower().replace("-", "")
         if norm_req_algo != norm_tok_algo:
             raise EngineError(
                 "invalid_request",
-                f"RFC 3161 timestamp token hash algorithm mismatch: expected {md_algorithm}, got {token_algo}",
+                f"RFC 3161 timestamp token hash algorithm mismatch: "
+                f"expected {md_algorithm}, got {token_algo}",
             )
 
     async def async_timestamp(
@@ -397,6 +399,12 @@ def _build_validation_context(
                 "invalid_request",
                 f"failed to parse OCSP response {p}: {exc}",
             ) from exc
+
+    # Self-signed signer certificate is its own trust anchor for DSS embedding
+    if signer is not None and getattr(signer, "signing_cert", None) is not None:
+        cert = signer.signing_cert
+        if cert.issuer == cert.subject and cert not in trust_roots:
+            trust_roots.append(cert)
 
     return ValidationContext(
         trust_roots=trust_roots if trust_roots else None,

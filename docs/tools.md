@@ -755,18 +755,18 @@ Digital signature creation, verification, removal, and visual appearances are im
 - **Secrets**:
   - `certificate`: Staged to `<work_dir>/cert.p12` mode 0600 on unix, strictly bounded to 10 MiB, cleaned up unconditionally on exit.
   - `password` / `key_password`: Decryption passphrase for PKCS#12 archive.
-- **Brokered Network Flow (AD-15)**: The engine runs in a network-denied sandbox. All RFC 3161 timestamping requests are emitted as protocol progress events (`tsa_request`) and brokered by the host's hardened `net::Client` against a configured TSA allowlist (`ASHIFT_TSA_ALLOWLIST`). Revocation info for B-LT/B-LTA is loaded exclusively from offline evidence; live network fetching is disabled.
+- **Brokered Network Flow (AD-15)**: The engine runs in a network-denied sandbox. All RFC 3161 timestamping requests are emitted as protocol progress events (`tsa_request`) and brokered by the host's hardened `net::Client` against an optional TSA allowlist (`ASHIFT_TSA_ALLOWLIST`, required in cloud mode). Revocation info for B-LT/B-LTA is loaded exclusively from offline evidence; live network fetching is disabled.
 
 ### 3. `pdf.sign_token` (Pro Tier)
 - **Engine**: `sign` pack.
 - **Summary**: Token signing interface.
-- **Availability**: Hardware token signing via PKCS#11 and OS Keychain integration are deferred and not available in 0.4.0. Invoking with a PKCS#11 module returns `error[tool_missing]`. An internal software-backed test seam is enabled under `ARIAD_TEST_SOFTWARE_TOKEN=1` for testing.
+- **Availability**: Hardware token signing via PKCS#11 and OS Keychain integration are deferred and not available in 0.4.0. Invoking with a PKCS#11 module returns `error[tool_missing]`.
 - **Parameters**: `module` (path to PKCS#11 shared library), `slot`, `token_label`, `key_label`, `pin` (`x-ariad-secret`).
 
 ### 4. `pdf.timestamp`
 - **Engine**: `sign` pack.
 - **Summary**: Adds an imprint-bound RFC 3161 document timestamp to a PDF without requiring a signer certificate.
-- **Parameters**: `field_name`, `tsa_url`, `timestamp_token` (base64 pre-computed token).
+- **Parameters**: `field_name`, `tsa_url`, `md_algorithm` (optional, default: `"sha256"`).
 
 ### 5. `pdf.sign_verify`
 - **Engine**: `sign` pack.

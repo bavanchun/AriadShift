@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
 from ariad_sign.protocol import EngineError, RunToolRequest, Writer
-from ariad_sign.sign import HostBrokeredTimeStamper, PreComputedTimeStamper
+from ariad_sign.sign import HostBrokeredTimeStamper
 
 try:
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
@@ -30,22 +29,14 @@ def run_timestamp(request: RunToolRequest, writer: Writer) -> None:
     params = request.params
     field_name = params.get("field_name")
     tsa_url = params.get("tsa_url")
-    timestamp_token = params.get("timestamp_token")
     work_dir = Path(request.work_dir)
 
-    if timestamp_token:
-        try:
-            token_bytes = base64.b64decode(timestamp_token)
-        except Exception as exc:
-            raise EngineError("invalid_request", f"invalid base64 timestamp_token: {exc}") from exc
-        timestamper = PreComputedTimeStamper(token_bytes)
-    elif tsa_url:
-        timestamper = HostBrokeredTimeStamper(work_dir, tsa_url, writer)
-    else:
+    if not tsa_url:
         raise EngineError(
             "invalid_request",
-            "either tsa_url or timestamp_token is required for pdf.timestamp",
+            "tsa_url is required for pdf.timestamp",
         )
+    timestamper = HostBrokeredTimeStamper(work_dir, tsa_url, writer)
 
     writer.progress("pdf.timestamp", 0, 1)
 

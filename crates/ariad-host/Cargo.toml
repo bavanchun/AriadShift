@@ -57,6 +57,7 @@ rustls-native-certs.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+ariad-host = { path = ".", features = ["test-probe"] }
 lopdf.workspace = true
 minisign.workspace = true
 rcgen.workspace = true

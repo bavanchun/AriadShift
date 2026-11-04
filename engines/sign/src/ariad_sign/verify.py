@@ -174,15 +174,17 @@ def run_verify(request: RunToolRequest, writer: Writer) -> None:
                         else [],
                     }
 
+                docmdp_ok = getattr(status, "docmdp_ok", None)
                 bottom_line = getattr(status, "bottom_line", None)
                 if bottom_line is None and is_timestamp:
+                    docmdp_passed = True if docmdp_ok is None else bool(docmdp_ok)
                     bottom_line = bool(
                         status.intact
                         and status.valid
-                        and getattr(status, "docmdp_ok", True)
+                        and docmdp_passed
                     )
                 modifications = {
-                    "docmdp_ok": getattr(status, "docmdp_ok", True),
+                    "docmdp_ok": docmdp_ok,
                     "bottom_line": bottom_line,
                     "modification_level": mod_level_str,
                     "diff_summary": diff_summary,

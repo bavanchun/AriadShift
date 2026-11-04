@@ -1,5 +1,6 @@
 ---
 source: crates/ariad-cli/tests/tools_cli.rs
+assertion_line: 383
 expression: tools_json
 ---
 [
@@ -8432,6 +8433,13 @@ expression: tools_json
                 "string",
                 "null"
               ]
+            },
+            "trust_anchors": {
+              "description": "Optional paths to trusted root CA certificates (PEM/DER format).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -8705,6 +8713,13 @@ expression: tools_json
                 "string",
                 "null"
               ]
+            },
+            "trust_anchors": {
+              "description": "Optional paths to trusted root CA certificates (PEM/DER format).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -8924,6 +8939,13 @@ expression: tools_json
                 "string",
                 "null"
               ]
+            },
+            "trust_anchors": {
+              "description": "Optional paths to trusted root CA certificates (PEM/DER format).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
