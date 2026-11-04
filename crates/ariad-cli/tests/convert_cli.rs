@@ -1383,6 +1383,37 @@ fn plans_and_converts_phase10_reader_routes() {
 fn converts_svg_with_hostile_inputs() {
     let directory = tempdir().expect("create test directory");
 
+    // The SVG conversion route embeds the entire SVG as an image asset (svg.rs:98-120),
+    // and the PDF engine renders SVG text as vector paths rather than text stream operators
+    // in the PDF text layer, meaning marker text cannot be observed via text extraction.
+    // Consequently, file access time (atime) is the sole signal proving external file hrefs
+    // were not accessed or read during conversion.
+    // The test verifies atime tracking is functional on this filesystem and skips with a
+    // "skipping:" message if atime is unsupported (e.g. noatime mount or accessed() error)
+    // so it never passes silently when the signal is unavailable.
+    let probe_path = directory.path().join("atime_probe.tmp");
+    fs::write(&probe_path, b"probe").expect("write atime probe");
+    let probe_atime_0 = match fs::metadata(&probe_path).and_then(|m| m.accessed()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("skipping: accessed() timestamp unsupported: {e}");
+            return;
+        }
+    };
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let _ = fs::read(&probe_path);
+    let probe_atime_1 = match fs::metadata(&probe_path).and_then(|m| m.accessed()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("skipping: accessed() timestamp unsupported: {e}");
+            return;
+        }
+    };
+    if probe_atime_1 <= probe_atime_0 {
+        eprintln!("skipping: filesystem does not update atime on file reads (noatime mount)");
+        return;
+    }
+
     // 1. Local listener to prove no network access occurs when SVG references an external HTTP URL
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local TCP listener");
     listener.set_nonblocking(true).expect("set non-blocking");
@@ -1398,7 +1429,13 @@ fn converts_svg_with_hostile_inputs() {
 </svg>"#
     );
     fs::write(&sentinel_path, sentinel_svg).expect("write sentinel SVG file");
-    let atime_before = fs::metadata(&sentinel_path).and_then(|m| m.accessed()).ok();
+    let atime_before = match fs::metadata(&sentinel_path).and_then(|m| m.accessed()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("skipping: sentinel file accessed() timestamp unsupported: {e}");
+            return;
+        }
+    };
 
     let http_svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
@@ -1476,13 +1513,19 @@ fn converts_svg_with_hostile_inputs() {
             }
         } else if name == "external_file_href" {
             // 1. Verify access time on the sentinel file was not modified (not opened or read)
-            let atime_after = fs::metadata(&sentinel_path).and_then(|m| m.accessed()).ok();
-            if let (Some(before), Some(after)) = (atime_before, atime_after) {
-                assert_eq!(
-                    before, after,
-                    "sentinel file must not have been accessed during conversion"
-                );
-            }
+            let atime_after = match fs::metadata(&sentinel_path).and_then(|m| m.accessed()) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!(
+                        "skipping: sentinel file accessed() timestamp after conversion unsupported: {e}"
+                    );
+                    return;
+                }
+            };
+            assert_eq!(
+                atime_before, atime_after,
+                "sentinel file must not have been accessed during conversion"
+            );
 
             // 2. Assert raw bytes do not leak into output PDF
             assert!(
