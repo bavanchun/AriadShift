@@ -4,9 +4,11 @@ Empirical measurement of queue times and execution durations across the last 30 
 
 ## Summary of Sampled Runs
 
-- **Total runs sampled:** 30 runs (29 `pull_request`, 1 `push` to `dev`).
+- **Total runs sampled:** 30 runs (29 `pull_request`, 1 `push` to `dev`).*
 - **Outcomes:** 4 succeeded, 2 failed on test/lint errors, 24 cancelled prematurely by newer pushes to the same PR branches.
 - **Typical end-to-end wall clock time (completed successful runs):** 33m 30s to 53m 35s.
+
+\* *Sampling window footnote:* The 30 sampled runs were filtered strictly to `pull_request` and `push` events on `dev`/`main` leading up to commit `e4a02cbd` (29 PR, 1 push). If manual `workflow_dispatch` runs within the same chronological window are included (e.g. up to 2026-11-04 01:00Z), the distribution across 30 runs is 27 `pull_request`, 1 `push`, and 2 `workflow_dispatch` (yielding 5 succeeded, 2 failed, 23 cancelled).
 
 The high cancellation rate (80%) is directly driven by long end-to-end feedback cycles: developers pushing follow-up commits within 15–35 minutes cancel earlier in-flight runs.
 
@@ -47,7 +49,7 @@ The table below summarizes queue time (from job creation to job execution start)
 ## Ranked List of Where Wall Time Goes
 
 1. **`Fuzz` Job Execution Duration (28m – 36m):**
-   - **Where time goes:** `fuzz` runs 19 distinct targets sequentially with `-max_total_time=60` seconds each plus compilation overhead. Even with target caches, building the fuzz harness and running 19 targets takes 28m to 35m44s.
+   - **Where time goes:** `fuzz` runs 21 active targets sequentially with `-max_total_time=60` seconds each (1,260s / 21 min total fuzz execution) plus compilation and setup overhead. Even with target caches, building the fuzz harness and running 21 targets takes 28m to 35m 44s.
    - **Impact:** In almost every run where macOS queue is under 15 minutes, `fuzz` is the sole gating bottleneck determining when `CI passed` can execute.
 
 2. **`Verify (macos-26)` Runner Queuing Delay (12m – 35m queue):**
@@ -131,5 +133,5 @@ To evaluate whether compiler caching (`sccache`) can accelerate CI wall times, r
 ## Conclusion
 
 - Queue time is heavily concentrated on `macos-26` runners (due to GitHub Actions platform queue limits for macOS).
-- Execution time is overwhelmingly dominated by the `Fuzz` job running full 60s rounds across 19 targets on every PR (28–36 minutes).
-- Reducing PR `fuzz` time to a fast smoke budget (≤ 5 minutes) directly targets the primary execution critical path, allowing PR feedback to converge towards the 18–25 minute mark (governed by native Verify and Server integration).
+- Execution time is overwhelmingly dominated by the `Fuzz` job running full 60s rounds across all 21 targets on every PR (28–36 minutes).
+- Reducing PR `fuzz` time to a fast smoke budget (≤ 5 minutes of fuzzing execution, 21 targets × 10s = 210s) directly targets the primary execution critical path. Note that the "5-minute smoke" applies strictly to the campaign execution budget; cargo-fuzz target compilation, toolchain setup, and cache restores contribute an additional 9–15 minutes of build overhead on cold or partial caches. Consequently, the PR Fuzz job wall-clock time drops to ~12–18 minutes, safely below the 18–25 minute critical path governed by native Verify and Server integration.

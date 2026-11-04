@@ -83,9 +83,13 @@ and excluded paths.
 Changes to any shared Rust crate or workspace manifest trigger Cloud E2E by design:
 `infra/docker/server.Dockerfile` compiles `ariad-server` and the `ashift` engine
 binary from the repository root. `ariad-server` and `ashift` depend directly on
-`ariad-core`, `ariad-host`, `ariad-pdf`, `ariad-engine-io`, and `ariad-typst`.
-Any change to these crates (such as adding PDF tools or modifying core readers)
-directly changes the server binary deployed inside the Compose containers.
+`ariad-core` and `ariad-host`, and transitively on `ariad-pdf`, `ariad-engine-io`,
+and `ariad-typst` through `ariad-host`. Changes to any of these shared crates
+(such as adding PDF tools or modifying core readers) directly change the server
+binaries deployed inside the Compose containers. Separately, `crates/ariad-wasm`
+is included in `cloud_paths` because the Compose stack's `web` service
+(`infra/docker/web.Dockerfile` under the `core` profile) compiles `ariad-wasm`
+and `ariad-typst` to WebAssembly before exporting the static web application.
 Because the Compose stack test exercises all three profiles (`core`, `office`,
 `docling`) against the exact tested commit, it requires a source-matched Docling
 pack. If no matching pack exists for that SHA (as on a new PR branch), the
