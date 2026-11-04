@@ -24,9 +24,11 @@ axum = { version = "0.8.9", default-features = false }
 base64 = "0.23.1"
 bytes = "1.12.1"
 cap-std = "4.0.3"
+cfb = "=0.16.0"
 chrono = { version = "0.4.45", default-features = false }
 clap = { version = "4.6.7", features = ["derive"] }
 comrak = { version = "0.57.0", default-features = false, features = ["shortcodes"] }
+csv = "=1.4.0"
 directories = "6.0.0"
 encoding_rs = "0.8.42"
 flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
@@ -42,6 +44,7 @@ jsonschema = { version = "0.60.2", default-features = false, features = ["resolv
 jsonwebtoken = { version = "11.1.0", default-features = false }
 libc = "0.2"
 lopdf = { version = "0.46.0", default-features = false }
+mail-parser = "=1.0.1"
 minisign = "0.10.0"
 minisign-verify = "0.3.0"
 nix = { version = "0.31.3", default-features = false }

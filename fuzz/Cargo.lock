@@ -123,11 +123,14 @@ version = "0.3.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
+ "cfb",
  "comrak",
+ "csv",
  "encoding_rs",
  "hex",
  "html5ever",
  "lopdf",
+ "mail-parser",
  "quick-xml 0.42.0",
  "saphyr-parser",
  "schemars",
@@ -234,6 +237,7 @@ dependencies = [
  "ttf-parser",
  "unicode-normalization",
  "unicode-segmentation",
+ "zip",
  "zune-core",
  "zune-jpeg",
 ]
@@ -512,6 +516,17 @@ dependencies = [
  "jobserver",
  "libc",
  "shlex",
+]
+
+[[package]]
+name = "cfb"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fef29b910ef2b9dbecc60168d1568d643c633b0518af970c17e83bd5f6e2c94f"
+dependencies = [
+ "fnv",
+ "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -1011,6 +1026,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "encodify"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e95d6e27686e1d6991a3077f4dbec9d33d18903466d234165ad86cd08c3ebc79"
+dependencies = [
+ "memchr",
+ "simdutf8",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1477,6 +1502,17 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash",
+]
+
+[[package]]
+name = "hashify"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04a037b1848eada162d6534c206770180e6bfc0eaa97292250c3e7179d8b1f73"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -2353,6 +2389,18 @@ dependencies = [
  "stringprep",
  "thiserror",
  "weezl 0.2.1",
+]
+
+[[package]]
+name = "mail-parser"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d4ea9311ef3ca6189aa85c5f984bd47b2f12079bcabae28917d900ab26c9ecc"
+dependencies = [
+ "encodify",
+ "hashify",
+ "memchr",
+ "simdutf8",
 ]
 
 [[package]]
@@ -5036,6 +5084,16 @@ name = "web-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88261b9deccee56594c11a3460c462c41f58d148598fe70ad77070126a68aba4"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "web-time"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

@@ -215,13 +215,16 @@ version = "0.3.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
+ "cfb 0.16.0",
  "comrak",
+ "csv",
  "encoding_rs",
  "hex",
  "html5ever 0.40.1",
  "insta",
  "jsonschema",
  "lopdf",
+ "mail-parser",
  "quick-xml 0.42.0",
  "saphyr-parser",
  "schemars 1.2.3",
@@ -335,6 +338,7 @@ dependencies = [
  "ttf-parser",
  "unicode-normalization",
  "unicode-segmentation",
+ "zip",
  "zune-core",
  "zune-jpeg",
 ]
@@ -1141,6 +1145,17 @@ name = "cfb"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a347dcabdae9c31b0825fd6a8bed285ec9c2acb89c47827126d52fa4f59cece3"
+dependencies = [
+ "fnv",
+ "uuid",
+ "web-time",
+]
+
+[[package]]
+name = "cfb"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fef29b910ef2b9dbecc60168d1568d643c633b0518af970c17e83bd5f6e2c94f"
 dependencies = [
  "fnv",
  "uuid",
@@ -2260,6 +2275,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
+name = "encodify"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e95d6e27686e1d6991a3077f4dbec9d33d18903466d234165ad86cd08c3ebc79"
+dependencies = [
+ "memchr",
+ "simdutf8",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3204,6 +3229,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashify"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04a037b1848eada162d6534c206770180e6bfc0eaa97292250c3e7179d8b1f73"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "hashlink"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3909,7 +3945,7 @@ version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4200d433cbd5178df7797c9c2e75b348b728e39631cf14520d1e2fc424201f4"
 dependencies = [
- "cfb",
+ "cfb 0.14.0",
 ]
 
 [[package]]
@@ -4535,6 +4571,18 @@ dependencies = [
  "stringprep",
  "thiserror 2.0.21",
  "weezl 0.2.1",
+]
+
+[[package]]
+name = "mail-parser"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d4ea9311ef3ca6189aa85c5f984bd47b2f12079bcabae28917d900ab26c9ecc"
+dependencies = [
+ "encodify",
+ "hashify",
+ "memchr",
+ "simdutf8",
 ]
 
 [[package]]

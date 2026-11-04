@@ -110,10 +110,13 @@ pub fn executor_edges() -> Vec<(Format, Format, &'static str)> {
     let native = engines::NATIVE_ROUTES
         .iter()
         .map(|&(from, to)| (from, to, IN_PROCESS_ENGINE));
+    let ariad_pdf = engines::ARIAD_PDF_ROUTES
+        .iter()
+        .map(|&(from, to)| (from, to, engines::IN_PROCESS_PDF_ENGINE));
     let external = engines::REGISTRY
         .iter()
         .flat_map(|spec| spec.routes.iter().map(|&(from, to)| (from, to, spec.id)));
-    native.chain(external).collect()
+    native.chain(ariad_pdf).chain(external).collect()
 }
 
 /// Detects a user-facing format from a path's extension.
@@ -839,6 +842,21 @@ pub fn read_document_to_ir(
             }
             parsed.document
         }
+        Format::Txt | Format::Csv | Format::Svg | Format::Eml | Format::Msg => {
+            let bytes = read_bounded_file(path, limits.max_input_bytes)?;
+            let parsed =
+                ariad_core::pipeline::read(format, &bytes, limits).map_err(|err| match err {
+                    ariad_core::pipeline::PipelineError::LimitExceeded { .. }
+                    | ariad_core::pipeline::PipelineError::InvalidLimits { .. } => {
+                        ConvertError::LimitExceeded
+                    }
+                    _ => ConvertError::InputIo,
+                })?;
+            for w in &parsed.warnings {
+                warnings.push(sanitize_warning(&w.code, &w.message));
+            }
+            parsed.document
+        }
         _ => {
             return Err(ConvertError::UnsupportedRoute {
                 detail: Some(format!(
@@ -917,8 +935,50 @@ where
         };
         if step.engine == IN_PROCESS_ENGINE {
             self.native_step(stage, step)
+        } else if step.engine == engines::IN_PROCESS_PDF_ENGINE {
+            self.ariad_pdf_step(stage, step)
         } else {
             self.engine_step(stage, step)
+        }
+    }
+
+    fn ariad_pdf_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
+        match (step.from, step.to) {
+            (Format::Cbz, Format::Pdf) => {
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let input_path = match &stage {
+                    Stage::Source => copy_and_preflight_input(
+                        &self.request.input,
+                        step.from.id(),
+                        &workspace,
+                        self.limits,
+                    )?,
+                    Stage::File { path, .. } => {
+                        copy_and_preflight_input(path, step.from.id(), &workspace, self.limits)?
+                    }
+                    Stage::Ir(_) => return Err(ConvertError::Failed),
+                };
+                let bytes = read_bounded_file(&input_path, self.limits.max_input_bytes)?;
+                let tool_ctx = ariad_pdf::ToolCtx::default();
+                let pdf_bytes = ariad_pdf::cbz::cbz_to_pdf(&bytes, self.limits, &tool_ctx)
+                    .map_err(|err| match err {
+                        ariad_pdf::PdfError::LimitExceeded(_) => ConvertError::LimitExceeded,
+                        _ => ConvertError::Failed,
+                    })?;
+                let path = workspace.output_dir().join("document.pdf");
+                fs::write(&path, &pdf_bytes).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
+            _ => Err(ConvertError::UnsupportedRoute {
+                detail: Some(format!(
+                    "unsupported ariad-pdf step {} -> {}",
+                    step.from.user_name(),
+                    step.to.user_name()
+                )),
+            }),
         }
     }
 
@@ -957,7 +1017,16 @@ where
                 Ok(Stage::Ir(Box::new(read.document)))
             }
 
-            (Format::Markdown | Format::Html, Format::AriadIrJson) => {
+            (
+                Format::Markdown
+                | Format::Html
+                | Format::Txt
+                | Format::Csv
+                | Format::Svg
+                | Format::Eml
+                | Format::Msg,
+                Format::AriadIrJson,
+            ) => {
                 let (path, base_dir) = match &stage {
                     Stage::Source => (
                         self.request.input.as_path(),
@@ -1594,7 +1663,7 @@ fn plan_with_available_engines(
         .steps
         .iter()
         .map(|step| step.engine.as_str())
-        .filter(|engine| *engine != IN_PROCESS_ENGINE)
+        .filter(|engine| *engine != IN_PROCESS_ENGINE && *engine != engines::IN_PROCESS_PDF_ENGINE)
         .collect();
     if needed.is_empty() {
         return Ok(initial);
@@ -2274,6 +2343,79 @@ mod tests {
         assert_eq!(err, ConvertError::LimitExceeded);
 
         let _ = workspace.close();
+    }
+
+    #[test]
+    fn copy_and_preflight_input_rejects_cbz_with_path_traversal() {
+        use super::{ConvertError, Limits, Workspace, copy_and_preflight_input};
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let hostile_cbz = temp_dir.path().join("hostile.cbz");
+
+        {
+            let file = std::fs::File::create(&hostile_cbz).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("../../../escape.png", options).unwrap();
+            zip.write_all(b"fake image bytes").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut workspace = Workspace::new().unwrap();
+        let limits = Limits::local();
+
+        let err = copy_and_preflight_input(&hostile_cbz, "cbz", &workspace, &limits).unwrap_err();
+        assert_eq!(err, ConvertError::Failed);
+
+        let _ = workspace.close();
+    }
+
+    #[test]
+    fn cbz_to_pdf_conversion_preserves_typed_limit_error() {
+        use super::{ConvertError, ConvertRequest, Limits, convert_with_limits};
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cbz_path = temp_dir.path().join("input.cbz");
+        let pdf_out = temp_dir.path().join("output.pdf");
+
+        let png: [u8; 69] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14, 0x08, 0x00, 0x00, 0x00,
+            0x00, 0x91, 0x85, 0xf3, 0x8a, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x18, 0xbe, 0x00, 0x00, 0x00, 0xdc, 0x00, 0x01, 0xf1, 0xc4, 0xae,
+            0xe0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            for i in 0..501 {
+                zip.start_file(format!("page_{i:04}.png"), options).unwrap();
+                zip.write_all(&png).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+
+        let request =
+            ConvertRequest::new(cbz_path, pdf_out, "pdf", std::path::PathBuf::from("ashift"));
+
+        let mut limits = Limits::local();
+        limits.max_archive_entries = 1000;
+
+        let err = convert_with_limits(
+            &request,
+            limits,
+            tokio_util::sync::CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap_err();
+        assert_eq!(err, ConvertError::LimitExceeded);
     }
 
     #[test]

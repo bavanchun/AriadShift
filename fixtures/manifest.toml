@@ -5760,3 +5760,207 @@ tags = ["pdf-tools", "digital-pdf", "forms"]
 phase = "8"
 routes = []
 companions = [{ path = "fixtures/pdf-forms-detect/prose.truth.json", sha256 = "ab67628ee66b7e23ad53ce32cb05a405e85f34b9402022388f1e4e3af705cfed" }]
+
+[[fixture]]
+id = "sample-txt"
+path = "fixtures/txt/sample.txt"
+format = "txt"
+media_type = "text/plain"
+languages = ["en"]
+title = "Neighborhood Repair Cafe Notes"
+origin = "generated"
+generated_by = "fixtures/gen/readers.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic text authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "fe001fb924cdc42be6e6542db1dbbf08e7a3486128f01ef4f45600509d6a7f4f"
+pages = 1
+tags = []
+phase = "10"
+routes = ["txt->pdf"]
+companions = []
+
+[[fixture]]
+id = "sample-csv"
+path = "fixtures/csv/sample.csv"
+format = "csv"
+media_type = "text/csv"
+languages = ["en"]
+title = "Repair Cafe Item Inventory"
+origin = "generated"
+generated_by = "fixtures/gen/readers.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic CSV table authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "088bc1ea7ced4ab6f30ec1f51534e8eb7ebe4b40e5dff55f8f287acb5d250ef0"
+pages = 1
+tags = ["tables"]
+phase = "10"
+routes = ["csv->pdf"]
+companions = []
+
+[[fixture]]
+id = "sample-eml"
+path = "fixtures/email/sample.eml"
+format = "eml"
+media_type = "message/rfc822"
+languages = ["en"]
+title = "Project Update Email"
+origin = "generated"
+generated_by = "fixtures/gen/readers.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic email message authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2a54a31b9e36bc52f45a8fb8390deb2d32b1d94bdee37fd79df2909ce78e49a7"
+pages = 1
+tags = ["attachments"]
+phase = "10"
+routes = ["eml->pdf"]
+companions = []
+
+[[fixture]]
+id = "sample-msg"
+path = "fixtures/email/sample.msg"
+format = "msg"
+media_type = "application/vnd.ms-outlook"
+languages = ["en"]
+title = "Project Update"
+origin = "generated"
+generated_by = "fixtures/gen/readers.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic Outlook MSG file authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "d625619dc279b076535a004df5a7e214149d3320ed6ffe63d091e57d268d2d93"
+pages = 1
+tags = ["attachments"]
+phase = "10"
+routes = ["msg->pdf"]
+companions = []
+
+[[fixture]]
+id = "sample-svg"
+path = "fixtures/svg/sample.svg"
+format = "svg"
+media_type = "image/svg+xml"
+languages = []
+title = "Sample SVG Badge"
+origin = "generated"
+generated_by = "fixtures/gen/readers.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic SVG graphic authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e30e83994f9676e9b1fcc86b9f428905c560e78821982235d9f612cfdceecf96"
+pages = 1
+tags = ["images"]
+phase = "10"
+routes = ["svg->pdf"]
+companions = []
+
+[[fixture]]
+id = "sample-cbz"
+path = "fixtures/cbz/sample.cbz"
+format = "cbz"
+media_type = "application/vnd.comicbook+zip"
+languages = []
+title = "Sample Comic Book ZIP"
+origin = "generated"
+generated_by = "fixtures/gen/readers.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic comic archive containing generated PNG images."
+attribution = "AriadShift contributors"
+sha256 = "69ea743401397b349eeff432d4d568014a24a599e5e219ca9dc05b3504cb6af6"
+pages = 3
+tags = ["images", "multipage"]
+phase = "10"
+routes = ["cbz->pdf"]
+companions = []
+
+[[fuzz_seed]]
+id = "fuzz-reader-text-simple-txt"
+target = "reader_text"
+path = "fuzz/seeds/reader_text/simple.txt"
+sha256 = "fe001fb924cdc42be6e6542db1dbbf08e7a3486128f01ef4f45600509d6a7f4f"
+source = "Original synthetic plain text seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-csv-simple-csv"
+target = "reader_csv"
+path = "fuzz/seeds/reader_csv/simple.csv"
+sha256 = "088bc1ea7ced4ab6f30ec1f51534e8eb7ebe4b40e5dff55f8f287acb5d250ef0"
+source = "Original synthetic CSV table seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-eml-simple-eml"
+target = "reader_eml"
+path = "fuzz/seeds/reader_eml/simple.eml"
+sha256 = "2a54a31b9e36bc52f45a8fb8390deb2d32b1d94bdee37fd79df2909ce78e49a7"
+source = "Original synthetic RFC822 email seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-msg-simple-msg"
+target = "reader_msg"
+path = "fuzz/seeds/reader_msg/simple.msg"
+sha256 = "aace21a80ffdb11a20f45243ea56d159a774eb7087d92d8d6627961fc75ebab5"
+source = "Original synthetic Outlook MSG seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-msg-properties-msg"
+target = "reader_msg"
+path = "fuzz/seeds/reader_msg/properties.msg"
+sha256 = "71cdea777d5669fb09196c525f6310d24636b4108fda2f1a6cf7e74805c7589c"
+source = "Original synthetic Outlook MSG seed with properties authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-msg-rtf-msg"
+target = "reader_msg"
+path = "fuzz/seeds/reader_msg/rtf.msg"
+sha256 = "234fbe2ddeaa17324d27254854af264ead472d8a929c27c7b64d1ca8e9d27709"
+source = "Original synthetic Outlook MSG seed with RTF compressed body authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-msg-attachments-msg"
+target = "reader_msg"
+path = "fuzz/seeds/reader_msg/attachments.msg"
+sha256 = "eac828d70dee10a82996cf696c8aece9c8246b08d600e2e21982537eac5d5ced"
+source = "Original synthetic Outlook MSG seed with attachment authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-svg-simple-svg"
+target = "reader_svg"
+path = "fuzz/seeds/reader_svg/simple.svg"
+sha256 = "e30e83994f9676e9b1fcc86b9f428905c560e78821982235d9f612cfdceecf96"
+source = "Original synthetic SVG graphic seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-reader-cbz-simple-cbz"
+target = "reader_cbz"
+path = "fuzz/seeds/reader_cbz/simple.cbz"
+sha256 = "69ea743401397b349eeff432d4d568014a24a599e5e219ca9dc05b3504cb6af6"
+source = "Original synthetic CBZ archive seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"

@@ -377,16 +377,27 @@ mod test_pack_engine {
 /// The in-process engine identifier for pure-Rust operations.
 pub const IN_PROCESS_ENGINE: &str = "ariad-core";
 
+/// The in-process engine identifier for pure-Rust PDF operations (CBZ -> PDF).
+pub const IN_PROCESS_PDF_ENGINE: &str = "ariad-pdf";
+
 /// Routes the in-process `ariad-core` engine executes.
 pub const NATIVE_ROUTES: &[(Format, Format)] = &[
     (Format::DoclingJson, Format::AriadIrJson),
     (Format::Markdown, Format::AriadIrJson),
     (Format::Html, Format::AriadIrJson),
+    (Format::Txt, Format::AriadIrJson),
+    (Format::Csv, Format::AriadIrJson),
+    (Format::Eml, Format::AriadIrJson),
+    (Format::Msg, Format::AriadIrJson),
+    (Format::Svg, Format::AriadIrJson),
     (Format::AriadIrJson, Format::Markdown),
     (Format::AriadIrJson, Format::Html),
     (Format::AriadIrJson, Format::Xlsx),
     (Format::AriadIrJson, Format::Csv),
 ];
+
+/// Routes the in-process `ariad-pdf` engine executes.
+pub const ARIAD_PDF_ROUTES: &[(Format, Format)] = &[(Format::Cbz, Format::Pdf)];
 
 /// Static description of an engine that `ashift __engine <id>` or an engine pack serves out of process.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -653,6 +664,8 @@ pub fn is_pack_engine(id: &str) -> bool {
 pub fn is_executable(from: Format, to: Format, engine: &str) -> bool {
     if engine == IN_PROCESS_ENGINE {
         NATIVE_ROUTES.contains(&(from, to))
+    } else if engine == IN_PROCESS_PDF_ENGINE {
+        ARIAD_PDF_ROUTES.contains(&(from, to))
     } else {
         spec(engine).is_some_and(|spec| spec.routes.contains(&(from, to)))
     }
@@ -778,6 +791,20 @@ fn in_process_availability() -> EngineAvailability {
     }
 }
 
+fn in_process_pdf_availability() -> EngineAvailability {
+    EngineAvailability {
+        engine: IN_PROCESS_PDF_ENGINE.to_owned(),
+        available: true,
+        tool_status: Some(ToolStatus {
+            name: IN_PROCESS_PDF_ENGINE.to_owned(),
+            version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+            status: ToolAvailability::Found,
+        }),
+        version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+        startup_failure: None,
+    }
+}
+
 /// Reports `ariad-core` plus every registered out-of-process engine.
 ///
 /// An empty `engine_args` starts `engine_program __engine <id>` for each engine; non-empty
@@ -808,10 +835,10 @@ pub fn availability_of(
     cancel: CancellationToken,
 ) -> Result<AvailabilityReport, RunError> {
     let mut report = AvailabilityReport {
-        engines: vec![in_process_availability()],
+        engines: vec![in_process_availability(), in_process_pdf_availability()],
     };
     for &id in engines {
-        if id == IN_PROCESS_ENGINE || report.get(id).is_some() {
+        if id == IN_PROCESS_ENGINE || id == IN_PROCESS_PDF_ENGINE || report.get(id).is_some() {
             continue;
         }
         report

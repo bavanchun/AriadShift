@@ -627,6 +627,7 @@ fn run_tool_inner(
     let is_ocr_composite = effective_engine
         == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
         && spec.group == ariad_core::tools::ToolGroup::Ocr;
+    let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
 
     if spec.id == "pdf.ocr"
@@ -661,7 +662,12 @@ fn run_tool_inner(
         extracts_attachments,
     )?;
 
-    if is_ocr_composite {
+    if is_cbz {
+        super::cbz::preflight(
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_ocr_composite {
         super::ocr::preflight(
             spec.id,
             request.engine_program.as_deref(),
@@ -731,7 +737,21 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let mut raw_exec = if is_ocr_composite {
+    let mut raw_exec = if is_cbz {
+        super::cbz::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+            &request.cancel,
+            on_event,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_ocr_composite {
         super::ocr::execute(
             &spec,
             &staged_inputs_with_format,
@@ -1502,6 +1522,11 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
         }
         "image.to_pdf" => {
             let p: ImageToPdfParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.to_cbz" => {
+            let p: ariad_core::tools::params::ToCbzParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             p.validate().map_err(|e| e.to_string())
         }

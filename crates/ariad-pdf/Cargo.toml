@@ -33,6 +33,7 @@ unicode-normalization.workspace = true
 unicode-segmentation = "=1.13.3"
 zune-core = { version = "=0.5.3", default-features = false, features = ["std"], optional = true }
 zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"], optional = true }
+zip.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lopdf = { workspace = true, features = ["wasm_js"] }

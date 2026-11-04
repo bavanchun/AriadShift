@@ -633,6 +633,72 @@
       ],
       "license": "MPL-2.0",
       "metrics": null
+    },
+    {
+      "from": "txt",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "csv",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "eml",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "msg",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "svg",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "cbz",
+      "to": "pdf",
+      "engine": "ariad-pdf",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
     }
   ]
 }

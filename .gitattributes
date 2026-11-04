@@ -3,6 +3,7 @@
 # licenses-check compares the bytes exactly.
 THIRD_PARTY_LICENSES -text
 fixtures/** -text
+fuzz/seeds/** -text
 fixtures/gen/**/*.py text eol=lf
 fixtures/gen/**/*.md text eol=lf
 fixtures/gen/**/*.toml text eol=lf
