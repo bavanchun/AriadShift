@@ -85,7 +85,7 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | Group | Purpose | Example Tools |
 |---|---|---|
 | `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.crop_whitespace`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers`, `pdf.remove_blank`, `pdf.detect_scanned`, `pdf.text_layout` |
-| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
+| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url`, `pdf.tables_to_csv` |
 | `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.grayscale`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize`, `pdf.unlock_forms` |
 | `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.replace_color`, `pdf.adjust_colors`, `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`, `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`, `pdf.watermark_detect`, `pdf.watermark_remove` |
@@ -166,6 +166,16 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 - `pdf.annotations`: PDF for editing actions and JSON for `list`.
 - `pdf.annotations_export`: XFDF (default) or JSON.
 - `pdf.forms_export`: JSON (default), FDF, XFDF or CSV.
+- `pdf.tables_to_csv`: `output_format: "csv"`, extracts every table to an individual CSV file.
+
+### `pdf.tables_to_csv`
+
+`pdf.tables_to_csv` extracts every table in an input PDF into its own CSV file (`table_1.csv`, `table_2.csv`, ...).
+
+- **Parameters**: Takes no mandatory parameters (`{}`) and rejects unknown fields (`additionalProperties: false`).
+- **Outputs**: Emits one or more CSV files with RFC 4180 escaping and formula-injection guarding (`=`, `+`, `-`, `@`, `\t`, `\r` prefixed with `'`). Capped at 255 tables and 50 MiB total CSV output.
+- **Runtime**: `local` only (executed host-side via `ariad-host` using Docling table detection).
+- **Error handling**: If the document contains no tables or Docling table detection finds no tables, the tool returns a `no_tables_found` error (exit code `3`). If Docling execution fails, the Docling error is surfaced directly without fallback to the native reader.
 
 Before PDFium opens a document, the engine checks page image dimensions and data against the job's limits. Inline images may use image masks without a color space, lossless ASCIIHex, ASCII85, Flate, RunLength or LZW filters, and CCITT or JPEG as the final filter. JPEG frame dimensions are checked against the image dictionary. Color-space aliases and filters the engine cannot safely inspect still cause `limit_exceeded` before the page is opened. Page budgets include repeated form invocations, inline image data and Type3 glyph uses; unusually complex pages may exceed these limits.
 

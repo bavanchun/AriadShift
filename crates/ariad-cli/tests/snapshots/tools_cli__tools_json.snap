@@ -7685,5 +7685,34 @@ expression: tools_json
     "summary": "Export PDF form values.",
     "tier": "free",
     "version": "1"
+  },
+  {
+    "engine": "ariad-host",
+    "group": "convert",
+    "id": "pdf.tables_to_csv",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "csv",
+    "output_formats": [
+      "csv"
+    ],
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.tables_to_csv`.\n\n`pdf.tables_to_csv` extracts every table in the input PDF into its own CSV file.\nIt takes no mandatory parameters (`{}`) and rejects unknown fields.",
+      "title": "TablesToCsvParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Extract tables from a PDF document to individual CSV files.",
+    "tier": "free",
+    "version": "1"
   }
 ]

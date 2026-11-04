@@ -418,43 +418,7 @@ fn odg_converts_to_pdf_via_libreoffice() {
     }
     let directory = tempdir().unwrap();
     let odg_path = directory.path().join("test_drawing.odg");
-    {
-        let file = fs::File::create(&odg_path).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let stored = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file("mimetype", stored).unwrap();
-        zip.write_all(b"application/vnd.oasis.opendocument.graphics")
-            .unwrap();
-
-        let deflated = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-        zip.start_file("META-INF/manifest.xml", deflated).unwrap();
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">
-  <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.graphics"/>
-  <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
-</manifest:manifest>"#,
-        )
-        .unwrap();
-
-        zip.start_file("content.xml", deflated).unwrap();
-        zip.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.3">
-  <office:body>
-    <office:drawing>
-      <draw:page draw:name="page1">
-        <draw:custom-shape svg:width="8cm" svg:height="4cm" svg:x="1cm" svg:y="1cm"/>
-      </draw:page>
-    </office:drawing>
-  </office:body>
-</office:document-content>"#,
-        )
-        .unwrap();
-        zip.finish().unwrap();
-    }
+    write_dummy_odg(&odg_path);
 
     let output = directory.path().join("test_drawing.pdf");
     let result = convert_json(&odg_path, "pdf", &output);
@@ -600,6 +564,21 @@ fn xlsx_created_from_ir_with_tables_opens_in_libreoffice() {
     );
     assert!(zip_has(&xlsx_file, "xl/worksheets/sheet1.xml"));
     assert!(zip_has(&xlsx_file, "xl/worksheets/sheet2.xml"));
+    assert!(
+        !zip_has(&xlsx_file, "xl/worksheets/sheet3.xml"),
+        "expected exactly 2 sheets"
+    );
+
+    let wb_xml = {
+        let file = fs::File::open(&xlsx_file).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut f = archive.by_name("xl/workbook.xml").unwrap();
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut f, &mut s).unwrap();
+        s
+    };
+    assert!(wb_xml.contains("name=\"First Table\""));
+    assert!(wb_xml.contains("name=\"Second Table\""));
 
     let soffice = ariad_host::engines::libreoffice::locate().unwrap();
     let lo_pdf = directory.path().join("document.pdf");
@@ -617,4 +596,162 @@ fn xlsx_created_from_ir_with_tables_opens_in_libreoffice() {
         lo_pdf.exists(),
         "LibreOffice failed to produce PDF from generated XLSX"
     );
+}
+
+fn docling_available() -> bool {
+    if std::env::var_os("ASHIFT_PACK_DOCLING").is_some()
+        || std::env::var_os("ASHIFT_DOCLING_ENGINE").is_some()
+    {
+        return true;
+    }
+    match ariad_host::engines::resolve_pack("docling") {
+        Ok(_) => true,
+        Err(_) => {
+            eprintln!(
+                "skipping: docling pack not installed; set ASHIFT_PACK_DOCLING or ASHIFT_DOCLING_ENGINE to run this test"
+            );
+            false
+        }
+    }
+}
+
+#[test]
+fn pages_family_conversion_attempts_or_explicit_skips() {
+    if !libreoffice_available() {
+        return;
+    }
+    // ODG is tested by odg_converts_to_pdf_via_libreoffice.
+    // For pub, vsd, wpd, wps: verify if real non-copyleft fixtures exist.
+    // If not committed due to repository licensing rules, skip with explicit explanation.
+    for fmt in ["pub", "vsd", "wpd", "wps"] {
+        let fixture_path =
+            support::fixtures::repository_root().join(format!("fixtures/office/sample.{fmt}"));
+        if !fixture_path.exists() {
+            eprintln!(
+                "skipping: real test fixture for {fmt} not committed due to repository licensing rules \
+                 (public DLP/libwpd/libwps suites use LGPL-2.1/MPL copyleft test assets excluded by AGENTS.md); \
+                 see local-gate note in result file"
+            );
+            continue;
+        }
+        let directory = tempdir().unwrap();
+        let output = directory.path().join(format!("output_{fmt}.pdf"));
+        let result = convert_json(&fixture_path, "pdf", &output);
+        assert_eq!(route_of(&result), [format!("{fmt}-libreoffice->pdf")]);
+        assert!(output.exists());
+    }
+}
+
+#[test]
+fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
+    if !docling_available() {
+        return;
+    }
+    let pdf_fixture =
+        support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+    let directory = tempdir().unwrap();
+
+    // 1. Plan pdf -> xlsx: must select docling engine
+    let plan_xlsx = cli()
+        .args([
+            "plan",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "xlsx",
+            "--json",
+        ])
+        .output()
+        .expect("plan pdf -> xlsx");
+    assert!(plan_xlsx.status.success());
+    let plan: Value = serde_json::from_slice(&plan_xlsx.stdout).unwrap();
+    assert_eq!(
+        plan["route"][0]["engine"], "docling",
+        "pdf -> xlsx must plan via docling tables"
+    );
+
+    // 2. Convert pdf -> xlsx: route must run through docling
+    let xlsx_out = directory.path().join("table.xlsx");
+    let conv_xlsx = cli()
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "xlsx",
+            "--json",
+            "-o",
+            xlsx_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert pdf -> xlsx");
+    assert!(conv_xlsx.status.success());
+    assert!(xlsx_out.exists());
+    assert!(zip_has(&xlsx_out, "xl/worksheets/sheet1.xml"));
+
+    // 3. Plan pdf -> csv: must select docling engine
+    let plan_csv = cli()
+        .args([
+            "plan",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "csv",
+            "--json",
+        ])
+        .output()
+        .expect("plan pdf -> csv");
+    assert!(plan_csv.status.success());
+    let plan: Value = serde_json::from_slice(&plan_csv.stdout).unwrap();
+    assert_eq!(
+        plan["route"][0]["engine"], "docling",
+        "pdf -> csv must plan via docling tables"
+    );
+
+    // 4. Convert pdf -> csv: route must run through docling
+    let csv_out = directory.path().join("table.csv");
+    let conv_csv = cli()
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "csv",
+            "--json",
+            "-o",
+            csv_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert pdf -> csv");
+    assert!(conv_csv.status.success());
+    assert!(csv_out.exists());
+}
+
+#[test]
+fn pdf_to_xlsx_without_docling_falls_back_to_text_dump_with_warning() {
+    let pdf_fixture =
+        support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+    let directory = tempdir().unwrap();
+    let xlsx_out = directory.path().join("fallback.xlsx");
+
+    // Convert forcing built-in PDF reader (--engine pdf)
+    let conv = cli()
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--engine",
+            "pdf",
+            "--to",
+            "xlsx",
+            "--json",
+            "-o",
+            xlsx_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert with native pdf");
+    assert!(conv.status.success());
+    let report: Value = serde_json::from_slice(&conv.stdout).unwrap();
+    let warnings = report["warnings"].as_array().expect("warnings array");
+    assert!(
+        warnings.iter().any(|w| w["code"] == "no_tables_found"),
+        "fallback text dump must issue no_tables_found warning: {warnings:?}"
+    );
+    assert!(xlsx_out.exists());
+    assert!(zip_has(&xlsx_out, "xl/worksheets/sheet1.xml"));
 }
