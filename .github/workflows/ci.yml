@@ -150,13 +150,20 @@ jobs:
     needs: scope
     if: needs.scope.outputs.heavy == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Cold builds on macOS and Windows can exceed 30 min before cache warming (e.g. after a prefix bump or prune); 45 min prevents spurious cancellation.
+    timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-26.04, macos-26, windows-2025]
+        include:
+          - os: ubuntu-26.04
+            timeout: 30
+          - os: macos-26
+            timeout: 45
+          - os: windows-2025
+            timeout: 45
     defaults:
       run:
         shell: bash
@@ -177,15 +184,28 @@ jobs:
         with:
           tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
 
-      - name: Start sccache
+      - name: Start sccache (read-write)
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           SCCACHE_REGION: auto
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
-          SCCACHE_S3_RW_MODE: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && 'READ_WRITE' || 'READ_ONLY' }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_WRITE
+        run: bash scripts/ci-sccache.sh start
+
+      - name: Start sccache (read-only)
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')) }}
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_ONLY
         run: bash scripts/ci-sccache.sh start
 
       - name: Set up uv
@@ -338,15 +358,28 @@ jobs:
         with:
           tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
 
-      - name: Start sccache
+      - name: Start sccache (read-write)
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           SCCACHE_REGION: auto
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
-          SCCACHE_S3_RW_MODE: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && 'READ_WRITE' || 'READ_ONLY' }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_WRITE
+        run: bash scripts/ci-sccache.sh start
+
+      - name: Start sccache (read-only)
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')) }}
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_ONLY
         run: bash scripts/ci-sccache.sh start
 
       - name: Cache Pandoc archive
@@ -438,8 +471,12 @@ jobs:
           version: 0.12.23
           python-version: "3.14"
 
-      - name: Report and prune R2 cache storage
+      - name: Install R2 cache requirements
         if: always()
+        run: uv pip install --system --require-hashes -r scripts/r2-cache-requirements.txt
+
+      - name: Prune R2 cache storage (read-write)
+        if: always() && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main'))
         continue-on-error: true
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
@@ -447,9 +484,20 @@ jobs:
           SCCACHE_REGION: auto
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
-          PRUNE_FLAG: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && '--prune' || '--report-only' }}
-        run: uv run --no-project --with boto3==1.43.123 python scripts/r2-cache-prune.py "$PRUNE_FLAG"
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+        run: python scripts/r2-cache-prune.py --prune
+
+      - name: Report R2 cache storage (read-only)
+        if: always() && !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main'))
+        continue-on-error: true
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+        run: python scripts/r2-cache-prune.py --report-only
 
   fuzz:
     name: Fuzz
@@ -481,15 +529,28 @@ jobs:
         with:
           tool: sccache@0.19.0
 
-      - name: Start sccache
+      - name: Start sccache (read-write)
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           SCCACHE_REGION: auto
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
-          SCCACHE_S3_RW_MODE: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && 'READ_WRITE' || 'READ_ONLY' }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_WRITE
+        run: bash scripts/ci-sccache.sh start
+
+      - name: Start sccache (read-only)
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')) }}
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_ONLY
         run: bash scripts/ci-sccache.sh start
 
       - name: Restore cargo-fuzz binary

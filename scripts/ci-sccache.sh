@@ -22,6 +22,12 @@ case "$action" in
         if [ -z "$endpoint" ] && [ -n "${R2_ACCOUNT_ID:-}" ]; then
             endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
         fi
+        if [ -n "${R2_ACCOUNT_ID:-}" ]; then
+            printf '::add-mask::%s\n' "$R2_ACCOUNT_ID"
+        fi
+        if [[ "$endpoint" =~ https://([^.]+)\.r2\.cloudflarestorage\.com ]]; then
+            printf '::add-mask::%s\n' "${BASH_REMATCH[1]}"
+        fi
         key_id="${AWS_ACCESS_KEY_ID:-${R2_ACCESS_KEY_ID:-}}"
         secret_key="${AWS_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY:-}}"
 
@@ -33,7 +39,7 @@ case "$action" in
         export SCCACHE_BUCKET="$bucket"
         export SCCACHE_ENDPOINT="$endpoint"
         export SCCACHE_REGION="${SCCACHE_REGION:-auto}"
-        export SCCACHE_S3_KEY_PREFIX="${SCCACHE_S3_KEY_PREFIX:-ariadshift-sccache/}"
+        export SCCACHE_S3_KEY_PREFIX="${SCCACHE_S3_KEY_PREFIX:-ariadshift-sccache-v2/}"
         export SCCACHE_S3_RW_MODE="${SCCACHE_S3_RW_MODE:-READ_ONLY}"
         export SCCACHE_IDLE_TIMEOUT=0
         export AWS_ACCESS_KEY_ID="$key_id"
@@ -72,7 +78,7 @@ case "$action" in
 ### sccache Statistics ($job_name)
 
 - **Mode:** \`${SCCACHE_S3_RW_MODE:-unknown}\`
-- **Prefix:** \`${SCCACHE_S3_KEY_PREFIX:-ariadshift-sccache/}\`
+- **Prefix:** \`${SCCACHE_S3_KEY_PREFIX:-ariadshift-sccache-v2/}\`
 
 \`\`\`text
 $stats

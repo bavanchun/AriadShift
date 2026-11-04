@@ -193,7 +193,7 @@ static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py
 
 test-ci-sccache:
     shellcheck -x scripts/ci-sccache.sh
-    uv run --no-project --with boto3==1.43.123 python scripts/test-r2-cache-prune.py
+    uv run --no-project --with-requirements scripts/r2-cache-requirements.txt python scripts/test-r2-cache-prune.py
 
 # Keep mandatory database proof and workflow publication policy executable.
 test-hardening-ci-wiring:

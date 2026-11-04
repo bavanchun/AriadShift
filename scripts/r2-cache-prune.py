@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage Cloudflare R2 build cache storage: report size, enforce lifecycle, and prune LRU to stay under 8 GB.
+"""Manage Cloudflare R2 build cache storage: report size, enforce lifecycle, and prune oldest-written objects to stay under 8 GB.
 
 This script communicates only with the dedicated sccache bucket via the S3 API.
 It never prints or logs secret credentials and guarantees the bucket stays strictly
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from typing import Any
 
@@ -17,7 +18,9 @@ from typing import Any
 # Target size after pruning: 6.5 GB (6,500,000,000 bytes) to prevent constant re-pruning.
 DEFAULT_MAX_BYTES = 8_000_000_000
 DEFAULT_TARGET_BYTES = 6_500_000_000
-DEFAULT_PREFIX = "ariadshift-sccache/"
+DEFAULT_PREFIX = "ariadshift-sccache-v2/"
+ALLOWED_BUCKET = "ariadshift-ci-cache"
+REQUIRED_PREFIX_START = "ariadshift-sccache"
 
 
 def format_bytes(num_bytes: int) -> str:
@@ -46,6 +49,14 @@ def get_s3_client() -> tuple[Any, str, str] | None:
     endpoint = os.environ.get("SCCACHE_ENDPOINT")
     if not endpoint and os.environ.get("R2_ACCOUNT_ID"):
         endpoint = f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com"
+
+    account_id = os.environ.get("R2_ACCOUNT_ID")
+    if account_id:
+        print(f"::add-mask::{account_id}")
+    elif endpoint:
+        m = re.search(r"https://([^.]+)\.r2\.cloudflarestorage\.com", endpoint)
+        if m:
+            print(f"::add-mask::{m.group(1)}")
 
     bucket = os.environ.get("SCCACHE_BUCKET") or os.environ.get("R2_CACHE_BUCKET")
     key_id = os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("R2_ACCESS_KEY_ID")
@@ -107,7 +118,7 @@ def apply_lifecycle_rule(client: Any, bucket: str, prefix: str) -> None:
         code = err.response.get("Error", {}).get("Code", "Unknown")
         print(
             f"r2-cache-prune: put_bucket_lifecycle_configuration returned {code} "
-            "(token is scoped to Object Read & Write; relying on LRU pruning step)"
+            "(token is scoped to Object Read & Write; relying on oldest-written pruning step)"
         )
 
 
@@ -130,19 +141,32 @@ def list_objects(client: Any, bucket: str, prefix: str) -> list[dict[str, Any]]:
 def prune_objects(
     client: Any,
     bucket: str,
+    prefix: str,
     objects: list[dict[str, Any]],
     target_bytes: int,
+    dry_run: bool = False,
 ) -> tuple[int, int]:
-    """Delete oldest objects until total size drops to target_bytes.
+    """Delete oldest-written objects until total size drops to target_bytes.
 
+    Enforces hard guards: bucket must equal ariadshift-ci-cache and prefix must start with ariadshift-sccache.
+    If dry_run is True, lists candidate objects without deleting.
     Returns (pruned_count, pruned_bytes).
     """
+    if bucket != ALLOWED_BUCKET:
+        raise ValueError(
+            f"Hard guard: deletion refused for bucket '{bucket}'; must equal '{ALLOWED_BUCKET}'"
+        )
+    if not prefix.startswith(REQUIRED_PREFIX_START):
+        raise ValueError(
+            f"Hard guard: deletion refused for prefix '{prefix}'; must start with '{REQUIRED_PREFIX_START}'"
+        )
+
     total_bytes = sum(obj["Size"] for obj in objects)
     bytes_to_free = total_bytes - target_bytes
     if bytes_to_free <= 0:
         return 0, 0
 
-    # Sort oldest first (LRU)
+    # Sort oldest-written first (sccache does not update LastModified timestamp on cache hit)
     sorted_objs = sorted(objects, key=lambda x: x["LastModified"])
 
     to_delete = []
@@ -152,6 +176,18 @@ def prune_objects(
         freed += obj["Size"]
         if freed >= bytes_to_free:
             break
+
+    if dry_run:
+        print(
+            f"r2-cache-prune: [dry-run] {len(to_delete)} oldest-written objects would be pruned "
+            f"({format_bytes(freed)} freed):"
+        )
+        for obj in to_delete:
+            print(
+                f"  [dry-run] Would delete: {obj['Key']} ({format_bytes(obj['Size'])}, "
+                f"modified: {obj['LastModified']})"
+            )
+        return len(to_delete), freed
 
     # S3 DeleteObjects allows up to 1000 keys per call
     pruned_count = 0
@@ -212,7 +248,7 @@ def write_summary(
         f"| **Status** | {status} |",
     ]
     if pruned_count > 0:
-        lines.append(f"| **Pruned (LRU)** | {pruned_count:,} objects ({format_bytes(pruned_bytes)}) |")
+        lines.append(f"| **Pruned (oldest-written)** | {pruned_count:,} objects ({format_bytes(pruned_bytes)}) |")
     lines.append("")
 
     try:
@@ -222,17 +258,22 @@ def write_summary(
         print(f"r2-cache-prune: failed to append summary to {summary_path}: {err}", file=sys.stderr)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Report and prune Cloudflare R2 sccache storage.")
     parser.add_argument(
         "--report-only",
         action="store_true",
-        help="Only report storage usage without pruning objects.",
+        help="Only report storage usage without pruning objects or modifying lifecycle.",
     )
     parser.add_argument(
         "--prune",
         action="store_true",
-        help="Prune oldest objects if total storage exceeds budget.",
+        help="Prune oldest-written objects if total storage exceeds budget.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List oldest-written objects that would be pruned without deleting them.",
     )
     parser.add_argument(
         "--max-bytes",
@@ -246,7 +287,7 @@ def main() -> int:
         default=DEFAULT_TARGET_BYTES,
         help=f"Target bytes to reduce to after pruning (default: {DEFAULT_TARGET_BYTES}).",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         setup = get_s3_client()
@@ -255,8 +296,9 @@ def main() -> int:
 
         client, bucket, prefix = setup
 
-        # Attempt lifecycle configuration once
-        apply_lifecycle_rule(client, bucket, prefix)
+        # Attempt lifecycle configuration only in read-write / non-report mode
+        if not args.report_only:
+            apply_lifecycle_rule(client, bucket, prefix)
 
         objects = list_objects(client, bucket, prefix)
         count = len(objects)
@@ -269,23 +311,28 @@ def main() -> int:
 
         pruned_count = 0
         pruned_bytes = 0
-        if not args.report_only and total_bytes > args.max_bytes:
+        should_prune = (args.prune or args.dry_run) and not args.report_only
+        if should_prune and total_bytes > args.max_bytes:
+            action_desc = "dry-run pruning" if args.dry_run else "pruning"
             print(
                 f"r2-cache-prune: total storage {format_bytes(total_bytes)} exceeds budget "
-                f"{format_bytes(args.max_bytes)}; pruning oldest objects down to {format_bytes(args.target_bytes)}..."
+                f"{format_bytes(args.max_bytes)}; {action_desc} oldest-written objects down to {format_bytes(args.target_bytes)}..."
             )
             pruned_count, pruned_bytes = prune_objects(
                 client=client,
                 bucket=bucket,
+                prefix=prefix,
                 objects=objects,
                 target_bytes=args.target_bytes,
+                dry_run=args.dry_run,
             )
-            count -= pruned_count
-            total_bytes -= pruned_bytes
-            print(
-                f"r2-cache-prune: pruned {pruned_count:,} objects ({format_bytes(pruned_bytes)} freed). "
-                f"New total: {format_bytes(total_bytes)} across {count:,} objects."
-            )
+            if not args.dry_run:
+                count -= pruned_count
+                total_bytes -= pruned_bytes
+                print(
+                    f"r2-cache-prune: pruned {pruned_count:,} objects ({format_bytes(pruned_bytes)} freed). "
+                    f"New total: {format_bytes(total_bytes)} across {count:,} objects."
+                )
 
         write_summary(
             bucket=bucket,
