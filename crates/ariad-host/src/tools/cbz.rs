@@ -195,10 +195,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preflight_fails_when_pdfium_missing() {
+    fn preflight_checks_pdfium_availability() {
+        // Preflight with an explicit override command must always succeed regardless of environment
+        let dummy = EngineCommand::builtin(Path::new("/bin/echo"), "pdfium");
+        assert!(preflight(None, Some(&dummy)).is_ok());
+
+        // Preflight without override must strictly assert based on environment configuration
         let res = preflight(None, None);
-        if std::env::var_os("ASHIFT_PACK_PDFIUM").is_none() {
-            assert!(res.is_err());
+        match std::env::var_os("ASHIFT_PACK_PDFIUM") {
+            Some(pack) if Path::new(&pack).join("pack.toml").is_file() => {
+                assert!(
+                    res.is_ok(),
+                    "preflight must succeed when PDFium pack is configured"
+                );
+            }
+            _ => {
+                assert!(
+                    res.is_err(),
+                    "preflight must fail when PDFium pack is not configured"
+                );
+            }
         }
     }
 }

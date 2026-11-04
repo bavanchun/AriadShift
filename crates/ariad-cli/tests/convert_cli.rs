@@ -1383,34 +1383,54 @@ fn plans_and_converts_phase10_reader_routes() {
 fn converts_svg_with_hostile_inputs() {
     let directory = tempdir().expect("create test directory");
 
-    let hostile_cases = [
-        (
-            "external_http_href",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
-  <image href="http://127.0.0.1:9999/malicious.png" width="100" height="100"/>
+    // 1. Local listener to prove no network access occurs when SVG references an external HTTP URL
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local TCP listener");
+    listener.set_nonblocking(true).expect("set non-blocking");
+    let listener_port = listener.local_addr().expect("local addr").port();
+
+    // 2. Sentinel file to prove no unauthorized local file access occurs
+    let sentinel_secret = "ARIAD_TEST_SENTINEL_SECRET_TOKEN_77492";
+    let sentinel_path = directory.path().join("sentinel.secret");
+    fs::write(&sentinel_path, sentinel_secret).expect("write sentinel file");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&sentinel_path, fs::Permissions::from_mode(0o000));
+    }
+
+    let http_svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="http://127.0.0.1:{listener_port}/hostile-probe.png" width="100" height="100"/>
   <text x="10" y="20">External HTTP</text>
-</svg>"#,
-        ),
-        (
-            "external_file_href",
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
-  <image href="/etc/passwd" width="100" height="100"/>
+</svg>"#
+    );
+
+    let file_svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="{}" width="100" height="100"/>
   <text x="10" y="20">External File</text>
 </svg>"#,
-        ),
+        sentinel_path.display()
+    );
+
+    let hostile_cases = [
+        ("external_http_href", http_svg),
+        ("external_file_href", file_svg),
         (
             "embedded_data_uri",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
   <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" width="100" height="100"/>
   <text x="10" y="20">Data URI</text>
-</svg>"#,
+</svg>"#
+                .to_string(),
         ),
         (
             "script_tag",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
   <script>alert('xss')</script>
   <circle cx="50" cy="50" r="40" fill="red"/>
-</svg>"#,
+</svg>"#
+                .to_string(),
         ),
     ];
 
@@ -1438,5 +1458,34 @@ fn converts_svg_with_hostile_inputs() {
             pdf_bytes.starts_with(b"%PDF-"),
             "valid PDF header for {name}"
         );
+
+        if name == "external_http_href" {
+            // Assert that the local listener was NOT contacted by the conversion
+            match listener.accept() {
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    // Success: zero network requests were made to the external HTTP href
+                }
+                Ok((_, addr)) => {
+                    panic!("Hostile SVG unexpectedly contacted local listener at {addr}");
+                }
+                Err(e) => {
+                    panic!("Unexpected listener error: {e}");
+                }
+            }
+        } else if name == "external_file_href" {
+            // Assert sentinel file contents did not leak into output PDF
+            assert!(
+                !pdf_bytes
+                    .windows(sentinel_secret.len())
+                    .any(|w| w == sentinel_secret.as_bytes()),
+                "output PDF must not leak contents from external file href"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&sentinel_path, fs::Permissions::from_mode(0o644));
     }
 }
