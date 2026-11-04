@@ -414,7 +414,12 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 75);
+    assert_eq!(all_tools.len(), 76);
+    assert!(
+        all_tools
+            .iter()
+            .any(|tool| tool["id"] == "pdf.tables_to_csv" && tool["runtimes"] == json!(["local"]))
+    );
     for id in [
         "pdf.annotations",
         "pdf.annotations_import",
@@ -982,4 +987,221 @@ fn recipe_run_prints_steps_requires_yes_and_rejects_literal_secrets() {
         9,
         &["error[invalid_params]"],
     );
+}
+
+#[test]
+fn tables_to_csv_end_to_end_cli_execution() {
+    let tmp = TempDir::new().unwrap();
+    let out_dir = tmp.path().join("out");
+    fs::create_dir_all(&out_dir).unwrap();
+
+    let probe = Path::new(env!("CARGO_BIN_EXE_ashift"))
+        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
+    let engine_probe_path = if probe.exists() {
+        probe
+    } else {
+        let repo_probe = repository_root().join("target/debug/engine-probe");
+        if repo_probe.exists() {
+            repo_probe
+        } else {
+            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+            let mut cmd = std::process::Command::new(cargo);
+            cmd.args([
+                "build",
+                "-p",
+                "ariad-host",
+                "--bin",
+                "engine-probe",
+                "--features",
+                "ariad-host/test-probe",
+            ]);
+            if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+                cmd.env("CARGO_TARGET_DIR", target_dir);
+            }
+            let _ = cmd.status();
+            if probe.exists() { probe } else { repo_probe }
+        }
+    };
+
+    let docling_fixture = repository_root().join("fixtures/docling/en-repair-log.docling.json");
+    let input_pdf = repository_root().join("fixtures/pdf/en-map-room.pdf");
+
+    // Case 1: When engine pack is missing, fails with exit code 5 (tool_missing)
+    let missing_cmd = ashift_cmd()
+        .env("ASHIFT_DATA_DIR", tmp.path().join("empty-data"))
+        .env_remove("ASHIFT_PACK_DOCLING")
+        .env_remove("ASHIFT_DOCLING_ENGINE")
+        .args(["tool", "pdf.tables_to_csv"])
+        .arg(&input_pdf)
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert_eq!(missing_cmd.status.code(), Some(5));
+    let missing_err = String::from_utf8_lossy(&missing_cmd.stderr);
+    assert!(
+        missing_err.contains("docling engine is not available")
+            || missing_err.contains("tool_missing"),
+        "stderr: {missing_err}"
+    );
+
+    // Case 2: Document with no tables fails with exit code 1 (engine_failure)
+    // and stderr "no tables found in document"
+    let no_tables_fixture =
+        repository_root().join("fixtures/docling/pd-en-gao-08-35-highlights.docling.json");
+    if !engine_probe_path.exists() {
+        println!(
+            "skipping: engine-probe binary not found at {}; skipping probe-dependent tool cases",
+            engine_probe_path.display()
+        );
+        return;
+    }
+
+    if no_tables_fixture.exists() {
+        let no_tables_cmd = ashift_cmd()
+            .env("ASHIFT_SANDBOX", "off")
+            .env(
+                "ASHIFT_DOCLING_ENGINE",
+                format!(
+                    "\"{}\" docling \"{}\"",
+                    engine_probe_path.display(),
+                    no_tables_fixture.display()
+                ),
+            )
+            .args(["tool", "pdf.tables_to_csv"])
+            .arg(&input_pdf)
+            .arg("-o")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert_eq!(no_tables_cmd.status.code(), Some(1));
+        let no_tables_err = String::from_utf8_lossy(&no_tables_cmd.stderr);
+        assert!(
+            no_tables_err.contains("no tables found in document"),
+            "stderr: {no_tables_err}"
+        );
+    }
+
+    // Case 3: Document with tables outputs table-001.csv, table-002.csv, etc.
+    if docling_fixture.exists() {
+        let tables_out_dir = tmp.path().join("tables_out");
+        fs::create_dir_all(&tables_out_dir).unwrap();
+        let cmd = ashift_cmd()
+            .env("ASHIFT_SANDBOX", "off")
+            .env(
+                "ASHIFT_DOCLING_ENGINE",
+                format!(
+                    "\"{}\" docling \"{}\"",
+                    engine_probe_path.display(),
+                    docling_fixture.display()
+                ),
+            )
+            .args(["tool", "pdf.tables_to_csv"])
+            .arg(&input_pdf)
+            .arg("-o")
+            .arg(&tables_out_dir)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(
+            cmd.status.success(),
+            "tool execution failed: {}",
+            String::from_utf8_lossy(&cmd.stderr)
+        );
+        let report: Value = serde_json::from_slice(&cmd.stdout).expect("parse tool json report");
+        let artifacts = report["artifacts"].as_array().expect("artifacts array");
+        assert_eq!(
+            artifacts.len(),
+            2,
+            "en-repair-log.docling.json has 2 tables"
+        );
+
+        // Verify naming: <stem>.table-001.csv, <stem>.table-002.csv
+        let t1 = tables_out_dir.join("en-map-room.table-001.csv");
+        let t2 = tables_out_dir.join("en-map-room.table-002.csv");
+        assert!(
+            t1.is_file(),
+            "en-map-room.table-001.csv must exist; artifacts: {artifacts:?}"
+        );
+        assert!(
+            t2.is_file(),
+            "en-map-room.table-002.csv must exist; artifacts: {artifacts:?}"
+        );
+
+        let content1 = fs::read_to_string(&t1).unwrap();
+        assert!(!content1.is_empty(), "table-001.csv must not be empty");
+    }
+
+    // Case 4: Dedicated formula-injection guarding test using committed fixture with =, +, -, @
+    let formula_fixture = repository_root().join("fixtures/docling/en-formula-cells.docling.json");
+    if formula_fixture.exists() {
+        let formula_out_dir = tmp.path().join("formula_out");
+        fs::create_dir_all(&formula_out_dir).unwrap();
+        let cmd = ashift_cmd()
+            .env("ASHIFT_SANDBOX", "off")
+            .env(
+                "ASHIFT_DOCLING_ENGINE",
+                format!(
+                    "\"{}\" docling \"{}\"",
+                    engine_probe_path.display(),
+                    formula_fixture.display()
+                ),
+            )
+            .args(["tool", "pdf.tables_to_csv"])
+            .arg(&input_pdf)
+            .arg("-o")
+            .arg(&formula_out_dir)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(
+            cmd.status.success(),
+            "formula tool execution failed: {}",
+            String::from_utf8_lossy(&cmd.stderr)
+        );
+        let csv_path = if formula_out_dir.join("en-map-room.table-001.csv").is_file() {
+            formula_out_dir.join("en-map-room.table-001.csv")
+        } else {
+            formula_out_dir.join("en-map-room.table.csv")
+        };
+        assert!(
+            csv_path.is_file(),
+            "formula csv output must exist in {formula_out_dir:?}"
+        );
+        let content = fs::read_to_string(&csv_path).unwrap();
+        let mut found_equals = false;
+        let mut found_plus = false;
+        let mut found_minus = false;
+        let mut found_at = false;
+        for line in content.lines() {
+            for cell in line.split(',') {
+                let unquoted = cell.trim_matches('"');
+                if unquoted.starts_with("'=SUM") {
+                    found_equals = true;
+                } else if unquoted.starts_with("'+12345") {
+                    found_plus = true;
+                } else if unquoted.starts_with("'-999") {
+                    found_minus = true;
+                } else if unquoted.starts_with("'@formula") {
+                    found_at = true;
+                }
+            }
+        }
+        assert!(
+            found_equals,
+            "cell beginning with = must be guarded with leading apostrophe; content: {content}"
+        );
+        assert!(
+            found_plus,
+            "cell beginning with + must be guarded with leading apostrophe; content: {content}"
+        );
+        assert!(
+            found_minus,
+            "cell beginning with - must be guarded with leading apostrophe; content: {content}"
+        );
+        assert!(
+            found_at,
+            "cell beginning with @ must be guarded with leading apostrophe; content: {content}"
+        );
+    }
 }

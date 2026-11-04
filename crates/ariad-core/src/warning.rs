@@ -52,4 +52,8 @@ pub enum WarningCode {
     TextUnmapped,
     /// TeX math could not be converted for the target and was kept as text.
     MathNotConverted,
+    /// No tables found in document when converting to tabular formats.
+    NoTablesFound,
+    /// Output exceeded maximum size limit and was truncated.
+    OutputTruncated,
 }

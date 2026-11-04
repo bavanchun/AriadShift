@@ -624,8 +624,10 @@ fn run_tool_inner(
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
-    let is_ocr_composite =
-        effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE;
+    let is_ocr_composite = effective_engine
+        == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
+        && spec.group == ariad_core::tools::ToolGroup::Ocr;
+    let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -665,6 +667,8 @@ fn run_tool_inner(
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
         )?;
+    } else if is_tables_to_csv {
+        super::tables::preflight(request.engine_program.as_deref())?;
     } else if effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some() {
         let _ = engine::resolve_engine_command(
             effective_engine,
@@ -729,6 +733,20 @@ fn run_tool_inner(
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
     let mut raw_exec = if is_ocr_composite {
         super::ocr::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_tables_to_csv {
+        super::tables::execute(
             &spec,
             &staged_inputs_with_format,
             &resolved_secrets.schema_params,

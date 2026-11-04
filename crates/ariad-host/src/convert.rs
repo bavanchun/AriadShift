@@ -1013,6 +1013,38 @@ where
                     path,
                 })
             }
+            (Format::AriadIrJson, Format::Xlsx) => {
+                let Stage::Ir(document) = stage else {
+                    return Err(ConvertError::Failed);
+                };
+                let out =
+                    ariad_core::writer::xlsx::write(&document).map_err(|_| ConvertError::Failed)?;
+                if out.bytes.is_empty() {
+                    return Err(ConvertError::Failed);
+                }
+                self.warnings.extend(out.warnings.iter().map(safe_warning));
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let path = workspace.output_dir().join("document.xlsx");
+                fs::write(&path, &out.bytes).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
+            (Format::AriadIrJson, Format::Csv) => {
+                let Stage::Ir(document) = stage else {
+                    return Err(ConvertError::Failed);
+                };
+                let out = ariad_core::writer::csv::write(&document);
+                self.warnings.extend(out.warnings.iter().map(safe_warning));
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let path = workspace.output_dir().join("document.csv");
+                fs::write(&path, out.content.as_bytes()).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
             _ => Err(ConvertError::UnsupportedRoute {
                 detail: Some(format!(
                     "no reachable targets from {}",
@@ -1937,6 +1969,9 @@ fn safe_warning_message(code: &str) -> String {
         "ocr_required" => "A page has no text layer; reading it needs OCR.",
         "text_unmapped" => "Some characters have no Unicode mapping and were replaced.",
         "math_not_converted" => "Math could not be converted and was kept as TeX text.",
+        "no_tables_found" => {
+            "No tables were found in the document; output was formatted as a text dump."
+        }
         _ => "The document could not be converted without a warning.",
     };
     msg.to_owned()
@@ -2141,6 +2176,18 @@ mod tests {
         assert_eq!(sanitized.code, "font_missing");
         assert!(!sanitized.message.contains("secret"));
         assert!(!sanitized.message.contains("/private"));
+
+        let table_warning = Warning::new(
+            WarningCode::NoTablesFound,
+            "document at /private/secret.pdf has no tables",
+        );
+        let sanitized = safe_warning(&table_warning);
+        assert_eq!(sanitized.code, "no_tables_found");
+        assert_eq!(
+            sanitized.message,
+            "No tables were found in the document; output was formatted as a text dump."
+        );
+        assert!(!sanitized.message.contains("secret"));
     }
 
     #[test]

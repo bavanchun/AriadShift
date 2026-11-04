@@ -384,6 +384,8 @@ pub const NATIVE_ROUTES: &[(Format, Format)] = &[
     (Format::Html, Format::AriadIrJson),
     (Format::AriadIrJson, Format::Markdown),
     (Format::AriadIrJson, Format::Html),
+    (Format::AriadIrJson, Format::Xlsx),
+    (Format::AriadIrJson, Format::Csv),
 ];
 
 /// Static description of an engine that `ashift __engine <id>` or an engine pack serves out of process.
@@ -481,6 +483,12 @@ pub const LIBREOFFICE: EngineSpec = EngineSpec {
         (Format::Ppt, Format::Pdf),
         (Format::Odp, Format::Pdf),
         (Format::Pptx, Format::Pdf),
+        (Format::Pdf, Format::Pptx),
+        (Format::Odg, Format::Pdf),
+        (Format::Pub, Format::Pdf),
+        (Format::Vsd, Format::Pdf),
+        (Format::Wpd, Format::Pdf),
+        (Format::Wps, Format::Pdf),
     ],
     install_hint: "install LibreOffice 24.2 or newer from libreoffice.org or set ASHIFT_SOFFICE",
     supported: Some(">=24.2"),

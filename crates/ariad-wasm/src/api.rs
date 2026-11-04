@@ -1089,11 +1089,13 @@ mod tests {
             error.detail("reachable_elsewhere"),
             Some(&serde_json::json!([
                 "ariad-ir+json",
+                "csv",
                 "docx",
                 "epub",
                 "html",
                 "markdown",
-                "pdf"
+                "pdf",
+                "xlsx"
             ]))
         );
         assert!(
@@ -1187,10 +1189,12 @@ mod tests {
             inspection.reachable,
             vec![
                 Format::AriadIrJson,
+                Format::Csv,
                 Format::Docx,
                 Format::Epub,
                 Format::Markdown,
-                Format::Pdf
+                Format::Pdf,
+                Format::Xlsx,
             ]
         );
     }

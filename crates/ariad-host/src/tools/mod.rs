@@ -14,6 +14,7 @@ pub mod recipe;
 pub mod run;
 pub mod secrets;
 pub mod similarity;
+pub mod tables;
 
 pub use publish::{
     PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
