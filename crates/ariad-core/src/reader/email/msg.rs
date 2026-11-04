@@ -10,6 +10,18 @@ use crate::{
     warning::{Warning, WarningCode},
 };
 
+/// Strip bidirectional control characters from filenames or metadata.
+fn strip_bidi_controls(s: &str) -> String {
+    s.chars()
+        .filter(|&c| {
+            !matches!(
+                c,
+                '\u{061c}' | '\u{200e}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+            )
+        })
+        .collect()
+}
+
 /// Errors that can occur when reading an Outlook MSG file.
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
@@ -89,9 +101,9 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
             .map_err(|_| "invalid header".to_string())?,
     );
 
-    // "MEMA" magic: uncompressed
-    if magic == 0x414d_454d {
-        let end = (16 + uncomp_size).min(compressed.len());
+    // "MEMA" or "MELA" magic: uncompressed
+    if magic == 0x414d_454d || magic == 0x414c_454d {
+        let end = 16usize.saturating_add(uncomp_size).min(compressed.len());
         return Ok(compressed[16..end].to_vec());
     }
 
@@ -100,22 +112,15 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
         return Err(format!("unknown RTF compression magic: 0x{magic:08x}"));
     }
 
-    let initial_dict = b"{\\rtf1\\ansi\\mac\\deff0\\deftab720{\\fonttbl;}{\\f0\\fnil \\froman \\fswiss \
-\\fmodern \\fscript \\fdecor MS Sans SerifSymbolArialTimes New RomanCourier{\\colortbl;\
-\\red0\\green0\\blue0;\\red0\\green0\\blue255;\\red0\\green255\\blue255;\\red0\\green255\\blue0;\
-\\red255\\green0\\blue255;\\red255\\green0\\blue0;\\red255\\green255\\blue0;\\red255\\green255\\blue255;\
-\\red0\\green0\\blue128;\\red0\\green128\\blue128;\\red0\\green128\\blue0;\\red128\\green0\\blue128;\
-\\red128\\green0\\blue0;\\red128\\green128\\blue0;\\red128\\green128\\blue128;\\red192\\green192\\green192;\
-\\par \\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx";
+    const RTF_PREBUF: &[u8; 207] = b"{\\rtf1\\ansi\\mac\\deff0\\deftab720{\\fonttbl;}{\\f0\\fnil \\froman \\fswiss \\fmodern \\fscript \\fdecor MS Sans SerifSymbolArialTimes New RomanCourier{\\colortbl\\red0\\green0\\blue0\r\n\\par \\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx";
 
-    let mut dict = [0u8; 4096];
-    let init_len = initial_dict.len().min(4096);
-    dict[..init_len].copy_from_slice(&initial_dict[..init_len]);
-    let mut write_offset = init_len;
+    let mut dict = [b' '; 4096];
+    dict[..RTF_PREBUF.len()].copy_from_slice(RTF_PREBUF);
+    let mut write_offset = RTF_PREBUF.len();
 
     let mut output = Vec::with_capacity(uncomp_size.min(10 * 1024 * 1024));
     let mut in_pos = 16;
-    let max_in = (comp_size + 4).min(compressed.len());
+    let max_in = 4usize.saturating_add(comp_size).min(compressed.len());
 
     while in_pos < max_in && output.len() < uncomp_size {
         let flag_byte = compressed[in_pos];
@@ -140,7 +145,7 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
                 let token = u16::from_be_bytes([compressed[in_pos], compressed[in_pos + 1]]);
                 in_pos += 2;
 
-                let offset = (token >> 4) as usize;
+                let mut offset = (token >> 4) as usize;
                 let length = ((token & 0x0F) + 2) as usize;
 
                 if offset == write_offset {
@@ -148,14 +153,15 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
                     return Ok(output);
                 }
 
-                for i in 0..length {
+                for _ in 0..length {
                     if output.len() >= uncomp_size {
                         break;
                     }
-                    let b = dict[(offset + i) % 4096];
+                    let b = dict[offset];
                     output.push(b);
                     dict[write_offset] = b;
                     write_offset = (write_offset + 1) % 4096;
+                    offset = (offset + 1) % 4096;
                 }
             }
         }
@@ -403,6 +409,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     // Gather recipients
     let mut to_recipients = Vec::new();
     let mut cc_recipients = Vec::new();
+    let mut bcc_recipients = Vec::new();
 
     for r_path in &recip_storages {
         let r_name = read_string_property(&mut comp, r_path, "3001", max_stream_bytes);
@@ -433,23 +440,16 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             (None, None) => continue,
         };
 
-        if recip_type == 2 {
-            cc_recipients.push(formatted);
-        } else {
-            to_recipients.push(formatted);
+        match recip_type {
+            2 => cc_recipients.push(formatted),
+            3 => bcc_recipients.push(formatted),
+            _ => to_recipients.push(formatted),
         }
     }
 
-    let to_str = if to_recipients.is_empty() {
-        None
-    } else {
-        Some(to_recipients.join(", "))
-    };
-    let cc_str = if cc_recipients.is_empty() {
-        None
-    } else {
-        Some(cc_recipients.join(", "))
-    };
+    let to_str = (!to_recipients.is_empty()).then(|| to_recipients.join(", "));
+    let cc_str = (!cc_recipients.is_empty()).then(|| cc_recipients.join(", "));
+    let bcc_str = (!bcc_recipients.is_empty()).then(|| bcc_recipients.join(", "));
 
     let mut blocks = Vec::new();
 
@@ -482,6 +482,15 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             }],
         });
         header_inlines.push(Inline::Text { text: nfc(cc_val) });
+        header_inlines.push(Inline::LineBreak {});
+    }
+    if let Some(ref bcc_val) = bcc_str {
+        header_inlines.push(Inline::Strong {
+            content: vec![Inline::Text {
+                text: "Bcc: ".to_owned(),
+            }],
+        });
+        header_inlines.push(Inline::Text { text: nfc(bcc_val) });
         header_inlines.push(Inline::LineBreak {});
     }
     if let Some(ref date_val) = date_str {
@@ -604,7 +613,8 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             prop_size
         };
 
-        let item_text = format!("{name} ({size} bytes)");
+        let clean_name = strip_bidi_controls(&name);
+        let item_text = format!("{clean_name} ({size} bytes)");
         attachment_items.push(ListItem {
             checked: None,
             blocks: vec![Block::Paragraph {
@@ -627,6 +637,13 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             start: None,
             tight: true,
             items: attachment_items,
+        });
+    }
+
+    if blocks.len() > limits.max_blocks as usize {
+        return Err(ReadError::TooManyBlocks {
+            actual: blocks.len() as u64,
+            limit: limits.max_blocks,
         });
     }
 
@@ -741,88 +758,248 @@ mod tests {
     }
 
     #[test]
-    fn generate_sample_msg_fixtures() {
+    fn lzfu_decompression_spec_vector() {
+        let comp = b"#\x00\x00\x00\"\x00\x00\x00LZFu3\\\xe8t\x03\x00\n\x00rcpg125\x922\n\xf3 t\x07\x90t}\x0f\x10";
+        let out = decompress_rtf(comp).expect("LZFu decompression failed");
+        assert_eq!(out, b"{\\rtf1\\ansi\\ansicpg1252\\pard test}");
+    }
+
+    #[test]
+    fn uncompressed_rtf_mema_and_mela() {
+        // MEMA
+        let mut mema = Vec::new();
+        mema.extend_from_slice(&16u32.to_le_bytes()); // comp_size = 12 + len(payload)
+        mema.extend_from_slice(&4u32.to_le_bytes()); // uncomp_size = 4
+        mema.extend_from_slice(&0x414d_454du32.to_le_bytes()); // "MEMA"
+        mema.extend_from_slice(&0u32.to_le_bytes()); // crc
+        mema.extend_from_slice(b"test");
+        assert_eq!(decompress_rtf(&mema).unwrap(), b"test");
+
+        // MELA
+        let mut mela = Vec::new();
+        mela.extend_from_slice(&16u32.to_le_bytes());
+        mela.extend_from_slice(&4u32.to_le_bytes());
+        mela.extend_from_slice(&0x414c_454du32.to_le_bytes()); // "MELA"
+        mela.extend_from_slice(&0u32.to_le_bytes());
+        mela.extend_from_slice(b"test");
+        assert_eq!(decompress_rtf(&mela).unwrap(), b"test");
+    }
+
+    #[test]
+    fn parses_msg_with_to_cc_bcc() {
         use std::io::Write;
         let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
 
-        // Write Subject
-        {
-            let mut stream = comp.create_stream("/__substg1.0_0037001F").unwrap();
-            stream.write_all(&encode_utf16le("Project Update")).unwrap();
-        }
-
-        // Write Sender
-        {
-            let mut stream = comp.create_stream("/__substg1.0_0C1A001F").unwrap();
-            stream.write_all(&encode_utf16le("Alice Walker")).unwrap();
-        }
-        {
-            let mut stream = comp.create_stream("/__substg1.0_0C1F001F").unwrap();
-            stream
-                .write_all(&encode_utf16le("alice@example.com"))
-                .unwrap();
-        }
-
-        // Recipient storage
+        // Recipient 1: To
         comp.create_storage("/__recip_version1.0_#00000000")
             .unwrap();
         {
-            let mut stream = comp
+            let mut s = comp
                 .create_stream("/__recip_version1.0_#00000000/__substg1.0_3001001F")
                 .unwrap();
-            stream.write_all(&encode_utf16le("Bob Smith")).unwrap();
+            s.write_all(&encode_utf16le("To Recipient")).unwrap();
         }
         {
-            let mut stream = comp
-                .create_stream("/__recip_version1.0_#00000000/__substg1.0_3003001F")
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000000/__properties_version1.0")
                 .unwrap();
-            stream
-                .write_all(&encode_utf16le("bob@example.com"))
-                .unwrap();
+            // 8 byte header + 16 byte property entry (prop_type=0x0003, prop_id=0x0C15, val=1)
+            let mut p = vec![0u8; 8];
+            p.extend_from_slice(&0x0003u16.to_le_bytes());
+            p.extend_from_slice(&0x0C15u16.to_le_bytes());
+            p.extend_from_slice(&0u32.to_le_bytes()); // flags
+            p.extend_from_slice(&1u32.to_le_bytes()); // value = 1 (MAPI_TO)
+            p.extend_from_slice(&0u32.to_le_bytes()); // padding to 16 bytes
+            s.write_all(&p).unwrap();
         }
 
-        // Write Plain body
+        // Recipient 2: Cc
+        comp.create_storage("/__recip_version1.0_#00000001")
+            .unwrap();
         {
-            let mut stream = comp.create_stream("/__substg1.0_1000001F").unwrap();
-            stream
-                .write_all(&encode_utf16le(
-                    "Hello Bob,\n\nHere is the latest progress report on the document pipeline.\n\nBest regards,\nAlice",
-                ))
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000001/__substg1.0_3001001F")
                 .unwrap();
+            s.write_all(&encode_utf16le("Cc Recipient")).unwrap();
+        }
+        {
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000001/__properties_version1.0")
+                .unwrap();
+            let mut p = vec![0u8; 8];
+            p.extend_from_slice(&0x0003u16.to_le_bytes());
+            p.extend_from_slice(&0x0C15u16.to_le_bytes());
+            p.extend_from_slice(&0u32.to_le_bytes());
+            p.extend_from_slice(&2u32.to_le_bytes()); // value = 2 (MAPI_CC)
+            p.extend_from_slice(&0u32.to_le_bytes());
+            s.write_all(&p).unwrap();
         }
 
-        // Attachment
+        // Recipient 3: Bcc
+        comp.create_storage("/__recip_version1.0_#00000002")
+            .unwrap();
+        {
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000002/__substg1.0_3001001F")
+                .unwrap();
+            s.write_all(&encode_utf16le("Bcc Recipient")).unwrap();
+        }
+        {
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000002/__properties_version1.0")
+                .unwrap();
+            let mut p = vec![0u8; 8];
+            p.extend_from_slice(&0x0003u16.to_le_bytes());
+            p.extend_from_slice(&0x0C15u16.to_le_bytes());
+            p.extend_from_slice(&0u32.to_le_bytes());
+            p.extend_from_slice(&3u32.to_le_bytes()); // value = 3 (MAPI_BCC)
+            p.extend_from_slice(&0u32.to_le_bytes());
+            s.write_all(&p).unwrap();
+        }
+
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+
+        let header_text = match &out.document.body[0] {
+            Block::Paragraph { content } => {
+                let mut t = String::new();
+                for inln in content {
+                    if let Inline::Text { text } = inln {
+                        t.push_str(text);
+                    }
+                }
+                t
+            }
+            _ => panic!("Expected header paragraph"),
+        };
+        assert!(header_text.contains("To Recipient"));
+        assert!(header_text.contains("Cc Recipient"));
+        assert!(header_text.contains("Bcc Recipient"));
+    }
+
+    #[test]
+    fn parses_msg_with_html_body() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__substg1.0_10130102").unwrap();
+            stream.write_all(b"<p>Hello <b>from HTML</b></p>").unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        let found = out.document.body.iter().any(|b| match b {
+            Block::Paragraph { content } => {
+                content.iter().any(|c| matches!(c, Inline::Strong { .. }))
+            }
+            _ => false,
+        });
+        assert!(found, "HTML bold tag should be parsed");
+    }
+
+    #[test]
+    fn parses_msg_with_rtf_compressed_body() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__substg1.0_10090102").unwrap();
+            stream
+                .write_all(b"#\x00\x00\x00\"\x00\x00\x00LZFu3\\\xe8t\x03\x00\n\x00rcpg125\x922\n\xf3 t\x07\x90t}\x0f\x10")
+                .unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert!(
+            out.warnings
+                .iter()
+                .any(|w| w.code == WarningCode::UnsupportedNode)
+        );
+        let found = out.document.body.iter().any(|b| match b {
+            Block::Paragraph { content } => content.iter().any(|c| match c {
+                Inline::Text { text } => text.contains("test"),
+                _ => false,
+            }),
+            _ => false,
+        });
+        assert!(found, "RTF body content should be extracted");
+    }
+
+    #[test]
+    fn parses_msg_with_filetime_date() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__properties_version1.0").unwrap();
+            let mut p = vec![0u8; 32]; // 32-byte header for root properties
+            // PT_SYSTIME = 0x0040, PR_CLIENT_SUBMIT_TIME = 0x0039
+            p.extend_from_slice(&0x0040u16.to_le_bytes());
+            p.extend_from_slice(&0x0039u16.to_le_bytes());
+            p.extend_from_slice(&0u32.to_le_bytes()); // flags
+            // 2026-11-04T12:00:00Z in FILETIME (approx 133752336000000000)
+            let ft: i64 = 133_752_336_000_000_000;
+            p.extend_from_slice(&ft.to_le_bytes());
+            stream.write_all(&p).unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert!(out.document.meta.date.is_some());
+    }
+
+    #[test]
+    fn strips_bidi_controls_in_attachments() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
         comp.create_storage("/__attach_version1.0_#00000000")
             .unwrap();
         {
             let mut stream = comp
                 .create_stream("/__attach_version1.0_#00000000/__substg1.0_3707001F")
                 .unwrap();
-            stream.write_all(&encode_utf16le("report.pdf")).unwrap();
+            // "evil\u{202E}fdp.exe" (RLO trick)
+            stream
+                .write_all(&encode_utf16le("evil\u{202E}fdp.exe"))
+                .unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        let has_stripped = out.document.body.iter().any(|b| match b {
+            Block::List { items, .. } => items.iter().any(|item| {
+                item.blocks.iter().any(|ib| match ib {
+                    Block::Paragraph { content } => content.iter().any(|c| match c {
+                        Inline::Text { text } => text.contains("evilfdp.exe"),
+                        _ => false,
+                    }),
+                    _ => false,
+                })
+            }),
+            _ => false,
+        });
+        assert!(has_stripped);
+    }
+
+    #[test]
+    fn enforces_max_blocks_limit() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__substg1.0_0037001F").unwrap();
+            stream.write_all(&encode_utf16le("Subject")).unwrap();
         }
         {
-            let mut stream = comp
-                .create_stream("/__attach_version1.0_#00000000/__substg1.0_37010102")
-                .unwrap();
-            stream.write_all(b"%PDF-1.4 dummy pdf attachment").unwrap();
+            let mut stream = comp.create_stream("/__substg1.0_1000001F").unwrap();
+            stream.write_all(&encode_utf16le("Body")).unwrap();
         }
-
         let bytes = comp.into_inner().into_inner();
-        let fixtures_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("fixtures/email");
-        let seeds_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("fuzz/seeds/reader_msg");
-        std::fs::create_dir_all(&fixtures_dir).unwrap();
-        std::fs::create_dir_all(&seeds_dir).unwrap();
-        std::fs::write(fixtures_dir.join("sample.msg"), &bytes).unwrap();
-        std::fs::write(seeds_dir.join("simple.msg"), &bytes).unwrap();
+        let limits = Limits {
+            max_blocks: 1,
+            ..Limits::local()
+        };
+        let err = read(&bytes, &limits).unwrap_err();
+        match err {
+            ReadError::TooManyBlocks { actual, limit } => {
+                assert!(actual > 1);
+                assert_eq!(limit, 1);
+            }
+            _ => panic!("Expected TooManyBlocks error, got {err:?}"),
+        }
     }
 }

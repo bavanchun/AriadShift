@@ -287,7 +287,13 @@ pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, Pipel
             crate::reader::csv::ReadError::InputTooLarge { .. } => {
                 limit_exceeded("max_input_bytes")
             }
-            crate::reader::csv::ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
+            crate::reader::csv::ReadError::TooManyBlocks { .. }
+            | crate::reader::csv::ReadError::TooManyRows { .. }
+            | crate::reader::csv::ReadError::TooManyColumns { .. }
+            | crate::reader::csv::ReadError::TooManyCells { .. }
+            | crate::reader::csv::ReadError::TooManyPaddedCells { .. } => {
+                limit_exceeded("max_blocks")
+            }
             other => PipelineError::InvalidInput {
                 reason: other.to_string(),
             },

@@ -34,8 +34,10 @@ pub fn read(text: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
         });
     }
 
+    let text_no_bom = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let normalized = nfc(&text_no_bom.replace("\r\n", "\n").replace('\r', "\n"));
+
     let mut blocks = Vec::new();
-    let normalized = nfc(text);
 
     // Split on double newlines (paragraphs)
     for paragraph_str in normalized.split("\n\n").map(str::trim) {
@@ -137,14 +139,58 @@ mod tests {
         // e + combining acute accent -> é
         let decomposed = "caf\u{0065}\u{0301}";
         let out = read(decomposed, &Limits::local()).unwrap();
-        if let Block::Paragraph { content } = &out.document.body[0] {
-            assert_eq!(
-                content[0],
-                Inline::Text {
-                    text: "café".to_owned()
-                }
-            );
-        }
+        let Block::Paragraph { content } = &out.document.body[0] else {
+            panic!("expected paragraph");
+        };
+        assert_eq!(
+            content[0],
+            Inline::Text {
+                text: "café".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn strips_bom_and_splits_crlf_paragraphs() {
+        let input = "\u{feff}First paragraph.\r\n\r\nSecond paragraph line 1\r\nline 2.\r\n\r\nThird paragraph.";
+        let out = read(input, &Limits::local()).unwrap();
+        assert_eq!(out.document.body.len(), 3);
+        let Block::Paragraph { content } = &out.document.body[0] else {
+            panic!("expected paragraph 1");
+        };
+        assert_eq!(
+            content[0],
+            Inline::Text {
+                text: "First paragraph.".to_owned()
+            }
+        );
+
+        let Block::Paragraph { content } = &out.document.body[1] else {
+            panic!("expected paragraph 2");
+        };
+        assert_eq!(
+            content[0],
+            Inline::Text {
+                text: "Second paragraph line 1".to_owned()
+            }
+        );
+        assert_eq!(content[1], Inline::SoftBreak {});
+        assert_eq!(
+            content[2],
+            Inline::Text {
+                text: "line 2.".to_owned()
+            }
+        );
+
+        let Block::Paragraph { content } = &out.document.body[2] else {
+            panic!("expected paragraph 3");
+        };
+        assert_eq!(
+            content[0],
+            Inline::Text {
+                text: "Third paragraph.".to_owned()
+            }
+        );
     }
 
     #[test]

@@ -7,6 +7,12 @@ use crate::{
     reader::common::{ReadOutput, nfc},
 };
 
+/// Hard limits for CSV parsing to prevent amplification attacks.
+pub const MAX_CSV_ROWS: usize = 1_048_576;
+pub const MAX_CSV_COLUMNS: usize = 16_384;
+pub const MAX_CSV_CELLS: usize = 10_000_000;
+pub const MAX_CSV_PADDED_CELLS: usize = 1_000_000;
+
 /// Errors that can occur when reading CSV into IR.
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
@@ -16,6 +22,14 @@ pub enum ReadError {
     InputTooLarge { actual: u64, limit: u64 },
     #[error("too many blocks (actual {actual}, limit {limit})")]
     TooManyBlocks { actual: u64, limit: u32 },
+    #[error("too many rows (actual {actual}, limit {limit})")]
+    TooManyRows { actual: usize, limit: usize },
+    #[error("too many columns (actual {actual}, limit {limit})")]
+    TooManyColumns { actual: usize, limit: usize },
+    #[error("too many cells (actual {actual}, limit {limit})")]
+    TooManyCells { actual: usize, limit: usize },
+    #[error("too many padded cells (actual {actual}, limit {limit})")]
+    TooManyPaddedCells { actual: usize, limit: usize },
     #[error("CSV parsing error: {0}")]
     Csv(String),
 }
@@ -45,14 +59,6 @@ fn detect_delimiter(bytes: &[u8]) -> u8 {
     }
     let index = (1..3).fold(0, |best, i| if counts[i] > counts[best] { i } else { best });
     b",;\t"[index]
-}
-
-/// Un-guards spreadsheet formula prefix (leading single quote before =, +, -, @, \t, \r).
-fn unguard(value: &str) -> &str {
-    match value.strip_prefix('\'') {
-        Some(rest) if rest.starts_with(['=', '+', '-', '@', '\t', '\r']) => rest,
-        _ => value,
-    }
 }
 
 /// Reads CSV data into an IR document containing a [`Block::Table`].
@@ -91,15 +97,28 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut max_cols = 0;
+    let mut actual_cells = 0usize;
 
     for result in reader.records() {
         let record = result.map_err(|e| ReadError::Csv(e.to_string()))?;
+        if record.len() > MAX_CSV_COLUMNS {
+            return Err(ReadError::TooManyColumns {
+                actual: record.len(),
+                limit: MAX_CSV_COLUMNS,
+            });
+        }
+        if rows.len() >= MAX_CSV_ROWS {
+            return Err(ReadError::TooManyRows {
+                actual: rows.len() + 1,
+                limit: MAX_CSV_ROWS,
+            });
+        }
+        actual_cells = actual_cells.saturating_add(record.len());
+        max_cols = max_cols.max(record.len());
         let mut row = Vec::with_capacity(record.len());
         for field in &record {
-            let clean = nfc(unguard(field));
-            row.push(clean);
+            row.push(nfc(field));
         }
-        max_cols = max_cols.max(row.len());
         rows.push(row);
     }
 
@@ -117,9 +136,28 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         });
     }
 
-    if limits.max_blocks < 1 {
+    let total_cells = rows.len().saturating_mul(max_cols);
+    let padded_cells = total_cells.saturating_sub(actual_cells);
+
+    if padded_cells > MAX_CSV_PADDED_CELLS {
+        return Err(ReadError::TooManyPaddedCells {
+            actual: padded_cells,
+            limit: MAX_CSV_PADDED_CELLS,
+        });
+    }
+
+    let cell_limit = (limits.max_blocks.saturating_sub(1) as usize).min(MAX_CSV_CELLS);
+    if total_cells > cell_limit {
+        return Err(ReadError::TooManyCells {
+            actual: total_cells,
+            limit: cell_limit,
+        });
+    }
+
+    let total_blocks = 1usize.saturating_add(total_cells);
+    if total_blocks > limits.max_blocks as usize {
         return Err(ReadError::TooManyBlocks {
-            actual: 1,
+            actual: total_blocks as u64,
             limit: limits.max_blocks,
         });
     }
@@ -218,57 +256,101 @@ mod tests {
     fn handles_semicolon_and_tab_delimiters() {
         let semicolon = b"Col1;Col2\nVal1;Val2\n";
         let out = read(semicolon, &Limits::local()).unwrap();
-        if let Block::Table { columns, .. } = &out.document.body[0] {
-            assert_eq!(columns.len(), 2);
-        }
+        let Block::Table { columns, .. } = &out.document.body[0] else {
+            panic!("expected Table block for semicolon delimiter");
+        };
+        assert_eq!(columns.len(), 2);
 
         let tab = b"Col1\tCol2\nVal1\tVal2\n";
         let out = read(tab, &Limits::local()).unwrap();
-        if let Block::Table { columns, .. } = &out.document.body[0] {
-            assert_eq!(columns.len(), 2);
-        }
+        let Block::Table { columns, .. } = &out.document.body[0] else {
+            panic!("expected Table block for tab delimiter");
+        };
+        assert_eq!(columns.len(), 2);
     }
 
     #[test]
-    fn unguards_formula_prefixes() {
+    fn preserves_leading_single_quote() {
         let data = b"Header\n'=1+2\n'@SUM(A1)\n";
         let out = read(data, &Limits::local()).unwrap();
-        if let Block::Table { body, .. } = &out.document.body[0] {
-            if let Block::Paragraph { content } = &body[0][0].blocks[0] {
-                assert_eq!(
-                    content[0],
-                    Inline::Text {
-                        text: "=1+2".to_owned()
-                    }
-                );
+        let Block::Table { body, .. } = &out.document.body[0] else {
+            panic!("expected Table block");
+        };
+        let Block::Paragraph { content } = &body[0][0].blocks[0] else {
+            panic!("expected paragraph in cell");
+        };
+        assert_eq!(
+            content[0],
+            Inline::Text {
+                text: "'=1+2".to_owned()
             }
-            if let Block::Paragraph { content } = &body[1][0].blocks[0] {
-                assert_eq!(
-                    content[0],
-                    Inline::Text {
-                        text: "@SUM(A1)".to_owned()
-                    }
-                );
+        );
+        let Block::Paragraph { content } = &body[1][0].blocks[0] else {
+            panic!("expected paragraph in cell");
+        };
+        assert_eq!(
+            content[0],
+            Inline::Text {
+                text: "'@SUM(A1)".to_owned()
             }
-        }
+        );
     }
 
     #[test]
     fn pads_jagged_rows() {
         let data = b"A,B,C\n1,2\n3,4,5,6\n";
         let out = read(data, &Limits::local()).unwrap();
-        if let Block::Table {
+        let Block::Table {
             columns,
             head,
             body,
             ..
         } = &out.document.body[0]
-        {
-            assert_eq!(columns.len(), 4);
-            assert_eq!(head[0].len(), 4);
-            assert_eq!(body[0].len(), 4);
-            assert_eq!(body[1].len(), 4);
+        else {
+            panic!("expected Table block");
+        };
+        assert_eq!(columns.len(), 4);
+        assert_eq!(head[0].len(), 4);
+        assert_eq!(body[0].len(), 4);
+        assert_eq!(body[1].len(), 4);
+    }
+
+    #[test]
+    fn rejects_50k_comma_amplification_row() {
+        // One row with 50,000 commas -> 50,001 columns
+        let comma_row = vec![b','; 50_000];
+        let err = read(&comma_row, &Limits::local()).unwrap_err();
+        assert!(matches!(
+            err,
+            ReadError::TooManyColumns {
+                actual: 50_001,
+                limit: MAX_CSV_COLUMNS
+            }
+        ));
+    }
+
+    #[test]
+    fn enforces_padded_cells_limit() {
+        let mut data = String::new();
+        data.push_str(&"a,".repeat(999));
+        data.push_str("a\n");
+        for _ in 0..1500 {
+            data.push_str("b\n");
         }
+        let err = read(data.as_bytes(), &Limits::local()).unwrap_err();
+        assert!(matches!(err, ReadError::TooManyPaddedCells { .. }));
+    }
+
+    #[test]
+    fn enforces_max_blocks_limit() {
+        let mut limits = Limits::local();
+        limits.max_blocks = 5; // Table (1) + 4 cells = 5 max blocks
+        let data = b"A,B\n1,2\n3,4\n"; // 2x3 = 6 cells -> 7 blocks
+        let err = read(data, &limits).unwrap_err();
+        assert!(matches!(
+            err,
+            ReadError::TooManyBlocks { .. } | ReadError::TooManyCells { .. }
+        ));
     }
 
     #[test]
