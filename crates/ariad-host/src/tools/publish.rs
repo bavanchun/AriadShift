@@ -501,6 +501,7 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.forms_flatten" => "flattened".to_owned(),
         "pdf.forms_detect" => "detected-fields".to_owned(),
         "pdf.forms_export" => "form-data".to_owned(),
+        "pdf.tables_to_csv" => "table".to_owned(),
         "pdf.decrypt" => "decrypted".to_owned(),
         "pdf.encrypt" => "encrypted".to_owned(),
         "pdf.permissions" => "permissions".to_owned(),
@@ -551,6 +552,7 @@ pub fn default_multi_artifact_name(
         "pdf.split" => "part".to_owned(),
         "pdf.extract_images" => "image".to_owned(),
         "pdf.to_images" | "pdf.render" => "page".to_owned(),
+        "pdf.tables_to_csv" => "table".to_owned(),
         _ => default_tool_suffix(tool_id),
     };
     format!("{stem}.{label}-{index_1_based:03}.{clean_ext}")
