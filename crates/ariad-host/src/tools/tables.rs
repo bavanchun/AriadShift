@@ -10,7 +10,7 @@ use std::{
 };
 
 use ariad_core::{
-    ir::{Block, ColumnSpec, Document, TableCell},
+    ir::{Block, Document},
     limits::Limits,
     protocol::{Input, Output, PROTOCOL, Request},
     tools::ToolSpec,
@@ -25,13 +25,10 @@ use super::{
 };
 use crate::workspace::Workspace;
 
-/// Representation of an extracted table from document IR.
-#[derive(Clone, Debug)]
-pub struct ExtractedTable {
-    pub columns: Vec<ColumnSpec>,
-    pub head: Vec<Vec<TableCell>>,
-    pub body: Vec<Vec<TableCell>>,
-}
+/// Maximum number of tables extracted into CSV files by `pdf.tables_to_csv`.
+pub const MAX_TABLES_COUNT: usize = 255;
+/// Maximum cumulative CSV bytes emitted by `pdf.tables_to_csv` (50 MiB).
+pub const MAX_TOTAL_CSV_BYTES: usize = 50 * 1024 * 1024;
 
 /// Checks engine prerequisites before staging inputs or executing.
 pub fn preflight(engine_program: Option<&Path>) -> Result<(), ToolError> {
@@ -45,48 +42,55 @@ pub fn preflight(engine_program: Option<&Path>) -> Result<(), ToolError> {
     Ok(())
 }
 
-/// Recursively extracts all table blocks from the IR document body.
-pub fn extract_tables(blocks: &[Block], tables: &mut Vec<ExtractedTable>) {
-    for block in blocks {
-        if let Block::Table {
-            columns,
-            head,
-            body,
-            ..
-        } = block
-        {
-            tables.push(ExtractedTable {
-                columns: columns.clone(),
-                head: head.clone(),
-                body: body.clone(),
-            });
-        }
-    }
-}
-
 /// Converts tables found in an IR document into CSV artifact files inside the workspace.
 pub fn tables_to_csv_artifacts(
     document: &Document,
     workspace: &Workspace,
 ) -> Result<Vec<(PathBuf, String)>, ToolError> {
-    let mut tables = Vec::new();
-    extract_tables(&document.body, &mut tables);
+    let tables = ariad_core::writer::csv::find_tables(&document.body);
     if tables.is_empty() {
         return Err(ToolError::EngineFailure(
             "no tables found in document".into(),
         ));
     }
 
-    let mut artifacts = Vec::with_capacity(tables.len());
-    for (idx, table) in tables.iter().enumerate() {
-        let csv_text =
-            ariad_core::writer::csv::table_to_csv(&table.columns, &table.head, &table.body);
-        let file_name = format!("table-{:03}.csv", idx + 1);
-        let path = workspace.output_dir().join(&file_name);
-        fs::write(&path, csv_text.as_bytes())
-            .map_err(|e| ToolError::OutputIo(format!("failed to write CSV artifact: {e}")))?;
-        artifacts.push((path, "csv".to_owned()));
+    let capped_tables = if tables.len() > MAX_TABLES_COUNT {
+        &tables[..MAX_TABLES_COUNT]
+    } else {
+        &tables[..]
+    };
+
+    let mut artifacts = Vec::with_capacity(capped_tables.len());
+    let mut total_bytes: usize = 0;
+
+    for (idx, table_block) in capped_tables.iter().enumerate() {
+        if let Block::Table {
+            columns,
+            head,
+            body,
+            ..
+        } = table_block
+        {
+            let csv_text = ariad_core::writer::csv::table_to_csv(columns, head, body);
+            total_bytes = total_bytes.saturating_add(csv_text.len());
+            if total_bytes > MAX_TOTAL_CSV_BYTES {
+                return Err(ToolError::LimitExceeded);
+            }
+
+            let file_name = format!("table-{:03}.csv", idx + 1);
+            let path = workspace.output_dir().join(&file_name);
+            fs::write(&path, csv_text.as_bytes())
+                .map_err(|e| ToolError::OutputIo(format!("failed to write CSV artifact: {e}")))?;
+            artifacts.push((path, "csv".to_owned()));
+        }
     }
+
+    if artifacts.is_empty() {
+        return Err(ToolError::EngineFailure(
+            "no tables found in document".into(),
+        ));
+    }
+
     Ok(artifacts)
 }
 
@@ -160,23 +164,7 @@ pub(super) fn execute(
         .first()
         .ok_or_else(|| ToolError::Usage("pdf.tables_to_csv requires one input file".into()))?;
 
-    let doc = match extract_document_with_docling(
-        input_path,
-        workspace,
-        limits,
-        engine_program,
-        cancel,
-    ) {
-        Ok(doc) => doc,
-        Err(docling_err) => {
-            // Fallback: try reading with core pdf reader to check if any tables exist
-            let bytes = fs::read(input_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
-            match ariad_core::reader::pdf::read(&bytes, limits) {
-                Ok(out) => out.document,
-                Err(_) => return Err(docling_err),
-            }
-        }
-    };
+    let doc = extract_document_with_docling(input_path, workspace, limits, engine_program, cancel)?;
 
     let artifacts = tables_to_csv_artifacts(&doc, workspace)?;
     Ok(RawToolExecution {
@@ -251,5 +239,30 @@ mod tests {
         let content = fs::read_to_string(&artifacts[0].0).unwrap();
         assert!(content.contains("'=2+2"));
         assert!(content.contains("'@bad_macro"));
+    }
+
+    #[test]
+    fn tables_to_csv_finds_nested_tables_inside_quotes() {
+        let ws = Workspace::new().unwrap();
+        let table_block = Block::Table {
+            caption: None,
+            columns: vec![ColumnSpec {
+                align: Alignment::Default,
+            }],
+            head: vec![],
+            body: vec![vec![make_cell("Nested Table Cell")]],
+            footnotes: Vec::new(),
+        };
+        let doc = Document {
+            body: vec![Block::Quote {
+                blocks: vec![table_block],
+            }],
+            ..Default::default()
+        };
+        let artifacts =
+            tables_to_csv_artifacts(&doc, &ws).expect("should find nested table in quote");
+        assert_eq!(artifacts.len(), 1);
+        let content = fs::read_to_string(&artifacts[0].0).unwrap();
+        assert!(content.contains("Nested Table Cell"));
     }
 }

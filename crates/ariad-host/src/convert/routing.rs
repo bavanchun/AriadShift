@@ -42,6 +42,18 @@ pub(crate) fn select(
         .edges
         .iter()
         .any(|edge| edge.from == from && edge.to == to && edge.to != Format::AriadIrJson);
+
+    // Decision D4: PDF -> XLSX and PDF -> CSV default to Docling tables reader when available.
+    let target_needs_tables = from == Format::Pdf && matches!(to, Format::Xlsx | Format::Csv);
+    if reader.is_none() && target_needs_tables {
+        let available =
+            engines::availability_of(invocation, &[engines::docling::ENGINE_ID], cancel.clone())
+                .map_err(map_run_error)?;
+        if available.is_available(engines::docling::ENGINE_ID) {
+            reader = Some(engines::docling::ENGINE_ID.to_owned());
+        }
+    }
+
     if reader.is_none()
         && from == Format::Pdf
         && !direct_non_ir_route
