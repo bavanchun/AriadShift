@@ -88,16 +88,15 @@ def _record_file_matches(item: metadata.PackagePath, site_root: Path | None = No
         return False
     if not path.is_file() or path.is_symlink():
         return False
-    if item.hash is None:
-        return True
-    data = path.read_bytes()
-    if item.size is not None and len(data) != item.size:
+    if item.hash is None or item.hash.mode != "sha256":
         return False
-    if item.hash.mode == "sha256":
-        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
-        if item.hash.value != digest:
-            return False
-    return True
+    if item.size is None:
+        return False
+    data = path.read_bytes()
+    if len(data) != item.size:
+        return False
+    digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+    return item.hash.value == digest
 
 
 def check_distribution(
@@ -108,7 +107,7 @@ def check_distribution(
     """Audits one installed distribution for metadata licence, RECORD integrity, native code, and notices."""
     findings: list[Finding] = []
     name = canonical(dist.metadata.get("Name", ""))
-    if not name or name == "ariad-sign":
+    if not name or name in ("ariad-sign", "pip", "setuptools", "wheel"):
         return findings
 
     # 1. Check against reviewed inventory
@@ -141,19 +140,29 @@ def check_distribution(
         if v is not None:
             findings.append(Finding(name, spdx, f"licence not allowed: {v}"))
 
-    # 3. Check for licence notice file in dist-info
+    # 3. Check for non-empty licence notice file in dist-info
     files = dist.files or []
     dist_info_files = [f for f in files if ".dist-info" in str(f)]
-    notice_found = any(
-        any(
+    notice_files = [
+        f
+        for f in dist_info_files
+        if any(
             part.upper().startswith(("LICEN", "COPYING", "NOTICE"))
             for part in Path(str(f)).parts
         )
-        for f in dist_info_files
-    )
-    if not notice_found:
+    ]
+    has_nonempty_notice = False
+    for nf in notice_files:
+        try:
+            p = Path(str(nf.locate())) if site_root is None else site_root / str(nf)
+            if p.is_file() and p.stat().st_size > 0:
+                has_nonempty_notice = True
+                break
+        except Exception:
+            pass
+    if not has_nonempty_notice:
         findings.append(
-            Finding(name, spdx or "unknown", "missing license or notice file in .dist-info")
+            Finding(name, spdx or "unknown", "missing or empty license or notice file in .dist-info")
         )
 
     # 4. Check RECORD file existence
@@ -161,7 +170,7 @@ def check_distribution(
     if record_file is None:
         findings.append(Finding(name, spdx or "unknown", "missing RECORD file in .dist-info"))
 
-    # 5. Check native components and verify RECORD SHA-256 and size
+    # 5. Check native components, pattern approval, and verify RECORD SHA-256 and size
     is_native_approved = rev.get("native", False)
     native_files = [
         f for f in files if str(f).endswith((".so", ".pyd", ".dylib", ".dll"))
@@ -171,8 +180,19 @@ def check_distribution(
             Finding(name, spdx or "unknown", "unexpected native binary object in non-native package")
         )
 
-    # Check RECORD SHA-256 and size matching for all native files
+    from fnmatch import fnmatchcase
+    approved_patterns = rev.get("native_files", [])
     for nf in native_files:
+        nf_str = str(nf).replace("\\", "/")
+        if is_native_approved and not any(fnmatchcase(nf_str, pat) for pat in approved_patterns):
+            findings.append(
+                Finding(
+                    name,
+                    spdx or "unknown",
+                    f"unapproved native object '{nf_str}' in package '{name}'",
+                )
+            )
+
         if not _record_file_matches(nf, site_root):
             findings.append(
                 Finding(
@@ -206,9 +226,13 @@ def check_environment(
         seen.add(name)
         findings.extend(check_distribution(dist, reviewed_inv, site_root))
 
+    DEV_PACKAGES = {"pytest", "ruff", "iniconfig", "pluggy", "pygments", "packaging"}
+
     # Also verify that all non-Windows reviewed dependencies are present
     for req_name, req_info in reviewed_inv.items():
         if req_name not in seen and req_name not in ("colorama", "tzdata"):
+            if site_root is not None and req_name in DEV_PACKAGES:
+                continue
             findings.append(
                 Finding(
                     req_name,

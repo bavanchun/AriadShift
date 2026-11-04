@@ -14,8 +14,3 @@ version = "0.1.0"
 description = "PDFium: PDF rendering, image extraction and text layout"
 manifest = "https://github.com/bavanchun/AriadShift/releases/download/pack-{name}-v{version}/pack.toml"
 
-[[packs]]
-name = "sign"
-version = "0.1.0"
-description = "Digital signatures: PAdES signing, verification, timestamping, and visual appearance"
-manifest = "https://github.com/bavanchun/AriadShift/releases/download/pack-{name}-v{version}/pack.toml"

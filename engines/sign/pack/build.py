@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,15 @@ DESCRIPTION = "Digital signatures: PAdES signing, verification, timestamping, an
 REQUIRES_ASHIFT = ">=0.2.0, <2.0.0"
 ENGINE_PROTOCOL = "ariad-engine/2"
 VERSION = "0.1.0"
-NOTICES = ["notices/SIGN-PACK.txt", "notices/ariadshift-LICENSE"]
+NOTICES = [
+    "notices/SIGN-PACK.txt",
+    "notices/AriadShift-LICENSE",
+    "notices/AriadShift-NOTICE",
+    "notices/Python-LICENSE.txt",
+    "notices/OpenSSL-LICENSE.txt",
+    "notices/libxml2-libxslt-LICENSES.txt",
+    "notices/libyaml-LICENSE.txt",
+]
 
 PACK_DIR = Path(__file__).resolve().parent
 SIGN_ENGINE_ROOT = PACK_DIR.parent
@@ -189,12 +198,13 @@ def build_pack_target(target: str, out_dir: Path, ashift_bin: Path | None = None
         reqs_file = stage / "requirements.txt"
         cmd_export = [
             "uv", "export",
-            "--package", "ariad-sign",
+            "--project", str(SIGN_ENGINE_ROOT),
             "--frozen",
             "--no-dev",
-            "--no-emit-workspace",
+            "--no-emit-project",
             "--no-header",
             "--format", "requirements.txt",
+            "--hashes",
             "--output-file", str(reqs_file),
         ]
         subprocess.run(cmd_export, cwd=REPOSITORY, check=True)
@@ -218,7 +228,7 @@ def build_pack_target(target: str, out_dir: Path, ashift_bin: Path | None = None
         dist_dir = stage / "dist"
         cmd_build = [
             "uv", "build",
-            "--package", "ariad-sign",
+            "--project", str(SIGN_ENGINE_ROOT),
             "--wheel",
             "--out-dir", str(dist_dir),
         ]
@@ -244,19 +254,39 @@ def build_pack_target(target: str, out_dir: Path, ashift_bin: Path | None = None
         # 6. Notices
         notices_dir = stage / "notices"
         notices_dir.mkdir(parents=True, exist_ok=True)
-        (notices_dir / "SIGN-PACK.txt").write_text(
-            "AriadShift Sign Engine Pack\n"
-            "Copyright (c) 2026 AriadShift Authors\n"
-            "Licensed under MIT and third-party permissive licenses.\n",
-            encoding="utf-8",
-        )
+        pack_notices = PACK_DIR / "notices"
+        if pack_notices.is_dir():
+            for notice_file in sorted(pack_notices.iterdir()):
+                if notice_file.is_file():
+                    shutil.copy2(notice_file, notices_dir / notice_file.name)
+
         repo_lic = REPOSITORY / "LICENSE"
         if repo_lic.is_file():
-            shutil.copy2(repo_lic, notices_dir / "ariadshift-LICENSE")
+            shutil.copy2(repo_lic, notices_dir / "AriadShift-LICENSE")
+        repo_notice = REPOSITORY / "NOTICE"
+        if repo_notice.is_file():
+            shutil.copy2(repo_notice, notices_dir / "AriadShift-NOTICE")
         for candidate in (py_env / "lib/python3.14/LICENSE.txt", py_env / "LICENSE.txt"):
             if candidate.is_file():
                 shutil.copy2(candidate, notices_dir / "Python-LICENSE.txt")
                 break
+
+        packages_notices_dir = notices_dir / "packages"
+        packages_notices_dir.mkdir(parents=True, exist_ok=True)
+        for dist in md.distributions(path=[str(site)]):
+            dname = dist.metadata.get("Name", "")
+            if not dname or dname == "ariad-sign":
+                continue
+            dist_notices = packages_notices_dir / dname
+            for item in dist.files or []:
+                s_item = str(item)
+                if ".dist-info" in s_item:
+                    p = Path(s_item)
+                    if any(part.upper().startswith(("LICEN", "COPYING", "NOTICE")) for part in p.parts):
+                        src_file = site / s_item
+                        if src_file.is_file() and src_file.stat().st_size > 0:
+                            dist_notices.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(src_file, dist_notices / p.name)
 
         # 7. Create tar.zst archive
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -309,6 +339,7 @@ def write_single_target_manifest(ashift_bin: Path | None, out_dir: Path, record:
             # Add general header fields
             manifest_text = manifest_path.read_text(encoding="utf-8")
             if "description =" not in manifest_text:
+                notices_list = ", ".join(f'"{n}"' for n in NOTICES)
                 header = (
                     f'schema = "ariad-pack/1"\n'
                     f'name = "{PACK_NAME}"\n'
@@ -317,7 +348,7 @@ def write_single_target_manifest(ashift_bin: Path | None, out_dir: Path, record:
                     f'license = "{record.license}"\n'
                     f'requires_ashift = "{REQUIRES_ASHIFT}"\n'
                     f'engine_protocol = "{ENGINE_PROTOCOL}"\n'
-                    f'notices = ["notices/SIGN-PACK.txt", "notices/ariadshift-LICENSE"]\n\n'
+                    f'notices = [{notices_list}]\n\n'
                 )
                 manifest_path.write_text(header + manifest_text, encoding="utf-8")
             return
@@ -335,6 +366,7 @@ def write_single_target_manifest(ashift_bin: Path | None, out_dir: Path, record:
             entries_count += 1
             unpacked_size += m.size
 
+    notices_list = ", ".join(f'"{n}"' for n in NOTICES)
     manifest_content = f'''schema = "ariad-pack/1"
 name = "{PACK_NAME}"
 version = "{record.version}"
@@ -342,7 +374,7 @@ description = "{DESCRIPTION}"
 license = "{record.license}"
 requires_ashift = "{REQUIRES_ASHIFT}"
 engine_protocol = "{ENGINE_PROTOCOL}"
-notices = ["notices/SIGN-PACK.txt", "notices/ariadshift-LICENSE"]
+notices = [{notices_list}]
 
 [[targets]]
 triple = "{record.triple}"
@@ -360,6 +392,66 @@ unpacked_size = {unpacked_size}
 entries = {entries_count}
 '''
     manifest_path.write_text(manifest_content, encoding="utf-8")
+
+
+def merge_manifests(out_dir: Path) -> Path:
+    manifest_path = out_dir / "pack.toml"
+    archives = sorted(out_dir.glob("sign-*-engine.tar.zst"))
+    if not archives:
+        raise ValueError(f"No sign engine archives found in {out_dir}")
+
+    notices_list = ", ".join(f'"{n}"' for n in NOTICES)
+    license_str = "MIT AND Apache-2.0 AND BSD-3-Clause AND BSD-2-Clause AND PSF-2.0 AND MPL-2.0 AND MIT-0"
+    lines = [
+        'schema = "ariad-pack/1"',
+        f'name = "{PACK_NAME}"',
+        f'version = "{VERSION}"',
+        f'description = "{DESCRIPTION}"',
+        f'license = "{license_str}"',
+        f'requires_ashift = "{REQUIRES_ASHIFT}"',
+        f'engine_protocol = "{ENGINE_PROTOCOL}"',
+        f'notices = [{notices_list}]',
+        "",
+    ]
+    for archive in archives:
+        m = re.search(r"sign-[^-]+-(.+)-engine\.tar\.zst", archive.name)
+        if not m:
+            continue
+        triple = m.group(1)
+        execs = archive_executables(archive)
+        execs_str = ", ".join(f'"{e}"' for e in execs)
+        entry_str = ", ".join(f'"{e}"' for e in entrypoint_for_target(triple))
+
+        entries_count = 0
+        unpacked_size = 0
+        with tarfile.open(archive, "r:zst") as tar:
+            for member in tar.getmembers():
+                entries_count += 1
+                unpacked_size += member.size
+        size = archive.stat().st_size
+        sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
+
+        lines.extend([
+            "[[targets]]",
+            f'triple = "{triple}"',
+            f"entrypoint = [{entry_str}]",
+            f"executables = [{execs_str}]",
+            "",
+            "[[targets.components]]",
+            'name = "engine"',
+            f'url = "{archive.name}"',
+            f'sha256 = "{sha256}"',
+            f"size = {size}",
+            'unpack = "tar.zst"',
+            'dest = "."',
+            f"unpacked_size = {unpacked_size}",
+            f"entries = {entries_count}",
+            "",
+        ])
+    manifest_content = "\n".join(lines)
+    manifest_path.write_text(manifest_content, encoding="utf-8")
+    print(f"Merged manifest written to {manifest_path} for {len(archives)} target(s)")
+    return manifest_path
 
 
 def run_conformance(pack_dir: Path, target: str | None = None) -> bool:
@@ -427,12 +519,18 @@ def main() -> int:
     conf_p.add_argument("--out", type=Path, required=True, help="Pack directory to verify")
     conf_p.add_argument("--target", type=str, default=None, help="Target triple to verify")
 
+    merge_p = subparsers.add_parser("merge", help="Merge multi-target pack manifest")
+    merge_p.add_argument("--out", type=Path, required=True, help="Pack directory with target archives")
+
     args = parser.parse_args()
     if args.command == "build":
         build_pack_target(args.target, args.out, args.ashift)
         return 0
     elif args.command == "conformance":
         return 0 if run_conformance(args.out, args.target) else 1
+    elif args.command == "merge":
+        merge_manifests(args.out)
+        return 0
     return 1
 
 
