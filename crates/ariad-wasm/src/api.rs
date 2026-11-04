@@ -1093,7 +1093,9 @@ mod tests {
                 "epub",
                 "html",
                 "markdown",
-                "pdf"
+                "pdf",
+                "rtf",
+                "txt"
             ]))
         );
         assert!(
@@ -1190,7 +1192,10 @@ mod tests {
                 Format::Docx,
                 Format::Epub,
                 Format::Markdown,
-                Format::Pdf
+                Format::Odt,
+                Format::Pdf,
+                Format::Rtf,
+                Format::Txt,
             ]
         );
     }

@@ -343,8 +343,23 @@ pub fn write_pandoc(bytes: &[u8], title: Option<String>) -> Result<JsValue, JsVa
 
 /// Stamps only package dates; Pandoc stays a separate aggregated module.
 #[wasm_bindgen(js_name = stampPackage)]
-pub fn stamp_package(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>, JsValue> {
-    ariad_core::package_meta::stamp_bytes(bytes, epub, timestamp).map_err(|e| {
+pub fn stamp_package(bytes: &[u8], target: &JsValue, timestamp: &str) -> Result<Vec<u8>, JsValue> {
+    let kind = if let Some(b) = target.as_bool() {
+        if b {
+            ariad_core::package_meta::PackageKind::Epub
+        } else {
+            ariad_core::package_meta::PackageKind::Docx
+        }
+    } else if let Some(s) = target.as_string() {
+        match s.as_str() {
+            "epub" => ariad_core::package_meta::PackageKind::Epub,
+            "odt" => ariad_core::package_meta::PackageKind::Odt,
+            _ => ariad_core::package_meta::PackageKind::Docx,
+        }
+    } else {
+        ariad_core::package_meta::PackageKind::Docx
+    };
+    ariad_core::package_meta::stamp_bytes_kind(bytes, kind, timestamp).map_err(|e| {
         to_js_error(&api::ApiError::from(
             ariad_core::pipeline::PipelineError::InvalidInput {
                 reason: e.to_string(),
