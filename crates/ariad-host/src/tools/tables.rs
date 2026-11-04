@@ -23,7 +23,7 @@ use super::{
     run::{ToolError, ToolEvent},
     secrets::SecretScrubber,
 };
-use crate::workspace::Workspace;
+use crate::{convert::ConvertWarning, workspace::Workspace};
 
 /// Maximum number of tables extracted into CSV files by `pdf.tables_to_csv`.
 pub const MAX_TABLES_COUNT: usize = 255;
@@ -42,11 +42,14 @@ pub fn preflight(engine_program: Option<&Path>) -> Result<(), ToolError> {
     Ok(())
 }
 
+/// Output artifact tuple and warnings produced by table extraction.
+pub type TablesArtifacts = (Vec<(PathBuf, String)>, Vec<ConvertWarning>);
+
 /// Converts tables found in an IR document into CSV artifact files inside the workspace.
 pub fn tables_to_csv_artifacts(
     document: &Document,
     workspace: &Workspace,
-) -> Result<Vec<(PathBuf, String)>, ToolError> {
+) -> Result<TablesArtifacts, ToolError> {
     let tables = ariad_core::writer::csv::find_tables(&document.body);
     if tables.is_empty() {
         return Err(ToolError::EngineFailure(
@@ -54,7 +57,16 @@ pub fn tables_to_csv_artifacts(
         ));
     }
 
+    let mut warnings = Vec::new();
     let capped_tables = if tables.len() > MAX_TABLES_COUNT {
+        warnings.push(ConvertWarning {
+            code: "unsupported_node".to_string(),
+            message: format!(
+                "document has {} tables; capped at maximum {} tables",
+                tables.len(),
+                MAX_TABLES_COUNT
+            ),
+        });
         &tables[..MAX_TABLES_COUNT]
     } else {
         &tables[..]
@@ -71,7 +83,14 @@ pub fn tables_to_csv_artifacts(
             ..
         } = table_block
         {
-            let csv_text = ariad_core::writer::csv::table_to_csv(columns, head, body);
+            let mut core_warnings = Vec::new();
+            let csv_text = ariad_core::writer::csv::table_to_csv_with_warnings(
+                columns,
+                head,
+                body,
+                &mut core_warnings,
+            );
+            warnings.extend(core_warnings.iter().map(crate::convert::safe_warning));
             total_bytes = total_bytes.saturating_add(csv_text.len());
             if total_bytes > MAX_TOTAL_CSV_BYTES {
                 return Err(ToolError::LimitExceeded);
@@ -91,7 +110,7 @@ pub fn tables_to_csv_artifacts(
         ));
     }
 
-    Ok(artifacts)
+    Ok((artifacts, warnings))
 }
 
 fn extract_document_with_docling(
@@ -166,10 +185,10 @@ pub(super) fn execute(
 
     let doc = extract_document_with_docling(input_path, workspace, limits, engine_program, cancel)?;
 
-    let artifacts = tables_to_csv_artifacts(&doc, workspace)?;
+    let (artifacts, warnings) = tables_to_csv_artifacts(&doc, workspace)?;
     Ok(RawToolExecution {
         artifacts,
-        warnings: Vec::new(),
+        warnings,
         metrics: BTreeMap::new(),
         inline_json: None,
     })
@@ -234,8 +253,10 @@ mod tests {
             body: vec![table_block],
             ..Default::default()
         };
-        let artifacts = tables_to_csv_artifacts(&doc, &ws).expect("should succeed with tables");
+        let (artifacts, warnings) =
+            tables_to_csv_artifacts(&doc, &ws).expect("should succeed with tables");
         assert_eq!(artifacts.len(), 1);
+        assert!(warnings.is_empty());
         let content = fs::read_to_string(&artifacts[0].0).unwrap();
         assert!(content.contains("'=2+2"));
         assert!(content.contains("'@bad_macro"));
@@ -259,10 +280,38 @@ mod tests {
             }],
             ..Default::default()
         };
-        let artifacts =
+        let (artifacts, _warnings) =
             tables_to_csv_artifacts(&doc, &ws).expect("should find nested table in quote");
         assert_eq!(artifacts.len(), 1);
         let content = fs::read_to_string(&artifacts[0].0).unwrap();
         assert!(content.contains("Nested Table Cell"));
+    }
+
+    #[test]
+    fn tables_to_csv_caps_at_255_and_emits_warning() {
+        let ws = Workspace::new().unwrap();
+        let tables: Vec<Block> = (0..260)
+            .map(|i| Block::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![make_cell(&format!("cell {i}"))]],
+                footnotes: Vec::new(),
+            })
+            .collect();
+        let doc = Document {
+            body: tables,
+            ..Default::default()
+        };
+        let (artifacts, warnings) =
+            tables_to_csv_artifacts(&doc, &ws).expect("should succeed and cap at 255");
+        assert_eq!(artifacts.len(), 255);
+        assert!(warnings.iter().any(|w| {
+            w.code == "unsupported_node"
+                && w.message
+                    .contains("document has 260 tables; capped at maximum 255 tables")
+        }));
     }
 }

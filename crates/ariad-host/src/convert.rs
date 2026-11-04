@@ -1017,7 +1017,11 @@ where
                 let Stage::Ir(document) = stage else {
                     return Err(ConvertError::Failed);
                 };
-                let out = ariad_core::writer::xlsx::write(&document);
+                let out =
+                    ariad_core::writer::xlsx::write(&document).map_err(|_| ConvertError::Failed)?;
+                if out.bytes.is_empty() {
+                    return Err(ConvertError::Failed);
+                }
                 self.warnings.extend(out.warnings.iter().map(safe_warning));
                 let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
                 let path = workspace.output_dir().join("document.xlsx");

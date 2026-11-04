@@ -624,8 +624,9 @@ fn run_tool_inner(
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
-    let is_ocr_composite =
-        effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE;
+    let is_ocr_composite = effective_engine
+        == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
+        && spec.group == ariad_core::tools::ToolGroup::Ocr;
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
 
     if spec.id == "pdf.ocr"
