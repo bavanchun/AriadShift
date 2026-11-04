@@ -170,12 +170,12 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 
 ### `pdf.tables_to_csv`
 
-`pdf.tables_to_csv` extracts every table in an input PDF into its own CSV file (`table_1.csv`, `table_2.csv`, ...).
+`pdf.tables_to_csv` extracts every table in an input PDF into its own CSV file (`<stem>.table-001.csv`, `<stem>.table-002.csv`, ...).
 
 - **Parameters**: Takes no mandatory parameters (`{}`) and rejects unknown fields (`additionalProperties: false`).
 - **Outputs**: Emits one or more CSV files with RFC 4180 escaping and formula-injection guarding (`=`, `+`, `-`, `@`, `\t`, `\r` prefixed with `'`). Capped at 255 tables and 50 MiB total CSV output.
 - **Runtime**: `local` only (executed host-side via `ariad-host` using Docling table detection).
-- **Error handling**: If the document contains no tables or Docling table detection finds no tables, the tool returns a `no_tables_found` error (exit code `3`). If Docling execution fails, the Docling error is surfaced directly without fallback to the native reader.
+- **Error handling**: If the document contains no tables or Docling table detection finds no tables, execution fails before publishing with exit code `1` (`engine_failure`, error message `"no tables found in document"`). If Docling execution fails, the Docling error is surfaced directly without fallback to the native reader.
 
 Before PDFium opens a document, the engine checks page image dimensions and data against the job's limits. Inline images may use image masks without a color space, lossless ASCIIHex, ASCII85, Flate, RunLength or LZW filters, and CCITT or JPEG as the final filter. JPEG frame dimensions are checked against the image dictionary. Color-space aliases and filters the engine cannot safely inspect still cause `limit_exceeded` before the page is opened. Page budgets include repeated form invocations, inline image data and Type3 glyph uses; unusually complex pages may exceed these limits.
 
