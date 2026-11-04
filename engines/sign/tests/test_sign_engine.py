@@ -285,7 +285,11 @@ def test_sign_encrypted_input_rejected(tmp_path: Path):
     if not plaintext_pdf.is_file():
         pytest.skip("plaintext fixture not found")
 
+    import shutil
     import subprocess
+
+    if not shutil.which("qpdf"):
+        pytest.skip("qpdf command not available")
 
     encrypted_pdf = tmp_path / "encrypted.pdf"
     res_qpdf = subprocess.run(

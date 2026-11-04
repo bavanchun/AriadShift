@@ -38,6 +38,9 @@ jobs:
         with:
           tool: just@1.58.0
 
+      - name: Install system tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qpdf
+
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
