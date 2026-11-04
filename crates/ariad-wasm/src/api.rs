@@ -282,6 +282,25 @@ pub fn convert(
     limits.validate().map_err(PipelineError::from)?;
 
     let route = plan_route(from, to, profile)?;
+    if route.steps.len() == 1
+        && route.steps[0].engine == "ariad-pdf"
+        && from == Format::Cbz
+        && to == Format::Pdf
+    {
+        let tool_ctx = ariad_pdf::ToolCtx::default();
+        let pdf_bytes = ariad_pdf::cbz::cbz_to_pdf(bytes, &limits, &tool_ctx)
+            .map_err(|err| ApiError::new("failed", err.to_string()))?;
+        return Ok(Conversion {
+            bytes: pdf_bytes,
+            meta: ConversionMeta {
+                format: to,
+                media_type: to.media_type(),
+                extension: output_extension(to),
+                route: route.steps,
+                warnings: Vec::new(),
+            },
+        });
+    }
     let converted = pipeline::execute(
         bytes,
         &route

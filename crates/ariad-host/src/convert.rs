@@ -110,10 +110,13 @@ pub fn executor_edges() -> Vec<(Format, Format, &'static str)> {
     let native = engines::NATIVE_ROUTES
         .iter()
         .map(|&(from, to)| (from, to, IN_PROCESS_ENGINE));
+    let ariad_pdf = engines::ARIAD_PDF_ROUTES
+        .iter()
+        .map(|&(from, to)| (from, to, engines::IN_PROCESS_PDF_ENGINE));
     let external = engines::REGISTRY
         .iter()
         .flat_map(|spec| spec.routes.iter().map(|&(from, to)| (from, to, spec.id)));
-    native.chain(external).collect()
+    native.chain(ariad_pdf).chain(external).collect()
 }
 
 /// Detects a user-facing format from a path's extension.
@@ -839,6 +842,21 @@ pub fn read_document_to_ir(
             }
             parsed.document
         }
+        Format::Txt | Format::Csv | Format::Svg | Format::Eml | Format::Msg => {
+            let bytes = read_bounded_file(path, limits.max_input_bytes)?;
+            let parsed =
+                ariad_core::pipeline::read(format, &bytes, limits).map_err(|err| match err {
+                    ariad_core::pipeline::PipelineError::LimitExceeded { .. }
+                    | ariad_core::pipeline::PipelineError::InvalidLimits { .. } => {
+                        ConvertError::LimitExceeded
+                    }
+                    _ => ConvertError::InputIo,
+                })?;
+            for w in &parsed.warnings {
+                warnings.push(sanitize_warning(&w.code, &w.message));
+            }
+            parsed.document
+        }
         _ => {
             return Err(ConvertError::UnsupportedRoute {
                 detail: Some(format!(
@@ -917,8 +935,40 @@ where
         };
         if step.engine == IN_PROCESS_ENGINE {
             self.native_step(stage, step)
+        } else if step.engine == engines::IN_PROCESS_PDF_ENGINE {
+            self.ariad_pdf_step(stage, step)
         } else {
             self.engine_step(stage, step)
+        }
+    }
+
+    fn ariad_pdf_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
+        match (step.from, step.to) {
+            (Format::Cbz, Format::Pdf) => {
+                let path = match &stage {
+                    Stage::Source => self.request.input.as_path(),
+                    Stage::File { path, .. } => path.as_path(),
+                    Stage::Ir(_) => return Err(ConvertError::Failed),
+                };
+                let bytes = read_bounded_file(path, self.limits.max_input_bytes)?;
+                let tool_ctx = ariad_pdf::ToolCtx::default();
+                let pdf_bytes = ariad_pdf::cbz::cbz_to_pdf(&bytes, self.limits, &tool_ctx)
+                    .map_err(|_| ConvertError::Failed)?;
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let path = workspace.output_dir().join("document.pdf");
+                fs::write(&path, &pdf_bytes).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
+            _ => Err(ConvertError::UnsupportedRoute {
+                detail: Some(format!(
+                    "unsupported ariad-pdf step {} -> {}",
+                    step.from.user_name(),
+                    step.to.user_name()
+                )),
+            }),
         }
     }
 
@@ -957,7 +1007,16 @@ where
                 Ok(Stage::Ir(Box::new(read.document)))
             }
 
-            (Format::Markdown | Format::Html, Format::AriadIrJson) => {
+            (
+                Format::Markdown
+                | Format::Html
+                | Format::Txt
+                | Format::Csv
+                | Format::Svg
+                | Format::Eml
+                | Format::Msg,
+                Format::AriadIrJson,
+            ) => {
                 let (path, base_dir) = match &stage {
                     Stage::Source => (
                         self.request.input.as_path(),
@@ -1562,7 +1621,7 @@ fn plan_with_available_engines(
         .steps
         .iter()
         .map(|step| step.engine.as_str())
-        .filter(|engine| *engine != IN_PROCESS_ENGINE)
+        .filter(|engine| *engine != IN_PROCESS_ENGINE && *engine != engines::IN_PROCESS_PDF_ENGINE)
         .collect();
     if needed.is_empty() {
         return Ok(initial);
