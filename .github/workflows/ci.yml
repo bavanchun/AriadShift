@@ -152,6 +152,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     # Cold builds on macOS and Windows can exceed 30 min before cache warming (e.g. after a prefix bump or prune); 45 min prevents spurious cancellation.
     timeout-minutes: ${{ matrix.timeout }}
+    environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && 'ci-cache-write' || '' }}
     permissions:
       contents: read
     strategy:
@@ -316,6 +317,7 @@ jobs:
     if: needs.scope.outputs.heavy == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 45
+    environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && 'ci-cache-write' || '' }}
     permissions:
       contents: read
     defaults:
@@ -506,6 +508,7 @@ jobs:
     # Pushes to dev/main run the full 60 s per target (1260 s / 21 min total fuzzing).
     # Nightly AddressSanitizer fuzzing (fuzz-nightly.yml) covers all targets for 600 s each.
     timeout-minutes: 45
+    environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && 'ci-cache-write' || '' }}
     permissions:
       contents: read
     defaults:

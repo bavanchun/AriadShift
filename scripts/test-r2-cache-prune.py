@@ -343,54 +343,113 @@ class TestR2CachePrune(unittest.TestCase):
         for p in prefixes:
             self.assertEqual(p, EXPECTED_PREFIX, f"Prefix {p} must be {EXPECTED_PREFIX}")
 
-        # Verify step-level split for read-write vs read-only:
-        # Every step providing R2_ACCESS_KEY_ID or R2_SECRET_ACCESS_KEY must have an if: condition
-        # restricting execution to push or workflow_dispatch on dev or main branch refs,
-        # and must configure SCCACHE_S3_RW_MODE: READ_WRITE.
-        # Every step providing R2_RO_ACCESS_KEY_ID or R2_RO_SECRET_ACCESS_KEY must configure
-        # SCCACHE_S3_RW_MODE: READ_ONLY and never receive RW secrets.
-        rw_cond_pattern = re.compile(
-            r"if:.*github\.event_name == 'push' \|\| github\.event_name == 'workflow_dispatch'.*github\.ref == 'refs/heads/dev' \|\| github\.ref == 'refs/heads/main'"
+        # Exact expected conditions (no loose regex patterns):
+        base_rw_cond = (
+            "(github.event_name == 'push' || github.event_name == 'workflow_dispatch') && "
+            "(github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')"
         )
+        expected_env_decl = f"environment: ${{{{ {base_rw_cond} && 'ci-cache-write' || '' }}}}"
+        expected_start_rw_if = f"if: {base_rw_cond}"
+        expected_prune_rw_if = f"if: always() && ({base_rw_cond})"
+        expected_start_ro_if = f"if: ${{{{ !({base_rw_cond}) }}}}"
+        expected_report_ro_if = f"if: always() && !({base_rw_cond})"
 
-        steps = re.split(r"\n\s+-\s+name:\s+", content)
+        # Verify job-level environment declarations:
+        # Exactly verify, server, and fuzz declare environment: ci-cache-write conditionally.
+        # Other jobs (scope, static, lint-windows, web, ci-passed) must NOT declare environment:.
+        jobs_section = content.split("\njobs:\n", 1)[1]
+        jobs_raw = re.split(r"\n  ([a-zA-Z0-9_-]+):\n", "\n" + jobs_section)
+        jobs = {}
+        for i in range(1, len(jobs_raw), 2):
+            jobs[jobs_raw[i]] = jobs_raw[i + 1]
+
+        expected_env_jobs = {"verify", "server", "fuzz"}
         rw_steps_count = 0
         ro_steps_count = 0
 
-        for step in steps:
-            has_rw_secret = "secrets.R2_ACCESS_KEY_ID" in step or "secrets.R2_SECRET_ACCESS_KEY" in step
-            has_ro_secret = "secrets.R2_RO_ACCESS_KEY_ID" in step or "secrets.R2_RO_SECRET_ACCESS_KEY" in step
-
-            if has_rw_secret:
-                rw_steps_count += 1
-                self.assertNotIn("secrets.R2_RO_ACCESS_KEY_ID", step)
-                self.assertNotIn("secrets.R2_RO_SECRET_ACCESS_KEY", step)
+        for jname, jbody in jobs.items():
+            if jname in expected_env_jobs:
                 self.assertIn(
-                    "SCCACHE_S3_RW_MODE: READ_WRITE",
-                    step,
-                    f"Read-write step missing SCCACHE_S3_RW_MODE: READ_WRITE:\n{step[:300]}",
+                    expected_env_decl,
+                    jbody,
+                    f"Job {jname} missing expected environment declaration:\n{expected_env_decl}",
                 )
-                self.assertNotIn("READ_ONLY", step, f"Read-write step must not contain READ_ONLY:\n{step[:300]}")
-                self.assertTrue(
-                    rw_cond_pattern.search(step),
-                    f"Read-write step missing required dev/main ref gate:\n{step[:300]}",
+            else:
+                self.assertNotIn(
+                    "environment:",
+                    jbody,
+                    f"Job {jname} must not declare an environment",
+                )
+                self.assertNotIn(
+                    "ci-cache-write",
+                    jbody,
+                    f"Job {jname} must not reference ci-cache-write",
+                )
+                self.assertNotIn(
+                    "secrets.R2_ACCESS_KEY_ID",
+                    jbody,
+                    f"Job {jname} must not reference RW secrets",
+                )
+                self.assertNotIn(
+                    "secrets.R2_SECRET_ACCESS_KEY",
+                    jbody,
+                    f"Job {jname} must not reference RW secrets",
                 )
 
-            if has_ro_secret:
-                ro_steps_count += 1
-                self.assertNotIn("secrets.R2_ACCESS_KEY_ID", step)
-                self.assertNotIn("secrets.R2_SECRET_ACCESS_KEY", step)
-                self.assertIn(
-                    "SCCACHE_S3_RW_MODE: READ_ONLY",
-                    step,
-                    f"Read-only step missing SCCACHE_S3_RW_MODE: READ_ONLY:\n{step[:300]}",
-                )
-                self.assertNotIn("READ_WRITE", step, f"Read-only step must not contain READ_WRITE:\n{step[:300]}")
-                # Ensure read-only steps are run on PRs and non-mainline refs
-                self.assertTrue(
-                    "!" in step or "pull_request" in step or "report-only" in step,
-                    f"Read-only step should run on non-mainline refs:\n{step[:300]}",
-                )
+            # Verify step-level split for read-write vs read-only within each job:
+            steps = re.split(r"\n\s+-\s+name:\s+", jbody)[1:]
+            for step in steps:
+                has_rw_secret = "secrets.R2_ACCESS_KEY_ID" in step or "secrets.R2_SECRET_ACCESS_KEY" in step
+                has_ro_secret = "secrets.R2_RO_ACCESS_KEY_ID" in step or "secrets.R2_RO_SECRET_ACCESS_KEY" in step
+
+                if has_rw_secret:
+                    rw_steps_count += 1
+                    self.assertIn(
+                        jname,
+                        expected_env_jobs,
+                        f"Read-write secret in unexpected job {jname}",
+                    )
+                    self.assertNotIn("secrets.R2_RO_ACCESS_KEY_ID", step)
+                    self.assertNotIn("secrets.R2_RO_SECRET_ACCESS_KEY", step)
+                    self.assertIn(
+                        "SCCACHE_S3_RW_MODE: READ_WRITE",
+                        step,
+                        f"Read-write step missing SCCACHE_S3_RW_MODE: READ_WRITE:\n{step[:300]}",
+                    )
+                    self.assertNotIn("READ_ONLY", step, f"Read-write step must not contain READ_ONLY:\n{step[:300]}")
+                    step_if_lines = [l.strip() for l in step.splitlines() if l.strip().startswith("if:")]
+                    self.assertEqual(
+                        len(step_if_lines),
+                        1,
+                        f"Expected exactly 1 if: line in RW step:\n{step[:300]}",
+                    )
+                    self.assertIn(
+                        step_if_lines[0],
+                        (expected_start_rw_if, expected_prune_rw_if),
+                        f"RW step if condition did not match exact expected condition:\n{step_if_lines[0]}",
+                    )
+
+                if has_ro_secret:
+                    ro_steps_count += 1
+                    self.assertNotIn("secrets.R2_ACCESS_KEY_ID", step)
+                    self.assertNotIn("secrets.R2_SECRET_ACCESS_KEY", step)
+                    self.assertIn(
+                        "SCCACHE_S3_RW_MODE: READ_ONLY",
+                        step,
+                        f"Read-only step missing SCCACHE_S3_RW_MODE: READ_ONLY:\n{step[:300]}",
+                    )
+                    self.assertNotIn("READ_WRITE", step, f"Read-only step must not contain READ_WRITE:\n{step[:300]}")
+                    step_if_lines = [l.strip() for l in step.splitlines() if l.strip().startswith("if:")]
+                    self.assertEqual(
+                        len(step_if_lines),
+                        1,
+                        f"Expected exactly 1 if: line in RO step:\n{step[:300]}",
+                    )
+                    self.assertIn(
+                        step_if_lines[0],
+                        (expected_start_ro_if, expected_report_ro_if),
+                        f"RO step if condition did not match exact negation:\n{step_if_lines[0]}",
+                    )
 
         self.assertEqual(rw_steps_count, 4, "Expected exactly 4 read-write steps (verify, server, prune, fuzz)")
         self.assertEqual(ro_steps_count, 4, "Expected exactly 4 read-only steps (verify, server, report, fuzz)")
