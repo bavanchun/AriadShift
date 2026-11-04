@@ -405,3 +405,63 @@ fn secret_handle_runs_registered_qpdf_tool() {
     let output = child.wait_with_output().unwrap();
     assert!(!String::from_utf8_lossy(&output.stderr).contains(secret));
 }
+
+#[test]
+fn secret_put_certificate_allows_large_payload() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["mcp"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    fn send(stdin: &mut impl Write, value: Value) {
+        writeln!(stdin, "{value}").unwrap();
+        stdin.flush().unwrap();
+    }
+    fn response(stdout: &mut impl BufRead, id: u64) -> Value {
+        loop {
+            let mut line = String::new();
+            stdout.read_line(&mut line).unwrap();
+            let value: Value = serde_json::from_str(&line).unwrap();
+            if value.get("id").and_then(Value::as_u64) == Some(id) {
+                return value;
+            }
+        }
+    }
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{"roots":{"listChanged":true}},"clientInfo":{"name":"test","version":"1"}}}),
+    );
+    response(&mut stdout, 1);
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+    );
+
+    // Standard string over 4096 bytes is rejected
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":"A".repeat(4097)}}}),
+    );
+    let rejected = response(&mut stdout, 2);
+    assert_eq!(rejected["result"]["structuredContent"]["exit_code"], 9);
+
+    // Certificate flag allows payloads up to 14 MiB
+    let cert_payload = "A".repeat(8192);
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":cert_payload,"certificate":true}}}),
+    );
+    let accepted = response(&mut stdout, 3);
+    assert_eq!(accepted["result"]["isError"], false);
+    assert!(
+        accepted["result"]["structuredContent"]["handle"]
+            .as_str()
+            .unwrap()
+            .starts_with("sec_")
+    );
+    drop(stdin);
+    let _ = child.wait().unwrap();
+}
