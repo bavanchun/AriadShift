@@ -185,7 +185,7 @@ jobs:
           tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
 
       - name: Start sccache (read-write)
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
@@ -197,7 +197,7 @@ jobs:
         run: bash scripts/ci-sccache.sh start
 
       - name: Start sccache (read-only)
-        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')) }}
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')) }}
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
@@ -359,7 +359,7 @@ jobs:
           tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
 
       - name: Start sccache (read-write)
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
@@ -371,7 +371,7 @@ jobs:
         run: bash scripts/ci-sccache.sh start
 
       - name: Start sccache (read-only)
-        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')) }}
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')) }}
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
@@ -472,7 +472,7 @@ jobs:
           python-version: "3.14"
 
       - name: Prune R2 cache storage (read-write)
-        if: always() && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main'))
+        if: always() && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'))
         continue-on-error: true
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
@@ -481,10 +481,11 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_WRITE
         run: uv run --no-project --with-requirements scripts/r2-cache-requirements.txt python scripts/r2-cache-prune.py --prune
 
       - name: Report R2 cache storage (read-only)
-        if: always() && !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main'))
+        if: always() && !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'))
         continue-on-error: true
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
@@ -493,6 +494,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
           SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_ONLY
         run: uv run --no-project --with-requirements scripts/r2-cache-requirements.txt python scripts/r2-cache-prune.py --report-only
 
   fuzz:
@@ -526,7 +528,7 @@ jobs:
           tool: sccache@0.19.0
 
       - name: Start sccache (read-write)
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
@@ -538,7 +540,7 @@ jobs:
         run: bash scripts/ci-sccache.sh start
 
       - name: Start sccache (read-only)
-        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main')) }}
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')) }}
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com

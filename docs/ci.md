@@ -76,24 +76,30 @@ The Rust cache is written only by pushes to `dev` and `main` (the web job shares
 
 - **What is cached:** Object-level compilation artifacts (`.o`, `.rlib`) produced by `rustc` across external crates and workspace modules under the `ariadshift-sccache-v2/` prefix in bucket `ariadshift-ci-cache`.
 - **Backend configuration and credential split:**
-  - Configured using repository variables `R2_ACCOUNT_ID` and `R2_CACHE_BUCKET` pointing to the S3 endpoint `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com` with region `auto`.
-  - Read-write credentials (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) are restricted exclusively to steps running on pushes to `dev` and `main` or `workflow_dispatch` maintenance runs triggered on `dev` or `main`.
-  - Read-only credentials (`R2_RO_ACCESS_KEY_ID`, `R2_RO_SECRET_ACCESS_KEY`) are provided to pull requests and non-mainline runs. Pull requests and feature branches never receive read-write credentials, ensuring untrusted PR code cannot upload, overwrite, or poison cache objects in R2.
+  - Configured using repository variables `R2_ACCOUNT_ID` and `R2_CACHE_BUCKET` pointing to the S3 endpoint `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com` with region `auto`. The Cloudflare account ID (`R2_ACCOUNT_ID`) is a non-secret configuration variable used to construct the endpoint URL; it is informational and not a credential or secret.
+  - Read-write credentials (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) are passed to steps guarded by `github.ref == 'refs/heads/dev'` or `github.ref == 'refs/heads/main'` on push and maintenance workflow dispatch events. However, because `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` are currently stored as repository-level secrets (pending a dedicated GitHub Environment scoped to `dev`/`main`), a same-repository pull request that edits `.github/workflows/ci.yml` could theoretically read the RW token while the RW pair remains a repository secret. In practice, only authorized collaborators with write access to the repository can push branches or open same-repo PRs, and branch protection (`protect-main-dev`) protects `main` and `dev`. External fork pull requests never receive any secrets.
+  - Read-only credentials (`R2_RO_ACCESS_KEY_ID`, `R2_RO_SECRET_ACCESS_KEY`) are provided to pull requests and non-mainline runs. The RO token's write denial is enforced through both client-side configuration (`SCCACHE_S3_RW_MODE=READ_ONLY`) and the upstream Cloudflare R2 API token permission scope configured by repository administration (Object Read only). Because PR runs operate strictly in read-only mode and cannot write to the cache, any initial run or run following a prefix bump will experience expected cold cache misses until a push or merge to `dev` or `main` populates the cache under the new prefix.
 - **Trust boundary and cache poisoning:**
-  - Only commits pushed or merged to `dev` or `main` (and maintainer manual dispatches on those refs) hold write credentials and can populate or prune the R2 cache.
+  - Only commits pushed or merged to `dev` or `main` (and maintainer manual dispatches on those refs) are intended to hold write credentials and populate or prune the R2 cache.
   - Pull requests operate strictly in read-only mode (`SCCACHE_S3_RW_MODE=READ_ONLY`) using the dedicated read-only token. Any compilation cache miss during a PR run compiles directly without writing back to R2.
   - External fork pull requests receive no secrets at all; `scripts/ci-sccache.sh` detects missing credentials, logs a diagnostic notice, and gracefully bypasses `sccache` with exit code 0.
-  - Because write permissions are restricted to `dev` and `main`, only authorized contributors with write access to `dev` or `main` could ever poison the shared CI compiler cache. If cache poisoning is ever suspected on `dev`, maintainers can immediately invalidate the entire cache by bumping the prefix string (e.g. from `ariadshift-sccache-v2/` to `ariadshift-sccache-v3/`) in `.github/workflows/ci.yml`, `scripts/ci-sccache.sh`, and `scripts/r2-cache-prune.py`.
+  - While the RW secrets remain repository-level secrets, a same-repo PR editing the workflow could read the RW token; only authorized collaborators with write access to the repository can push branches. If cache poisoning is ever suspected on `dev`, maintainers can immediately invalidate the entire cache by bumping the prefix string (e.g. from `ariadshift-sccache-v2/` to `ariadshift-sccache-v3/`) in `.github/workflows/ci.yml`, `scripts/ci-sccache.sh`, `scripts/r2-cache-prune.py`, and the test suite `scripts/test-r2-cache-prune.py`.
 - **Workflows that never use the R2 cache:**
-  - Release, publish, and artifact packaging workflows never touch or read the R2 cache:
+  - Other workflows never touch or read the R2 cache:
+    - `bench.yml`
+    - `cloud-e2e.yml`
+    - `codeql.yml`
+    - `desktop.yml`
+    - `fuzz-nightly.yml`
+    - `images.yml`
+    - `links.yml`
+    - `pack-docling.yml`, `toolchain-wheels.yml`, and `torch-docling.yml` (these rely on isolated GitHub Actions local `SCCACHE_DIR` disk cache, never R2).
+    - `pack-pdfium.yml`, `pack-qpdf.yml`, `pack-tesseract.yml`
+    - `publish-crates.yml`
     - `release.yml`
     - `release-smoke.yml`
-    - `publish-crates.yml`
+    - `security.yml`
     - `verify-pack-signing-key.yml`
-    - `images.yml`
-    - `desktop.yml`
-    - `pack-pdfium.yml`, `pack-qpdf.yml`, `pack-tesseract.yml`
-    - `pack-docling.yml`, `toolchain-wheels.yml`, and `torch-docling.yml` (these rely on isolated GitHub Actions local `SCCACHE_DIR` disk cache, never R2).
   - All distributed binaries, release archives, and published crates are built cold and cleanly from checked-out source to guarantee complete reproducibility and supply-chain integrity.
 - **Graceful fallback:** Cache failure never fails a CI build. If credentials are missing, or if the `sccache` daemon fails to initialize or connect to R2, `scripts/ci-sccache.sh` emits a warning and allows `cargo` to invoke `rustc` directly.
 - **Budget and pruning policy:**
@@ -102,7 +108,7 @@ The Rust cache is written only by pushes to `dev` and `main` (the web job shares
   - Lifecycle expiration configuration (14-day retention) is attempted only during read-write runs (`--prune`), never during read-only runs (`--report-only`).
   - Automated deletion enforces hard guards asserting that the bucket is strictly `ariadshift-ci-cache` and the key prefix starts with `ariadshift-sccache`.
 - **How to purge:**
-  - To purge the cache after a suspected poisoning event or when clearing stale objects, bump the prefix string (e.g. `ariadshift-sccache-v3/`) in `.github/workflows/ci.yml`, `scripts/ci-sccache.sh`, and `scripts/r2-cache-prune.py`.
+  - To purge the cache after a suspected poisoning event or when clearing stale objects, bump the prefix string (e.g. `ariadshift-sccache-v3/`) across `.github/workflows/ci.yml`, `scripts/ci-sccache.sh`, `scripts/r2-cache-prune.py`, and `scripts/test-r2-cache-prune.py` (`EXPECTED_PREFIX` constant, which enforces prefix consistency across the codebase).
   - Stale objects under older prefixes (such as the initial `ariadshift-sccache/` prefix) can be pruned directly by repository maintainers via the Cloudflare dashboard or AWS S3 CLI.
 
 ## Cloud E2E pack dependency

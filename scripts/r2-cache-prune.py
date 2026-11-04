@@ -89,29 +89,72 @@ def get_s3_client() -> tuple[Any, str, str] | None:
     return client, bucket, prefix
 
 
-def apply_lifecycle_rule(client: Any, bucket: str, prefix: str) -> None:
+def apply_lifecycle_rule(
+    client: Any,
+    bucket: str,
+    prefix: str,
+    dry_run: bool = False,
+) -> None:
     """Attempt to configure an automated lifecycle expiration rule on the bucket.
 
+    Enforces hard guards: bucket must equal ariadshift-ci-cache and prefix must start with ariadshift-sccache.
+    Performs read-modify-write so unrelated lifecycle rules on the bucket are preserved.
+    Does not modify lifecycle configuration if dry_run is True.
     If the API token lacks bucket-management permissions, this logs an informative note
     and allows the script to continue to object-level pruning.
     """
+    if bucket != ALLOWED_BUCKET:
+        raise ValueError(
+            f"Hard guard: lifecycle update refused for bucket '{bucket}'; must equal '{ALLOWED_BUCKET}'"
+        )
+    if not prefix.startswith(REQUIRED_PREFIX_START):
+        raise ValueError(
+            f"Hard guard: lifecycle update refused for prefix '{prefix}'; must start with '{REQUIRED_PREFIX_START}'"
+        )
+
+    if dry_run:
+        print(f"r2-cache-prune: [dry-run] skipping lifecycle configuration update for '{prefix}' in '{bucket}'")
+        return
+
     from botocore.exceptions import ClientError
 
-    lifecycle_policy = {
-        "Rules": [
-            {
-                "ID": "ariadshift-sccache-retention",
-                "Status": "Enabled",
-                "Filter": {"Prefix": prefix},
-                "Expiration": {"Days": 14},
-                "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
-            }
-        ]
+    existing_rules: list[dict[str, Any]] = []
+    try:
+        response = client.get_bucket_lifecycle_configuration(Bucket=bucket)
+        existing_rules = response.get("Rules", [])
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "Unknown")
+        if code in ("NoSuchLifecycleConfiguration", "LifecycleConfigurationNotFound"):
+            existing_rules = []
+        else:
+            print(
+                f"r2-cache-prune: get_bucket_lifecycle_configuration returned {code} "
+                "(token is scoped to Object Read & Write; relying on oldest-written pruning step)"
+            )
+            return
+
+    target_rule = {
+        "ID": "ariadshift-sccache-retention",
+        "Status": "Enabled",
+        "Filter": {"Prefix": prefix},
+        "Expiration": {"Days": 14},
+        "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
     }
+
+    # Read-modify-write: retain all unrelated rules, update/replace only the rule for this ID or prefix
+    preserved_rules = [
+        rule
+        for rule in existing_rules
+        if rule.get("ID") != "ariadshift-sccache-retention"
+        and rule.get("Filter", {}).get("Prefix") != prefix
+        and rule.get("Prefix") != prefix
+    ]
+    preserved_rules.append(target_rule)
+
     try:
         client.put_bucket_lifecycle_configuration(
             Bucket=bucket,
-            LifecycleConfiguration=lifecycle_policy,
+            LifecycleConfiguration={"Rules": preserved_rules},
         )
         print(f"r2-cache-prune: applied 14-day expiration lifecycle policy to '{prefix}' in '{bucket}'")
     except ClientError as err:
@@ -296,9 +339,9 @@ def main(argv: list[str] | None = None) -> int:
 
         client, bucket, prefix = setup
 
-        # Attempt lifecycle configuration only in read-write / non-report mode
-        if not args.report_only:
-            apply_lifecycle_rule(client, bucket, prefix)
+        # Attempt lifecycle configuration only in read-write prune mode (not report-only or dry-run)
+        if args.prune and not args.dry_run and not args.report_only:
+            apply_lifecycle_rule(client, bucket, prefix, dry_run=args.dry_run)
 
         objects = list_objects(client, bucket, prefix)
         count = len(objects)
