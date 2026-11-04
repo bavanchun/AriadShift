@@ -5,6 +5,7 @@
 //! batch quotas, validates `x-ariad-secret` rules, scrubs secret values from all outputs, and
 //! atomically publishes output artifacts into the target directory.
 
+pub mod cbz;
 pub mod engine;
 pub mod inprocess;
 mod ocr;

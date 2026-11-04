@@ -624,8 +624,10 @@ fn run_tool_inner(
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
-    let is_ocr_composite =
-        effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE;
+    let is_ocr_composite = effective_engine
+        == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
+        && spec.id != "pdf.to_cbz";
+    let is_cbz_composite = spec.id == "pdf.to_cbz";
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -662,6 +664,11 @@ fn run_tool_inner(
     if is_ocr_composite {
         super::ocr::preflight(
             spec.id,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_cbz_composite {
+        super::cbz::preflight(
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
         )?;
@@ -739,6 +746,20 @@ fn run_tool_inner(
             &request.cancel,
             on_event,
             clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_cbz_composite {
+        super::cbz::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+            &request.cancel,
+            on_event,
         )
         .map_err(|e| e.scrubbed(scrubber))?
     } else if !is_out_of_process {
@@ -1484,6 +1505,11 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
         }
         "image.to_pdf" => {
             let p: ImageToPdfParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.to_cbz" => {
+            let p: ariad_core::tools::params::ToCbzParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             p.validate().map_err(|e| e.to_string())
         }

@@ -7770,6 +7770,103 @@
       "summary": "Export PDF form values.",
       "tier": "free",
       "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "pdf.to_cbz",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "cbz",
+      "output_formats": [
+        "cbz"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ToCbzParams",
+        "description": "Parameters for `pdf.to_cbz`.",
+        "type": "object",
+        "properties": {
+          "dpi": {
+            "description": "Render resolution in dots per inch (default: 150.0).",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "format": {
+            "description": "Image format for the rendered pages (default: PNG).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ImageFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pages": {
+            "description": "Pages to include (default: all pages).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PageRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quality": {
+            "description": "Encoder quality for lossy formats (1-100).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "ImageFormat": {
+            "description": "Image format for rendering CBZ pages.",
+            "oneOf": [
+              {
+                "description": "Lossless PNG (default).",
+                "type": "string",
+                "const": "png"
+              },
+              {
+                "description": "JPEG.",
+                "type": "string",
+                "const": "jpeg"
+              },
+              {
+                "description": "WebP.",
+                "type": "string",
+                "const": "webp"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Convert PDF pages into a comic book archive (CBZ).",
+      "tier": "free",
+      "version": "1"
     }
   ],
   "x-status": "draft",
