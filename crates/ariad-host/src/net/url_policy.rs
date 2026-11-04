@@ -5,12 +5,14 @@ use url::Url;
 use super::error::NetError;
 
 /// URL policy rules for outbound connections.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UrlPolicy {
     /// Whether only HTTPS URLs are allowed.
     pub https_only: bool,
     /// Whether loopback HTTP connections are allowed (for tests/development).
     pub allow_loopback: bool,
+    /// Explicitly allowed ports beyond default 443 (HTTPS) and 80 (HTTP).
+    pub allowed_ports: Vec<u16>,
 }
 
 impl Default for UrlPolicy {
@@ -18,6 +20,7 @@ impl Default for UrlPolicy {
         Self {
             https_only: true,
             allow_loopback: false,
+            allowed_ports: Vec::new(),
         }
     }
 }
@@ -43,7 +46,20 @@ pub fn validate_url(url: &Url, policy: &UrlPolicy) -> Result<(), NetError> {
 
     // Credentials checks: userinfo is forbidden
     if !url.username().is_empty() || url.password().is_some() {
-        return Err(NetError::CredentialsNotAllowed(url.to_string()));
+        return Err(NetError::CredentialsNotAllowed);
+    }
+
+    // Port check: default 443 (https) and 80 (http). Non-standard ports must be allowed by policy.
+    let port = url
+        .port_or_known_default()
+        .unwrap_or(if url.scheme() == "https" { 443 } else { 80 });
+    let is_standard = match url.scheme() {
+        "https" => port == 443,
+        "http" => port == 80,
+        _ => false,
+    };
+    if !is_standard && !policy.allow_loopback && !policy.allowed_ports.contains(&port) {
+        return Err(NetError::PortNotAllowed { port });
     }
 
     // Host check

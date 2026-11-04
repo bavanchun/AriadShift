@@ -33,6 +33,8 @@ pub struct ClientPolicy {
     pub https_only: bool,
     /// Allow loopback addresses (for internal integration tests only).
     pub allow_loopback: bool,
+    /// Allowed ports beyond default 443 (HTTPS) and 80 (HTTP).
+    pub allowed_ports: Vec<u16>,
 }
 
 impl Default for ClientPolicy {
@@ -46,6 +48,7 @@ impl Default for ClientPolicy {
             total_timeout: Duration::from_secs(30),
             https_only: true,
             allow_loopback: false,
+            allowed_ports: Vec::new(),
         }
     }
 }
@@ -96,6 +99,7 @@ impl Client {
         let url_policy = UrlPolicy {
             https_only: self.policy.https_only,
             allow_loopback: self.policy.allow_loopback,
+            allowed_ports: self.policy.allowed_ports.clone(),
         };
 
         let mut redirect_count = 0;
@@ -130,12 +134,15 @@ impl Client {
                 write: self.policy.write_timeout.min(remaining),
             };
 
+            let deadline = start + self.policy.total_timeout;
+
             // 5. Execute request against the pinned socket address
             let response = self.transport.execute(
                 &request,
                 pinned_addr,
                 &timeouts,
                 self.policy.max_response_bytes,
+                deadline,
             )?;
 
             if start.elapsed() >= self.policy.total_timeout {
@@ -182,6 +189,16 @@ impl Client {
                         // Temporary / Permanent Redirect: preserve method and body
                     }
                     _ => {}
+                }
+
+                let is_cross_origin = request.url.origin() != next_url.origin();
+                if is_cross_origin {
+                    request.headers.retain(|(k, _)| {
+                        matches!(
+                            k.to_ascii_lowercase().as_str(),
+                            "accept" | "accept-language" | "user-agent"
+                        )
+                    });
                 }
 
                 request.url = next_url;
@@ -240,6 +257,11 @@ impl ClientBuilder {
 
     pub fn allow_loopback(mut self, allow: bool) -> Self {
         self.policy.allow_loopback = allow;
+        self
+    }
+
+    pub fn allowed_ports(mut self, ports: Vec<u16>) -> Self {
+        self.policy.allowed_ports = ports;
         self
     }
 

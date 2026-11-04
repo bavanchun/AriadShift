@@ -1,8 +1,9 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    io::{Read, Write},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener},
     str::FromStr,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use url::Url;
@@ -12,7 +13,9 @@ use super::{
     error::NetError,
     ip::{IpCategory, classify_ip, classify_ipv4, classify_ipv6, is_public_ip},
     resolver::{MockResolver, resolve_and_pin_public},
-    transport::{HttpResponse, Method, MockTransport},
+    transport::{
+        DefaultTransport, HttpRequest, HttpResponse, Method, MockTransport, Timeouts, Transport,
+    },
     url_policy::{UrlPolicy, validate_redirect, validate_url},
 };
 
@@ -52,7 +55,7 @@ fn test_ipv4_classification() {
         Err(IpCategory::Private)
     );
 
-    // Link-local and cloud metadata (169.254.169.254)
+    // Link-local and cloud metadata (169.254.169.254, 168.63.129.16)
     assert_eq!(
         classify_ipv4(Ipv4Addr::new(169, 254, 1, 1)),
         Err(IpCategory::LinkLocal)
@@ -60,6 +63,20 @@ fn test_ipv4_classification() {
     assert_eq!(
         classify_ipv4(Ipv4Addr::new(169, 254, 169, 254)),
         Err(IpCategory::CloudMetadata)
+    );
+    assert_eq!(
+        classify_ipv4(Ipv4Addr::new(168, 63, 129, 16)),
+        Err(IpCategory::CloudMetadata)
+    );
+
+    // Reserved (AS112-v4, AMT)
+    assert_eq!(
+        classify_ipv4(Ipv4Addr::new(192, 31, 196, 1)),
+        Err(IpCategory::Reserved)
+    );
+    assert_eq!(
+        classify_ipv4(Ipv4Addr::new(192, 52, 193, 1)),
+        Err(IpCategory::Reserved)
     );
 
     // CGNAT / Shared Address Space
@@ -159,10 +176,22 @@ fn test_ipv6_classification() {
         Err(IpCategory::Multicast)
     );
 
-    // Documentation
+    // Documentation and benchmarking / reserved
     assert_eq!(
         classify_ipv6(Ipv6Addr::from_str("2001:db8::1").unwrap()),
         Err(IpCategory::Documentation)
+    );
+    assert_eq!(
+        classify_ipv6(Ipv6Addr::from_str("2001:2::1").unwrap()),
+        Err(IpCategory::Benchmarking)
+    );
+    assert_eq!(
+        classify_ipv6(Ipv6Addr::from_str("2001:10::1").unwrap()),
+        Err(IpCategory::Reserved)
+    );
+    assert_eq!(
+        classify_ipv6(Ipv6Addr::from_str("2001:20::1").unwrap()),
+        Err(IpCategory::Reserved)
     );
 
     // NAT64 well-known prefix embedding private/loopback/metadata IPv4
@@ -240,7 +269,7 @@ fn test_url_validation_rules() {
     let url = Url::parse("https://user:pass@example.com/secret").unwrap();
     assert!(matches!(
         validate_url(&url, &policy),
-        Err(NetError::CredentialsNotAllowed(_))
+        Err(NetError::CredentialsNotAllowed)
     ));
 }
 
@@ -517,4 +546,202 @@ fn test_classify_and_is_public_ip() {
 
     assert!(!is_public_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
     assert!(classify_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))).is_err());
+}
+
+#[test]
+fn test_real_transport_oversize_line() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = socket.read(&mut buf);
+        // Send a status line exceeding 8 KiB without \n
+        let long_line = "A".repeat(9000);
+        let _ = socket.write_all(format!("HTTP/1.1 200 OK {long_line}\r\n\r\n").as_bytes());
+    });
+
+    let transport = DefaultTransport::new().unwrap();
+    let url = Url::parse(&format!("http://localhost:{}/path", addr.port())).unwrap();
+    let request = HttpRequest::get(url);
+    let timeouts = Timeouts::default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    let err = transport
+        .execute(&request, addr, &timeouts, 1024 * 1024, deadline)
+        .unwrap_err();
+
+    assert!(matches!(err, NetError::LineTooLong { limit: 8192 }));
+    server_handle.join().unwrap();
+}
+
+#[test]
+fn test_real_transport_giant_chunk() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = socket.read(&mut buf);
+        // Send chunked response with huge chunk size
+        let _ = socket.write_all(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nffffffffffffffff\r\n",
+        );
+    });
+
+    let transport = DefaultTransport::new().unwrap();
+    let url = Url::parse(&format!("http://localhost:{}/path", addr.port())).unwrap();
+    let request = HttpRequest::get(url);
+    let timeouts = Timeouts::default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    let err = transport
+        .execute(&request, addr, &timeouts, 64 * 1024, deadline)
+        .unwrap_err();
+
+    assert!(matches!(err, NetError::ResponseTooLarge { limit: 65536 }));
+    server_handle.join().unwrap();
+}
+
+#[test]
+fn test_real_transport_slowloris_drip_feed() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = socket.read(&mut buf);
+        // Send 1 byte every 40ms indefinitely
+        for _ in 0..100 {
+            if socket.write_all(b"H").is_err() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+    });
+
+    let transport = DefaultTransport::new().unwrap();
+    let url = Url::parse(&format!("http://localhost:{}/path", addr.port())).unwrap();
+    let request = HttpRequest::get(url);
+    let timeouts = Timeouts {
+        connect: Duration::from_millis(100),
+        read: Duration::from_millis(50),
+        write: Duration::from_millis(50),
+    };
+    let deadline = Instant::now() + Duration::from_millis(80);
+
+    let start = Instant::now();
+    let err = transport
+        .execute(&request, addr, &timeouts, 1024 * 1024, deadline)
+        .unwrap_err();
+
+    assert!(matches!(err, NetError::Timeout));
+    assert!(start.elapsed() < Duration::from_millis(500));
+    server_handle.join().unwrap();
+}
+
+#[test]
+fn test_real_transport_untrusted_tls_cert() {
+    // Generate self-signed TLS cert with rcgen
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = std::thread::spawn(move || {
+        let (tcp_stream, _) = listener.accept().unwrap();
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let server_config = rustls::ServerConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![cert.cert.der().clone()],
+                rustls::pki_types::PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der())
+                    .into(),
+            )
+            .unwrap();
+        let conn = rustls::ServerConnection::new(Arc::new(server_config)).unwrap();
+        let mut stream = rustls::StreamOwned::new(conn, tcp_stream);
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+    });
+
+    // Default transport uses OS native roots, which will NOT trust this throwaway cert
+    let transport = DefaultTransport::new().unwrap();
+    let url = Url::parse(&format!("https://localhost:{}/path", addr.port())).unwrap();
+    let request = HttpRequest::get(url);
+    let timeouts = Timeouts::default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    let err = transport
+        .execute(&request, addr, &timeouts, 1024 * 1024, deadline)
+        .unwrap_err();
+
+    assert!(
+        matches!(err, NetError::Tls(_))
+            || matches!(err, NetError::Io(ref io_err) if io_err.to_string().contains("cert")),
+        "unexpected error: {err:?}"
+    );
+    server_handle.join().unwrap();
+}
+
+#[test]
+fn test_real_transport_pinned_addr_and_headers() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = std::thread::spawn(move || {
+        let (mut socket, client_addr) = listener.accept().unwrap();
+        assert_eq!(client_addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        let mut buf = [0u8; 2048];
+        let n = socket.read(&mut buf).unwrap();
+        let req_text = String::from_utf8_lossy(&buf[..n]);
+        assert!(req_text.contains("GET /test-path HTTP/1.1\r\n"));
+        assert!(req_text.contains(&format!("Host: localhost:{}\r\n", addr.port())));
+        assert!(req_text.contains("User-Agent: ashift/"));
+        assert!(req_text.contains("x-custom-test: test-val\r\n"));
+        let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\nsuccess");
+    });
+
+    let transport = DefaultTransport::new().unwrap();
+    let url = Url::parse(&format!("http://localhost:{}/test-path", addr.port())).unwrap();
+    let mut request = HttpRequest::get(url);
+    request
+        .headers
+        .push(("x-custom-test".to_owned(), "test-val".to_owned()));
+    let timeouts = Timeouts::default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    let resp = transport
+        .execute(&request, addr, &timeouts, 1024 * 1024, deadline)
+        .unwrap();
+
+    assert_eq!(resp.status, 200);
+    assert_eq!(resp.body, b"success");
+    server_handle.join().unwrap();
+}
+
+#[test]
+fn test_transport_header_crlf_injection_rejected() {
+    let url = Url::parse("http://example.com/").unwrap();
+    let mut request = HttpRequest::get(url);
+    request
+        .headers
+        .push(("X-Bad\r\nInjected".to_owned(), "value".to_owned()));
+
+    let transport = DefaultTransport::new().unwrap();
+    let timeouts = Timeouts::default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let dummy_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 80);
+
+    let err = transport
+        .execute(&request, dummy_addr, &timeouts, 1024, deadline)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        NetError::InvalidHeader(_) | NetError::ConnectFailed { .. }
+    ));
 }

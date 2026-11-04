@@ -174,6 +174,7 @@ fn property_url_validation_invariants() {
 
         if let Ok(parsed) = Url::parse(&raw) {
             let res = validate_url(&parsed, &policy);
+            let has_non_standard_port = parsed.port().is_some_and(|p| p != 443);
             if scheme != "https" {
                 assert!(
                     res.is_err(),
@@ -181,6 +182,11 @@ fn property_url_validation_invariants() {
                 );
             } else if has_creds {
                 assert!(res.is_err(), "credentials must be rejected");
+            } else if has_non_standard_port {
+                assert!(
+                    res.is_err(),
+                    "non-standard port must be rejected under default policy"
+                );
             } else {
                 assert!(
                     res.is_ok(),

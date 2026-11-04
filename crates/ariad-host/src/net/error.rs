@@ -16,8 +16,17 @@ pub enum NetError {
     #[error("HTTPS to HTTP downgrade refused for redirect target '{0}'")]
     DowngradeRefused(String),
 
-    #[error("URL contains credentials, which are forbidden: '{0}'")]
-    CredentialsNotAllowed(String),
+    #[error("URL contains user credentials, which are forbidden")]
+    CredentialsNotAllowed,
+
+    #[error("port {port} is not permitted")]
+    PortNotAllowed { port: u16 },
+
+    #[error("invalid header: {0}")]
+    InvalidHeader(String),
+
+    #[error("line exceeded maximum allowed length ({limit} bytes)")]
+    LineTooLong { limit: usize },
 
     #[error("DNS resolution failed for '{host}': {source}")]
     ResolutionFailed {

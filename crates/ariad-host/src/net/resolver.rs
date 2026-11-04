@@ -23,8 +23,19 @@ pub struct DefaultResolver;
 
 impl Resolver for DefaultResolver {
     fn resolve(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, NetError> {
-        let addrs = (host, port)
-            .to_socket_addrs()
+        let host_owned = host.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = std::thread::Builder::new()
+            .name("dns-resolver".into())
+            .spawn(move || {
+                let res = (host_owned.as_str(), port).to_socket_addrs();
+                let _ = tx.send(res);
+            });
+
+        let timeout = std::time::Duration::from_secs(5);
+        let result = rx.recv_timeout(timeout).map_err(|_| NetError::Timeout)?;
+
+        let addrs = result
             .map_err(|source| NetError::ResolutionFailed {
                 host: host.to_owned(),
                 source,

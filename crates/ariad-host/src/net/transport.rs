@@ -5,7 +5,7 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpStream},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use url::Url;
@@ -13,6 +13,7 @@ use url::Url;
 use super::error::NetError;
 
 const MAX_HEADERS_BYTES: usize = 64 * 1024;
+const MAX_LINE_BYTES: usize = 8 * 1024;
 
 /// HTTP request method.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -65,6 +66,39 @@ impl HttpRequest {
 
     pub fn host(&self) -> &str {
         self.url.host_str().unwrap_or_default()
+    }
+
+    pub fn host_header(&self) -> String {
+        let host_str = match self.url.host() {
+            Some(url::Host::Ipv6(ipv6)) => format!("[{ipv6}]"),
+            Some(url::Host::Ipv4(ipv4)) => ipv4.to_string(),
+            Some(url::Host::Domain(domain)) => domain.to_owned(),
+            None => self.url.host_str().unwrap_or_default().to_owned(),
+        };
+        match self.url.port() {
+            Some(p) => format!("{host_str}:{p}"),
+            None => host_str,
+        }
+    }
+
+    pub fn sni_name(&self) -> Result<rustls::pki_types::ServerName<'static>, NetError> {
+        match self.url.host() {
+            Some(url::Host::Ipv6(ipv6)) => Ok(rustls::pki_types::ServerName::IpAddress(
+                std::net::IpAddr::V6(ipv6).into(),
+            )),
+            Some(url::Host::Ipv4(ipv4)) => Ok(rustls::pki_types::ServerName::IpAddress(
+                std::net::IpAddr::V4(ipv4).into(),
+            )),
+            Some(url::Host::Domain(domain)) => {
+                rustls::pki_types::ServerName::try_from(domain.to_owned())
+                    .map_err(|_| NetError::InvalidHost(domain.to_owned()))
+            }
+            None => {
+                let h = self.url.host_str().unwrap_or_default();
+                rustls::pki_types::ServerName::try_from(h.to_owned())
+                    .map_err(|_| NetError::InvalidHost(h.to_owned()))
+            }
+        }
     }
 
     pub fn port(&self) -> u16 {
@@ -130,6 +164,7 @@ pub trait Transport: Debug + Send + Sync + 'static {
         pinned_addr: SocketAddr,
         timeouts: &Timeouts,
         max_response_bytes: usize,
+        deadline: Instant,
     ) -> Result<HttpResponse, NetError>;
 }
 
@@ -170,6 +205,104 @@ impl DefaultTransport {
     }
 }
 
+/// Stream wrapper that bounds every read/write operation to the remaining deadline budget
+/// and updates per-operation socket timeouts dynamically.
+struct DeadlineStream<S> {
+    inner: S,
+    tcp: Option<TcpStream>,
+    deadline: Instant,
+    read_timeout: Duration,
+    write_timeout: Duration,
+}
+
+impl<S> DeadlineStream<S> {
+    fn new(
+        inner: S,
+        tcp: Option<TcpStream>,
+        deadline: Instant,
+        read_timeout: Duration,
+        write_timeout: Duration,
+    ) -> Self {
+        Self {
+            inner,
+            tcp,
+            deadline,
+            read_timeout,
+            write_timeout,
+        }
+    }
+
+    fn check_deadline(&self) -> Result<Duration, std::io::Error> {
+        let now = Instant::now();
+        if now >= self.deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "deadline exceeded",
+            ));
+        }
+        Ok(self.deadline.duration_since(now))
+    }
+}
+
+impl<S: Read> Read for DeadlineStream<S> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let remaining = self.check_deadline()?;
+        if let Some(ref tcp) = self.tcp {
+            let timeout = self.read_timeout.min(remaining);
+            let _ = tcp.set_read_timeout(Some(timeout));
+        }
+        match self.inner.read(buf) {
+            Ok(n) => Ok(n),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                if Instant::now() >= self.deadline {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "deadline exceeded",
+                    ))
+                } else {
+                    Err(e)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl<S: Write> Write for DeadlineStream<S> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let remaining = self.check_deadline()?;
+        if let Some(ref tcp) = self.tcp {
+            let timeout = self.write_timeout.min(remaining);
+            let _ = tcp.set_write_timeout(Some(timeout));
+        }
+        match self.inner.write(buf) {
+            Ok(n) => Ok(n),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                if Instant::now() >= self.deadline {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "deadline exceeded",
+                    ))
+                } else {
+                    Err(e)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let _ = self.check_deadline()?;
+        self.inner.flush()
+    }
+}
+
 impl Transport for DefaultTransport {
     fn execute(
         &self,
@@ -177,41 +310,127 @@ impl Transport for DefaultTransport {
         pinned_addr: SocketAddr,
         timeouts: &Timeouts,
         max_response_bytes: usize,
+        deadline: Instant,
     ) -> Result<HttpResponse, NetError> {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(NetError::Timeout);
+        }
+        let connect_timeout = timeouts.connect.min(remaining);
+
         // TCP connection directly to the pinned IP address (no host re-resolution)
-        let tcp = TcpStream::connect_timeout(&pinned_addr, timeouts.connect).map_err(|source| {
+        let tcp = TcpStream::connect_timeout(&pinned_addr, connect_timeout).map_err(|source| {
             NetError::ConnectFailed {
                 addr: pinned_addr,
                 source,
             }
         })?;
 
-        let _ = tcp.set_read_timeout(Some(timeouts.read));
-        let _ = tcp.set_write_timeout(Some(timeouts.write));
+        let tcp_clone = tcp.try_clone().ok();
         let _ = tcp.set_nodelay(true);
 
-        if request.url.scheme() == "https" {
-            let host_str = request.host();
-            let server_name = rustls::pki_types::ServerName::try_from(host_str.to_owned())
-                .map_err(|_| NetError::InvalidHost(host_str.to_owned()))?;
+        let result = if request.url.scheme() == "https" {
+            let server_name = request.sni_name()?;
 
             let conn = rustls::ClientConnection::new(Arc::clone(&self.tls_config), server_name)
                 .map_err(|e| NetError::Tls(e.to_string()))?;
 
-            let mut tls_stream = rustls::StreamOwned::new(conn, tcp);
-            send_and_receive(&mut tls_stream, request, max_response_bytes)
+            let tls_stream = rustls::StreamOwned::new(conn, tcp);
+            let mut stream = DeadlineStream::new(
+                tls_stream,
+                tcp_clone,
+                deadline,
+                timeouts.read,
+                timeouts.write,
+            );
+            send_and_receive(&mut stream, request, max_response_bytes, deadline)
         } else {
-            let mut stream = tcp;
-            send_and_receive(&mut stream, request, max_response_bytes)
+            let mut stream =
+                DeadlineStream::new(tcp, tcp_clone, deadline, timeouts.read, timeouts.write);
+            send_and_receive(&mut stream, request, max_response_bytes, deadline)
+        };
+
+        result.map_err(|err| match err {
+            NetError::Io(ref io_err) if request.url.scheme() == "https" => {
+                let msg = io_err.to_string();
+                if msg.contains("cert")
+                    || msg.contains("peer")
+                    || msg.contains("handshake")
+                    || msg.contains("tls")
+                {
+                    NetError::Tls(msg)
+                } else {
+                    err
+                }
+            }
+            other => other,
+        })
+    }
+}
+
+fn read_bounded_line<R: BufRead>(
+    reader: &mut R,
+    buf: &mut String,
+    max_line_bytes: usize,
+    deadline: Instant,
+) -> Result<usize, NetError> {
+    buf.clear();
+    let mut total = 0;
+    loop {
+        if Instant::now() >= deadline {
+            return Err(NetError::Timeout);
+        }
+        let available = match reader.fill_buf() {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                return Err(NetError::Timeout);
+            }
+            Err(e) => return Err(NetError::Io(e)),
+        };
+        if available.is_empty() {
+            break; // EOF
+        }
+        let (found_newline, take_len) = match available.iter().position(|&b| b == b'\n') {
+            Some(pos) => (true, pos + 1),
+            None => (false, available.len()),
+        };
+        if total + take_len > max_line_bytes {
+            return Err(NetError::LineTooLong {
+                limit: max_line_bytes,
+            });
+        }
+        let s = std::str::from_utf8(&available[..take_len]).map_err(|_| {
+            NetError::InvalidResponse("invalid UTF-8 in HTTP header or status line".to_owned())
+        })?;
+        buf.push_str(s);
+        total += take_len;
+        reader.consume(take_len);
+        if found_newline {
+            break;
         }
     }
+    Ok(total)
 }
 
 fn send_and_receive<S: Read + Write>(
     stream: &mut S,
     request: &HttpRequest,
     max_response_bytes: usize,
+    deadline: Instant,
 ) -> Result<HttpResponse, NetError> {
+    // Validate headers for CR or LF injection
+    for (k, v) in &request.headers {
+        if k.bytes().any(|b| b == b'\r' || b == b'\n')
+            || v.bytes().any(|b| b == b'\r' || b == b'\n')
+        {
+            return Err(NetError::InvalidHeader(format!("{k}: {v}")));
+        }
+    }
+
     // 1. Build and send request
     let path_and_query = match request.url.query() {
         Some(q) => format!("{}?{}", request.url.path(), q),
@@ -223,10 +442,7 @@ fn send_and_receive<S: Read + Write>(
         path_and_query
     };
 
-    let host_header = match request.url.port() {
-        Some(p) => format!("{}:{}", request.host(), p),
-        None => request.host().to_owned(),
-    };
+    let host_header = request.host_header();
 
     let mut header_buf = Vec::new();
     write!(
@@ -267,7 +483,7 @@ fn send_and_receive<S: Read + Write>(
     let mut total_header_bytes = 0;
 
     let mut status_line = String::new();
-    let n = reader.read_line(&mut status_line)?;
+    let n = read_bounded_line(&mut reader, &mut status_line, MAX_LINE_BYTES, deadline)?;
     if n == 0 {
         return Err(NetError::InvalidResponse("empty response".to_owned()));
     }
@@ -286,7 +502,7 @@ fn send_and_receive<S: Read + Write>(
     let mut headers = Vec::new();
     loop {
         let mut line = String::new();
-        let bytes_read = reader.read_line(&mut line)?;
+        let bytes_read = read_bounded_line(&mut reader, &mut line, MAX_LINE_BYTES, deadline)?;
         if bytes_read == 0 {
             break;
         }
@@ -318,7 +534,7 @@ fn send_and_receive<S: Read + Write>(
         let mut chunks = Vec::new();
         loop {
             let mut size_line = String::new();
-            reader.read_line(&mut size_line)?;
+            read_bounded_line(&mut reader, &mut size_line, 128, deadline)?;
             let size_str = size_line.trim().split(';').next().unwrap_or("0");
             let chunk_size = usize::from_str_radix(size_str.trim(), 16).map_err(|e| {
                 NetError::InvalidResponse(format!("invalid chunk size '{size_str}': {e}"))
@@ -327,11 +543,16 @@ fn send_and_receive<S: Read + Write>(
             if chunk_size == 0 {
                 // Read trailing CRLF / trailers until empty line
                 let mut trailer = String::new();
-                reader.read_line(&mut trailer)?;
+                read_bounded_line(&mut reader, &mut trailer, MAX_LINE_BYTES, deadline)?;
                 break;
             }
 
-            if chunks.len() + chunk_size > max_response_bytes {
+            if chunk_size > max_response_bytes
+                || chunks
+                    .len()
+                    .checked_add(chunk_size)
+                    .is_none_or(|new_len| new_len > max_response_bytes)
+            {
                 return Err(NetError::ResponseTooLarge {
                     limit: max_response_bytes,
                 });
@@ -413,7 +634,11 @@ impl Transport for MockTransport {
         pinned_addr: SocketAddr,
         _timeouts: &Timeouts,
         max_response_bytes: usize,
+        deadline: Instant,
     ) -> Result<HttpResponse, NetError> {
+        if Instant::now() >= deadline {
+            return Err(NetError::Timeout);
+        }
         let resp = (self.handler)(request, pinned_addr)?;
         if resp.body.len() > max_response_bytes {
             return Err(NetError::ResponseTooLarge {

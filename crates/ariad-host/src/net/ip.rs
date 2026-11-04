@@ -73,6 +73,11 @@ pub fn classify_ipv4(v4: Ipv4Addr) -> Result<(), IpCategory> {
         return Err(IpCategory::SharedAddressSpace);
     }
 
+    // 168.63.129.16/32 - Azure WireServer / host metadata RFC 3927 alternative
+    if octets == [168, 63, 129, 16] {
+        return Err(IpCategory::CloudMetadata);
+    }
+
     // 169.254.0.0/16 - Link-local RFC 3927 (includes 169.254.169.254 cloud metadata)
     if octets[0] == 169 && octets[1] == 254 {
         if octets[2] == 169 && octets[3] == 254 {
@@ -94,6 +99,16 @@ pub fn classify_ipv4(v4: Ipv4Addr) -> Result<(), IpCategory> {
     // 192.0.2.0/24 - TEST-NET-1 Documentation RFC 5737
     if octets[0] == 192 && octets[1] == 0 && octets[2] == 2 {
         return Err(IpCategory::Documentation);
+    }
+
+    // 192.31.196.0/24 - AS112-v4 RFC 7535
+    if octets[0] == 192 && octets[1] == 31 && octets[2] == 196 {
+        return Err(IpCategory::Reserved);
+    }
+
+    // 192.52.193.0/24 - AMT RFC 7450
+    if octets[0] == 192 && octets[1] == 52 && octets[2] == 193 {
+        return Err(IpCategory::Reserved);
     }
 
     // 192.88.99.0/24 - 6to4 Relay Anycast RFC 7526 (deprecated)
@@ -203,6 +218,21 @@ pub fn classify_ipv6(v6: Ipv6Addr) -> Result<(), IpCategory> {
 
     // 2001:0000::/32 - Teredo RFC 4380 (embeds IPv4; reserved for tunneling)
     if segments[0] == 0x2001 && segments[1] == 0x0000 {
+        return Err(IpCategory::Reserved);
+    }
+
+    // 2001:2::/48 - Benchmarking RFC 5180
+    if segments[0] == 0x2001 && segments[1] == 0x0002 && segments[2] == 0 {
+        return Err(IpCategory::Benchmarking);
+    }
+
+    // 2001:10::/28 - ORCHID RFC 4843 (deprecated)
+    if segments[0] == 0x2001 && (segments[1] & 0xfff0 == 0x0010) {
+        return Err(IpCategory::Reserved);
+    }
+
+    // 2001:20::/28 - ORCHIDv2 RFC 7343
+    if segments[0] == 0x2001 && (segments[1] & 0xfff0 == 0x0020) {
         return Err(IpCategory::Reserved);
     }
 
