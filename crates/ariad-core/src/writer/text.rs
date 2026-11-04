@@ -26,6 +26,19 @@ pub fn write(document: &Document) -> WriteOutput {
     let doc = normalize_document(document);
     let mut writer = TextWriter::new();
 
+    let has_metadata = doc.meta.title.is_some()
+        || !doc.meta.authors.is_empty()
+        || doc.meta.language.is_some()
+        || doc.meta.date.is_some()
+        || doc.meta.subject.is_some()
+        || !doc.meta.keywords.is_empty();
+    if has_metadata {
+        writer.warn(
+            WarningCode::UnsupportedNode,
+            "document metadata is not supported in plain text output and was dropped",
+        );
+    }
+
     if !writer.write_blocks(&doc.body, 0) {
         return output_ceiling_exceeded();
     }
@@ -120,7 +133,12 @@ impl TextWriter {
         match block {
             Block::Heading { level, content } => {
                 let mut temp = Vec::new();
-                let heading_text = inlines_to_string(content, &mut temp);
+                let Some(heading_text) =
+                    inlines_to_string(content, &mut temp, self.remaining_bytes)
+                else {
+                    self.warnings.extend(temp);
+                    return false;
+                };
                 self.warnings.extend(temp);
                 let hashes = "#".repeat((*level as usize).clamp(1, 6));
                 self.push_str(&format!("{hashes} {heading_text}\n\n"))
@@ -176,7 +194,7 @@ impl TextWriter {
                 for item in items {
                     let marker = if *ordered {
                         let m = format!("{num}. ");
-                        num += 1;
+                        num = num.saturating_add(1);
                         m
                     } else {
                         "- ".to_string()
@@ -212,14 +230,45 @@ impl TextWriter {
             }
             Block::Table {
                 caption,
-                columns: _,
+                columns,
                 head,
                 body,
                 footnotes,
             } => {
+                let requested_columns = head
+                    .iter()
+                    .chain(body.iter())
+                    .map(|r| r.len())
+                    .max()
+                    .unwrap_or(0)
+                    .max(columns.len());
+                if requested_columns > MAX_TABLE_COLUMNS {
+                    self.warn(
+                        WarningCode::UnsupportedNode,
+                        "table columns beyond 128 were omitted",
+                    );
+                }
+
+                let has_spans = head
+                    .iter()
+                    .chain(body.iter())
+                    .flatten()
+                    .any(|cell| cell.rowspan > 1 || cell.colspan > 1);
+                if has_spans {
+                    self.warn(
+                        WarningCode::UnsupportedNode,
+                        "table cell rowspan and colspan are not supported in plain text and were ignored",
+                    );
+                }
+
                 if let Some(caption_inlines) = caption {
                     let mut temp = Vec::new();
-                    let cap_str = inlines_to_string(caption_inlines, &mut temp);
+                    let Some(cap_str) =
+                        inlines_to_string(caption_inlines, &mut temp, self.remaining_bytes)
+                    else {
+                        self.warnings.extend(temp);
+                        return false;
+                    };
                     self.warnings.extend(temp);
                     if !self.push_str(&format!("Table: {cap_str}\n")) {
                         return false;
@@ -231,7 +280,14 @@ impl TextWriter {
                 for row in head {
                     let mut rendered_row = Vec::new();
                     for cell in row {
-                        rendered_row.push(cell_to_string(cell, &mut self.warnings));
+                        let mut temp = Vec::new();
+                        let Some(rendered) = cell_to_string(cell, &mut temp, self.remaining_bytes)
+                        else {
+                            self.warnings.extend(temp);
+                            return false;
+                        };
+                        self.warnings.extend(temp);
+                        rendered_row.push(rendered);
                     }
                     head_rows.push(rendered_row);
                 }
@@ -240,18 +296,19 @@ impl TextWriter {
                 for row in body {
                     let mut rendered_row = Vec::new();
                     for cell in row {
-                        rendered_row.push(cell_to_string(cell, &mut self.warnings));
+                        let mut temp = Vec::new();
+                        let Some(rendered) = cell_to_string(cell, &mut temp, self.remaining_bytes)
+                        else {
+                            self.warnings.extend(temp);
+                            return false;
+                        };
+                        self.warnings.extend(temp);
+                        rendered_row.push(rendered);
                     }
                     body_rows.push(rendered_row);
                 }
 
-                let col_count = head_rows
-                    .iter()
-                    .chain(body_rows.iter())
-                    .map(|r| r.len())
-                    .max()
-                    .unwrap_or(0)
-                    .min(MAX_TABLE_COLUMNS);
+                let col_count = requested_columns.min(MAX_TABLE_COLUMNS);
 
                 if col_count > 0 {
                     let mut col_widths = vec![3usize; col_count];
@@ -270,8 +327,26 @@ impl TextWriter {
 
                     // Write separator
                     if !head_rows.is_empty() {
-                        let sep_parts: Vec<String> =
-                            col_widths.iter().map(|&w| "-".repeat(w.max(3))).collect();
+                        let sep_parts: Vec<String> = (0..col_count)
+                            .map(|c| {
+                                let w = col_widths[c].max(3);
+                                let align = columns
+                                    .get(c)
+                                    .map_or(crate::ir::Alignment::Default, |col| col.align);
+                                match align {
+                                    crate::ir::Alignment::Left => {
+                                        format!(":{}", "-".repeat(w.saturating_sub(1)))
+                                    }
+                                    crate::ir::Alignment::Right => {
+                                        format!("{}:", "-".repeat(w.saturating_sub(1)))
+                                    }
+                                    crate::ir::Alignment::Center => {
+                                        format!(":{}:", "-".repeat(w.saturating_sub(2)))
+                                    }
+                                    crate::ir::Alignment::Default => "-".repeat(w),
+                                }
+                            })
+                            .collect();
                         if !self.push_str(&format!("| {} |\n", sep_parts.join(" | "))) {
                             return false;
                         }
@@ -288,7 +363,12 @@ impl TextWriter {
 
                 if !footnotes.is_empty() {
                     let mut temp = Vec::new();
-                    let fn_str = inlines_to_string(footnotes, &mut temp);
+                    let Some(fn_str) =
+                        inlines_to_string(footnotes, &mut temp, self.remaining_bytes)
+                    else {
+                        self.warnings.extend(temp);
+                        return false;
+                    };
                     self.warnings.extend(temp);
                     if !self.push_str(&format!("Footnotes: {fn_str}\n\n")) {
                         return false;
@@ -304,7 +384,12 @@ impl TextWriter {
                 );
                 if !caption.is_empty() {
                     let mut temp = Vec::new();
-                    let cap_text = inlines_to_string(caption, &mut temp);
+                    let Some(cap_text) =
+                        inlines_to_string(caption, &mut temp, self.remaining_bytes)
+                    else {
+                        self.warnings.extend(temp);
+                        return false;
+                    };
                     self.warnings.extend(temp);
                     self.push_str(&format!("[Figure: {cap_text}]\n\n"))
                 } else {
@@ -419,18 +504,34 @@ impl TextWriter {
     }
 }
 
-fn inlines_to_string(inlines: &[Inline], warnings: &mut Vec<Warning>) -> String {
+fn inlines_to_string(
+    inlines: &[Inline],
+    warnings: &mut Vec<Warning>,
+    remaining_bytes: usize,
+) -> Option<String> {
     let mut writer = TextWriter::new();
-    let _ = writer.write_inlines(inlines);
+    writer.remaining_bytes = remaining_bytes;
+    if !writer.write_inlines(inlines) {
+        warnings.extend(writer.warnings);
+        return None;
+    }
     warnings.extend(writer.warnings);
-    writer.out
+    Some(writer.out)
 }
 
-fn cell_to_string(cell: &TableCell, warnings: &mut Vec<Warning>) -> String {
+fn cell_to_string(
+    cell: &TableCell,
+    warnings: &mut Vec<Warning>,
+    remaining_bytes: usize,
+) -> Option<String> {
     let mut writer = TextWriter::new();
-    let _ = writer.write_blocks(&cell.blocks, 0);
+    writer.remaining_bytes = remaining_bytes;
+    if !writer.write_blocks(&cell.blocks, 0) {
+        warnings.extend(writer.warnings);
+        return None;
+    }
     warnings.extend(writer.warnings);
-    writer.out.trim().replace('\n', " ")
+    Some(writer.out.trim().replace('\n', " "))
 }
 
 #[cfg(test)]
@@ -757,7 +858,7 @@ mod tests {
         assert!(output.content.contains("11. [x] Finished item\n"));
         assert!(output.content.contains("Table: Metrics Table\n"));
         assert!(output.content.contains("| Metric   | Score |\n"));
-        assert!(output.content.contains("| -------- | ----- |\n"));
+        assert!(output.content.contains("| :------- | ----: |\n"));
         assert!(output.content.contains("| Fidelity | 99.5% |\n"));
         assert!(
             output
@@ -770,5 +871,160 @@ mod tests {
                 .contains("[^fn1]: Footnote explanation text.\n\n")
         );
         assert!(output.warnings.is_empty());
+    }
+
+    #[test]
+    fn pipe_tables_support_alignment_markers() {
+        let doc = Document {
+            version: crate::ir::IR_VERSION.to_owned(),
+            meta: Metadata::default(),
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![
+                    ColumnSpec {
+                        align: Alignment::Left,
+                    },
+                    ColumnSpec {
+                        align: Alignment::Center,
+                    },
+                    ColumnSpec {
+                        align: Alignment::Right,
+                    },
+                    ColumnSpec {
+                        align: Alignment::Default,
+                    },
+                ],
+                head: vec![vec![
+                    TableCell {
+                        rowspan: 1,
+                        colspan: 1,
+                        header: Some(true),
+                        blocks: vec![Block::Paragraph {
+                            content: vec![Inline::Text { text: "L".into() }],
+                        }],
+                    },
+                    TableCell {
+                        rowspan: 1,
+                        colspan: 1,
+                        header: Some(true),
+                        blocks: vec![Block::Paragraph {
+                            content: vec![Inline::Text {
+                                text: "Center".into(),
+                            }],
+                        }],
+                    },
+                    TableCell {
+                        rowspan: 1,
+                        colspan: 1,
+                        header: Some(true),
+                        blocks: vec![Block::Paragraph {
+                            content: vec![Inline::Text { text: "R".into() }],
+                        }],
+                    },
+                    TableCell {
+                        rowspan: 1,
+                        colspan: 1,
+                        header: Some(true),
+                        blocks: vec![Block::Paragraph {
+                            content: vec![Inline::Text { text: "Def".into() }],
+                        }],
+                    },
+                ]],
+                body: vec![],
+                footnotes: vec![],
+            }],
+            assets: Default::default(),
+            layout: None,
+            provenance: None,
+            furniture: vec![],
+        };
+
+        let output = write(&doc);
+        // Column widths: "L" -> 3 (min), "Center" -> 6, "R" -> 3 (min), "Def" -> 3 (min)
+        assert!(output.content.contains("| :-- | :----: | --: | --- |\n"));
+    }
+
+    #[test]
+    fn warns_on_dropped_table_features_and_metadata() {
+        let doc = Document {
+            version: crate::ir::IR_VERSION.to_owned(),
+            meta: Metadata {
+                title: Some("Document Title".into()),
+                authors: vec!["Author Name".into()],
+                ..Default::default()
+            },
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![],
+                head: vec![vec![
+                    TableCell {
+                        rowspan: 2,
+                        colspan: 1,
+                        header: Some(true),
+                        blocks: vec![],
+                    },
+                    TableCell {
+                        rowspan: 1,
+                        colspan: 2,
+                        header: Some(true),
+                        blocks: vec![],
+                    },
+                ]],
+                body: vec![],
+                footnotes: vec![],
+            }],
+            assets: Default::default(),
+            layout: None,
+            provenance: None,
+            furniture: vec![],
+        };
+
+        let output = write(&doc);
+        let warnings: Vec<&str> = output.warnings.iter().map(|w| w.message.as_str()).collect();
+        assert!(warnings.iter().any(|msg| msg.contains("document metadata")));
+        assert!(
+            warnings
+                .iter()
+                .any(|msg| msg.contains("rowspan and colspan"))
+        );
+    }
+
+    #[test]
+    fn ordered_list_counter_saturates_without_overflow() {
+        let doc = Document {
+            version: crate::ir::IR_VERSION.to_owned(),
+            meta: Metadata::default(),
+            body: vec![Block::List {
+                ordered: true,
+                start: Some(u64::MAX),
+                tight: true,
+                items: vec![
+                    ListItem {
+                        checked: None,
+                        blocks: vec![Block::Paragraph {
+                            content: vec![Inline::Text {
+                                text: "first".into(),
+                            }],
+                        }],
+                    },
+                    ListItem {
+                        checked: None,
+                        blocks: vec![Block::Paragraph {
+                            content: vec![Inline::Text {
+                                text: "second".into(),
+                            }],
+                        }],
+                    },
+                ],
+            }],
+            assets: Default::default(),
+            layout: None,
+            provenance: None,
+            furniture: vec![],
+        };
+
+        let output = write(&doc);
+        assert!(output.content.contains(&format!("{}. first\n", u64::MAX)));
+        assert!(output.content.contains(&format!("{}. second\n", u64::MAX)));
     }
 }
