@@ -92,7 +92,7 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotations`, `pdf.annotations_import`, `pdf.annotations_export` |
 | `forms` | AcroForm field inspection, filling, creation, detection, and flattening | `pdf.forms_list`, `pdf.forms_fill`, `pdf.forms_create`, `pdf.forms_detect`, `pdf.forms_flatten`, `pdf.forms_import`, `pdf.forms_export` |
-| `sign` | PAdES digital signing, timestamping, and signature verification | `pdf.sign`, `pdf.sign_verify` |
+| `sign` | PAdES digital signing, timestamping, signature verification, and removal | `pdf.sign`, `pdf.sign_verify`, `pdf.sign_remove` |
 | `redact` | True object-stream and raster redaction with verification report | `pdf.redact`, `pdf.redact_verify` |
 | `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare_visual`, `pdf.compare_semantic` |
 | `edit` | Stateless page-mode in-place edits and document-mode export helpers | `pdf.edit_apply` |
@@ -407,6 +407,8 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.unlock_forms` → `report.unlocked.pdf`
   - `pdf.ocr` → `scan.ocr.pdf`
   - `pdf.sign` → `contract.signed.pdf`
+  - `pdf.sign_verify` → `contract.sign-verify.json`
+  - `pdf.sign_remove` → `contract.unsigned.pdf`
   - `pdf.redact` → `contract.redacted.pdf` (plus `contract.redaction-report.json` when verification report is requested)
   - `pdf.info` → prints structured JSON to stdout on CLI when `--json` is passed (or human summary without `-o`), and writes `report.info.json` when `-o` specifies a directory or file.
   - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio`, `pdf.layers` and `pdf.annotations`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.

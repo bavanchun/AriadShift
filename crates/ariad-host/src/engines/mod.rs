@@ -567,7 +567,7 @@ pub const SIGN: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
-    pack_program_env: None,
+    pack_program_env: Some("ASHIFT_SIGN_PROGRAM"),
 };
 
 /// veraPDF PDF/A validation pack (`ariad-engine/2`).

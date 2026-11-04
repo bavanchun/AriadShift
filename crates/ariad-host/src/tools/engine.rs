@@ -96,6 +96,16 @@ pub fn execute(
         }
     }
 
+    let _cert_guard = if effective_engine == "sign" && spec.id == "pdf.sign" {
+        super::sign::stage_binary_certificate(
+            workspace,
+            engine_params,
+            &super::secrets::SecretBag::new(),
+        )?
+    } else {
+        super::sign::SecretFileGuard(None)
+    };
+
     let inputs: Vec<Input> = staged_inputs
         .iter()
         .map(|(path, format)| Input {
@@ -201,7 +211,7 @@ pub fn execute(
 
 fn engine_limits(engine: &str, limits: &Limits) -> Limits {
     let mut effective = limits.clone();
-    if matches!(engine, "pdfium" | "tesseract") {
+    if matches!(engine, "pdfium" | "tesseract" | "sign") {
         let defaults = Limits::cloud();
         effective.timeout_s = effective.timeout_s.or(defaults.timeout_s);
         effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);

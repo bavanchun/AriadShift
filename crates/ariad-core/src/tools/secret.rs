@@ -21,6 +21,7 @@ pub const SECRET_HANDLE_PREFIX: &str = "sec_";
 /// Used as a defence-in-depth fallback when validating recipes that reference tools not yet
 /// present in the active registry (`pdf.decrypt`, `pdf.encrypt`, `pdf.permissions`, `pdf.sign`).
 pub const KNOWN_SECRET_FIELD_NAMES: &[&str] = &[
+    "certificate",
     "password",
     "user_password",
     "owner_password",

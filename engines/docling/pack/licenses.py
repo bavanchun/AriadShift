@@ -56,39 +56,27 @@ from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from functools import cache
 from importlib import metadata
+import importlib.util
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-ALLOWED = frozenset(
-    {
-        "0BSD",
-        "Apache-2.0",
-        "BSD-2-Clause",
-        "BSD-3-Clause",
-        "BSL-1.0",
-        "CNRI-Python",
-        "HPND",
-        "ISC",
-        "MIT",
-        "MIT-CMU",
-        "PSF-2.0",
-        "Python-2.0",
-        "Unlicense",
-        "Zlib",
-    }
-)
+_core_path = Path(__file__).resolve().parents[2] / "common" / "licenses" / "core.py"
+_spec = importlib.util.spec_from_file_location("engines_common_licenses_core", _core_path)
+if _spec is None or _spec.loader is None:
+    raise ImportError(f"could not load shared licence core from {_core_path}")
+_core = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = _core
+_spec.loader.exec_module(_core)
+
+ALLOWED = _core.ALLOWED
+ALLOWED_DATA = _core.ALLOWED_DATA
+ALLOWED_EXCEPTIONS = _core.ALLOWED_EXCEPTIONS
+_DENIED = _core._DENIED
+_GPL_RUNTIME = _core._GPL_RUNTIME
+_RAW_DENIED = _core._RAW_DENIED
+
 # MPL-2.0 is accepted only for these unmodified distributions, one reviewed exception each.
 MPL_EXCEPTIONS = frozenset({"certifi", "tqdm"})
-# License exceptions that only relax a permissive licence.
-ALLOWED_EXCEPTIONS = frozenset({"LLVM-exception"})
-# Model weights and data files.
-ALLOWED_DATA = frozenset({"Apache-2.0", "CDLA-Permissive-2.0", "CC0-1.0", "MIT", "PSF-2.0"})
-
-_DENIED = re.compile(r"AGPL|(?<!L)GPL|SSPL|RAIL|BUSL|Commons-Clause|NC-|Proprietary", re.I)
-_RAW_DENIED = re.compile(r"(?<!Lesser )General Public License|Affero", re.I)
-_GPL_RUNTIME = re.compile(
-    rb"lib[\w-]+ licen[sc]e:\s*(?:A?GPL)\b|(?:^|\s)--enable-gpl(?:\s|\x00|$)", re.I
-)
 
 # Free-text ``License`` fields and trove classifiers seen in the locked dependencies.
 _KNOWN = {
