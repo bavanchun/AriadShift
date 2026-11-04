@@ -102,22 +102,8 @@ pub fn cbz_to_pdf(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<Vec<u8
         }));
     }
 
-    // Verify no duplicate entry names exist in the central directory
-    let mut cd_cursor = 0;
-    let cd_sig = b"PK\x01\x02";
-    let mut seen_cd_names = std::collections::HashSet::new();
-    while let Some(pos) = bytes[cd_cursor..].windows(4).position(|w| w == cd_sig) {
-        let abs_pos = cd_cursor + pos;
-        if abs_pos + 46 <= bytes.len() {
-            let name_len = u16::from_le_bytes([bytes[abs_pos + 28], bytes[abs_pos + 29]]) as usize;
-            if abs_pos + 46 + name_len <= bytes.len() {
-                let name = &bytes[abs_pos + 46..abs_pos + 46 + name_len];
-                if !seen_cd_names.insert(name) {
-                    return Err(PdfError::Malformed);
-                }
-            }
-        }
-        cd_cursor = abs_pos + 4;
+    if archive.has_duplicate_names() {
+        return Err(PdfError::Malformed);
     }
 
     let mut image_names: Vec<String> = Vec::new();
