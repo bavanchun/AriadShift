@@ -1029,7 +1029,15 @@ fn tables_to_csv_end_to_end_cli_execution() {
     // and stderr "no tables found in document"
     let no_tables_fixture =
         repository_root().join("fixtures/docling/pd-en-gao-08-35-highlights.docling.json");
-    if engine_probe_path.exists() && no_tables_fixture.exists() {
+    if !engine_probe_path.exists() {
+        println!(
+            "skipping: engine-probe binary not found at {}; skipping probe-dependent tool cases",
+            engine_probe_path.display()
+        );
+        return;
+    }
+
+    if no_tables_fixture.exists() {
         let no_tables_cmd = ashift_cmd()
             .env("ASHIFT_SANDBOX", "off")
             .env(
@@ -1055,7 +1063,7 @@ fn tables_to_csv_end_to_end_cli_execution() {
     }
 
     // Case 3: Document with tables outputs table-001.csv, table-002.csv, etc.
-    if engine_probe_path.exists() && docling_fixture.exists() {
+    if docling_fixture.exists() {
         let tables_out_dir = tmp.path().join("tables_out");
         fs::create_dir_all(&tables_out_dir).unwrap();
         let cmd = ashift_cmd()
@@ -1100,19 +1108,80 @@ fn tables_to_csv_end_to_end_cli_execution() {
             "en-map-room.table-002.csv must exist; artifacts: {artifacts:?}"
         );
 
-        // Verify content and formula guard
         let content1 = fs::read_to_string(&t1).unwrap();
         assert!(!content1.is_empty(), "table-001.csv must not be empty");
-        for line in content1.lines() {
+    }
+
+    // Case 4: Dedicated formula-injection guarding test using committed fixture with =, +, -, @
+    let formula_fixture = repository_root().join("fixtures/docling/en-formula-cells.docling.json");
+    if formula_fixture.exists() {
+        let formula_out_dir = tmp.path().join("formula_out");
+        fs::create_dir_all(&formula_out_dir).unwrap();
+        let cmd = ashift_cmd()
+            .env("ASHIFT_SANDBOX", "off")
+            .env(
+                "ASHIFT_DOCLING_ENGINE",
+                format!(
+                    "\"{}\" docling \"{}\"",
+                    engine_probe_path.display(),
+                    formula_fixture.display()
+                ),
+            )
+            .args(["tool", "pdf.tables_to_csv"])
+            .arg(&input_pdf)
+            .arg("-o")
+            .arg(&formula_out_dir)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(
+            cmd.status.success(),
+            "formula tool execution failed: {}",
+            String::from_utf8_lossy(&cmd.stderr)
+        );
+        let csv_path = if formula_out_dir.join("en-map-room.table-001.csv").is_file() {
+            formula_out_dir.join("en-map-room.table-001.csv")
+        } else {
+            formula_out_dir.join("en-map-room.table.csv")
+        };
+        assert!(
+            csv_path.is_file(),
+            "formula csv output must exist in {formula_out_dir:?}"
+        );
+        let content = fs::read_to_string(&csv_path).unwrap();
+        let mut found_equals = false;
+        let mut found_plus = false;
+        let mut found_minus = false;
+        let mut found_at = false;
+        for line in content.lines() {
             for cell in line.split(',') {
                 let unquoted = cell.trim_matches('"');
-                if unquoted.starts_with(['=', '+', '@']) {
-                    assert!(
-                        unquoted.starts_with('\''),
-                        "formula trigger must be guarded: {unquoted}"
-                    );
+                if unquoted.starts_with("'=SUM") {
+                    found_equals = true;
+                } else if unquoted.starts_with("'+12345") {
+                    found_plus = true;
+                } else if unquoted.starts_with("'-999") {
+                    found_minus = true;
+                } else if unquoted.starts_with("'@formula") {
+                    found_at = true;
                 }
             }
         }
+        assert!(
+            found_equals,
+            "cell beginning with = must be guarded with leading apostrophe; content: {content}"
+        );
+        assert!(
+            found_plus,
+            "cell beginning with + must be guarded with leading apostrophe; content: {content}"
+        );
+        assert!(
+            found_minus,
+            "cell beginning with - must be guarded with leading apostrophe; content: {content}"
+        );
+        assert!(
+            found_at,
+            "cell beginning with @ must be guarded with leading apostrophe; content: {content}"
+        );
     }
 }

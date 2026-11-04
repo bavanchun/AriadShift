@@ -1385,6 +1385,22 @@ phase = "1b"
 routes = ["docling->ir"]
 
 [[fixture]]
+id = "docling-en-formula-cells"
+path = "fixtures/docling/en-formula-cells.docling.json"
+format = "docling+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Formula injection guard test table"
+origin = "generated"
+license = "Apache-2.0"
+license_basis = "Authored for AriadShift test suite to verify formula injection guarding."
+attribution = "AriadShift contributors"
+sha256 = "c18fda0ed875ca771bd669de4877bac87e9bc7538aca51aed6419777de51686f"
+tags = ["tables", "formula-guard"]
+phase = "10"
+routes = ["docling->ir"]
+
+[[fixture]]
 id = "vi-garden-notes-odt"
 path = "fixtures/office/vi-garden-notes.odt"
 format = "odt"
