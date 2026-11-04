@@ -52,6 +52,8 @@ pub mod permissions;
 pub mod portfolio;
 pub mod posterize;
 pub mod qr;
+pub mod redact;
+pub mod redact_internal;
 pub mod remove_blank;
 pub mod render;
 pub mod reorder;
@@ -123,6 +125,14 @@ pub use permissions::{PdfPermissions, PermissionsParams};
 pub use portfolio::{PortfolioAction, PortfolioParams, PortfolioView};
 pub use posterize::{PosterizeParams, PosterizeTiles};
 pub use qr::{QrBackground, QrLevel, QrParams};
+pub use redact::{
+    RedactParams, RedactVerifyParams, RedactionCarrierEvidence, RedactionPreset, RedactionScope,
+    RedactionTarget, RedactionVerificationReport,
+};
+pub use redact_internal::{
+    RedactGeometry, RedactGeometryChar, RedactGeometryPage, RedactInspectParams,
+    RedactionCheckStatus, RedactionChecks, RedactionVerificationStatus,
+};
 pub use remove_blank::RemoveBlankParams;
 pub use render::{Background, Combine, RasterFormat, RenderParams, ToImagesParams};
 pub use reorder::{ReorderParams, ReorderPreset, ReorderSpec};

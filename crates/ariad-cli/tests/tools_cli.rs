@@ -414,7 +414,7 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 81);
+    assert_eq!(all_tools.len(), 83);
     for id in [
         "pdf.annotations",
         "pdf.annotations_import",
@@ -444,6 +444,8 @@ fn tools_command_lists_registry_json_and_human() {
         "pdf.deskew",
         "pdf.scan_split",
         "pdf.scanner_effect",
+        "pdf.redact",
+        "pdf.redact_verify",
     ] {
         assert!(
             all_tools
@@ -992,4 +994,170 @@ fn recipe_run_prints_steps_requires_yes_and_rejects_literal_secrets() {
         9,
         &["error[invalid_params]"],
     );
+}
+
+#[test]
+fn redact_and_verify_cli_end_to_end() {
+    let Some(pdfium) = std::env::var_os("ASHIFT_PACK_PDFIUM")
+        .or_else(|| std::env::var_os("ARIAD_TEST_PDFIUM_PACK"))
+    else {
+        if std::env::var_os("ARIAD_REQUIRE_PDFIUM_PACK").is_some() {
+            panic!("ARIAD_REQUIRE_PDFIUM_PACK is set but PDFium pack was not resolved");
+        }
+        eprintln!("skipping: PDFium pack not configured");
+        return;
+    };
+
+    let tmp = TempDir::new().unwrap();
+    let redacted_pdf = tmp.path().join("redacted.pdf");
+
+    // 1. Run ashift tool pdf.redact
+    let mut cmd = ashift_cmd();
+    cmd.env("ASHIFT_PACK_PDFIUM", &pdfium);
+    cmd.env("ARIAD_TEST_PDFIUM_DIR", &pdfium);
+    let output = cmd
+        .args(["tool", "pdf.redact"])
+        .arg(pdf_fixture("mixed-sizes.pdf"))
+        .arg("-o")
+        .arg(&redacted_pdf)
+        .args([
+            "--param",
+            "targets=[{\"kind\":\"exact\",\"text\":\"Portfolio\"}]",
+            "--json",
+        ])
+        .output()
+        .expect("run ashift tool pdf.redact");
+
+    assert!(
+        output.status.success(),
+        "pdf.redact failed: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    assert!(redacted_pdf.is_file());
+
+    let val: Value = serde_json::from_slice(&output.stdout).expect("parse outcome JSON");
+    let report = &val["inline_json"];
+    assert_eq!(report["status"], "verified");
+    assert_eq!(report["match_count"], 3);
+
+    // 2. Run ashift tool pdf.redact_verify on the clean redacted PDF
+    let mut cmd2 = ashift_cmd();
+    cmd2.env("ASHIFT_PACK_PDFIUM", &pdfium);
+    cmd2.env("ARIAD_TEST_PDFIUM_DIR", &pdfium);
+    let verify_clean = cmd2
+        .args(["tool", "pdf.redact_verify"])
+        .arg(&redacted_pdf)
+        .args([
+            "--param",
+            "targets=[{\"kind\":\"exact\",\"text\":\"Portfolio\"}]",
+            "--json",
+        ])
+        .output()
+        .expect("run ashift tool pdf.redact_verify clean");
+
+    assert!(verify_clean.status.success());
+    let val_clean: Value = serde_json::from_slice(&verify_clean.stdout).expect("parse verify JSON");
+    assert_eq!(val_clean["status"], "unverifiable");
+    assert_eq!(val_clean["checks"]["pdfium_text"], "pass");
+    assert_eq!(val_clean["checks"]["core_text"], "pass");
+    assert_eq!(val_clean["checks"]["region_render"], "unavailable");
+    assert_eq!(val_clean["checks"]["image_pixels"], "unavailable");
+
+    // 3. Run ashift tool pdf.redact_verify on unredacted input (must report failed)
+    let mut cmd3 = ashift_cmd();
+    cmd3.env("ASHIFT_PACK_PDFIUM", &pdfium);
+    cmd3.env("ARIAD_TEST_PDFIUM_DIR", &pdfium);
+    let verify_dirty = cmd3
+        .args(["tool", "pdf.redact_verify"])
+        .arg(pdf_fixture("mixed-sizes.pdf"))
+        .args([
+            "--param",
+            "targets=[{\"kind\":\"exact\",\"text\":\"Portfolio\"}]",
+            "--json",
+        ])
+        .output()
+        .expect("run ashift tool pdf.redact_verify dirty");
+
+    assert!(verify_dirty.status.success());
+    let val_dirty: Value =
+        serde_json::from_slice(&verify_dirty.stdout).expect("parse verify dirty JSON");
+    assert_eq!(val_dirty["status"], "failed");
+
+    // 4. Refuses encrypted input upfront with code 12
+    let encrypted_pdf = tmp.path().join("locked.pdf");
+    write_encrypted_stub_pdf(&encrypted_pdf);
+    let mut cmd4 = ashift_cmd();
+    cmd4.env("ASHIFT_PACK_PDFIUM", &pdfium);
+    cmd4.env("ARIAD_TEST_PDFIUM_DIR", &pdfium);
+    let encrypt_out = cmd4
+        .args(["tool", "pdf.redact"])
+        .arg(&encrypted_pdf)
+        .arg("-o")
+        .arg(tmp.path().join("encrypted_redacted.pdf"))
+        .args([
+            "--param",
+            "targets=[{\"kind\":\"exact\",\"text\":\"Portfolio\"}]",
+        ])
+        .output()
+        .expect("run ashift tool pdf.redact encrypted");
+
+    assert_eq!(
+        encrypt_out.status.code(),
+        Some(12),
+        "encrypted input must exit with code 12"
+    );
+
+    // 5. Run ashift tool pdf.redact with rectangle target (must succeed and verify)
+    let rect_pdf = tmp.path().join("rect_redacted.pdf");
+    let mut cmd5 = ashift_cmd();
+    cmd5.env("ASHIFT_PACK_PDFIUM", &pdfium);
+    cmd5.env("ARIAD_TEST_PDFIUM_DIR", &pdfium);
+    let rect_out = cmd5
+        .args(["tool", "pdf.redact"])
+        .arg(pdf_fixture("mixed-sizes.pdf"))
+        .arg("-o")
+        .arg(&rect_pdf)
+        .args([
+            "--param",
+            "targets=[{\"kind\":\"rectangle\",\"page\":1,\"rect\":{\"left\":50.0,\"bottom\":700.0,\"right\":200.0,\"top\":750.0}}]",
+            "--json",
+        ])
+        .output()
+        .expect("run ashift tool pdf.redact with rectangle");
+
+    assert!(
+        rect_out.status.success(),
+        "pdf.redact rectangle failed: {}",
+        String::from_utf8_lossy(&rect_out.stderr)
+    );
+    let val_rect: Value = serde_json::from_slice(&rect_out.stdout).expect("parse outcome JSON");
+    assert_eq!(val_rect["inline_json"]["status"], "verified");
+
+    // 6. Run ashift tool pdf.redact with page target (must succeed and verify)
+    let page_pdf = tmp.path().join("page_redacted.pdf");
+    let mut cmd6 = ashift_cmd();
+    cmd6.env("ASHIFT_PACK_PDFIUM", &pdfium);
+    cmd6.env("ARIAD_TEST_PDFIUM_DIR", &pdfium);
+    let page_out = cmd6
+        .args(["tool", "pdf.redact"])
+        .arg(pdf_fixture("mixed-sizes.pdf"))
+        .arg("-o")
+        .arg(&page_pdf)
+        .args([
+            "--param",
+            "targets=[{\"kind\":\"page\",\"page\":2}]",
+            "--json",
+        ])
+        .output()
+        .expect("run ashift tool pdf.redact with page");
+
+    assert!(
+        page_out.status.success(),
+        "pdf.redact page failed: {}",
+        String::from_utf8_lossy(&page_out.stderr)
+    );
+    let val_page: Value = serde_json::from_slice(&page_out.stdout).expect("parse outcome JSON");
+    assert_eq!(val_page["inline_json"]["status"], "verified");
 }

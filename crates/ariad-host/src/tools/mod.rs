@@ -11,6 +11,7 @@ mod ocr;
 mod ocr_text;
 pub mod publish;
 pub mod recipe;
+pub mod redact;
 pub mod run;
 pub mod secrets;
 pub mod sign;

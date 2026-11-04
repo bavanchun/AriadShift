@@ -7772,6 +7772,562 @@
       "version": "1"
     },
     {
+      "engine": "ariad-host",
+      "group": "redact",
+      "id": "pdf.redact",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RedactParams",
+        "description": "Parameters for true redaction.",
+        "type": "object",
+        "properties": {
+          "color": {
+            "description": "Opaque replacement color; black when omitted.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/HexColor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "invalidate_signatures": {
+            "description": "Explicitly permit invalidation of signatures by the full rewrite.",
+            "type": "boolean",
+            "default": false
+          },
+          "overlay_text": {
+            "description": "Optional replacement text.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "scope": {
+            "description": "Document carriers to inspect.",
+            "$ref": "#/$defs/RedactionScope",
+            "default": {
+              "annotations": true,
+              "attachments": true,
+              "images": true,
+              "metadata": true,
+              "text": true,
+              "vectors": true
+            }
+          },
+          "targets": {
+            "description": "Content and page regions to remove.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/RedactionTarget"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "targets"
+        ],
+        "$defs": {
+          "CropRect": {
+            "description": "Explicit crop rectangle coordinates `{ left, bottom, right, top }` in PDF points.",
+            "type": "object",
+            "properties": {
+              "bottom": {
+                "description": "Bottom coordinate (`lly`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "left": {
+                "description": "Left coordinate (`llx`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "right": {
+                "description": "Right coordinate (`urx`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "top": {
+                "description": "Top coordinate (`ury`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "left",
+              "bottom",
+              "right",
+              "top"
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "RedactionPreset": {
+            "description": "Built-in text detectors.",
+            "oneOf": [
+              {
+                "description": "Email address.",
+                "type": "string",
+                "const": "email"
+              },
+              {
+                "description": "International or Vietnamese phone number.",
+                "type": "string",
+                "const": "phone"
+              },
+              {
+                "description": "Vietnamese citizen identification number.",
+                "type": "string",
+                "const": "cccd"
+              },
+              {
+                "description": "Vietnamese legacy identity number.",
+                "type": "string",
+                "const": "cmnd"
+              },
+              {
+                "description": "International bank account number.",
+                "type": "string",
+                "const": "iban"
+              },
+              {
+                "description": "Luhn-valid payment card number.",
+                "type": "string",
+                "const": "credit_card"
+              }
+            ]
+          },
+          "RedactionScope": {
+            "description": "Carriers to inspect and scrub. A report is partial if any carrier is excluded.",
+            "type": "object",
+            "properties": {
+              "annotations": {
+                "description": "Annotations and form fields.",
+                "type": "boolean",
+                "default": true
+              },
+              "attachments": {
+                "description": "Embedded files.",
+                "type": "boolean",
+                "default": true
+              },
+              "images": {
+                "description": "Image pixels and masks.",
+                "type": "boolean",
+                "default": true
+              },
+              "metadata": {
+                "description": "Metadata and other document-level text.",
+                "type": "boolean",
+                "default": true
+              },
+              "text": {
+                "description": "Text and text-bearing structures.",
+                "type": "boolean",
+                "default": true
+              },
+              "vectors": {
+                "description": "Vector content.",
+                "type": "boolean",
+                "default": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "RedactionTarget": {
+            "description": "A target to remove from the document.",
+            "oneOf": [
+              {
+                "description": "Exact text match.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "exact"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "text"
+                ]
+              },
+              {
+                "description": "A bounded regular expression.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "regex"
+                  },
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "pattern"
+                ]
+              },
+              {
+                "description": "A built-in detector.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "preset"
+                  },
+                  "preset": {
+                    "$ref": "#/$defs/RedactionPreset"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "preset"
+                ]
+              },
+              {
+                "description": "Rectangle in PDF points on a one-based page.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "rectangle"
+                  },
+                  "page": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                  },
+                  "rect": {
+                    "$ref": "#/$defs/CropRect"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "page",
+                  "rect"
+                ]
+              },
+              {
+                "description": "Entire one-based page.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "page"
+                  },
+                  "page": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "page"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "True object-stream and raster redaction with verification report.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "redact",
+      "id": "pdf.redact_verify",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "output_formats": [
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RedactVerifyParams",
+        "description": "Parameters for standalone redaction verification.",
+        "type": "object",
+        "properties": {
+          "scope": {
+            "description": "Document carriers to inspect.",
+            "$ref": "#/$defs/RedactionScope",
+            "default": {
+              "annotations": true,
+              "attachments": true,
+              "images": true,
+              "metadata": true,
+              "text": true,
+              "vectors": true
+            }
+          },
+          "targets": {
+            "description": "Content and page regions that should be absent from the document.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/RedactionTarget"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "targets"
+        ],
+        "$defs": {
+          "CropRect": {
+            "description": "Explicit crop rectangle coordinates `{ left, bottom, right, top }` in PDF points.",
+            "type": "object",
+            "properties": {
+              "bottom": {
+                "description": "Bottom coordinate (`lly`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "left": {
+                "description": "Left coordinate (`llx`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "right": {
+                "description": "Right coordinate (`urx`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "top": {
+                "description": "Top coordinate (`ury`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "left",
+              "bottom",
+              "right",
+              "top"
+            ]
+          },
+          "RedactionPreset": {
+            "description": "Built-in text detectors.",
+            "oneOf": [
+              {
+                "description": "Email address.",
+                "type": "string",
+                "const": "email"
+              },
+              {
+                "description": "International or Vietnamese phone number.",
+                "type": "string",
+                "const": "phone"
+              },
+              {
+                "description": "Vietnamese citizen identification number.",
+                "type": "string",
+                "const": "cccd"
+              },
+              {
+                "description": "Vietnamese legacy identity number.",
+                "type": "string",
+                "const": "cmnd"
+              },
+              {
+                "description": "International bank account number.",
+                "type": "string",
+                "const": "iban"
+              },
+              {
+                "description": "Luhn-valid payment card number.",
+                "type": "string",
+                "const": "credit_card"
+              }
+            ]
+          },
+          "RedactionScope": {
+            "description": "Carriers to inspect and scrub. A report is partial if any carrier is excluded.",
+            "type": "object",
+            "properties": {
+              "annotations": {
+                "description": "Annotations and form fields.",
+                "type": "boolean",
+                "default": true
+              },
+              "attachments": {
+                "description": "Embedded files.",
+                "type": "boolean",
+                "default": true
+              },
+              "images": {
+                "description": "Image pixels and masks.",
+                "type": "boolean",
+                "default": true
+              },
+              "metadata": {
+                "description": "Metadata and other document-level text.",
+                "type": "boolean",
+                "default": true
+              },
+              "text": {
+                "description": "Text and text-bearing structures.",
+                "type": "boolean",
+                "default": true
+              },
+              "vectors": {
+                "description": "Vector content.",
+                "type": "boolean",
+                "default": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "RedactionTarget": {
+            "description": "A target to remove from the document.",
+            "oneOf": [
+              {
+                "description": "Exact text match.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "exact"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "text"
+                ]
+              },
+              {
+                "description": "A bounded regular expression.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "regex"
+                  },
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "pattern"
+                ]
+              },
+              {
+                "description": "A built-in detector.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "preset"
+                  },
+                  "preset": {
+                    "$ref": "#/$defs/RedactionPreset"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "preset"
+                ]
+              },
+              {
+                "description": "Rectangle in PDF points on a one-based page.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "rectangle"
+                  },
+                  "page": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                  },
+                  "rect": {
+                    "$ref": "#/$defs/CropRect"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "page",
+                  "rect"
+                ]
+              },
+              {
+                "description": "Entire one-based page.",
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "page"
+                  },
+                  "page": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "page"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Independently verify document redaction against requested targets.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
       "engine": "ariad-pdf",
       "group": "sign",
       "id": "pdf.sign_visual",

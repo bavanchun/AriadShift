@@ -624,8 +624,9 @@ fn run_tool_inner(
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
-    let is_ocr_composite =
-        effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE;
+    let is_redact_composite = spec.id == "pdf.redact" || spec.id == "pdf.redact_verify";
+    let is_ocr_composite = !is_redact_composite
+        && effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE;
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -661,6 +662,12 @@ fn run_tool_inner(
 
     if is_ocr_composite {
         super::ocr::preflight(
+            spec.id,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_redact_composite {
+        super::redact::preflight(
             spec.id,
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
@@ -729,6 +736,20 @@ fn run_tool_inner(
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
     let mut raw_exec = if is_ocr_composite {
         super::ocr::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_redact_composite {
+        super::redact::execute(
             &spec,
             &staged_inputs_with_format,
             &resolved_secrets.schema_params,

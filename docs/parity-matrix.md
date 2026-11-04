@@ -162,7 +162,7 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.redact` | redact | S25 redact | Redact Content | 9 | ariad-pdf, pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.redact` | redact | S25 redact | Redact Content | 9 | ariad-pdf, pdfium | local (wasm deferred to phase 14/15, cloud deferred to phase 13) | Free | CLI, MCP, web(h), mac |
 | `pdf.sign_visual` | sign | S17 sign (draw, type, image) | Sign PDF | 9 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
 | `pdf.sign` (software certificate, PAdES B-B to B-LTA; macOS Keychain identities) | sign | S18 sign with certificate | Digital Signature | 9 | sign-pack | local | Free | CLI, MCP, web(h), mac |
 | `pdf.sign_token` † (PKCS#11 and smart-card tokens; split from `pdf.sign` because a tier belongs to a tool spec) | sign | S19 hardware / smart-card signing | — | 9 | sign-pack | local | Pro (b) | CLI, mac |
@@ -199,7 +199,7 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | Item | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
 | Fidelity score per conversion and edit export (`ashift convert --json`, `edit.export_document`) | convert | PDF to Word complaints with no score (#4338, #4137) | no score | 11 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| Verified redaction report (`pdf.redact_verify`, `verification_report`) | redact | redaction path via jpdfium; no verification report | fake redaction, text still copyable (#762) | 9 | pdfium, ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
+| Verified redaction report (`pdf.redact_verify`, `verification_report`) | redact | redaction path via jpdfium; no verification report | fake redaction, text still copyable (#762) | 9 | ariad-pdf, pdfium | local (wasm deferred to phase 14/15, cloud deferred to phase 13) | Free | CLI, MCP, web(h), mac |
 | Document mode and Page mode on one viewer (`edit.open_document`, `edit.export_document`; Page mode is `edit.apply`, Pro) | edit | one in-place text editor (S33) | in-place text editor only | 12, 16, 18 | ariad-core, typst, pandoc | wasm, local | Document mode Free; Page mode Pro (d) | CLI, MCP, web, mac |
 | Natural-language recipes (`ai.recipe_from_text`, validated against the registry, never auto-run) | ai | AI agents are metered on Cloud (S45) | workflow builder without natural language | 13 | ai-pack | local | Free (offline); hosted models Pro (a) | CLI, MCP, web(h), mac |
 | Semantic compare (reading-order text diff in phase 10; IR-block level † not in a phase file yet) | compare | S36 compare, method unverified | Compare PDFs (pixel and text) | 10 | pdfium, ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |

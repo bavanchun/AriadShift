@@ -329,6 +329,8 @@ dependencies = [
  "oxiarc-jpeg",
  "qrcode",
  "quick-xml 0.42.0",
+ "regex",
+ "regex-syntax",
  "schemars 1.2.3",
  "serde",
  "serde_json",

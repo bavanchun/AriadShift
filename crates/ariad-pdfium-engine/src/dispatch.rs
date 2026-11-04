@@ -13,6 +13,7 @@ use ariad_core::{
             CropWhitespaceParams, DeskewParams, DetectScannedParams, ExtractImagesParams,
             RemoveBlankParams, RenderParams, ScanRenderParams, ScanSplitParams,
             ScannerEffectParams, TextLayoutParams, ThumbnailsParams, ToImagesParams,
+            redact_internal::RedactInspectParams,
         },
         specs::{annotate_forms::PDF_FORMS_DETECT_SPEC, pdfium::specs},
     },
@@ -41,6 +42,7 @@ pub const TOOL_IDS: &[&str] = &[
     "pdf.forms_detect",
     "pdf.split",
     "scan.render",
+    "redact.inspect",
     "pdf.deskew",
     "pdf.scan_split",
     "pdf.scanner_effect",
@@ -160,6 +162,7 @@ pub fn run_tool(ctx: &mut ToolContext<'_>, params: Value) -> ToolResult {
     ctx.check()?;
     match ctx.tool().to_owned().as_str() {
         "scan.render" => crate::scan::render::run(ctx, parse::<ScanRenderParams>(params)?),
+        "redact.inspect" => crate::redact::inspect(ctx, parse::<RedactInspectParams>(params)?),
         "pdf.deskew" => crate::scan::tools::deskew(ctx, parse::<DeskewParams>(params)?),
         "pdf.scan_split" => crate::scan::tools::scan_split(ctx, parse::<ScanSplitParams>(params)?),
         "pdf.scanner_effect" => {
@@ -298,6 +301,7 @@ mod tests {
                 "pdf.forms_detect",
                 "pdf.split",
                 "scan.render",
+                "redact.inspect",
                 "pdf.deskew",
                 "pdf.scan_split",
                 "pdf.scanner_effect",

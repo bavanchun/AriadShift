@@ -20,6 +20,7 @@ pub mod extract_images;
 pub mod forms_detect;
 pub mod library;
 pub mod output;
+mod redact;
 pub mod render;
 pub mod scan;
 pub mod text_layout;

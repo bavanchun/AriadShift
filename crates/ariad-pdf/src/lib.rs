@@ -30,6 +30,7 @@ pub mod paper;
 mod pdf_text;
 #[cfg(feature = "codecs")]
 pub mod recolor;
+pub mod redact;
 pub mod scan_pages;
 pub mod scan_text;
 pub mod tools;
