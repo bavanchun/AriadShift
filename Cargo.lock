@@ -432,6 +432,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen",
+ "zip",
 ]
 
 [[package]]

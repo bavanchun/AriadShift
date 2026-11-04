@@ -19,7 +19,8 @@ use crate::{
     reader::{html as reader_html, markdown as reader_markdown},
     warning::{SourcePos, Warning},
     writer::{
-        csv as writer_csv, html as writer_html, markdown as writer_markdown, xlsx as writer_xlsx,
+        csv as writer_csv, html as writer_html, markdown as writer_markdown, text as writer_text,
+        xlsx as writer_xlsx,
     },
 };
 
@@ -192,7 +193,12 @@ pub const fn can_read(format: Format) -> bool {
 pub const fn can_write(format: Format) -> bool {
     matches!(
         format,
-        Format::Markdown | Format::Html | Format::AriadIrJson | Format::Xlsx | Format::Csv
+        Format::Markdown
+            | Format::Html
+            | Format::AriadIrJson
+            | Format::Txt
+            | Format::Xlsx
+            | Format::Csv
     )
 }
 
@@ -371,6 +377,7 @@ pub fn write(
     let output = match format {
         Format::Markdown => writer_markdown::write(document),
         Format::Html => writer_html::write_with_title_fallback(document, options.title_fallback),
+        Format::Txt => writer_text::write(document),
         Format::Csv => writer_csv::write(document),
         Format::Xlsx => {
             let output =
@@ -984,6 +991,7 @@ mod tests {
     fn readers_and_writers_report_unsupported_formats() {
         assert!(!can_read(Format::Docx));
         assert!(!can_write(Format::Pdf));
+        assert!(can_write(Format::Txt));
         let error = read(Format::Docx, b"PK", &Limits::local()).unwrap_err();
         assert_eq!(
             error,

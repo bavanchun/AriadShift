@@ -268,7 +268,10 @@ mod tests {
                 Format::Docx,
                 Format::Epub,
                 Format::Html,
+                Format::Odt,
                 Format::Pdf,
+                Format::Rtf,
+                Format::Txt,
                 Format::Xlsx,
             ]
         );

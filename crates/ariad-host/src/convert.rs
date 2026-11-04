@@ -20,7 +20,7 @@ use ariad_core::{
     protocol::{ErrorCode, Event, Input, Output, PROTOCOL, Request},
     reader::{html as reader_html, markdown as reader_markdown},
     warning::Warning,
-    writer::{html as writer_html, markdown as writer_markdown},
+    writer::{html as writer_html, markdown as writer_markdown, text as writer_text},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1058,12 +1058,14 @@ where
                     .extend(asset_warnings.iter().map(safe_warning));
                 Ok(Stage::Ir(Box::new(document)))
             }
-            (Format::AriadIrJson, Format::Markdown | Format::Html) => {
+            (Format::AriadIrJson, Format::Markdown | Format::Html | Format::Txt) => {
                 let Stage::Ir(document) = stage else {
                     return Err(ConvertError::Failed);
                 };
                 let output = if step.to == Format::Markdown {
                     writer_markdown::write(&document)
+                } else if step.to == Format::Txt {
+                    writer_text::write(&document)
                 } else {
                     writer_html::write_with_title_fallback(
                         &document,
@@ -1165,8 +1167,8 @@ where
             );
         }
         // Writers stamp their output with the conversion time, which honours SOURCE_DATE_EPOCH.
-        let stamps_package =
-            step.engine == engines::PANDOC.id && matches!(step.to, Format::Docx | Format::Epub);
+        let stamps_package = step.engine == engines::PANDOC.id
+            && matches!(step.to, Format::Docx | Format::Epub | Format::Odt);
         let timestamp = if step.to == Format::AriadIrJson {
             None
         } else {
@@ -1222,10 +1224,11 @@ where
         drop(lease);
         let _ = workspace.close();
         if let (true, Some(timestamp)) = (stamps_package, timestamp) {
-            let stamped = if step.to == Format::Docx {
-                package_meta::stamp_docx(&path, timestamp)
-            } else {
-                package_meta::stamp_epub(&path, timestamp)
+            let stamped = match step.to {
+                Format::Docx => package_meta::stamp_docx(&path, timestamp),
+                Format::Epub => package_meta::stamp_epub(&path, timestamp),
+                Format::Odt => package_meta::stamp_odt(&path, timestamp),
+                _ => Ok(()),
             };
             stamped.map_err(|_| ConvertError::Failed)?;
         }

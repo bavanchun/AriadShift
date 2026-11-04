@@ -50,7 +50,7 @@ impl EngineFailure {
     const fn unsupported_route() -> Self {
         Self::new(
             ErrorCode::UnsupportedRoute,
-            "Pandoc supports IR JSON to DOCX, and DOCX or EPUB to IR JSON conversion.",
+            "Pandoc supports IR JSON to DOCX, ODT, RTF, or EPUB, and DOCX or EPUB to IR JSON conversion.",
         )
     }
 
@@ -158,9 +158,14 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             })?;
 
             if input.format == "ariad-ir+json"
-                && (req_output.format == "docx" || req_output.format == "epub")
+                && (req_output.format == "docx"
+                    || req_output.format == "epub"
+                    || req_output.format == "odt"
+                    || req_output.format == "rtf")
             {
                 let is_epub = req_output.format == "epub";
+                let is_odt = req_output.format == "odt";
+                let is_rtf = req_output.format == "rtf";
                 let input_bytes = fs::read(&input.path).map_err(|_| EngineFailure::io())?;
                 let document = ir_io::read(BufReader::new(input_bytes.as_slice()), &limits)
                     .map_err(|err| match err {
@@ -225,9 +230,21 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     .map_err(|_| EngineFailure::io())?;
                 }
 
-                let target_format = if is_epub { "epub3" } else { "docx" };
+                let target_format = if is_epub {
+                    "epub3"
+                } else if is_odt {
+                    "odt"
+                } else if is_rtf {
+                    "rtf"
+                } else {
+                    "docx"
+                };
                 let output_filename = if is_epub {
                     "document.epub"
+                } else if is_odt {
+                    "document.odt"
+                } else if is_rtf {
+                    "document.rtf"
                 } else {
                     "document.docx"
                 };
@@ -436,6 +453,14 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                             output: "epub".to_owned(),
                         },
                         RouteCapability {
+                            input: "ariad-ir+json".to_owned(),
+                            output: "odt".to_owned(),
+                        },
+                        RouteCapability {
+                            input: "ariad-ir+json".to_owned(),
+                            output: "rtf".to_owned(),
+                        },
+                        RouteCapability {
                             input: "docx".to_owned(),
                             output: "ariad-ir+json".to_owned(),
                         },
@@ -474,8 +499,11 @@ fn validate_convert_request(
     if protocol != PROTOCOL {
         return Err(EngineFailure::invalid_request());
     }
-    let is_writer =
-        input.format == "ariad-ir+json" && (output.format == "docx" || output.format == "epub");
+    let is_writer = input.format == "ariad-ir+json"
+        && (output.format == "docx"
+            || output.format == "epub"
+            || output.format == "odt"
+            || output.format == "rtf");
     let is_reader =
         (input.format == "docx" || input.format == "epub") && output.format == "ariad-ir+json";
     if !is_writer && !is_reader {
@@ -527,6 +555,7 @@ fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(),
     command
         .arg("--sandbox")
         .arg(log_argument)
+        .arg("-s")
         .args(["-f", "json", "-t", config.target_format, "-o"])
         .arg(config.output_path)
         .current_dir(config.work_dir)
@@ -537,6 +566,9 @@ fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(),
         .env("TMPDIR", config.workspace.join("tmp"))
         .env("TMP", config.workspace.join("tmp"))
         .env("TEMP", config.workspace.join("tmp"));
+    if let Some(epoch) = env::var_os("SOURCE_DATE_EPOCH") {
+        command.env("SOURCE_DATE_EPOCH", epoch);
+    }
     if let Some(path) = env::var_os("PATH") {
         command.env("PATH", path);
     }

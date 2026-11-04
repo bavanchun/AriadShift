@@ -63,6 +63,14 @@ pub fn write(bytes: &[u8], title: Option<&str>, limits: &Limits) -> Result<Writt
     })
 }
 
+/// Stamps ODT package creation and modification timestamps in memory.
+pub fn stamp_odt(
+    bytes: &[u8],
+    timestamp: &str,
+) -> Result<Vec<u8>, crate::package_meta::PackageMetaError> {
+    crate::package_meta::stamp_bytes_kind(bytes, crate::package_meta::PackageKind::Odt, timestamp)
+}
+
 type Media = std::collections::BTreeMap<String, Asset>;
 fn media_files(bytes: &[u8], limits: &Limits) -> Result<Media, PipelineError> {
     let mut files = Media::new();

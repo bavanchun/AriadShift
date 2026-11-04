@@ -392,6 +392,7 @@ pub const NATIVE_ROUTES: &[(Format, Format)] = &[
     (Format::Svg, Format::AriadIrJson),
     (Format::AriadIrJson, Format::Markdown),
     (Format::AriadIrJson, Format::Html),
+    (Format::AriadIrJson, Format::Txt),
     (Format::AriadIrJson, Format::Xlsx),
     (Format::AriadIrJson, Format::Csv),
 ];
@@ -434,6 +435,8 @@ pub const PANDOC: EngineSpec = EngineSpec {
         (Format::AriadIrJson, Format::Epub),
         (Format::Docx, Format::AriadIrJson),
         (Format::Epub, Format::AriadIrJson),
+        (Format::AriadIrJson, Format::Odt),
+        (Format::AriadIrJson, Format::Rtf),
     ],
     install_hint: "run 'just pandoc' or install Pandoc >=3.12,<4 and set ASHIFT_PANDOC",
     supported: Some(">=3.12, <4"),

@@ -21,6 +21,7 @@ wasm-bindgen.workspace = true
 
 [dev-dependencies]
 lopdf.workspace = true
+zip.workspace = true
 
 [package.metadata.dist]
 dist = false
