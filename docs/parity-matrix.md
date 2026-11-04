@@ -239,7 +239,7 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | SAML2, audit log, usage analytics, admin UI, teams, invites | S47, S48, S49 | Enterprise administration; billing and admin are non-goals of this stage (D2, brainstorm non-goals). |
 | PostHog and Scarf analytics | S50 | Deliberate: no telemetry by default (Stirling report §6, item 6). |
 | Sign from phone (QR), mobile scanner | S51 | Mobile apps are a non-goal of this stage. |
-| Pages to PDF | S12, D2 | LibreOffice 26.8 on Linux failed import ('Error: source file could not be loaded' across Pages '09 and Pages 2013+ fixtures due to missing libetonyek packaging in distro LibreOffice). |
+| Pages to PDF | S12, D2 | Failed to import on LibreOffice 26.8 on Linux ('Error: source file could not be loaded' across Pages '09 and Pages 2013+ fixtures); cause not isolated. Revisit if a standalone permissive importer or verified LibreOffice filter package is identified. |
 
 ## Gap assignments (`†` rows)
 

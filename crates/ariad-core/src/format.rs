@@ -82,10 +82,7 @@ const MIMETYPE_FORMATS: &[(&[u8], Format)] = &[
         b"application/vnd.oasis.opendocument.presentation",
         Format::Odp,
     ),
-    (
-        b"application/vnd.oasis.opendocument.graphics",
-        Format::Odg,
-    ),
+    (b"application/vnd.oasis.opendocument.graphics", Format::Odg),
 ];
 
 /// OOXML main parts that identify a ZIP holding `[Content_Types].xml`.
@@ -96,12 +93,16 @@ const OOXML_MAIN_PARTS: &[(&str, Format)] = &[
 ];
 
 /// Streams that identify legacy Office documents inside an OLE2 compound file.
+///
+/// `Msg` (__properties_version1.0) is checked before Office streams (WordDocument,
+/// Workbook, etc.) so that an Outlook message with embedded Office objects is
+/// correctly identified as `Msg`.
 const OLE_STREAMS: &[(&str, Format)] = &[
+    ("__properties_version1.0", Format::Msg),
     ("WordDocument", Format::Doc),
     ("Workbook", Format::Xls),
     ("Book", Format::Xls),
     ("PowerPoint Document", Format::Ppt),
-    ("__properties_version1.0", Format::Msg),
     ("VisioDocument", Format::Vsd),
     ("Quill", Format::Pub),
 ];
@@ -358,6 +359,12 @@ pub fn classify(
     }
 
     if let Some(format) = classify_magic(prefix) {
+        if format == Format::Svg
+            && let Some(text_fmt) = extension.and_then(Format::from_extension)
+            && matches!(text_fmt, Format::Markdown | Format::Html | Format::Txt)
+        {
+            return Some(text_fmt);
+        }
         return Some(format);
     }
 
@@ -974,8 +981,11 @@ mod tests {
             b"application/vnd.oasis.opendocument.graphics",
             true,
         );
-        let odt_prefix =
-            stored_zip_prefix(b"mimetype", b"application/vnd.oasis.opendocument.text", true);
+        let odt_prefix = stored_zip_prefix(
+            b"mimetype",
+            b"application/vnd.oasis.opendocument.text",
+            true,
+        );
         let entries = ["mimetype", "content.xml"];
         assert_eq!(
             classify(&odg_prefix, Some(&entries), None),
@@ -1013,6 +1023,19 @@ mod tests {
             Some(Format::Xls)
         );
 
+        // When both Msg and WordDocument streams are present (e.g. MSG with embedded Office doc),
+        // Msg takes precedence.
+        let both_entries = ["Root Entry", "WordDocument", "__properties_version1.0"];
+        assert_eq!(
+            classify(&ole_prefix, Some(&both_entries), None),
+            Some(Format::Msg)
+        );
+        let reverse_order = ["Root Entry", "__properties_version1.0", "WordDocument"];
+        assert_eq!(
+            classify(&ole_prefix, Some(&reverse_order), None),
+            Some(Format::Msg)
+        );
+
         // VSD positive and negative
         let vsd_entries = ["Root Entry", "VisioDocument"];
         assert_eq!(
@@ -1040,10 +1063,7 @@ mod tests {
             classify(b"\xFFWPC\x01\x02\x03\x04", None, None),
             Some(Format::Wpd)
         );
-        assert_eq!(
-            classify(b"\xFFWPD\x01\x02\x03\x04", None, None),
-            None
-        );
+        assert_eq!(classify(b"\xFFWPD\x01\x02\x03\x04", None, None), None);
 
         // WPS extension fallback positive and negative
         assert_eq!(
@@ -1054,27 +1074,40 @@ mod tests {
             classify(b"random bytes", None, Some("wps")),
             Some(Format::Wps)
         );
-        assert_eq!(
-            classify(b"random bytes", None, Some("other")),
-            None
-        );
+        assert_eq!(classify(b"random bytes", None, Some("other")), None);
 
         // SVG vs HTML / XML
         assert_eq!(
-            classify(b"<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>", None, None),
+            classify(
+                b"<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>",
+                None,
+                None
+            ),
             Some(Format::Svg)
         );
         assert_eq!(
-            classify(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg width=\"100\"></svg>", None, None),
+            classify(
+                b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg width=\"100\"></svg>",
+                None,
+                None
+            ),
             Some(Format::Svg)
         );
         assert_eq!(
-            classify(b"<?xml version=\"1.0\"?>\n<!-- a comment -->\n<svg></svg>", None, None),
+            classify(
+                b"<?xml version=\"1.0\"?>\n<!-- a comment -->\n<svg></svg>",
+                None,
+                None
+            ),
             Some(Format::Svg)
         );
         // HTML is not classified as SVG
         assert_eq!(
-            classify(b"<!DOCTYPE html><html><body><svg></svg></body></html>", None, None),
+            classify(
+                b"<!DOCTYPE html><html><body><svg></svg></body></html>",
+                None,
+                None
+            ),
             Some(Format::Html)
         );
         assert_ne!(
@@ -1087,6 +1120,27 @@ mod tests {
             None
         );
 
+        // Known text extensions (md, html, txt) win over leading <svg
+        let leading_svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>";
+        assert_eq!(
+            classify(leading_svg, None, Some("md")),
+            Some(Format::Markdown)
+        );
+        assert_eq!(
+            classify(leading_svg, None, Some("markdown")),
+            Some(Format::Markdown)
+        );
+        assert_eq!(
+            classify(leading_svg, None, Some("html")),
+            Some(Format::Html)
+        );
+        assert_eq!(classify(leading_svg, None, Some("htm")), Some(Format::Html));
+        assert_eq!(classify(leading_svg, None, Some("txt")), Some(Format::Txt));
+        assert_eq!(classify(leading_svg, None, Some("text")), Some(Format::Txt));
+        assert_eq!(classify(leading_svg, None, Some("svg")), Some(Format::Svg));
+        assert_eq!(classify(leading_svg, None, None), Some(Format::Svg));
+        assert_eq!(classify(leading_svg, None, Some("xml")), Some(Format::Svg));
+
         // CBZ extension-only positive and negative
         let cbz_prefix = b"PK\x03\x04...";
         let cbz_entries = ["01.jpg", "02.jpg"];
@@ -1094,14 +1148,17 @@ mod tests {
             classify(cbz_prefix, Some(&cbz_entries), Some("cbz")),
             Some(Format::Cbz)
         );
-        assert_eq!(
-            classify(cbz_prefix, Some(&cbz_entries), None),
-            None
-        );
+        assert_eq!(classify(cbz_prefix, Some(&cbz_entries), None), None);
 
         // TXT, CSV, EML extension-only positive and negative
-        assert_eq!(classify(b"hello world", None, Some("txt")), Some(Format::Txt));
-        assert_eq!(classify(b"a,b,c\n1,2,3", None, Some("csv")), Some(Format::Csv));
+        assert_eq!(
+            classify(b"hello world", None, Some("txt")),
+            Some(Format::Txt)
+        );
+        assert_eq!(
+            classify(b"a,b,c\n1,2,3", None, Some("csv")),
+            Some(Format::Csv)
+        );
         assert_eq!(
             classify(b"From: a@b.c\nTo: d@e.f\n\nHi", None, Some("eml")),
             Some(Format::Eml)

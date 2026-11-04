@@ -1,13 +1,15 @@
 /** Output formats offered before the first file is inspected. */
 export const formats = ["md", "html", "docx", "epub", "pdf", "json", "xlsx", "pptx"];
 
-/** Host input formats and the file extensions the picker and drop target accept for each. */
-export const inputExtensions: Record<string, string[]> = {
+/** All user-facing format extensions known to AriadShift. */
+export const allFormats: Record<string, string[]> = {
   md: ["md", "markdown", "mdown"],
   html: ["html", "htm"],
   docx: ["docx"],
   epub: ["epub"],
   pdf: ["pdf"],
+  png: ["png"],
+  json: ["json"],
   pptx: ["pptx"],
   xlsx: ["xlsx"],
   odt: ["odt"],
@@ -17,11 +19,9 @@ export const inputExtensions: Record<string, string[]> = {
   xls: ["xls"],
   ppt: ["ppt"],
   rtf: ["rtf"],
-  json: ["json"],
-  png: ["png"],
   jpeg: ["jpg", "jpeg"],
-  tiff: ["tif", "tiff"],
   webp: ["webp"],
+  tiff: ["tif", "tiff"],
   txt: ["txt", "text"],
   csv: ["csv"],
   eml: ["eml"],
@@ -33,6 +33,38 @@ export const inputExtensions: Record<string, string[]> = {
   wps: ["wps"],
   pub: ["pub"],
   vsd: ["vsd"],
+};
+
+/** Formats that currently have active conversion routes. */
+const routableFormats = new Set([
+  "md",
+  "html",
+  "docx",
+  "epub",
+  "pdf",
+  "pptx",
+  "xlsx",
+  "odt",
+  "ods",
+  "odp",
+  "doc",
+  "xls",
+  "ppt",
+  "rtf",
+  "json",
+  "png",
+  "jpeg",
+  "tiff",
+  "webp",
+]);
+
+/** Host input formats and the file extensions the picker and drop target accept for each.
+ * Only formats with active engine conversion routes are accepted as inputs.
+ */
+export const inputExtensions: Record<string, string[]> = {
+  ...Object.fromEntries(
+    Object.entries(allFormats).filter(([format]) => routableFormats.has(format)),
+  ),
   "docling+json": ["json"],
 };
 

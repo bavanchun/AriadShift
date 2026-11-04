@@ -1227,4 +1227,22 @@ mod tests {
         assert!(warnings[0].contains("'a.run.exe'") && warnings[0].contains("'a.run.exe.bin'"));
         assert!(warnings[1].contains("'a.z.LNK'") && warnings[1].contains("'a.z.LNK.bin'"));
     }
+
+    #[test]
+    fn validate_extracted_artifact_extensions_accepts_txt_csv_and_svg_formats() {
+        let staged = vec![
+            StagedArtifact::new("/w/out/notes.txt", "txt", "notes.txt"),
+            StagedArtifact::new("/w/out/data.csv", "csv", "data.csv"),
+            StagedArtifact::new("/w/out/diagram.svg", "svg", "diagram.svg"),
+        ];
+        assert!(validate_extracted_artifact_extensions(&staged).is_ok());
+
+        for item in &staged {
+            assert!(Format::from_user_name(&item.format).is_some());
+            assert_eq!(quarantined_target_name(item), None);
+        }
+
+        let mismatched = vec![StagedArtifact::new("/w/out/notes.pdf", "txt", "notes.txt")];
+        assert!(validate_extracted_artifact_extensions(&mismatched).is_err());
+    }
 }
