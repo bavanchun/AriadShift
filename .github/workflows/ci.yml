@@ -471,10 +471,6 @@ jobs:
           version: 0.12.23
           python-version: "3.14"
 
-      - name: Install R2 cache requirements
-        if: always()
-        run: uv pip install --system --require-hashes -r scripts/r2-cache-requirements.txt
-
       - name: Prune R2 cache storage (read-write)
         if: always() && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main'))
         continue-on-error: true
@@ -485,7 +481,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
-        run: python scripts/r2-cache-prune.py --prune
+        run: uv run --no-project --with-requirements scripts/r2-cache-requirements.txt python scripts/r2-cache-prune.py --prune
 
       - name: Report R2 cache storage (read-only)
         if: always() && !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref_name == 'dev' || github.ref_name == 'main'))
@@ -497,7 +493,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
           SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
-        run: python scripts/r2-cache-prune.py --report-only
+        run: uv run --no-project --with-requirements scripts/r2-cache-requirements.txt python scripts/r2-cache-prune.py --report-only
 
   fuzz:
     name: Fuzz
