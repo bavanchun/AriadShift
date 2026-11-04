@@ -191,7 +191,10 @@ def check_environment(
 ) -> list[Finding]:
     """Audits the complete installed environment against the sign licence gate."""
     if distributions is None:
-        distributions = list(metadata.distributions(path=[str(site_root)] if site_root else None))
+        if site_root is not None:
+            distributions = list(metadata.distributions(path=[str(site_root)]))
+        else:
+            distributions = list(metadata.distributions())
     reviewed_inv = load_reviewed_inventory()
     findings: list[Finding] = []
     seen = set()

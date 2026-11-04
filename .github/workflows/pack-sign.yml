@@ -51,7 +51,7 @@ jobs:
         run: uv run --project engines/sign pytest engines/sign/tests
 
       - name: Run shared licenses tests
-        run: uv run --project engines/sign pytest engines/common/licenses/tests
+        run: uv run --project engines/sign pytest engines/common/tests
 
       - name: Run license audit gate
         run: uv run --project engines/sign python engines/sign/pack/licenses.py
