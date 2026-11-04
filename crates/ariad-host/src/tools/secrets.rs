@@ -52,11 +52,22 @@ impl SecretBag {
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<(), &'static str> {
+        let key = key.into();
         let value = value.into();
-        if value.len() > 4096 || value.bytes().any(|byte| matches!(byte, b'\r' | b'\n' | 0)) {
+        let is_binary_key = key.eq_ignore_ascii_case("certificate")
+            || key.starts_with(ariad_core::tools::SECRET_HANDLE_PREFIX);
+        let max_len = if is_binary_key {
+            14 * 1024 * 1024
+        } else {
+            4096
+        };
+        if value.len() > max_len {
+            return Err("secret exceeds size limit");
+        }
+        if !is_binary_key && value.bytes().any(|byte| matches!(byte, b'\r' | b'\n' | 0)) {
             return Err("secret must be at most 4096 bytes and contain no CR, LF or NUL");
         }
-        self.entries.insert(key.into(), value);
+        self.entries.insert(key, value);
         Ok(())
     }
 
@@ -452,7 +463,7 @@ impl SecretScrubber {
     ///
     /// Empty or whitespace-only strings are ignored to avoid corrupting output formatting.
     pub fn register(&mut self, secret: &str) {
-        if secret.is_empty() {
+        if secret.is_empty() || secret.len() > 4096 {
             return;
         }
         self.push_pattern(secret.to_owned());

@@ -7,7 +7,7 @@ use std::{
 };
 
 const CAPACITY: usize = 32;
-const MAX_BYTES: usize = 4096;
+const MAX_BYTES: usize = 14 * 1024 * 1024;
 const TTL: Duration = Duration::from_secs(300);
 
 struct Entry {
