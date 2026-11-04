@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
+from pathlib import Path
 
 _core_path = Path(__file__).resolve().parents[2] / "common" / "licenses" / "core.py"
 _spec = importlib.util.spec_from_file_location("engines_common_licenses_core", _core_path)

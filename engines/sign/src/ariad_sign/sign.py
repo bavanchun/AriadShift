@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import os
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +14,8 @@ try:
     from pyhanko.sign import fields, signers, timestamps
     from pyhanko.sign.fields import SigFieldSpec
     from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata, PdfSigner
-    from pyhanko.sign.timestamps import TimeStamper
     from pyhanko.stamp import TextStampStyle
+
     PYHANKO_AVAILABLE = True
 except ImportError:
     PYHANKO_AVAILABLE = False
@@ -82,7 +81,8 @@ def run_sign(request: RunToolRequest, writer: Writer) -> None:
         if timestamper is None:
             raise EngineError(
                 "invalid_request",
-                f"signature level '{level}' requires a TSA URL or pre-fetched timestamp token; silent downgrade is prohibited",
+                f"signature level '{level}' requires a TSA URL or "
+                "pre-fetched timestamp token; silent downgrade is prohibited",
             )
 
     # Signature metadata

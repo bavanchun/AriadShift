@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from email.message import Message
 from importlib import metadata
-import importlib.util
 from pathlib import Path
-import sys
-
-import pytest
 
 _core_path = Path(__file__).resolve().parents[1] / "licenses" / "core.py"
 _spec = importlib.util.spec_from_file_location("common_licenses", _core_path)

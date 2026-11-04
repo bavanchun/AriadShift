@@ -15,6 +15,7 @@ try:
         validate_pdf_signature,
     )
     from pyhanko.sign.validation.status import SignatureCoverageLevel
+
     PYHANKO_AVAILABLE = True
 except ImportError:
     PYHANKO_AVAILABLE = False
@@ -78,8 +79,11 @@ def run_verify(request: RunToolRequest, writer: Writer) -> None:
                 timestamp_info = None
                 if status.timestamp_validity is not None:
                     ts_val = status.timestamp_validity
+                    ts = (
+                        ts_val.timestamp.isoformat() if getattr(ts_val, "timestamp", None) else None
+                    )
                     timestamp_info = {
-                        "timestamp": ts_val.timestamp.isoformat() if hasattr(ts_val, "timestamp") and ts_val.timestamp else None,
+                        "timestamp": ts,
                         "integrity": ts_val.intact,
                         "valid": ts_val.valid,
                     }
@@ -136,10 +140,12 @@ def run_verify(request: RunToolRequest, writer: Writer) -> None:
     writer.progress("pdf.sign_verify", 1, 1)
     writer.artifact(str(out_path), "json")
     all_valid = len(signatures_report) > 0 and all(s["valid"] for s in signatures_report)
-    writer.ok({
-        "signatures_count": len(signatures_report),
-        "all_valid": all_valid,
-    })
+    writer.ok(
+        {
+            "signatures_count": len(signatures_report),
+            "all_valid": all_valid,
+        }
+    )
 
 
 def _build_validation_context(
@@ -161,6 +167,7 @@ def _build_validation_context(
                 # Attempt PEM decode
                 if b"-----BEGIN CERTIFICATE-----" in data:
                     from cryptography.x509 import load_pem_x509_certificates
+
                     certs = load_pem_x509_certificates(data)
                     for c in certs:
                         cert_obj = x509.Certificate.load(c.public_bytes(serialization.Encoding.DER))
@@ -168,7 +175,7 @@ def _build_validation_context(
                 else:
                     cert_obj = x509.Certificate.load(data)
                     trust_roots.append(cert_obj)
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
     return ValidationContext(

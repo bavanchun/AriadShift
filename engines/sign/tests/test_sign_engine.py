@@ -2,40 +2,37 @@
 
 from __future__ import annotations
 
-import base64
-from datetime import datetime, timedelta, timezone
 import io
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import tempfile
 
+import pytest
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import BestAvailableEncryption, pkcs12
 from cryptography.x509.oid import NameOID
-import pytest
 
 from ariad_sign.describe import capabilities
 from ariad_sign.engine import handle
 from ariad_sign.protocol import (
-    DescribeRequest,
-    EngineError,
     RunToolRequest,
     Writer,
-    parse_request,
 )
 
 
 def generate_test_p12(password: str = "secret") -> bytes:
     """Generates an in-memory test PKCS#12 bundle."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COUNTRY_NAME, "VN"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AriadShift Test"),
-        x509.NameAttribute(NameOID.COMMON_NAME, "Test Signer"),
-    ])
-    now = datetime.now(timezone.utc)
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "VN"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AriadShift Test"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "Test Signer"),
+        ]
+    )
+    now = datetime.now(UTC)
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -65,13 +62,18 @@ def get_sample_pdf_bytes() -> bytes:
     if FIXTURE_PDF.is_file():
         return FIXTURE_PDF.read_bytes()
     # Fallback to minimal PDF
+    from pyhanko.pdf_utils.generic import ArrayObject, DictionaryObject, NameObject, NumberObject
     from pyhanko.pdf_utils.writer import PdfFileWriter
-    from pyhanko.pdf_utils.generic import DictionaryObject, NameObject, ArrayObject, NumberObject
+
     w = PdfFileWriter()
-    page = DictionaryObject({
-        NameObject("/Type"): NameObject("/Page"),
-        NameObject("/MediaBox"): ArrayObject([NumberObject(0), NumberObject(0), NumberObject(612), NumberObject(792)]),
-    })
+    page = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Page"),
+            NameObject("/MediaBox"): ArrayObject(
+                [NumberObject(0), NumberObject(0), NumberObject(612), NumberObject(792)]
+            ),
+        }
+    )
     w.add_page(page)
     bio = io.BytesIO()
     w.write(bio)
@@ -283,6 +285,7 @@ def test_sign_encrypted_input_rejected(tmp_path: Path):
         pytest.skip("plaintext fixture not found")
 
     import subprocess
+
     encrypted_pdf = tmp_path / "encrypted.pdf"
     res_qpdf = subprocess.run(
         ["qpdf", "--encrypt", "user", "owner", "256", "--", str(plaintext_pdf), str(encrypted_pdf)],

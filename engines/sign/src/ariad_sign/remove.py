@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from ariad_sign.protocol import EngineError, RunToolRequest, Writer
 
@@ -11,6 +10,7 @@ try:
     from pyhanko.pdf_utils import generic
     from pyhanko.pdf_utils.reader import PdfFileReader
     from pyhanko.pdf_utils.writer import copy_into_new_writer
+
     PYHANKO_AVAILABLE = True
 except ImportError:
     PYHANKO_AVAILABLE = False
@@ -62,7 +62,7 @@ def run_remove(request: RunToolRequest, writer: Writer) -> None:
                         field_obj = f_ref.get_object() if hasattr(f_ref, "get_object") else f_ref
                         field_name = str(field_obj.get("/T", ""))
                         ft = field_obj.get("/FT")
-                        is_sig = (ft == generic.pdf_name("/Sig"))
+                        is_sig = ft == generic.pdf_name("/Sig")
                         if is_sig and (target_field is None or field_name == target_field):
                             removed_count += 1
                         else:
@@ -83,8 +83,15 @@ def run_remove(request: RunToolRequest, writer: Writer) -> None:
                     annots_obj = annots.get_object() if hasattr(annots, "get_object") else annots
                     new_annots = generic.ArrayObject()
                     for annot_ref in annots_obj:
-                        annot_obj = annot_ref.get_object() if hasattr(annot_ref, "get_object") else annot_ref
-                        if annot_obj.get("/Subtype") == generic.pdf_name("/Widget") and annot_obj.get("/FT") == generic.pdf_name("/Sig"):
+                        annot_obj = (
+                            annot_ref.get_object()
+                            if hasattr(annot_ref, "get_object")
+                            else annot_ref
+                        )
+                        is_sig = annot_obj.get("/Subtype") == generic.pdf_name(
+                            "/Widget"
+                        ) and annot_obj.get("/FT") == generic.pdf_name("/Sig")
+                        if is_sig:
                             name = str(annot_obj.get("/T", ""))
                             if target_field is None or name == target_field:
                                 continue
@@ -99,7 +106,9 @@ def run_remove(request: RunToolRequest, writer: Writer) -> None:
 
     writer.progress("pdf.sign_remove", 1, 1)
     writer.artifact(str(out_path), "pdf")
-    writer.ok({
-        "removed_signatures_count": removed_count,
-        "invalidated": True,
-    })
+    writer.ok(
+        {
+            "removed_signatures_count": removed_count,
+            "invalidated": True,
+        }
+    )

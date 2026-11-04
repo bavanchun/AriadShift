@@ -44,6 +44,7 @@ import argparse
 import base64
 import csv
 import hashlib
+import importlib.util
 import io
 import json
 import re
@@ -56,7 +57,6 @@ from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from functools import cache
 from importlib import metadata
-import importlib.util
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 

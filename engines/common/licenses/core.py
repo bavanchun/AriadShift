@@ -28,12 +28,17 @@ ALLOWED = frozenset(
 
 ALLOWED_EXCEPTIONS = frozenset({"LLVM-exception"})
 
-ALLOWED_DATA = frozenset({"Apache-2.0", "CDLA-Permissive-2.0", "CC0-1.0", "MIT", "PSF-2.0"})
+ALLOWED_DATA = frozenset(
+    {"Apache-2.0", "CDLA-Permissive-2.0", "CC0-1.0", "MIT", "PSF-2.0"}
+)
 
-_DENIED = re.compile(r"AGPL|(?<!L)GPL|SSPL|RAIL|BUSL|Commons-Clause|NC-|Proprietary", re.I)
-_RAW_DENIED = re.compile(r"(?<!Lesser )General Public License|Affero", re.I)
+_DENIED = re.compile(
+    r"AGPL|(?<!L)GPL|SSPL|RAIL|BUSL|Commons-Clause|NC-|Proprietary", re.IGNORECASE
+)
+_RAW_DENIED = re.compile(r"(?<!Lesser )General Public License|Affero", re.IGNORECASE)
 _GPL_RUNTIME = re.compile(
-    rb"lib[\w-]+ licen[sc]e:\s*(?:A?GPL)\b|(?:^|\s)--enable-gpl(?:\s|\x00|$)", re.I
+    rb"lib[\w-]+ licen[sc]e:\s*(?:A?GPL)\b|(?:^|\s)--enable-gpl(?:\s|\x00|$)",
+    re.IGNORECASE,
 )
 
 _KNOWN = {
@@ -101,7 +106,9 @@ class _Expression:
         return result
 
     def _peek(self) -> str | None:
-        return self._tokens[self._position] if self._position < len(self._tokens) else None
+        return (
+            self._tokens[self._position] if self._position < len(self._tokens) else None
+        )
 
     def _take(self) -> str:
         token = self._peek()
@@ -221,7 +228,9 @@ def _licence_signature(expression: str) -> frozenset[frozenset[str]]:
     """Compare known declarations independent of operand order and parentheses."""
     alternatives = _split_expression(expression, "OR")
     if len(alternatives) > 1:
-        return frozenset(term for part in alternatives for term in _licence_signature(part))
+        return frozenset(
+            term for part in alternatives for term in _licence_signature(part)
+        )
     terms = _split_expression(expression, "AND")
     if len(terms) > 1:
         result = frozenset({frozenset()})
@@ -358,7 +367,9 @@ def check_distributions(
     for distribution in distributions:
         name = canonical(distribution.metadata["Name"])
         if _duplicate_licence_fields(distribution):
-            findings.append(Finding(name, "unknown", "duplicate single-value licence field"))
+            findings.append(
+                Finding(name, "unknown", "duplicate single-value licence field")
+            )
             continue
         licence = license_of_distribution(
             distribution,

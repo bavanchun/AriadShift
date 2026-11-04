@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
+from pathlib import Path
 
 _core_path = Path(__file__).resolve().parents[2] / "common" / "licenses" / "core.py"
 _spec = importlib.util.spec_from_file_location("engines_common_licenses_core", _core_path)
@@ -29,5 +29,6 @@ def test_sign_pack_allowed_licences():
 
 def test_sign_gate_rejects_copyleft():
     gate = LicenceGate(allowed=ALLOWED)
+    assert gate.allowed == ALLOWED
     assert not parse_expression("GPL-3.0-only")
     assert not parse_expression("AGPL-3.0-only")
