@@ -79,7 +79,7 @@ describe("browserEngines Pandoc media types and package stamping", () => {
     expect(result.media_type).toBe("application/vnd.oasis.opendocument.text");
     expect(lastTarget).toBe("odt");
     expect(stampCalls).toHaveLength(1);
-    expect(stampCalls[0].target).toBe("odt");
+    expect(stampCalls[0]!.target).toBe("odt");
     expect(result.bytes).toEqual(new Uint8Array([10, 20, 30, 99]));
   });
 
@@ -112,11 +112,11 @@ describe("browserEngines Pandoc media types and package stamping", () => {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
     expect(lastTarget).toBe("docx");
-    expect(stampCalls[0].target).toBe("docx");
+    expect(stampCalls[0]!.target).toBe("docx");
 
     const epubResult = await pandocEngine!.convert(inputIr, "ariad-ir+json", "epub", {});
     expect(epubResult.media_type).toBe("application/epub+zip");
     expect(lastTarget).toBe("epub3"); // epub passes epub3 to pandoc
-    expect(stampCalls[1].target).toBe("epub");
+    expect(stampCalls[1]!.target).toBe("epub");
   });
 });

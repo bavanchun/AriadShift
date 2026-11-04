@@ -41,7 +41,16 @@ describe("ariad-wasm", () => {
     expect(result.counts?.headings["1"]).toBe(1);
     expect(result.counts?.words).toBe(4);
     expect(result.meta?.title).toBeNull();
-    expect(result.reachable).toEqual(["ariad-ir+json", "docx", "epub", "html", "pdf"]);
+    expect(result.reachable).toEqual([
+      "ariad-ir+json",
+      "docx",
+      "epub",
+      "html",
+      "odt",
+      "pdf",
+      "rtf",
+      "txt",
+    ]);
     expect(result.reachable_elsewhere).toEqual([]);
   });
 
