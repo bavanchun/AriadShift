@@ -480,9 +480,7 @@ fn real_sign_engine_conformance() {
             .expect("stdin")
             .write_all(&bytes)
             .expect("write request");
-        child
-            .wait_with_output()
-            .expect("wait for real sign engine")
+        child.wait_with_output().expect("wait for real sign engine")
     };
 
     // 1. Test describe

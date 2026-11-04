@@ -38,7 +38,11 @@ impl SecretStore {
         self.put_with_options(value, false)
     }
 
-    pub(super) fn put_with_options(&self, value: String, is_certificate: bool) -> Result<String, ()> {
+    pub(super) fn put_with_options(
+        &self,
+        value: String,
+        is_certificate: bool,
+    ) -> Result<String, ()> {
         let max_len = if is_certificate {
             MAX_CERT_BYTES
         } else {
