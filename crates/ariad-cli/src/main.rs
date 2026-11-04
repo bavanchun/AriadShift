@@ -1126,35 +1126,7 @@ fn parse_tool_params_and_secrets(
                     "empty file path in --secret {name}=@"
                 )));
             }
-            let p = std::path::Path::new(file_path);
-            let canonical = std::fs::canonicalize(p)
-                .map_err(|err| ToolError::InputIo(format!("cannot resolve secret file: {err}")))?;
-            let canonical_str = canonical.to_string_lossy();
-            if canonical_str.starts_with("/proc")
-                || canonical_str.starts_with("/sys")
-                || canonical_str.starts_with("/dev")
-                || canonical_str.starts_with("/etc")
-                || canonical_str.starts_with("/var")
-                || canonical_str.starts_with("/run")
-                || canonical_str.starts_with("/private/var")
-                || canonical_str.starts_with("/private/etc")
-                || canonical_str.contains("/.ssh")
-                || canonical_str.contains("/.gnupg")
-                || canonical_str.contains("/.aws")
-                || canonical_str.contains("/.config")
-            {
-                return Err(ToolError::InvalidParams(
-                    "secret path points to a forbidden system or sensitive directory".into(),
-                ));
-            }
-            let meta = std::fs::metadata(&canonical)
-                .map_err(|err| ToolError::InputIo(format!("cannot read secret file: {err}")))?;
-            if !meta.file_type().is_file() || meta.len() == 0 {
-                return Err(ToolError::InvalidParams(
-                    "secret file must be a non-empty regular file".into(),
-                ));
-            }
-            let file = std::fs::File::open(&canonical)
+            let file = std::fs::File::open(file_path)
                 .map_err(|err| ToolError::InputIo(err.to_string()))?;
             if is_cert {
                 bounded_secret_certificate(file)?

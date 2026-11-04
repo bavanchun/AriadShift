@@ -1087,3 +1087,46 @@ fn test_cloud_default_deny_tsa_timestamp() {
             .contains("TSA URL is not in the allowed TSA list")
     );
 }
+
+#[test]
+fn test_tsa_client_refuses_redirects() {
+    let resolver = Arc::new(MockResolver::new());
+    resolver.insert(
+        "tsa.example.com",
+        vec![SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
+            443,
+        )],
+    );
+
+    let transport = Arc::new(MockTransport::fixed(HttpResponse {
+        status: 302,
+        headers: vec![(
+            "location".to_owned(),
+            "https://tsa.example.com/redirected".to_owned(),
+        )],
+        body: Vec::new(),
+    }));
+
+    let client = Client::builder()
+        .resolver(resolver)
+        .transport(transport)
+        .max_redirects(0)
+        .build()
+        .unwrap();
+
+    let err = client
+        .post(
+            Url::parse("https://tsa.example.com/tsa").unwrap(),
+            b"data".to_vec(),
+            "application/timestamp-query",
+        )
+        .unwrap_err();
+
+    match err {
+        NetError::TooManyRedirects { max } => {
+            assert_eq!(max, 0);
+        }
+        other => panic!("expected TooManyRedirects(0), got {other:?}"),
+    }
+}

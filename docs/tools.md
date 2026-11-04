@@ -753,9 +753,9 @@ Digital signature creation, verification, removal, and visual appearances are im
   - `B-LT`: Long-term validation with embedded validation info (DSS containing OCSP/CRL responses from offline evidence).
   - `B-LTA`: Long-term archival validation with a document timestamp covering DSS.
 - **Secrets**:
-  - `certificate`: Staged to `<work_dir>/cert.p12` mode 0600 on unix, strictly bounded to 10 MiB, cleaned up unconditionally on exit.
+  - `certificate`: Base64-encoded PKCS#12 payload (up to 10 MiB). Filesystem paths are strictly rejected by the host. CLI (`--secret certificate=@<file>`) and MCP (`secret_put` with base64 data) read/encode the content on their side. Staged to `<work_dir>/cert.p12` mode 0600 on unix, strictly bounded to 10 MiB, cleaned up unconditionally on exit.
   - `password` / `key_password`: Decryption passphrase for PKCS#12 archive.
-- **Brokered Network Flow (AD-15)**: The engine runs in a network-denied sandbox. All RFC 3161 timestamping requests are emitted as protocol progress events (`tsa_request`) and brokered by the host's hardened `net::Client` against an optional TSA allowlist (`ASHIFT_TSA_ALLOWLIST`, required in cloud mode). Revocation info for B-LT/B-LTA is loaded exclusively from offline evidence; live network fetching is disabled.
+- **Brokered Network Flow (AD-15)**: The engine runs in a network-denied sandbox. All RFC 3161 timestamping requests are emitted as protocol progress events (`tsa_request`) and brokered by the host's hardened `net::Client` against an optional TSA allowlist (`ASHIFT_TSA_ALLOWLIST`, required in cloud mode `ASHIFT_CLOUD_MODE=1`). Outbound TSA requests refuse HTTP redirects. Revocation info for B-LT/B-LTA is loaded exclusively from offline evidence; live network fetching is disabled.
 
 ### 3. `pdf.sign_token` (Pro Tier)
 - **Engine**: `sign` pack.

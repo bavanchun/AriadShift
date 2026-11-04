@@ -1298,3 +1298,54 @@ def test_second_incremental_signature_preserves_first(tmp_path: Path):
     assert rep["integrity"] is True
     assert all(s["integrity"] is True for s in rep["signatures"])
 
+
+def test_precomputed_timestamper_mismatched_imprint_rejected(tmp_path: Path):
+    from asn1crypto import tsp
+    ca_path, p12_path, crl_path, ocsp_paths, dummy_tsa = generate_ca_and_evidence(tmp_path)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(get_sample_pdf_bytes())
+
+    # Generate an RFC 3161 timestamp token with a mismatched imprint (e.g. b"0" * 32)
+    req = tsp.TimeStampReq(
+        {
+            "version": 1,
+            "message_imprint": tsp.MessageImprint(
+                {
+                    "hash_algorithm": {"algorithm": "sha256"},
+                    "hashed_message": b"0" * 32,
+                }
+            ),
+        }
+    )
+    resp = dummy_tsa.request_tsa_response(req)
+    tok_file = tmp_path / "mismatched.tok"
+    tok_file.write_bytes(resp["time_stamp_token"].dump())
+
+    work_dir = tmp_path / "work_mismatch"
+    work_dir.mkdir()
+    out_dir = tmp_path / "out_mismatch"
+    out_dir.mkdir()
+
+    sign_req = RunToolRequest(
+        job="job-mismatch",
+        tool="pdf.sign",
+        inputs=[{"path": str(pdf_path), "format": "pdf"}],
+        output_dir=str(out_dir),
+        work_dir=str(work_dir),
+        params={
+            "certificate": str(p12_path),
+            "password": "pass",
+            "level": "B-T",
+            "offline_evidence": {
+                "timestamp_token": str(tok_file),
+            },
+        },
+    )
+    writer = InMemoryWriter()
+    handle(sign_req, writer)
+
+    res = next(e for e in writer.events if e["type"] == "result")
+    assert res["ok"] is False
+    assert res["error"]["code"] == "invalid_request"
+    assert "imprint mismatch" in res["error"]["message"].lower()
+

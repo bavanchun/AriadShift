@@ -467,6 +467,15 @@ fn secret_put_certificate_allows_large_payload() {
     let _ = child.wait().unwrap();
 }
 
+static TEST_PW_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn dynamic_test_password() -> String {
+    let count = TEST_PW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let nonce = uuid::Uuid::new_v4().simple();
+    format!("p{pid}_{count}_{nonce}")
+}
+
 #[test]
 fn secret_put_binary_certificate_end_to_end_pdf_sign() {
     let py = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engines/sign/.venv/bin/python3");
@@ -480,6 +489,7 @@ fn secret_put_binary_certificate_end_to_end_pdf_sign() {
 
     let dir = tempfile::tempdir().unwrap();
     let p12_path = dir.path().join("signer.p12");
+    let password = dynamic_test_password();
     let script = format!(
         r#"
 from datetime import datetime, timedelta, timezone
@@ -508,12 +518,13 @@ p12 = pkcs12.serialize_key_and_certificates(
     key=key,
     cert=cert,
     cas=None,
-    encryption_algorithm=BestAvailableEncryption("mcppass".encode("utf-8")),
+    encryption_algorithm=BestAvailableEncryption("{password}".encode("utf-8")),
 )
 with open(r"{out_path}", "wb") as f:
     f.write(p12)
 "#,
-        out_path = p12_path.display()
+        out_path = p12_path.display(),
+        password = password
     );
     let status = Command::new(&py).args(["-c", &script]).status().unwrap();
     assert!(status.success());
@@ -591,7 +602,7 @@ with open(r"{out_path}", "wb") as f:
     // 2. Store password via secret_put
     send(
         &mut stdin,
-        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":"mcppass"}}}),
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":password}}}),
     );
     let pass_resp = response(&mut stdout, &mut stdin, 3);
     let pass_handle = pass_resp["result"]["structuredContent"]["handle"]
@@ -627,6 +638,46 @@ with open(r"{out_path}", "wb") as f:
     assert_eq!(sign_resp["result"]["isError"], false);
     let out_files: Vec<_> = std::fs::read_dir(&out_dir).unwrap().collect();
     assert!(!out_files.is_empty());
+
+    // 4. Negative test: path-valued certificate secret cannot read /private/var or ~/.netrc
+    for forbidden_path in ["/private/var/test.p12", "~/.netrc"] {
+        send(
+            &mut stdin,
+            json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":forbidden_path,"certificate":true}}}),
+        );
+        let bad_cert_resp = response(&mut stdout, &mut stdin, 5);
+        let bad_cert_handle = bad_cert_resp["result"]["structuredContent"]["handle"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let bad_out_dir = dir.path().join("bad_out");
+        send(
+            &mut stdin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "run_doc_tool",
+                    "arguments": {
+                        "tool": "pdf.sign",
+                        "inputs": [input_pdf.to_string_lossy()],
+                        "output_dir": bad_out_dir.to_string_lossy(),
+                        "params": {
+                            "certificate": {"$secret": bad_cert_handle},
+                            "password": {"$secret": pass_handle}
+                        }
+                    }
+                }
+            }),
+        );
+        let bad_sign_resp = response(&mut stdout, &mut stdin, 6);
+        assert_eq!(
+            bad_sign_resp["result"]["isError"], true,
+            "MCP pdf.sign must fail when certificate is a filesystem path: {forbidden_path}"
+        );
+    }
 
     drop(stdin);
     let _ = child.wait().unwrap();

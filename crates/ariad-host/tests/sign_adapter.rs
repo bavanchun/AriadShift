@@ -21,6 +21,21 @@ use ariad_host::{
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+static TEST_PW_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn dynamic_test_password() -> String {
+    let count = TEST_PW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let nonce = uuid::Uuid::new_v4().simple();
+    format!("p{pid}_{count}_{nonce}")
+}
+
+fn p12_to_base64(path: &Path) -> String {
+    use base64::Engine;
+    let bytes = fs::read(path).unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    base64::engine::general_purpose::STANDARD.encode(&bytes)
+}
+
 fn spec(id: &str) -> ToolSpec {
     sign::specs()
         .into_iter()
@@ -133,7 +148,7 @@ with open(r"{out_path}".replace(".p12", ".crt"), "wb") as f:
     let _ = Command::new(&py).args(["-c", &cert_pem_script]).status();
 }
 
-fn generate_test_pki_and_evidence(dir: &Path) {
+fn generate_test_pki_and_evidence(dir: &Path, password: &str) {
     let py = python_bin();
     let script = r#"
 import sys
@@ -147,6 +162,7 @@ from cryptography.x509 import ocsp
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 out_dir = Path(sys.argv[1])
+p12_pw = sys.argv[2].encode("utf-8")
 now = datetime.now(timezone.utc)
 
 # 1. Root CA
@@ -186,7 +202,7 @@ p12_bytes = pkcs12.serialize_key_and_certificates(
     key=signer_key,
     cert=signer_cert,
     cas=[ca_cert],
-    encryption_algorithm=BestAvailableEncryption(b"pass123"),
+    encryption_algorithm=BestAvailableEncryption(p12_pw),
 )
 (out_dir / "signer.p12").write_bytes(p12_bytes)
 (out_dir / "signer.crt").write_bytes(signer_cert.public_bytes(serialization.Encoding.PEM))
@@ -255,7 +271,7 @@ ocsp_tsa = (
 (out_dir / "tsa.ocsp").write_bytes(ocsp_tsa.public_bytes(serialization.Encoding.DER))
 "#;
     let status = Command::new(&py)
-        .args(["-c", script, &dir.to_string_lossy()])
+        .args(["-c", script, &dir.to_string_lossy(), password])
         .status()
         .expect("failed to generate PKI test evidence");
     assert!(status.success(), "PKI evidence generation failed");
@@ -290,15 +306,17 @@ fn test_sign_verify_remove_pipeline() {
     };
 
     let tmp = tempfile::tempdir().expect("tempdir");
+    let pw = dynamic_test_password();
     let p12_path = tmp.path().join("test_cert.p12");
-    generate_test_p12(&p12_path, "testsecret123");
+    generate_test_p12(&p12_path, &pw);
+    let p12_b64 = p12_to_base64(&p12_path);
 
     // 1. Sign
     let signed_dir = tmp.path().join("signed");
     fs::create_dir_all(&signed_dir).unwrap();
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", "testsecret123");
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &pw);
 
     let sign_req = ToolRequest::new(
         "pdf.sign",
@@ -395,14 +413,16 @@ fn test_visual_signature() {
     };
 
     let tmp = tempfile::tempdir().expect("tempdir");
+    let pw = dynamic_test_password();
     let p12_path = tmp.path().join("visual_cert.p12");
-    generate_test_p12(&p12_path, "pass");
+    generate_test_p12(&p12_path, &pw);
+    let p12_b64 = p12_to_base64(&p12_path);
 
     let signed_dir = tmp.path().join("signed_visual");
     fs::create_dir_all(&signed_dir).unwrap();
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", "pass");
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &pw);
 
     let sign_req = ToolRequest::new(
         "pdf.sign",
@@ -434,12 +454,13 @@ fn test_secret_scrubbing_in_sign() {
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let p12_path = tmp.path().join("secret_cert.p12");
-    let secret_pw = "UltraSecretSignPassword!99";
-    generate_test_p12(&p12_path, secret_pw);
+    let secret_pw = dynamic_test_password();
+    generate_test_p12(&p12_path, &secret_pw);
+    let p12_b64 = p12_to_base64(&p12_path);
 
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", secret_pw);
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &secret_pw);
 
     let signed_dir = tmp.path().join("signed_secret");
     fs::create_dir_all(&signed_dir).unwrap();
@@ -458,7 +479,7 @@ fn test_secret_scrubbing_in_sign() {
     let sign_res = run_tool(&sign_req).expect("sign with SecretBag should succeed");
     for w in &sign_res.warnings {
         assert!(
-            !w.message.contains(secret_pw),
+            !w.message.contains(&secret_pw),
             "password leaked in warning!"
         );
     }
@@ -472,11 +493,14 @@ fn test_sign_with_wrong_password_fails() {
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let p12_path = tmp.path().join("cert.p12");
-    generate_test_p12(&p12_path, "correct_password");
+    let correct_pw = dynamic_test_password();
+    let wrong_pw = format!("{correct_pw}_wrong");
+    generate_test_p12(&p12_path, &correct_pw);
+    let p12_b64 = p12_to_base64(&p12_path);
 
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", "wrong_password");
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &wrong_pw);
 
     let signed_dir = tmp.path().join("signed_fail");
     fs::create_dir_all(&signed_dir).unwrap();
@@ -682,14 +706,16 @@ fn test_pades_b_t_with_brokered_tsa() {
     let tsa_url = format!("http://127.0.0.1:{}/", tsa.port);
 
     let p12_path = tmp.path().join("test_cert.p12");
-    generate_test_p12(&p12_path, "pass123");
+    let pw = dynamic_test_password();
+    generate_test_p12(&p12_path, &pw);
+    let p12_b64 = p12_to_base64(&p12_path);
     let signer_cert_path = p12_path.with_extension("crt");
 
     let signed_dir = tmp.path().join("signed_bt");
     fs::create_dir_all(&signed_dir).unwrap();
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", "pass123");
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &pw);
 
     let sign_req = ToolRequest::new(
         "pdf.sign",
@@ -749,10 +775,12 @@ fn test_pades_b_lt_and_b_lta_with_brokered_tsa() {
         return;
     };
     let tmp = tempfile::tempdir().expect("tempdir");
-    generate_test_pki_and_evidence(tmp.path());
+    let pw = dynamic_test_password();
+    generate_test_pki_and_evidence(tmp.path(), &pw);
 
     let ca_crt = tmp.path().join("ca.crt");
     let signer_p12 = tmp.path().join("signer.p12");
+    let signer_b64 = p12_to_base64(&signer_p12);
     let ca_crl = tmp.path().join("ca.crl");
     let signer_ocsp = tmp.path().join("signer.ocsp");
     let tsa_ocsp = tmp.path().join("tsa.ocsp");
@@ -779,8 +807,8 @@ fn test_pades_b_lt_and_b_lta_with_brokered_tsa() {
     let out_blt = tmp.path().join("out_blt");
     fs::create_dir_all(&out_blt).unwrap();
     let mut bag_blt = SecretBag::new();
-    let _ = bag_blt.insert("certificate", signer_p12.to_str().unwrap());
-    let _ = bag_blt.insert("password", "pass123");
+    let _ = bag_blt.insert("certificate", &signer_b64);
+    let _ = bag_blt.insert("password", &pw);
 
     let req_blt = ToolRequest::new(
         "pdf.sign",
@@ -840,8 +868,8 @@ fn test_pades_b_lt_and_b_lta_with_brokered_tsa() {
     let out_blta = tmp.path().join("out_blta");
     fs::create_dir_all(&out_blta).unwrap();
     let mut bag_blta = SecretBag::new();
-    let _ = bag_blta.insert("certificate", signer_p12.to_str().unwrap());
-    let _ = bag_blta.insert("password", "pass123");
+    let _ = bag_blta.insert("certificate", &signer_b64);
+    let _ = bag_blta.insert("password", &pw);
 
     let req_blta = ToolRequest::new(
         "pdf.sign",
@@ -902,8 +930,8 @@ fn test_pades_b_lt_and_b_lta_with_brokered_tsa() {
     let out_bt = tmp.path().join("out_bt_downgrade");
     fs::create_dir_all(&out_bt).unwrap();
     let mut bag_bt = SecretBag::new();
-    let _ = bag_bt.insert("certificate", signer_p12.to_str().unwrap());
-    let _ = bag_bt.insert("password", "pass123");
+    let _ = bag_bt.insert("certificate", &signer_b64);
+    let _ = bag_bt.insert("password", &pw);
 
     let req_bt = ToolRequest::new(
         "pdf.sign",
@@ -1016,14 +1044,16 @@ fn test_tampered_pdf_fails_verification() {
     };
 
     let tmp = tempfile::tempdir().expect("tempdir");
+    let pw = dynamic_test_password();
     let p12_path = tmp.path().join("test_cert.p12");
-    generate_test_p12(&p12_path, "secret");
+    generate_test_p12(&p12_path, &pw);
+    let p12_b64 = p12_to_base64(&p12_path);
 
     let signed_dir = tmp.path().join("signed");
     fs::create_dir_all(&signed_dir).unwrap();
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", "secret");
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &pw);
 
     let sign_req = ToolRequest::new(
         "pdf.sign",
@@ -1072,12 +1102,14 @@ fn test_second_incremental_signature() {
     };
 
     let tmp = tempfile::tempdir().expect("tempdir");
+    let pw = dynamic_test_password();
     let p12_path = tmp.path().join("cert.p12");
-    generate_test_p12(&p12_path, "secret");
+    generate_test_p12(&p12_path, &pw);
+    let p12_b64 = p12_to_base64(&p12_path);
 
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", "secret");
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &pw);
 
     // First signature
     let dir1 = tmp.path().join("sig1");
@@ -1238,15 +1270,17 @@ fn test_sign_engine_pades_b_t_succeeds_under_sandbox() {
     cmd.launcher = Some(launcher);
 
     let tmp = tempfile::tempdir().expect("tempdir");
+    let pw = dynamic_test_password();
     let p12_path = tmp.path().join("cert.p12");
-    generate_test_p12(&p12_path, "secret");
+    generate_test_p12(&p12_path, &pw);
+    let p12_b64 = p12_to_base64(&p12_path);
 
     let tsa = TestTsaServer::spawn();
     let tsa_url = format!("http://127.0.0.1:{}/", tsa.port);
 
     let mut bag = SecretBag::new();
-    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
-    let _ = bag.insert("password", "secret");
+    let _ = bag.insert("certificate", &p12_b64);
+    let _ = bag.insert("password", &pw);
 
     let out_dir = tmp.path().join("signed_sandbox");
     fs::create_dir_all(&out_dir).unwrap();
@@ -1273,4 +1307,48 @@ fn test_sign_engine_pades_b_t_succeeds_under_sandbox() {
     let res = with_test_tsa_client(client, || run_tool(&req))
         .expect("B-T signing with brokered TSA must succeed under sandbox");
     assert!(!res.artifacts.is_empty());
+}
+
+#[test]
+fn test_path_valued_certificate_is_rejected() {
+    let Some(cmd) = engine_command() else {
+        return;
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out_dir = tmp.path().join("out");
+    fs::create_dir_all(&out_dir).unwrap();
+
+    for path in [
+        "/etc/passwd",
+        "/private/var/test.p12",
+        "~/.netrc",
+        "./relative.p12",
+    ] {
+        let mut bag = SecretBag::new();
+        let _ = bag.insert("certificate", path);
+        let _ = bag.insert("password", dynamic_test_password());
+
+        let req = ToolRequest::new(
+            "pdf.sign",
+            vec![InputRef::new(fixture_pdf())],
+            OutputTarget::Directory(out_dir.clone()),
+        )
+        .with_spec(spec("pdf.sign"))
+        .with_params(json!({"level": "B-B"}))
+        .with_secrets(bag)
+        .with_engine_command(cmd.clone());
+
+        let res = run_tool(&req);
+        match res {
+            Err(ariad_host::tools::ToolError::InvalidParams(msg)) => {
+                assert!(
+                    msg.contains(
+                        "certificate secret must be base64-encoded data, not a filesystem path"
+                    ) || msg.contains("certificate parameter must be base64-encoded data"),
+                    "unexpected error message for {path}: {msg}"
+                );
+            }
+            other => panic!("expected InvalidParams for path '{path}', got {other:?}"),
+        }
+    }
 }

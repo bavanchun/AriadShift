@@ -172,7 +172,7 @@ Stores a secret in the local stdio server's memory and returns a single-use hand
 
 Call `secret_put` with `{"value":"<secret>"}`. The result is `{"handle":"sec_<id>","expires_in_s":300}`. Pass the returned handle as, for example, `{"password":{"$secret":"sec_<id>"}}` in `run_doc_tool` parameters. Unknown, expired, used, and malformed handles fail with `invalid_params` (exit 9).
 
-For digital signature and security tools (`pdf.sign`, `pdf.sign_token`, `pdf.timestamp`, `pdf.sign_verify`, `pdf.sign_remove`, `pdf.sign_visual`), secret fields such as `password` and `key_passphrase`, as well as `certificate` (base64-encoded PKCS#12 payload), must travel inside a secret handle via `secret_put`. All secret material and temporary staging files are scrubbed unconditionally from disk immediately after tool execution.
+For digital signature and security tools (`pdf.sign`, `pdf.sign_token`, `pdf.timestamp`, `pdf.sign_verify`, `pdf.sign_remove`, `pdf.sign_visual`), secret fields such as `password` and `key_passphrase`, as well as `certificate`, must travel inside a secret handle via `secret_put`. For binary certificates (`certificate: true`), the client must provide the raw PKCS#12 payload encoded in base64 up to 10 MiB; filesystem paths are strictly rejected by the server and host. All secret material and temporary staging files are scrubbed unconditionally from disk immediately after tool execution.
 
 ---
 

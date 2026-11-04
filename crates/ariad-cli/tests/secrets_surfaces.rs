@@ -255,6 +255,15 @@ fn sign_python_bin() -> Option<PathBuf> {
     if py.is_file() { Some(py) } else { None }
 }
 
+static TEST_PW_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn dynamic_test_password() -> String {
+    let count = TEST_PW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let nonce = uuid::Uuid::new_v4().simple();
+    format!("p{pid}_{count}_{nonce}")
+}
+
 fn generate_test_p12_file(py: &std::path::Path, out_path: &std::path::Path, password: &str) {
     let script = format!(
         r#"
@@ -315,10 +324,11 @@ fn cli_certificate_binary_secret_pdf_sign() {
 
     let dir = tempfile::tempdir().unwrap();
     let p12_path = dir.path().join("signer.p12");
-    generate_test_p12_file(&py, &p12_path, "secret123");
+    let password = dynamic_test_password();
+    generate_test_p12_file(&py, &p12_path, &password);
 
     let pass_path = dir.path().join("password.txt");
-    std::fs::write(&pass_path, "secret123\n").unwrap();
+    std::fs::write(&pass_path, format!("{password}\n")).unwrap();
 
     let input_pdf =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/annotations.pdf");
@@ -345,22 +355,55 @@ fn cli_certificate_binary_secret_pdf_sign() {
     );
     assert!(output_pdf.is_file());
     assert!(std::fs::metadata(&output_pdf).unwrap().len() > 0);
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("secret123"));
-    assert!(!String::from_utf8_lossy(&output.stderr).contains("secret123"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(&password));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(&password));
 }
 
 #[test]
 fn cert_path_restrictions_reject_forbidden_paths() {
-    for forbidden in ["/proc/cpuinfo", "/dev/null", "/etc/passwd"] {
-        if !std::path::Path::new(forbidden).exists() {
-            continue;
+    // 1. Filesystem paths passed as certificate values to host resolve_cert_bytes are strictly rejected
+    for path in [
+        "/private/var/folders/secret.p12",
+        "~/.netrc",
+        "/etc/passwd",
+        "/proc/cpuinfo",
+        "./cert.p12",
+        "../secret.p12",
+    ] {
+        let err = ariad_host::tools::sign::resolve_cert_bytes(path);
+        assert!(
+            err.is_err(),
+            "host resolve_cert_bytes must reject filesystem path: {path}"
+        );
+        match err.unwrap_err() {
+            ariad_host::tools::ToolError::InvalidParams(msg) => {
+                assert!(
+                    msg.contains(
+                        "certificate secret must be base64-encoded data, not a filesystem path"
+                    ) || msg.contains("certificate parameter must be base64-encoded data"),
+                    "unexpected error msg: {msg}"
+                );
+            }
+            other => panic!("expected InvalidParams, got {other:?}"),
         }
+    }
+
+    // 2. CLI rejects inline literal paths for secret parameters
+    for path in ["/private/var/secret.p12", "~/.netrc", "/etc/passwd"] {
         let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
             .args(["tool", "pdf.sign"])
             .arg(fixture())
-            .args(["--secret", &format!("certificate=@{forbidden}")])
+            .args(["--secret", &format!("certificate={path}")])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(9));
+
+        let output_param = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .args(["tool", "pdf.sign"])
+            .arg(fixture())
+            .args(["--param", &format!("certificate={path}")])
+            .output()
+            .unwrap();
+        assert_eq!(output_param.status.code(), Some(9));
     }
 }

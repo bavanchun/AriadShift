@@ -36,64 +36,41 @@ impl Drop for SecretFileGuard {
     }
 }
 
-fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
+pub fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
     let trimmed = input.trim();
 
-    // 1. Prefer base64 encoded payload (standard transport for CLI and MCP secrets)
-    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(trimmed) {
-        match decoded.len() as u64 {
-            0 => {}
-            1..=MAX_CERT_BYTES => return Ok(decoded),
-            _ => return Err(ToolError::LimitExceeded),
-        }
+    // The host strictly rejects filesystem paths. CLI (--secret certificate=@FILE)
+    // and MCP (secret_put with base64) must read bytes on their side.
+    if trimmed.starts_with('/')
+        || trimmed.starts_with('~')
+        || trimmed.starts_with("./")
+        || trimmed.starts_with("../")
+        || trimmed.starts_with(r".\")
+        || trimmed.starts_with(r"..\")
+        || (trimmed.len() >= 3
+            && trimmed.as_bytes()[1] == b':'
+            && (trimmed.as_bytes()[2] == b'\\' || trimmed.as_bytes()[2] == b'/'))
+    {
+        return Err(ToolError::InvalidParams(
+            "certificate secret must be base64-encoded data, not a filesystem path; pass file contents via CLI --secret certificate=@<path> or MCP base64 secret_put".to_owned(),
+        ));
     }
 
-    // 2. Allow-list approach for explicit file path input
-    let path = Path::new(trimmed);
-    if path.is_file() {
-        let canonical = fs::canonicalize(path).map_err(|e| {
-            ToolError::InvalidParams(format!("cannot resolve certificate file: {e}"))
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(trimmed)
+        .map_err(|_| {
+            ToolError::InvalidParams(
+                "certificate parameter must be base64-encoded data (file paths are not accepted by the host)".to_owned(),
+            )
         })?;
 
-        let canonical_str = canonical.to_string_lossy();
-        if canonical_str.starts_with("/proc")
-            || canonical_str.starts_with("/sys")
-            || canonical_str.starts_with("/dev")
-            || canonical_str.starts_with("/etc")
-            || canonical_str.starts_with("/var")
-            || canonical_str.starts_with("/run")
-            || canonical_str.starts_with("/private/var")
-            || canonical_str.starts_with("/private/etc")
-            || canonical_str.contains("/.ssh")
-            || canonical_str.contains("/.gnupg")
-            || canonical_str.contains("/.aws")
-            || canonical_str.contains("/.config")
-        {
-            return Err(ToolError::InvalidParams(
-                "certificate path points to a forbidden system or sensitive directory".to_owned(),
-            ));
-        }
-
-        let meta = fs::metadata(&canonical)
-            .map_err(|e| ToolError::InvalidParams(format!("cannot read certificate file: {e}")))?;
-
-        if !meta.file_type().is_file() || meta.len() == 0 {
-            return Err(ToolError::InvalidParams(
-                "certificate file must be a non-empty regular file".to_owned(),
-            ));
-        }
-        if meta.len() > MAX_CERT_BYTES {
-            return Err(ToolError::LimitExceeded);
-        }
-
-        return fs::read(&canonical)
-            .map_err(|e| ToolError::InvalidParams(format!("cannot read certificate file: {e}")));
+    match decoded.len() as u64 {
+        0 => Err(ToolError::InvalidParams(
+            "certificate secret cannot be empty".to_owned(),
+        )),
+        1..=MAX_CERT_BYTES => Ok(decoded),
+        _ => Err(ToolError::LimitExceeded),
     }
-
-    Err(ToolError::InvalidParams(
-        "certificate parameter must be base64-encoded data or an explicit certificate file path"
-            .to_owned(),
-    ))
 }
 
 /// Stages a PKCS#12 certificate file or binary data into `<work_dir>/cert.p12` (0600).
@@ -262,10 +239,7 @@ pub fn broker_tsa_timestamp(
     let url = Url::parse(tsa_url_str)
         .map_err(|_| ToolError::InvalidParams("invalid TSA URL".to_owned()))?;
 
-    let is_cloud = std::env::var("ASHIFT_CLOUD_MODE").as_deref() == Ok("1")
-        || std::env::var("ASHIFT_CLOUD").as_deref() == Ok("1")
-        || std::env::var("ARIAD_CLOUD").as_deref() == Ok("1")
-        || std::env::var("ASHIFT_DEPLOYMENT").as_deref() == Ok("cloud");
+    let is_cloud = std::env::var("ASHIFT_CLOUD_MODE").as_deref() == Ok("1");
 
     let allowlist = std::env::var("ASHIFT_TSA_ALLOWLIST").ok();
     check_tsa_policy(&url, allowlist.as_deref(), is_cloud)?;
@@ -279,7 +253,7 @@ pub fn broker_tsa_timestamp(
     let net_client = match client.or(seam_client.as_ref()) {
         Some(c) => c,
         None => {
-            default_client = Client::builder().build().map_err(|_| {
+            default_client = Client::builder().max_redirects(0).build().map_err(|_| {
                 ToolError::EngineFailure("failed to initialize safe network client".to_owned())
             })?;
             &default_client
