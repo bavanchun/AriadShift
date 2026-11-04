@@ -724,7 +724,56 @@ Before running any tool that has one or more resolved secrets in `SecretBag`:
 
 ---
 
-## 12. CLI Commands and Tool Exit Codes
+## 12. Digital Signatures and Timestamping (`sign` group)
+
+Digital signature creation, verification, removal, and visual appearances are implemented across `ariad-pdf` (pure Rust, WASM + native) and the out-of-process Python `sign` engine pack (pyHanko):
+
+### 1. `pdf.sign_visual`
+- **Engine**: `ariad-pdf` (pure Rust in-process, `wasm` and `local` runtimes).
+- **Summary**: Places a visible signature box on a document page without cryptographic CMS payload.
+- **Modes**:
+  - `type`: Typographic text layout with optional signer metadata.
+  - `draw`: Vector stroke / path rendering.
+  - `image`: Image stamp (PNG/JPEG).
+- **Parameters**: `page` (1-based index), `rect` (`[x1, y1, x2, y2]` in points), `flatten` (boolean; `true` burns into page content, `false` adds a `/Subtype /Stamp` annotation).
+
+### 2. `pdf.sign`
+- **Engine**: `sign` pack (out-of-process pyHanko).
+- **Summary**: Creates standard PAdES digital signatures.
+- **Profiles / Levels**:
+  - `B-B`: Basic cryptographic signature with signer certificate.
+  - `B-T`: Signature with a trusted RFC 3161 timestamp token.
+  - `B-LT`: Long-term validation with embedded validation info (DSS containing OCSP/CRL responses).
+  - `B-LTA`: Long-term archival validation with a document timestamp covering DSS.
+- **Secrets**:
+  - `certificate`: Staged to `<work_dir>/cert.p12` mode 0600 on unix, strictly bounded to 10 MiB, cleaned up unconditionally on exit.
+  - `password` / `key_password`: Decryption passphrase for PKCS#12 archive.
+- **Brokered Network Flow (AD-15)**: The engine runs in a network-denied sandbox. All RFC 3161 timestamping requests are emitted as protocol progress events (`tsa_request`) and brokered by the host's hardened `net::Client`.
+
+### 3. `pdf.sign_token` (Pro Tier)
+- **Engine**: `sign` pack.
+- **Summary**: Signs a PDF using a PKCS#11 hardware security module (HSM) or smart card token.
+- **Parameters**: `module` (path to PKCS#11 shared library), `slot`, `token_label`, `key_label`, `pin` (`x-ariad-secret`).
+
+### 4. `pdf.timestamp`
+- **Engine**: `sign` pack.
+- **Summary**: Adds an imprint-bound RFC 3161 document timestamp to a PDF without requiring a signer certificate.
+- **Parameters**: `field_name`, `tsa_url`, `timestamp_token` (base64 pre-computed token).
+
+### 5. `pdf.sign_verify`
+- **Engine**: `sign` pack.
+- **Summary**: Cryptographically verifies all embedded signatures and document timestamps in a PDF.
+- **Report**: Returns JSON report with `signatures_count`, `valid`, `integrity`, per-signature signer subject/issuer/validity dates, `signing_time`, `revocation_status`, `coverage` (`entire_file`, `entire_revision`, `partial`), and DocMDP modification analysis.
+- **Security**: Network fetching is strictly disabled (`allow_fetching = false`). Operates with the OS trust store by default, and accepts `trust_anchors` and `offline_evidence` files.
+
+### 6. `pdf.sign_remove`
+- **Engine**: `sign` pack.
+- **Summary**: Removes digital signature fields and annotations from a PDF.
+- **Safety**: Refuses encrypted PDFs upfront (`error[encrypted_input]`). Cleans up `/Root/Perms /DocMDP` and `/UR3`. Requires `confirm_invalidation: true` to prevent accidental loss of integrity guarantees.
+
+---
+
+## 13. CLI Commands and Tool Exit Codes
 
 ### CLI Commands
 

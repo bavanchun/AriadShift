@@ -6,6 +6,7 @@ Heavy engines (Docling, OCR models) are not part of the base `ashift` install. T
 
 ```bash
 ashift engines install docling                 # recommended version from the built-in index
+ashift engines install sign                    # sign engine pack for digital signatures
 ashift engines install docling --version 0.2.0
 ashift engines install docling --manifest https://example.org/pack.toml
 ashift engines install docling --from ./docling-pack   # offline, no network

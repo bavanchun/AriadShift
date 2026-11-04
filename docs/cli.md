@@ -45,7 +45,7 @@ All CLI commands adhere to a single unified exit-code table:
 | `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
 | `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
 | `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
-| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. PDFium tools (`pdf.render` and the other tools of the `pdfium` engine): the `pdfium` pack is not installed or fails verification at resolve (damaged files, a mismatched `engine_protocol`, or an entrypoint outside the pack root); the error carries the install hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. |
+| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. PDFium tools (`pdf.render` and the other tools of the `pdfium` engine): the `pdfium` pack is not installed or fails verification at resolve (damaged files, a mismatched `engine_protocol`, or an entrypoint outside the pack root); the error carries the install hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. Digital signature tools (`pdf.sign`, `pdf.sign_token`, `pdf.timestamp`, `pdf.sign_verify`, `pdf.sign_remove`): the `sign` pack is not installed; the error carries the install hint `run 'ashift engines install sign' to install the sign engine pack`. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
 | `8` | Unknown Tool | Requested tool ID (`ashift tool <id>`) is not in the tool registry (`error[unknown_tool]`). |
 | `9` | Invalid Params | Tool parameters failed JSON Schema validation, violated `x-ariad-secret` rules (such as an inline secret on `--param` or `--params-json`), or an imported recipe was not confirmed (`error[invalid_params]`). |
@@ -705,7 +705,7 @@ ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--param
 - `-o, --output <DIR_OR_FILE>`: Explicit output file or directory. When omitted, single-output and multi-output tools publish beside the first input using default naming, while `pdf.info` prints its inspection summary (or structured JSON with `--json`) without writing a file to disk.
 - `--param <KEY=VALUE>`: Repeatable parameter override (`VALUE` is parsed as JSON when valid, otherwise as a string).
 - `--params-json <FILE|->`: Read the tool parameter JSON object from a file or `-` (stdin). Explicit `--param` flags override keys from `--params-json`.
-- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Secrets are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
+- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Text secrets (such as passwords and passphrases) are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Binary secrets (such as PKCS#12 certificates for `pdf.sign`: `--secret certificate=@cert.p12`) are resolved from regular files up to 10 MiB, staged into isolated 0600 workspace files, and scrubbed immediately after execution. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
 - `--overwrite`: Replace existing destination file(s).
 - `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
 
@@ -804,6 +804,12 @@ ashift tool pdf.portfolio fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tool
 
 # Remove a named optional-content layer (/OCProperties) and its marked content (-> watermark-layer.layers.pdf)
 ashift tool pdf.layers fixtures/pdf-tools/watermark-layer.pdf --param action=remove --param 'names=["AriadShift Watermark"]' -o out/
+
+# Digitally sign a PDF using a PKCS#12 certificate and password
+ashift tool pdf.sign document.pdf --secret certificate=@cert.p12 --secret password=@pass.txt --param level=b-b -o signed.pdf
+
+# Verify all digital signatures and timestamps in a PDF
+ashift tool pdf.sign_verify signed.pdf --json
 ```
 
 ---

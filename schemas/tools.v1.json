@@ -7770,6 +7770,836 @@
       "summary": "Export PDF form values.",
       "tier": "free",
       "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "sign",
+      "id": "pdf.sign_visual",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SignVisualParams",
+        "description": "Parameters for `pdf.sign_visual`.",
+        "type": "object",
+        "properties": {
+          "color": {
+            "description": "Color in hex format (e.g. \"#000000\").",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/HexColor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "date": {
+            "description": "Optional date string rendered with signature.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flatten": {
+            "description": "Whether to flatten the visual signature directly into the page content stream\ninstead of keeping it as a stamp annotation. Default is `true`.",
+            "type": "boolean",
+            "default": true
+          },
+          "image_data": {
+            "description": "Base64 encoded image data or image filename (when mode = `image`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "description": "Mode of visual signature: `type`, `draw`, or `image`.",
+            "$ref": "#/$defs/SignVisualMode",
+            "default": "type"
+          },
+          "page": {
+            "description": "1-based page number where the visual signature appears (default: 1).",
+            "type": "integer",
+            "format": "uint32",
+            "default": 1,
+            "minimum": 0
+          },
+          "rect": {
+            "description": "Bounding rectangle `[x1, y1, x2, y2]` in points (PDF coordinates, origin bottom-left).",
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 4,
+            "minItems": 4
+          },
+          "signer_name": {
+            "description": "Optional signer name / label rendered underneath signature.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "description": "Text to render (when mode = `type`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vector_data": {
+            "description": "SVG path data or vector stroke coordinates (when mode = `draw`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "rect"
+        ],
+        "$defs": {
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "SignVisualMode": {
+            "description": "Mode of visual signature appearance: `type`, `draw`, or `image`.",
+            "oneOf": [
+              {
+                "description": "Render typographic text with optional signer details.",
+                "type": "string",
+                "const": "type"
+              },
+              {
+                "description": "Render hand-drawn vector stroke or SVG path.",
+                "type": "string",
+                "const": "draw"
+              },
+              {
+                "description": "Render an image stamp (PNG/JPEG).",
+                "type": "string",
+                "const": "image"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add a visual signature (drawn stroke, typed text, or image stamp) to a PDF page.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "sign",
+      "group": "sign",
+      "id": "pdf.sign",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SignParams",
+        "description": "Parameters for `pdf.sign`.",
+        "type": "object",
+        "properties": {
+          "certificate": {
+            "description": "PKCS#12 certificate file path, handle, or base64 data (secret).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-ariad-secret": true
+          },
+          "contact": {
+            "description": "Contact info of the signer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field_name": {
+            "description": "Signature field name (default: \"Signature1\").",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key_password": {
+            "description": "Passphrase to unlock the private key if separate from container password (secret).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-ariad-secret": true
+          },
+          "keychain": {
+            "description": "macOS Keychain backend parameters.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/KeychainParams"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level": {
+            "description": "Conformance level (B-B, B-T, B-LT, B-LTA). Default is `B-B`.",
+            "$ref": "#/$defs/SignLevel",
+            "default": "B-B"
+          },
+          "location": {
+            "description": "Location where the document was signed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offline_evidence": {
+            "description": "Caller-supplied offline evidence.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OfflineEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "password": {
+            "description": "Passphrase to decrypt the PKCS#12 certificate container (secret).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-ariad-secret": true
+          },
+          "reason": {
+            "description": "Reason for signing the document.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "token": {
+            "description": "PKCS#11 hardware token backend parameters.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TokenParams"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tsa_url": {
+            "description": "RFC 3161 Timestamp Authority (TSA) URL. Required for B-T, B-LT, B-LTA.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visible": {
+            "description": "Visible signature visual appearance.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VisibleSignature"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "KeychainParams": {
+            "description": "macOS Keychain backend interface.",
+            "type": "object",
+            "properties": {
+              "identity": {
+                "description": "Common name or SHA-1 fingerprint of the signing certificate in the Keychain.",
+                "type": "string"
+              },
+              "keychain_path": {
+                "description": "Optional keychain name or path.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "identity"
+            ]
+          },
+          "OfflineEvidence": {
+            "description": "Caller-supplied offline evidence files.",
+            "type": "object",
+            "properties": {
+              "crl_files": {
+                "description": "Optional paths to pre-fetched CRL (Certificate Revocation List) files.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "ocsp_responses": {
+                "description": "Optional paths to pre-fetched OCSP response files.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timestamp_token": {
+                "description": "Optional path to a pre-fetched RFC 3161 timestamp response token file.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "SignLevel": {
+            "description": "PAdES digital signature conformance level.",
+            "oneOf": [
+              {
+                "description": "PAdES B-B: basic digital signature.",
+                "type": "string",
+                "const": "B-B"
+              },
+              {
+                "description": "PAdES B-T: signature with a trusted RFC 3161 timestamp.",
+                "type": "string",
+                "const": "B-T"
+              },
+              {
+                "description": "PAdES B-LT: signature with Long-Term validation data (certificates and revocation info).",
+                "type": "string",
+                "const": "B-LT"
+              },
+              {
+                "description": "PAdES B-LTA: signature with Long-Term validation data and archival timestamp.",
+                "type": "string",
+                "const": "B-LTA"
+              }
+            ]
+          },
+          "TokenParams": {
+            "description": "PKCS#11 hardware token backend interface.",
+            "type": "object",
+            "properties": {
+              "key_label": {
+                "description": "Optional key label.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "module": {
+                "description": "Path to the PKCS#11 module dynamic library (`.so` / `.dylib` / `.dll`).",
+                "type": "string"
+              },
+              "pin": {
+                "description": "Token user PIN (secret).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "slot": {
+                "description": "Optional slot number or token label.",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0
+              },
+              "token_label": {
+                "description": "Optional token label.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "module"
+            ]
+          },
+          "VisibleSignature": {
+            "description": "Visual appearance settings for a digital signature.",
+            "type": "object",
+            "properties": {
+              "appearance": {
+                "description": "Optional appearance text or template to render inside the signature box.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "1-based page number where the signature will appear.",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "rect": {
+                "description": "Bounding rectangle `[x1, y1, x2, y2]` in PDF user space units (points).",
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "maxItems": 4,
+                "minItems": 4
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "page",
+              "rect"
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [
+        "certificate",
+        "password",
+        "key_password"
+      ],
+      "summary": "Sign a PDF document with a PAdES digital signature.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "sign",
+      "group": "sign",
+      "id": "pdf.sign_token",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SignTokenParams",
+        "description": "Parameters for `pdf.sign_token`.",
+        "type": "object",
+        "properties": {
+          "contact": {
+            "description": "Contact info of the signer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field_name": {
+            "description": "Signature field name (default: \"Signature1\").",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key_label": {
+            "description": "Optional key label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "level": {
+            "description": "Conformance level (B-B, B-T, B-LT, B-LTA). Default is `B-B`.",
+            "$ref": "#/$defs/SignLevel",
+            "default": "B-B"
+          },
+          "location": {
+            "description": "Location where the document was signed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "module": {
+            "description": "Path to the PKCS#11 module dynamic library (`.so` / `.dylib` / `.dll`).",
+            "type": "string"
+          },
+          "offline_evidence": {
+            "description": "Caller-supplied offline evidence.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OfflineEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pin": {
+            "description": "Token user PIN (secret).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-ariad-secret": true
+          },
+          "reason": {
+            "description": "Reason for signing the document.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slot": {
+            "description": "Optional slot number.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "token_label": {
+            "description": "Optional token label.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tsa_url": {
+            "description": "RFC 3161 Timestamp Authority (TSA) URL. Required for B-T, B-LT, B-LTA.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visible": {
+            "description": "Visible signature visual appearance.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VisibleSignature"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "module"
+        ],
+        "$defs": {
+          "OfflineEvidence": {
+            "description": "Caller-supplied offline evidence files.",
+            "type": "object",
+            "properties": {
+              "crl_files": {
+                "description": "Optional paths to pre-fetched CRL (Certificate Revocation List) files.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "ocsp_responses": {
+                "description": "Optional paths to pre-fetched OCSP response files.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timestamp_token": {
+                "description": "Optional path to a pre-fetched RFC 3161 timestamp response token file.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "SignLevel": {
+            "description": "PAdES digital signature conformance level.",
+            "oneOf": [
+              {
+                "description": "PAdES B-B: basic digital signature.",
+                "type": "string",
+                "const": "B-B"
+              },
+              {
+                "description": "PAdES B-T: signature with a trusted RFC 3161 timestamp.",
+                "type": "string",
+                "const": "B-T"
+              },
+              {
+                "description": "PAdES B-LT: signature with Long-Term validation data (certificates and revocation info).",
+                "type": "string",
+                "const": "B-LT"
+              },
+              {
+                "description": "PAdES B-LTA: signature with Long-Term validation data and archival timestamp.",
+                "type": "string",
+                "const": "B-LTA"
+              }
+            ]
+          },
+          "VisibleSignature": {
+            "description": "Visual appearance settings for a digital signature.",
+            "type": "object",
+            "properties": {
+              "appearance": {
+                "description": "Optional appearance text or template to render inside the signature box.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "1-based page number where the signature will appear.",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "rect": {
+                "description": "Bounding rectangle `[x1, y1, x2, y2]` in PDF user space units (points).",
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "maxItems": 4,
+                "minItems": 4
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "page",
+              "rect"
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [
+        "pin"
+      ],
+      "summary": "Sign a PDF document using a PKCS#11 hardware token or smart card.",
+      "tier": "pro",
+      "version": "1"
+    },
+    {
+      "engine": "sign",
+      "group": "sign",
+      "id": "pdf.timestamp",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TimestampParams",
+        "description": "Parameters for `pdf.timestamp`.",
+        "type": "object",
+        "properties": {
+          "field_name": {
+            "description": "Optional field name for document timestamp.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "md_algorithm": {
+            "description": "Digest algorithm (e.g. \"sha256\", \"sha384\", \"sha512\"). Default: \"sha256\".",
+            "type": "string",
+            "default": "sha256"
+          },
+          "offline_evidence": {
+            "description": "Caller-supplied offline evidence.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OfflineEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tsa_url": {
+            "description": "RFC 3161 Timestamp Authority (TSA) URL.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "tsa_url"
+        ],
+        "$defs": {
+          "OfflineEvidence": {
+            "description": "Caller-supplied offline evidence files.",
+            "type": "object",
+            "properties": {
+              "crl_files": {
+                "description": "Optional paths to pre-fetched CRL (Certificate Revocation List) files.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "ocsp_responses": {
+                "description": "Optional paths to pre-fetched OCSP response files.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timestamp_token": {
+                "description": "Optional path to a pre-fetched RFC 3161 timestamp response token file.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add a trusted RFC 3161 document timestamp to a PDF document.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "sign",
+      "group": "sign",
+      "id": "pdf.sign_verify",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SignVerifyParams",
+        "description": "Parameters for `pdf.sign_verify`.",
+        "type": "object",
+        "properties": {
+          "fetch_revocation": {
+            "description": "Whether to fetch live revocation status (OCSP/CRL) over the network.\nDefaults to `false` (offline validation by default).",
+            "type": "boolean",
+            "default": false
+          },
+          "offline_evidence": {
+            "description": "Optional caller-supplied offline evidence file paths.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "trust_anchors": {
+            "description": "Optional paths to trusted root CA certificates (PEM/DER format).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tsa_url": {
+            "description": "Optional custom TSA URL to verify timestamps.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local",
+        "cloud"
+      ],
+      "secret_params": [],
+      "summary": "Verify digital signatures in a PDF document.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "sign",
+      "group": "sign",
+      "id": "pdf.sign_remove",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SignRemoveParams",
+        "description": "Parameters for `pdf.sign_remove`.",
+        "type": "object",
+        "properties": {
+          "confirm_invalidation": {
+            "description": "Confirmation that signature removal invalidates document cryptographic integrity.\nMust be set to `true` to proceed.",
+            "type": "boolean"
+          },
+          "field_name": {
+            "description": "Optional signature field name to remove. If `None`, removes all signature fields.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "confirm_invalidation"
+        ]
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Remove digital signatures from a PDF document.",
+      "tier": "free",
+      "version": "1"
     }
   ],
   "x-status": "draft",
