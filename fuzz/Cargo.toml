@@ -259,3 +259,11 @@ path = "fuzz_targets/reader_svg.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "reader_cbz"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/reader_cbz.rs"
+test = false
+doc = false
+bench = false

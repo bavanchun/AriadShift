@@ -16,7 +16,7 @@ ammonia.workspace = true
 base64.workspace = true
 cfb.workspace = true
 comrak.workspace = true
-csv = "=1.4.0"
+csv.workspace = true
 encoding_rs.workspace = true
 hex.workspace = true
 html5ever.workspace = true

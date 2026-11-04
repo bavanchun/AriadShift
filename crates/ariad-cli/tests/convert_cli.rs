@@ -1315,3 +1315,128 @@ fn target_format_inferred_from_output_extension_and_overridden_by_to_flag() {
         );
     }
 }
+
+#[test]
+fn plans_and_converts_phase10_reader_routes() {
+    let directory = tempdir().expect("create test directory");
+    let root = support::fixtures::repository_root();
+
+    let routes = [
+        ("txt", root.join("fixtures/txt/sample.txt")),
+        ("csv", root.join("fixtures/csv/sample.csv")),
+        ("eml", root.join("fixtures/email/sample.eml")),
+        ("msg", root.join("fixtures/email/sample.msg")),
+        ("svg", root.join("fixtures/svg/sample.svg")),
+        ("cbz", root.join("fixtures/cbz/sample.cbz")),
+    ];
+
+    for (fmt, fixture_path) in routes {
+        assert!(
+            fixture_path.is_file(),
+            "fixture must exist: {}",
+            fixture_path.display()
+        );
+
+        // 1. ashift plan --json
+        let plan_res = cli()
+            .args(["plan"])
+            .arg(&fixture_path)
+            .args(["--to", "pdf", "--json"])
+            .output()
+            .expect("run ashift plan");
+        assert!(
+            plan_res.status.success(),
+            "plan failed for {fmt}: {}",
+            String::from_utf8_lossy(&plan_res.stderr)
+        );
+        let plan_val: serde_json::Value =
+            serde_json::from_slice(&plan_res.stdout).expect("valid plan JSON");
+        assert!(
+            plan_val["route"].as_array().is_some_and(|r| !r.is_empty()),
+            "plan for {fmt} must have route steps"
+        );
+
+        // 2. ashift convert
+        let out_pdf = directory.path().join(format!("{fmt}_out.pdf"));
+        let conv_res = cli()
+            .args(["convert"])
+            .arg(&fixture_path)
+            .args(["--to", "pdf", "-o"])
+            .arg(&out_pdf)
+            .output()
+            .expect("run ashift convert");
+        assert!(
+            conv_res.status.success(),
+            "convert failed for {fmt}: {}",
+            String::from_utf8_lossy(&conv_res.stderr)
+        );
+        assert!(out_pdf.is_file(), "output PDF should exist for {fmt}");
+        let pdf_bytes = fs::read(&out_pdf).expect("read output PDF");
+        assert!(
+            pdf_bytes.starts_with(b"%PDF-"),
+            "valid PDF header for {fmt}"
+        );
+    }
+}
+
+#[test]
+fn converts_svg_with_hostile_inputs() {
+    let directory = tempdir().expect("create test directory");
+
+    let hostile_cases = [
+        (
+            "external_http_href",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="http://127.0.0.1:9999/malicious.png" width="100" height="100"/>
+  <text x="10" y="20">External HTTP</text>
+</svg>"#,
+        ),
+        (
+            "external_file_href",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="/etc/passwd" width="100" height="100"/>
+  <text x="10" y="20">External File</text>
+</svg>"#,
+        ),
+        (
+            "embedded_data_uri",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" width="100" height="100"/>
+  <text x="10" y="20">Data URI</text>
+</svg>"#,
+        ),
+        (
+            "script_tag",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <script>alert('xss')</script>
+  <circle cx="50" cy="50" r="40" fill="red"/>
+</svg>"#,
+        ),
+    ];
+
+    for (name, content) in hostile_cases {
+        let svg_path = directory.path().join(format!("{name}.svg"));
+        fs::write(&svg_path, content).expect("write hostile SVG");
+
+        let out_pdf = directory.path().join(format!("{name}.pdf"));
+        let res = cli()
+            .args(["convert"])
+            .arg(&svg_path)
+            .args(["--to", "pdf", "-o"])
+            .arg(&out_pdf)
+            .output()
+            .expect("convert hostile SVG");
+
+        assert!(
+            res.status.success(),
+            "convert hostile SVG {name} failed: {}",
+            String::from_utf8_lossy(&res.stderr)
+        );
+        assert!(out_pdf.is_file(), "output PDF should exist for {name}");
+        let pdf_bytes = fs::read(&out_pdf).expect("read output PDF");
+        assert!(
+            pdf_bytes.starts_with(b"%PDF-"),
+            "valid PDF header for {name}"
+        );
+    }
+}
