@@ -405,7 +405,7 @@ impl TextWriter {
                 self.push_str(tex)
             }
             Inline::FootnoteRef { id } => {
-                let ref_str = format!("[{id}]");
+                let ref_str = format!("[^{id}]");
                 self.push_str(&ref_str)
             }
             Inline::Raw { format, text: _ } => {
@@ -623,5 +623,152 @@ mod tests {
         assert!(warning_codes.contains(&WarningCode::ImageNotEmbedded));
         assert!(warning_codes.contains(&WarningCode::MathNotConverted));
         assert!(warning_codes.contains(&WarningCode::RawDropped));
+    }
+
+    #[test]
+    fn formats_headings_lists_tables_and_footnotes() {
+        let doc = Document {
+            version: crate::ir::IR_VERSION.to_owned(),
+            meta: Metadata::default(),
+            body: vec![
+                Block::Heading {
+                    level: 2,
+                    content: vec![Inline::Text {
+                        text: "Detailed Section".into(),
+                    }],
+                },
+                Block::Paragraph {
+                    content: vec![
+                        Inline::Text {
+                            text: "Referencing a footnote".into(),
+                        },
+                        Inline::FootnoteRef { id: "fn1".into() },
+                        Inline::Text {
+                            text: " in text.".into(),
+                        },
+                    ],
+                },
+                Block::List {
+                    ordered: true,
+                    start: Some(10),
+                    tight: true,
+                    items: vec![
+                        ListItem {
+                            checked: Some(false),
+                            blocks: vec![Block::Paragraph {
+                                content: vec![Inline::Text {
+                                    text: "Pending item".into(),
+                                }],
+                            }],
+                        },
+                        ListItem {
+                            checked: Some(true),
+                            blocks: vec![Block::Paragraph {
+                                content: vec![Inline::Text {
+                                    text: "Finished item".into(),
+                                }],
+                            }],
+                        },
+                    ],
+                },
+                Block::Table {
+                    caption: Some(vec![Inline::Text {
+                        text: "Metrics Table".into(),
+                    }]),
+                    columns: vec![
+                        ColumnSpec {
+                            align: Alignment::Left,
+                        },
+                        ColumnSpec {
+                            align: Alignment::Right,
+                        },
+                    ],
+                    head: vec![vec![
+                        TableCell {
+                            rowspan: 1,
+                            colspan: 1,
+                            header: Some(true),
+                            blocks: vec![Block::Paragraph {
+                                content: vec![Inline::Text {
+                                    text: "Metric".into(),
+                                }],
+                            }],
+                        },
+                        TableCell {
+                            rowspan: 1,
+                            colspan: 1,
+                            header: Some(true),
+                            blocks: vec![Block::Paragraph {
+                                content: vec![Inline::Text {
+                                    text: "Score".into(),
+                                }],
+                            }],
+                        },
+                    ]],
+                    body: vec![vec![
+                        TableCell {
+                            rowspan: 1,
+                            colspan: 1,
+                            header: Some(false),
+                            blocks: vec![Block::Paragraph {
+                                content: vec![Inline::Text {
+                                    text: "Fidelity".into(),
+                                }],
+                            }],
+                        },
+                        TableCell {
+                            rowspan: 1,
+                            colspan: 1,
+                            header: Some(false),
+                            blocks: vec![Block::Paragraph {
+                                content: vec![Inline::Text {
+                                    text: "99.5%".into(),
+                                }],
+                            }],
+                        },
+                    ]],
+                    footnotes: vec![Inline::Text {
+                        text: "Measured against golden standards.".into(),
+                    }],
+                },
+                Block::Footnote {
+                    id: "fn1".into(),
+                    blocks: vec![Block::Paragraph {
+                        content: vec![Inline::Text {
+                            text: "Footnote explanation text.".into(),
+                        }],
+                    }],
+                },
+            ],
+            assets: Default::default(),
+            layout: None,
+            provenance: None,
+            furniture: vec![],
+        };
+
+        let output = write(&doc);
+        assert!(output.content.contains("## Detailed Section\n\n"));
+        assert!(
+            output
+                .content
+                .contains("Referencing a footnote[^fn1] in text.\n\n")
+        );
+        assert!(output.content.contains("10. [ ] Pending item\n"));
+        assert!(output.content.contains("11. [x] Finished item\n"));
+        assert!(output.content.contains("Table: Metrics Table\n"));
+        assert!(output.content.contains("| Metric   | Score |\n"));
+        assert!(output.content.contains("| -------- | ----- |\n"));
+        assert!(output.content.contains("| Fidelity | 99.5% |\n"));
+        assert!(
+            output
+                .content
+                .contains("Footnotes: Measured against golden standards.\n\n")
+        );
+        assert!(
+            output
+                .content
+                .contains("[^fn1]: Footnote explanation text.\n\n")
+        );
+        assert!(output.warnings.is_empty());
     }
 }

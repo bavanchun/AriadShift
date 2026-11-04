@@ -8,9 +8,41 @@ use ariad_core::{limits::Limits, reader::pdf, writer::markdown};
 use serde_json::Value;
 use tempfile::tempdir;
 
+fn pandoc_path() -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os("ASHIFT_PANDOC") {
+        return std::path::PathBuf::from(path);
+    }
+    let name = if cfg!(windows) {
+        "pandoc.exe"
+    } else {
+        "pandoc"
+    };
+    support::fixtures::repository_root()
+        .join(".tools/pandoc/bin")
+        .join(name)
+}
+
+fn engine_probe_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_BIN_EXE_ashift"))
+        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
+}
+
+fn locate_libreoffice() -> Option<std::path::PathBuf> {
+    match ariad_host::engines::libreoffice::locate() {
+        Ok(soffice) => Some(soffice.path),
+        Err(error) => {
+            eprintln!(
+                "skipping: LibreOffice 24.2 or newer is not installed ({error:?}); set ASHIFT_SOFFICE to run this test"
+            );
+            None
+        }
+    }
+}
+
 fn cli() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_ashift"));
     command.env("SOURCE_DATE_EPOCH", "1700000000");
+    command.env("ASHIFT_PANDOC", pandoc_path());
     command
 }
 
@@ -269,6 +301,9 @@ fn every_pdf_to_text_family_row_is_plannable_and_converts() {
 
 #[test]
 fn odt_and_rtf_outputs_open_in_libreoffice() {
+    let Some(soffice) = locate_libreoffice() else {
+        return;
+    };
     let root = support::fixtures::repository_root();
     let input = root.join("fixtures/pdf/en-map-room.pdf");
     let dir = tempdir().unwrap();
@@ -285,7 +320,7 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
     let soffice_out = dir.path().join("soffice_out");
     fs::create_dir_all(&soffice_out).unwrap();
 
-    let result = Command::new("soffice")
+    let result = Command::new(&soffice)
         .args([
             "--headless",
             "--convert-to",
@@ -294,17 +329,16 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
             soffice_out.to_str().unwrap(),
         ])
         .arg(&odt_output)
-        .output();
-    if let Ok(res) = result {
-        assert!(
-            res.status.success(),
-            "soffice failed on ODT: {}",
-            String::from_utf8_lossy(&res.stderr)
-        );
-        assert!(soffice_out.join("en-map-room.pdf").is_file());
-    }
+        .output()
+        .expect("execute soffice for ODT");
+    assert!(
+        result.status.success(),
+        "soffice failed on ODT: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(soffice_out.join("en-map-room.pdf").is_file());
 
-    let result = Command::new("soffice")
+    let result = Command::new(&soffice)
         .args([
             "--headless",
             "--convert-to",
@@ -313,26 +347,74 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
             soffice_out.to_str().unwrap(),
         ])
         .arg(&rtf_output)
-        .output();
-    if let Ok(res) = result {
-        assert!(
-            res.status.success(),
-            "soffice failed on RTF: {}",
-            String::from_utf8_lossy(&res.stderr)
-        );
-    }
+        .output()
+        .expect("execute soffice for RTF");
+    assert!(
+        result.status.success(),
+        "soffice failed on RTF: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn odt_package_stamping_honours_source_date_epoch_determinism() {
+    let root = support::fixtures::repository_root();
+    let input = root.join("fixtures/pdf/en-map-room.pdf");
+    let dir = tempdir().unwrap();
+    let out1 = dir.path().join("first.odt");
+    let out2 = dir.path().join("second.odt");
+
+    convert(&input, "odt", &out1);
+    convert(&input, "odt", &out2);
+
+    let bytes1 = fs::read(&out1).unwrap();
+    let bytes2 = fs::read(&out2).unwrap();
+    assert_eq!(
+        bytes1, bytes2,
+        "ODT output must be byte-identical across runs under SOURCE_DATE_EPOCH"
+    );
+
+    // Verify meta.xml contains fixed timestamp from SOURCE_DATE_EPOCH=1700000000 (2023-11-14T22:13:20Z)
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes1)).unwrap();
+    let mut meta = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name("meta.xml").unwrap(), &mut meta).unwrap();
+    assert!(meta.contains("<meta:creation-date>2023-11-14T22:13:20Z</meta:creation-date>"));
+    assert!(meta.contains("<dc:date>2023-11-14T22:13:20Z</dc:date>"));
 }
 
 #[test]
 fn docling_scan_path_maps_tables_to_ir_tables() {
     let root = support::fixtures::repository_root();
-    let docling_path = root.join("fixtures/docling/en-map-room.docling.json");
+    let docling_fixture = root.join("fixtures/docling/en-map-room.docling.json");
+    let input_pdf = root.join("fixtures/pdf/en-map-room.pdf");
     let dir = tempdir().unwrap();
 
     let ir_output = dir.path().join("en-map-room.docling.ir.json");
-    let report = convert(&docling_path, "json", &ir_output);
-    assert_eq!(report["route"][0]["from"], "docling+json");
-    assert_eq!(report["route"][0]["to"], "ariad-ir+json");
+    let mut command = cli();
+    command.env("ASHIFT_SANDBOX", "off");
+    command.env(
+        "ASHIFT_DOCLING_ENGINE",
+        format!(
+            "\"{}\" docling \"{}\"",
+            engine_probe_path().display(),
+            docling_fixture.display()
+        ),
+    );
+    let result = command
+        .args(["convert", "--engine", "docling"])
+        .arg(&input_pdf)
+        .args(["--to", "json", "--json", "-o"])
+        .arg(&ir_output)
+        .output()
+        .expect("run ashift with docling engine probe");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["route"][0]["engine"], "docling");
+    assert_eq!(report["route"][1]["engine"], "ariad-core");
 
     let doc: ariad_core::ir::Document =
         serde_json::from_slice(&fs::read(&ir_output).unwrap()).unwrap();
@@ -364,6 +446,13 @@ fn docling_scan_path_maps_tables_to_ir_tables() {
     let txt_content = fs::read_to_string(txt_output).unwrap();
     assert!(
         txt_content.contains('|'),
-        "TXT table output must contain delimiters"
+        "TXT table output must contain pipe delimiters"
     );
+
+    // Optional check for real Docling pack when installed/configured
+    if ariad_host::engines::docling::resolve().is_none() {
+        eprintln!(
+            "skipping: docling pack is not installed or configured; set ASHIFT_PACK_DOCLING or ASHIFT_DOCLING_ENGINE to run this test"
+        );
+    }
 }
