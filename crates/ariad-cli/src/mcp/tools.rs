@@ -378,7 +378,7 @@ impl McpServer {
         Parameters(args): Parameters<SecretPutArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let is_cert = args.certificate.unwrap_or(false);
-        match self.secrets.put(args.value, is_cert) {
+        match self.secrets.put_with_options(args.value, is_cert) {
             Ok(handle) => tool_success(
                 &SecretPutResult {
                     handle,

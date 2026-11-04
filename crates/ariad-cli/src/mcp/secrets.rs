@@ -33,7 +33,12 @@ impl SecretStore {
             ttl,
         }
     }
-    pub(super) fn put(&self, value: String, is_certificate: bool) -> Result<String, ()> {
+    #[cfg(test)]
+    pub(super) fn put(&self, value: String) -> Result<String, ()> {
+        self.put_with_options(value, false)
+    }
+
+    pub(super) fn put_with_options(&self, value: String, is_certificate: bool) -> Result<String, ()> {
         let max_len = if is_certificate {
             MAX_CERT_BYTES
         } else {
@@ -132,7 +137,7 @@ mod tests {
         }
         assert!(store.put("x".into()).is_err());
         assert!(store.put("".into()).is_err());
-        assert!(store.put("x".repeat(MAX_BYTES + 1)).is_err());
+        assert!(store.put("x".repeat(MAX_TEXT_BYTES + 1)).is_err());
     }
 
     #[test]

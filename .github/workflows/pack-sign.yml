@@ -1,0 +1,101 @@
+name: sign pack
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - engines/sign/**
+      - engines/common/**
+      - crates/ariad-host/src/engines/sign.rs
+      - crates/ariad-host/src/tools/sign.rs
+      - crates/ariad-host/tests/sign_adapter.rs
+      - .github/workflows/pack-sign.yml
+  push:
+    tags: ['pack-sign-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Sign engine tests and verification (ubuntu-26.04)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: just@1.58.0
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Sync sign virtualenv
+        run: uv sync --project engines/sign --frozen
+
+      - name: Run sign pytest suite
+        run: uv run --project engines/sign pytest engines/sign/tests
+
+      - name: Run shared licenses tests
+        run: uv run --project engines/sign pytest engines/common/licenses/tests
+
+      - name: Run license audit gate
+        run: uv run --project engines/sign python engines/sign/pack/licenses.py
+
+      - name: Run Rust sign adapter tests with ARIAD_REQUIRE_SIGN_PACK
+        env:
+          ARIAD_REQUIRE_SIGN_PACK: "1"
+        run: |
+          cargo test -p ariad-host --test sign_adapter
+          cargo test -p ariad-cli --features ariad-host/test-probe --test engine_conformance_v2 real_sign_engine_conformance
+
+  pack-build:
+    name: Build sign pack (${{ matrix.target }})
+    needs: engine
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-26.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Build sign pack
+        run: python3 engines/sign/pack/build.py build --target "${{ matrix.target }}" --out pack-dist
+
+      - name: Verify pack conformance
+        run: python3 engines/sign/pack/build.py conformance --out pack-dist --target "${{ matrix.target }}"
+
+      - name: Upload pack artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sign-pack-${{ matrix.target }}
+          path: pack-dist/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}

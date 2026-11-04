@@ -270,7 +270,7 @@ installation is unavailable until a release and index entry exist.
 
 The sign engine pack delivers digital signing, verification, and timestamping via pyHanko and cryptography in a sandboxed, network-denied Python environment speaking `ariad-engine/2`.
 
-The pack is under development and is not yet published as an official release. In development environments, point `ASHIFT_SIGN_PROGRAM` to the `ariad_sign` runner (e.g. `python -m ariad_sign`) or set `ASHIFT_PACK_SIGN` to an unpacked development pack directory containing `pack.toml`.
+The pack is under development and is not yet published as an official release. In development environments, point `ASHIFT_SIGN_ENGINE` to the `ariad_sign` runner command line (e.g. `python -I -m ariad_sign`) or set `ASHIFT_PACK_SIGN` to an unpacked development pack directory containing `pack.toml`.
 
 ## Signing and publishing
 
