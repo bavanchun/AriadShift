@@ -18,6 +18,9 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+if sys.version_info < (3, 14):
+    sys.exit("build needs Python 3.14 (tarfile writes zstd archives there).")
+
 PACK_NAME = "sign"
 DESCRIPTION = "Digital signatures: PAdES signing, verification, timestamping, and visual appearance"
 REQUIRES_ASHIFT = ">=0.2.0, <2.0.0"
@@ -61,6 +64,22 @@ def is_windows(target: str) -> bool:
 
 def is_macos(target: str) -> bool:
     return "darwin" in target or "apple" in target
+
+
+def can_run_target(target: str) -> bool:
+    sys_name = platform.system().lower()
+    mach = platform.machine().lower()
+    if is_windows(target):
+        return sys_name == "windows"
+    if is_macos(target):
+        return sys_name == "darwin"
+    if sys_name != "linux":
+        return False
+    if "aarch64" in target or "arm64" in target:
+        return mach in ("aarch64", "arm64")
+    if "x86_64" in target:
+        return mach in ("x86_64", "amd64")
+    return False
 
 
 def python_executable(runtime: Path, target: str) -> Path:
@@ -470,6 +489,12 @@ def run_conformance(pack_dir: Path, target: str | None = None) -> bool:
     target_entry = next((t for t in targets if t.get("triple") == current_target), None)
     if not target_entry:
         target_entry = targets[0]
+
+    target_triple = target_entry["triple"]
+    if not can_run_target(target_triple):
+        print(f"Skipping binary execution check for {target_triple} on host {platform.system()} {platform.machine()}")
+        print("Sign pack conformance structure check succeeded!")
+        return True
 
     comp = target_entry["components"][0]
     archive_path = pack_dir / comp["url"]

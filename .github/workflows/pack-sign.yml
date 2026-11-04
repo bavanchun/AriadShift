@@ -103,10 +103,10 @@ jobs:
           python-version: "3.14"
 
       - name: Build sign pack
-        run: python engines/sign/pack/build.py build --target "${{ matrix.target }}" --out pack-dist
+        run: uv run --no-project --python 3.14 python engines/sign/pack/build.py build --target "${{ matrix.target }}" --out pack-dist
 
       - name: Verify pack conformance
-        run: python engines/sign/pack/build.py conformance --out pack-dist --target "${{ matrix.target }}"
+        run: uv run --no-project --python 3.14 python engines/sign/pack/build.py conformance --out pack-dist --target "${{ matrix.target }}"
 
       - name: Upload pack artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -141,7 +141,7 @@ jobs:
           merge-multiple: true
 
       - name: Merge multi-target pack manifest
-        run: python engines/sign/pack/build.py merge --out pack-dist
+        run: uv run --no-project --python 3.14 python engines/sign/pack/build.py merge --out pack-dist
 
       - name: Upload merged pack manifest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
