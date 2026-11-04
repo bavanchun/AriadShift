@@ -14,6 +14,21 @@ fn cli() -> Command {
     command
 }
 
+fn plan(input: &Path, to: &str) -> Value {
+    let result = cli()
+        .arg("plan")
+        .arg(input)
+        .args(["--to", to, "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    serde_json::from_slice(&result.stdout).unwrap()
+}
+
 fn convert(input: &Path, to: &str, output: &Path) -> Value {
     let result = cli()
         .arg("convert")
@@ -222,4 +237,133 @@ fn batch_pdf_routes_use_the_shared_executor_and_canonical_extensions() {
         let bytes = fs::read(directory.path().join(format!("{name}.pdf"))).unwrap();
         assert!(pdf::read(&bytes, &Limits::local()).is_ok());
     }
+}
+
+#[test]
+fn every_pdf_to_text_family_row_is_plannable_and_converts() {
+    let root = support::fixtures::repository_root();
+    let input = root.join("fixtures/pdf/en-map-room.pdf");
+    let dir = tempdir().unwrap();
+
+    let targets = ["docx", "odt", "rtf", "epub", "html", "md", "txt", "json"];
+    for target in targets {
+        let expected_to = ariad_core::format::Format::from_user_name(target)
+            .unwrap()
+            .id();
+        let plan_report = plan(&input, target);
+        let steps = plan_report["route"].as_array().expect("route array");
+        assert_eq!(steps.first().unwrap()["from"], "pdf");
+        assert_eq!(steps.last().unwrap()["to"], expected_to);
+
+        let output = dir.path().join(format!("en-map-room.{target}"));
+        let report = convert(&input, target, &output);
+        assert!(output.is_file(), "output file for {target} should exist");
+        let len = fs::metadata(&output).unwrap().len();
+        assert!(len > 0, "output file for {target} should be non-empty");
+
+        let route = report["route"].as_array().expect("route array");
+        assert_eq!(route.first().unwrap()["from"], "pdf");
+        assert_eq!(route.last().unwrap()["to"], expected_to);
+    }
+}
+
+#[test]
+fn odt_and_rtf_outputs_open_in_libreoffice() {
+    let root = support::fixtures::repository_root();
+    let input = root.join("fixtures/pdf/en-map-room.pdf");
+    let dir = tempdir().unwrap();
+
+    let odt_output = dir.path().join("en-map-room.odt");
+    convert(&input, "odt", &odt_output);
+    assert!(odt_output.is_file());
+
+    let rtf_output = dir.path().join("en-map-room.rtf");
+    convert(&input, "rtf", &rtf_output);
+    assert!(rtf_output.is_file());
+
+    // Verify both open in LibreOffice and convert to PDF headless
+    let soffice_out = dir.path().join("soffice_out");
+    fs::create_dir_all(&soffice_out).unwrap();
+
+    let result = Command::new("soffice")
+        .args([
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            soffice_out.to_str().unwrap(),
+        ])
+        .arg(&odt_output)
+        .output();
+    if let Ok(res) = result {
+        assert!(
+            res.status.success(),
+            "soffice failed on ODT: {}",
+            String::from_utf8_lossy(&res.stderr)
+        );
+        assert!(soffice_out.join("en-map-room.pdf").is_file());
+    }
+
+    let result = Command::new("soffice")
+        .args([
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            soffice_out.to_str().unwrap(),
+        ])
+        .arg(&rtf_output)
+        .output();
+    if let Ok(res) = result {
+        assert!(
+            res.status.success(),
+            "soffice failed on RTF: {}",
+            String::from_utf8_lossy(&res.stderr)
+        );
+    }
+}
+
+#[test]
+fn docling_scan_path_maps_tables_to_ir_tables() {
+    let root = support::fixtures::repository_root();
+    let docling_path = root.join("fixtures/docling/en-map-room.docling.json");
+    let dir = tempdir().unwrap();
+
+    let ir_output = dir.path().join("en-map-room.docling.ir.json");
+    let report = convert(&docling_path, "json", &ir_output);
+    assert_eq!(report["route"][0]["from"], "docling+json");
+    assert_eq!(report["route"][0]["to"], "ariad-ir+json");
+
+    let doc: ariad_core::ir::Document =
+        serde_json::from_slice(&fs::read(&ir_output).unwrap()).unwrap();
+    let mut found_table = false;
+    for block in &doc.body {
+        if let ariad_core::ir::Block::Table {
+            columns,
+            head,
+            body,
+            ..
+        } = block
+        {
+            found_table = true;
+            assert!(!columns.is_empty(), "IR table should have columns");
+            assert!(
+                !head.is_empty() || !body.is_empty(),
+                "IR table should have rows"
+            );
+        }
+    }
+    assert!(
+        found_table,
+        "Docling scan path must map tables to IR Block::Table"
+    );
+
+    // Also convert to txt and verify table formatting
+    let txt_output = dir.path().join("from_docling.txt");
+    convert(&ir_output, "txt", &txt_output);
+    let txt_content = fs::read_to_string(txt_output).unwrap();
+    assert!(
+        txt_content.contains('|'),
+        "TXT table output must contain delimiters"
+    );
 }
