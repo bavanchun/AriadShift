@@ -18,7 +18,9 @@ use crate::{
     planner::PlanStep,
     reader::{html as reader_html, markdown as reader_markdown},
     warning::{SourcePos, Warning},
-    writer::{html as writer_html, markdown as writer_markdown},
+    writer::{
+        csv as writer_csv, html as writer_html, markdown as writer_markdown, xlsx as writer_xlsx,
+    },
 };
 
 /// Engine identifier of the in-process readers and writers in this crate.
@@ -182,7 +184,7 @@ pub const fn can_read(format: Format) -> bool {
 pub const fn can_write(format: Format) -> bool {
     matches!(
         format,
-        Format::Markdown | Format::Html | Format::AriadIrJson
+        Format::Markdown | Format::Html | Format::AriadIrJson | Format::Xlsx | Format::Csv
     )
 }
 
@@ -285,6 +287,14 @@ pub fn write(
     let output = match format {
         Format::Markdown => writer_markdown::write(document),
         Format::Html => writer_html::write_with_title_fallback(document, options.title_fallback),
+        Format::Csv => writer_csv::write(document),
+        Format::Xlsx => {
+            let output = writer_xlsx::write(document);
+            return Ok(Written {
+                bytes: output.bytes,
+                warnings: output.warnings.iter().map(Notice::from).collect(),
+            });
+        }
         Format::AriadIrJson => {
             let bytes =
                 serde_json::to_vec_pretty(document).map_err(|error| PipelineError::InvalidIr {
