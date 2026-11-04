@@ -647,11 +647,10 @@ fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
     if !docling_available() {
         return;
     }
-    let pdf_fixture =
-        support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+    let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
     let directory = tempdir().unwrap();
 
-    // 1. Plan pdf -> xlsx: must select docling engine
+    // 1. Plan pdf -> xlsx: default route must select docling engine without --engine docling
     let plan_xlsx = cli()
         .args([
             "plan",
@@ -683,11 +682,38 @@ fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
         ])
         .output()
         .expect("convert pdf -> xlsx");
-    assert!(conv_xlsx.status.success());
+    assert!(
+        conv_xlsx.status.success(),
+        "pdf -> xlsx failed: {}",
+        String::from_utf8_lossy(&conv_xlsx.stderr)
+    );
+    let route = route_of(&conv_xlsx);
+    assert!(
+        route.iter().any(|s| s.contains("docling")),
+        "route must contain docling: {route:?}"
+    );
     assert!(xlsx_out.exists());
     assert!(zip_has(&xlsx_out, "xl/worksheets/sheet1.xml"));
+    assert!(
+        !zip_has(&xlsx_out, "xl/worksheets/sheet2.xml"),
+        "expected exactly 1 sheet for 1 table"
+    );
 
-    // 3. Plan pdf -> csv: must select docling engine
+    // Verify sheet content contains table cell text
+    let sheet1_xml = {
+        let file = fs::File::open(&xlsx_out).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut f = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut f, &mut s).unwrap();
+        s
+    };
+    assert!(
+        sheet1_xml.contains("Archive item") || sheet1_xml.contains("Street plan"),
+        "sheet1.xml missing table content: {sheet1_xml}"
+    );
+
+    // 3. Plan pdf -> csv: default route must select docling engine without --engine docling
     let plan_csv = cli()
         .args([
             "plan",
@@ -719,24 +745,32 @@ fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
         ])
         .output()
         .expect("convert pdf -> csv");
-    assert!(conv_csv.status.success());
+    assert!(
+        conv_csv.status.success(),
+        "pdf -> csv failed: {}",
+        String::from_utf8_lossy(&conv_csv.stderr)
+    );
     assert!(csv_out.exists());
+    let csv_content = fs::read_to_string(&csv_out).unwrap();
+    assert!(
+        csv_content.contains("Archive item") || csv_content.contains("Street plan"),
+        "table.csv missing table content: {csv_content}"
+    );
 }
 
 #[test]
-fn pdf_to_xlsx_without_docling_falls_back_to_text_dump_with_warning() {
-    let pdf_fixture =
-        support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+fn xlsx_reread_through_docling_has_one_sheet_per_table() {
+    if !docling_available() {
+        return;
+    }
+    let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
     let directory = tempdir().unwrap();
-    let xlsx_out = directory.path().join("fallback.xlsx");
+    let xlsx_out = directory.path().join("table.xlsx");
 
-    // Convert forcing built-in PDF reader (--engine pdf)
     let conv = cli()
         .args([
             "convert",
             pdf_fixture.to_str().unwrap(),
-            "--engine",
-            "pdf",
             "--to",
             "xlsx",
             "--json",
@@ -744,9 +778,89 @@ fn pdf_to_xlsx_without_docling_falls_back_to_text_dump_with_warning() {
             xlsx_out.to_str().unwrap(),
         ])
         .output()
-        .expect("convert with native pdf");
+        .expect("convert pdf -> xlsx");
     assert!(conv.status.success());
+
+    // Re-read XLSX through Docling into IR JSON
+    let reread_json = directory.path().join("reread.json");
+    let reread = cli()
+        .args([
+            "convert",
+            xlsx_out.to_str().unwrap(),
+            "--to",
+            "json",
+            "--json",
+            "-o",
+            reread_json.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert xlsx -> json");
+    assert!(
+        reread.status.success(),
+        "re-reading XLSX through docling failed: {}",
+        String::from_utf8_lossy(&reread.stderr)
+    );
+    let report: Value = serde_json::from_slice(&reread.stdout).unwrap();
+    assert!(
+        report["route"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["engine"] == "docling"),
+        "re-reading XLSX must plan through docling: {report:?}"
+    );
+
+    let ir_bytes = fs::read(&reread_json).expect("read reread.json");
+    let ir: Value = serde_json::from_slice(&ir_bytes).expect("parse IR JSON");
+    let body = ir["body"].as_array().expect("body array");
+    let tables: Vec<&Value> = body.iter().filter(|b| b["type"] == "table").collect();
+    assert_eq!(
+        tables.len(),
+        1,
+        "expected 1 table in re-read IR from en-map-room.pdf"
+    );
+}
+
+#[test]
+fn pdf_to_xlsx_without_docling_falls_back_to_text_dump_with_warning() {
+    let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
+    let directory = tempdir().unwrap();
+    let empty_data = directory.path().join("empty-data");
+    fs::create_dir_all(&empty_data).unwrap();
+    let xlsx_out = directory.path().join("fallback.xlsx");
+
+    // Convert WITHOUT passing --engine pdf; simulate docling absence via environment
+    let conv = cli()
+        .env("ASHIFT_DATA_DIR", &empty_data)
+        .env_remove("ASHIFT_PACK_DOCLING")
+        .env_remove("ASHIFT_DOCLING_ENGINE")
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "xlsx",
+            "--json",
+            "-o",
+            xlsx_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert without docling");
+    assert!(
+        conv.status.success(),
+        "fallback conversion failed: {}",
+        String::from_utf8_lossy(&conv.stderr)
+    );
     let report: Value = serde_json::from_slice(&conv.stdout).unwrap();
+    let route: Vec<&str> = report["route"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|step| step["engine"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        route[0], "pdf",
+        "must fall back to native pdf engine when docling is absent: {route:?}"
+    );
     let warnings = report["warnings"].as_array().expect("warnings array");
     assert!(
         warnings.iter().any(|w| w["code"] == "no_tables_found"),
