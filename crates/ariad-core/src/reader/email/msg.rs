@@ -860,21 +860,47 @@ mod tests {
         let bytes = comp.into_inner().into_inner();
         let out = read(&bytes, &Limits::local()).unwrap();
 
-        let header_text = match &out.document.body[0] {
+        let header_fields = match &out.document.body[0] {
             Block::Paragraph { content } => {
-                let mut t = String::new();
+                let mut fields = std::collections::HashMap::new();
+                let mut current_label: Option<String> = None;
                 for inln in content {
-                    if let Inline::Text { text } = inln {
-                        t.push_str(text);
+                    match inln {
+                        Inline::Strong { content } => {
+                            if let Some(Inline::Text { text }) = content.first() {
+                                current_label = Some(text.trim_end_matches(": ").to_string());
+                            }
+                        }
+                        Inline::Text { text } => {
+                            if let Some(label) = current_label.take() {
+                                fields.insert(label, text.clone());
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                t
+                fields
             }
             _ => panic!("Expected header paragraph"),
         };
-        assert!(header_text.contains("To Recipient"));
-        assert!(header_text.contains("Cc Recipient"));
-        assert!(header_text.contains("Bcc Recipient"));
+        assert_eq!(
+            header_fields.get("To").map(String::as_str),
+            Some("To Recipient")
+        );
+        assert_eq!(
+            header_fields.get("Cc").map(String::as_str),
+            Some("Cc Recipient")
+        );
+        assert_eq!(
+            header_fields.get("Bcc").map(String::as_str),
+            Some("Bcc Recipient")
+        );
+        assert!(!header_fields["To"].contains("Cc Recipient"));
+        assert!(!header_fields["To"].contains("Bcc Recipient"));
+        assert!(!header_fields["Cc"].contains("To Recipient"));
+        assert!(!header_fields["Cc"].contains("Bcc Recipient"));
+        assert!(!header_fields["Bcc"].contains("To Recipient"));
+        assert!(!header_fields["Bcc"].contains("Cc Recipient"));
     }
 
     #[test]
