@@ -1000,7 +1000,27 @@ fn tables_to_csv_end_to_end_cli_execution() {
     let engine_probe_path = if probe.exists() {
         probe
     } else {
-        repository_root().join("target/debug/engine-probe")
+        let repo_probe = repository_root().join("target/debug/engine-probe");
+        if repo_probe.exists() {
+            repo_probe
+        } else {
+            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+            let mut cmd = std::process::Command::new(cargo);
+            cmd.args([
+                "build",
+                "-p",
+                "ariad-host",
+                "--bin",
+                "engine-probe",
+                "--features",
+                "ariad-host/test-probe",
+            ]);
+            if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+                cmd.env("CARGO_TARGET_DIR", target_dir);
+            }
+            let _ = cmd.status();
+            if probe.exists() { probe } else { repo_probe }
+        }
     };
 
     let docling_fixture = repository_root().join("fixtures/docling/en-repair-log.docling.json");

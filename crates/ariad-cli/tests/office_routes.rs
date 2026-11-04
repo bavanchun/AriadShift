@@ -599,8 +599,31 @@ fn xlsx_created_from_ir_with_tables_opens_in_libreoffice() {
 }
 
 fn engine_probe_path() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
+    let probe = Path::new(env!("CARGO_BIN_EXE_ashift"))
+        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
+    if probe.exists() {
+        return probe;
+    }
+    let repo_probe = support::fixtures::repository_root().join("target/debug/engine-probe");
+    if repo_probe.exists() {
+        return repo_probe;
+    }
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let mut cmd = std::process::Command::new(cargo);
+    cmd.args([
+        "build",
+        "-p",
+        "ariad-host",
+        "--bin",
+        "engine-probe",
+        "--features",
+        "ariad-host/test-probe",
+    ]);
+    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        cmd.env("CARGO_TARGET_DIR", target_dir);
+    }
+    let _ = cmd.status();
+    if probe.exists() { probe } else { repo_probe }
 }
 
 fn docling_cli(fixture: &Path) -> Option<Command> {
@@ -642,9 +665,8 @@ fn pages_family_conversion_attempts_or_explicit_skips() {
             support::fixtures::repository_root().join(format!("fixtures/office/sample.{fmt}"));
         if !fixture_path.exists() {
             eprintln!(
-                "skipping: real test fixture for {fmt} not committed; no permissively licensed \
-                 sample was found after searching upstream corpora (libpub, libvisio, libwpd, \
-                 libwps, Document Liberation Project); manual local verification described in docs/parity-matrix.md"
+                "skipping: real test fixture for {fmt} not committed; the search for permissive \
+                 samples found none that could be verified; manual local verification described in docs/parity-matrix.md"
             );
             continue;
         }
@@ -803,6 +825,24 @@ fn xlsx_reread_through_docling_has_one_sheet_per_table() {
         .output()
         .expect("convert pdf -> xlsx");
     assert!(conv.status.success());
+
+    // Verify sheet count directly from the produced XLSX package (open zip and count xl/worksheets/sheet*.xml)
+    let file = fs::File::open(&xlsx_out).expect("open produced XLSX");
+    let zip = zip::ZipArchive::new(file).expect("read XLSX zip archive");
+    let sheet_count = zip
+        .file_names()
+        .filter(|name| {
+            if let Ok(name) = name {
+                name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml")
+            } else {
+                false
+            }
+        })
+        .count();
+    assert_eq!(
+        sheet_count, 1,
+        "produced XLSX should have exactly 1 worksheet for 1 table in en-map-room"
+    );
 
     // Re-read XLSX through Docling into IR JSON
     let reread_json = directory.path().join("reread.json");
