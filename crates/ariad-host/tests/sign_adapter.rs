@@ -51,6 +51,11 @@ fn engine_command() -> Option<EngineCommand> {
         );
         return None;
     }
+    let install_root = py
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .and_then(|p| p.canonicalize().ok());
     Some(EngineCommand {
         engine: "sign".to_owned(),
         program: py,
@@ -60,7 +65,7 @@ fn engine_command() -> Option<EngineCommand> {
             OsString::from("ariad_sign"),
         ],
         env: Vec::new(),
-        install_root: None,
+        install_root,
         launcher: None,
         sandbox: Some(SandboxMode::Off),
     })
@@ -678,24 +683,21 @@ fn test_sign_engine_sandbox_network_denial() {
     cmd.sandbox = Some(SandboxMode::Required);
     cmd.launcher = Some(launcher);
 
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let script = tmp.path().join("probe_net.py");
-    fs::write(
-        &script,
-        r#"import socket, sys
-try:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(0.5)
-    s.connect(("1.1.1.1", 80))
-    sys.exit(0)
-except Exception:
-    sys.exit(42)
-"#,
-    )
-    .unwrap();
-
     let mut test_cmd = cmd.clone();
-    test_cmd.args = vec![OsString::from("-I"), script.into_os_string()];
+    test_cmd.args = vec![
+        OsString::from("-I"),
+        OsString::from("-c"),
+        OsString::from(
+            "import socket, sys\n\
+            try:\n    \
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    \
+                s.settimeout(0.5)\n    \
+                s.connect(('1.1.1.1', 80))\n    \
+                sys.exit(0)\n\
+            except Exception:\n    \
+                sys.exit(42)\n",
+        ),
+    ];
 
     let req = ariad_core::protocol::v2::RequestV2::Describe {
         protocol: ariad_core::protocol::v2::PROTOCOL_V2.to_owned(),
