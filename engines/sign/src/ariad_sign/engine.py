@@ -6,7 +6,7 @@ import logging
 import sys
 from typing import IO
 
-from ariad_sign import describe, remove, sign, verify
+from ariad_sign import describe, remove, sign, timestamp, token, verify
 from ariad_sign.protocol import (
     DescribeRequest,
     EngineError,
@@ -48,6 +48,10 @@ def handle(request: RunToolRequest | DescribeRequest, writer: Writer) -> None:
 
         if request.tool == "pdf.sign":
             sign.run_sign(request, writer)
+        elif request.tool == "pdf.sign_token":
+            token.run_sign_token(request, writer)
+        elif request.tool == "pdf.timestamp":
+            timestamp.run_timestamp(request, writer)
         elif request.tool == "pdf.sign_verify":
             verify.run_verify(request, writer)
         elif request.tool == "pdf.sign_remove":

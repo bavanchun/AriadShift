@@ -21,6 +21,8 @@ def capabilities() -> dict[str, Any]:
         "routes": [],
         "tools": [
             {"id": "pdf.sign", "version": "1"},
+            {"id": "pdf.sign_token", "version": "1"},
+            {"id": "pdf.timestamp", "version": "1"},
             {"id": "pdf.sign_verify", "version": "1"},
             {"id": "pdf.sign_remove", "version": "1"},
         ],

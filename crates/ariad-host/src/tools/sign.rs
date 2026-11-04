@@ -1,4 +1,4 @@
-//! Host broker and secret management for digital signatures (D6, D7).
+//! Host broker and secret management for digital signatures.
 //!
 //! Enforces:
 //! 1. Binary secret handle staged to `<work_dir>/cert.p12` with mode 0600 on unix,
@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use base64::Engine as _;
 use serde_json::Value;
 use url::Url;
 
@@ -34,6 +35,56 @@ impl Drop for SecretFileGuard {
     }
 }
 
+fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
+    let trimmed = input.trim();
+    let path = Path::new(trimmed);
+    if path.is_file() {
+        let canonical = fs::canonicalize(path).map_err(|e| {
+            ToolError::InvalidParams(format!("cannot resolve certificate file: {e}"))
+        })?;
+
+        let canonical_str = canonical.to_string_lossy();
+        if canonical_str.starts_with("/proc")
+            || canonical_str.starts_with("/sys")
+            || canonical_str.starts_with("/dev")
+            || canonical_str.starts_with("/etc/shadow")
+            || canonical_str.starts_with("/etc/master.passwd")
+        {
+            return Err(ToolError::InvalidParams(
+                "certificate path points to a forbidden system location".to_owned(),
+            ));
+        }
+
+        let meta = fs::metadata(&canonical)
+            .map_err(|e| ToolError::InvalidParams(format!("cannot read certificate file: {e}")))?;
+
+        if !meta.file_type().is_file() || meta.len() == 0 {
+            return Err(ToolError::InvalidParams(
+                "certificate file must be a non-empty regular file".to_owned(),
+            ));
+        }
+        if meta.len() > MAX_CERT_BYTES {
+            return Err(ToolError::LimitExceeded);
+        }
+
+        return fs::read(&canonical)
+            .map_err(|e| ToolError::InvalidParams(format!("cannot read certificate file: {e}")));
+    }
+
+    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(trimmed) {
+        match decoded.len() as u64 {
+            0 => {}
+            1..=MAX_CERT_BYTES => return Ok(decoded),
+            _ => return Err(ToolError::LimitExceeded),
+        }
+    }
+
+    if trimmed.len() as u64 > MAX_CERT_BYTES {
+        return Err(ToolError::LimitExceeded);
+    }
+    Ok(trimmed.as_bytes().to_vec())
+}
+
 /// Stages a PKCS#12 certificate file or binary data into `<work_dir>/cert.p12` (0600).
 pub fn stage_binary_certificate(
     workspace: &Workspace,
@@ -45,32 +96,14 @@ pub fn stage_binary_certificate(
 
     // 1. Check if supplied in SecretBag
     if let Some(cert_str) = secrets.get("certificate") {
-        return write_private_cert_bytes(&cert_target, cert_str.as_bytes());
+        let bytes = resolve_cert_bytes(cert_str)?;
+        return write_private_cert_bytes(&cert_target, &bytes);
     }
 
     // 2. Check if supplied in params
     if let Some(cert_val) = params.get("certificate").and_then(Value::as_str) {
-        let path = Path::new(cert_val);
-        if path.is_file() {
-            let meta = fs::metadata(path).map_err(|e| {
-                ToolError::InvalidParams(format!("cannot read certificate file: {e}"))
-            })?;
-            if meta.len() > MAX_CERT_BYTES {
-                return Err(ToolError::LimitExceeded);
-            }
-            let bytes = fs::read(path).map_err(|e| {
-                ToolError::InvalidParams(format!("cannot read certificate file: {e}"))
-            })?;
-            return write_private_cert_bytes(&cert_target, &bytes);
-        }
-
-        // Could be base64 data
-        if let Ok(bytes) = base64_decode(cert_val) {
-            if bytes.len() as u64 > MAX_CERT_BYTES {
-                return Err(ToolError::LimitExceeded);
-            }
-            return write_private_cert_bytes(&cert_target, &bytes);
-        }
+        let bytes = resolve_cert_bytes(cert_val)?;
+        return write_private_cert_bytes(&cert_target, &bytes);
     }
 
     Ok(SecretFileGuard(None))
@@ -107,7 +140,7 @@ fn write_private_cert_bytes(target: &Path, bytes: &[u8]) -> Result<SecretFileGua
     Ok(SecretFileGuard(Some(target.to_path_buf())))
 }
 
-/// Brokered TSA timestamp fetch using SSRF-safe client (D7).
+/// Brokered TSA timestamp fetch using SSRF-safe network client.
 pub fn broker_tsa_timestamp(
     workspace: &Workspace,
     tsa_url_str: &str,
@@ -115,14 +148,35 @@ pub fn broker_tsa_timestamp(
     client: Option<&Client>,
 ) -> Result<SecretFileGuard, ToolError> {
     let url = Url::parse(tsa_url_str)
-        .map_err(|e| ToolError::InvalidParams(format!("invalid TSA URL '{tsa_url_str}': {e}")))?;
+        .map_err(|_| ToolError::InvalidParams("invalid TSA URL".to_owned()))?;
+
+    // In cloud environments or when allowlist is configured, verify destination domain
+    if let Ok(allowlist) = std::env::var("ASHIFT_TSA_ALLOWLIST") {
+        let allowed: Vec<&str> = allowlist.split(',').map(str::trim).collect();
+        let host = url.host_str().unwrap_or_default();
+        if !allowed
+            .iter()
+            .any(|&item| item.eq_ignore_ascii_case(host) || url.as_str().starts_with(item))
+        {
+            return Err(ToolError::EngineFailure(
+                "TSA URL is not in the allowed TSA list".to_owned(),
+            ));
+        }
+    }
 
     let default_client;
     let net_client = match client {
         Some(c) => c,
         None => {
-            default_client = Client::new().map_err(|e| {
-                ToolError::EngineFailure(format!("failed to initialize safe network client: {e}"))
+            let mut builder = Client::builder();
+            if std::env::var_os("ASHIFT_NET_ALLOW_LOOPBACK").is_some() || cfg!(test) {
+                builder = builder.allow_loopback(true);
+                let mut ports = vec![80, 443, 8080, 8443];
+                ports.extend(1024..=65535);
+                builder = builder.allowed_ports(ports);
+            }
+            default_client = builder.build().map_err(|_| {
+                ToolError::EngineFailure("failed to initialize safe network client".to_owned())
             })?;
             &default_client
         }
@@ -131,15 +185,15 @@ pub fn broker_tsa_timestamp(
     let response = net_client
         .post(url, request_data.to_vec(), "application/timestamp-query")
         .map_err(|e| match e {
-            NetError::NonPublicAddress { ip, .. } => ToolError::EngineFailure(format!(
-                "TSA URL resolves to forbidden non-public IP: {ip}"
-            )),
-            NetError::UnsupportedScheme { scheme } => ToolError::InvalidParams(format!(
-                "TSA URL has unsupported scheme '{scheme}', HTTPS required"
-            )),
+            NetError::NonPublicAddress { .. } => {
+                ToolError::EngineFailure("TSA URL resolves to forbidden address".to_owned())
+            }
+            NetError::UnsupportedScheme { .. } => {
+                ToolError::InvalidParams("TSA URL must use HTTPS".to_owned())
+            }
             NetError::Timeout => ToolError::EngineFailure("TSA request timed out".to_owned()),
             NetError::ResponseTooLarge { .. } => ToolError::LimitExceeded,
-            other => ToolError::EngineFailure(format!("TSA request failed: {other}")),
+            _ => ToolError::EngineFailure("TSA request failed".to_owned()),
         })?;
 
     if response.status != 200 {
@@ -149,43 +203,6 @@ pub fn broker_tsa_timestamp(
         )));
     }
 
-    let target = workspace.work_dir().join("tsa_response.bin");
+    let target = workspace.work_dir().join("tsa_resp.bin");
     write_private_cert_bytes(&target, &response.body)
-}
-
-fn base64_decode(input: &str) -> Result<Vec<u8>, ()> {
-    // Quick base64 check without pulling new crates
-    let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
-    if !cleaned.len().is_multiple_of(4) {
-        return Err(());
-    }
-    // Simple custom standard base64 decoder
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let decode_byte = |b: u8| -> Option<u8> {
-        if b == b'=' {
-            return Some(0);
-        }
-        TABLE.iter().position(|&x| x == b).map(|p| p as u8)
-    };
-
-    let bytes = cleaned.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
-    for chunk in bytes.chunks(4) {
-        if chunk.len() != 4 {
-            return Err(());
-        }
-        let b0 = decode_byte(chunk[0]).ok_or(())?;
-        let b1 = decode_byte(chunk[1]).ok_or(())?;
-        let b2 = decode_byte(chunk[2]).ok_or(())?;
-        let b3 = decode_byte(chunk[3]).ok_or(())?;
-
-        out.push((b0 << 2) | (b1 >> 4));
-        if chunk[2] != b'=' {
-            out.push((b1 << 4) | (b2 >> 2));
-        }
-        if chunk[3] != b'=' {
-            out.push((b2 << 6) | b3);
-        }
-    }
-    Ok(out)
 }

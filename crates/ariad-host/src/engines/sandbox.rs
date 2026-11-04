@@ -32,7 +32,7 @@ pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] = &[
     ("pdfium", pdfium_paths),
     ("qpdf", EnginePaths::default),
     ("tesseract", EnginePaths::default),
-    ("sign", EnginePaths::default),
+    ("sign", sign_paths),
     ("verapdf", EnginePaths::default),
     ("ai", EnginePaths::default),
     ("inpaint", EnginePaths::default),
@@ -114,6 +114,23 @@ fn libreoffice_paths() -> EnginePaths {
         private_tmp: !exec.is_empty(),
         exec,
     }
+}
+
+fn sign_paths() -> EnginePaths {
+    let mut paths = EnginePaths::default();
+    if std::env::var_os(super::sign::OVERRIDE_ENV).is_some()
+        && let Some(command) = super::sign::resolve()
+    {
+        let Ok(program) = std::path::absolute(&command.program) else {
+            return paths;
+        };
+        if let Some(prefix) = program.parent().and_then(std::path::Path::parent) {
+            paths.exec.extend(prefix.canonicalize().ok());
+        }
+        paths.exec.push(program.clone());
+        grant_editable_source(&mut paths, &program);
+    }
+    paths
 }
 
 /// Docling executes system Tesseract and, in development, reads an editable Python environment.

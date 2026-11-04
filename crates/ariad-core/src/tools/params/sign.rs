@@ -1,11 +1,123 @@
-//! Parameters for PDF digital signing, verification, and removal.
+//! Parameters for PDF digital signing, verification, visual signatures, timestamps, and removal.
 
 use std::fmt;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::ParamsError;
+use super::{HexColor, ParamsError};
+
+fn default_page_one() -> u32 {
+    1
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_sha256() -> String {
+    "sha256".to_owned()
+}
+
+/// Mode of visual signature appearance: `type`, `draw`, or `image`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum SignVisualMode {
+    /// Render typographic text with optional signer details.
+    #[default]
+    Type,
+    /// Render hand-drawn vector stroke or SVG path.
+    Draw,
+    /// Render an image stamp (PNG/JPEG).
+    Image,
+}
+
+/// Parameters for `pdf.sign_visual`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SignVisualParams {
+    /// 1-based page number where the visual signature appears (default: 1).
+    #[serde(default = "default_page_one")]
+    pub page: u32,
+    /// Bounding rectangle `[x1, y1, x2, y2]` in points (PDF coordinates, origin bottom-left).
+    pub rect: [f64; 4],
+    /// Mode of visual signature: `type`, `draw`, or `image`.
+    #[serde(default)]
+    pub mode: SignVisualMode,
+    /// Text to render (when mode = `type`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// SVG path data or vector stroke coordinates (when mode = `draw`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vector_data: Option<String>,
+    /// Base64 encoded image data or image filename (when mode = `image`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_data: Option<String>,
+    /// Optional signer name / label rendered underneath signature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signer_name: Option<String>,
+    /// Optional date string rendered with signature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    /// Color in hex format (e.g. "#000000").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<HexColor>,
+    /// Whether to flatten the visual signature directly into the page content stream
+    /// instead of keeping it as a stamp annotation. Default is `true`.
+    #[serde(default = "default_true")]
+    pub flatten: bool,
+}
+
+impl SignVisualParams {
+    /// Validates parameter invariants.
+    pub fn validate(&self) -> Result<(), ParamsError> {
+        if self.page == 0 {
+            return Err(ParamsError::new("page", "must be 1-based (page >= 1)"));
+        }
+        if self.rect[2] <= self.rect[0] || self.rect[3] <= self.rect[1] {
+            return Err(ParamsError::new(
+                "rect",
+                "invalid rectangle coordinates: width and height must be positive",
+            ));
+        }
+        match self.mode {
+            SignVisualMode::Type => {
+                if self.text.as_deref().unwrap_or_default().trim().is_empty() {
+                    return Err(ParamsError::new("text", "text is required for mode 'type'"));
+                }
+            }
+            SignVisualMode::Draw => {
+                if self
+                    .vector_data
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                {
+                    return Err(ParamsError::new(
+                        "vector_data",
+                        "vector_data is required for mode 'draw'",
+                    ));
+                }
+            }
+            SignVisualMode::Image => {
+                if self
+                    .image_data
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                {
+                    return Err(ParamsError::new(
+                        "image_data",
+                        "image_data is required for mode 'image'",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
 
 /// PAdES digital signature conformance level.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -52,7 +164,7 @@ pub struct VisibleSignature {
     pub appearance: Option<String>,
 }
 
-/// Caller-supplied offline evidence files (D7).
+/// Caller-supplied offline evidence files.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OfflineEvidence {
@@ -67,7 +179,7 @@ pub struct OfflineEvidence {
     pub crl_files: Vec<String>,
 }
 
-/// PKCS#11 hardware token backend interface (D6).
+/// PKCS#11 hardware token backend interface.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TokenParams {
@@ -99,7 +211,7 @@ impl fmt::Debug for TokenParams {
     }
 }
 
-/// macOS Keychain backend interface (D6).
+/// macOS Keychain backend interface.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct KeychainParams {
@@ -144,13 +256,13 @@ pub struct SignParams {
     /// Visible signature visual appearance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible: Option<VisibleSignature>,
-    /// Caller-supplied offline evidence (D7).
+    /// Caller-supplied offline evidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offline_evidence: Option<OfflineEvidence>,
-    /// PKCS#11 hardware token backend parameters (D6).
+    /// PKCS#11 hardware token backend parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<TokenParams>,
-    /// macOS Keychain backend parameters (D6).
+    /// macOS Keychain backend parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keychain: Option<KeychainParams>,
 }
@@ -221,11 +333,142 @@ impl fmt::Debug for SignParams {
     }
 }
 
+/// Parameters for `pdf.sign_token`.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SignTokenParams {
+    /// Path to the PKCS#11 module dynamic library (`.so` / `.dylib` / `.dll`).
+    pub module: String,
+    /// Optional slot number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u32>,
+    /// Optional token label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_label: Option<String>,
+    /// Optional key label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_label: Option<String>,
+    /// Token user PIN (secret).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<String>,
+    /// Conformance level (B-B, B-T, B-LT, B-LTA). Default is `B-B`.
+    #[serde(default)]
+    pub level: SignLevel,
+    /// RFC 3161 Timestamp Authority (TSA) URL. Required for B-T, B-LT, B-LTA.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tsa_url: Option<String>,
+    /// Reason for signing the document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Location where the document was signed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Contact info of the signer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact: Option<String>,
+    /// Signature field name (default: "Signature1").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_name: Option<String>,
+    /// Visible signature visual appearance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<VisibleSignature>,
+    /// Caller-supplied offline evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offline_evidence: Option<OfflineEvidence>,
+}
+
+impl SignTokenParams {
+    /// Validates parameter invariants.
+    pub fn validate(&self) -> Result<(), ParamsError> {
+        if self.module.trim().is_empty() {
+            return Err(ParamsError::new(
+                "module",
+                "PKCS#11 module path must not be empty",
+            ));
+        }
+        if matches!(self.level, SignLevel::BT | SignLevel::BLT | SignLevel::BLTA)
+            && self.tsa_url.is_none()
+            && self
+                .offline_evidence
+                .as_ref()
+                .and_then(|e| e.timestamp_token.as_ref())
+                .is_none()
+        {
+            return Err(ParamsError::new(
+                "tsa_url",
+                "TSA URL or offline timestamp token is required for B-T, B-LT, and B-LTA levels",
+            ));
+        }
+        if let Some(visible) = &self.visible {
+            if visible.page == 0 {
+                return Err(ParamsError::new(
+                    "visible.page",
+                    "must be 1-based (page >= 1)",
+                ));
+            }
+            if visible.rect[2] <= visible.rect[0] || visible.rect[3] <= visible.rect[1] {
+                return Err(ParamsError::new(
+                    "visible.rect",
+                    "invalid rectangle coordinates: width and height must be positive",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for SignTokenParams {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignTokenParams")
+            .field("module", &self.module)
+            .field("slot", &self.slot)
+            .field("token_label", &self.token_label)
+            .field("key_label", &self.key_label)
+            .field("pin", &self.pin.as_ref().map(|_| "[REDACTED]"))
+            .field("level", &self.level)
+            .field("tsa_url", &self.tsa_url)
+            .field("reason", &self.reason)
+            .field("location", &self.location)
+            .field("contact", &self.contact)
+            .field("field_name", &self.field_name)
+            .field("visible", &self.visible)
+            .field("offline_evidence", &self.offline_evidence)
+            .finish()
+    }
+}
+
+/// Parameters for `pdf.timestamp`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimestampParams {
+    /// RFC 3161 Timestamp Authority (TSA) URL.
+    pub tsa_url: String,
+    /// Digest algorithm (e.g. "sha256", "sha384", "sha512"). Default: "sha256".
+    #[serde(default = "default_sha256")]
+    pub md_algorithm: String,
+    /// Optional field name for document timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_name: Option<String>,
+    /// Caller-supplied offline evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offline_evidence: Option<OfflineEvidence>,
+}
+
+impl TimestampParams {
+    /// Validates parameter invariants.
+    pub fn validate(&self) -> Result<(), ParamsError> {
+        if self.tsa_url.trim().is_empty() {
+            return Err(ParamsError::new("tsa_url", "TSA URL must not be empty"));
+        }
+        Ok(())
+    }
+}
+
 /// Parameters for `pdf.sign_verify`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SignVerifyParams {
-    /// Whether to fetch live revocation status (OCSP/CRL) over the network (D7).
+    /// Whether to fetch live revocation status (OCSP/CRL) over the network.
     /// Defaults to `false` (offline validation by default).
     #[serde(default)]
     pub fetch_revocation: bool,
@@ -243,6 +486,12 @@ pub struct SignVerifyParams {
 impl SignVerifyParams {
     /// Validates parameter invariants.
     pub fn validate(&self) -> Result<(), ParamsError> {
+        if self.fetch_revocation {
+            return Err(ParamsError::new(
+                "fetch_revocation",
+                "network revocation fetching by engine is disabled; supply offline_evidence or wait for host broker support",
+            ));
+        }
         Ok(())
     }
 }
@@ -254,7 +503,7 @@ pub struct SignRemoveParams {
     /// Optional signature field name to remove. If `None`, removes all signature fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_name: Option<String>,
-    /// Confirmation that signature removal invalidates document cryptographic integrity (D8).
+    /// Confirmation that signature removal invalidates document cryptographic integrity.
     /// Must be set to `true` to proceed.
     pub confirm_invalidation: bool,
 }

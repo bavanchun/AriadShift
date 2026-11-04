@@ -47,6 +47,7 @@ pub fn execute(
     workspace: &Workspace,
     limits: &Limits,
     scrubber: &SecretScrubber,
+    secrets: &super::secrets::SecretBag,
     engine_program: Option<&Path>,
     engine_command_override: Option<&EngineCommand>,
     cancel: CancellationToken,
@@ -96,15 +97,12 @@ pub fn execute(
         }
     }
 
-    let _cert_guard = if effective_engine == "sign" && spec.id == "pdf.sign" {
-        super::sign::stage_binary_certificate(
-            workspace,
-            engine_params,
-            &super::secrets::SecretBag::new(),
-        )?
-    } else {
-        super::sign::SecretFileGuard(None)
-    };
+    let _cert_guard =
+        if effective_engine == "sign" && (spec.id == "pdf.sign" || spec.id == "pdf.sign_token") {
+            super::sign::stage_binary_certificate(workspace, engine_params, secrets)?
+        } else {
+            super::sign::SecretFileGuard(None)
+        };
 
     let inputs: Vec<Input> = staged_inputs
         .iter()
@@ -143,6 +141,24 @@ pub fn execute(
             warnings.push(scrubber.scrub_warning(&ConvertWarning { code, message }));
         }
         EventV2::Progress { stage, done, total } => {
+            if stage == "tsa_request" {
+                let req_path = workspace.work_dir().join("tsa_req.bin");
+                if let Ok(req_bytes) = fs::read(&req_path) {
+                    let tsa_url = engine_params
+                        .get("tsa_url")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    match super::sign::broker_tsa_timestamp(workspace, tsa_url, &req_bytes, None) {
+                        Ok(_guard) => {
+                            let _ = fs::remove_file(&req_path);
+                        }
+                        Err(e) => {
+                            let _ =
+                                fs::write(workspace.work_dir().join("tsa_err.txt"), e.to_string());
+                        }
+                    }
+                }
+            }
             on_event(ToolEvent::Progress {
                 stage: scrubber.scrub(&stage),
                 done,

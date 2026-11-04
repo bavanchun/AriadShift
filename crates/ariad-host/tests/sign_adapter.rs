@@ -38,6 +38,12 @@ fn fixture_pdf() -> PathBuf {
 fn engine_command() -> Option<EngineCommand> {
     let py = python_bin();
     if !py.is_file() {
+        if std::env::var_os("ARIAD_REQUIRE_SIGN_PACK").is_some() {
+            panic!(
+                "ARIAD_REQUIRE_SIGN_PACK set but sign engine virtualenv missing at {}",
+                py.display()
+            );
+        }
         eprintln!(
             "skipping: sign engine virtualenv not found at {}",
             py.display()
@@ -121,6 +127,8 @@ fn test_sign_describe_capabilities() {
             assert_eq!(engine, "sign");
             let tool_ids: Vec<_> = tools.into_iter().map(|t| t.id).collect();
             assert!(tool_ids.contains(&"pdf.sign".to_string()));
+            assert!(tool_ids.contains(&"pdf.sign_token".to_string()));
+            assert!(tool_ids.contains(&"pdf.timestamp".to_string()));
             assert!(tool_ids.contains(&"pdf.sign_verify".to_string()));
             assert!(tool_ids.contains(&"pdf.sign_remove".to_string()));
         }
@@ -229,7 +237,8 @@ fn test_sign_verify_remove_pipeline() {
     let verify_removed_data: Value =
         serde_json::from_slice(&fs::read(&verify_removed_res.artifacts[0].path).unwrap()).unwrap();
     assert_eq!(verify_removed_data["signature_count"], 0);
-    assert_eq!(verify_removed_data["valid"], true);
+    assert_eq!(verify_removed_data["valid"], false);
+    assert_eq!(verify_removed_data["integrity"], false);
 }
 
 #[test]
@@ -306,4 +315,63 @@ fn test_secret_scrubbing_in_sign() {
             "password leaked in warning!"
         );
     }
+}
+
+#[test]
+fn test_sign_with_wrong_password_fails() {
+    let Some(cmd) = engine_command() else {
+        return;
+    };
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let p12_path = tmp.path().join("cert.p12");
+    generate_test_p12(&p12_path, "correct_password");
+
+    let mut bag = SecretBag::new();
+    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
+    let _ = bag.insert("password", "wrong_password");
+
+    let signed_dir = tmp.path().join("signed_fail");
+    fs::create_dir_all(&signed_dir).unwrap();
+    let sign_req = ToolRequest::new(
+        "pdf.sign",
+        vec![InputRef::new(fixture_pdf())],
+        OutputTarget::Directory(signed_dir),
+    )
+    .with_spec(spec("pdf.sign"))
+    .with_params(json!({"level": "B-B"}))
+    .with_secrets(bag)
+    .with_engine_command(cmd);
+
+    let res = run_tool(&sign_req);
+    assert!(res.is_err(), "signing with wrong password must fail");
+}
+
+#[test]
+fn test_sign_token() {
+    let Some(cmd) = engine_command() else {
+        return;
+    };
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let signed_dir = tmp.path().join("signed_token");
+    fs::create_dir_all(&signed_dir).unwrap();
+
+    let req = ToolRequest::new(
+        "pdf.sign_token",
+        vec![InputRef::new(fixture_pdf())],
+        OutputTarget::Directory(signed_dir),
+    )
+    .with_spec(spec("pdf.sign_token"))
+    .with_plan(ariad_core::tools::Plan::Pro)
+    .with_params(json!({
+        "module": "mock",
+        "key_label": "Hardware Token Key",
+        "level": "B-B"
+    }))
+    .with_engine_command(cmd);
+
+    let res = run_tool(&req).expect("pdf.sign_token should succeed");
+    assert_eq!(res.artifacts.len(), 1);
+    assert!(res.artifacts[0].path.is_file());
 }

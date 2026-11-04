@@ -764,6 +764,7 @@ fn run_tool_inner(
             &workspace,
             &request.limits,
             scrubber,
+            &request.secrets,
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
             request.cancel.clone(),
@@ -1514,6 +1515,36 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
             serde_json::from_value::<ariad_core::tools::params::ScannerEffectParams>(params.clone())
                 .map(|_| ())
                 .map_err(|e| e.to_string())
+        }
+        "pdf.sign" => {
+            let p: ariad_core::tools::params::SignParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_verify" => {
+            let p: ariad_core::tools::params::SignVerifyParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_remove" => {
+            let p: ariad_core::tools::params::SignRemoveParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_visual" => {
+            let p: ariad_core::tools::params::SignVisualParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_token" => {
+            let p: ariad_core::tools::params::SignTokenParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.timestamp" => {
+            let p: ariad_core::tools::params::TimestampParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
         }
         _ => Ok(()),
     }

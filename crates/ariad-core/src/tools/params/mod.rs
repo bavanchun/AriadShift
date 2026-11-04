@@ -135,8 +135,9 @@ pub use scale::{ScaleFit, ScaleParams};
 pub use scan_split::ScanSplitParams;
 pub use scanner_effect::ScannerEffectParams;
 pub use sign::{
-    KeychainParams, OfflineEvidence, SignLevel, SignParams, SignRemoveParams, SignVerifyParams,
-    TokenParams, VisibleSignature,
+    KeychainParams, OfflineEvidence, SignLevel, SignParams, SignRemoveParams, SignTokenParams,
+    SignVerifyParams, SignVisualMode, SignVisualParams, TimestampParams, TokenParams,
+    VisibleSignature,
 };
 pub use single_page::SinglePageParams;
 pub use split::{SplitDetectMode, SplitMode, SplitParams};

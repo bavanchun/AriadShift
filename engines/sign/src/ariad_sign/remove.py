@@ -30,7 +30,7 @@ def run_remove(request: RunToolRequest, writer: Writer) -> None:
     if not confirm:
         raise EngineError(
             "invalid_request",
-            "confirm_invalidation must be true to remove digital signatures (D8)",
+            "confirm_invalidation must be true to remove digital signatures",
         )
 
     target_field = params.get("field_name")
@@ -47,19 +47,51 @@ def run_remove(request: RunToolRequest, writer: Writer) -> None:
     try:
         with open(in_path, "rb") as inf:
             reader = PdfFileReader(inf, strict=False)
+            if reader.encrypted:
+                raise EngineError("encrypted_input", "cannot remove signatures from encrypted PDF")
+
+            embedded = reader.embedded_signatures
+            if len(embedded) > 1 and target_field is not None:
+                msg = (
+                    f"removing signature '{target_field}' invalidates "
+                    "remaining digital signatures in the document"
+                )
+                writer.warning("invalidated_signatures", msg)
+
             pdf_writer = copy_into_new_writer(reader)
-
             root = pdf_writer.root
-            acro_form = root.get("/AcroForm")
 
+            # Remove DocMDP and UR3 permissions if present
+            perms = root.get("/Perms")
+            if perms is not None:
+                perms_obj = (
+                    perms.get_object() if hasattr(perms, "get_object") else perms
+                )
+                if generic.pdf_name("/DocMDP") in perms_obj:
+                    del perms_obj[generic.pdf_name("/DocMDP")]
+                if generic.pdf_name("/UR3") in perms_obj:
+                    del perms_obj[generic.pdf_name("/UR3")]
+                if len(perms_obj) == 0:
+                    del root[generic.pdf_name("/Perms")]
+
+            # Remove signature fields from AcroForm
+            acro_form = root.get("/AcroForm")
             if acro_form is not None:
-                form_obj = acro_form.get_object() if hasattr(acro_form, "get_object") else acro_form
+                form_obj = (
+                    acro_form.get_object()
+                    if hasattr(acro_form, "get_object")
+                    else acro_form
+                )
                 fields = form_obj.get("/Fields")
                 if fields is not None:
-                    fields_obj = fields.get_object() if hasattr(fields, "get_object") else fields
+                    fields_obj = (
+                        fields.get_object() if hasattr(fields, "get_object") else fields
+                    )
                     new_fields = generic.ArrayObject()
                     for f_ref in fields_obj:
-                        field_obj = f_ref.get_object() if hasattr(f_ref, "get_object") else f_ref
+                        field_obj = (
+                            f_ref.get_object() if hasattr(f_ref, "get_object") else f_ref
+                        )
                         field_name = str(field_obj.get("/T", ""))
                         ft = field_obj.get("/FT")
                         is_sig = ft == generic.pdf_name("/Sig")
@@ -74,13 +106,16 @@ def run_remove(request: RunToolRequest, writer: Writer) -> None:
                         if generic.pdf_name("/AcroForm") in root:
                             del root[generic.pdf_name("/AcroForm")]
 
+            # Remove signature annotations from pages
             page_count = int(reader.root["/Pages"]["/Count"])
             for page_ix in range(page_count):
                 p_ref, _ = pdf_writer.find_page_for_modification(page_ix)
                 page_obj = p_ref.get_object() if hasattr(p_ref, "get_object") else p_ref
                 annots = page_obj.get("/Annots")
                 if annots is not None:
-                    annots_obj = annots.get_object() if hasattr(annots, "get_object") else annots
+                    annots_obj = (
+                        annots.get_object() if hasattr(annots, "get_object") else annots
+                    )
                     new_annots = generic.ArrayObject()
                     for annot_ref in annots_obj:
                         annot_obj = (
@@ -98,9 +133,11 @@ def run_remove(request: RunToolRequest, writer: Writer) -> None:
                         new_annots.append(annot_ref)
                     page_obj[generic.pdf_name("/Annots")] = new_annots
 
-            # Full rewrite (drops prior revisions and garbage collects)
+            # Full rewrite
             with open(out_path, "wb") as outf:
                 pdf_writer.write(outf)
+    except EngineError:
+        raise
     except Exception as exc:
         raise EngineError("engine_failure", f"signature removal failed: {exc}") from exc
 
