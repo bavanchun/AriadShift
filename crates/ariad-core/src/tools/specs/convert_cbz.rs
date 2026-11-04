@@ -3,10 +3,8 @@
 use crate::tools::{
     InputArity, Tier, ToolGroup, ToolRuntime, ToolSpec,
     params::{ToCbzParams, schema_for_params},
+    specs::ocr_scan::HOST_COMPOSITE_ENGINE,
 };
-
-/// Host composite engine identifier.
-pub const HOST_COMPOSITE_ENGINE: &str = "ariad-host";
 
 /// Allowed artifact formats for `pdf.to_cbz`.
 pub const TO_CBZ_OUTPUT_FORMATS: &[&str] = &["cbz"];

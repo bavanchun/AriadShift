@@ -189,3 +189,16 @@ pub fn execute(
         inline_json: None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preflight_fails_when_pdfium_missing() {
+        let res = preflight(None, None);
+        if std::env::var_os("ASHIFT_PACK_PDFIUM").is_none() {
+            assert!(res.is_err());
+        }
+    }
+}

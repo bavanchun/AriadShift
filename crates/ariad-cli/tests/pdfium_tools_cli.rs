@@ -42,6 +42,7 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
         ("pdf.remove_blank", &[][..]),
         ("pdf.crop_whitespace", &[][..]),
         ("pdf.detect_scanned", &[][..]),
+        ("pdf.to_cbz", &[][..]),
         (
             "pdf.split",
             &["--param", "mode=blank-separator", "--param", "detect=pixel"][..],
@@ -370,4 +371,33 @@ fn cli_runs_every_pdfium_tool_end_to_end_when_pack_is_configured() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(cropped_path.is_file());
+
+    // 10. pdf.to_cbz
+    let cbz_path = temp.path().join("output.cbz");
+    let out = ashift_cmd()
+        .env("ASHIFT_PACK_PDFIUM", &pack_dir)
+        .args([
+            "tool",
+            "pdf.to_cbz",
+            blank_sep.to_str().unwrap(),
+            "-o",
+            cbz_path.to_str().unwrap(),
+            "--param",
+            "pages=1-2",
+            "--param",
+            "dpi=72",
+            "--json",
+        ])
+        .output()
+        .expect("run pdf.to_cbz");
+    assert!(
+        out.status.success(),
+        "pdf.to_cbz failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(cbz_path.is_file());
+    let file = fs::File::open(&cbz_path).unwrap();
+    let mut zip = zip::ZipArchive::new(file).unwrap();
+    assert!(zip.len() >= 2);
+    assert_eq!(zip.by_index(0).unwrap().name().unwrap(), "page-001.png");
 }

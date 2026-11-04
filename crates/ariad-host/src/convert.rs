@@ -945,16 +945,23 @@ where
     fn ariad_pdf_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
         match (step.from, step.to) {
             (Format::Cbz, Format::Pdf) => {
-                let path = match &stage {
-                    Stage::Source => self.request.input.as_path(),
-                    Stage::File { path, .. } => path.as_path(),
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let input_path = match &stage {
+                    Stage::Source => copy_and_preflight_input(
+                        &self.request.input,
+                        step.from.id(),
+                        &workspace,
+                        self.limits,
+                    )?,
+                    Stage::File { path, .. } => {
+                        copy_and_preflight_input(path, step.from.id(), &workspace, self.limits)?
+                    }
                     Stage::Ir(_) => return Err(ConvertError::Failed),
                 };
-                let bytes = read_bounded_file(path, self.limits.max_input_bytes)?;
+                let bytes = read_bounded_file(&input_path, self.limits.max_input_bytes)?;
                 let tool_ctx = ariad_pdf::ToolCtx::default();
                 let pdf_bytes = ariad_pdf::cbz::cbz_to_pdf(&bytes, self.limits, &tool_ctx)
                     .map_err(|_| ConvertError::Failed)?;
-                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
                 let path = workspace.output_dir().join("document.pdf");
                 fs::write(&path, &pdf_bytes).map_err(|_| ConvertError::Failed)?;
                 Ok(Stage::File {

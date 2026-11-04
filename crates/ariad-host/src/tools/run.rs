@@ -624,10 +624,8 @@ fn run_tool_inner(
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
-    let is_ocr_composite = effective_engine
-        == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
-        && spec.id != "pdf.to_cbz";
-    let is_cbz_composite = spec.id == "pdf.to_cbz";
+    let is_host_composite =
+        effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE;
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -661,17 +659,18 @@ fn run_tool_inner(
         extracts_attachments,
     )?;
 
-    if is_ocr_composite {
-        super::ocr::preflight(
-            spec.id,
-            request.engine_program.as_deref(),
-            request.engine_command.as_ref(),
-        )?;
-    } else if is_cbz_composite {
-        super::cbz::preflight(
-            request.engine_program.as_deref(),
-            request.engine_command.as_ref(),
-        )?;
+    if is_host_composite {
+        match spec.id {
+            "pdf.to_cbz" => super::cbz::preflight(
+                request.engine_program.as_deref(),
+                request.engine_command.as_ref(),
+            )?,
+            _ => super::ocr::preflight(
+                spec.id,
+                request.engine_program.as_deref(),
+                request.engine_command.as_ref(),
+            )?,
+        }
     } else if effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some() {
         let _ = engine::resolve_engine_command(
             effective_engine,
@@ -734,34 +733,35 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let mut raw_exec = if is_ocr_composite {
-        super::ocr::execute(
-            &spec,
-            &staged_inputs_with_format,
-            &resolved_secrets.schema_params,
-            &workspace,
-            &request.limits,
-            scrubber,
-            request.engine_program.as_deref(),
-            &request.cancel,
-            on_event,
-            clock,
-        )
-        .map_err(|e| e.scrubbed(scrubber))?
-    } else if is_cbz_composite {
-        super::cbz::execute(
-            &spec,
-            &staged_inputs_with_format,
-            &resolved_secrets.schema_params,
-            &workspace,
-            &request.limits,
-            scrubber,
-            request.engine_program.as_deref(),
-            request.engine_command.as_ref(),
-            &request.cancel,
-            on_event,
-        )
-        .map_err(|e| e.scrubbed(scrubber))?
+    let mut raw_exec = if is_host_composite {
+        match spec.id {
+            "pdf.to_cbz" => super::cbz::execute(
+                &spec,
+                &staged_inputs_with_format,
+                &resolved_secrets.schema_params,
+                &workspace,
+                &request.limits,
+                scrubber,
+                request.engine_program.as_deref(),
+                request.engine_command.as_ref(),
+                &request.cancel,
+                on_event,
+            )
+            .map_err(|e| e.scrubbed(scrubber))?,
+            _ => super::ocr::execute(
+                &spec,
+                &staged_inputs_with_format,
+                &resolved_secrets.schema_params,
+                &workspace,
+                &request.limits,
+                scrubber,
+                request.engine_program.as_deref(),
+                &request.cancel,
+                on_event,
+                clock,
+            )
+            .map_err(|e| e.scrubbed(scrubber))?,
+        }
     } else if !is_out_of_process {
         inprocess::execute_with_names_and_clock(
             &spec,

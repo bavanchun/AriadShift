@@ -12,6 +12,9 @@ use crate::{document::ToolCtx, error::PdfError, image_to_pdf};
 /// Supported image extensions in comic book archives.
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp"];
 
+/// Maximum supported images in a comic book archive.
+const MAX_CBZ_IMAGES: usize = 500;
+
 /// Natural comparison for strings with numbers (e.g. `page2.png` < `page10.png`).
 #[must_use]
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
@@ -100,9 +103,19 @@ pub fn cbz_to_pdf(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<Vec<u8
     }
 
     let mut image_names: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for name in archive.file_names().flatten() {
         if is_image_path(&name) {
-            image_names.push(name.into_owned());
+            let owned = name.into_owned();
+            if !seen.insert(owned.clone()) {
+                return Err(PdfError::Malformed);
+            }
+            if image_names.len() >= MAX_CBZ_IMAGES {
+                return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
+                    limit: MAX_CBZ_IMAGES,
+                }));
+            }
+            image_names.push(owned);
         }
     }
 
@@ -121,7 +134,15 @@ pub fn cbz_to_pdf(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<Vec<u8
         ctx.check()?;
         let mut file = archive.by_name(&name).map_err(|_| PdfError::Malformed)?;
         let uncompressed_size = file.size();
-        total_decompressed = total_decompressed.saturating_add(uncompressed_size);
+        let remaining_budget = limits
+            .max_decompressed_bytes
+            .saturating_sub(total_decompressed);
+        let mut take = (&mut file).take(remaining_budget.saturating_add(1));
+        let alloc_hint = (uncompressed_size as usize).min(64 * 1024);
+        let mut buf = Vec::with_capacity(alloc_hint);
+        take.read_to_end(&mut buf)
+            .map_err(|_| PdfError::Malformed)?;
+        total_decompressed = total_decompressed.saturating_add(buf.len() as u64);
 
         if total_decompressed > limits.max_decompressed_bytes {
             return Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge {
@@ -129,9 +150,6 @@ pub fn cbz_to_pdf(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<Vec<u8
             }));
         }
 
-        let mut buf = Vec::with_capacity(uncompressed_size as usize);
-        file.read_to_end(&mut buf)
-            .map_err(|_| PdfError::Malformed)?;
         images.push(buf);
     }
 
@@ -182,17 +200,22 @@ mod tests {
 
     #[test]
     fn converts_simple_cbz_to_pdf() {
-        // Minimal 1x1 8-bit grayscale PNG:
-        // Signature (8 bytes) + IHDR (25 bytes) + IDAT (11 bytes) + IEND (12 bytes)
-        let minimal_png: [u8; 67] = [
-            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // signature
-            0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR length & type
-            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
-            0x08, 0x00, 0x00, 0x00, 0x00, 0x3a, 0x7e, 0x9b, 0x55, // 8-bit gray + crc
-            0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, // IDAT length & type
-            0x78, 0x9c, 0x63, 0x60, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x73, 0x75, 0x01,
-            0x18, // crc
-            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82, // IEND
+        // Minimal 10x20 PNG
+        let png_10x20: [u8; 69] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14, 0x08, 0x00, 0x00, 0x00,
+            0x00, 0x91, 0x85, 0xf3, 0x8a, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x18, 0xbe, 0x00, 0x00, 0x00, 0xdc, 0x00, 0x01, 0xf1, 0xc4, 0xae,
+            0xe0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        // Minimal 30x40 PNG
+        let png_30x40: [u8; 75] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x1e, 0x00, 0x00, 0x00, 0x28, 0x08, 0x00, 0x00, 0x00,
+            0x00, 0xcc, 0x78, 0x15, 0xce, 0x00, 0x00, 0x00, 0x12, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x18, 0x05, 0xa3, 0x60, 0x14, 0x8c, 0x82, 0xe1, 0x05, 0x00, 0x04,
+            0xd8, 0x00, 0x01, 0x5f, 0x45, 0x6a, 0x85, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+            0x44, 0xae, 0x42, 0x60, 0x82,
         ];
 
         let mut zip_buf = Cursor::new(Vec::new());
@@ -200,15 +223,33 @@ mod tests {
             let mut zip = zip::ZipWriter::new(&mut zip_buf);
             let options =
                 SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            // Insert out-of-order: page2 (30x40) before page1 (10x20)
             zip.start_file("page2.png", options).unwrap();
-            zip.write_all(&minimal_png).unwrap();
+            zip.write_all(&png_30x40).unwrap();
             zip.start_file("page1.png", options).unwrap();
-            zip.write_all(&minimal_png).unwrap();
+            zip.write_all(&png_10x20).unwrap();
             zip.finish().unwrap();
         }
 
         let zip_bytes = zip_buf.into_inner();
         let pdf = cbz_to_pdf(&zip_bytes, &Limits::local(), &ToolCtx::default()).unwrap();
         assert!(pdf.starts_with(b"%PDF-"));
+
+        // Verify natural ordering resulted in page1 (10x20) first, page2 (30x40) second
+        let doc = lopdf::Document::load_mem(&pdf).expect("valid PDF");
+        let pages = doc.get_pages();
+        assert_eq!(pages.len(), 2);
+        let page1 = doc.get_object(pages[&1]).unwrap().as_dict().unwrap();
+        let page2 = doc.get_object(pages[&2]).unwrap().as_dict().unwrap();
+        let mbox1 = page1.get(b"MediaBox").unwrap().as_array().unwrap();
+        let mbox2 = page2.get(b"MediaBox").unwrap().as_array().unwrap();
+
+        let to_f = |o: &lopdf::Object| match o {
+            lopdf::Object::Integer(i) => *i as f64,
+            lopdf::Object::Real(r) => *r as f64,
+            _ => panic!("Expected number in MediaBox"),
+        };
+        assert_eq!((to_f(&mbox1[2]), to_f(&mbox1[3])), (10.0, 20.0));
+        assert_eq!((to_f(&mbox2[2]), to_f(&mbox2[3])), (30.0, 40.0));
     }
 }
