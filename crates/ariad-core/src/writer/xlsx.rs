@@ -16,6 +16,19 @@ use crate::{
     },
 };
 
+/// Maximum rows allowed per worksheet in Excel OpenXML standard.
+pub const MAX_EXCEL_ROWS: usize = 1_048_576;
+/// Maximum columns allowed per worksheet in Excel OpenXML standard.
+pub const MAX_EXCEL_COLS: usize = 16_384;
+/// Maximum characters allowed per cell in Excel OpenXML standard.
+pub const MAX_CELL_CHARS: usize = 32_767;
+/// Maximum length in Unicode characters for an Excel sheet name.
+pub const MAX_SHEET_NAME_LEN: usize = 31;
+/// Maximum number of sheets emitted per workbook.
+pub const MAX_SHEETS_COUNT: usize = 255;
+/// Maximum colspan or rowspan applied per cell to prevent memory thrashing.
+pub const MAX_CELL_SPAN: usize = 1024;
+
 /// Computes the Excel column letters from a 0-based column index (0 -> "A", 25 -> "Z", 26 -> "AA").
 #[must_use]
 pub fn col_name(mut col: usize) -> String {
@@ -40,6 +53,7 @@ fn escape_xml(s: &str) -> String {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&apos;"),
+            '\u{FFFE}' | '\u{FFFF}' => {}
             // Filter invalid XML 1.0 control characters
             c if (c < ' ' && c != '\t' && c != '\n' && c != '\r') => {}
             c => out.push(c),
@@ -71,19 +85,22 @@ fn sanitize_sheet_name(raw: &str, fallback_index: usize, used: &mut HashSet<Stri
         .chars()
         .map(|c| match c {
             '\\' | '/' | '?' | '*' | ':' | '[' | ']' => '_',
+            '\u{FFFE}' | '\u{FFFF}' => '_',
             c if c < ' ' => '_',
             c => c,
         })
         .collect();
-    let trimmed = clean.trim();
+    // Excel rule: sheet name cannot begin or end with an apostrophe.
+    let trimmed = clean.trim().trim_matches('\'').trim();
     let base = if trimmed.is_empty() {
         format!("Table {fallback_index}")
     } else {
-        let s: String = trimmed.chars().take(31).collect();
-        if s.is_empty() {
+        let s: String = trimmed.chars().take(MAX_SHEET_NAME_LEN).collect();
+        let s_trimmed = s.trim_end_matches('\'').trim();
+        if s_trimmed.is_empty() {
             format!("Table {fallback_index}")
         } else {
-            s
+            s_trimmed.to_owned()
         }
     };
 
@@ -91,9 +108,13 @@ fn sanitize_sheet_name(raw: &str, fallback_index: usize, used: &mut HashSet<Stri
     let mut counter = 2;
     while used.contains(&candidate.to_ascii_lowercase()) {
         let suffix = format!("_{counter}");
-        let allowed = 31usize.saturating_sub(suffix.len());
+        let allowed = MAX_SHEET_NAME_LEN.saturating_sub(suffix.len());
         let truncated: String = base.chars().take(allowed).collect();
-        candidate = format!("{truncated}{suffix}");
+        let mut truncated_clean = truncated.trim_end_matches('\'').to_owned();
+        if truncated_clean.is_empty() {
+            truncated_clean = format!("Table_{counter}");
+        }
+        candidate = format!("{truncated_clean}{suffix}");
         counter += 1;
     }
     used.insert(candidate.to_ascii_lowercase());
@@ -145,25 +166,44 @@ fn build_sheet_from_table(
     let raw_name = caption.map(inlines_to_text).unwrap_or_default();
     let name = sanitize_sheet_name(&raw_name, table_idx, used_names);
 
-    let all_rows: Vec<&Vec<TableCell>> = head.iter().chain(body.iter()).collect();
+    let all_rows: Vec<&Vec<TableCell>> = head
+        .iter()
+        .chain(body.iter())
+        .take(MAX_EXCEL_ROWS)
+        .collect();
     let mut occupied: Vec<Vec<bool>> = Vec::new();
-    let mut rows: Vec<RowData> = Vec::with_capacity(all_rows.len());
+    let mut rows: Vec<RowData> = Vec::with_capacity(all_rows.len().min(1000));
     let mut merge_cells: Vec<String> = Vec::new();
 
     for (r, row_cells) in all_rows.iter().enumerate() {
+        if r >= MAX_EXCEL_ROWS {
+            break;
+        }
         let row_num = r + 1;
         let mut cells = Vec::new();
         let mut c = 0;
 
         for cell in *row_cells {
-            while is_occupied(&occupied, r, c) {
+            while c < MAX_EXCEL_COLS && is_occupied(&occupied, r, c) {
                 c += 1;
             }
-            let colspan = (cell.colspan as usize).max(1);
-            let rowspan = (cell.rowspan as usize).max(1);
+            if c >= MAX_EXCEL_COLS {
+                break;
+            }
+
+            let raw_colspan = (cell.colspan as usize).max(1);
+            let raw_rowspan = (cell.rowspan as usize).max(1);
+            let max_remaining_rows = all_rows.len().saturating_sub(r).max(1);
+            let colspan = raw_colspan.min(MAX_EXCEL_COLS - c).min(MAX_CELL_SPAN);
+            let rowspan = raw_rowspan.min(max_remaining_rows).min(MAX_CELL_SPAN);
+
             mark_occupied(&mut occupied, r, c, rowspan, colspan);
 
-            let raw_text = blocks_to_text(&cell.blocks);
+            let mut raw_text = blocks_to_text(&cell.blocks);
+            if raw_text.chars().count() > MAX_CELL_CHARS {
+                raw_text = raw_text.chars().take(MAX_CELL_CHARS).collect();
+            }
+
             let value = if is_numeric(&raw_text).is_some() {
                 CellValue::Number(raw_text.trim().to_owned())
             } else {
@@ -303,8 +343,14 @@ pub fn write(document: &Document) -> WriteBinaryOutput {
         let mut rows = Vec::new();
         let mut row_num = 1;
         for block in &document.body {
-            let text = blocks_to_text(std::slice::from_ref(block));
+            if row_num > MAX_EXCEL_ROWS {
+                break;
+            }
+            let mut text = blocks_to_text(std::slice::from_ref(block));
             if !text.is_empty() {
+                if text.chars().count() > MAX_CELL_CHARS {
+                    text = text.chars().take(MAX_CELL_CHARS).collect();
+                }
                 rows.push(RowData {
                     row_num,
                     cells: vec![CellData {
@@ -322,7 +368,22 @@ pub fn write(document: &Document) -> WriteBinaryOutput {
             merge_cells: Vec::new(),
         });
     } else {
-        for (idx, table_block) in tables.iter().enumerate() {
+        let max_sheets = MAX_SHEETS_COUNT;
+        let tables_to_process = if tables.len() > max_sheets {
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                format!(
+                    "document has {} tables; capped at maximum {} sheets",
+                    tables.len(),
+                    max_sheets
+                ),
+            ));
+            &tables[..max_sheets]
+        } else {
+            &tables[..]
+        };
+
+        for (idx, table_block) in tables_to_process.iter().enumerate() {
             sheets.push(build_sheet_from_table(
                 idx + 1,
                 table_block,
@@ -331,11 +392,20 @@ pub fn write(document: &Document) -> WriteBinaryOutput {
         }
     }
 
-    let bytes = package_xlsx(&sheets);
+    let bytes = match package_xlsx(&sheets) {
+        Ok(b) => b,
+        Err(e) => {
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                format!("failed to generate xlsx package: {e}"),
+            ));
+            Vec::new()
+        }
+    };
     WriteBinaryOutput { bytes, warnings }
 }
 
-fn package_xlsx(sheets: &[SheetData]) -> Vec<u8> {
+fn package_xlsx(sheets: &[SheetData]) -> Result<Vec<u8>, zip::result::ZipError> {
     let mut cursor = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(&mut cursor);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -351,12 +421,12 @@ fn package_xlsx(sheets: &[SheetData]) -> Vec<u8> {
     }
     content_types.push_str("</Types>\n");
 
-    let _ = zip.start_file("[Content_Types].xml", options);
-    let _ = zip.write_all(content_types.as_bytes());
+    zip.start_file("[Content_Types].xml", options)?;
+    zip.write_all(content_types.as_bytes())?;
 
     // 2. _rels/.rels
-    let _ = zip.start_file("_rels/.rels", options);
-    let _ = zip.write_all(ROOT_RELS_XML.as_bytes());
+    zip.start_file("_rels/.rels", options)?;
+    zip.write_all(ROOT_RELS_XML.as_bytes())?;
 
     // 3. xl/_rels/workbook.xml.rels
     let mut wb_rels = String::from(
@@ -369,12 +439,12 @@ fn package_xlsx(sheets: &[SheetData]) -> Vec<u8> {
     }
     wb_rels.push_str("</Relationships>\n");
 
-    let _ = zip.start_file("xl/_rels/workbook.xml.rels", options);
-    let _ = zip.write_all(wb_rels.as_bytes());
+    zip.start_file("xl/_rels/workbook.xml.rels", options)?;
+    zip.write_all(wb_rels.as_bytes())?;
 
     // 4. xl/styles.xml
-    let _ = zip.start_file("xl/styles.xml", options);
-    let _ = zip.write_all(MINIMAL_STYLES_XML.as_bytes());
+    zip.start_file("xl/styles.xml", options)?;
+    zip.write_all(MINIMAL_STYLES_XML.as_bytes())?;
 
     // 5. xl/workbook.xml
     let mut workbook_xml = String::from(
@@ -389,19 +459,19 @@ fn package_xlsx(sheets: &[SheetData]) -> Vec<u8> {
     }
     workbook_xml.push_str("</sheets>\n</workbook>\n");
 
-    let _ = zip.start_file("xl/workbook.xml", options);
-    let _ = zip.write_all(workbook_xml.as_bytes());
+    zip.start_file("xl/workbook.xml", options)?;
+    zip.write_all(workbook_xml.as_bytes())?;
 
     // 6. xl/worksheets/sheet{i}.xml
     for (i, sheet) in sheets.iter().enumerate() {
         let id = i + 1;
         let sheet_xml = render_worksheet_xml(sheet);
-        let _ = zip.start_file(format!("xl/worksheets/sheet{id}.xml"), options);
-        let _ = zip.write_all(sheet_xml.as_bytes());
+        zip.start_file(format!("xl/worksheets/sheet{id}.xml"), options)?;
+        zip.write_all(sheet_xml.as_bytes())?;
     }
 
-    let _ = zip.finish();
-    cursor.into_inner()
+    zip.finish()?;
+    Ok(cursor.into_inner())
 }
 
 #[cfg(test)]
@@ -542,5 +612,165 @@ mod tests {
             s
         };
         assert!(sheet1_xml.contains("Only text here"));
+    }
+
+    #[test]
+    fn bounded_colspan_and_rowspan_clamp_safely() {
+        // Colspan of u32::MAX must not allocate terabytes or abort
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![
+                    make_cell("Safe Cell", u32::MAX, u32::MAX),
+                    make_cell("Next Cell", 1, 1),
+                ]],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+
+        let output = write(&doc);
+        assert!(!output.bytes.is_empty());
+        let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
+        let sheet1_xml = {
+            let mut sheet1_file = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut sheet1_file, &mut s).unwrap();
+            s
+        };
+        assert!(sheet1_xml.contains("Safe Cell"));
+        // Range must be bounded to MAX_CELL_SPAN and table rows
+        assert!(sheet1_xml.contains("<mergeCell ref=\"A1:AMJ1\"/>"));
+    }
+
+    #[test]
+    fn overlong_cell_text_truncated_to_max_chars() {
+        let long_text = "A".repeat(40_000);
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![make_cell(&long_text, 1, 1)]],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+
+        let output = write(&doc);
+        let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
+        let sheet1_xml = {
+            let mut sheet1_file = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut sheet1_file, &mut s).unwrap();
+            s
+        };
+        // The cell text must be truncated to MAX_CELL_CHARS (32,767)
+        let expected = "A".repeat(MAX_CELL_CHARS);
+        assert!(sheet1_xml.contains(&expected));
+        assert!(!sheet1_xml.contains(&format!("{expected}A")));
+    }
+
+    #[test]
+    fn sheet_name_sanitization_rules_and_deduplication() {
+        let mut used = HashSet::new();
+
+        // 1. Apostrophes at either end are stripped
+        let name1 = sanitize_sheet_name("'Finance Report'", 1, &mut used);
+        assert_eq!(name1, "Finance Report");
+        assert!(!name1.starts_with('\'') && !name1.ends_with('\''));
+
+        // 2. Overlong names (> 31 chars) truncated
+        let name2 = sanitize_sheet_name(
+            "A Very Very Very Long Sheet Name That Exceeds Limit",
+            2,
+            &mut used,
+        );
+        assert!(name2.chars().count() <= 31);
+
+        // 3. Characters forbidden in Excel replaced
+        let name3 = sanitize_sheet_name("Sales:2026/Q1[Final]*?\\", 3, &mut used);
+        assert_eq!(name3, "Sales_2026_Q1_Final____");
+
+        // 4. Case-insensitive deduplication
+        let mut used_dups = HashSet::new();
+        let d1 = sanitize_sheet_name("Summary", 1, &mut used_dups);
+        let d2 = sanitize_sheet_name("SUMMARY", 2, &mut used_dups);
+        let d3 = sanitize_sheet_name("summary", 3, &mut used_dups);
+        assert_eq!(d1, "Summary");
+        assert_eq!(d2, "SUMMARY_2");
+        assert_eq!(d3, "summary_3");
+
+        // 5. Special chars & < > " in workbook.xml properly escaped
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: Some(vec![Inline::Text {
+                    text: "Tom & Jerry <Fun>".into(),
+                }]),
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![make_cell("data", 1, 1)]],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let output = write(&doc);
+        let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
+        let wb_xml = {
+            let mut wb_file = archive.by_name("xl/workbook.xml").unwrap();
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut wb_file, &mut s).unwrap();
+            s
+        };
+        assert!(wb_xml.contains("name=\"Tom &amp; Jerry &lt;Fun&gt;\""));
+    }
+
+    #[test]
+    fn text_dump_mode_extracts_nested_blocks() {
+        let doc = Document {
+            body: vec![
+                Block::Quote {
+                    blocks: vec![Block::Paragraph {
+                        content: vec![Inline::Text {
+                            text: "Quote text".into(),
+                        }],
+                    }],
+                },
+                Block::List {
+                    ordered: false,
+                    start: None,
+                    tight: true,
+                    items: vec![crate::ir::ListItem {
+                        checked: None,
+                        blocks: vec![Block::Paragraph {
+                            content: vec![Inline::Text {
+                                text: "List item text".into(),
+                            }],
+                        }],
+                    }],
+                },
+            ],
+            ..Default::default()
+        };
+
+        let output = write(&doc);
+        assert_eq!(output.warnings[0].code, WarningCode::NoTablesFound);
+        let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
+        let sheet1_xml = {
+            let mut sheet1_file = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut sheet1_file, &mut s).unwrap();
+            s
+        };
+        assert!(sheet1_xml.contains("Quote text"));
+        assert!(sheet1_xml.contains("List item text"));
     }
 }

@@ -114,6 +114,15 @@ fn append_list_items(items: &[ListItem], out: &mut String) {
     }
 }
 
+/// Maximum rows allowed per CSV table.
+pub const MAX_EXCEL_ROWS: usize = 1_048_576;
+/// Maximum columns allowed per CSV table.
+pub const MAX_EXCEL_COLS: usize = 16_384;
+/// Maximum characters allowed per CSV cell.
+pub const MAX_CELL_CHARS: usize = 32_767;
+/// Maximum colspan or rowspan applied per cell to prevent memory thrashing.
+pub const MAX_CELL_SPAN: usize = 1024;
+
 /// Converts a single IR table into CSV text with formula-injection guarding.
 #[must_use]
 pub fn table_to_csv(
@@ -121,7 +130,11 @@ pub fn table_to_csv(
     head: &[Vec<TableCell>],
     body: &[Vec<TableCell>],
 ) -> String {
-    let all_rows: Vec<&Vec<TableCell>> = head.iter().chain(body.iter()).collect();
+    let all_rows: Vec<&Vec<TableCell>> = head
+        .iter()
+        .chain(body.iter())
+        .take(MAX_EXCEL_ROWS)
+        .collect();
     if all_rows.is_empty() {
         return String::new();
     }
@@ -130,16 +143,30 @@ pub fn table_to_csv(
     let mut grid: Vec<Vec<Option<String>>> = Vec::new();
 
     for (r, row_cells) in all_rows.iter().enumerate() {
+        if r >= MAX_EXCEL_ROWS {
+            break;
+        }
         let mut c = 0;
         for cell in *row_cells {
-            while is_occupied(&occupied, r, c) {
+            while c < MAX_EXCEL_COLS && is_occupied(&occupied, r, c) {
                 c += 1;
             }
-            let colspan = (cell.colspan as usize).max(1);
-            let rowspan = (cell.rowspan as usize).max(1);
+            if c >= MAX_EXCEL_COLS {
+                break;
+            }
+
+            let raw_colspan = (cell.colspan as usize).max(1);
+            let raw_rowspan = (cell.rowspan as usize).max(1);
+            let max_remaining_rows = all_rows.len().saturating_sub(r).max(1);
+            let colspan = raw_colspan.min(MAX_EXCEL_COLS - c).min(MAX_CELL_SPAN);
+            let rowspan = raw_rowspan.min(max_remaining_rows).min(MAX_CELL_SPAN);
+
             mark_occupied(&mut occupied, r, c, rowspan, colspan);
 
-            let raw_text = blocks_to_text(&cell.blocks);
+            let mut raw_text = blocks_to_text(&cell.blocks);
+            if raw_text.chars().count() > MAX_CELL_CHARS {
+                raw_text = raw_text.chars().take(MAX_CELL_CHARS).collect();
+            }
             let guarded = guard_formula(&raw_text);
 
             ensure_grid_size(&mut grid, r + 1, c + 1);
@@ -373,5 +400,67 @@ mod tests {
         assert_eq!(output.warnings.len(), 1);
         assert_eq!(output.warnings[0].code, WarningCode::NoTablesFound);
         assert_eq!(output.content, "Title\r\n'=Formula Para\r\n");
+    }
+
+    #[test]
+    fn bounded_colspan_and_rowspan_prevent_allocation_overflow() {
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![
+                    make_cell("Safe Huge Cell", u32::MAX, u32::MAX),
+                    make_cell("Next", 1, 1),
+                ]],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+
+        let output = write(&doc);
+        assert!(output.warnings.is_empty());
+        assert!(output.content.contains("Safe Huge Cell"));
+    }
+
+    #[test]
+    fn overlong_cell_text_truncated() {
+        let long_text = "B".repeat(40_000);
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![make_cell(&long_text, 1, 1)]],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+
+        let output = write(&doc);
+        assert!(output.content.len() >= MAX_CELL_CHARS);
+        // Ensure it doesn't contain the full 40,000 characters
+        assert!(!output.content.contains(&"B".repeat(MAX_CELL_CHARS + 1)));
+    }
+
+    #[test]
+    fn formula_guard_matches_interchange_characters() {
+        // Cross-check: guard prefixes with an apostrophe for all standard injection prefixes
+        for prefix in ['=', '+', '-', '@', '\t', '\r'] {
+            let input = format!("{prefix}cmd|'/C calc'!A0");
+            let guarded = guard_formula(&input);
+            assert!(
+                guarded.starts_with('\''),
+                "prefix {prefix:?} was not guarded"
+            );
+            assert_eq!(&guarded[1..], &input);
+        }
+        // Negative numbers are also guarded (fidelity cost noted in F5)
+        assert_eq!(guard_formula("-5"), "'-5");
+        assert_eq!(guard_formula("5"), "5");
     }
 }
