@@ -18,7 +18,7 @@ use crate::{
     planner::PlanStep,
     reader::{html as reader_html, markdown as reader_markdown},
     warning::{SourcePos, Warning},
-    writer::{html as writer_html, markdown as writer_markdown},
+    writer::{html as writer_html, markdown as writer_markdown, text as writer_text},
 };
 
 /// Engine identifier of the in-process readers and writers in this crate.
@@ -182,7 +182,7 @@ pub const fn can_read(format: Format) -> bool {
 pub const fn can_write(format: Format) -> bool {
     matches!(
         format,
-        Format::Markdown | Format::Html | Format::AriadIrJson
+        Format::Markdown | Format::Html | Format::AriadIrJson | Format::Txt
     )
 }
 
@@ -285,6 +285,7 @@ pub fn write(
     let output = match format {
         Format::Markdown => writer_markdown::write(document),
         Format::Html => writer_html::write_with_title_fallback(document, options.title_fallback),
+        Format::Txt => writer_text::write(document),
         Format::AriadIrJson => {
             let bytes =
                 serde_json::to_vec_pretty(document).map_err(|error| PipelineError::InvalidIr {
@@ -887,6 +888,7 @@ mod tests {
     fn readers_and_writers_report_unsupported_formats() {
         assert!(!can_read(Format::Docx));
         assert!(!can_write(Format::Pdf));
+        assert!(can_write(Format::Txt));
         let error = read(Format::Docx, b"PK", &Limits::local()).unwrap_err();
         assert_eq!(
             error,

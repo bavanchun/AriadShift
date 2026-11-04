@@ -3,6 +3,7 @@
 pub mod html;
 pub mod markdown;
 pub mod sanitize;
+pub mod text;
 pub mod typst;
 
 use crate::{

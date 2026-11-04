@@ -267,7 +267,10 @@ mod tests {
                 Format::Docx,
                 Format::Epub,
                 Format::Html,
-                Format::Pdf
+                Format::Odt,
+                Format::Pdf,
+                Format::Rtf,
+                Format::Txt,
             ]
         );
         assert_eq!(inspection.reachable_elsewhere, Vec::<Format>::new());

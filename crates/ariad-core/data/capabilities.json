@@ -551,6 +551,39 @@
         "peak_mem_mb": 303.0,
         "samples": 2
       }
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "odt",
+      "engine": "pandoc",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": null
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "rtf",
+      "engine": "pandoc",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": null
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "txt",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
     }
   ]
 }
