@@ -102,9 +102,29 @@ pub fn cbz_to_pdf(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<Vec<u8
         }));
     }
 
+    // Verify no duplicate entry names exist in the central directory
+    let mut cd_cursor = 0;
+    let cd_sig = b"PK\x01\x02";
+    let mut seen_cd_names = std::collections::HashSet::new();
+    while let Some(pos) = bytes[cd_cursor..].windows(4).position(|w| w == cd_sig) {
+        let abs_pos = cd_cursor + pos;
+        if abs_pos + 46 <= bytes.len() {
+            let name_len = u16::from_le_bytes([bytes[abs_pos + 28], bytes[abs_pos + 29]]) as usize;
+            if abs_pos + 46 + name_len <= bytes.len() {
+                let name = &bytes[abs_pos + 46..abs_pos + 46 + name_len];
+                if !seen_cd_names.insert(name) {
+                    return Err(PdfError::Malformed);
+                }
+            }
+        }
+        cd_cursor = abs_pos + 4;
+    }
+
     let mut image_names: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    for name in archive.file_names().flatten() {
+    for i in 0..archive.len() {
+        let file = archive.by_index(i).map_err(|_| PdfError::Malformed)?;
+        let name = file.name().map_err(|_| PdfError::Malformed)?;
         if is_image_path(&name) {
             let owned = name.into_owned();
             if !seen.insert(owned.clone()) {
@@ -251,5 +271,106 @@ mod tests {
         };
         assert_eq!((to_f(&mbox1[2]), to_f(&mbox1[3])), (10.0, 20.0));
         assert_eq!((to_f(&mbox2[2]), to_f(&mbox2[3])), (30.0, 40.0));
+    }
+
+    #[test]
+    fn rejects_cbz_exceeding_max_images() {
+        let png_1x1: [u8; 69] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14, 0x08, 0x00, 0x00, 0x00,
+            0x00, 0x91, 0x85, 0xf3, 0x8a, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x18, 0xbe, 0x00, 0x00, 0x00, 0xdc, 0x00, 0x01, 0xf1, 0xc4, 0xae,
+            0xe0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let mut zip_buf = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut zip_buf);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            for i in 0..=MAX_CBZ_IMAGES {
+                zip.start_file(format!("page_{i:04}.png"), options).unwrap();
+                zip.write_all(&png_1x1).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        let zip_bytes = zip_buf.into_inner();
+        let mut limits = Limits::local();
+        limits.max_archive_entries = 1000;
+        let err = cbz_to_pdf(&zip_bytes, &limits, &ToolCtx::default()).unwrap_err();
+        match err {
+            PdfError::LimitExceeded(ReadError::TooManyObjects { limit }) => {
+                assert_eq!(limit, MAX_CBZ_IMAGES);
+            }
+            other => panic!("expected TooManyObjects error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_cbz_with_duplicate_image_names() {
+        let png: [u8; 69] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14, 0x08, 0x00, 0x00, 0x00,
+            0x00, 0x91, 0x85, 0xf3, 0x8a, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x18, 0xbe, 0x00, 0x00, 0x00, 0xdc, 0x00, 0x01, 0xf1, 0xc4, 0xae,
+            0xe0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let mut zip_buf = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut zip_buf);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("page01.png", options).unwrap();
+            zip.write_all(&png).unwrap();
+            zip.start_file("page02.png", options).unwrap();
+            zip.write_all(&png).unwrap();
+            zip.finish().unwrap();
+        }
+        let mut zip_bytes = zip_buf.into_inner();
+        // Replace "page02.png" with "page01.png" in zip headers to create duplicate entry names
+        let p2 = b"page02.png";
+        let p1 = b"page01.png";
+        let mut count = 0;
+        for i in 0..=zip_bytes.len().saturating_sub(p2.len()) {
+            if &zip_bytes[i..i + p2.len()] == p2 {
+                zip_bytes[i..i + p2.len()].copy_from_slice(p1);
+                count += 1;
+            }
+        }
+        assert_eq!(
+            count, 2,
+            "must replace both local header and central directory entry"
+        );
+        let err = cbz_to_pdf(&zip_bytes, &Limits::local(), &ToolCtx::default()).unwrap_err();
+        assert!(matches!(err, PdfError::Malformed));
+    }
+
+    #[test]
+    fn rejects_cbz_exceeding_byte_budget() {
+        let png: [u8; 69] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14, 0x08, 0x00, 0x00, 0x00,
+            0x00, 0x91, 0x85, 0xf3, 0x8a, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x18, 0xbe, 0x00, 0x00, 0x00, 0xdc, 0x00, 0x01, 0xf1, 0xc4, 0xae,
+            0xe0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let mut zip_buf = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut zip_buf);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("page01.png", options).unwrap();
+            zip.write_all(&png).unwrap();
+            zip.finish().unwrap();
+        }
+        let zip_bytes = zip_buf.into_inner();
+        let mut limits = Limits::local();
+        limits.max_decompressed_bytes = 40;
+        let err = cbz_to_pdf(&zip_bytes, &limits, &ToolCtx::default()).unwrap_err();
+        match err {
+            PdfError::LimitExceeded(ReadError::DecompressedTooLarge { limit }) => {
+                assert_eq!(limit, 40);
+            }
+            other => panic!("expected DecompressedTooLarge error, got: {other:?}"),
+        }
     }
 }
