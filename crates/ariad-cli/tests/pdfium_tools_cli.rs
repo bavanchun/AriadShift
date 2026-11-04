@@ -46,6 +46,20 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
             "pdf.split",
             &["--param", "mode=blank-separator", "--param", "detect=pixel"][..],
         ),
+        (
+            "pdf.redact",
+            &[
+                "--param",
+                "targets=[{\"kind\":\"exact\",\"text\":\"test\"}]",
+            ][..],
+        ),
+        (
+            "pdf.redact_verify",
+            &[
+                "--param",
+                "targets=[{\"kind\":\"exact\",\"text\":\"test\"}]",
+            ][..],
+        ),
     ] {
         let output = ashift_cmd()
             .env("ASHIFT_DATA_DIR", &empty_data)

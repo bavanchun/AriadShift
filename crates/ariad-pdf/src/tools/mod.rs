@@ -1005,7 +1005,7 @@ fn finalize_tool_output_impl(
     })
 }
 
-fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
+pub(crate) fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
     use lopdf::Object;
     use std::collections::HashSet;
 
