@@ -173,7 +173,15 @@ pub struct WriteOptions<'a> {
 pub const fn can_read(format: Format) -> bool {
     matches!(
         format,
-        Format::Markdown | Format::Html | Format::AriadIrJson | Format::DoclingJson
+        Format::Markdown
+            | Format::Html
+            | Format::AriadIrJson
+            | Format::DoclingJson
+            | Format::Txt
+            | Format::Csv
+            | Format::Eml
+            | Format::Msg
+            | Format::Svg
     ) || (cfg!(feature = "pdf") && matches!(format, Format::Pdf))
 }
 
@@ -249,6 +257,76 @@ pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, Pipel
                     limit_exceeded("max_nesting_depth")
                 }
                 crate::docling::ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
+                other => PipelineError::InvalidInput {
+                    reason: other.to_string(),
+                },
+            })?
+        }
+        Format::Txt => {
+            let text = std::str::from_utf8(bytes).map_err(|error| PipelineError::InvalidInput {
+                reason: format!(
+                    "Text must be UTF-8; invalid byte at offset {}",
+                    error.valid_up_to()
+                ),
+            })?;
+            crate::reader::text::read(text, limits).map_err(|error| match error {
+                crate::reader::text::ReadError::InvalidLimits(error) => error.into(),
+                crate::reader::text::ReadError::InputTooLarge { .. } => {
+                    limit_exceeded("max_input_bytes")
+                }
+                crate::reader::text::ReadError::TooManyBlocks { .. } => {
+                    limit_exceeded("max_blocks")
+                }
+                crate::reader::text::ReadError::InvalidUtf8(reason) => {
+                    PipelineError::InvalidInput { reason }
+                }
+            })?
+        }
+        Format::Csv => crate::reader::csv::read(bytes, limits).map_err(|error| match error {
+            crate::reader::csv::ReadError::InvalidLimits(error) => error.into(),
+            crate::reader::csv::ReadError::InputTooLarge { .. } => {
+                limit_exceeded("max_input_bytes")
+            }
+            crate::reader::csv::ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
+            other => PipelineError::InvalidInput {
+                reason: other.to_string(),
+            },
+        })?,
+        Format::Svg => crate::reader::svg::read(bytes, limits).map_err(|error| match error {
+            crate::reader::svg::ReadError::InvalidLimits(error) => error.into(),
+            crate::reader::svg::ReadError::InputTooLarge { .. } => {
+                limit_exceeded("max_input_bytes")
+            }
+            crate::reader::svg::ReadError::NestingTooDeep { .. } => {
+                limit_exceeded("max_nesting_depth")
+            }
+            other => PipelineError::InvalidInput {
+                reason: other.to_string(),
+            },
+        })?,
+        Format::Eml => {
+            crate::reader::email::read_eml(bytes, limits).map_err(|error| match error {
+                crate::reader::email::eml::ReadError::InvalidLimits(error) => error.into(),
+                crate::reader::email::eml::ReadError::InputTooLarge { .. } => {
+                    limit_exceeded("max_input_bytes")
+                }
+                crate::reader::email::eml::ReadError::TooManyBlocks { .. } => {
+                    limit_exceeded("max_blocks")
+                }
+                other => PipelineError::InvalidInput {
+                    reason: other.to_string(),
+                },
+            })?
+        }
+        Format::Msg => {
+            crate::reader::email::read_msg(bytes, limits).map_err(|error| match error {
+                crate::reader::email::msg::ReadError::InvalidLimits(error) => error.into(),
+                crate::reader::email::msg::ReadError::InputTooLarge { .. } => {
+                    limit_exceeded("max_input_bytes")
+                }
+                crate::reader::email::msg::ReadError::TooManyBlocks { .. } => {
+                    limit_exceeded("max_blocks")
+                }
                 other => PipelineError::InvalidInput {
                     reason: other.to_string(),
                 },
