@@ -321,6 +321,7 @@ name = "ariad-pdf"
 version = "0.3.0"
 dependencies = [
  "ariad-core",
+ "base64 0.23.1",
  "csv",
  "flate2",
  "image",

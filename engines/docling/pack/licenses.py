@@ -311,18 +311,8 @@ def _empty_licence_fields(distribution: metadata.Distribution) -> bool:
     )
 
 
-def _licence_signature(expression: str) -> frozenset[frozenset[str]]:
-    """Compare known declarations independent of operand order and parentheses."""
-    alternatives = _split_expression(expression, "OR")
-    if len(alternatives) > 1:
-        return frozenset(term for part in alternatives for term in _licence_signature(part))
-    terms = _split_expression(expression, "AND")
-    if len(terms) > 1:
-        result = frozenset({frozenset()})
-        for term in terms:
-            result = frozenset(a | b for a in result for b in _licence_signature(term))
-        return result
-    return frozenset({frozenset(terms)})
+_licence_signature = _core._licence_signature
+_split_expression = _core._split_expression
 
 
 def license_of(distribution: metadata.Distribution) -> str | None:
@@ -383,80 +373,28 @@ def _reviewed_license_field(distribution: metadata.Distribution) -> bool:
 
 def verdict(name: str, expression: str, *, metadata_only: bool = False) -> str | None:
     """Returns why an expression is not acceptable, or ``None`` when it is."""
-    if _DENIED.search(expression):
-        return "excluded licence"
-    try:
-        allowed = _Expression(name, expression, metadata_only=metadata_only).allowed()
-    except ValueError:
-        return "not a valid SPDX expression"
-    return None if allowed else "not in the allow-list"
+    return _core.verdict(
+        name,
+        expression,
+        allowed=ALLOWED,
+        allowed_exceptions=ALLOWED_EXCEPTIONS,
+        mpl_exceptions=MPL_EXCEPTIONS,
+        metadata_only=metadata_only,
+    )
 
 
-class _Expression:
-    """Evaluates an SPDX expression against the allow-list.
-
-    Every ``OR`` alternative must be known and allowed; ``AND`` needs every operand, and
-    ``WITH`` accepts only the reviewed exceptions. Anything the grammar does not cover is an
-    error, which the gate treats as a refusal.
-    """
+class _Expression(_core._Expression):
+    """Evaluates an SPDX expression against the allow-list."""
 
     def __init__(self, name: str, expression: str, *, metadata_only: bool = False) -> None:
-        self._name = name
-        self._metadata_only = metadata_only
-        self._tokens = re.findall(r"\(|\)|[^\s()]+", expression)
-        self._position = 0
-
-    def allowed(self) -> bool:
-        result = self._or()
-        if self._position != len(self._tokens):
-            raise ValueError("unexpected token")
-        return result
-
-    def _peek(self) -> str | None:
-        return self._tokens[self._position] if self._position < len(self._tokens) else None
-
-    def _take(self) -> str:
-        token = self._peek()
-        if token is None:
-            raise ValueError("unexpected end")
-        self._position += 1
-        return token
-
-    def _or(self) -> bool:
-        results = [self._and()]
-        while self._peek() == "OR":
-            self._take()
-            results.append(self._and())
-        return all(results)
-
-    def _and(self) -> bool:
-        results = [self._operand()]
-        while self._peek() == "AND":
-            self._take()
-            results.append(self._operand())
-        return all(results)
-
-    def _operand(self) -> bool:
-        word = self._take()
-        if word == "(":
-            result = self._or()
-            if self._take() != ")":
-                raise ValueError("missing closing parenthesis")
-            return result
-        if word in (")", "AND", "OR", "WITH"):
-            raise ValueError("unexpected word")
-        if self._peek() == "WITH":
-            self._take()
-            exception = self._take()
-            return exception in ALLOWED_EXCEPTIONS and self._licence_allowed(word)
-        return self._licence_allowed(word)
-
-    def _licence_allowed(self, licence: str) -> bool:
-        if licence == "CC0-1.0":
-            return self._metadata_only
-        if licence == "MPL-2.0":
-            return self._name in MPL_EXCEPTIONS
-        return licence in ALLOWED
+        super().__init__(
+            name,
+            expression,
+            allowed=ALLOWED,
+            allowed_exceptions=ALLOWED_EXCEPTIONS,
+            mpl_exceptions=MPL_EXCEPTIONS,
+            metadata_only=metadata_only,
+        )
 
 
 def check(distributions: Iterable[metadata.Distribution]) -> list[Finding]:
@@ -636,28 +574,6 @@ def combined_expression(expressions: Iterable[str]) -> str:
         or (" WITH " in term and term.split(" WITH ", 1)[0] in terms)
     }
     return " AND ".join(f"({item})" for item in sorted(terms - redundant))
-
-
-def _split_expression(expression: str, operator: str) -> list[str]:
-    tokens = re.findall(r"\(|\)|[^\s()]+", expression)
-    while tokens and tokens[0] == "(":
-        depth = 0
-        for _end, word in enumerate(tokens):
-            depth += (word == "(") - (word == ")")
-            if depth == 0:
-                break
-        if _end != len(tokens) - 1:
-            break
-        tokens = tokens[1:-1]
-    parts = []
-    start = depth = 0
-    for index, word in enumerate(tokens):
-        depth += (word == "(") - (word == ")")
-        if depth == 0 and word == operator:
-            parts.append(" ".join(tokens[start:index]))
-            start = index + 1
-    parts.append(" ".join(tokens[start:]))
-    return parts
 
 
 def _conjuncts(expression: str) -> list[str]:

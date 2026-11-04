@@ -207,21 +207,26 @@ def verdict(
 
 def _split_expression(expression: str, operator: str) -> list[str]:
     """Split an SPDX expression by a binary operator outside parentheses."""
-    depth = 0
     tokens = re.findall(r"\(|\)|[^\s()]+", expression)
-    parts: list[list[str]] = [[]]
-    for token in tokens:
-        if token == "(":
-            depth += 1
-            parts[-1].append(token)
-        elif token == ")":
-            depth -= 1
-            parts[-1].append(token)
-        elif depth == 0 and token == operator:
-            parts.append([])
-        else:
-            parts[-1].append(token)
-    return [" ".join(p).strip() for p in parts if p]
+    while tokens and tokens[0] == "(":
+        depth = 0
+        end_idx = 0
+        for end_idx, word in enumerate(tokens):
+            depth += (word == "(") - (word == ")")
+            if depth == 0:
+                break
+        if end_idx != len(tokens) - 1:
+            break
+        tokens = tokens[1:-1]
+    parts: list[str] = []
+    start = depth = 0
+    for index, word in enumerate(tokens):
+        depth += (word == "(") - (word == ")")
+        if depth == 0 and word == operator:
+            parts.append(" ".join(tokens[start:index]))
+            start = index + 1
+    parts.append(" ".join(tokens[start:]))
+    return [p.strip() for p in parts if p.strip()]
 
 
 def _licence_signature(expression: str) -> frozenset[frozenset[str]]:
