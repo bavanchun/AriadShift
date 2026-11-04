@@ -38,8 +38,13 @@ pub(crate) fn select(
     let mut capabilities = caps.clone();
     let mut pdf = None;
     let mut reader = preferred.map(str::to_owned);
+    let direct_non_ir_route = caps
+        .edges
+        .iter()
+        .any(|edge| edge.from == from && edge.to == to && edge.to != Format::AriadIrJson);
     if reader.is_none()
         && from == Format::Pdf
+        && !direct_non_ir_route
         && caps
             .edges
             .iter()

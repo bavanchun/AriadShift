@@ -7,6 +7,7 @@ mod support;
 
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -391,4 +392,229 @@ mod lifecycle {
             assert!(!directory.path().join("output.pdf").exists());
         }
     }
+}
+
+#[test]
+fn pdf_converts_to_pptx_via_libreoffice() {
+    if !libreoffice_available() {
+        return;
+    }
+    let directory = tempdir().unwrap();
+    let input = support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+    let output = directory.path().join("table.pptx");
+    let result = convert_json(&input, "pptx", &output);
+    assert_eq!(
+        route_of(&result),
+        ["pdf-libreoffice->pptx"],
+        "pdf -> pptx route"
+    );
+    assert!(zip_has(&output, "ppt/presentation.xml"));
+}
+
+#[test]
+fn odg_converts_to_pdf_via_libreoffice() {
+    if !libreoffice_available() {
+        return;
+    }
+    let directory = tempdir().unwrap();
+    let odg_path = directory.path().join("test_drawing.odg");
+    {
+        let file = fs::File::create(&odg_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let stored = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/vnd.oasis.opendocument.graphics")
+            .unwrap();
+
+        let deflated = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("META-INF/manifest.xml", deflated).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">
+  <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.graphics"/>
+  <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>"#,
+        )
+        .unwrap();
+
+        zip.start_file("content.xml", deflated).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.3">
+  <office:body>
+    <office:drawing>
+      <draw:page draw:name="page1">
+        <draw:custom-shape svg:width="8cm" svg:height="4cm" svg:x="1cm" svg:y="1cm"/>
+      </draw:page>
+    </office:drawing>
+  </office:body>
+</office:document-content>"#,
+        )
+        .unwrap();
+        zip.finish().unwrap();
+    }
+
+    let output = directory.path().join("test_drawing.pdf");
+    let result = convert_json(&odg_path, "pdf", &output);
+    assert_eq!(
+        route_of(&result),
+        ["odg-libreoffice->pdf"],
+        "odg -> pdf route"
+    );
+    let bytes = fs::read(&output).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"), "odg did not produce a PDF");
+}
+
+fn write_dummy_odg(path: &Path) {
+    let file = fs::File::create(path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("mimetype", stored).unwrap();
+    zip.write_all(b"application/vnd.oasis.opendocument.graphics")
+        .unwrap();
+
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("META-INF/manifest.xml", deflated).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">
+  <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.graphics"/>
+  <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>"#,
+    )
+    .unwrap();
+
+    zip.start_file("content.xml", deflated).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.3">
+  <office:body>
+    <office:drawing>
+      <draw:page draw:name="page1">
+        <draw:custom-shape svg:width="8cm" svg:height="4cm" svg:x="1cm" svg:y="1cm"/>
+      </draw:page>
+    </office:drawing>
+  </office:body>
+</office:document-content>"#,
+    )
+    .unwrap();
+    zip.finish().unwrap();
+}
+
+#[test]
+fn pages_family_routes_are_plannable() {
+    let directory = tempdir().unwrap();
+    for fmt in ["odg", "pub", "vsd", "wpd", "wps"] {
+        let input_file = directory.path().join(format!("sample.{fmt}"));
+        if fmt == "odg" {
+            write_dummy_odg(&input_file);
+        } else {
+            fs::write(&input_file, b"dummy content").unwrap();
+        }
+        let out = cli()
+            .args([
+                "plan",
+                input_file.to_str().unwrap(),
+                "--to",
+                "pdf",
+                "--json",
+            ])
+            .output()
+            .expect("start ashift plan");
+        assert!(
+            out.status.success(),
+            "planning failed for {fmt} -> pdf: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let plan: Value = serde_json::from_slice(&out.stdout).expect("parse plan JSON");
+        assert_eq!(plan["route"][0]["engine"], "libreoffice");
+    }
+
+    let pdf_file = support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+    let pptx_plan = cli()
+        .args(["plan", pdf_file.to_str().unwrap(), "--to", "pptx", "--json"])
+        .output()
+        .expect("start ashift plan");
+    assert!(
+        pptx_plan.status.success(),
+        "planning failed for pdf -> pptx: {}",
+        String::from_utf8_lossy(&pptx_plan.stderr)
+    );
+    let plan: Value = serde_json::from_slice(&pptx_plan.stdout).expect("parse plan JSON");
+    assert_eq!(plan["route"][0]["engine"], "libreoffice");
+}
+
+#[test]
+fn xlsx_created_from_ir_with_tables_opens_in_libreoffice() {
+    if !libreoffice_available() {
+        return;
+    }
+    let directory = tempdir().unwrap();
+    let ir_json = r#"{
+      "version": "ariad-ir/1",
+      "meta": {},
+      "body": [
+        {
+          "type": "table",
+          "caption": [{"type": "text", "text": "First Table"}],
+          "columns": [{"align": "left"}, {"align": "right"}],
+          "head": [
+            [
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Item"}]}]},
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Price"}]}]}
+            ]
+          ],
+          "body": [
+            [
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Apple"}]}]},
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "1.50"}]}]}
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "caption": [{"type": "text", "text": "Second Table"}],
+          "columns": [{"align": "left"}],
+          "head": [],
+          "body": [
+            [
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Only Cell"}]}]}
+            ]
+          ]
+        }
+      ]
+    }"#;
+    let ir_file = directory.path().join("document.ir.json");
+    fs::write(&ir_file, ir_json).unwrap();
+
+    let xlsx_file = directory.path().join("document.xlsx");
+    let result = convert_json(&ir_file, "xlsx", &xlsx_file);
+    assert_eq!(
+        route_of(&result),
+        ["ariad-ir+json-ariad-core->xlsx"],
+        "ir -> xlsx route"
+    );
+    assert!(zip_has(&xlsx_file, "xl/worksheets/sheet1.xml"));
+    assert!(zip_has(&xlsx_file, "xl/worksheets/sheet2.xml"));
+
+    let soffice = ariad_host::engines::libreoffice::locate().unwrap();
+    let lo_pdf = directory.path().join("document.pdf");
+    let lo_run = Command::new(&soffice.path)
+        .args(["--headless", "--convert-to", "pdf", "--outdir"])
+        .arg(directory.path())
+        .arg(&xlsx_file)
+        .output()
+        .expect("run soffice conversion");
+    assert!(
+        lo_run.status.success(),
+        "LibreOffice failed to open/convert generated XLSX"
+    );
+    assert!(
+        lo_pdf.exists(),
+        "LibreOffice failed to produce PDF from generated XLSX"
+    );
 }

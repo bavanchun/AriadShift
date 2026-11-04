@@ -989,25 +989,38 @@ where
                     .extend(asset_warnings.iter().map(safe_warning));
                 Ok(Stage::Ir(Box::new(document)))
             }
-            (Format::AriadIrJson, Format::Markdown | Format::Html) => {
+            (Format::AriadIrJson, Format::Markdown | Format::Html | Format::Xlsx | Format::Csv) => {
                 let Stage::Ir(document) = stage else {
                     return Err(ConvertError::Failed);
                 };
-                let output = if step.to == Format::Markdown {
-                    writer_markdown::write(&document)
-                } else {
-                    writer_html::write_with_title_fallback(
-                        &document,
-                        Some(self.title_fallback().as_str()),
-                    )
+                let (bytes, warnings) = match step.to {
+                    Format::Markdown => {
+                        let out = writer_markdown::write(&document);
+                        (out.content.into_bytes(), out.warnings)
+                    }
+                    Format::Html => {
+                        let out = writer_html::write_with_title_fallback(
+                            &document,
+                            Some(self.title_fallback().as_str()),
+                        );
+                        (out.content.into_bytes(), out.warnings)
+                    }
+                    Format::Xlsx => {
+                        let out = ariad_core::writer::xlsx::write(&document);
+                        (out.bytes, out.warnings)
+                    }
+                    Format::Csv => {
+                        let out = ariad_core::writer::csv::write(&document);
+                        (out.content.into_bytes(), out.warnings)
+                    }
+                    _ => unreachable!(),
                 };
-                self.warnings
-                    .extend(output.warnings.iter().map(safe_warning));
+                self.warnings.extend(warnings.iter().map(safe_warning));
                 let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
                 let path = workspace
                     .output_dir()
                     .join(format!("document.{}", step.to.user_name()));
-                fs::write(&path, output.content.as_bytes()).map_err(|_| ConvertError::Failed)?;
+                fs::write(&path, &bytes).map_err(|_| ConvertError::Failed)?;
                 Ok(Stage::File {
                     workspace: Box::new(workspace),
                     path,
