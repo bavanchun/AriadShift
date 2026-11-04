@@ -73,6 +73,61 @@ The table below summarizes queue time (from job creation to job execution start)
 
 ---
 
+## Rust Compilation vs Test Execution Analysis (sccache Evaluation Input)
+
+To evaluate whether compiler caching (`sccache`) can accelerate CI wall times, raw job logs across completed successful and representative runs (`41739496367`, `41720599859`, `41718691179`, `41704457593`) were extracted via `gh api` and analyzed for:
+1. `rust-cache` restore outcome (`full match: true`, fallback prefix match, or complete miss).
+2. Cold compilation duration (Clippy checks, WASM compilation, test binary compilation preceding nextest execution, CLI binary builds, and `server.Dockerfile` container compilation during `test-server-container`).
+3. Pure test execution duration (nextest test run time, bench-test run time, container smoke test execution).
+
+### Per-Job Compilation vs Test Breakdown
+
+| Run ID | Job Name | Cache Restore Status | Compilation Duration | Test Execution Duration | Comp % of Run |
+|---|---|---|---|---|---|
+| `41739496367` (PR) | **Server integration (ubuntu-26.04)** | Miss (~248 MB partial, full: false) | 12m 26s | 2m 50s | 81.4% |
+| `41739496367` (PR) | **Verify (ubuntu-26.04)** | Miss (~0 MB metadata only) | 11m 36s | 3m 52s | 75.0% |
+| `41739496367` (PR) | **Verify (windows-2025)** | Miss (no match) | 11m 13s | 6m 32s | 63.2% |
+| `41739496367` (PR) | **Verify (macos-26)** | Prefix hit (~74 MB, full: false) | 9m 07s | 5m 10s | 63.8% |
+| `41739496367` (PR) | **Fuzz** | Hit (`fuzz-target-Linux-...` ~20 MB) | 0m 24s (oracle build) | 0m 02s (oracle test) | 90.0% |
+| `41720599859` (dev) | **Server integration (ubuntu-26.04)** | Miss (no match) | 16m 00s | 3m 42s | 81.2% |
+| `41720599859` (dev) | **Verify (ubuntu-26.04)** | Miss (~0 MB metadata only) | 9m 08s | 3m 05s | 74.7% |
+| `41720599859` (dev) | **Verify (windows-2025)** | Miss (~1.9 GB stale, full: false) | 6m 09s | 3m 49s | 61.7% |
+| `41720599859` (dev) | **Verify (macos-26)** | Miss (no match) | 7m 43s | 4m 04s | 65.4% |
+| `41720599859` (dev) | **Fuzz** | Miss (~14 MB stale) | 15m 20s (targets cold build) | 19m 08s (campaigns) | 44.5% |
+| `41718691179` (PR) | **Server integration (ubuntu-26.04)** | Miss (no match) | 15m 33s | 3m 34s | 81.3% |
+| `41718691179` (PR) | **Verify (ubuntu-26.04)** | Miss (~62 MB stale, full: false) | 11m 08s | 3m 44s | 74.9% |
+| `41718691179` (PR) | **Verify (windows-2025)** | Miss (~1.9 GB stale, full: false) | 6m 54s | 4m 22s | 61.2% |
+| `41718691179` (PR) | **Verify (macos-26)** | Prefix hit (~74 MB, full: false) | 5m 37s | 3m 02s | 64.9% |
+| `41704457593` (PR) | **Server integration (ubuntu-26.04)** | Miss (~248 MB stale, full: false) | 11m 27s | 2m 42s | 80.9% |
+| `41704457593` (PR) | **Verify (ubuntu-26.04)** | Miss (~62 MB stale, full: false) | 10m 29s | 3m 35s | 74.5% |
+| `41704457593` (PR) | **Verify (windows-2025)** | Prefix hit (~74 MB, full: false) | 7m 14s | 4m 29s | 61.8% |
+| `41704457593` (PR) | **Verify (macos-26)** | Prefix hit (~74 MB, full: false) | 7m 52s | 4m 09s | 65.5% |
+
+### Cache Hit Rate Summary
+
+- **Exact Cache Hit Rate (`full match: true`): 0%**
+  Across all sampled jobs and events (both PRs and dev pushes), exact cache hit was 0%. Under `actions-rust-lang/setup-rust-toolchain`, cache keys incorporate hashes of `Cargo.lock` and rustc version. When PRs touch dependencies or when new commits arrive on branches, the exact key misses.
+- **Prefix / Partial Hit Rate (`full match: false`): ~25%**
+  A fallback key matches in ~25% of jobs (mainly macOS and Windows runners restoring ~74 MB or stale registry files). However, because workspace crates are purged on mismatch, all workspace crates and invalid downstream dependencies must be recompiled cold.
+- **Complete Cache Miss Rate: ~75%**
+  In Ubuntu Verify and Server integration, runners frequently restore ~0 MB (empty) or experience total cache misses, compiling every single dependency from scratch.
+- **Container Build Cache Miss Rate: 100%**
+  `just test-server-container` builds `infra/docker/server.Dockerfile` via Docker BuildKit inside a disposable GitHub runner VM. Because there is no persistent or remote Docker layer cache configured, BuildKit's cache mount starts completely empty on every run, forcing a 100% cold compilation of all 613 workspace and external crates (consuming 9m 27s to 12m 50s per run).
+
+### Implications for sccache Evaluation
+
+1. **Compilation is the true execution bottleneck for non-Fuzz jobs:**
+   - In `Verify (ubuntu-26.04)`: ~11 minutes is compilation (Clippy 3.5m, WASM 1m, nextest binary compilation 5.7m); pure test execution takes only 3m 12s.
+   - In `Server integration`: ~12 to 16 minutes is compilation (ashift build 1m, server nextest build 1.5m, Docker server compilation 10.5m); actual test execution takes under 3 minutes.
+2. **Coarse-grained tarball caching (`rust-cache`) is largely ineffective for PR velocity:**
+   - Tarball caching is all-or-nothing: changing `Cargo.lock` or a shared core type invalidates the entire workspace artifact set. Restoring and compressing 1–2 GB tarballs also adds 1–2 minutes of archive I/O per job.
+3. **Potential impact of `sccache`:**
+   - An object-level compiler cache (`sccache` backed by S3/R2 or shared storage) caches compilation at the individual `rustc` invocation level.
+   - Even when `Cargo.lock` or workspace files change, unchanged third-party crates (hundreds of packages) would hit the compiler cache.
+   - If `sccache` is integrated into both host builds and the `server.Dockerfile` container build (via `RUSTC_WRAPPER=sccache`), it could eliminate **7–12 minutes of compilation per Verify job** and **8–10 minutes from Server integration**, cutting total job runtimes by 40%–50%.
+
+---
+
 ## Conclusion
 
 - Queue time is heavily concentrated on `macos-26` runners (due to GitHub Actions platform queue limits for macOS).
