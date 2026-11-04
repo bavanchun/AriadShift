@@ -405,7 +405,9 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_md.status.code(), Some(3));
     let stderr_md = String::from_utf8_lossy(&result_md.stderr);
-    assert!(stderr_md.contains("reachable targets from md: docx, epub, html, json, pdf"));
+    assert!(
+        stderr_md.contains("reachable targets from md: docx, epub, html, json, odt, pdf, rtf, txt")
+    );
 
     let result_docx = cli()
         .args(["convert"])
@@ -415,7 +417,10 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_docx.status.code(), Some(3));
     let stderr_docx = String::from_utf8_lossy(&result_docx.stderr);
-    assert!(stderr_docx.contains("reachable targets from docx: epub, html, json, md, pdf"));
+    assert!(
+        stderr_docx
+            .contains("reachable targets from docx: epub, html, json, md, odt, pdf, rtf, txt")
+    );
 }
 
 #[test]

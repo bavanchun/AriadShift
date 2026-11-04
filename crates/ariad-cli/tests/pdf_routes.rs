@@ -23,8 +23,31 @@ fn pandoc_path() -> std::path::PathBuf {
 }
 
 fn engine_probe_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
+    let probe = Path::new(env!("CARGO_BIN_EXE_ashift"))
+        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
+    if probe.exists() {
+        return probe;
+    }
+    let repo_probe = support::fixtures::repository_root().join("target/debug/engine-probe");
+    if repo_probe.exists() {
+        return repo_probe;
+    }
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let mut cmd = std::process::Command::new(cargo);
+    cmd.args([
+        "build",
+        "-p",
+        "ariad-host",
+        "--bin",
+        "engine-probe",
+        "--features",
+        "ariad-host/test-probe",
+    ]);
+    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        cmd.env("CARGO_TARGET_DIR", target_dir);
+    }
+    let _ = cmd.status();
+    if probe.exists() { probe } else { repo_probe }
 }
 
 fn locate_libreoffice() -> Option<std::path::PathBuf> {
@@ -293,6 +316,18 @@ fn every_pdf_to_text_family_row_is_plannable_and_converts() {
         let len = fs::metadata(&output).unwrap().len();
         assert!(len > 0, "output file for {target} should be non-empty");
 
+        if target == "rtf" {
+            let rtf_bytes = fs::read(&output).unwrap();
+            assert!(
+                rtf_bytes.starts_with(b"{\\rtf1"),
+                "RTF output must be a full document starting with {{\\rtf1"
+            );
+            assert!(
+                rtf_bytes.ends_with(b"}\n") || rtf_bytes.ends_with(b"}"),
+                "RTF output must be a closed document ending with }}"
+            );
+        }
+
         let route = report["route"].as_array().expect("route array");
         assert_eq!(route.first().unwrap()["from"], "pdf");
         assert_eq!(route.last().unwrap()["to"], expected_to);
@@ -302,6 +337,9 @@ fn every_pdf_to_text_family_row_is_plannable_and_converts() {
 #[test]
 fn odt_and_rtf_outputs_open_in_libreoffice() {
     let Some(soffice) = locate_libreoffice() else {
+        eprintln!(
+            "skipping: LibreOffice 24.2 or newer is not installed; set ASHIFT_SOFFICE to run this test"
+        );
         return;
     };
     let root = support::fixtures::repository_root();
@@ -316,9 +354,9 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
     convert(&input, "rtf", &rtf_output);
     assert!(rtf_output.is_file());
 
-    // Verify both open in LibreOffice and convert to PDF headless
-    let soffice_out = dir.path().join("soffice_out");
-    fs::create_dir_all(&soffice_out).unwrap();
+    // Verify both open in LibreOffice and convert to PDF headless into distinct output directories
+    let odt_out_dir = dir.path().join("soffice_odt_out");
+    fs::create_dir_all(&odt_out_dir).unwrap();
 
     let result = Command::new(&soffice)
         .args([
@@ -326,7 +364,7 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
             "--convert-to",
             "pdf",
             "--outdir",
-            soffice_out.to_str().unwrap(),
+            odt_out_dir.to_str().unwrap(),
         ])
         .arg(&odt_output)
         .output()
@@ -336,7 +374,11 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
         "soffice failed on ODT: {}",
         String::from_utf8_lossy(&result.stderr)
     );
-    assert!(soffice_out.join("en-map-room.pdf").is_file());
+    let odt_pdf = odt_out_dir.join("en-map-room.pdf");
+    assert!(odt_pdf.is_file(), "ODT converted PDF should exist");
+
+    let rtf_out_dir = dir.path().join("soffice_rtf_out");
+    fs::create_dir_all(&rtf_out_dir).unwrap();
 
     let result = Command::new(&soffice)
         .args([
@@ -344,7 +386,7 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
             "--convert-to",
             "pdf",
             "--outdir",
-            soffice_out.to_str().unwrap(),
+            rtf_out_dir.to_str().unwrap(),
         ])
         .arg(&rtf_output)
         .output()
@@ -353,6 +395,34 @@ fn odt_and_rtf_outputs_open_in_libreoffice() {
         result.status.success(),
         "soffice failed on RTF: {}",
         String::from_utf8_lossy(&result.stderr)
+    );
+    let rtf_pdf = rtf_out_dir.join("en-map-room.pdf");
+    assert!(rtf_pdf.is_file(), "RTF converted PDF should exist");
+
+    // Assert converted PDFs have text containing a known string from the fixture
+    let extract_text = |pdf_path: &Path| -> String {
+        if let Ok(output) = Command::new("pdftotext").arg(pdf_path).arg("-").output()
+            && output.status.success()
+        {
+            return String::from_utf8_lossy(&output.stdout).into_owned();
+        }
+        let bytes = fs::read(pdf_path).unwrap();
+        let doc =
+            ariad_core::reader::pdf::read(&bytes, &Limits::local()).expect("read converted PDF");
+        let write_out = ariad_core::writer::text::write(&doc.document);
+        write_out.content
+    };
+
+    let odt_text = extract_text(&odt_pdf);
+    assert!(
+        odt_text.contains("Map Room"),
+        "ODT-converted PDF text must contain fixture string 'Map Room'"
+    );
+
+    let rtf_text = extract_text(&rtf_pdf);
+    assert!(
+        rtf_text.contains("Map Room"),
+        "RTF-converted PDF text must contain fixture string 'Map Room'"
     );
 }
 
@@ -365,6 +435,8 @@ fn odt_package_stamping_honours_source_date_epoch_determinism() {
     let out2 = dir.path().join("second.odt");
 
     convert(&input, "odt", &out1);
+    // Sleep across ZIP timestamp resolution boundary (2 seconds) to verify determinism
+    std::thread::sleep(std::time::Duration::from_millis(2500));
     convert(&input, "odt", &out2);
 
     let bytes1 = fs::read(&out1).unwrap();
