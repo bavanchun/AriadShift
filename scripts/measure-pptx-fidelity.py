@@ -24,6 +24,10 @@ FIXTURES = [
 
 
 def find_ashift():
+    if "ASHIFT_BIN" in os.environ:
+        return os.environ["ASHIFT_BIN"]
+    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
+        return sys.argv[1]
     candidates = [
         os.path.abspath("target/debug/ashift"),
         os.path.expanduser("~/.cache/ariadshift-target-p10-t2/debug/ashift"),
@@ -115,6 +119,10 @@ def main():
         "|---|---|---|---|---|---|---|---|"
     )
 
+    total_words = 0
+    total_pptx_matched = 0
+    total_docx_matched = 0
+
     with tempfile.TemporaryDirectory() as tmpdir:
         for fix in FIXTURES:
             pdf_path = os.path.abspath(fix)
@@ -125,6 +133,9 @@ def main():
             base = os.path.basename(fix)
             pdf_text, pdf_pages = get_pdf_text_and_pages(pdf_path)
             pdf_words = tokenize(pdf_text)
+            ref_c = Counter(pdf_words)
+            word_count = len(pdf_words)
+            total_words += word_count
 
             # Convert to PPTX
             pptx_path = os.path.join(tmpdir, f"{base}.pptx")
@@ -134,13 +145,16 @@ def main():
             )
             if res_pptx.returncode != 0:
                 print(
-                    f"| {base} | {pdf_pages} | {len(pdf_words)} | Error: {res_pptx.returncode} | - | - | - | - |"
+                    f"| {base} | {pdf_pages} | {word_count} | Error: {res_pptx.returncode} | - | - | - | - |"
                 )
                 continue
 
             pptx_text, pptx_slides, pptx_shapes = extract_pptx(pptx_path)
             pptx_words = tokenize(pptx_text)
-            pptx_rec = multiset_recall(pdf_words, pptx_words)
+            pptx_c = Counter(pptx_words)
+            pptx_matched = sum(min(count, pptx_c[word]) for word, count in ref_c.items())
+            total_pptx_matched += pptx_matched
+            pptx_rec = pptx_matched / word_count if word_count else 1.0
 
             # Convert to DOCX
             docx_path = os.path.join(tmpdir, f"{base}.docx")
@@ -152,13 +166,25 @@ def main():
             if res_docx.returncode == 0:
                 docx_text = extract_docx(docx_path)
                 docx_words = tokenize(docx_text)
-                docx_rec = multiset_recall(pdf_words, docx_words)
+                docx_c = Counter(docx_words)
+                docx_matched = sum(min(count, docx_c[word]) for word, count in ref_c.items())
+                total_docx_matched += docx_matched
+                docx_rec = docx_matched / word_count if word_count else 1.0
 
             delta = (pptx_rec - docx_rec) * 100
             delta_str = f"{delta:+.1f}%" if delta != 0.0 else "0.0%"
 
             print(
-                f"| `{base}` | {pdf_pages} | {len(pdf_words)} | {pptx_slides} | {pptx_shapes} | {pptx_rec*100:.1f}% | {docx_rec*100:.1f}% | {delta_str} |"
+                f"| `{base}` | {pdf_pages} | {word_count} | {pptx_slides} | {pptx_shapes} | {pptx_rec*100:.1f}% | {docx_rec*100:.1f}% | {delta_str} |"
+            )
+
+        if total_words > 0:
+            weighted_pptx = (total_pptx_matched / total_words) * 100
+            weighted_docx = (total_docx_matched / total_words) * 100
+            delta = weighted_pptx - weighted_docx
+            delta_str = f"{delta:+.1f}%" if delta != 0.0 else "0.0%"
+            print(
+                f"| **Overall (weighted)** | - | {total_words} | - | - | {weighted_pptx:.1f}% | {weighted_docx:.1f}% | {delta_str} |"
             )
 
 
