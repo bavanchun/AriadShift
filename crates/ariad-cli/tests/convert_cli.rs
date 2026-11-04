@@ -1388,15 +1388,17 @@ fn converts_svg_with_hostile_inputs() {
     listener.set_nonblocking(true).expect("set non-blocking");
     let listener_port = listener.local_addr().expect("local addr").port();
 
-    // 2. Sentinel file to prove no unauthorized local file access occurs
+    // 2. Readable sentinel file with unique marker inside a valid SVG to prove no unauthorized local file access occurs
     let sentinel_secret = "ARIAD_TEST_SENTINEL_SECRET_TOKEN_77492";
-    let sentinel_path = directory.path().join("sentinel.secret");
-    fs::write(&sentinel_path, sentinel_secret).expect("write sentinel file");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&sentinel_path, fs::Permissions::from_mode(0o000));
-    }
+    let sentinel_path = directory.path().join("sentinel.svg");
+    let sentinel_svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50">
+  <text x="5" y="15">{sentinel_secret}</text>
+  <rect width="50" height="50" fill="blue"/>
+</svg>"#
+    );
+    fs::write(&sentinel_path, sentinel_svg).expect("write sentinel SVG file");
+    let atime_before = fs::metadata(&sentinel_path).and_then(|m| m.accessed()).ok();
 
     let http_svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
@@ -1473,19 +1475,43 @@ fn converts_svg_with_hostile_inputs() {
                 }
             }
         } else if name == "external_file_href" {
-            // Assert sentinel file contents did not leak into output PDF
+            // 1. Verify access time on the sentinel file was not modified (not opened or read)
+            let atime_after = fs::metadata(&sentinel_path).and_then(|m| m.accessed()).ok();
+            if let (Some(before), Some(after)) = (atime_before, atime_after) {
+                assert_eq!(
+                    before, after,
+                    "sentinel file must not have been accessed during conversion"
+                );
+            }
+
+            // 2. Assert raw bytes do not leak into output PDF
             assert!(
                 !pdf_bytes
                     .windows(sentinel_secret.len())
                     .any(|w| w == sentinel_secret.as_bytes()),
-                "output PDF must not leak contents from external file href"
+                "output PDF must not leak raw contents from external file href"
+            );
+
+            // 3. Decompress PDF streams and verify parsed text does not contain sentinel secret
+            let ir =
+                ariad_core::reader::pdf::read(&pdf_bytes, &ariad_core::limits::Limits::local())
+                    .expect("read output PDF text");
+            let mut extracted = String::new();
+            for block in &ir.document.body {
+                if let ariad_core::ir::Block::Paragraph { content }
+                | ariad_core::ir::Block::Heading { content, .. } = block
+                {
+                    for inline in content {
+                        if let ariad_core::ir::Inline::Text { text } = inline {
+                            extracted.push_str(text);
+                        }
+                    }
+                }
+            }
+            assert!(
+                !extracted.contains(sentinel_secret),
+                "output PDF decompressed text must not leak contents from external file href"
             );
         }
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&sentinel_path, fs::Permissions::from_mode(0o644));
     }
 }
