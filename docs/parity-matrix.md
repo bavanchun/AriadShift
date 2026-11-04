@@ -310,3 +310,7 @@ Disposition of every row of the Stirling report's §2 feature table, in report o
 | S50 | PostHog and Scarf analytics | Not adopted |
 | S51 | Sign from phone, mobile scanner | Not adopted |
 | S52 | Localisation, 40+ languages | Platform capability |
+
+## Notes on Pages-Family Formats (PUB, VSD, WPD, WPS)
+
+For Pages-family formats (`pub`, `vsd`, `wpd`, `wps`), no permissively licensed (public-domain, CC0, CC-BY, MIT, Apache) sample files were found after searching upstream corpora (`libmspub`, `libvisio`, `libwpd`, `libwps`, and the Document Liberation Project). Upstream regression corpora are licensed under LGPL-2.1+ or MPL-2.0 copyleft terms rather than standalone permissive licenses. Route plannability is verified by `pages_family_routes_planning_only_without_conversion` in `crates/ariad-cli/tests/office_routes.rs`. Full conversion testing is covered by a local manual verification gate: placing sample files at `fixtures/office/sample.{pub,vsd,wpd,wps}` causes `pages_family_conversion_attempts_or_explicit_skips` to execute full LibreOffice conversions.

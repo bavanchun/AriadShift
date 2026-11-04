@@ -470,7 +470,7 @@ fn write_dummy_odg(path: &Path) {
 }
 
 #[test]
-fn pages_family_routes_are_plannable() {
+fn pages_family_routes_planning_only_without_conversion() {
     let directory = tempdir().unwrap();
     for fmt in ["odg", "pub", "vsd", "wpd", "wps"] {
         let input_file = directory.path().join(format!("sample.{fmt}"));
@@ -598,21 +598,35 @@ fn xlsx_created_from_ir_with_tables_opens_in_libreoffice() {
     );
 }
 
-fn docling_available() -> bool {
+fn engine_probe_path() -> PathBuf {
+    Path::new(env!("CARGO_BIN_EXE_ashift"))
+        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
+}
+
+fn docling_cli(fixture: &Path) -> Option<Command> {
     if std::env::var_os("ASHIFT_PACK_DOCLING").is_some()
         || std::env::var_os("ASHIFT_DOCLING_ENGINE").is_some()
     {
-        return true;
+        return Some(cli());
     }
-    match ariad_host::engines::resolve_pack("docling") {
-        Ok(_) => true,
-        Err(_) => {
-            eprintln!(
-                "skipping: docling pack not installed; set ASHIFT_PACK_DOCLING or ASHIFT_DOCLING_ENGINE to run this test"
-            );
-            false
-        }
+    if ariad_host::engines::resolve_pack("docling").is_ok() {
+        return Some(cli());
     }
+    let probe = engine_probe_path();
+    if probe.exists() {
+        let mut command = cli();
+        command.env("ASHIFT_SANDBOX", "off");
+        command.env(
+            "ASHIFT_DOCLING_ENGINE",
+            format!("\"{}\" docling \"{}\"", probe.display(), fixture.display()),
+        );
+        return Some(command);
+    }
+    eprintln!(
+        "skipping: docling pack not installed and engine-probe binary not found at {}",
+        probe.display()
+    );
+    None
 }
 
 #[test]
@@ -628,9 +642,9 @@ fn pages_family_conversion_attempts_or_explicit_skips() {
             support::fixtures::repository_root().join(format!("fixtures/office/sample.{fmt}"));
         if !fixture_path.exists() {
             eprintln!(
-                "skipping: real test fixture for {fmt} not committed due to repository licensing rules \
-                 (public DLP/libwpd/libwps suites use LGPL-2.1/MPL copyleft test assets excluded by AGENTS.md); \
-                 see local-gate note in result file"
+                "skipping: real test fixture for {fmt} not committed; no permissively licensed \
+                 sample was found after searching upstream corpora (libpub, libvisio, libwpd, \
+                 libwps, Document Liberation Project); manual local verification described in docs/parity-matrix.md"
             );
             continue;
         }
@@ -644,14 +658,17 @@ fn pages_family_conversion_attempts_or_explicit_skips() {
 
 #[test]
 fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
-    if !docling_available() {
+    let docling_fixture =
+        support::fixtures::repository_root().join("fixtures/docling/en-map-room.docling.json");
+    if docling_cli(&docling_fixture).is_none() {
         return;
     }
     let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
     let directory = tempdir().unwrap();
 
     // 1. Plan pdf -> xlsx: default route must select docling engine without --engine docling
-    let plan_xlsx = cli()
+    let plan_xlsx = docling_cli(&docling_fixture)
+        .unwrap()
         .args([
             "plan",
             pdf_fixture.to_str().unwrap(),
@@ -670,7 +687,8 @@ fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
 
     // 2. Convert pdf -> xlsx: route must run through docling
     let xlsx_out = directory.path().join("table.xlsx");
-    let conv_xlsx = cli()
+    let conv_xlsx = docling_cli(&docling_fixture)
+        .unwrap()
         .args([
             "convert",
             pdf_fixture.to_str().unwrap(),
@@ -714,7 +732,8 @@ fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
     );
 
     // 3. Plan pdf -> csv: default route must select docling engine without --engine docling
-    let plan_csv = cli()
+    let plan_csv = docling_cli(&docling_fixture)
+        .unwrap()
         .args([
             "plan",
             pdf_fixture.to_str().unwrap(),
@@ -733,7 +752,8 @@ fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
 
     // 4. Convert pdf -> csv: route must run through docling
     let csv_out = directory.path().join("table.csv");
-    let conv_csv = cli()
+    let conv_csv = docling_cli(&docling_fixture)
+        .unwrap()
         .args([
             "convert",
             pdf_fixture.to_str().unwrap(),
@@ -760,14 +780,17 @@ fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
 
 #[test]
 fn xlsx_reread_through_docling_has_one_sheet_per_table() {
-    if !docling_available() {
+    let docling_fixture =
+        support::fixtures::repository_root().join("fixtures/docling/en-map-room.docling.json");
+    if docling_cli(&docling_fixture).is_none() {
         return;
     }
     let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
     let directory = tempdir().unwrap();
     let xlsx_out = directory.path().join("table.xlsx");
 
-    let conv = cli()
+    let conv = docling_cli(&docling_fixture)
+        .unwrap()
         .args([
             "convert",
             pdf_fixture.to_str().unwrap(),
@@ -783,7 +806,8 @@ fn xlsx_reread_through_docling_has_one_sheet_per_table() {
 
     // Re-read XLSX through Docling into IR JSON
     let reread_json = directory.path().join("reread.json");
-    let reread = cli()
+    let reread = docling_cli(&docling_fixture)
+        .unwrap()
         .args([
             "convert",
             xlsx_out.to_str().unwrap(),
