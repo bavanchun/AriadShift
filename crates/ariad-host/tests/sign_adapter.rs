@@ -654,3 +654,126 @@ fn test_second_incremental_signature() {
     assert_eq!(sigs[0]["integrity"], true);
     assert_eq!(sigs[1]["integrity"], true);
 }
+
+#[test]
+fn test_sign_engine_sandbox_network_denial() {
+    let support = ariad_host::sandbox::support();
+    if !support.landlock_network && !support.seccomp {
+        eprintln!(
+            "skipping network denial test: no Landlock network rules and no seccomp on this platform"
+        );
+        return;
+    }
+
+    let Some(mut cmd) = engine_command() else {
+        return;
+    };
+
+    let launcher = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    if !launcher.is_file() {
+        eprintln!("skipping: engine-probe launcher not found");
+        return;
+    }
+
+    cmd.sandbox = Some(SandboxMode::Required);
+    cmd.launcher = Some(launcher);
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let script = tmp.path().join("probe_net.py");
+    fs::write(
+        &script,
+        r#"import socket, sys
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    s.connect(("1.1.1.1", 80))
+    sys.exit(0)
+except Exception:
+    sys.exit(42)
+"#,
+    )
+    .unwrap();
+
+    let mut test_cmd = cmd.clone();
+    test_cmd.args = vec![OsString::from("-I"), script.into_os_string()];
+
+    let req = ariad_core::protocol::v2::RequestV2::Describe {
+        protocol: ariad_core::protocol::v2::PROTOCOL_V2.to_owned(),
+        job: "sandbox-net-test".to_owned(),
+    };
+    let outcome = runner::run_command_v2(&test_cmd, &req, CancellationToken::new(), |_| {});
+
+    match outcome {
+        Err(runner::RunError::Crash { exit, .. }) => {
+            assert_eq!(
+                exit,
+                Some(42),
+                "sandboxed network connection was denied (exit 42)"
+            );
+        }
+        Err(err) => {
+            eprintln!("sandboxed process failed as expected: {:?}", err);
+        }
+        Ok(_) => {
+            panic!("sandboxed network connection unexpectedly succeeded");
+        }
+    }
+}
+
+#[test]
+fn test_sign_engine_pades_b_t_succeeds_under_sandbox() {
+    let support = ariad_host::sandbox::support();
+    let mode = if support.gaps().is_empty() {
+        SandboxMode::Required
+    } else {
+        SandboxMode::BestEffort
+    };
+
+    let Some(mut cmd) = engine_command() else {
+        return;
+    };
+
+    let launcher = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    if !launcher.is_file() {
+        return;
+    }
+    cmd.sandbox = Some(mode);
+    cmd.launcher = Some(launcher);
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let p12_path = tmp.path().join("cert.p12");
+    generate_test_p12(&p12_path, "secret");
+
+    let tsa = TestTsaServer::spawn();
+    let tsa_url = format!("http://127.0.0.1:{}/", tsa.port);
+
+    let mut bag = SecretBag::new();
+    let _ = bag.insert("certificate", p12_path.to_str().unwrap());
+    let _ = bag.insert("password", "secret");
+
+    let out_dir = tmp.path().join("signed_sandbox");
+    fs::create_dir_all(&out_dir).unwrap();
+
+    let req = ToolRequest::new(
+        "pdf.sign",
+        vec![InputRef::new(fixture_pdf())],
+        OutputTarget::Directory(out_dir),
+    )
+    .with_spec(spec("pdf.sign"))
+    .with_params(json!({
+        "level": "B-T",
+        "tsa_url": tsa_url,
+    }))
+    .with_secrets(bag)
+    .with_engine_command(cmd);
+
+    let client = Client::builder()
+        .allow_loopback(true)
+        .https_only(false)
+        .allowed_ports(vec![tsa.port])
+        .build()
+        .unwrap();
+    let res = with_test_tsa_client(client, || run_tool(&req))
+        .expect("B-T signing with brokered TSA must succeed under sandbox");
+    assert!(!res.artifacts.is_empty());
+}

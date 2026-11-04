@@ -562,13 +562,13 @@ pub const SIGN: EngineSpec = EngineSpec {
     id: "sign",
     license: "Apache-2.0 OR MIT",
     routes: &[],
-    install_hint: "the sign pack is not yet released; set ASHIFT_SIGN_PROGRAM or ASHIFT_PACK_SIGN to use a development build",
+    install_hint: "the sign pack is not yet released; set ASHIFT_SIGN_ENGINE or ASHIFT_PACK_SIGN to use a development build",
     supported: None,
     required: false,
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
-    pack_program_env: Some("ASHIFT_SIGN_PROGRAM"),
+    pack_program_env: None,
 };
 
 /// veraPDF PDF/A validation pack (`ariad-engine/2`).
