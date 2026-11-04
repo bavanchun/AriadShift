@@ -107,7 +107,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
 
 ### 2. Promote `dev` to `main` with a merge commit
 
-1. Confirm `dev` is green on all three OSes with no known regression, and obtain the maintainer's explicit go-ahead ([git-workflow.md](git-workflow.md) "Promotion and hotfixes").
+1. Confirm `dev` is green (`ci.yml` `CI passed` on the `dev` head) and that the heavy workflows (Docling pack `pack-docling.yml`, Cloud E2E `cloud-e2e.yml`, Release rehearsal `release.yml`, and required engine pack workflows `pack-*`) are green on `dev`, with no known regression, and obtain the maintainer's explicit go-ahead ([git-workflow.md](git-workflow.md) "Promotion and hotfixes").
 2. Open a promotion pull request from `dev` into `main` titled `chore: promote dev to main`:
    ```bash
    gh pr create --base main --head dev --title "chore: promote dev to main" --body "Promote dev to main for vX.Y.Z."
