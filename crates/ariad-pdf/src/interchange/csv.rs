@@ -120,20 +120,20 @@ pub(super) fn detect_delimiter(bytes: &[u8]) -> u8 {
     b",;\t"[index]
 }
 
+/// Protects against spreadsheet formula injection by prefixing triggering characters
+/// with an apostrophe, delegating to `ariad_core::writer::csv::guard_formula`.
+#[must_use]
+pub fn guard_formula(s: &str) -> String {
+    ariad_core::writer::csv::guard_formula(s)
+}
+
 /// Serialize one record using CRLF and prefix spreadsheet formulas with an apostrophe.
 pub fn write_forms(record: &FormRecord) -> Result<Vec<u8>, PdfError> {
     let mut writer = WriterBuilder::new()
         .terminator(Terminator::CRLF)
         .from_writer(super::BoundedWriter::default());
-    let guard = |s: &str| -> String {
-        if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
-            format!("'{s}")
-        } else {
-            s.to_owned()
-        }
-    };
     writer
-        .write_record(record.keys().map(|s| guard(s)))
+        .write_record(record.keys().map(|s| guard_formula(s)))
         .map_err(|_| invalid("cannot encode CSV"))?;
     let cells = record.values().map(|value| {
         let s = match value {
@@ -142,7 +142,7 @@ pub fn write_forms(record: &FormRecord) -> Result<Vec<u8>, PdfError> {
             FormValue::Multi(values) => values.join("|"),
             FormValue::Null(()) => String::new(),
         };
-        guard(&s)
+        guard_formula(&s)
     });
     writer
         .write_record(cells)
@@ -175,5 +175,27 @@ mod tests {
         let record = FormRecord::from([("=header".into(), FormValue::Text("+value".into()))]);
         let csv = String::from_utf8(write_forms(&record).unwrap()).unwrap();
         assert_eq!(csv, "'=header\r\n'+value\r\n");
+    }
+
+    #[test]
+    fn formula_guard_cross_check_against_ariad_core() {
+        let cases = [
+            "=cmd",
+            "+123",
+            "-456",
+            "@sum",
+            "\ttab",
+            "\rcr",
+            "normal text",
+            "",
+            "'already",
+            "a=b",
+        ];
+        for case in cases {
+            assert_eq!(
+                guard_formula(case),
+                ariad_core::writer::csv::guard_formula(case)
+            );
+        }
     }
 }

@@ -28,6 +28,22 @@ pub const MAX_SHEET_NAME_LEN: usize = 31;
 pub const MAX_SHEETS_COUNT: usize = 255;
 /// Maximum colspan or rowspan applied per cell to prevent memory thrashing.
 pub const MAX_CELL_SPAN: usize = 1024;
+/// Maximum total bytes for serialized XLSX binary output (50 MiB).
+pub const MAX_OUTPUT_BYTES: usize = 50 * 1024 * 1024;
+
+/// Errors that can occur when serializing an XLSX document.
+#[derive(Debug, thiserror::Error)]
+pub enum XlsxError {
+    /// Packaging the OpenXML ZIP archive failed.
+    #[error("failed to package xlsx: {0}")]
+    Package(#[from] zip::result::ZipError),
+    /// Writing XML to archive failed.
+    #[error("io error writing xlsx: {0}")]
+    Io(#[from] std::io::Error),
+    /// The serialized XLSX output exceeded the total size limit.
+    #[error("xlsx output exceeded size limit of {limit} bytes")]
+    OutputTooLarge { limit: usize },
+}
 
 /// Computes the Excel column letters from a 0-based column index (0 -> "A", 25 -> "Z", 26 -> "AA").
 #[must_use]
@@ -146,6 +162,7 @@ fn build_sheet_from_table(
     table_idx: usize,
     table_block: &Block,
     used_names: &mut HashSet<String>,
+    warnings: &mut Vec<Warning>,
 ) -> SheetData {
     let (caption, head, body) = match table_block {
         Block::Table {
@@ -166,6 +183,14 @@ fn build_sheet_from_table(
     let raw_name = caption.map(inlines_to_text).unwrap_or_default();
     let name = sanitize_sheet_name(&raw_name, table_idx, used_names);
 
+    let total_rows = head.len() + body.len();
+    if total_rows > MAX_EXCEL_ROWS {
+        warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            format!("table has {total_rows} rows; truncated to maximum {MAX_EXCEL_ROWS}"),
+        ));
+    }
+
     let all_rows: Vec<&Vec<TableCell>> = head
         .iter()
         .chain(body.iter())
@@ -174,6 +199,7 @@ fn build_sheet_from_table(
     let mut occupied: Vec<Vec<bool>> = Vec::new();
     let mut rows: Vec<RowData> = Vec::with_capacity(all_rows.len().min(1000));
     let mut merge_cells: Vec<String> = Vec::new();
+    let mut row_col_exceeded = false;
 
     for (r, row_cells) in all_rows.iter().enumerate() {
         if r >= MAX_EXCEL_ROWS {
@@ -188,6 +214,15 @@ fn build_sheet_from_table(
                 c += 1;
             }
             if c >= MAX_EXCEL_COLS {
+                if !row_col_exceeded {
+                    warnings.push(Warning::new(
+                        WarningCode::UnsupportedNode,
+                        format!(
+                            "table columns exceed maximum {MAX_EXCEL_COLS}; excess columns dropped"
+                        ),
+                    ));
+                    row_col_exceeded = true;
+                }
                 break;
             }
 
@@ -197,10 +232,30 @@ fn build_sheet_from_table(
             let colspan = raw_colspan.min(MAX_EXCEL_COLS - c).min(MAX_CELL_SPAN);
             let rowspan = raw_rowspan.min(max_remaining_rows).min(MAX_CELL_SPAN);
 
+            if raw_colspan > colspan {
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!("cell colspan {raw_colspan} clamped to {colspan}"),
+                ));
+            }
+            if raw_rowspan > rowspan {
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!("cell rowspan {raw_rowspan} clamped to {rowspan}"),
+                ));
+            }
+
             mark_occupied(&mut occupied, r, c, rowspan, colspan);
 
             let mut raw_text = blocks_to_text(&cell.blocks);
-            if raw_text.chars().count() > MAX_CELL_CHARS {
+            let char_count = raw_text.chars().count();
+            if char_count > MAX_CELL_CHARS {
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!(
+                        "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
+                    ),
+                ));
                 raw_text = raw_text.chars().take(MAX_CELL_CHARS).collect();
             }
 
@@ -234,6 +289,9 @@ fn build_sheet_from_table(
 }
 
 fn is_occupied(occupied: &[Vec<bool>], r: usize, c: usize) -> bool {
+    if occupied.is_empty() {
+        return false;
+    }
     occupied
         .get(r)
         .and_then(|row| row.get(c))
@@ -248,6 +306,9 @@ fn mark_occupied(
     rowspan: usize,
     colspan: usize,
 ) {
+    if rowspan <= 1 && colspan <= 1 && occupied.is_empty() {
+        return;
+    }
     if occupied.len() < r + rowspan {
         occupied.resize_with(r + rowspan, Vec::new);
     }
@@ -327,8 +388,8 @@ const ROOT_RELS_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="
 ///
 /// Each IR table becomes its own sheet. If no tables are found, document blocks are dumped
 /// row by row into a single sheet, and a `no_tables_found` warning is issued.
-#[must_use]
-pub fn write(document: &Document) -> WriteBinaryOutput {
+#[must_use = "document serialization returns a Result with output bytes and warnings"]
+pub fn write(document: &Document) -> Result<WriteBinaryOutput, XlsxError> {
     let tables = find_tables(&document.body);
     let mut warnings = Vec::new();
     let mut sheets = Vec::new();
@@ -340,6 +401,17 @@ pub fn write(document: &Document) -> WriteBinaryOutput {
             "no tables found in document; generated text dump",
         ));
 
+        if document.body.len() > MAX_EXCEL_ROWS {
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                format!(
+                    "document has {} blocks; text dump truncated to maximum {} rows",
+                    document.body.len(),
+                    MAX_EXCEL_ROWS
+                ),
+            ));
+        }
+
         let mut rows = Vec::new();
         let mut row_num = 1;
         for block in &document.body {
@@ -348,7 +420,14 @@ pub fn write(document: &Document) -> WriteBinaryOutput {
             }
             let mut text = blocks_to_text(std::slice::from_ref(block));
             if !text.is_empty() {
-                if text.chars().count() > MAX_CELL_CHARS {
+                let char_count = text.chars().count();
+                if char_count > MAX_CELL_CHARS {
+                    warnings.push(Warning::new(
+                        WarningCode::UnsupportedNode,
+                        format!(
+                            "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
+                        ),
+                    ));
                     text = text.chars().take(MAX_CELL_CHARS).collect();
                 }
                 rows.push(RowData {
@@ -388,24 +467,16 @@ pub fn write(document: &Document) -> WriteBinaryOutput {
                 idx + 1,
                 table_block,
                 &mut used_names,
+                &mut warnings,
             ));
         }
     }
 
-    let bytes = match package_xlsx(&sheets) {
-        Ok(b) => b,
-        Err(e) => {
-            warnings.push(Warning::new(
-                WarningCode::UnsupportedNode,
-                format!("failed to generate xlsx package: {e}"),
-            ));
-            Vec::new()
-        }
-    };
-    WriteBinaryOutput { bytes, warnings }
+    let bytes = package_xlsx(&sheets)?;
+    Ok(WriteBinaryOutput { bytes, warnings })
 }
 
-fn package_xlsx(sheets: &[SheetData]) -> Result<Vec<u8>, zip::result::ZipError> {
+fn package_xlsx(sheets: &[SheetData]) -> Result<Vec<u8>, XlsxError> {
     let mut cursor = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(&mut cursor);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -471,7 +542,13 @@ fn package_xlsx(sheets: &[SheetData]) -> Result<Vec<u8>, zip::result::ZipError> 
     }
 
     zip.finish()?;
-    Ok(cursor.into_inner())
+    let bytes = cursor.into_inner();
+    if bytes.len() > MAX_OUTPUT_BYTES {
+        return Err(XlsxError::OutputTooLarge {
+            limit: MAX_OUTPUT_BYTES,
+        });
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -556,7 +633,7 @@ mod tests {
             ..Default::default()
         };
 
-        let output = write(&doc);
+        let output = write(&doc).unwrap();
         assert!(output.warnings.is_empty());
         assert!(!output.bytes.is_empty());
 
@@ -600,7 +677,7 @@ mod tests {
             ..Default::default()
         };
 
-        let output = write(&doc);
+        let output = write(&doc).unwrap();
         assert_eq!(output.warnings.len(), 1);
         assert_eq!(output.warnings[0].code, WarningCode::NoTablesFound);
 
@@ -633,8 +710,14 @@ mod tests {
             ..Default::default()
         };
 
-        let output = write(&doc);
+        let output = write(&doc).unwrap();
         assert!(!output.bytes.is_empty());
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("clamped"))
+        );
         let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
         let sheet1_xml = {
             let mut sheet1_file = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
@@ -663,7 +746,13 @@ mod tests {
             ..Default::default()
         };
 
-        let output = write(&doc);
+        let output = write(&doc).unwrap();
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("truncated"))
+        );
         let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
         let sheet1_xml = {
             let mut sheet1_file = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
@@ -722,7 +811,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        let output = write(&doc);
+        let output = write(&doc).unwrap();
         let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
         let wb_xml = {
             let mut wb_file = archive.by_name("xl/workbook.xml").unwrap();
@@ -761,7 +850,7 @@ mod tests {
             ..Default::default()
         };
 
-        let output = write(&doc);
+        let output = write(&doc).unwrap();
         assert_eq!(output.warnings[0].code, WarningCode::NoTablesFound);
         let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
         let sheet1_xml = {
@@ -772,5 +861,82 @@ mod tests {
         };
         assert!(sheet1_xml.contains("Quote text"));
         assert!(sheet1_xml.contains("List item text"));
+    }
+
+    #[test]
+    fn sheet_cap_truncates_to_255_and_emits_warning() {
+        let tables: Vec<Block> = (0..260)
+            .map(|i| Block::Table {
+                caption: Some(vec![Inline::Text {
+                    text: format!("Table {i}"),
+                }]),
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![make_cell("data", 1, 1)]],
+                footnotes: Vec::new(),
+            })
+            .collect();
+        let doc = Document {
+            body: tables,
+            ..Default::default()
+        };
+
+        let output = write(&doc).unwrap();
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("document has 260 tables; capped at maximum 255 sheets")
+        }));
+
+        let mut archive = ZipArchive::new(Cursor::new(output.bytes)).unwrap();
+        assert!(archive.by_name("xl/worksheets/sheet255.xml").is_ok());
+        assert!(archive.by_name("xl/worksheets/sheet256.xml").is_err());
+    }
+
+    #[test]
+    fn col_cap_emits_warning_when_columns_exceed_limit() {
+        let wide_row: Vec<TableCell> = (0..MAX_EXCEL_COLS + 5)
+            .map(|_| make_cell("c", 1, 1))
+            .collect();
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![],
+                head: vec![],
+                body: vec![wide_row],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let output = write(&doc).unwrap();
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("table columns exceed maximum 16384; excess columns dropped")
+        }));
+    }
+
+    #[test]
+    fn row_cap_emits_warning_when_rows_exceed_limit() {
+        let single_row = vec![make_cell("r", 1, 1)];
+        let body = vec![single_row; MAX_EXCEL_ROWS + 2];
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![],
+                head: vec![],
+                body,
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let output = write(&doc).unwrap();
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("table has 1048578 rows; truncated to maximum 1048576")
+        }));
     }
 }

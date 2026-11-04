@@ -114,22 +114,28 @@ fn append_list_items(items: &[ListItem], out: &mut String) {
     }
 }
 
-/// Maximum rows allowed per CSV table.
-pub const MAX_EXCEL_ROWS: usize = 1_048_576;
-/// Maximum columns allowed per CSV table.
-pub const MAX_EXCEL_COLS: usize = 16_384;
-/// Maximum characters allowed per CSV cell.
-pub const MAX_CELL_CHARS: usize = 32_767;
-/// Maximum colspan or rowspan applied per cell to prevent memory thrashing.
-pub const MAX_CELL_SPAN: usize = 1024;
+pub use super::xlsx::{
+    MAX_CELL_CHARS, MAX_CELL_SPAN, MAX_EXCEL_COLS, MAX_EXCEL_ROWS, MAX_OUTPUT_BYTES,
+    MAX_SHEETS_COUNT,
+};
 
-/// Converts a single IR table into CSV text with formula-injection guarding.
+/// Converts a single IR table into CSV text with formula-injection guarding,
+/// collecting warnings for row/column truncation, span clamping, or text cutoffs.
 #[must_use]
-pub fn table_to_csv(
+pub fn table_to_csv_with_warnings(
     columns: &[ColumnSpec],
     head: &[Vec<TableCell>],
     body: &[Vec<TableCell>],
+    warnings: &mut Vec<Warning>,
 ) -> String {
+    let total_rows = head.len() + body.len();
+    if total_rows > MAX_EXCEL_ROWS {
+        warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            format!("table has {total_rows} rows; truncated to maximum {MAX_EXCEL_ROWS}"),
+        ));
+    }
+
     let all_rows: Vec<&Vec<TableCell>> = head
         .iter()
         .chain(body.iter())
@@ -141,6 +147,7 @@ pub fn table_to_csv(
 
     let mut occupied: Vec<Vec<bool>> = Vec::new();
     let mut grid: Vec<Vec<Option<String>>> = Vec::new();
+    let mut row_col_exceeded = false;
 
     for (r, row_cells) in all_rows.iter().enumerate() {
         if r >= MAX_EXCEL_ROWS {
@@ -152,6 +159,15 @@ pub fn table_to_csv(
                 c += 1;
             }
             if c >= MAX_EXCEL_COLS {
+                if !row_col_exceeded {
+                    warnings.push(Warning::new(
+                        WarningCode::UnsupportedNode,
+                        format!(
+                            "table columns exceed maximum {MAX_EXCEL_COLS}; excess columns dropped"
+                        ),
+                    ));
+                    row_col_exceeded = true;
+                }
                 break;
             }
 
@@ -161,16 +177,42 @@ pub fn table_to_csv(
             let colspan = raw_colspan.min(MAX_EXCEL_COLS - c).min(MAX_CELL_SPAN);
             let rowspan = raw_rowspan.min(max_remaining_rows).min(MAX_CELL_SPAN);
 
+            if raw_colspan > colspan {
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!("cell colspan {raw_colspan} clamped to {colspan}"),
+                ));
+            }
+            if raw_rowspan > rowspan {
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!("cell rowspan {raw_rowspan} clamped to {rowspan}"),
+                ));
+            }
+
             mark_occupied(&mut occupied, r, c, rowspan, colspan);
 
             let mut raw_text = blocks_to_text(&cell.blocks);
-            if raw_text.chars().count() > MAX_CELL_CHARS {
+            let char_count = raw_text.chars().count();
+            if char_count > MAX_CELL_CHARS {
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!(
+                        "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
+                    ),
+                ));
                 raw_text = raw_text.chars().take(MAX_CELL_CHARS).collect();
             }
             let guarded = guard_formula(&raw_text);
 
-            ensure_grid_size(&mut grid, r + 1, c + 1);
-            grid[r][c] = Some(guarded);
+            if grid.len() <= r {
+                grid.resize_with(r + 1, Vec::new);
+            }
+            let grid_row = &mut grid[r];
+            if grid_row.len() <= c {
+                grid_row.resize_with(c + 1, || None);
+            }
+            grid_row[c] = Some(guarded);
 
             c += colspan;
         }
@@ -197,7 +239,21 @@ pub fn table_to_csv(
     out
 }
 
+/// Converts a single IR table into CSV text with formula-injection guarding.
+#[must_use]
+pub fn table_to_csv(
+    columns: &[ColumnSpec],
+    head: &[Vec<TableCell>],
+    body: &[Vec<TableCell>],
+) -> String {
+    let mut warnings = Vec::new();
+    table_to_csv_with_warnings(columns, head, body, &mut warnings)
+}
+
 fn is_occupied(occupied: &[Vec<bool>], r: usize, c: usize) -> bool {
+    if occupied.is_empty() {
+        return false;
+    }
     occupied
         .get(r)
         .and_then(|row| row.get(c))
@@ -212,6 +268,9 @@ fn mark_occupied(
     rowspan: usize,
     colspan: usize,
 ) {
+    if rowspan <= 1 && colspan <= 1 && occupied.is_empty() {
+        return;
+    }
     if occupied.len() < r + rowspan {
         occupied.resize_with(r + rowspan, Vec::new);
     }
@@ -221,17 +280,6 @@ fn mark_occupied(
         }
         for cell in row.iter_mut().skip(c).take(colspan) {
             *cell = true;
-        }
-    }
-}
-
-fn ensure_grid_size(grid: &mut Vec<Vec<Option<String>>>, rows: usize, cols: usize) {
-    if grid.len() < rows {
-        grid.resize_with(rows, Vec::new);
-    }
-    for row in grid.iter_mut() {
-        if row.len() < cols {
-            row.resize_with(cols, || None);
         }
     }
 }
@@ -267,45 +315,99 @@ fn collect_tables<'a>(blocks: &'a [Block], out: &mut Vec<&'a Block>) {
 #[must_use]
 pub fn write(document: &Document) -> WriteOutput {
     let tables = find_tables(&document.body);
+    let mut warnings = Vec::new();
+    let mut content = String::new();
+
     if tables.is_empty() {
-        let mut content = String::new();
-        for block in &document.body {
-            let text = blocks_to_text(std::slice::from_ref(block));
+        warnings.push(Warning::new(
+            WarningCode::NoTablesFound,
+            "no tables found in document; generated text dump",
+        ));
+
+        if document.body.len() > MAX_EXCEL_ROWS {
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                format!(
+                    "document has {} blocks; text dump truncated to maximum {} rows",
+                    document.body.len(),
+                    MAX_EXCEL_ROWS
+                ),
+            ));
+        }
+
+        for (r, block) in document.body.iter().enumerate() {
+            if r >= MAX_EXCEL_ROWS {
+                break;
+            }
+            let mut text = blocks_to_text(std::slice::from_ref(block));
             if !text.is_empty() {
+                let char_count = text.chars().count();
+                if char_count > MAX_CELL_CHARS {
+                    warnings.push(Warning::new(
+                        WarningCode::UnsupportedNode,
+                        format!(
+                            "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
+                        ),
+                    ));
+                    text = text.chars().take(MAX_CELL_CHARS).collect();
+                }
                 let guarded = guard_formula(&text);
                 content.push_str(&escape_csv_field(&guarded));
                 content.push_str("\r\n");
             }
         }
-        return WriteOutput {
-            content,
-            warnings: vec![Warning::new(
-                WarningCode::NoTablesFound,
-                "no tables found in document; generated text dump",
-            )],
+    } else {
+        let max_tables = MAX_SHEETS_COUNT;
+        let tables_to_process = if tables.len() > max_tables {
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                format!(
+                    "document has {} tables; capped at maximum {} tables",
+                    tables.len(),
+                    max_tables
+                ),
+            ));
+            &tables[..max_tables]
+        } else {
+            &tables[..]
         };
+
+        for (idx, table_block) in tables_to_process.iter().enumerate() {
+            if idx > 0 {
+                content.push_str("\r\n");
+            }
+            if let Block::Table {
+                columns,
+                head,
+                body,
+                ..
+            } = table_block
+            {
+                content.push_str(&table_to_csv_with_warnings(
+                    columns,
+                    head,
+                    body,
+                    &mut warnings,
+                ));
+            }
+        }
     }
 
-    let mut content = String::new();
-    for (idx, table_block) in tables.iter().enumerate() {
-        if idx > 0 {
-            content.push_str("\r\n");
+    if content.len() > MAX_OUTPUT_BYTES {
+        warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            format!(
+                "CSV output exceeded maximum size limit of {MAX_OUTPUT_BYTES} bytes; content truncated"
+            ),
+        ));
+        let mut end = MAX_OUTPUT_BYTES;
+        while !content.is_char_boundary(end) {
+            end = end.saturating_sub(1);
         }
-        if let Block::Table {
-            columns,
-            head,
-            body,
-            ..
-        } = table_block
-        {
-            content.push_str(&table_to_csv(columns, head, body));
-        }
+        content.truncate(end);
     }
 
-    WriteOutput {
-        content,
-        warnings: Vec::new(),
-    }
+    WriteOutput { content, warnings }
 }
 
 #[cfg(test)]
@@ -421,7 +523,12 @@ mod tests {
         };
 
         let output = write(&doc);
-        assert!(output.warnings.is_empty());
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("clamped"))
+        );
         assert!(output.content.contains("Safe Huge Cell"));
     }
 
@@ -442,9 +549,88 @@ mod tests {
         };
 
         let output = write(&doc);
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("truncated"))
+        );
         assert!(output.content.len() >= MAX_CELL_CHARS);
         // Ensure it doesn't contain the full 40,000 characters
         assert!(!output.content.contains(&"B".repeat(MAX_CELL_CHARS + 1)));
+    }
+
+    #[test]
+    fn col_cap_emits_warning_when_columns_exceed_limit() {
+        let wide_row: Vec<TableCell> = (0..MAX_EXCEL_COLS + 5)
+            .map(|_| make_cell("c", 1, 1))
+            .collect();
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![],
+                head: vec![],
+                body: vec![wide_row],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let output = write(&doc);
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("table columns exceed maximum 16384; excess columns dropped")
+        }));
+    }
+
+    #[test]
+    fn row_cap_emits_warning_when_rows_exceed_limit() {
+        let single_row = vec![make_cell("r", 1, 1)];
+        let body = vec![single_row; MAX_EXCEL_ROWS + 2];
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![],
+                head: vec![],
+                body,
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let output = write(&doc);
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("table has 1048578 rows; truncated to maximum 1048576")
+        }));
+    }
+
+    #[test]
+    fn table_cap_emits_warning_when_tables_exceed_limit() {
+        let tables: Vec<Block> = (0..260)
+            .map(|i| Block::Table {
+                caption: Some(vec![Inline::Text {
+                    text: format!("Table {i}"),
+                }]),
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: vec![vec![make_cell("data", 1, 1)]],
+                footnotes: Vec::new(),
+            })
+            .collect();
+        let doc = Document {
+            body: tables,
+            ..Default::default()
+        };
+
+        let output = write(&doc);
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("document has 260 tables; capped at maximum 255 tables")
+        }));
     }
 
     #[test]

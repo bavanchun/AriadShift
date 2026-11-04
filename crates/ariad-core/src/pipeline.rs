@@ -289,7 +289,10 @@ pub fn write(
         Format::Html => writer_html::write_with_title_fallback(document, options.title_fallback),
         Format::Csv => writer_csv::write(document),
         Format::Xlsx => {
-            let output = writer_xlsx::write(document);
+            let output =
+                writer_xlsx::write(document).map_err(|error| PipelineError::InvalidInput {
+                    reason: error.to_string(),
+                })?;
             return Ok(Written {
                 bytes: output.bytes,
                 warnings: output.warnings.iter().map(Notice::from).collect(),
