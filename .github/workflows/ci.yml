@@ -175,7 +175,18 @@ jobs:
       - name: Install command-line tools
         uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
-          tool: just@1.58.0,cargo-nextest@0.9.146
+          tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
+
+      - name: Start sccache
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
+          SCCACHE_S3_RW_MODE: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && 'READ_WRITE' || 'READ_ONLY' }}
+        run: bash scripts/ci-sccache.sh start
 
       - name: Set up uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -273,6 +284,12 @@ jobs:
       - name: Check packaging
         run: just package-check
 
+      - name: Stop sccache and report stats
+        if: always()
+        env:
+          JOB_NAME: Verify (${{ matrix.os }})
+        run: bash scripts/ci-sccache.sh stop
+
   server:
     name: Server integration (ubuntu-26.04)
     needs: scope
@@ -319,7 +336,18 @@ jobs:
       - name: Install command-line tools
         uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
-          tool: just@1.58.0,cargo-nextest@0.9.146
+          tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
+
+      - name: Start sccache
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
+          SCCACHE_S3_RW_MODE: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && 'READ_WRITE' || 'READ_ONLY' }}
+        run: bash scripts/ci-sccache.sh start
 
       - name: Cache Pandoc archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -397,6 +425,24 @@ jobs:
         if: always()
         run: docker rm -f ariadshift-test-s3 || true
 
+      - name: Stop sccache and report stats
+        if: always()
+        env:
+          JOB_NAME: Server integration
+        run: bash scripts/ci-sccache.sh stop
+
+      - name: Report and prune R2 cache storage
+        if: always()
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
+          PRUNE_FLAG: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && '--prune' || '--report-only' }}
+        run: uv run --no-project --with boto3==1.43.123 python scripts/r2-cache-prune.py "$PRUNE_FLAG"
+
   fuzz:
     name: Fuzz
     needs: scope
@@ -421,6 +467,22 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache: false
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: sccache@0.19.0
+
+      - name: Start sccache
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache/
+          SCCACHE_S3_RW_MODE: ${{ ((github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')) || github.event_name == 'workflow_dispatch') && 'READ_WRITE' || 'READ_ONLY' }}
+        run: bash scripts/ci-sccache.sh start
 
       - name: Restore cargo-fuzz binary
         id: restore-cargo-fuzz
@@ -509,6 +571,12 @@ jobs:
           name: fuzz-artifacts
           path: fuzz/artifacts/
           retention-days: 14
+
+      - name: Stop sccache and report stats
+        if: always()
+        env:
+          JOB_NAME: Fuzz
+        run: bash scripts/ci-sccache.sh stop
 
   web:
     name: Web
