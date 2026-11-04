@@ -1170,7 +1170,6 @@ fn redact_pipeline_rect_overlay_e2e_with_pdftotext() {
     }
     let temp = tempfile::tempdir().unwrap();
     let out_path = temp.path().join("out_rect_overlay.pdf");
-    let report_path = temp.path().join("report.json");
     let request = ToolRequest::new(
         "pdf.redact",
         vec![InputRef::new(fixture("mixed-sizes.pdf"))],
@@ -1181,19 +1180,17 @@ fn redact_pipeline_rect_overlay_e2e_with_pdftotext() {
             {
                 "kind": "rectangle",
                 "page": 1,
-                "rect": { "left": 100.0, "bottom": 690.0, "right": 250.0, "top": 720.0 }
+                "rect": { "left": 70.0, "bottom": 745.0, "right": 320.0, "top": 765.0 }
             }
         ],
-        "overlay_text": "REDACTED",
-        "report_path": report_path.to_str().unwrap()
+        "overlay_text": "REDACTED"
     }));
 
-    let _outcome = run_tool(&request).expect("run pdf.redact with rect and overlay_text");
+    let outcome = run_tool(&request).expect("run pdf.redact with rect and overlay_text");
     assert!(out_path.exists());
 
-    let report_raw = fs::read_to_string(&report_path).expect("read report");
     let report: RedactionVerificationReport =
-        serde_json::from_str(&report_raw).expect("parse report");
+        serde_json::from_value(outcome.inline_json.unwrap()).expect("parse report");
     assert_eq!(report.status, RedactionVerificationStatus::Verified);
 
     let oracle = Command::new("pdftotext")
@@ -1213,7 +1210,6 @@ fn redact_pipeline_rect_overlay_characters_equal_target() {
     }
     let temp = tempfile::tempdir().unwrap();
     let out_path = temp.path().join("out_equal_chars.pdf");
-    let report_path = temp.path().join("report.json");
     let request = ToolRequest::new(
         "pdf.redact",
         vec![InputRef::new(fixture("mixed-sizes.pdf"))],
@@ -1224,20 +1220,17 @@ fn redact_pipeline_rect_overlay_characters_equal_target() {
             {
                 "kind": "rectangle",
                 "page": 1,
-                "rect": { "left": 100.0, "bottom": 690.0, "right": 250.0, "top": 720.0 }
+                "rect": { "left": 70.0, "bottom": 745.0, "right": 320.0, "top": 765.0 }
             }
         ],
-        "overlay_text": "Page 1:",
-        "report_path": report_path.to_str().unwrap()
+        "overlay_text": "Page 1:"
     }));
 
-    let _outcome =
-        run_tool(&request).expect("run pdf.redact when overlay equals target characters");
+    let outcome = run_tool(&request).expect("run pdf.redact when overlay equals target characters");
     assert!(out_path.exists());
 
-    let report_raw = fs::read_to_string(&report_path).expect("read report");
     let report: RedactionVerificationReport =
-        serde_json::from_str(&report_raw).expect("parse report");
+        serde_json::from_value(outcome.inline_json.unwrap()).expect("parse report");
     assert_eq!(report.status, RedactionVerificationStatus::Verified);
 }
 
@@ -1374,7 +1367,6 @@ fn redact_pipeline_counts_annotations_removed_and_vectors_inspected() {
     }
     let temp = tempfile::tempdir().unwrap();
     let out_path = temp.path().join("out_annots.pdf");
-    let report_path = temp.path().join("report.json");
     let request = ToolRequest::new(
         "pdf.redact",
         vec![InputRef::new(root_fixture("pdf-forms/forms-all-types.pdf"))],
@@ -1386,15 +1378,13 @@ fn redact_pipeline_counts_annotations_removed_and_vectors_inspected() {
                 "kind": "page",
                 "page": 1
             }
-        ],
-        "report_path": report_path.to_str().unwrap()
+        ]
     }));
 
-    let _outcome = run_tool(&request).expect("run pdf.redact on page with annotations");
+    let outcome = run_tool(&request).expect("run pdf.redact on page with annotations");
 
-    let report_raw = fs::read_to_string(&report_path).expect("read report");
     let report: RedactionVerificationReport =
-        serde_json::from_str(&report_raw).expect("parse report");
+        serde_json::from_value(outcome.inline_json.unwrap()).expect("parse report");
     assert!(report.carriers.is_some());
     let carriers = report.carriers.unwrap();
     assert!(

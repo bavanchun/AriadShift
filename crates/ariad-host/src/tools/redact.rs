@@ -349,28 +349,41 @@ fn execute_redact(
         .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
 
     // Step 4: Run mandatory verification gates on the candidate
-    // If an overlay is specified, produce a clean candidate without overlay text
+    // If an overlay is specified on rectangle targets, produce a clean candidate without overlay text
     // to strictly verify that original text content was removed under every rectangle.
-    let (clean_candidate_bytes, clean_geometry) = if redact_params.overlay_text.is_some() {
-        let mut unoverlayed_params = redact_params.clone();
-        unoverlayed_params.overlay_text = None;
-        let (unoverlayed_bytes, _) = rewrite_document_with_evidence(
-            input_bytes,
-            &unoverlayed_params,
-            &plan,
-            &geometry,
-            job.limits,
-            &job.ctx,
-        )
-        .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
-        let unoverlayed_path = job.workspace.input_dir().join("clean_candidate.pdf");
-        fs::write(&unoverlayed_path, &unoverlayed_bytes)
-            .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
-        let unoverlayed_geom = job.inspect_geometry(&unoverlayed_path, events)?;
-        (Some(unoverlayed_bytes), Some(unoverlayed_geom))
-    } else {
-        (None, None)
-    };
+    let has_rectangles = redact_params
+        .targets
+        .iter()
+        .any(|t| matches!(t, RedactionTarget::Rectangle { .. }));
+    let (clean_candidate_bytes, clean_geometry) =
+        if redact_params.overlay_text.is_some() && has_rectangles {
+            let mut unoverlayed_params = redact_params.clone();
+            unoverlayed_params.overlay_text = None;
+            let unoverlayed_plan = ariad_pdf::redact::plan(
+                input_bytes,
+                &unoverlayed_params,
+                &geometry,
+                job.limits,
+                &job.ctx,
+            )
+            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+            let (unoverlayed_bytes, _) = rewrite_document_with_evidence(
+                input_bytes,
+                &unoverlayed_params,
+                &unoverlayed_plan,
+                &geometry,
+                job.limits,
+                &job.ctx,
+            )
+            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+            let unoverlayed_path = job.workspace.input_dir().join("clean_candidate.pdf");
+            fs::write(&unoverlayed_path, &unoverlayed_bytes)
+                .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+            let unoverlayed_geom = job.inspect_geometry(&unoverlayed_path, events)?;
+            (Some(unoverlayed_bytes), Some(unoverlayed_geom))
+        } else {
+            (None, None)
+        };
 
     // Gate 1: PDFium text re-extraction check
     let candidate_geometry = job.inspect_geometry(&candidate_path, events)?;
