@@ -22,6 +22,17 @@ export const inputExtensions: Record<string, string[]> = {
   jpeg: ["jpg", "jpeg"],
   tiff: ["tif", "tiff"],
   webp: ["webp"],
+  txt: ["txt", "text"],
+  csv: ["csv"],
+  eml: ["eml"],
+  msg: ["msg"],
+  svg: ["svg"],
+  cbz: ["cbz"],
+  odg: ["odg"],
+  wpd: ["wpd"],
+  wps: ["wps"],
+  pub: ["pub"],
+  vsd: ["vsd"],
   "docling+json": ["json"],
 };
 

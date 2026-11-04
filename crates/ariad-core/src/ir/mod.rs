@@ -94,7 +94,144 @@ pub struct Metadata {
     pub date: Option<String>,
     pub subject: Option<String>,
     pub keywords: Vec<String>,
+    #[serde(
+        serialize_with = "serialize_source_format",
+        deserialize_with = "deserialize_source_format"
+    )]
+    #[schemars(schema_with = "source_format_schema")]
     pub source_format: Option<Format>,
+}
+
+/// A format supported by the core registry.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "Format")]
+pub enum IrFormat {
+    #[serde(rename = "markdown")]
+    Markdown,
+    #[serde(rename = "html")]
+    Html,
+    #[serde(rename = "docx")]
+    Docx,
+    #[serde(rename = "epub")]
+    Epub,
+    #[serde(rename = "pdf")]
+    Pdf,
+    #[serde(rename = "png")]
+    Png,
+    #[serde(rename = "ariad-ir+json")]
+    AriadIrJson,
+    #[serde(rename = "pandoc+json")]
+    PandocJson,
+    #[serde(rename = "docling+json")]
+    DoclingJson,
+    #[serde(rename = "pptx")]
+    Pptx,
+    #[serde(rename = "xlsx")]
+    Xlsx,
+    #[serde(rename = "odt")]
+    Odt,
+    #[serde(rename = "ods")]
+    Ods,
+    #[serde(rename = "odp")]
+    Odp,
+    #[serde(rename = "doc")]
+    Doc,
+    #[serde(rename = "xls")]
+    Xls,
+    #[serde(rename = "ppt")]
+    Ppt,
+    #[serde(rename = "rtf")]
+    Rtf,
+    #[serde(rename = "jpeg")]
+    Jpeg,
+    #[serde(rename = "webp")]
+    Webp,
+    #[serde(rename = "tiff")]
+    Tiff,
+}
+
+impl IrFormat {
+    #[must_use]
+    pub const fn from_format(format: Format) -> Option<Self> {
+        match format {
+            Format::Markdown => Some(Self::Markdown),
+            Format::Html => Some(Self::Html),
+            Format::Docx => Some(Self::Docx),
+            Format::Epub => Some(Self::Epub),
+            Format::Pdf => Some(Self::Pdf),
+            Format::Png => Some(Self::Png),
+            Format::AriadIrJson => Some(Self::AriadIrJson),
+            Format::PandocJson => Some(Self::PandocJson),
+            Format::DoclingJson => Some(Self::DoclingJson),
+            Format::Pptx => Some(Self::Pptx),
+            Format::Xlsx => Some(Self::Xlsx),
+            Format::Odt => Some(Self::Odt),
+            Format::Ods => Some(Self::Ods),
+            Format::Odp => Some(Self::Odp),
+            Format::Doc => Some(Self::Doc),
+            Format::Xls => Some(Self::Xls),
+            Format::Ppt => Some(Self::Ppt),
+            Format::Rtf => Some(Self::Rtf),
+            Format::Jpeg => Some(Self::Jpeg),
+            Format::Webp => Some(Self::Webp),
+            Format::Tiff => Some(Self::Tiff),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn to_format(self) -> Format {
+        match self {
+            Self::Markdown => Format::Markdown,
+            Self::Html => Format::Html,
+            Self::Docx => Format::Docx,
+            Self::Epub => Format::Epub,
+            Self::Pdf => Format::Pdf,
+            Self::Png => Format::Png,
+            Self::AriadIrJson => Format::AriadIrJson,
+            Self::PandocJson => Format::PandocJson,
+            Self::DoclingJson => Format::DoclingJson,
+            Self::Pptx => Format::Pptx,
+            Self::Xlsx => Format::Xlsx,
+            Self::Odt => Format::Odt,
+            Self::Ods => Format::Ods,
+            Self::Odp => Format::Odp,
+            Self::Doc => Format::Doc,
+            Self::Xls => Format::Xls,
+            Self::Ppt => Format::Ppt,
+            Self::Rtf => Format::Rtf,
+            Self::Jpeg => Format::Jpeg,
+            Self::Webp => Format::Webp,
+            Self::Tiff => Format::Tiff,
+        }
+    }
+}
+
+fn serialize_source_format<S>(
+    value: &Option<Format>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        Some(format) => IrFormat::from_format(*format).serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_source_format<'de, D>(
+    deserializer: D,
+) -> Result<Option<Format>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let frozen: Option<IrFormat> = Option::deserialize(deserializer)?;
+    Ok(frozen.map(IrFormat::to_format))
+}
+
+fn source_format_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    generator.subschema_for::<Option<IrFormat>>()
 }
 
 /// The document's semantic content.

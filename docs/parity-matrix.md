@@ -239,6 +239,7 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | SAML2, audit log, usage analytics, admin UI, teams, invites | S47, S48, S49 | Enterprise administration; billing and admin are non-goals of this stage (D2, brainstorm non-goals). |
 | PostHog and Scarf analytics | S50 | Deliberate: no telemetry by default (Stirling report §6, item 6). |
 | Sign from phone (QR), mobile scanner | S51 | Mobile apps are a non-goal of this stage. |
+| Pages to PDF | S12, D2 | LibreOffice 26.8 on Linux failed import ('Error: source file could not be loaded' across Pages '09 and Pages 2013+ fixtures due to missing libetonyek packaging in distro LibreOffice). |
 
 ## Gap assignments (`†` rows)
 
@@ -248,7 +249,7 @@ Every `†` task was added by the PM at the phase scout and is assigned to the p
 
 - **Stirling**: the report's §2 feature table has 52 rows (`S01`-`S52`). All 52 appear in the matrix, the platform table or "Not adopted" (see the index below). Six rows are Not adopted entirely (S11, S47-S51); five are platform capabilities (S37, S43, S44, S46, S52); five are partly Not adopted (S09, S10, S12, S42, S45); the other 36 map to tool or route rows.
 - **Bento**: the report's §2 inventory names 124 tools in the form it spells them (the report counts 125 tool pages in the source and 124 distinct names in the README, and groups some names, so the two counts cannot be reconciled one to one). All 124 are accounted for: 114 map to rows of the parity matrix, 3 to the platform table (View PDF, PDF Multi Tool, PDFs to ZIP) and 7 are Not adopted (Font to Outline, PSD to PDF, MOBI to PDF, FB2 to PDF, XPS to PDF, XML to PDF, PDF to SVG).
-- **Rows**: 108 in the parity matrix (14 carry `†`; the document-title auto-rename task rides on the `recipe run` row and has no row of its own), 10 in "Beyond parity", 7 platform capabilities, 14 Not adopted entries.
+- **Rows**: 108 in the parity matrix (14 carry `†`; the document-title auto-rename task rides on the `recipe run` row and has no row of its own), 10 in "Beyond parity", 7 platform capabilities, 15 Not adopted entries.
 - **Pro rows (approved 2026-11-01)**: `pdf.sign_token` (b), `edit.page_objects` with `edit.apply` (d), `recipe run` and `recipe run --watch` above the cap (c). Cloud execution and AriadShift-hosted AI are Pro as runtimes (a). No other row is Pro.
 
 ## Stirling index
