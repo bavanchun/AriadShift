@@ -34,9 +34,9 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
 4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc (plus distribution-pinned LibreOffice Writer/Calc/Impress and qpdf on Linux), sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test` (including shared engine conformance, with LibreOffice required on Linux), `just bench-test`, `just bench-check`, and `just package-check`.
 5. **Server integration** (Linux, `ubuntu-26.04`) runs the `ariad-server` tests against PostgreSQL 18 with pgmq (a service container) and SeaweedFS (started in a step, because service containers cannot take a command), with Pandoc installed and the `ashift` engine binary built. The database and S3 tests skip in the Verify job, where neither exists; `just test-server` runs the same suite locally in Docker. It installs Node.js, pnpm and the matching PostgreSQL 18 client, then runs `just test-auth-db` with mandatory database execution to prove OAuth serialization across replicas. The job also checks all three Dockerfiles, builds the server image and converts Markdown to DOCX using real Pandoc in required mode in a read-only container with tmpfs, then probes procfs access to the worker and its supervisor. The signed Docling image, the Office namespace profile and the direct-launch Kubernetes fragment are not exercised by this smoke.
-6. **Fuzz** (Linux, `ubuntu-26.04`) first runs `cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta`, then runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`, `limits_validate`, `pdf_reader`, `typst_writer`, `archive_preflight`, `docx_meta`, `pack_manifest`, `pack_archive`, `engine_protocol`, `capabilities_json`, `asset_resolve`, `uri_parsers`, `ir_json_versioned`), with cached corpus and crash artifact upload on failure or cancellation.
+6. **Fuzz** (Linux, `ubuntu-26.04`) first runs `cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta`. On pull requests, it runs a fast smoke with a 5-minute maximum total fuzzing budget (10 seconds per target across all targets, ~3.5 min fuzz execution). Pushes to `dev` and `main` run full 60 seconds per target with cached corpus and crash artifact upload on failure or cancellation. The date-pinned nightly workflow (`fuzz-nightly.yml`) covers all targets for 10 minutes each under AddressSanitizer.
 7. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest against a PostgreSQL 18/pgmq service (including mandatory auth database tests), builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
-8. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, jobs 3 to 6 either passed or were skipped by the scope decision, and job 7 passed when the scope asked for it and was skipped otherwise.
+8. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, jobs 3 to 6 either passed or were skipped by the scope decision, and job 7 passed when the scope asked for it and was skipped otherwise. On the `dev` branch head, a successful `CI passed` run is the authoritative definition of "dev is green" required before branching a new phase worktree. The heavy workflows (Docling pack `pack-docling.yml`, Cloud E2E `cloud-e2e.yml`, Release rehearsal `release.yml`, and engine pack workflows `pack-*`) do not block creating a phase worktree, but must be green before any release tag (`v*`), before promoting `dev` to `main`, and before any PR that depends on their output.
 
 ### When the build, test and fuzz jobs are skipped
 
@@ -74,9 +74,29 @@ The Rust cache is written only by pushes to `dev` and `main` (the web job shares
 
 Pushes and pull requests use the single cloud path list in
 [`ci-scope.sh`](../scripts/ci-scope.sh) (`--classify-cloud`). It covers the web,
-shared Rust crates, workspace/toolchain inputs, image and service sources, the
-image-only fixture and its manifest. [`test-ci-scope.sh`](../scripts/test-ci-scope.sh)
-checks both included and excluded paths. Every label event recomputes scope;
+shared Rust crates (`crates/ariad-(server|core|pdf|engine-io|host|cli|wasm|typst)/`),
+workspace and toolchain inputs (`Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`,
+`justfile`, etc.), image and service sources, the image-only fixture and its
+manifest. [`test-ci-scope.sh`](../scripts/test-ci-scope.sh) checks both included
+and excluded paths.
+
+Changes to any shared Rust crate or workspace manifest trigger Cloud E2E by design:
+`infra/docker/server.Dockerfile` compiles `ariad-server` and the `ashift` engine
+binary from the repository root. `ariad-server` and `ashift` depend directly on
+`ariad-core` and `ariad-host`, and transitively on `ariad-pdf`, `ariad-engine-io`,
+and `ariad-typst` through `ariad-host`. Changes to any of these shared crates
+(such as adding PDF tools or modifying core readers) directly change the server
+binaries deployed inside the Compose containers. Separately, `crates/ariad-wasm`
+is included in `cloud_paths` because the Compose stack's `web` service
+(`infra/docker/web.Dockerfile` under the `core` profile) compiles `ariad-wasm`
+and `ariad-typst` to WebAssembly before exporting the static web application.
+Because the Compose stack test exercises all three profiles (`core`, `office`,
+`docling`) against the exact tested commit, it requires a source-matched Docling
+pack. If no matching pack exists for that SHA (as on a new PR branch), the
+isolated **Request source-matched CI pack** job automatically dispatches
+`pack-docling.yml` on the branch before `Run Compose (core, office, docling)` runs.
+
+Every label event recomputes scope;
 the `cloud-e2e` label forces a run. Adding another label to a cloud change
 therefore requires another real Compose result, rather than a skipped check.
 Cancellation remains scoped to the conversion job. PR events other than
