@@ -2348,8 +2348,10 @@ mod tests {
             let mut zip = zip::ZipWriter::new(file);
             let options =
                 SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-            zip.start_file("page01.png", options).unwrap();
-            zip.write_all(&png).unwrap();
+            for i in 0..501 {
+                zip.start_file(format!("page_{i:04}.png"), options).unwrap();
+                zip.write_all(&png).unwrap();
+            }
             zip.finish().unwrap();
         }
 
@@ -2357,7 +2359,7 @@ mod tests {
             ConvertRequest::new(cbz_path, pdf_out, "pdf", std::path::PathBuf::from("ashift"));
 
         let mut limits = Limits::local();
-        limits.max_decompressed_bytes = 20;
+        limits.max_archive_entries = 1000;
 
         let err = convert_with_limits(
             &request,

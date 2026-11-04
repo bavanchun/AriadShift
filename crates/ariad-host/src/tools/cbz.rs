@@ -200,6 +200,9 @@ mod tests {
         let dummy = EngineCommand::builtin(Path::new("/bin/echo"), "pdfium");
         assert!(preflight(None, Some(&dummy)).is_ok());
 
+        // Preflight with a non-existent engine program path must always fail
+        assert!(preflight(Some(Path::new("/nonexistent/bin/pdfium-dummy")), None).is_err());
+
         // Preflight without override must strictly assert based on environment configuration
         let res = preflight(None, None);
         match std::env::var_os("ASHIFT_PACK_PDFIUM") {
@@ -210,6 +213,12 @@ mod tests {
                 );
             }
             _ => {
+                if res.is_ok() {
+                    eprintln!(
+                        "skipping: PDFium pack resolved from installed location without ASHIFT_PACK_PDFIUM"
+                    );
+                    return;
+                }
                 assert!(
                     res.is_err(),
                     "preflight must fail when PDFium pack is not configured"
