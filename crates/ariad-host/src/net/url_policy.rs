@@ -58,7 +58,7 @@ pub fn validate_url(url: &Url, policy: &UrlPolicy) -> Result<(), NetError> {
         "http" => port == 80,
         _ => false,
     };
-    if !is_standard && !policy.allow_loopback && !policy.allowed_ports.contains(&port) {
+    if !is_standard && !policy.allowed_ports.contains(&port) {
         return Err(NetError::PortNotAllowed { port });
     }
 

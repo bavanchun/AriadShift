@@ -37,6 +37,17 @@ impl Drop for SecretFileGuard {
 
 fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
     let trimmed = input.trim();
+
+    // 1. Prefer base64 encoded payload (standard transport for CLI and MCP secrets)
+    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(trimmed) {
+        match decoded.len() as u64 {
+            0 => {}
+            1..=MAX_CERT_BYTES => return Ok(decoded),
+            _ => return Err(ToolError::LimitExceeded),
+        }
+    }
+
+    // 2. Allow-list approach for explicit file path input
     let path = Path::new(trimmed);
     if path.is_file() {
         let canonical = fs::canonicalize(path).map_err(|e| {
@@ -47,11 +58,16 @@ fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
         if canonical_str.starts_with("/proc")
             || canonical_str.starts_with("/sys")
             || canonical_str.starts_with("/dev")
-            || canonical_str.starts_with("/etc/shadow")
-            || canonical_str.starts_with("/etc/master.passwd")
+            || canonical_str.starts_with("/etc")
+            || canonical_str.starts_with("/var")
+            || canonical_str.starts_with("/run")
+            || canonical_str.contains("/.ssh")
+            || canonical_str.contains("/.gnupg")
+            || canonical_str.contains("/.aws")
+            || canonical_str.contains("/.config")
         {
             return Err(ToolError::InvalidParams(
-                "certificate path points to a forbidden system location".to_owned(),
+                "certificate path points to a forbidden system or sensitive directory".to_owned(),
             ));
         }
 
@@ -71,18 +87,10 @@ fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
             .map_err(|e| ToolError::InvalidParams(format!("cannot read certificate file: {e}")));
     }
 
-    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(trimmed) {
-        match decoded.len() as u64 {
-            0 => {}
-            1..=MAX_CERT_BYTES => return Ok(decoded),
-            _ => return Err(ToolError::LimitExceeded),
-        }
-    }
-
-    if trimmed.len() as u64 > MAX_CERT_BYTES {
-        return Err(ToolError::LimitExceeded);
-    }
-    Ok(trimmed.as_bytes().to_vec())
+    Err(ToolError::InvalidParams(
+        "certificate parameter must be base64-encoded data or an explicit certificate file path"
+            .to_owned(),
+    ))
 }
 
 /// Stages a PKCS#12 certificate file or binary data into `<work_dir>/cert.p12` (0600).
@@ -140,6 +148,25 @@ fn write_private_cert_bytes(target: &Path, bytes: &[u8]) -> Result<SecretFileGua
     Ok(SecretFileGuard(Some(target.to_path_buf())))
 }
 
+thread_local! {
+    static TEST_TSA_CLIENT: std::cell::RefCell<Option<Client>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Sets a thread-local test TSA client for loopback testing.
+#[doc(hidden)]
+pub fn with_test_tsa_client<F, R>(client: Client, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    TEST_TSA_CLIENT.with(|c| *c.borrow_mut() = Some(client));
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    TEST_TSA_CLIENT.with(|c| *c.borrow_mut() = None);
+    match res {
+        Ok(r) => r,
+        Err(p) => std::panic::resume_unwind(p),
+    }
+}
+
 /// Brokered TSA timestamp fetch using SSRF-safe network client.
 pub fn broker_tsa_timestamp(
     workspace: &Workspace,
@@ -150,32 +177,53 @@ pub fn broker_tsa_timestamp(
     let url = Url::parse(tsa_url_str)
         .map_err(|_| ToolError::InvalidParams("invalid TSA URL".to_owned()))?;
 
+    let is_cloud = std::env::var("ASHIFT_CLOUD").is_ok()
+        || std::env::var("ARIAD_CLOUD").is_ok()
+        || std::env::var("ASHIFT_DEPLOYMENT").as_deref() == Ok("cloud");
+
     // In cloud environments or when allowlist is configured, verify destination domain
     if let Ok(allowlist) = std::env::var("ASHIFT_TSA_ALLOWLIST") {
-        let allowed: Vec<&str> = allowlist.split(',').map(str::trim).collect();
-        let host = url.host_str().unwrap_or_default();
-        if !allowed
-            .iter()
-            .any(|&item| item.eq_ignore_ascii_case(host) || url.as_str().starts_with(item))
-        {
+        let allowed_entries: Vec<&str> = allowlist
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        let matched = allowed_entries.iter().any(|&item| {
+            if let Ok(item_url) = Url::parse(item) {
+                item_url.scheme() == url.scheme()
+                    && item_url
+                        .host_str()
+                        .unwrap_or_default()
+                        .eq_ignore_ascii_case(url.host_str().unwrap_or_default())
+                    && item_url.port_or_known_default() == url.port_or_known_default()
+            } else {
+                let (h, p) = if let Some((h, p_str)) = item.split_once(':') {
+                    (h, p_str.parse::<u16>().ok())
+                } else {
+                    (item, None)
+                };
+                h.eq_ignore_ascii_case(url.host_str().unwrap_or_default())
+                    && p.is_none_or(|port| Some(port) == url.port_or_known_default())
+            }
+        });
+        if !matched {
             return Err(ToolError::EngineFailure(
                 "TSA URL is not in the allowed TSA list".to_owned(),
             ));
         }
+    } else if is_cloud {
+        return Err(ToolError::EngineFailure(
+            "TSA requests are disabled in cloud unless an allowlist is configured".to_owned(),
+        ));
     }
 
+    let seam_client = TEST_TSA_CLIENT.with(|c| c.borrow().clone());
+
     let default_client;
-    let net_client = match client {
+    let net_client = match client.or(seam_client.as_ref()) {
         Some(c) => c,
         None => {
-            let mut builder = Client::builder();
-            if std::env::var_os("ASHIFT_NET_ALLOW_LOOPBACK").is_some() || cfg!(test) {
-                builder = builder.allow_loopback(true);
-                let mut ports = vec![80, 443, 8080, 8443];
-                ports.extend(1024..=65535);
-                builder = builder.allowed_ports(ports);
-            }
-            default_client = builder.build().map_err(|_| {
+            default_client = Client::builder().build().map_err(|_| {
                 ToolError::EngineFailure("failed to initialize safe network client".to_owned())
             })?;
             &default_client

@@ -64,8 +64,13 @@ impl HttpRequest {
         req
     }
 
-    pub fn host(&self) -> &str {
-        self.url.host_str().unwrap_or_default()
+    pub fn host(&self) -> String {
+        match self.url.host() {
+            Some(url::Host::Ipv6(ipv6)) => ipv6.to_string(),
+            Some(url::Host::Ipv4(ipv4)) => ipv4.to_string(),
+            Some(url::Host::Domain(domain)) => domain.to_owned(),
+            None => self.url.host_str().unwrap_or_default().to_owned(),
+        }
     }
 
     pub fn host_header(&self) -> String {
@@ -312,6 +317,15 @@ impl Transport for DefaultTransport {
         max_response_bytes: usize,
         deadline: Instant,
     ) -> Result<HttpResponse, NetError> {
+        // Validate headers for CR or LF injection upfront before connecting
+        for (k, v) in &request.headers {
+            if k.bytes().any(|b| b == b'\r' || b == b'\n')
+                || v.bytes().any(|b| b == b'\r' || b == b'\n')
+            {
+                return Err(NetError::InvalidHeader(format!("{k}: {v}")));
+            }
+        }
+
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(NetError::Timeout);
@@ -541,9 +555,24 @@ fn send_and_receive<S: Read + Write>(
             })?;
 
             if chunk_size == 0 {
-                // Read trailing CRLF / trailers until empty line
-                let mut trailer = String::new();
-                read_bounded_line(&mut reader, &mut trailer, MAX_LINE_BYTES, deadline)?;
+                // Read trailing CRLF / trailers until empty line, bounded
+                let mut total_trailer_bytes = 0;
+                loop {
+                    let mut trailer = String::new();
+                    let n = read_bounded_line(&mut reader, &mut trailer, MAX_LINE_BYTES, deadline)?;
+                    if n == 0 {
+                        break;
+                    }
+                    total_trailer_bytes += n;
+                    if total_trailer_bytes > MAX_HEADERS_BYTES {
+                        return Err(NetError::HeadersTooLarge {
+                            limit: MAX_HEADERS_BYTES,
+                        });
+                    }
+                    if trailer.trim_end_matches(['\r', '\n']).is_empty() {
+                        break;
+                    }
+                }
                 break;
             }
 
@@ -636,6 +665,15 @@ impl Transport for MockTransport {
         max_response_bytes: usize,
         deadline: Instant,
     ) -> Result<HttpResponse, NetError> {
+        // Validate headers for CR or LF injection
+        for (k, v) in &request.headers {
+            if k.bytes().any(|b| b == b'\r' || b == b'\n')
+                || v.bytes().any(|b| b == b'\r' || b == b'\n')
+            {
+                return Err(NetError::InvalidHeader(format!("{k}: {v}")));
+            }
+        }
+
         if Instant::now() >= deadline {
             return Err(NetError::Timeout);
         }

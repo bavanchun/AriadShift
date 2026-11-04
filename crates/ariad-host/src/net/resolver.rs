@@ -14,7 +14,12 @@ use super::{
 
 /// Trait for DNS resolvers. Injectable so tests run without network access.
 pub trait Resolver: Debug + Send + Sync + 'static {
-    fn resolve(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, NetError>;
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<SocketAddr>, NetError>;
 }
 
 /// Standard resolver delegating to operating system name resolution (`ToSocketAddrs`).
@@ -22,7 +27,12 @@ pub trait Resolver: Debug + Send + Sync + 'static {
 pub struct DefaultResolver;
 
 impl Resolver for DefaultResolver {
-    fn resolve(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, NetError> {
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<SocketAddr>, NetError> {
         let host_owned = host.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
         let _ = std::thread::Builder::new()
@@ -32,7 +42,6 @@ impl Resolver for DefaultResolver {
                 let _ = tx.send(res);
             });
 
-        let timeout = std::time::Duration::from_secs(5);
         let result = rx.recv_timeout(timeout).map_err(|_| NetError::Timeout)?;
 
         let addrs = result
@@ -68,7 +77,12 @@ impl MockResolver {
 }
 
 impl Resolver for MockResolver {
-    fn resolve(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, NetError> {
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        _timeout: std::time::Duration,
+    ) -> Result<Vec<SocketAddr>, NetError> {
         let guard = self.map.lock().unwrap();
         let key_with_port = format!("{host}:{port}");
         if let Some(addrs) = guard.get(&key_with_port).or_else(|| guard.get(host)) {
@@ -95,8 +109,9 @@ pub fn resolve_and_pin_public(
     host: &str,
     port: u16,
     allow_loopback: bool,
+    timeout: std::time::Duration,
 ) -> Result<SocketAddr, NetError> {
-    let addrs = resolver.resolve(host, port)?;
+    let addrs = resolver.resolve(host, port, timeout)?;
     if addrs.is_empty() {
         return Err(NetError::HostNotFound(host.to_owned()));
     }

@@ -136,6 +136,7 @@ pub fn execute(
     };
 
     let mut warnings = Vec::new();
+    let mut tsa_guards = Vec::new();
     let run_result = runner::run_command_v2(&command, &request, cancel, |event| match event {
         EventV2::Warning { code, message } => {
             warnings.push(scrubber.scrub_warning(&ConvertWarning { code, message }));
@@ -149,8 +150,9 @@ pub fn execute(
                         .and_then(Value::as_str)
                         .unwrap_or_default();
                     match super::sign::broker_tsa_timestamp(workspace, tsa_url, &req_bytes, None) {
-                        Ok(_guard) => {
+                        Ok(guard) => {
                             let _ = fs::remove_file(&req_path);
+                            tsa_guards.push(guard);
                         }
                         Err(e) => {
                             let _ =
@@ -168,8 +170,12 @@ pub fn execute(
         _ => {}
     });
 
-    // Defense-in-depth: ensure `<work_dir>/params.json` is removed immediately after the engine exits.
+    // Defense-in-depth: ensure `<work_dir>/params.json` and transient broker files are removed immediately after the engine exits.
     let _ = fs::remove_file(&params_file_path);
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_err.txt"));
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_req.bin"));
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_resp.bin"));
+    drop(tsa_guards);
 
     let outcome = run_result.map_err(|err| map_run_error(err, spec, effective_engine, scrubber))?;
 

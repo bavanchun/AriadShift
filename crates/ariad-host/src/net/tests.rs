@@ -12,7 +12,7 @@ use super::{
     client::Client,
     error::NetError,
     ip::{IpCategory, classify_ip, classify_ipv4, classify_ipv6, is_public_ip},
-    resolver::{MockResolver, resolve_and_pin_public},
+    resolver::{MockResolver, Resolver, resolve_and_pin_public},
     transport::{
         DefaultTransport, HttpRequest, HttpResponse, Method, MockTransport, Timeouts, Transport,
     },
@@ -306,7 +306,8 @@ fn test_resolve_and_pin_public_rejects_mixed_or_private() {
         "internal.corp",
         vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443)],
     );
-    let err = resolve_and_pin_public(&resolver, "internal.corp", 443, false);
+    let timeout = Duration::from_secs(5);
+    let err = resolve_and_pin_public(&resolver, "internal.corp", 443, false, timeout);
     assert!(matches!(err, Err(NetError::NonPublicAddress { .. })));
 
     // Host resolving to metadata IP rejected
@@ -317,7 +318,7 @@ fn test_resolve_and_pin_public_rejects_mixed_or_private() {
             443,
         )],
     );
-    let err = resolve_and_pin_public(&resolver, "metadata.aws", 443, false);
+    let err = resolve_and_pin_public(&resolver, "metadata.aws", 443, false, timeout);
     assert!(matches!(err, Err(NetError::NonPublicAddress { .. })));
 
     // Host resolving to mixed public + private IP: WHOLE ANSWER REJECTED
@@ -328,7 +329,7 @@ fn test_resolve_and_pin_public_rejects_mixed_or_private() {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 443),     // loopback
         ],
     );
-    let err = resolve_and_pin_public(&resolver, "mixed.attacker.com", 443, false);
+    let err = resolve_and_pin_public(&resolver, "mixed.attacker.com", 443, false, timeout);
     assert!(matches!(err, Err(NetError::NonPublicAddress { .. })));
 
     // Pure public IP resolves and pins
@@ -339,7 +340,8 @@ fn test_resolve_and_pin_public_rejects_mixed_or_private() {
             443,
         )],
     );
-    let pinned = resolve_and_pin_public(&resolver, "safe.example.com", 443, false).unwrap();
+    let pinned =
+        resolve_and_pin_public(&resolver, "safe.example.com", 443, false, timeout).unwrap();
     assert_eq!(pinned.ip(), IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)));
 }
 
@@ -700,14 +702,16 @@ fn test_real_transport_pinned_addr_and_headers() {
         let n = socket.read(&mut buf).unwrap();
         let req_text = String::from_utf8_lossy(&buf[..n]);
         assert!(req_text.contains("GET /test-path HTTP/1.1\r\n"));
-        assert!(req_text.contains(&format!("Host: localhost:{}\r\n", addr.port())));
+        // Proves pinned addr is used for socket connect while URL host is preserved in Host header
+        assert!(req_text.contains("Host: pinned-target.unresolvable.invalid:9999\r\n"));
         assert!(req_text.contains("User-Agent: ashift/"));
         assert!(req_text.contains("x-custom-test: test-val\r\n"));
         let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\nsuccess");
     });
 
     let transport = DefaultTransport::new().unwrap();
-    let url = Url::parse(&format!("http://localhost:{}/test-path", addr.port())).unwrap();
+    // Use an unresolvable hostname to prove the transport connects to pinned_addr without DNS lookup
+    let url = Url::parse("http://pinned-target.unresolvable.invalid:9999/test-path").unwrap();
     let mut request = HttpRequest::get(url);
     request
         .headers
@@ -740,8 +744,94 @@ fn test_transport_header_crlf_injection_rejected() {
     let err = transport
         .execute(&request, dummy_addr, &timeouts, 1024, deadline)
         .unwrap_err();
-    assert!(matches!(
-        err,
-        NetError::InvalidHeader(_) | NetError::ConnectFailed { .. }
-    ));
+    // Must strictly be InvalidHeader; failing with ConnectFailed would mean the check did not run upfront
+    assert!(
+        matches!(err, NetError::InvalidHeader(_)),
+        "expected InvalidHeader error, got {err:?}"
+    );
+}
+
+#[test]
+fn test_ipv6_literal_host_resolution_and_headers() {
+    let url = Url::parse("http://[::1]:8080/test-ipv6").unwrap();
+    let request = HttpRequest::get(url);
+
+    // host() must return IPv6 address without square brackets for getaddrinfo / socket resolution
+    assert_eq!(request.host(), "::1");
+    // host_header() must preserve brackets for HTTP/1.1 Host header
+    assert_eq!(request.host_header(), "[::1]:8080");
+
+    let resolver = MockResolver::new();
+    let timeout = Duration::from_secs(2);
+    let addrs = resolver.resolve(&request.host(), 8080, timeout).unwrap();
+    assert_eq!(addrs.len(), 1);
+    assert_eq!(addrs[0].ip(), "::1".parse::<IpAddr>().unwrap());
+    assert_eq!(addrs[0].port(), 8080);
+}
+
+#[test]
+fn test_cross_origin_307_post_body_dropped() {
+    let resolver = Arc::new(MockResolver::new());
+    resolver.insert(
+        "origin1.example.com",
+        vec![SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
+            443,
+        )],
+    );
+    resolver.insert(
+        "origin2.example.com",
+        vec![SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(93, 184, 216, 35)),
+            443,
+        )],
+    );
+
+    let seen_requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen_clone = Arc::clone(&seen_requests);
+
+    let transport = Arc::new(MockTransport::new(move |req, _| {
+        seen_clone
+            .lock()
+            .unwrap()
+            .push((req.method, req.url.clone(), req.body.clone()));
+        if req.url.host_str() == Some("origin1.example.com") {
+            Ok(HttpResponse {
+                status: 307,
+                headers: vec![(
+                    "location".to_owned(),
+                    "https://origin2.example.com/target".to_owned(),
+                )],
+                body: Vec::new(),
+            })
+        } else {
+            Ok(HttpResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: b"target-reached".to_vec(),
+            })
+        }
+    }));
+
+    let client = Client::builder()
+        .resolver(resolver)
+        .transport(transport)
+        .build()
+        .unwrap();
+
+    let url = Url::parse("https://origin1.example.com/init").unwrap();
+    let resp = client
+        .post(url, b"sensitive-post-body".to_vec(), "application/json")
+        .unwrap();
+    assert_eq!(resp.status, 200);
+
+    let reqs = seen_requests.lock().unwrap();
+    assert_eq!(reqs.len(), 2);
+    // Initial request is POST with body
+    assert_eq!(reqs[0].0, Method::Post);
+    assert_eq!(reqs[0].2, Some(b"sensitive-post-body".to_vec()));
+
+    // Redirected hop is cross-origin: method switched to GET and body dropped!
+    assert_eq!(reqs[1].0, Method::Get);
+    assert_eq!(reqs[1].2, None);
 }

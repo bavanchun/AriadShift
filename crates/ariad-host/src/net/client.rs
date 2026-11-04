@@ -114,15 +114,24 @@ impl Client {
             // 2. Validate URL according to policy
             validate_url(&request.url, &url_policy)?;
 
-            // 3. Resolve host and pin connection IP (refusing any non-public IPs)
+            // 3. Compute remaining time budget before DNS resolution
+            let remaining = self.policy.total_timeout.saturating_sub(start.elapsed());
+            if remaining.is_zero() {
+                return Err(NetError::Timeout);
+            }
+            let dns_timeout = self.policy.connect_timeout.min(remaining);
+
+            // 4. Resolve host and pin connection IP (refusing any non-public IPs)
+            let host_str = request.host();
             let pinned_addr = resolve_and_pin_public(
                 &*self.resolver,
-                request.host(),
+                &host_str,
                 request.port(),
                 self.policy.allow_loopback,
+                dns_timeout,
             )?;
 
-            // 4. Compute remaining time budget
+            // 5. Recompute remaining time budget after DNS
             let remaining = self.policy.total_timeout.saturating_sub(start.elapsed());
             if remaining.is_zero() {
                 return Err(NetError::Timeout);
@@ -136,7 +145,7 @@ impl Client {
 
             let deadline = start + self.policy.total_timeout;
 
-            // 5. Execute request against the pinned socket address
+            // 6. Execute request against the pinned socket address
             let response = self.transport.execute(
                 &request,
                 pinned_addr,
@@ -193,6 +202,12 @@ impl Client {
 
                 let is_cross_origin = request.url.origin() != next_url.origin();
                 if is_cross_origin {
+                    if (response.status == 307 || response.status == 308)
+                        && request.method == Method::Post
+                    {
+                        request.method = Method::Get;
+                        request.body = None;
+                    }
                     request.headers.retain(|(k, _)| {
                         matches!(
                             k.to_ascii_lowercase().as_str(),
