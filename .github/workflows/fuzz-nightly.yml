@@ -55,6 +55,11 @@ jobs:
           - pdf_draw_params
           - pdf_form_interchange
           - pdf_form_structure
+          - reader_text
+          - reader_csv
+          - reader_eml
+          - reader_msg
+          - reader_svg
     permissions:
       contents: read
     defaults:

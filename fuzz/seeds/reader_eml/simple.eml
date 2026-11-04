@@ -1,0 +1,25 @@
+From: Alice Walker <alice@example.com>
+To: Bob Smith <bob@example.com>
+Subject: Project Update
+Date: Wed, 15 Apr 2026 10:30:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="boundary-12345"
+
+--boundary-12345
+Content-Type: text/plain; charset="utf-8"
+
+Hello Bob,
+
+Here is the latest progress report on the document pipeline.
+
+Best regards,
+Alice
+
+--boundary-12345
+Content-Type: application/octet-stream; name="report.pdf"
+Content-Disposition: attachment; filename="report.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJcTl8uXrp420ced90=
+
+--boundary-12345--

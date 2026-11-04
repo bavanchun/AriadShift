@@ -462,7 +462,7 @@ jobs:
 
       - name: Run fuzz targets
         run: |
-          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned"
+          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned reader_text reader_csv reader_eml reader_msg reader_svg"
           for t in $targets; do
             echo "=== Running fuzz target: $t ==="
             mkdir -p "fuzz/corpus/$t"
