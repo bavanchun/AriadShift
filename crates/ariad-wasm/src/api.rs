@@ -312,6 +312,29 @@ pub fn convert(
     })
 }
 
+/// Stamps timestamps on package formats (`"docx"`, `"odt"`, `"epub"`).
+pub fn stamp_package(bytes: &[u8], target: &str, timestamp: &str) -> Result<Vec<u8>, ApiError> {
+    let kind = match target {
+        "docx" => ariad_core::package_meta::PackageKind::Docx,
+        "odt" => ariad_core::package_meta::PackageKind::Odt,
+        "epub" => ariad_core::package_meta::PackageKind::Epub,
+        unknown => {
+            return Err(ApiError::from(
+                ariad_core::pipeline::PipelineError::InvalidInput {
+                    reason: format!(
+                        "unknown package target `{unknown}`; expected docx, odt, or epub"
+                    ),
+                },
+            ));
+        }
+    };
+    ariad_core::package_meta::stamp_bytes_kind(bytes, kind, timestamp).map_err(|e| {
+        ApiError::from(ariad_core::pipeline::PipelineError::InvalidInput {
+            reason: e.to_string(),
+        })
+    })
+}
+
 /// An in-memory artifact produced by [`run_tool`].
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ToolArtifact {
@@ -1915,5 +1938,53 @@ mod tests {
         assert_eq!(img_pdf.media_type, "application/pdf");
         assert_eq!(img_pdf.extension, "pdf");
         assert!(img_pdf.bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn stamp_package_stamps_odt_successfully() {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored_options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        let deflated_options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        writer.start_file("mimetype", stored_options).unwrap();
+        std::io::Write::write_all(&mut writer, b"application/vnd.oasis.opendocument.text").unwrap();
+        writer.start_file("meta.xml", deflated_options).unwrap();
+        std::io::Write::write_all(
+            &mut writer,
+            br#"<?xml version="1.0" encoding="utf-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <office:meta>
+    <meta:creation-date>2000-01-01T00:00:00Z</meta:creation-date>
+    <dc:date>2000-01-01T00:00:00Z</dc:date>
+  </office:meta>
+</office:document-meta>"#,
+        )
+        .unwrap();
+        writer.start_file("content.xml", deflated_options).unwrap();
+        std::io::Write::write_all(&mut writer, b"<content>preserved</content>").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        let result = stamp_package(&bytes, "odt", "2023-11-14T22:13:20Z").unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(result)).unwrap();
+        let mut meta = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("meta.xml").unwrap(), &mut meta)
+            .unwrap();
+        assert!(meta.contains("<meta:creation-date>2023-11-14T22:13:20Z</meta:creation-date>"));
+        assert!(meta.contains("<dc:date>2023-11-14T22:13:20Z</dc:date>"));
+    }
+
+    #[test]
+    fn stamp_package_rejects_unknown_target() {
+        let err = stamp_package(b"dummy", "unknown", "2023-11-14T22:13:20Z").unwrap_err();
+        assert_eq!(err.code(), "invalid_input");
+        assert!(
+            err.detail("message")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("unknown package target")
+        );
     }
 }
