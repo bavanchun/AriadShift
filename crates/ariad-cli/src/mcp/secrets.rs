@@ -7,7 +7,8 @@ use std::{
 };
 
 const CAPACITY: usize = 32;
-const MAX_BYTES: usize = 4096;
+const MAX_TEXT_BYTES: usize = 4096;
+const MAX_CERT_BYTES: usize = 14 * 1024 * 1024;
 const TTL: Duration = Duration::from_secs(300);
 
 struct Entry {
@@ -32,9 +33,23 @@ impl SecretStore {
             ttl,
         }
     }
+    #[cfg(test)]
     pub(super) fn put(&self, value: String) -> Result<String, ()> {
+        self.put_with_options(value, false)
+    }
+
+    pub(super) fn put_with_options(
+        &self,
+        value: String,
+        is_certificate: bool,
+    ) -> Result<String, ()> {
+        let max_len = if is_certificate {
+            MAX_CERT_BYTES
+        } else {
+            MAX_TEXT_BYTES
+        };
         if value.is_empty()
-            || value.len() > MAX_BYTES
+            || value.len() > max_len
             || value.bytes().any(|b| matches!(b, b'\r' | b'\n' | 0))
         {
             return Err(());
@@ -126,7 +141,7 @@ mod tests {
         }
         assert!(store.put("x".into()).is_err());
         assert!(store.put("".into()).is_err());
-        assert!(store.put("x".repeat(MAX_BYTES + 1)).is_err());
+        assert!(store.put("x".repeat(MAX_TEXT_BYTES + 1)).is_err());
     }
 
     #[test]

@@ -414,7 +414,7 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 77);
+    assert_eq!(all_tools.len(), 83);
     for id in [
         "pdf.annotations",
         "pdf.annotations_import",
@@ -452,6 +452,16 @@ fn tools_command_lists_registry_json_and_human() {
                 .iter()
                 .any(|tool| tool["id"] == id && tool["runtimes"] == json!(["local"]))
         );
+    }
+    for id in [
+        "pdf.sign_visual",
+        "pdf.sign",
+        "pdf.sign_token",
+        "pdf.timestamp",
+        "pdf.sign_verify",
+        "pdf.sign_remove",
+    ] {
+        assert!(all_tools.iter().any(|tool| tool["id"] == id));
     }
 
     let empty_group = ashift_cmd()

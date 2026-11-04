@@ -249,3 +249,161 @@ fn secret_input_is_bounded_and_rejects_control_bytes() {
         .unwrap();
     assert_eq!(output.status.code(), Some(9));
 }
+
+fn sign_python_bin() -> Option<PathBuf> {
+    let py = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engines/sign/.venv/bin/python3");
+    if py.is_file() { Some(py) } else { None }
+}
+
+static TEST_PW_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn dynamic_test_password() -> String {
+    let count = TEST_PW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let nonce = uuid::Uuid::new_v4().simple();
+    format!("p{pid}_{count}_{nonce}")
+}
+
+fn generate_test_p12_file(py: &std::path::Path, out_path: &std::path::Path, password: &str) {
+    let script = format!(
+        r#"
+from datetime import datetime, timedelta, timezone
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import BestAvailableEncryption, pkcs12
+from cryptography.x509.oid import NameOID
+
+key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+subject = issuer = x509.Name([
+    x509.NameAttribute(NameOID.COUNTRY_NAME, "VN"),
+    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AriadShift Test"),
+    x509.NameAttribute(NameOID.COMMON_NAME, "Test Signer"),
+])
+now = datetime.now(timezone.utc)
+cert = (
+    x509.CertificateBuilder()
+    .subject_name(subject)
+    .issuer_name(issuer)
+    .public_key(key.public_key())
+    .serial_number(x509.random_serial_number())
+    .not_valid_before(now - timedelta(days=1))
+    .not_valid_after(now + timedelta(days=365))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .sign(key, hashes.SHA256())
+)
+p12 = pkcs12.serialize_key_and_certificates(
+    name=b"test-signer",
+    key=key,
+    cert=cert,
+    cas=None,
+    encryption_algorithm=BestAvailableEncryption("{password}".encode("utf-8")),
+)
+with open(r"{out_path}", "wb") as f:
+    f.write(p12)
+"#,
+        out_path = out_path.display(),
+        password = password
+    );
+    let status = Command::new(py)
+        .args(["-c", &script])
+        .status()
+        .expect("failed to generate test certificate");
+    assert!(status.success(), "failed to generate p12 bundle");
+}
+
+#[test]
+fn cli_certificate_binary_secret_pdf_sign() {
+    let Some(py) = sign_python_bin() else {
+        if std::env::var_os("ARIAD_REQUIRE_SIGN_PACK").is_some() {
+            panic!("ARIAD_REQUIRE_SIGN_PACK set but sign venv is missing");
+        }
+        eprintln!("skipping: sign engine venv missing");
+        return;
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let p12_path = dir.path().join("signer.p12");
+    let password = dynamic_test_password();
+    generate_test_p12_file(&py, &p12_path, &password);
+
+    let pass_path = dir.path().join("password.txt");
+    std::fs::write(&pass_path, format!("{password}\n")).unwrap();
+
+    let input_pdf =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/annotations.pdf");
+    let output_pdf = dir.path().join("signed.pdf");
+
+    let engine_override = format!("{} -I -m ariad_sign", py.display());
+    let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["tool", "pdf.sign"])
+        .arg(&input_pdf)
+        .arg("-o")
+        .arg(&output_pdf)
+        .args(["--secret", &format!("certificate=@{}", p12_path.display())])
+        .args(["--secret", &format!("password=@{}", pass_path.display())])
+        .env("ASHIFT_SIGN_ENGINE", &engine_override)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI pdf.sign failed: status={:?}, stdout={}, stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(output_pdf.is_file());
+    assert!(std::fs::metadata(&output_pdf).unwrap().len() > 0);
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(&password));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(&password));
+}
+
+#[test]
+fn cert_path_restrictions_reject_forbidden_paths() {
+    // 1. Filesystem paths passed as certificate values to host resolve_cert_bytes are strictly rejected
+    for path in [
+        "/private/var/folders/secret.p12",
+        "~/.netrc",
+        "/etc/passwd",
+        "/proc/cpuinfo",
+        "./cert.p12",
+        "../secret.p12",
+    ] {
+        let err = ariad_host::tools::sign::resolve_cert_bytes(path);
+        assert!(
+            err.is_err(),
+            "host resolve_cert_bytes must reject filesystem path: {path}"
+        );
+        match err.unwrap_err() {
+            ariad_host::tools::ToolError::InvalidParams(msg) => {
+                assert!(
+                    msg.contains(
+                        "certificate secret must be base64-encoded data, not a filesystem path"
+                    ) || msg.contains("certificate parameter must be base64-encoded data"),
+                    "unexpected error msg: {msg}"
+                );
+            }
+            other => panic!("expected InvalidParams, got {other:?}"),
+        }
+    }
+
+    // 2. CLI rejects inline literal paths for secret parameters
+    for path in ["/private/var/secret.p12", "~/.netrc", "/etc/passwd"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .args(["tool", "pdf.sign"])
+            .arg(fixture())
+            .args(["--secret", &format!("certificate={path}")])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(9));
+
+        let output_param = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .args(["tool", "pdf.sign"])
+            .arg(fixture())
+            .args(["--param", &format!("certificate={path}")])
+            .output()
+            .unwrap();
+        assert_eq!(output_param.status.code(), Some(9));
+    }
+}

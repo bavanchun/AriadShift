@@ -65,6 +65,7 @@ pub mod sanitize;
 pub mod scale;
 pub mod scan_split;
 pub mod scanner_effect;
+pub mod sign;
 pub mod single_page;
 pub mod split;
 pub mod stamp;
@@ -143,6 +144,11 @@ pub use sanitize::{SanitizeForms, SanitizeParams};
 pub use scale::{ScaleFit, ScaleParams};
 pub use scan_split::ScanSplitParams;
 pub use scanner_effect::ScannerEffectParams;
+pub use sign::{
+    KeychainParams, OfflineEvidence, SignLevel, SignParams, SignRemoveParams, SignTokenParams,
+    SignVerifyParams, SignVisualMode, SignVisualParams, TimestampParams, TokenParams,
+    VisibleSignature,
+};
 pub use single_page::SinglePageParams;
 pub use split::{SplitDetectMode, SplitMode, SplitParams};
 pub use stamp::{StampParams, StampPreset};

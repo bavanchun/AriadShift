@@ -272,6 +272,7 @@ version = "0.3.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
+ "ariad-host",
  "ariad-pdf",
  "ariad-typst",
  "base64 0.23.1",
@@ -311,6 +312,7 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "unicode-normalization",
  "ureq",
+ "url",
  "uuid",
  "zip",
 ]
@@ -320,6 +322,7 @@ name = "ariad-pdf"
 version = "0.3.0"
 dependencies = [
  "ariad-core",
+ "base64 0.23.1",
  "csv",
  "flate2",
  "image",

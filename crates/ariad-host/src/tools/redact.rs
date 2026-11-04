@@ -142,6 +142,7 @@ impl RedactJob<'_> {
                 .saturating_add(u64::from(remaining.subsec_nanos() != 0))
                 .max(1),
         );
+        let empty_secrets = super::secrets::SecretBag::new();
         let result = engine::execute(
             spec,
             spec.engine,
@@ -151,6 +152,7 @@ impl RedactJob<'_> {
             self.workspace,
             &limits,
             self.scrubber,
+            &empty_secrets,
             self.engine_program,
             None,
             self.cancel.clone(),

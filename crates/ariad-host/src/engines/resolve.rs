@@ -244,6 +244,29 @@ pub fn resolve_pack_with_options(
         }
         return Ok((command, docling.options));
     }
+    if engine_id == super::sign::ENGINE_ID && std::env::var_os(super::sign::OVERRIDE_ENV).is_some()
+    {
+        let sign_engine = super::sign::resolve().ok_or_else(|| ResolveError::NotInstalled {
+            engine: engine_id.to_owned(),
+            hint: install_hint(engine_id),
+        })?;
+        let launcher = launcher_override
+            .map(Path::to_path_buf)
+            .or_else(default_launcher);
+        let mut command = EngineCommand {
+            engine: engine_id.to_owned(),
+            program: sign_engine.program,
+            args: sign_engine.args,
+            env: sign_engine.env,
+            install_root: sign_engine.install_root,
+            launcher,
+            sandbox: None,
+        };
+        if let Some(launcher) = launcher_override {
+            command = command.with_launcher(launcher);
+        }
+        return Ok((command, sign_engine.options));
+    }
     let pack = match packs::try_resolve(engine_id) {
         Ok(Some(pack)) => pack,
         Ok(None) => {

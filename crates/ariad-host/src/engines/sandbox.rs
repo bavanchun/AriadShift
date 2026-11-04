@@ -32,7 +32,7 @@ pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] = &[
     ("pdfium", pdfium_paths),
     ("qpdf", EnginePaths::default),
     ("tesseract", EnginePaths::default),
-    ("sign", EnginePaths::default),
+    ("sign", sign_paths),
     ("verapdf", EnginePaths::default),
     ("ai", EnginePaths::default),
     ("inpaint", EnginePaths::default),
@@ -116,6 +116,23 @@ fn libreoffice_paths() -> EnginePaths {
     }
 }
 
+fn sign_paths() -> EnginePaths {
+    let mut paths = EnginePaths::default();
+    if std::env::var_os(super::sign::OVERRIDE_ENV).is_some()
+        && let Some(command) = super::sign::resolve()
+    {
+        let Ok(program) = std::path::absolute(&command.program) else {
+            return paths;
+        };
+        if let Some(prefix) = program.parent().and_then(std::path::Path::parent) {
+            paths.exec.extend(prefix.canonicalize().ok());
+        }
+        paths.exec.push(program.clone());
+        grant_editable_source(&mut paths, &program);
+    }
+    paths
+}
+
 /// Docling executes system Tesseract and, in development, reads an editable Python environment.
 fn docling_paths() -> EnginePaths {
     let mut paths = EnginePaths::default();
@@ -166,22 +183,25 @@ fn grant_tesseract(paths: &mut EnginePaths, program: &Path) {
     }
 }
 
-/// uv writes the editable package's source directory into ariad_docling.pth. Resolve it from
-/// the override's environment so release binaries carry no builder checkout path.
+/// uv writes the editable package's source directory into ariad_docling.pth or
+/// ariad_sign.pth. Resolve it from the override's environment so release binaries carry
+/// no builder checkout path.
 fn grant_editable_source(paths: &mut EnginePaths, program: &Path) {
     let Some(prefix) = program.parent().and_then(Path::parent) else {
         return;
     };
     for relative in ["lib/python3.14/site-packages", "Lib/site-packages"] {
         let site = prefix.join(relative);
-        if let Ok(contents) = std::fs::read_to_string(site.join("ariad_docling.pth")) {
-            for line in contents.lines().map(str::trim) {
-                if !line.is_empty()
-                    && !line.starts_with('#')
-                    && !line.starts_with("import ")
-                    && !line.starts_with("import\t")
-                {
-                    paths.read_only.extend(site.join(line).canonicalize().ok());
+        for pth in ["ariad_docling.pth", "ariad_sign.pth"] {
+            if let Ok(contents) = std::fs::read_to_string(site.join(pth)) {
+                for line in contents.lines().map(str::trim) {
+                    if !line.is_empty()
+                        && !line.starts_with('#')
+                        && !line.starts_with("import ")
+                        && !line.starts_with("import\t")
+                    {
+                        paths.read_only.extend(site.join(line).canonicalize().ok());
+                    }
                 }
             }
         }

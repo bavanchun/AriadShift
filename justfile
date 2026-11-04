@@ -316,6 +316,23 @@ pack-docling-verify out="target/pack-docling" input="fixtures/scan/vi-garden-300
 pack-docling-test out="target/pack-docling":
     uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance --out "{{out}}"
 
+# Sign engine virtual environment and tools.
+sign_root := justfile_directory() / "engines" / "sign"
+sign_python := sign_root / ".venv" / if os() == "windows" { "Scripts/python.exe" } else { "bin/python" }
+
+# Sync the sign engine environment.
+sign-dev:
+    uv sync --directory engines/sign --frozen
+
+# Lint and test the sign engine and shared common licenses.
+sign-test:
+    uv run --directory engines/sign --frozen ruff check src
+    uv run --directory engines/sign --frozen pytest tests ../common/tests
+
+# Build the unsigned sign engine pack for this host into target/pack-sign.
+pack-sign out="target/pack-sign":
+    python3 engines/sign/pack/build.py build --out "{{out}}"
+
 # Build the unsigned pdfium engine pack for this host into target/packs/pdfium, an unpacked
 # development pack: `export ASHIFT_PACK_PDFIUM=$PWD/target/packs/pdfium`. The components go to
 # target/packs/pdfium-dist. Downloads the pinned PDFium archive unless PDFIUM_ARCHIVE names a copy.

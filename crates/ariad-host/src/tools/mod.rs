@@ -14,6 +14,7 @@ pub mod recipe;
 pub mod redact;
 pub mod run;
 pub mod secrets;
+pub mod sign;
 pub mod similarity;
 
 pub use publish::{

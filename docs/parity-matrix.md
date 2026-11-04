@@ -168,7 +168,7 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 | `pdf.sign_token` † (PKCS#11 and smart-card tokens; split from `pdf.sign` because a tier belongs to a tool spec) | sign | S19 hardware / smart-card signing | — | 9 | sign-pack | local | Pro (b) | CLI, mac |
 | `pdf.timestamp` † (document timestamp without a signer certificate; RFC 3161 response fetched by the host under AD-15) | sign | S21 RFC 3161 timestamp | Timestamp PDF | 9 | sign-pack | local | Free | CLI, MCP, web(h), mac |
 | `pdf.sign_remove` | sign | S20 remove certificate sign | — | 9 | sign-pack | local | Free | CLI, MCP, web(h), mac |
-| `pdf.sign_validate` | sign | S22 validate signature | Validate Signature | 9 | sign-pack | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.sign_verify` | sign | S22 validate signature | Validate Signature | 9 | sign-pack | local, cloud | Free | CLI, MCP, web(h), mac |
 
 ### compliance, compare and edit
 
@@ -278,7 +278,7 @@ Disposition of every row of the Stirling report's §2 feature table, in report o
 | S19 | Hardware and smart-card signing | `pdf.sign_token` † |
 | S20 | Remove certificate sign | `pdf.sign_remove` |
 | S21 | RFC 3161 timestamp | `pdf.timestamp` † |
-| S22 | Validate signature | `pdf.sign_validate` |
+| S22 | Validate signature | `pdf.sign_verify` |
 | S23 | Validate PDF/A, PDF/UA | `pdf.validate_pdfa`, `pdf.validate_pdfua` |
 | S24 | Get all info on PDF | `pdf.info` |
 | S25 | Redact | `pdf.redact` |

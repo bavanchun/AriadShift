@@ -47,6 +47,7 @@ pub fn execute(
     workspace: &Workspace,
     limits: &Limits,
     scrubber: &SecretScrubber,
+    secrets: &super::secrets::SecretBag,
     engine_program: Option<&Path>,
     engine_command_override: Option<&EngineCommand>,
     cancel: CancellationToken,
@@ -96,6 +97,13 @@ pub fn execute(
         }
     }
 
+    let _cert_guard =
+        if effective_engine == "sign" && (spec.id == "pdf.sign" || spec.id == "pdf.sign_token") {
+            super::sign::stage_binary_certificate(workspace, engine_params, secrets)?
+        } else {
+            super::sign::SecretFileGuard(None)
+        };
+
     let inputs: Vec<Input> = staged_inputs
         .iter()
         .map(|(path, format)| Input {
@@ -128,11 +136,31 @@ pub fn execute(
     };
 
     let mut warnings = Vec::new();
+    let mut tsa_guards = Vec::new();
     let run_result = runner::run_command_v2(&command, &request, cancel, |event| match event {
         EventV2::Warning { code, message } => {
             warnings.push(scrubber.scrub_warning(&ConvertWarning { code, message }));
         }
         EventV2::Progress { stage, done, total } => {
+            if stage == "tsa_request" {
+                let req_path = workspace.work_dir().join("tsa_req.bin");
+                if let Ok(req_bytes) = fs::read(&req_path) {
+                    let tsa_url = engine_params
+                        .get("tsa_url")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    match super::sign::broker_tsa_timestamp(workspace, tsa_url, &req_bytes, None) {
+                        Ok(guard) => {
+                            let _ = fs::remove_file(&req_path);
+                            tsa_guards.push(guard);
+                        }
+                        Err(e) => {
+                            let _ =
+                                fs::write(workspace.work_dir().join("tsa_err.txt"), e.to_string());
+                        }
+                    }
+                }
+            }
             on_event(ToolEvent::Progress {
                 stage: scrubber.scrub(&stage),
                 done,
@@ -142,8 +170,12 @@ pub fn execute(
         _ => {}
     });
 
-    // Defense-in-depth: ensure `<work_dir>/params.json` is removed immediately after the engine exits.
+    // Defense-in-depth: ensure `<work_dir>/params.json` and transient broker files are removed immediately after the engine exits.
     let _ = fs::remove_file(&params_file_path);
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_err.txt"));
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_req.bin"));
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_resp.bin"));
+    drop(tsa_guards);
 
     let outcome = run_result.map_err(|err| map_run_error(err, spec, effective_engine, scrubber))?;
 
@@ -201,7 +233,7 @@ pub fn execute(
 
 fn engine_limits(engine: &str, limits: &Limits) -> Limits {
     let mut effective = limits.clone();
-    if matches!(engine, "pdfium" | "tesseract") {
+    if matches!(engine, "pdfium" | "tesseract" | "sign") {
         let defaults = Limits::cloud();
         effective.timeout_s = effective.timeout_s.or(defaults.timeout_s);
         effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);

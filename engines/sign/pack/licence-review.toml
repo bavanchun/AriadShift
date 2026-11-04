@@ -1,0 +1,262 @@
+# Locked Python environment licence inventory for ariad-sign engine pack.
+# 31 external registry dependencies locked in uv.lock.
+
+pack = "sign"
+locked_packages_count = 31
+
+[[package]]
+name = "aiohappyeyeballs"
+version = "2.7.1"
+spdx = "PSF-2.0"
+native = false
+notes = "Permissive Python Software Foundation License."
+
+[[package]]
+name = "aiohttp"
+version = "3.14.5"
+spdx = "Apache-2.0 AND MIT"
+native = true
+native_files = [
+    "aiohttp/_http_parser.*",
+    "aiohttp/_http_writer.*",
+    "aiohttp/_websocket/mask.*",
+    "aiohttp/_websocket/reader_c.*",
+]
+notes = "Native C extensions for HTTP parsing. Permissive Apache-2.0 and MIT."
+
+[[package]]
+name = "aiosignal"
+version = "1.4.0"
+spdx = "Apache-2.0"
+native = false
+notes = "Permissive Apache-2.0."
+
+[[package]]
+name = "asn1crypto"
+version = "1.5.1"
+spdx = "MIT"
+native = false
+notes = "Pure Python ASN.1 parser. Permissive MIT."
+
+[[package]]
+name = "attrs"
+version = "26.1.0"
+spdx = "MIT"
+native = false
+notes = "Permissive MIT."
+
+[[package]]
+name = "certifi"
+version = "2026.10.23"
+spdx = "MPL-2.0"
+native = false
+notes = "Unmodified Mozilla CA bundle under MPL-2.0; reviewed exception (similar to docling)."
+
+[[package]]
+name = "cffi"
+version = "2.1.1"
+spdx = "MIT-0"
+native = true
+native_files = [
+    "_cffi_backend.*",
+]
+notes = "C Foreign Function Interface with native C backend. Permissive MIT-0 (No-Attribution)."
+
+[[package]]
+name = "click"
+version = "8.5.0"
+spdx = "BSD-3-Clause"
+native = false
+notes = "Permissive BSD-3-Clause."
+
+[[package]]
+name = "colorama"
+version = "0.4.6"
+spdx = "BSD-3-Clause"
+native = false
+notes = "Windows terminal color utility under BSD-3-Clause. Environment marker sys_platform == 'win32'."
+
+[[package]]
+name = "cryptography"
+version = "50.0.2"
+spdx = "Apache-2.0 OR BSD-3-Clause"
+native = true
+native_files = [
+    "cryptography/hazmat/bindings/_rust.*",
+]
+notes = "Rust/C cryptographic primitives. Dual-licensed Apache-2.0 OR BSD-3-Clause. Bundles OpenSSL under Apache-2.0; upstream notices recorded in notices/OpenSSL-LICENSE.txt."
+
+[[package]]
+name = "frozenlist"
+version = "1.8.0"
+spdx = "Apache-2.0"
+native = true
+native_files = [
+    "frozenlist/_frozenlist.*",
+]
+notes = "Cython/C accelerated list under Apache-2.0."
+
+[[package]]
+name = "idna"
+version = "3.20"
+spdx = "BSD-3-Clause"
+native = false
+notes = "Internationalized Domain Names in Applications. Permissive BSD-3-Clause."
+
+[[package]]
+name = "iniconfig"
+version = "2.3.1"
+spdx = "MIT"
+native = false
+notes = "Permissive MIT."
+
+[[package]]
+name = "lxml"
+version = "6.1.3"
+spdx = "BSD-3-Clause"
+native = true
+native_files = [
+    "lxml/_elementpath.*",
+    "lxml/builder.*",
+    "lxml/etree.*",
+    "lxml/html/_difflib.*",
+    "lxml/html/diff.*",
+    "lxml/objectify.*",
+    "lxml/sax.*",
+]
+notes = "Python XML/HTML processing library binding libxml2/libxslt. Permissive BSD-3-Clause. Bundles libxml2 and libxslt under MIT; upstream notices recorded in notices/libxml2-libxslt-LICENSES.txt."
+
+[[package]]
+name = "multidict"
+version = "7.2.1"
+spdx = "Apache-2.0"
+native = true
+native_files = [
+    "multidict/_multidict.*",
+    "multidict/_testcapi.*",
+]
+notes = "Multidict implementation with C extensions under Apache-2.0."
+
+[[package]]
+name = "oscrypto"
+version = "1.3.0"
+spdx = "MIT"
+native = false
+notes = "OS cryptographic library bindings (OpenSSL/Security.framework/CryptoAPI via ctypes). Permissive MIT."
+
+[[package]]
+name = "packaging"
+version = "26.3"
+spdx = "Apache-2.0 OR BSD-2-Clause"
+native = false
+notes = "Core utilities for Python packages. Dual-licensed Apache-2.0 OR BSD-2-Clause."
+
+[[package]]
+name = "pluggy"
+version = "1.7.0"
+spdx = "MIT"
+native = false
+notes = "Plugin management under MIT."
+
+[[package]]
+name = "propcache"
+version = "0.5.4"
+spdx = "Apache-2.0"
+native = true
+native_files = [
+    "propcache/_helpers_c.*",
+]
+notes = "Property cache with C accelerator under Apache-2.0."
+
+[[package]]
+name = "pycparser"
+version = "3.12"
+spdx = "BSD-3-Clause"
+native = false
+notes = "C parser in Python under BSD-3-Clause."
+
+[[package]]
+name = "pygments"
+version = "2.21.0"
+spdx = "BSD-2-Clause"
+native = false
+notes = "Syntax highlighter under BSD-2-Clause."
+
+[[package]]
+name = "pyhanko"
+version = "0.38.0"
+spdx = "MIT"
+native = false
+notes = "PDF digital signature library under MIT."
+
+[[package]]
+name = "pyhanko-certvalidator"
+version = "0.33.0"
+spdx = "MIT"
+native = false
+notes = "X.509 certificate path validation for pyHanko under MIT."
+
+[[package]]
+name = "pytest"
+version = "9.1.1"
+spdx = "MIT"
+native = false
+notes = "Test framework under MIT."
+
+[[package]]
+name = "pyyaml"
+version = "6.0.3"
+spdx = "MIT"
+native = true
+native_files = [
+    "yaml/_yaml.*",
+]
+notes = "YAML parser with LibYAML C extension. Permissive MIT. Upstream notices recorded in notices/libyaml-LICENSE.txt."
+
+[[package]]
+name = "qrcode"
+version = "8.2"
+spdx = "BSD-3-Clause"
+native = false
+notes = "QR code generator under BSD-3-Clause."
+
+[[package]]
+name = "ruff"
+version = "0.17.1"
+spdx = "MIT"
+native = true
+native_files = [
+    "ruff/*",
+]
+notes = "Development linter tool under MIT."
+
+[[package]]
+name = "tzdata"
+version = "2026.6"
+spdx = "Apache-2.0"
+native = false
+notes = "IANA time zone database Python package under Apache-2.0."
+
+[[package]]
+name = "tzlocal"
+version = "5.4.5"
+spdx = "MIT"
+native = false
+notes = "Local timezone detection under MIT."
+
+[[package]]
+name = "uritools"
+version = "6.1.3"
+spdx = "MIT"
+native = false
+notes = "RFC 3986 URI parsing under MIT."
+
+[[package]]
+name = "yarl"
+version = "1.25.1"
+spdx = "Apache-2.0"
+native = true
+native_files = [
+    "yarl/_quoting_c.*",
+]
+notes = "URL parsing and manipulation library with C extensions under Apache-2.0."
