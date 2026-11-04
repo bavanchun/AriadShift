@@ -30,7 +30,6 @@ def find_ashift():
         return sys.argv[1]
     candidates = [
         os.path.abspath("target/debug/ashift"),
-        os.path.expanduser("~/.cache/ariadshift-target-p10-t2/debug/ashift"),
         os.path.abspath("../target/debug/ashift"),
     ]
     for c in candidates:
