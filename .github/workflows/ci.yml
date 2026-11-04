@@ -433,6 +433,7 @@ jobs:
 
       - name: Report and prune R2 cache storage
         if: always()
+        continue-on-error: true
         env:
           SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
           SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com

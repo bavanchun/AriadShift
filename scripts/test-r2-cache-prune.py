@@ -32,6 +32,21 @@ class TestR2CachePrune(unittest.TestCase):
             res = prune_mod.get_s3_client()
             self.assertIsNone(res)
 
+    def test_get_s3_client_prefix_normalization(self):
+        env = {
+            "SCCACHE_ENDPOINT": "https://fake.r2.cloudflarestorage.com",
+            "SCCACHE_BUCKET": "fake-bucket",
+            "AWS_ACCESS_KEY_ID": "fake-key",
+            "AWS_SECRET_ACCESS_KEY": "fake-secret",
+            "SCCACHE_S3_KEY_PREFIX": "custom-prefix",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with patch("boto3.client") as mock_boto:
+                res = prune_mod.get_s3_client()
+                self.assertIsNotNone(res)
+                client, bucket, prefix = res
+                self.assertEqual(prefix, "custom-prefix/")
+
     def test_apply_lifecycle_rule_handles_access_denied(self):
         from botocore.exceptions import ClientError
 
