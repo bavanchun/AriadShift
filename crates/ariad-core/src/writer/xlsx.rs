@@ -28,6 +28,8 @@ pub const MAX_SHEET_NAME_LEN: usize = 31;
 pub const MAX_SHEETS_COUNT: usize = 255;
 /// Maximum colspan or rowspan applied per cell to prevent memory thrashing.
 pub const MAX_CELL_SPAN: usize = 1024;
+/// Maximum clamp/truncation warnings emitted before silencing (matches CSV writer).
+pub const MAX_CLAMP_WARNINGS: usize = 64;
 /// Maximum total bytes for serialized XLSX binary output (50 MiB).
 pub const MAX_OUTPUT_BYTES: usize = 50 * 1024 * 1024;
 
@@ -184,7 +186,12 @@ fn build_sheet_from_table(
     let name = sanitize_sheet_name(&raw_name, table_idx, used_names);
 
     let total_rows = head.len() + body.len();
-    if total_rows > MAX_EXCEL_ROWS {
+    if total_rows == 0 {
+        warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            "table has no rows; produced empty sheet",
+        ));
+    } else if total_rows > MAX_EXCEL_ROWS {
         warnings.push(Warning::new(
             WarningCode::UnsupportedNode,
             format!("table has {total_rows} rows; truncated to maximum {MAX_EXCEL_ROWS}"),
@@ -234,14 +241,14 @@ fn build_sheet_from_table(
             let colspan = raw_colspan.min(MAX_EXCEL_COLS - c).min(MAX_CELL_SPAN);
             let rowspan = raw_rowspan.min(max_remaining_rows).min(MAX_CELL_SPAN);
 
-            if raw_colspan > colspan && clamp_warnings_count < 64 {
+            if raw_colspan > colspan && clamp_warnings_count < MAX_CLAMP_WARNINGS {
                 clamp_warnings_count += 1;
                 warnings.push(Warning::new(
                     WarningCode::UnsupportedNode,
                     format!("cell colspan {raw_colspan} clamped to {colspan}"),
                 ));
             }
-            if raw_rowspan > rowspan && clamp_warnings_count < 64 {
+            if raw_rowspan > rowspan && clamp_warnings_count < MAX_CLAMP_WARNINGS {
                 clamp_warnings_count += 1;
                 warnings.push(Warning::new(
                     WarningCode::UnsupportedNode,
@@ -254,7 +261,7 @@ fn build_sheet_from_table(
             let mut raw_text = blocks_to_text(&cell.blocks);
             let char_count = raw_text.chars().count();
             if char_count > MAX_CELL_CHARS {
-                if char_trunc_warnings_count < 64 {
+                if char_trunc_warnings_count < MAX_CLAMP_WARNINGS {
                     char_trunc_warnings_count += 1;
                     warnings.push(Warning::new(
                         WarningCode::UnsupportedNode,
@@ -329,7 +336,14 @@ fn mark_occupied(
     }
 }
 
-fn render_worksheet_xml(sheet: &SheetData) -> String {
+fn render_worksheet_xml(sheet: &SheetData) -> Result<String, XlsxError> {
+    render_worksheet_xml_with_limit(sheet, MAX_UNCOMPRESSED_SHEET_BYTES)
+}
+
+fn render_worksheet_xml_with_limit(
+    sheet: &SheetData,
+    max_bytes: usize,
+) -> Result<String, XlsxError> {
     let mut xml = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n<sheetData>\n",
     );
@@ -355,6 +369,9 @@ fn render_worksheet_xml(sheet: &SheetData) -> String {
             }
         }
         xml.push_str("</row>\n");
+        if xml.len() > max_bytes {
+            return Err(XlsxError::OutputTooLarge { limit: max_bytes });
+        }
     }
 
     xml.push_str("</sheetData>\n");
@@ -371,7 +388,10 @@ fn render_worksheet_xml(sheet: &SheetData) -> String {
     }
 
     xml.push_str("</worksheet>\n");
-    xml
+    if xml.len() > max_bytes {
+        return Err(XlsxError::OutputTooLarge { limit: max_bytes });
+    }
+    Ok(xml)
 }
 
 const MINIMAL_STYLES_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -403,10 +423,17 @@ pub fn write(document: &Document) -> Result<WriteBinaryOutput, XlsxError> {
     let mut used_names = HashSet::new();
 
     if tables.is_empty() {
-        warnings.push(Warning::new(
-            WarningCode::NoTablesFound,
-            "no tables found in document; generated text dump",
-        ));
+        if document.body.is_empty() {
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                "document has no content; produced empty sheet",
+            ));
+        } else {
+            warnings.push(Warning::new(
+                WarningCode::NoTablesFound,
+                "no tables found in document; generated text dump",
+            ));
+        }
 
         if document.body.len() > MAX_EXCEL_ROWS {
             warnings.push(Warning::new(
@@ -430,7 +457,7 @@ pub fn write(document: &Document) -> Result<WriteBinaryOutput, XlsxError> {
             if !text.is_empty() {
                 let char_count = text.chars().count();
                 if char_count > MAX_CELL_CHARS {
-                    if char_trunc_warnings_count < 64 {
+                    if char_trunc_warnings_count < MAX_CLAMP_WARNINGS {
                         char_trunc_warnings_count += 1;
                         warnings.push(Warning::new(
                             WarningCode::UnsupportedNode,
@@ -553,10 +580,7 @@ fn package_xlsx_with_limit(sheets: &[SheetData], limit: usize) -> Result<Vec<u8>
     // 6. xl/worksheets/sheet{i}.xml
     for (i, sheet) in sheets.iter().enumerate() {
         let id = i + 1;
-        let sheet_xml = render_worksheet_xml(sheet);
-        if sheet_xml.len() > MAX_UNCOMPRESSED_SHEET_BYTES {
-            return Err(XlsxError::OutputTooLarge { limit });
-        }
+        let sheet_xml = render_worksheet_xml(sheet)?;
         zip.start_file(format!("xl/worksheets/sheet{id}.xml"), options)?;
         zip.write_all(sheet_xml.as_bytes())?;
         if zip.get_ref().map(|c| c.get_ref().len()).unwrap_or(0) > limit {
@@ -976,6 +1000,77 @@ mod tests {
         };
         // Passing limit = 100 bytes will fail as minimum XLSX zip is > 1KB
         let err = package_xlsx_with_limit(&[sheet], 100).unwrap_err();
+        assert!(matches!(err, XlsxError::OutputTooLarge { limit: 100 }));
+    }
+
+    #[test]
+    fn clamp_warnings_capped_at_64() {
+        let rows: Vec<Vec<TableCell>> = (0..70).map(|_| vec![make_cell("cell", 1, 2000)]).collect();
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![],
+                head: vec![],
+                body: rows,
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let output = write(&doc).unwrap();
+        let clamp_count = output
+            .warnings
+            .iter()
+            .filter(|w| w.message.contains("clamped"))
+            .count();
+        assert_eq!(clamp_count, MAX_CLAMP_WARNINGS);
+    }
+
+    #[test]
+    fn empty_table_emits_warning() {
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![],
+                head: vec![],
+                body: vec![],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let output = write(&doc).unwrap();
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("table has no rows; produced empty sheet")
+        }));
+    }
+
+    #[test]
+    fn empty_document_emits_warning() {
+        let doc = Document::default();
+        let output = write(&doc).unwrap();
+        assert!(output.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode
+                && w.message
+                    .contains("document has no content; produced empty sheet")
+        }));
+    }
+
+    #[test]
+    fn worksheet_xml_bounded_while_building() {
+        let sheet = SheetData {
+            name: "Sheet1".to_string(),
+            rows: vec![RowData {
+                row_num: 1,
+                cells: vec![CellData {
+                    col: 0,
+                    value: CellValue::String("A".repeat(500)),
+                }],
+            }],
+            merge_cells: vec![],
+        };
+        // Passing max_bytes = 100 will fail during row rendering and report limit 100
+        let err = render_worksheet_xml_with_limit(&sheet, 100).unwrap_err();
         assert!(matches!(err, XlsxError::OutputTooLarge { limit: 100 }));
     }
 }

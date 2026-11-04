@@ -54,4 +54,6 @@ pub enum WarningCode {
     MathNotConverted,
     /// No tables found in document when converting to tabular formats.
     NoTablesFound,
+    /// Output exceeded maximum size limit and was truncated.
+    OutputTruncated,
 }

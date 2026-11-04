@@ -103,10 +103,9 @@ pub fn tables_to_csv_artifacts(
                 ));
                 continue;
             }
-            let table_truncated = core_warnings.iter().any(|w| {
-                w.code == ariad_core::warning::WarningCode::UnsupportedNode
-                    && w.message.contains("exceeded maximum size limit")
-            });
+            let table_truncated = core_warnings
+                .iter()
+                .any(|w| w.code == ariad_core::warning::WarningCode::OutputTruncated);
             total_bytes = total_bytes.saturating_add(csv_text.len());
             if total_bytes > MAX_TOTAL_CSV_BYTES || table_truncated {
                 return Err(ToolError::LimitExceeded);

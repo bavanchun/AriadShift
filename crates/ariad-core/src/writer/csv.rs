@@ -251,17 +251,11 @@ pub fn table_to_csv_with_warnings(
         let line = row_fields.join(",");
         if out.len() + line.len() + 2 > MAX_OUTPUT_BYTES {
             warnings.push(Warning::new(
-                WarningCode::UnsupportedNode,
+                WarningCode::OutputTruncated,
                 format!(
-                    "CSV output exceeded maximum size limit of {MAX_OUTPUT_BYTES} bytes; content truncated"
+                    "CSV output exceeded maximum size limit of {MAX_OUTPUT_BYTES} bytes; content truncated at record boundary"
                 ),
             ));
-            let remaining = MAX_OUTPUT_BYTES.saturating_sub(out.len());
-            let mut end = remaining.min(line.len());
-            while !line.is_char_boundary(end) {
-                end = end.saturating_sub(1);
-            }
-            out.push_str(&line[..end]);
             return out;
         }
         out.push_str(&line);
@@ -750,15 +744,13 @@ mod tests {
 
     #[test]
     fn clamp_warnings_capped_at_64() {
-        let row: Vec<TableCell> = (0..100)
-            .map(|_| make_cell("cell", u32::MAX, u32::MAX))
-            .collect();
+        let rows: Vec<Vec<TableCell>> = (0..70).map(|_| vec![make_cell("cell", 1, 2000)]).collect();
         let doc = Document {
             body: vec![Block::Table {
                 caption: None,
                 columns: vec![],
                 head: vec![],
-                body: vec![row],
+                body: rows,
                 footnotes: Vec::new(),
             }],
             ..Default::default()
@@ -769,7 +761,7 @@ mod tests {
             .iter()
             .filter(|w| w.message.contains("clamped"))
             .count();
-        assert!(clamp_count <= MAX_CLAMP_WARNINGS * 2);
+        assert_eq!(clamp_count, MAX_CLAMP_WARNINGS);
     }
 
     #[test]
@@ -787,9 +779,10 @@ mod tests {
             ..Default::default()
         };
         let output = write(&doc);
-        assert_eq!(output.content.len(), MAX_OUTPUT_BYTES);
+        assert!(output.content.len() <= MAX_OUTPUT_BYTES);
+        assert!(output.content.ends_with("\r\n"));
         assert!(output.warnings.iter().any(|w| {
-            w.code == WarningCode::UnsupportedNode
+            w.code == WarningCode::OutputTruncated
                 && w.message.contains("CSV output exceeded maximum size limit")
         }));
     }
