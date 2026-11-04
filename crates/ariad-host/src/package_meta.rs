@@ -1,5 +1,6 @@
 #[cfg(test)]
 use ariad_core::package_meta::MAX_ENTRY_BYTES;
+use ariad_core::package_meta::PackageKind;
 pub use ariad_core::package_meta::PackageMetaError;
 use jiff::Timestamp;
 use std::{env, fs::File, path::Path};
@@ -7,25 +8,38 @@ use tempfile::NamedTempFile;
 
 /// Stamps DOCX created/modified timestamps.
 pub fn stamp_docx(path: &Path, timestamp: Timestamp) -> Result<(), PackageMetaError> {
-    stamp(path, timestamp, false)
+    stamp_kind(path, timestamp, PackageKind::Docx)
 }
 /// Stamps EPUB publication/modified timestamps.
 pub fn stamp_epub(path: &Path, timestamp: Timestamp) -> Result<(), PackageMetaError> {
-    stamp(path, timestamp, true)
+    stamp_kind(path, timestamp, PackageKind::Epub)
 }
-fn stamp(path: &Path, timestamp: Timestamp, epub: bool) -> Result<(), PackageMetaError> {
+/// Stamps ODT creation/modified timestamps.
+pub fn stamp_odt(path: &Path, timestamp: Timestamp) -> Result<(), PackageMetaError> {
+    stamp_kind(path, timestamp, PackageKind::Odt)
+}
+fn stamp_kind(
+    path: &Path,
+    timestamp: Timestamp,
+    kind: PackageKind,
+) -> Result<(), PackageMetaError> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let temporary = NamedTempFile::new_in(parent)?;
-    let text = if epub {
-        timestamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
-    } else {
-        timestamp.to_string()
+    let text = match kind {
+        PackageKind::Docx => timestamp.to_string(),
+        PackageKind::Epub | PackageKind::Odt => {
+            timestamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
+        }
     };
-    let output =
-        ariad_core::package_meta::stamp_into(File::open(path)?, temporary.reopen()?, epub, &text)?;
+    let output = ariad_core::package_meta::stamp_into_kind(
+        File::open(path)?,
+        temporary.reopen()?,
+        kind,
+        &text,
+    )?;
     output.sync_all()?;
     drop(output);
     temporary
@@ -70,7 +84,8 @@ mod tests {
     use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
     use super::{
-        MAX_ENTRY_BYTES, PackageMetaError, stamp_docx, stamp_epub, timestamp_from_source_date_epoch,
+        MAX_ENTRY_BYTES, PackageMetaError, stamp_docx, stamp_epub, stamp_odt,
+        timestamp_from_source_date_epoch,
     };
 
     const CORE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Preserved title</dc:title><dcterms:created xsi:type="dcterms:W3CDTF">2000-01-01T00:00:00Z</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">2000-01-01T00:00:00Z</dcterms:modified></cp:coreProperties>"#;
@@ -85,6 +100,15 @@ mod tests {
     <meta property="dcterms:modified">1970-01-01T00:00:00Z</meta>
   </metadata>
 </package>"#;
+
+    const META_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <office:meta>
+    <dc:title>Preserved ODT Title</dc:title>
+    <meta:creation-date>1970-01-01T00:00:00Z</meta:creation-date>
+    <dc:date>1970-01-01T00:00:00Z</dc:date>
+  </office:meta>
+</office:document-meta>"#;
 
     fn make_docx(path: &std::path::Path, oversized_properties: bool) {
         let file = File::create(path).unwrap();
@@ -129,6 +153,35 @@ mod tests {
             .start_file("EPUB/content.opf", deflated_options)
             .unwrap();
         writer.write_all(OPF_XML.as_bytes()).unwrap();
+        if oversized_properties {
+            let chunk = [b' '; 1024 * 1024];
+            for _ in 0..(MAX_ENTRY_BYTES / chunk.len() as u64 + 1) {
+                writer.write_all(&chunk).unwrap();
+            }
+        }
+        writer.finish().unwrap();
+    }
+
+    fn make_odt(path: &std::path::Path, oversized_properties: bool) {
+        let file = File::create(path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        let stored_options =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let deflated_options =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+        writer.start_file("mimetype", stored_options).unwrap();
+        writer
+            .write_all(b"application/vnd.oasis.opendocument.text")
+            .unwrap();
+
+        writer.start_file("content.xml", deflated_options).unwrap();
+        writer
+            .write_all(b"<office:document-content>unchanged</office:document-content>")
+            .unwrap();
+
+        writer.start_file("meta.xml", deflated_options).unwrap();
+        writer.write_all(META_XML.as_bytes()).unwrap();
         if oversized_properties {
             let chunk = [b' '; 1024 * 1024];
             for _ in 0..(MAX_ENTRY_BYTES / chunk.len() as u64 + 1) {
@@ -229,6 +282,44 @@ mod tests {
     }
 
     #[test]
+    fn changes_only_odt_meta_timestamps_and_preserves_other_entries() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("document.odt");
+        make_odt(&path, false);
+        let original_archive = fs::read(&path).unwrap();
+        let timestamp = Timestamp::from_second(1_700_000_000).unwrap();
+
+        stamp_odt(&path, timestamp).unwrap();
+
+        let stamped_archive = fs::read(&path).unwrap();
+        for name in ["mimetype", "content.xml"] {
+            assert_eq!(
+                compressed_entry_bytes(&original_archive, name),
+                compressed_entry_bytes(&stamped_archive, name),
+                "raw compressed bytes for {name} should remain identical"
+            );
+        }
+
+        let mut archive = ZipArchive::new(File::open(path).unwrap()).unwrap();
+        {
+            let first_entry = archive.by_index(0).unwrap();
+            assert_eq!(first_entry.name().unwrap(), "mimetype");
+            assert_eq!(first_entry.compression(), CompressionMethod::Stored);
+        }
+
+        let mut meta = String::new();
+        archive
+            .by_name("meta.xml")
+            .unwrap()
+            .read_to_string(&mut meta)
+            .unwrap();
+        assert!(meta.contains("<dc:title>Preserved ODT Title</dc:title>"));
+        assert!(meta.contains("<meta:creation-date>2023-11-14T22:13:20Z</meta:creation-date>"));
+        assert!(meta.contains("<dc:date>2023-11-14T22:13:20Z</dc:date>"));
+        assert!(!meta.contains("1970-01-01T00:00:00Z"));
+    }
+
+    #[test]
     fn source_date_epoch_is_parsed_as_the_conversion_timestamp() {
         let timestamp = timestamp_from_source_date_epoch(Some("0")).unwrap();
         assert_eq!(timestamp.to_string(), "1970-01-01T00:00:00Z");
@@ -253,6 +344,13 @@ mod tests {
         make_epub(&epub_path, true);
         assert!(matches!(
             stamp_epub(&epub_path, Timestamp::UNIX_EPOCH),
+            Err(PackageMetaError::EntryTooLarge)
+        ));
+
+        let odt_path = directory.path().join("oversized.odt");
+        make_odt(&odt_path, true);
+        assert!(matches!(
+            stamp_odt(&odt_path, Timestamp::UNIX_EPOCH),
             Err(PackageMetaError::EntryTooLarge)
         ));
     }

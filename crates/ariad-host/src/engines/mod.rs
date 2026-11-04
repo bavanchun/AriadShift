@@ -384,6 +384,7 @@ pub const NATIVE_ROUTES: &[(Format, Format)] = &[
     (Format::Html, Format::AriadIrJson),
     (Format::AriadIrJson, Format::Markdown),
     (Format::AriadIrJson, Format::Html),
+    (Format::AriadIrJson, Format::Txt),
 ];
 
 /// Static description of an engine that `ashift __engine <id>` or an engine pack serves out of process.
@@ -421,6 +422,8 @@ pub const PANDOC: EngineSpec = EngineSpec {
         (Format::AriadIrJson, Format::Epub),
         (Format::Docx, Format::AriadIrJson),
         (Format::Epub, Format::AriadIrJson),
+        (Format::AriadIrJson, Format::Odt),
+        (Format::AriadIrJson, Format::Rtf),
     ],
     install_hint: "run 'just pandoc' or install Pandoc >=3.12,<4 and set ASHIFT_PANDOC",
     supported: Some(">=3.12, <4"),
