@@ -75,15 +75,18 @@ pub(super) fn clear_pages(
     for (id, content) in prepared {
         ctx.check()?;
         let content_id = doc.add_object(Stream::new(lopdf::Dictionary::new(), content));
+        if let Ok(page_obj) = doc.get_object(id)
+            && let Ok(page_dict) = page_obj.as_dict()
+            && let Ok(annots_obj) = page_dict.get(b"Annots")
+            && let Ok((_, annots_deref)) = doc.dereference(annots_obj)
+            && let Ok(arr) = annots_deref.as_array()
+        {
+            total_annots_removed += arr.len();
+        }
         let page = doc
             .get_object_mut(id)
             .and_then(Object::as_dict_mut)
             .map_err(|_| PdfError::Malformed)?;
-        if let Ok(annots) = page.get(b"Annots")
-            && let Ok(arr) = annots.as_array()
-        {
-            total_annots_removed += arr.len();
-        }
         for key in [
             b"Annots".as_slice(),
             b"Thumb",

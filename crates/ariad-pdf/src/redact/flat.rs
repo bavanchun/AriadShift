@@ -160,7 +160,9 @@ pub(super) fn rewrite(
         let source = content(pdf.inner(), page_dict, &mut budget, ctx)?;
         let resources = resources(pdf.inner(), id)?;
         let trace = stream::trace(pdf.inner(), &resources, &source, input_len, limits, ctx)?;
-        total_vectors_inspected += trace.painted_paths().len();
+        if params.scope.vectors {
+            total_vectors_inspected += trace.painted_paths().len();
+        }
         if trace.uninspected_objects() != 0 {
             let carrier = trace.uninspected_carrier().unwrap_or("uninspected carrier");
             return Err(PdfError::NotImplemented(format!(

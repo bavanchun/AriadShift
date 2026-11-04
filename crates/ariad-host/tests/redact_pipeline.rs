@@ -306,11 +306,11 @@ fn redact_pipeline_refuses_signed_pdf_without_confirmation() {
 }
 
 #[test]
-fn redact_verify_reports_verified_when_clean() {
-    if !child("redact_verify_reports_verified_when_clean") {
+fn redact_verify_reports_unverifiable_standalone() {
+    if !child("redact_verify_reports_unverifiable_standalone") {
         return;
     }
-    // Verify target "NonexistentText" on mixed-sizes.pdf -> 0 occurrences -> Verified
+    // Verify target "NonexistentText" on mixed-sizes.pdf -> 0 occurrences -> Unverifiable standalone
     let request = ToolRequest::new(
         "pdf.redact_verify",
         vec![InputRef::new(fixture("mixed-sizes.pdf"))],
@@ -1232,6 +1232,23 @@ fn redact_pipeline_rect_overlay_characters_equal_target() {
     let report: RedactionVerificationReport =
         serde_json::from_value(outcome.inline_json.unwrap()).expect("parse report");
     assert_eq!(report.status, RedactionVerificationStatus::Verified);
+
+    let oracle = std::process::Command::new("pdftotext")
+        .arg(&out_path)
+        .arg("-")
+        .output()
+        .expect("pdftotext oracle");
+    assert!(oracle.status.success());
+    let extracted = String::from_utf8_lossy(&oracle.stdout);
+    assert!(
+        !extracted.contains("ISO A4 Portrait"),
+        "rest of targeted line must be removed"
+    );
+    assert_eq!(
+        extracted.matches("Page 1:").count(),
+        1,
+        "Page 1: overlay text must appear exactly once"
+    );
 }
 
 #[test]
@@ -1391,5 +1408,246 @@ fn redact_pipeline_counts_annotations_removed_and_vectors_inspected() {
         carriers.annotations_removed > 0,
         "expected annotations_removed > 0, got {}",
         carriers.annotations_removed
+    );
+    assert_eq!(
+        carriers.vectors_inspected, 0,
+        "page targets must not claim vectors inspected unless scope.vectors is true"
+    );
+}
+
+#[test]
+fn redact_pipeline_rect_overlay_guard_rejects_unredacted_clean_candidate() {
+    if !child("redact_pipeline_rect_overlay_guard_rejects_unredacted_clean_candidate") {
+        return;
+    }
+    use ariad_core::limits::Limits;
+    use ariad_core::tools::params::crop::CropRect;
+    use ariad_core::tools::params::redact::{RedactParams, RedactionScope, RedactionTarget};
+    use ariad_host::tools::redact::{inspect_geometry_for_test, verify_rect_overlay_text_gates};
+
+    let limits = Limits::local();
+    let pdf_path = fixture("mixed-sizes.pdf");
+    let input_bytes = fs::read(&pdf_path).unwrap();
+
+    let target_rect = CropRect {
+        left: 70.0,
+        bottom: 745.0,
+        right: 320.0,
+        top: 765.0,
+    };
+    let params = RedactParams {
+        targets: vec![RedactionTarget::Rectangle {
+            page: 1,
+            rect: target_rect,
+        }],
+        color: None,
+        overlay_text: Some("Page 1:".into()),
+        scope: RedactionScope::default(),
+        invalidate_signatures: false,
+    };
+    let ctx = ariad_pdf::ToolCtx::new();
+
+    // 1. Inspect real geometry using PDFium
+    let orig_geom = inspect_geometry_for_test(&pdf_path, &limits).expect("inspect real geometry");
+
+    // 2. Perform a real rewrite with overlay text matching target line start
+    let plan = ariad_pdf::redact::plan(&input_bytes, &params, &orig_geom, &limits, &ctx)
+        .expect("plan redaction");
+    let (candidate_bytes, _) = ariad_pdf::redact::rewrite_document_with_evidence(
+        &input_bytes,
+        &params,
+        &plan,
+        &orig_geom,
+        &limits,
+        &ctx,
+    )
+    .expect("rewrite document");
+
+    let temp = tempfile::tempdir().unwrap();
+    let candidate_path = temp.path().join("candidate.pdf");
+    fs::write(&candidate_path, &candidate_bytes).unwrap();
+    let candidate_geom =
+        inspect_geometry_for_test(&candidate_path, &limits).expect("inspect candidate geometry");
+
+    // Case A: Without clean candidate check, candidate with overlay "Page 1:"
+    // passes because the overlay characters match the target text box:
+    let (pdfium_pass, core_pass) = verify_rect_overlay_text_gates(
+        &candidate_bytes,
+        &candidate_geom,
+        None,
+        None,
+        &params,
+        &limits,
+        &ctx,
+    )
+    .expect("verify without clean candidate");
+    assert_eq!(pdfium_pass, RedactionCheckStatus::Pass);
+    assert_eq!(core_pass, RedactionCheckStatus::Pass);
+
+    // Case B: With clean candidate still containing target content (e.g. original unredacted PDF),
+    // the guard MUST reject it and return Fail for text gates:
+    let (pdfium_fail, core_fail) = verify_rect_overlay_text_gates(
+        &candidate_bytes,
+        &candidate_geom,
+        Some(&input_bytes),
+        Some(&orig_geom),
+        &params,
+        &limits,
+        &ctx,
+    )
+    .expect("verify with unredacted clean candidate");
+    assert_eq!(
+        pdfium_fail,
+        RedactionCheckStatus::Fail,
+        "clean candidate containing original target text must fail PDFium text gate"
+    );
+    assert_eq!(
+        core_fail,
+        RedactionCheckStatus::Fail,
+        "clean candidate containing original target text must fail core text gate"
+    );
+}
+
+#[test]
+fn redact_pipeline_counts_indirect_annotations_and_vector_paths() {
+    if !child("redact_pipeline_counts_indirect_annotations_and_vector_paths") {
+        return;
+    }
+    // 1. Build a valid minimal PDF with indirect /Annots reference
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let content = b"BT /F1 12 Tf 72 712 Td (Hello World) Tj ET\n10 10 50 50 re S\n";
+    let content_id = doc.add_object(lopdf::Stream::new(
+        lopdf::Dictionary::new(),
+        content.to_vec(),
+    ));
+    let annot_dict = lopdf::Dictionary::from_iter(vec![
+        (b"Type".to_vec(), lopdf::Object::Name(b"Annot".to_vec())),
+        (b"Subtype".to_vec(), lopdf::Object::Name(b"Text".to_vec())),
+        (
+            b"Rect".to_vec(),
+            lopdf::Object::Array(vec![
+                lopdf::Object::Real(10.0),
+                lopdf::Object::Real(10.0),
+                lopdf::Object::Real(100.0),
+                lopdf::Object::Real(100.0),
+            ]),
+        ),
+    ]);
+    let annot_id = doc.add_object(annot_dict);
+    let annots_arr_id = doc.add_object(lopdf::Object::Array(vec![lopdf::Object::Reference(
+        annot_id,
+    )]));
+    let font_dict = lopdf::Dictionary::from_iter(vec![
+        (b"Type".to_vec(), lopdf::Object::Name(b"Font".to_vec())),
+        (b"Subtype".to_vec(), lopdf::Object::Name(b"Type1".to_vec())),
+        (
+            b"BaseFont".to_vec(),
+            lopdf::Object::Name(b"Helvetica".to_vec()),
+        ),
+    ]);
+    let font_id = doc.add_object(font_dict);
+    let res_fonts =
+        lopdf::Dictionary::from_iter(vec![(b"F1".to_vec(), lopdf::Object::Reference(font_id))]);
+    let resources = lopdf::Dictionary::from_iter(vec![(
+        b"Font".to_vec(),
+        lopdf::Object::Dictionary(res_fonts),
+    )]);
+    let page_dict = lopdf::Dictionary::from_iter(vec![
+        (b"Type".to_vec(), lopdf::Object::Name(b"Page".to_vec())),
+        (b"Parent".to_vec(), lopdf::Object::Reference(pages_id)),
+        (
+            b"MediaBox".to_vec(),
+            lopdf::Object::Array(vec![
+                lopdf::Object::Integer(0),
+                lopdf::Object::Integer(0),
+                lopdf::Object::Integer(612),
+                lopdf::Object::Integer(792),
+            ]),
+        ),
+        (b"Contents".to_vec(), lopdf::Object::Reference(content_id)),
+        (b"Resources".to_vec(), lopdf::Object::Dictionary(resources)),
+        // Indirect /Annots reference:
+        (b"Annots".to_vec(), lopdf::Object::Reference(annots_arr_id)),
+    ]);
+    let page_id = doc.add_object(page_dict);
+    let pages_dict = lopdf::Dictionary::from_iter(vec![
+        (b"Type".to_vec(), lopdf::Object::Name(b"Pages".to_vec())),
+        (
+            b"Kids".to_vec(),
+            lopdf::Object::Array(vec![lopdf::Object::Reference(page_id)]),
+        ),
+        (b"Count".to_vec(), lopdf::Object::Integer(1)),
+    ]);
+    doc.objects
+        .insert(pages_id, lopdf::Object::Dictionary(pages_dict));
+    let catalog_dict = lopdf::Dictionary::from_iter(vec![
+        (b"Type".to_vec(), lopdf::Object::Name(b"Catalog".to_vec())),
+        (b"Pages".to_vec(), lopdf::Object::Reference(pages_id)),
+    ]);
+    let catalog_id = doc.add_object(catalog_dict);
+    doc.trailer
+        .set(b"Root".to_vec(), lopdf::Object::Reference(catalog_id));
+
+    let temp = tempfile::tempdir().unwrap();
+    let in_indirect_pdf = temp.path().join("in_indirect.pdf");
+    doc.save(&in_indirect_pdf).unwrap();
+
+    // Test page-target on indirect /Annots
+    let out_page = temp.path().join("out_page.pdf");
+    let req_page = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(in_indirect_pdf.clone())],
+        OutputTarget::Path(out_page),
+    )
+    .with_params(json!({
+        "targets": [{ "kind": "page", "page": 1 }]
+    }));
+    let outcome_page = run_tool(&req_page).expect("run pdf.redact on page with indirect annots");
+    let report_page: RedactionVerificationReport =
+        serde_json::from_value(outcome_page.inline_json.unwrap()).expect("parse report");
+    let carriers_page = report_page.carriers.expect("carriers present");
+    assert_eq!(
+        carriers_page.annotations_removed, 1,
+        "indirect /Annots must be dereferenced and counted"
+    );
+    assert_eq!(carriers_page.vectors_inspected, 0);
+
+    // Test rectangle target with scope.vectors = false (default) vs scope.vectors = true
+    let out_no_vec = temp.path().join("out_no_vec.pdf");
+    let req_no_vec = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(in_indirect_pdf.clone())],
+        OutputTarget::Path(out_no_vec),
+    )
+    .with_params(json!({
+        "targets": [{ "kind": "rectangle", "page": 1, "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 } }],
+        "scope": { "vectors": false }
+    }));
+    let outcome_no_vec = run_tool(&req_no_vec).expect("run pdf.redact without vector scope");
+    let report_no_vec: RedactionVerificationReport =
+        serde_json::from_value(outcome_no_vec.inline_json.unwrap()).expect("parse report");
+    assert_eq!(
+        report_no_vec.carriers.unwrap().vectors_inspected,
+        0,
+        "vectors_inspected must be 0 when scope.vectors is false"
+    );
+
+    let out_vec = temp.path().join("out_vec.pdf");
+    let req_vec = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(in_indirect_pdf)],
+        OutputTarget::Path(out_vec),
+    )
+    .with_params(json!({
+        "targets": [{ "kind": "rectangle", "page": 1, "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 } }],
+        "scope": { "vectors": true }
+    }));
+    let outcome_vec = run_tool(&req_vec).expect("run pdf.redact with vector scope");
+    let report_vec: RedactionVerificationReport =
+        serde_json::from_value(outcome_vec.inline_json.unwrap()).expect("parse report");
+    assert!(
+        report_vec.carriers.unwrap().vectors_inspected > 0,
+        "vectors_inspected must be > 0 when scope.vectors is true"
     );
 }

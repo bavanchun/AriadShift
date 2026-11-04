@@ -297,6 +297,82 @@ pub(super) fn execute(
     }
 }
 
+pub fn verify_rect_overlay_text_gates(
+    candidate_bytes: &[u8],
+    candidate_geometry: &RedactGeometry,
+    clean_candidate_bytes: Option<&[u8]>,
+    clean_geometry: Option<&RedactGeometry>,
+    redact_params: &RedactParams,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<(RedactionCheckStatus, RedactionCheckStatus), ariad_pdf::PdfError> {
+    let pdfium_text =
+        if let (Some(clean_bytes), Some(clean_geom)) = (clean_candidate_bytes, clean_geometry) {
+            let mut unoverlayed_params = redact_params.clone();
+            unoverlayed_params.overlay_text = None;
+            let clean_check =
+                verify_pdfium_text(clean_bytes, &unoverlayed_params, clean_geom, limits, ctx)?;
+            if clean_check == RedactionCheckStatus::Fail {
+                RedactionCheckStatus::Fail
+            } else {
+                verify_pdfium_text(
+                    candidate_bytes,
+                    redact_params,
+                    candidate_geometry,
+                    limits,
+                    ctx,
+                )?
+            }
+        } else {
+            verify_pdfium_text(
+                candidate_bytes,
+                redact_params,
+                candidate_geometry,
+                limits,
+                ctx,
+            )?
+        };
+
+    let core_text = if let Some(clean_bytes) = clean_candidate_bytes {
+        let mut unoverlayed_params = redact_params.clone();
+        unoverlayed_params.overlay_text = None;
+        let clean_check = verify_core_text(clean_bytes, &unoverlayed_params, limits, ctx)?;
+        if clean_check == RedactionCheckStatus::Fail {
+            RedactionCheckStatus::Fail
+        } else {
+            verify_core_text(candidate_bytes, redact_params, limits, ctx)?
+        }
+    } else {
+        verify_core_text(candidate_bytes, redact_params, limits, ctx)?
+    };
+
+    Ok((pdfium_text, core_text))
+}
+
+pub fn inspect_geometry_for_test(
+    pdf_path: &Path,
+    limits: &Limits,
+) -> Result<RedactGeometry, ToolError> {
+    let ws = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    let staged_path = ws.input_dir().join("input.pdf");
+    fs::copy(pdf_path, &staged_path).map_err(|e| ToolError::InputIo(e.to_string()))?;
+    let scrubber = SecretScrubber::default();
+    let cancel = CancellationToken::new();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut job = RedactJob {
+        workspace: &ws,
+        limits,
+        scrubber: &scrubber,
+        engine_program: None,
+        cancel: &cancel,
+        deadline,
+        ctx: ToolCtx::new(),
+        _bridge: CancelBridge::new(&cancel),
+        warnings: Vec::new(),
+    };
+    job.inspect_geometry(&staged_path, &mut |_| {})
+}
+
 fn execute_redact(
     job: &mut RedactJob<'_>,
     input_path: &Path,
@@ -385,59 +461,18 @@ fn execute_redact(
             (None, None)
         };
 
-    // Gate 1: PDFium text re-extraction check
+    // Gate 1: PDFium text re-extraction check & Gate 2: Core reader text check
     let candidate_geometry = job.inspect_geometry(&candidate_path, events)?;
-    let pdfium_text =
-        if let (Some(clean_bytes), Some(clean_geom)) = (&clean_candidate_bytes, &clean_geometry) {
-            let mut unoverlayed_params = redact_params.clone();
-            unoverlayed_params.overlay_text = None;
-            let clean_check = verify_pdfium_text(
-                clean_bytes,
-                &unoverlayed_params,
-                clean_geom,
-                job.limits,
-                &job.ctx,
-            )
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
-            if clean_check == RedactionCheckStatus::Fail {
-                RedactionCheckStatus::Fail
-            } else {
-                verify_pdfium_text(
-                    &candidate_bytes,
-                    &redact_params,
-                    &candidate_geometry,
-                    job.limits,
-                    &job.ctx,
-                )
-                .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?
-            }
-        } else {
-            verify_pdfium_text(
-                &candidate_bytes,
-                &redact_params,
-                &candidate_geometry,
-                job.limits,
-                &job.ctx,
-            )
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?
-        };
-
-    // Gate 2: Core reader text check
-    let core_text = if let Some(clean_bytes) = clean_candidate_bytes.as_ref() {
-        let mut unoverlayed_params = redact_params.clone();
-        unoverlayed_params.overlay_text = None;
-        let clean_check = verify_core_text(clean_bytes, &unoverlayed_params, job.limits, &job.ctx)
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
-        if clean_check == RedactionCheckStatus::Fail {
-            RedactionCheckStatus::Fail
-        } else {
-            verify_core_text(&candidate_bytes, &redact_params, job.limits, &job.ctx)
-                .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?
-        }
-    } else {
-        verify_core_text(&candidate_bytes, &redact_params, job.limits, &job.ctx)
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?
-    };
+    let (pdfium_text, core_text) = verify_rect_overlay_text_gates(
+        &candidate_bytes,
+        &candidate_geometry,
+        clean_candidate_bytes.as_deref(),
+        clean_geometry.as_ref(),
+        &redact_params,
+        job.limits,
+        &job.ctx,
+    )
+    .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
 
     // Gate 3: Rendered pixel opacity verification for affected pages
     let region_render = verify_candidate_rendering(
