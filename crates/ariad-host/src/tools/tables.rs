@@ -76,6 +76,9 @@ pub fn tables_to_csv_artifacts(
     let mut total_bytes: usize = 0;
 
     for (idx, table_block) in capped_tables.iter().enumerate() {
+        if total_bytes >= MAX_TOTAL_CSV_BYTES {
+            return Err(ToolError::LimitExceeded);
+        }
         if let Block::Table {
             columns,
             head,
@@ -91,8 +94,21 @@ pub fn tables_to_csv_artifacts(
                 &mut core_warnings,
             );
             warnings.extend(core_warnings.iter().map(crate::convert::safe_warning));
+            if csv_text.is_empty() {
+                warnings.push(crate::convert::safe_warning(
+                    &ariad_core::warning::Warning::new(
+                        ariad_core::warning::WarningCode::UnsupportedNode,
+                        format!("table {} has no content; skipped", idx + 1),
+                    ),
+                ));
+                continue;
+            }
+            let table_truncated = core_warnings.iter().any(|w| {
+                w.code == ariad_core::warning::WarningCode::UnsupportedNode
+                    && w.message.contains("exceeded maximum size limit")
+            });
             total_bytes = total_bytes.saturating_add(csv_text.len());
-            if total_bytes > MAX_TOTAL_CSV_BYTES {
+            if total_bytes > MAX_TOTAL_CSV_BYTES || table_truncated {
                 return Err(ToolError::LimitExceeded);
             }
 
@@ -313,5 +329,26 @@ mod tests {
                 && w.message
                     .contains("document has 260 tables; capped at maximum 255 tables")
         }));
+    }
+
+    #[test]
+    fn tables_to_csv_returns_limit_exceeded_when_bytes_cap_exceeded() {
+        let ws = Workspace::new().unwrap();
+        let chunk = "A".repeat(30_000);
+        let rows: Vec<Vec<TableCell>> = (0..1800).map(|_| vec![make_cell(&chunk)]).collect();
+        let doc = Document {
+            body: vec![Block::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![],
+                body: rows,
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let res = tables_to_csv_artifacts(&doc, &ws);
+        assert!(matches!(res, Err(ToolError::LimitExceeded)));
     }
 }

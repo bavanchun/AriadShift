@@ -200,6 +200,8 @@ fn build_sheet_from_table(
     let mut rows: Vec<RowData> = Vec::with_capacity(all_rows.len().min(1000));
     let mut merge_cells: Vec<String> = Vec::new();
     let mut row_col_exceeded = false;
+    let mut clamp_warnings_count = 0;
+    let mut char_trunc_warnings_count = 0;
 
     for (r, row_cells) in all_rows.iter().enumerate() {
         if r >= MAX_EXCEL_ROWS {
@@ -232,13 +234,15 @@ fn build_sheet_from_table(
             let colspan = raw_colspan.min(MAX_EXCEL_COLS - c).min(MAX_CELL_SPAN);
             let rowspan = raw_rowspan.min(max_remaining_rows).min(MAX_CELL_SPAN);
 
-            if raw_colspan > colspan {
+            if raw_colspan > colspan && clamp_warnings_count < 64 {
+                clamp_warnings_count += 1;
                 warnings.push(Warning::new(
                     WarningCode::UnsupportedNode,
                     format!("cell colspan {raw_colspan} clamped to {colspan}"),
                 ));
             }
-            if raw_rowspan > rowspan {
+            if raw_rowspan > rowspan && clamp_warnings_count < 64 {
+                clamp_warnings_count += 1;
                 warnings.push(Warning::new(
                     WarningCode::UnsupportedNode,
                     format!("cell rowspan {raw_rowspan} clamped to {rowspan}"),
@@ -250,12 +254,15 @@ fn build_sheet_from_table(
             let mut raw_text = blocks_to_text(&cell.blocks);
             let char_count = raw_text.chars().count();
             if char_count > MAX_CELL_CHARS {
-                warnings.push(Warning::new(
-                    WarningCode::UnsupportedNode,
-                    format!(
-                        "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
-                    ),
-                ));
+                if char_trunc_warnings_count < 64 {
+                    char_trunc_warnings_count += 1;
+                    warnings.push(Warning::new(
+                        WarningCode::UnsupportedNode,
+                        format!(
+                            "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
+                        ),
+                    ));
+                }
                 raw_text = raw_text.chars().take(MAX_CELL_CHARS).collect();
             }
 
@@ -414,6 +421,7 @@ pub fn write(document: &Document) -> Result<WriteBinaryOutput, XlsxError> {
 
         let mut rows = Vec::new();
         let mut row_num = 1;
+        let mut char_trunc_warnings_count = 0;
         for block in &document.body {
             if row_num > MAX_EXCEL_ROWS {
                 break;
@@ -422,12 +430,15 @@ pub fn write(document: &Document) -> Result<WriteBinaryOutput, XlsxError> {
             if !text.is_empty() {
                 let char_count = text.chars().count();
                 if char_count > MAX_CELL_CHARS {
-                    warnings.push(Warning::new(
-                        WarningCode::UnsupportedNode,
-                        format!(
-                            "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
-                        ),
-                    ));
+                    if char_trunc_warnings_count < 64 {
+                        char_trunc_warnings_count += 1;
+                        warnings.push(Warning::new(
+                            WarningCode::UnsupportedNode,
+                            format!(
+                                "cell content of {char_count} characters truncated to {MAX_CELL_CHARS} characters"
+                            ),
+                        ));
+                    }
                     text = text.chars().take(MAX_CELL_CHARS).collect();
                 }
                 rows.push(RowData {
@@ -476,9 +487,15 @@ pub fn write(document: &Document) -> Result<WriteBinaryOutput, XlsxError> {
     Ok(WriteBinaryOutput { bytes, warnings })
 }
 
+pub const MAX_UNCOMPRESSED_SHEET_BYTES: usize = 200 * 1024 * 1024;
+
 fn package_xlsx(sheets: &[SheetData]) -> Result<Vec<u8>, XlsxError> {
-    let mut cursor = Cursor::new(Vec::new());
-    let mut zip = ZipWriter::new(&mut cursor);
+    package_xlsx_with_limit(sheets, MAX_OUTPUT_BYTES)
+}
+
+fn package_xlsx_with_limit(sheets: &[SheetData], limit: usize) -> Result<Vec<u8>, XlsxError> {
+    let cursor = Cursor::new(Vec::new());
+    let mut zip = ZipWriter::new(cursor);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // 1. [Content_Types].xml
@@ -537,16 +554,20 @@ fn package_xlsx(sheets: &[SheetData]) -> Result<Vec<u8>, XlsxError> {
     for (i, sheet) in sheets.iter().enumerate() {
         let id = i + 1;
         let sheet_xml = render_worksheet_xml(sheet);
+        if sheet_xml.len() > MAX_UNCOMPRESSED_SHEET_BYTES {
+            return Err(XlsxError::OutputTooLarge { limit });
+        }
         zip.start_file(format!("xl/worksheets/sheet{id}.xml"), options)?;
         zip.write_all(sheet_xml.as_bytes())?;
+        if zip.get_ref().map(|c| c.get_ref().len()).unwrap_or(0) > limit {
+            return Err(XlsxError::OutputTooLarge { limit });
+        }
     }
 
-    zip.finish()?;
+    let cursor = zip.finish()?;
     let bytes = cursor.into_inner();
-    if bytes.len() > MAX_OUTPUT_BYTES {
-        return Err(XlsxError::OutputTooLarge {
-            limit: MAX_OUTPUT_BYTES,
-        });
+    if bytes.len() > limit {
+        return Err(XlsxError::OutputTooLarge { limit });
     }
     Ok(bytes)
 }
@@ -938,5 +959,23 @@ mod tests {
                 && w.message
                     .contains("table has 1048578 rows; truncated to maximum 1048576")
         }));
+    }
+
+    #[test]
+    fn output_too_large_error_returned_when_exceeding_max_bytes() {
+        let sheet = SheetData {
+            name: "Sheet1".to_string(),
+            rows: vec![RowData {
+                row_num: 1,
+                cells: vec![CellData {
+                    col: 0,
+                    value: CellValue::String("A".repeat(500)),
+                }],
+            }],
+            merge_cells: vec![],
+        };
+        // Passing limit = 100 bytes will fail as minimum XLSX zip is > 1KB
+        let err = package_xlsx_with_limit(&[sheet], 100).unwrap_err();
+        assert!(matches!(err, XlsxError::OutputTooLarge { limit: 100 }));
     }
 }
