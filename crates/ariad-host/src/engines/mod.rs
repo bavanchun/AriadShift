@@ -562,7 +562,7 @@ pub const SIGN: EngineSpec = EngineSpec {
     id: "sign",
     license: "Apache-2.0 OR MIT",
     routes: &[],
-    install_hint: "run 'ashift engines install sign' to install the sign engine pack",
+    install_hint: "the sign pack is not yet released; set ASHIFT_SIGN_PROGRAM or ASHIFT_PACK_SIGN to use a development build",
     supported: None,
     required: false,
     builtin: false,

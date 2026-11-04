@@ -6,7 +6,6 @@ Heavy engines (Docling, OCR models) are not part of the base `ashift` install. T
 
 ```bash
 ashift engines install docling                 # recommended version from the built-in index
-ashift engines install sign                    # sign engine pack for digital signatures
 ashift engines install docling --version 0.2.0
 ashift engines install docling --manifest https://example.org/pack.toml
 ashift engines install docling --from ./docling-pack   # offline, no network
@@ -266,6 +265,12 @@ run `just pack-qpdf <qpdf_dir>` and set `ASHIFT_PACK_QPDF` to
 `$PWD/target/packs/qpdf`. The upstream Linux development cache carries
 additional unreviewed libraries and is for local testing only. Signed pack
 installation is unavailable until a release and index entry exist.
+
+## The sign pack
+
+The sign engine pack delivers digital signing, verification, and timestamping via pyHanko and cryptography in a sandboxed, network-denied Python environment speaking `ariad-engine/2`.
+
+The pack is under development and is not yet published as an official release. In development environments, point `ASHIFT_SIGN_PROGRAM` to the `ariad_sign` runner (e.g. `python -m ariad_sign`) or set `ASHIFT_PACK_SIGN` to an unpacked development pack directory containing `pack.toml`.
 
 ## Signing and publishing
 
