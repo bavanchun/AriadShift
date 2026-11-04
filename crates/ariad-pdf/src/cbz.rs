@@ -107,21 +107,16 @@ pub fn cbz_to_pdf(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<Vec<u8
     }
 
     let mut image_names: Vec<String> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
     for i in 0..archive.len() {
         let file = archive.by_index(i).map_err(|_| PdfError::Malformed)?;
         let name = file.name().map_err(|_| PdfError::Malformed)?;
         if is_image_path(&name) {
-            let owned = name.into_owned();
-            if !seen.insert(owned.clone()) {
-                return Err(PdfError::Malformed);
-            }
             if image_names.len() >= MAX_CBZ_IMAGES {
                 return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
                     limit: MAX_CBZ_IMAGES,
                 }));
             }
-            image_names.push(owned);
+            image_names.push(name.into_owned());
         }
     }
 
