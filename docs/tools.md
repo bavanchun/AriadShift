@@ -85,7 +85,7 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | Group | Purpose | Example Tools |
 |---|---|---|
 | `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.crop_whitespace`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers`, `pdf.remove_blank`, `pdf.detect_scanned`, `pdf.text_layout` |
-| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url`, `pdf.tables_to_csv` |
+| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `web.to_pdf`, `pdf.tables_to_csv` |
 | `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.grayscale`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize`, `pdf.unlock_forms` |
 | `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.replace_color`, `pdf.adjust_colors`, `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`, `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`, `pdf.watermark_detect`, `pdf.watermark_remove` |
@@ -209,6 +209,30 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
     - `text_changes`: Array of `{ kind, text_before?, text_after?, bbox: [left, bottom, right, top] }` where `kind` is `"insert"` (emerald highlight on after doc), `"delete"` (red rectangle), `"replace"` (amber highlight), or `"move"` (blue rectangle).
     - `visual_changes`: Array of `{ bbox: [left, bottom, right, top], diff_pixels }` (purple rectangle).
 
+### `web.to_pdf`
+
+`web.to_pdf` fetches a remote web page securely and converts it offline into a PDF document via the HTML -> IR -> Typst pipeline.
+
+- **Parameters** (`WebToPdfParams`):
+  - `url` (string, required): Remote web page URL to convert. Must be a valid non-empty HTTPS URL (`additionalProperties: false`).
+  - `title` (string, optional): Document title override. If omitted, the HTML `<title>` tag is used.
+- **SSRF and Network Safeguards (AD-15)**:
+  - Enforces HTTPS only (`https_only: true`, `allow_loopback: false`).
+  - DNS resolution uses `resolve_and_pin_public`, which rejects the entire DNS answer if any returned IP address is private (RFC 1918), loopback, link-local, CGNAT (`100.64.0.0/10`), cloud metadata (`169.254.169.254`), multicast, unspecified, IPv4-mapped IPv6, or NAT64 (`64:ff9b::/96`). Outbound connection is pinned to the verified public IP.
+  - Redirects (`<= 5`): Every redirect target is re-validated and re-resolved against public IP rules.
+  - No `Cookie`, `Authorization`, or `Referer` headers are sent.
+- **Scope, Same-Origin Enforcement, and Caps (D12)**:
+  - Top-level response must have `Content-Type: text/html` or `application/xhtml+xml` (case-insensitive, ignoring charset); other content types fail with exit code `1`.
+  - Same-origin sub-assets: Fetches same-origin images (`<img>`, `srcset`), same-origin stylesheets (`<link rel="stylesheet">`), and same-origin CSS sub-assets (`@import`, `url(...)`).
+  - Cross-origin assets: Any cross-origin image, stylesheet, or CSS reference is skipped without network fetch and emits a warning with code `"remote_asset_skipped"`.
+  - JavaScript: Never executed. Any HTML containing `<script` tags emits a warning with code `"js_content_not_rendered"`.
+  - Resource caps: Top-level HTML `<= 10 MiB`, sub-assets `<= 50` total, `<= 20 MiB` per asset, cumulative bytes `<= 64 MiB`, and overall deadline `30 s`. Exceeding any cap terminates immediately with exit code `4` (`limit_exceeded`).
+  - Offline rendering: Verified HTML and same-origin assets are stored in a confined directory in the workspace, then rendered through the offline `HTML -> IR -> Typst` pipeline with `AssetBase` confined to that directory.
+- **Inputs & Output**:
+  - `inputs`: `InputArity::None` (takes zero file inputs; invocation operates via `--param url=https://...`).
+  - `output_format`: `pdf` (`output_formats: ["pdf"]`).
+- **Runtime**: `local` only (`HOST_COMPOSITE_ENGINE = "ariad-host"`). Access: `Tier::Free`.
+
 Before PDFium opens a document, the engine checks page image dimensions and data against the job's limits. Inline images may use image masks without a color space, lossless ASCIIHex, ASCII85, Flate, RunLength or LZW filters, and CCITT or JPEG as the final filter. JPEG frame dimensions are checked against the image dictionary. Color-space aliases and filters the engine cannot safely inspect still cause `limit_exceeded` before the page is opened. Page budgets include repeated form invocations, inline image data and Type3 glyph uses; unusually complex pages may exceed these limits.
 
 PDFium tools serialize the strictly loaded object graph into a fresh PDF with a classic cross-reference table before opening it in PDFium. All PDFium tools preflight that same graph; image extraction additionally refuses PDFs whose cross-reference tables required repair. The canonical output is limited to the smaller of the remaining decompression budget and the job memory limit (also capped at 4 GiB minus one byte), less the original input size. For example, with a 2 GiB remaining decompression budget and a canonical output about the size of its input, the effective input ceiling is approximately 1 GiB; decoded streams and output expansion reduce that headroom further. The default local decompression budget is 4 GiB, while the cloud budget is 2 GiB. Embedded font programs, ICC profiles, Indexed color lookups and function streams decoded while PDFium parses a page are not covered by image preflight budgets; their resource use relies on the engine process ceiling.
@@ -239,6 +263,7 @@ Engine availability for `pdf.split` is decided **before execution** via `ToolSpe
 
 Each `ToolSpec` declares its input arity:
 
+- `none`: Zero input files are required. The tool operates purely via parameters or remote sources (for example, `web.to_pdf`).
 - `one`: Exactly 1 input file is required (for example, `pdf.info`, `pdf.rotate`, `pdf.split`, `pdf.compress`).
 - `many(min, max)`: Between `min` and `max` input files (inclusive) are required (`1 <= min <= max`).
   - `pdf.merge`: `many(2, 500)`
@@ -512,12 +537,12 @@ Exceeding any limit terminates the job immediately and returns `limit_exceeded` 
 ### Sandbox and Network Isolation (AD-15)
 
 - **Mandatory confinement**: Out-of-process engines (`pdfium`, `qpdf`, `tesseract`, `sign`, `verapdf`, `ai`, `inpaint`) declare `sandbox_required: true` in their `EngineSpec` and refuse to start if OS sandbox isolation (Linux Landlock + seccomp, macOS Seatbelt) is unavailable unless the user explicitly sets `ASHIFT_SANDBOX=off`. Writable filesystem roots are restricted to `<workspace>/out` and the job's private `work_dir` (`TMPDIR`).
-- **Zero engine network access (AD-15)**: No engine ever receives network access. Whenever a tool requires remote data — RFC 3161 timestamp authority (TSA) responses, OCSP responses, CRLs for `pdf.sign`, or web page HTML/assets for `pdf.from_url` — the trusted host (`ariad-host`) fetches the resource beforehand using its SSRF-safe HTTP client:
+- **Zero engine network access (AD-15)**: No engine ever receives network access. Whenever a tool requires remote data — RFC 3161 timestamp authority (TSA) responses, OCSP responses, CRLs for `pdf.sign`, or web page HTML/assets for `web.to_pdf` — the trusted host (`ariad-host`) fetches the resource beforehand using its SSRF-safe HTTP client:
   - HTTPS only (plain HTTP is allowed only for explicit loopback development).
   - DNS is resolved once per hop and rejected if **any** resolved IP address is loopback, private (RFC 1918 / RFC 4193), link-local, CGNAT, multicast, broadcast, or cloud metadata (`169.254.169.254`, `fd00:ec2::254`).
   - Every redirect target is re-validated against the same URL and DNS rules (bounded redirect count).
   - Strict response byte size and wall-clock time caps are enforced.
-  - The host writes the verified bytes into `<work_dir>` and passes the local file path to the offline engine. For `pdf.from_url`, the host renders the fetched static HTML offline (`HTML -> IR -> Typst`); JavaScript-driven pages are never executed and emit a `js_not_executed` warning.
+  - The host writes the verified bytes into `<work_dir>` and passes the local file path to the offline engine. For `web.to_pdf`, the host renders the fetched static HTML offline (`HTML -> IR -> Typst`); JavaScript-driven pages are never executed and emit a `js_content_not_rendered` warning. Any cross-origin assets are skipped with a `remote_asset_skipped` warning.
 
 ### Progress Unit
 
@@ -625,7 +650,7 @@ Any recipe loaded from an external `.json` file, shared URL, clipboard import, m
    - CLI (`ashift recipe run`): Prints the step summary and prompts interactively on `/dev/tty`, or requires the explicit `--yes` flag in non-interactive scripts.
    - Web and macOS: Shows a confirmation sheet listing all steps and target folder before any step runs.
    - Natural-language recipes generated by `ai.recipe_from_text` are also treated as untrusted and never auto-execute without user confirmation.
-2. **Forbidden steps in imported recipes**: Imported recipes are strictly forbidden from configuring watch-folder automation (`watch`) or network-fetch steps (such as `pdf.from_url`). Presence of either in an imported recipe fails validation with exit code `9`.
+2. **Forbidden steps in imported recipes**: Imported recipes are strictly forbidden from configuring watch-folder automation (`watch`) or network-fetch steps (such as `web.to_pdf`). Presence of either in an imported recipe fails validation with exit code `9`.
 3. **No literal secrets**: Imported and trusted recipes alike reject any literal value on an `x-ariad-secret` parameter; a recipe step may only contain `"password": {"$secret": "prompt"}` (see [§11](#11-secrets-contract-x-ariad-secret)).
 4. **Deep links are route-only**: `ariadshift://` deep links may only navigate to a named view, conversion pair, or tool ID (for example, `ariadshift://tool/pdf.merge`). Deep links **never** accept filesystem paths, parameter blobs, or inline recipes.
 

@@ -19,6 +19,7 @@ pub mod secrets;
 pub mod sign;
 pub mod similarity;
 pub mod tables;
+pub mod web_to_pdf;
 
 pub use publish::{
     PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,

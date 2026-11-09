@@ -363,7 +363,7 @@ struct ToolArgs {
     #[arg(value_name = "ID")]
     tool: String,
     /// Input document file paths.
-    #[arg(value_name = "INPUT", required = true, num_args = 1..)]
+    #[arg(value_name = "INPUT", num_args = 0..)]
     inputs: Vec<PathBuf>,
     /// Output file or directory path.
     #[arg(short = 'o', long = "output", value_name = "DIR_OR_FILE")]

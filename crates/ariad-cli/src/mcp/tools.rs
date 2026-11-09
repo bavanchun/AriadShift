@@ -137,6 +137,7 @@ pub struct RunDocToolArgs {
     /// Canonical tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
     pub tool: String,
     /// Input document filesystem paths or `file://` URIs inside `--allow-dir`.
+    #[serde(default)]
     pub inputs: Vec<String>,
     /// Optional directory inside `--allow-dir` for published outputs (defaults to the first input's parent directory).
     pub output_dir: Option<String>,

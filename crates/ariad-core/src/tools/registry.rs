@@ -285,6 +285,8 @@ pub struct ToolGroupParseError(pub String);
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "arity", rename_all = "snake_case")]
 pub enum InputArity {
+    /// Zero input files (tool operates purely via parameters or remote sources).
+    None,
     /// Exactly 1 input file is required.
     One,
     /// Between `min` and `max` input files (inclusive) are required (`1 <= min <= max`).
@@ -313,6 +315,7 @@ impl InputArity {
     #[must_use]
     pub const fn accepts(self, count: usize) -> bool {
         match self {
+            Self::None => count == 0,
             Self::One => count == 1,
             Self::Many { min, max } => count >= min && count <= max,
         }
@@ -322,6 +325,7 @@ impl InputArity {
     #[must_use]
     pub const fn min(self) -> usize {
         match self {
+            Self::None => 0,
             Self::One => 1,
             Self::Many { min, .. } => min,
         }
@@ -331,6 +335,7 @@ impl InputArity {
     #[must_use]
     pub const fn max(self) -> usize {
         match self {
+            Self::None => 0,
             Self::One => 1,
             Self::Many { max, .. } => max,
         }
@@ -340,7 +345,7 @@ impl InputArity {
     #[must_use]
     pub const fn is_valid(self) -> bool {
         match self {
-            Self::One => true,
+            Self::None | Self::One => true,
             Self::Many { min, max } => min >= 1 && min <= max,
         }
     }
@@ -721,7 +726,6 @@ pub struct ToolDescriptor {
     /// Required input file count.
     pub inputs: InputArity,
     /// Accepted input format identifiers.
-    #[schemars(length(min = 1))]
     pub input_formats: Vec<String>,
     /// Primary output format identifier.
     pub output_format: String,
@@ -828,10 +832,19 @@ pub fn validate_specs(specs: &[ToolSpec]) -> Result<(), RegistryError> {
                 reason: "inputs arity bounds must satisfy 1 <= min <= max",
             });
         }
-        if spec.input_formats.is_empty() || spec.input_formats.iter().any(|f| f.trim().is_empty()) {
+        if spec.inputs != InputArity::None
+            && (spec.input_formats.is_empty()
+                || spec.input_formats.iter().any(|f| f.trim().is_empty()))
+        {
             return Err(RegistryError::InvalidSpec {
                 id: spec.id.to_owned(),
                 reason: "input_formats must be non-empty",
+            });
+        }
+        if spec.inputs == InputArity::None && !spec.input_formats.is_empty() {
+            return Err(RegistryError::InvalidSpec {
+                id: spec.id.to_owned(),
+                reason: "input_formats must be empty for 0-input tools",
             });
         }
         if spec.output_format.trim().is_empty() {

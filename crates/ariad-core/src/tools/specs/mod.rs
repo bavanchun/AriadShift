@@ -21,6 +21,7 @@ pub mod pdfium;
 pub mod redact;
 pub mod security;
 pub mod sign;
+pub mod web;
 
 use crate::tools::ToolSpec;
 
@@ -49,5 +50,6 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(convert_cbz::specs());
     list.extend(compare::specs());
     list.extend(compliance::specs());
+    list.extend(web::specs());
     list
 }
