@@ -1,0 +1,536 @@
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Editable neighbour before table-caption.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b5d9ed48a64984f4637eec326af31047918c926d4c506a74a4f86f10faf4de8e1",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Editor case: table-caption",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b84003af50ce8a31e1682e08c329acf7c45e2d2f9999c270d5422de7ae8bef073",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "River",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "be9bba523e1221f79715440d38745d6e11c2e0fa8a2db0d2f92dc91c4c79b08a5",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "3",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b6631c92a6c6bfc5edf22dccb30061be5327e79b79a9151f33b6da689fde94ab3",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Shade",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "ba1b2f0b5de957f9ddbaf5d5f46a2c8ee70240116451d1804389f95dccf14299b",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Garden",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b5870760432a05995ff7ca81647bb7572da372953b3dcb99ea693609c9a457a02",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "5",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bc66239af2c689391caf1b30b4519e17861941b06b187ae74fb75e1d299107c69",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Books",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bf272a307d612e35ca6b189afa020ecee4390cd19c001156b365f7a2ccded2b94",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": [
+        {
+          "text": "Survey: ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "morning seats",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "center"
+        }
+      ],
+      "direct": {},
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Place",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b4fff1297f0438eb6d4c8159e288628f0530c7b3397179e566797327a22f19064",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Seats",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bac1c8e44332355c7aebbdcab338ffbb34e9b7105502f30f9eaf358777bcc1bc5",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Note",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bfc2870082ef34527c513ca57452e21800ed7f94dd17c2725edc656f9f5874b1d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "b55f2a7ea91b9ca517c8bacee1c0155473db8959bcebc3e6ac4a0a5df360d2c10",
+      "type": "table"
+    },
+    {
+      "content": [
+        {
+          "text": "Editable neighbour after table-caption.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "bf92c4c013ee5b338f06d17d2069fb20220c4c1c1c22ffca60f55501b76d8567a",
+      "type": "paragraph"
+    }
+  ],
+  "layout": {
+    "blocks": {
+      "b4fff1297f0438eb6d4c8159e288628f0530c7b3397179e566797327a22f19064": {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      },
+      "b55f2a7ea91b9ca517c8bacee1c0155473db8959bcebc3e6ac4a0a5df360d2c10": {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      },
+      "b5870760432a05995ff7ca81647bb7572da372953b3dcb99ea693609c9a457a02": {
+        "bbox": {
+          "bottom": 112.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 96.0
+        },
+        "page_no": 1
+      },
+      "b5d9ed48a64984f4637eec326af31047918c926d4c506a74a4f86f10faf4de8e1": {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      },
+      "b6631c92a6c6bfc5edf22dccb30061be5327e79b79a9151f33b6da689fde94ab3": {
+        "bbox": {
+          "bottom": 104.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 88.0
+        },
+        "page_no": 1
+      },
+      "b84003af50ce8a31e1682e08c329acf7c45e2d2f9999c270d5422de7ae8bef073": {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      },
+      "ba1b2f0b5de957f9ddbaf5d5f46a2c8ee70240116451d1804389f95dccf14299b": {
+        "bbox": {
+          "bottom": 108.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 92.0
+        },
+        "page_no": 1
+      },
+      "bac1c8e44332355c7aebbdcab338ffbb34e9b7105502f30f9eaf358777bcc1bc5": {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      },
+      "bc66239af2c689391caf1b30b4519e17861941b06b187ae74fb75e1d299107c69": {
+        "bbox": {
+          "bottom": 116.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 100.0
+        },
+        "page_no": 1
+      },
+      "be9bba523e1221f79715440d38745d6e11c2e0fa8a2db0d2f92dc91c4c79b08a5": {
+        "bbox": {
+          "bottom": 100.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 84.0
+        },
+        "page_no": 1
+      },
+      "bf272a307d612e35ca6b189afa020ecee4390cd19c001156b365f7a2ccded2b94": {
+        "bbox": {
+          "bottom": 120.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 104.0
+        },
+        "page_no": 1
+      },
+      "bf92c4c013ee5b338f06d17d2069fb20220c4c1c1c22ffca60f55501b76d8567a": {
+        "bbox": {
+          "bottom": 124.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 108.0
+        },
+        "page_no": 1
+      },
+      "bfc2870082ef34527c513ca57452e21800ed7f94dd17c2725edc656f9f5874b1d": {
+        "bbox": {
+          "bottom": 96.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 80.0
+        },
+        "page_no": 1
+      }
+    },
+    "pages": [
+      {
+        "height": 842.0,
+        "page_no": 1,
+        "width": 595.0
+      }
+    ]
+  },
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "ariad-ir+json",
+    "subject": "Original editor preservation corpus",
+    "title": "Editor preservation: table-caption"
+  },
+  "provenance": {
+    "org.ariadshift.editor-corpus": {
+      "case": "table-caption",
+      "font_permission_evidence": {
+        "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+      },
+      "source": "original-authoring"
+    }
+  },
+  "source_map": {
+    "b4fff1297f0438eb6d4c8159e288628f0530c7b3397179e566797327a22f19064": [
+      {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b55f2a7ea91b9ca517c8bacee1c0155473db8959bcebc3e6ac4a0a5df360d2c10": [
+      {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b5870760432a05995ff7ca81647bb7572da372953b3dcb99ea693609c9a457a02": [
+      {
+        "bbox": {
+          "bottom": 112.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 96.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b5d9ed48a64984f4637eec326af31047918c926d4c506a74a4f86f10faf4de8e1": [
+      {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b6631c92a6c6bfc5edf22dccb30061be5327e79b79a9151f33b6da689fde94ab3": [
+      {
+        "bbox": {
+          "bottom": 104.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 88.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b84003af50ce8a31e1682e08c329acf7c45e2d2f9999c270d5422de7ae8bef073": [
+      {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    ],
+    "ba1b2f0b5de957f9ddbaf5d5f46a2c8ee70240116451d1804389f95dccf14299b": [
+      {
+        "bbox": {
+          "bottom": 108.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 92.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bac1c8e44332355c7aebbdcab338ffbb34e9b7105502f30f9eaf358777bcc1bc5": [
+      {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bc66239af2c689391caf1b30b4519e17861941b06b187ae74fb75e1d299107c69": [
+      {
+        "bbox": {
+          "bottom": 116.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 100.0
+        },
+        "page_no": 1
+      }
+    ],
+    "be9bba523e1221f79715440d38745d6e11c2e0fa8a2db0d2f92dc91c4c79b08a5": [
+      {
+        "bbox": {
+          "bottom": 100.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 84.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bf272a307d612e35ca6b189afa020ecee4390cd19c001156b365f7a2ccded2b94": [
+      {
+        "bbox": {
+          "bottom": 120.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 104.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bf92c4c013ee5b338f06d17d2069fb20220c4c1c1c22ffca60f55501b76d8567a": [
+      {
+        "bbox": {
+          "bottom": 124.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 108.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bfc2870082ef34527c513ca57452e21800ed7f94dd17c2725edc656f9f5874b1d": [
+      {
+        "bbox": {
+          "bottom": 96.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 80.0
+        },
+        "page_no": 1
+      }
+    ]
+  },
+  "version": "ariad-ir/2"
+}

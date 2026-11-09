@@ -1,0 +1,201 @@
+{
+  "case": "raw-tex-block",
+  "features": [
+    "raw-tex-block"
+  ],
+  "future_gates": [
+    "tiptap-native-roundtrip",
+    "textkit-native-roundtrip",
+    "edit-export-fidelity"
+  ],
+  "ir": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "text": "Editable neighbour before raw-tex-block.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b2c7cdeb9af14d99dbe1702c1c564b64bb6d82fd19797e04c184b4e5a2df592ec",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Editor case: raw-tex-block",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b400885d2e8cfcc5d465246a6a32ded8bee894b27aa0a3ec469b7fa37f2057bf0",
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "direct": {},
+        "format": "tex",
+        "id": "ba5ad9553f7c491498294164f2d0de1e084c967885b7d315c1e0f6aeb7ea53d35",
+        "text": "\\newcommand{\\route}[1]{  #1 }% original\r\n\\route{Bến sông}\n",
+        "type": "raw"
+      },
+      {
+        "content": [
+          {
+            "text": "Editable neighbour after raw-tex-block.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b62ca0ac150a5a701ec939bdfefc0beaeeb3e5d5a4d6f80bf0bebcfa605f2a896",
+        "type": "paragraph"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "b2c7cdeb9af14d99dbe1702c1c564b64bb6d82fd19797e04c184b4e5a2df592ec": {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        },
+        "b400885d2e8cfcc5d465246a6a32ded8bee894b27aa0a3ec469b7fa37f2057bf0": {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        },
+        "b62ca0ac150a5a701ec939bdfefc0beaeeb3e5d5a4d6f80bf0bebcfa605f2a896": {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        },
+        "ba5ad9553f7c491498294164f2d0de1e084c967885b7d315c1e0f6aeb7ea53d35": {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 842.0,
+          "page_no": 1,
+          "width": 595.0
+        }
+      ]
+    },
+    "meta": {
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "language": "en",
+      "source_format": "ariad-ir+json",
+      "subject": "Original editor preservation corpus",
+      "title": "Editor preservation: raw-tex-block"
+    },
+    "provenance": {
+      "org.ariadshift.editor-corpus": {
+        "case": "raw-tex-block",
+        "font_permission_evidence": {
+          "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+        },
+        "source": "original-authoring"
+      }
+    },
+    "source_map": {
+      "b2c7cdeb9af14d99dbe1702c1c564b64bb6d82fd19797e04c184b4e5a2df592ec": [
+        {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b400885d2e8cfcc5d465246a6a32ded8bee894b27aa0a3ec469b7fa37f2057bf0": [
+        {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b62ca0ac150a5a701ec939bdfefc0beaeeb3e5d5a4d6f80bf0bebcfa605f2a896": [
+        {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        }
+      ],
+      "ba5ad9553f7c491498294164f2d0de1e084c967885b7d315c1e0f6aeb7ea53d35": [
+        {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        }
+      ]
+    },
+    "version": "ariad-ir/2"
+  },
+  "layout": {
+    "first_bbox": {
+      "bottom": 76.0,
+      "left": 54.0,
+      "right": 540.0,
+      "top": 60.0
+    },
+    "first_block_source_fragments": 1,
+    "page_height_pt": 842.0,
+    "page_width_pt": 595.0,
+    "reference_kind": "authored-ir-geometry",
+    "section_count": 0
+  },
+  "origin": "independent-original-specification",
+  "preservation": [
+    "adjacent-text-edit",
+    "stable-id-reorder",
+    "opaque-byte-equality",
+    "explicit-delete-removes-payload",
+    "ambiguous-orphan-is-reported"
+  ],
+  "schema": "ariad-editor-truth/1",
+  "semantics": {
+    "editable_after": "Editable neighbour after raw-tex-block.",
+    "editable_before": "Editable neighbour before raw-tex-block.",
+    "raw_tex": "\\newcommand{\\route}[1]{  #1 }% original\r\n\\route{Bến sông}\n"
+  },
+  "styles": {
+    "applicable": false
+  }
+}

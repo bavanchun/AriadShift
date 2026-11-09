@@ -1,0 +1,16 @@
+{
+  "case": "vi-field-notes-html",
+  "layout": {
+    "reference_kind": "reflow-no-box-reference"
+  },
+  "origin": "independent-original-specification",
+  "schema": "ariad-editor-truth/1",
+  "semantics": {
+    "paragraph": "Có bóng mát vào buổi sáng.",
+    "title": "Bảng ghế bên sông"
+  },
+  "styles": {
+    "heading_color": "#185c4c",
+    "heading_size_pt": 18.0
+  }
+}
