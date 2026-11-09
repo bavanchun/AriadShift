@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, replace
-from datetime import datetime, timezone
 import hashlib
-import platform
 import json
 import os
-from pathlib import Path
+import platform
 import shlex
 import shutil
 import statistics
@@ -17,14 +14,22 @@ import subprocess
 import tempfile
 import time
 import tomllib
+from dataclasses import asdict, replace
+from datetime import datetime, timezone
+from pathlib import Path
 
 from ariad_bench.canonical import CanonicalDoc, normalize
 from ariad_bench.metrics import aggregate_edge_metrics, measure_execution, score_fixture
+from ariad_bench.references import INDEPENDENT_READBACK_FORMATS, read_writer_output
 from ariad_bench.run import find_binary
 from ariad_bench.visual import pdf_ssim
 
 IR = "ariad-ir+json"
 DOCLING = "docling+json"
+OFFICE_PDF_INPUTS = {
+    "docx", "xlsx", "pptx", "odt", "rtf", "doc", "xls", "ppt", "ods", "odp",
+    "odg", "wpd", "wps", "pub", "vsd",
+}
 
 
 class Bench:
@@ -141,6 +146,32 @@ class Bench:
         _, wall, rss = self.execute(command)
         return output, wall, rss
 
+    def convert(
+        self, source: Path, target: str, engine: str | None = None
+    ) -> tuple[Path, float, int]:
+        """Measure a complete direct route, including the planner and host startup."""
+        self.serial += 1
+        output = self.scratch / f"convert-{self.serial}.{target}"
+        command = [
+            str(self.ashift), "convert", str(source), "--to", target,
+            "-o", str(output), "--overwrite",
+        ]
+        if engine is not None:
+            command.extend(["--engine", engine])
+        _, wall, rss = self.execute(command)
+        return output, wall, rss
+
+    def readback(self, artifact: Path, target: str) -> Path | CanonicalDoc:
+        if target in INDEPENDENT_READBACK_FORMATS:
+            return read_writer_output(artifact, target, self.pandoc)
+        if target == "pdf":
+            return self.engine("pdf", artifact, target, IR)[0]
+        if target in ("docx", "epub"):
+            return self.engine("pandoc", artifact, target, IR)[0]
+        if target == IR:
+            return artifact
+        return self.hook("__ir", artifact)[0]
+
     def docling_canonical(self, path: Path):
         """Interpret the source with Docling's own exporter, independently of our Rust mapper."""
         self.serial += 1
@@ -181,8 +212,8 @@ class Bench:
     def visual_pdf(self, artifact: Path, target: str) -> tuple[Path, str]:
         if target == "pdf":
             return artifact, "pdfium"
-        if target == "docx":
-            return self.engine("libreoffice", artifact, "docx", "pdf")[0], "libreoffice"
+        if target in OFFICE_PDF_INPUTS:
+            return self.engine("libreoffice", artifact, target, "pdf")[0], "libreoffice"
         ir = self.hook("__ir", artifact)[0]
         return self.engine("typst", ir, IR, "pdf")[0], "ariad-core+typst"
 
@@ -213,7 +244,9 @@ class Bench:
             "pages": fixture.get("pages", 1),
             **asdict(score),
         }
-        if target == "pdf" or route:
+        # Plain text and CSV do not carry a faithful page layout. Do not create
+        # a misleading SSIM score by forcing them through an unavailable reader.
+        if (target == "pdf" or route) and target not in ("txt", "csv"):
             rendered, renderer = self.visual_pdf(runs[-1][0], target)
             sample["ssim"] = pdf_ssim(self.root / fixture["visual_reference"], rendered)
             sample["visual_profile"] = "faithful"
@@ -228,21 +261,28 @@ class Bench:
 
     def measure(self, fixture: dict, engine: str, target: str, ocr: str = "off"):
         source = fixture["format"]
-        runs = [
-            self.engine(engine, self.root / fixture["path"], source, target, ocr)
-            for _ in range(self.repeat)
-        ]
+        path = self.root / fixture["path"]
+        if engine == "ariad-pdf":
+            if (source, target) != ("cbz", "pdf"):
+                raise ValueError(f"Unsupported in-process PDF edge: {source}->{target}")
+            runs = [self.convert(path, target) for _ in range(self.repeat)]
+        elif engine == "ariad-core":
+            runs = [
+                self.hook("__ir" if target == IR else "__write", path, target)
+                for _ in range(self.repeat)
+            ]
+        else:
+            runs = [
+                self.engine(engine, path, source, target, ocr)
+                for _ in range(self.repeat)
+            ]
         artifact = runs[-1][0]
         mapper_runs = None
         if target == DOCLING:
             mapper_runs = [self.hook("__ir", artifact) for _ in range(self.repeat)]
             ir = mapper_runs[-1][0]
-        elif target == "pdf":
-            ir = self.engine("pdf", artifact, "pdf", IR)[0]
-        elif target == "docx":
-            ir = self.engine("pandoc", artifact, "docx", IR)[0]
         else:
-            ir = artifact
+            ir = self.readback(artifact, target)
         source_document = self.docling_canonical(artifact) if target == DOCLING else ir
         score = self.record(fixture, engine, target, ocr, runs, source_document)
         pages = max(1, fixture.get("pages", 1))
@@ -269,6 +309,22 @@ class Bench:
 
     def route(self, fixture: dict, engine: str, target: str, ocr: str = "off"):
         """Cold complete route; exclude scoring read-back from job time and memory."""
+        if engine == "ariad-pdf" or (
+            engine == "libreoffice"
+            and (fixture["format"] in OFFICE_PDF_INPUTS or fixture["format"] == "pdf")
+        ):
+            if engine == "ariad-pdf" and (fixture["format"], target) != ("cbz", "pdf"):
+                raise ValueError("Only cbz->pdf is an in-process PDF route")
+            runs = [
+                self.convert(
+                    self.root / fixture["path"], target,
+                    "libreoffice" if engine == "libreoffice" else None,
+                )
+                for _ in range(self.repeat)
+            ]
+            self.record(fixture, engine, target, ocr, runs,
+                        self.readback(runs[-1][0], target), route=True)
+            return
         runs = []
         for _ in range(self.repeat):
             started = time.perf_counter()
@@ -290,7 +346,7 @@ class Bench:
                 stages.append(self.engine(engine, stages[-1][0], "docx", "pdf"))
             elif engine == "typst":
                 stages.append(self.engine("typst", stages[-1][0], IR, "pdf"))
-            elif target == "docx":
+            elif target in ("docx", "epub", "odt", "rtf"):
                 stages.append(self.engine("pandoc", stages[-1][0], IR, target))
             else:
                 stages.append(self.hook("__write", stages[-1][0], target))
@@ -302,11 +358,7 @@ class Bench:
                 )
             )
         artifact = runs[-1][0]
-        if target in ("pdf", "docx"):
-            reader = "pdf" if target == "pdf" else "pandoc"
-            ir = self.engine(reader, artifact, target, IR)[0]
-        else:
-            ir = self.hook("__ir", artifact)[0]
+        ir = self.readback(artifact, target)
         self.record(fixture, engine, target, ocr, runs, ir, route=True)
 
 
@@ -335,9 +387,15 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
                 if fmt == "pdf" and not scan:
                     bench.measure(fixture, "pdf", IR)
                     bench.route(fixture, "pdf", "markdown")
+                    for target in ("odt", "rtf", "txt", "xlsx"):
+                        bench.route(fixture, "pdf", target)
+                    bench.measure(fixture, "libreoffice", "pptx")
+                    bench.route(fixture, "libreoffice", "pptx")
                 for ocr in ["tesseract", "rapidocr"] if scan else ["off"]:
                     bench.measure(fixture, "docling", DOCLING, ocr)
                     bench.route(fixture, "docling", "markdown", ocr)
+                    if fmt == "pdf":
+                        bench.route(fixture, "docling", "xlsx", ocr)
                     if scan:
                         bench.route(fixture, "docling", "docx", ocr)
             elif fmt in ("pptx", "xlsx", "docx"):
@@ -347,10 +405,16 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
                 bench.measure(fixture, "libreoffice", "pdf")
                 if fmt == "docx":
                     bench.route(fixture, "typst", "pdf")
-            elif fmt in ("odt", "ods", "odp", "doc", "rtf", "xls", "ppt"):
+            elif fmt in OFFICE_PDF_INPUTS:
                 bench.measure(fixture, "libreoffice", "pdf")
                 if fmt in ("odt", "doc", "rtf"):
                     bench.measure(fixture, "libreoffice", "docx")
+            elif fmt in ("txt", "csv", "eml", "msg", "svg"):
+                bench.measure(fixture, "ariad-core", IR)
+                bench.route(fixture, "typst", "pdf")
+            elif fmt == "cbz":
+                bench.measure(fixture, "ariad-pdf", "pdf")
+                bench.route(fixture, "ariad-pdf", "pdf")
             elif fmt == "md":
                 truth_path = root / next(
                     c["path"]
