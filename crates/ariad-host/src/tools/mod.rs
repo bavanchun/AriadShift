@@ -6,6 +6,7 @@
 //! atomically publishes output artifacts into the target directory.
 
 pub mod cbz;
+pub mod compare;
 pub mod engine;
 pub mod inprocess;
 mod ocr;

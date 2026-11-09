@@ -676,9 +676,14 @@ impl ToolSpec {
     /// out-of-process `"pdfium"` engine.
     #[must_use]
     pub fn engine_for_params(&self, params: &serde_json::Value) -> &'static str {
-        if self.id == "pdf.split"
-            && params.get("detect").and_then(serde_json::Value::as_str) == Some("pixel")
-        {
+        let requires_pdfium = (self.id == "pdf.split"
+            && params.get("detect").and_then(serde_json::Value::as_str) == Some("pixel"))
+            || (self.id == "pdf.compare"
+                && matches!(
+                    params.get("mode").and_then(serde_json::Value::as_str),
+                    Some("visual" | "both")
+                ));
+        if requires_pdfium {
             "pdfium"
         } else {
             self.engine

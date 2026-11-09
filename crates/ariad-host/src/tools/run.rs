@@ -619,6 +619,7 @@ fn run_tool_inner(
 
     // 8. Pre-validate output target confinement and engine availability before staging or running.
     let emits_json = (spec.id != "pdf.forms_export"
+        && spec.id != "pdf.compare"
         && spec.output_format.eq_ignore_ascii_case("json"))
         || tool_action_emits_json(spec.id, &resolved_secrets.schema_params);
     let extracts_attachments =
@@ -630,6 +631,7 @@ fn run_tool_inner(
         && spec.group == ariad_core::tools::ToolGroup::Ocr;
     let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
+    let is_compare = spec.id == "pdf.compare";
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -665,6 +667,12 @@ fn run_tool_inner(
 
     if is_cbz {
         super::cbz::preflight(
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_compare {
+        super::compare::preflight(
+            &resolved_secrets.schema_params,
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
         )?;
@@ -756,6 +764,21 @@ fn run_tool_inner(
             request.engine_command.as_ref(),
             &request.cancel,
             on_event,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_compare {
+        super::compare::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+            &request.cancel,
+            on_event,
+            clock.clock,
         )
         .map_err(|e| e.scrubbed(scrubber))?
     } else if is_ocr_composite {
@@ -864,6 +887,20 @@ fn run_tool_inner(
 
     if request.cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
+    }
+
+    if is_compare && let OutputTarget::Path(ref path) = request.output {
+        let is_dir = path.is_dir()
+            || path
+                .as_os_str()
+                .to_string_lossy()
+                .ends_with(['/', std::path::MAIN_SEPARATOR]);
+        if !is_dir {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            raw_exec
+                .artifacts
+                .retain(|(_, fmt)| fmt.eq_ignore_ascii_case(ext));
+        }
     }
 
     // 11. Plan and execute atomic multi-artifact publication.
@@ -1307,8 +1344,10 @@ fn publish_tool_outputs(
         OutputTarget::None => return Ok((Vec::new(), Vec::new())),
         OutputTarget::DefaultBesideInput => {
             // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`, `layers list`,
-            // `pdf.text_layout`, `pdf.detect_scanned`) without `-o` emit structured JSON inline without writing a file next to input.
-            if (spec.id == "pdf.info" || emits_json) && naming_template.is_none() {
+            // `pdf.text_layout`, `pdf.detect_scanned`, `pdf.compare`) without `-o` emit structured JSON inline without writing a file next to input.
+            if (spec.id == "pdf.info" || spec.id == "pdf.compare" || emits_json)
+                && naming_template.is_none()
+            {
                 return Ok((Vec::new(), Vec::new()));
             }
             let parent = first_input
@@ -1391,6 +1430,9 @@ fn publish_tool_outputs(
             && let Some(engine_named) = replace_staged_input_stem(staged_path, first_input)
         {
             engine_named
+        } else if spec.id == "pdf.compare" {
+            let clean_ext = format.trim_start_matches('.');
+            format!("{first_stem}.compared.{clean_ext}")
         } else if multi {
             default_multi_artifact_name(first_input, spec.id, index_1_based, format)
         } else {
@@ -1609,6 +1651,11 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
             let p: ariad_core::tools::params::TimestampParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.compare" => {
+            serde_json::from_value::<ariad_core::tools::params::CompareParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
         }
         _ => Ok(()),
     }

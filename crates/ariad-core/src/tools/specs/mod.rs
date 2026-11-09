@@ -1,6 +1,7 @@
 //! Per-file tool specification lists concatenated into the global tool registry.
 
 pub mod annotate_forms;
+pub mod compare;
 pub mod convert_cbz;
 pub mod convert_tables;
 pub mod ocr_scan;
@@ -45,5 +46,6 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(sign::specs());
     list.extend(convert_tables::specs());
     list.extend(convert_cbz::specs());
+    list.extend(compare::specs());
     list
 }

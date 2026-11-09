@@ -94,7 +94,7 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | `forms` | AcroForm field inspection, filling, creation, detection, and flattening | `pdf.forms_list`, `pdf.forms_fill`, `pdf.forms_create`, `pdf.forms_detect`, `pdf.forms_flatten`, `pdf.forms_import`, `pdf.forms_export` |
 | `sign` | PAdES digital signing, timestamping, signature verification, and removal | `pdf.sign`, `pdf.sign_verify`, `pdf.sign_remove` |
 | `redact` | True object-stream and raster redaction with verification report | `pdf.redact`, `pdf.redact_verify` |
-| `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare_visual`, `pdf.compare_semantic` |
+| `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare` |
 | `edit` | Stateless page-mode in-place edits and document-mode export helpers | `pdf.edit_apply` |
 | `ai` | Offline-first summarization, Q&A with citations, translation, table extraction | `ai.summarize`, `ai.ask`, `ai.translate`, `ai.extract_tables`, `ai.recipe_from_text` |
 | `automation` | Batch recipe execution and folder watch automation | `automation.recipe_validate` |
@@ -174,6 +174,7 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 - `pdf.annotations_export`: XFDF (default) or JSON.
 - `pdf.forms_export`: JSON (default), FDF, XFDF or CSV.
 - `pdf.tables_to_csv`: `output_format: "csv"`, extracts every table to an individual CSV file.
+- `pdf.compare`: `output_format: "json"`, `output_formats: ["json", "pdf"]`
 
 ### `pdf.tables_to_csv`
 
@@ -183,6 +184,30 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 - **Outputs**: Emits one or more CSV files with RFC 4180 escaping and formula-injection guarding (`=`, `+`, `-`, `@`, `\t`, `\r` prefixed with `'`). Capped at 255 tables and 50 MiB total CSV output.
 - **Runtime**: `local` only (executed host-side via `ariad-host` using Docling table detection).
 - **Error handling**: If the document contains no tables or Docling table detection finds no tables, execution fails before publishing with exit code `1` (`engine_failure`, error message `"no tables found in document"`). If Docling execution fails, the Docling error is surfaced directly without fallback to the native reader.
+
+### `pdf.compare`
+
+`pdf.compare` performs semantic text diffing and rasterized visual comparison between two PDF documents (`inputs[0]` before, `inputs[1]` after), emitting a structured JSON difference report (`<stem>.compared.json`) and an annotated PDF report (`<stem>.compared.pdf`) highlighting changes.
+
+- **Parameters**:
+  - `mode` (`"text"` | `"visual"` | `"both"`, default `"text"`): Comparison mode.
+    - `"text"`: Reading-order semantic word diff using `similar` 3.2.1 Myers diff with bounding boxes (WASM-capable, in-process via `ariad-pdf` or host composite with PDFium `pdf.text_layout` word coordinates).
+    - `"visual"`: Rasterized pixel difference with 16px connected bounding box grouping (local only, renders via `pdfium`).
+    - `"both"`: Executes both semantic text diffing and rasterized visual comparison.
+  - `pages` (optional string): Page selection to compare (e.g. `"1-5"`, `"odd"`, `"1,3"`). Defaults to comparing all pages.
+- **Outputs**:
+  - Default: Multi-artifact publication emitting `<stem>.compared.json` and `<stem>.compared.pdf`. When `-o` names a `.json` or `.pdf` file, only the requested artifact is published. When `-o` is omitted and run inline, outputs structured JSON to stdout.
+- **Runtimes**: `wasm (text), local`. On WASM or when the PDFium pack is missing, selecting `"visual"` or `"both"` fails early at preflight with exit code `5` (`engine_unavailable` / `tool_missing`).
+- **Resource Bounds & Limits**:
+  - Visual comparison is capped at 200 pages (`MAX_VISUAL_PAGES = 200`). Exceeding this limit in `"visual"` or `"both"` mode fails immediately before rendering with exit code `9` (`invalid_params`) naming the 200-page limit.
+  - Rendered page images are capped at 50 megapixels (`MAX_PAGE_PIXELS = 50_000_000`, 50 Mpx).
+  - Detected visual differences are grouped into at most 200 bounding boxes per page (`MAX_DIFF_BOXES = 200`).
+  - Visual comparison streams page by page so decoded raster images are not retained simultaneously in memory.
+- **Report Schema**:
+  - `summary`: Aggregate counts (`pages_before`, `pages_after`, `pages_compared`, `pages_identical`, `pages_changed`, `total_changes`, `text_changes`, `visual_changes`).
+  - `pages`: Per-page results (`page_number`, `page_before`, `page_after`, `status`: `"identical"` | `"changed"` | `"added"` | `"removed"`, `text_changes`, `visual_changes`).
+    - `text_changes`: Array of `{ kind, text_before?, text_after?, bbox: [left, bottom, right, top] }` where `kind` is `"insert"` (emerald highlight on after doc), `"delete"` (red rectangle), `"replace"` (amber highlight), or `"move"` (blue rectangle).
+    - `visual_changes`: Array of `{ bbox: [left, bottom, right, top], diff_pixels }` (purple rectangle).
 
 Before PDFium opens a document, the engine checks page image dimensions and data against the job's limits. Inline images may use image masks without a color space, lossless ASCIIHex, ASCII85, Flate, RunLength or LZW filters, and CCITT or JPEG as the final filter. JPEG frame dimensions are checked against the image dictionary. Color-space aliases and filters the engine cannot safely inspect still cause `limit_exceeded` before the page is opened. Page budgets include repeated form invocations, inline image data and Type3 glyph uses; unusually complex pages may exceed these limits.
 
@@ -220,7 +245,7 @@ Each `ToolSpec` declares its input arity:
   - `pdf.alternate_mix`: `many(2, 2)`
   - `pdf.overlay`: `many(2, 2)`
   - `pdf.annotations_import` / `pdf.forms_import`: `many(2, 2)` (base PDF followed by data file)
-  - `pdf.compare_visual` / `pdf.compare_semantic`: `many(2, 2)`
+  - `pdf.compare`: `many(2, 2)`
   - `pdf.attachments`: `many(1, 100)` (`list` / `extract` / `remove` take 1 PDF; `add` takes the base PDF followed by attachment files)
   - `pdf.portfolio`: `many(1, 100)` (`create` takes 1..=100 input files; `list` / `extract` take 1 portfolio PDF)
 
@@ -237,7 +262,7 @@ Input order is preserved end-to-end across CLI arguments, MCP `inputs` arrays, W
 - **`pdf.merge`**: Pages are concatenated in the exact order the input files are provided (`inputs[0]`, then `inputs[1]`, ..., `inputs[N - 1]`). When `outline: "per-file"` is active, top-level bookmarks are generated in the same order using each input's file stem.
 - **`pdf.overlay`**: `inputs[0]` is the base document; `inputs[1]` is the overlay document applied over or under `inputs[0]`.
 - **`pdf.alternate_mix`**: Pages interleave starting with page 1 of `inputs[0]`, followed by page 1 of `inputs[1]` (or the last page of `inputs[1]` when `reverse_second: true`).
-- **`pdf.compare_*`**: `inputs[0]` is the baseline ("before") document and `inputs[1]` is the revised ("after") document.
+- **`pdf.compare`**: `inputs[0]` is the baseline ("before") document and `inputs[1]` is the revised ("after") document.
 
 ### Encrypted Input Preflight
 

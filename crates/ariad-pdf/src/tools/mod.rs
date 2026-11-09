@@ -360,6 +360,14 @@ pub fn run_tool(
 
     match tool_id {
         #[cfg(feature = "codecs")]
+        "pdf.compare" => {
+            let parsed_params: ariad_core::tools::params::CompareParams =
+                serde_json::from_value(params.clone())
+                    .map_err(|err| PdfError::InvalidParams(err.to_string()))?;
+            parsed_params.validate().map_err(PdfError::InvalidParams)?;
+            crate::compare::run_inputs(inputs, &parsed_params, ctx)
+        }
+        #[cfg(feature = "codecs")]
         "pdf.annotations" => dispatch_structural_inputs::<
             ariad_core::tools::params::annotations::AnnotationsParams,
             _,
