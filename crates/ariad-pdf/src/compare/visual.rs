@@ -6,8 +6,14 @@ use image::{DynamicImage, GenericImageView};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of pages that can be visually compared in a single run.
+pub const MAX_VISUAL_PAGES: usize = 200;
+
 /// Maximum allowed visual change bounding boxes per page.
-pub const MAX_VISUAL_BOXES_PER_PAGE: usize = 200;
+pub const MAX_DIFF_BOXES: usize = 200;
+
+/// Backward-compatible alias for [`MAX_DIFF_BOXES`].
+pub const MAX_VISUAL_BOXES_PER_PAGE: usize = MAX_DIFF_BOXES;
 
 /// Grid cell dimension in pixels for connected-component grouping.
 pub const GRID_CELL_SIZE: u32 = 16;
@@ -19,7 +25,10 @@ pub const PIXEL_DIFF_THRESHOLD: u32 = 35;
 pub const MIN_COMPONENT_DIFF_PIXELS: usize = 5;
 
 /// Maximum total pixels across an image before returning an error (50 megapixels).
-pub const MAX_IMAGE_PIXELS: u64 = 50_000_000;
+pub const MAX_PAGE_PIXELS: u64 = 50_000_000;
+
+/// Backward-compatible alias for [`MAX_PAGE_PIXELS`].
+pub const MAX_IMAGE_PIXELS: u64 = MAX_PAGE_PIXELS;
 
 /// A visual difference region on a page.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

@@ -18,6 +18,7 @@ use ariad_core::{
         params::{Background, Combine, CompareMode, CompareParams, RasterFormat, RenderParams},
     },
 };
+pub use ariad_pdf::compare::{MAX_DIFF_BOXES, MAX_PAGE_PIXELS, MAX_VISUAL_PAGES};
 use ariad_pdf::{
     ToolCtx,
     compare::{
@@ -25,7 +26,6 @@ use ariad_pdf::{
         build_report_pdf, diff_words, extract_words_from_reader, visual_diff_images,
     },
 };
-use image::DynamicImage;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use zip::ZipArchive;
@@ -73,9 +73,10 @@ fn parse_page_no_from_name(name: &str) -> Option<u32> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_pages_to_images(
+fn render_pages_to_image_files(
     staged_input: &(PathBuf, String),
     pages: Option<&PageRange>,
+    subdir: &str,
     workspace: &Workspace,
     limits: &Limits,
     scrubber: &SecretScrubber,
@@ -83,7 +84,7 @@ fn render_pages_to_images(
     engine_command_override: Option<&EngineCommand>,
     cancel: &CancellationToken,
     on_event: &mut dyn FnMut(ToolEvent),
-) -> Result<BTreeMap<u32, DynamicImage>, ToolError> {
+) -> Result<BTreeMap<u32, PathBuf>, ToolError> {
     let render_spec = *ariad_core::tools::find("pdf.render")
         .ok_or_else(|| ToolError::UnknownTool("pdf.render".into()))?;
 
@@ -119,6 +120,9 @@ fn render_pages_to_images(
     }
 
     let mut images = BTreeMap::new();
+    let extract_dir = workspace.work_dir().join(subdir);
+    std::fs::create_dir_all(&extract_dir)
+        .map_err(|e| ToolError::OutputIo(format!("could not create {subdir} directory: {e}")))?;
 
     for (artifact_path, format) in &render_exec.artifacts {
         if format == "zip" {
@@ -136,31 +140,24 @@ fn render_pages_to_images(
                     .map_err(|_| ToolError::EngineFailure("invalid filename in render zip".into()))?
                     .to_string();
                 if !zip_file.is_dir() {
-                    let mut data = Vec::new();
-                    zip_file.read_to_end(&mut data).map_err(|_| {
-                        ToolError::EngineFailure("could not read data from render zip".into())
-                    })?;
                     let page_no = parse_page_no_from_name(&name).unwrap_or((i + 1) as u32);
-                    if let Ok(img) = image::load_from_memory(&data) {
-                        images.insert(page_no, img);
-                    }
+                    let target_path = extract_dir.join(&name);
+                    let mut out_file = std::fs::File::create(&target_path).map_err(|e| {
+                        ToolError::OutputIo(format!("could not create extracted image file: {e}"))
+                    })?;
+                    std::io::copy(&mut zip_file, &mut out_file).map_err(|e| {
+                        ToolError::OutputIo(format!("could not write extracted image file: {e}"))
+                    })?;
+                    images.insert(page_no, target_path);
                 }
             }
         } else {
-            let mut file = workspace
-                .open_artifact(artifact_path)
-                .map_err(|_| ToolError::EngineFailure("could not open render artifact".into()))?;
-            let mut data = Vec::new();
-            file.read_to_end(&mut data)
-                .map_err(|_| ToolError::EngineFailure("could not read render artifact".into()))?;
             let filename = artifact_path
                 .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("page-001.png");
             let page_no = parse_page_no_from_name(filename).unwrap_or(1);
-            if let Ok(img) = image::load_from_memory(&data) {
-                images.insert(page_no, img);
-            }
+            images.insert(page_no, artifact_path.clone());
         }
     }
 
@@ -367,15 +364,23 @@ pub fn execute(
         }
     }
 
-    // 2. Visual diffing
-    let mut images_before = BTreeMap::new();
-    let mut images_after = BTreeMap::new();
-
     let do_visual = matches!(params.mode, CompareMode::Visual | CompareMode::Both);
+    if do_visual && page_numbers.len() > MAX_VISUAL_PAGES {
+        return Err(ToolError::InvalidParams(format!(
+            "visual comparison page count {} exceeds maximum limit of {MAX_VISUAL_PAGES}",
+            page_numbers.len()
+        )));
+    }
+
+    // 2. Visual diffing
+    let mut image_files_before = BTreeMap::new();
+    let mut image_files_after = BTreeMap::new();
+
     if do_visual {
-        images_before = render_pages_to_images(
+        image_files_before = render_pages_to_image_files(
             &staged_inputs[0],
             params.pages.as_ref(),
+            "render-before",
             workspace,
             limits,
             scrubber,
@@ -384,9 +389,10 @@ pub fn execute(
             cancel,
             on_event,
         )?;
-        images_after = render_pages_to_images(
+        image_files_after = render_pages_to_image_files(
             &staged_inputs[1],
             params.pages.as_ref(),
+            "render-after",
             workspace,
             limits,
             scrubber,
@@ -411,6 +417,36 @@ pub fn execute(
         let has_before = (page_no as usize) <= pages_before;
         let has_after = (page_no as usize) <= pages_after;
 
+        let b_img = if do_visual {
+            if let Some(path) = image_files_before.remove(&page_no) {
+                let bytes = std::fs::read(&path).map_err(|e| {
+                    ToolError::EngineFailure(format!("could not read rendered image: {e}"))
+                })?;
+                Some(image::load_from_memory(&bytes).map_err(|e| {
+                    ToolError::EngineFailure(format!("could not decode rendered image: {e}"))
+                })?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let a_img = if do_visual {
+            if let Some(path) = image_files_after.remove(&page_no) {
+                let bytes = std::fs::read(&path).map_err(|e| {
+                    ToolError::EngineFailure(format!("could not read rendered image: {e}"))
+                })?;
+                Some(image::load_from_memory(&bytes).map_err(|e| {
+                    ToolError::EngineFailure(format!("could not decode rendered image: {e}"))
+                })?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         if has_before && has_after {
             let text_changes = if do_text {
                 let bw = words_before_map
@@ -426,14 +462,8 @@ pub fn execute(
                 Vec::new()
             };
 
-            let visual_changes = if do_visual {
-                if let (Some(b_img), Some(a_img)) =
-                    (images_before.get(&page_no), images_after.get(&page_no))
-                {
-                    visual_diff_images(b_img, a_img, 150.0).map_err(ToolError::EngineFailure)?
-                } else {
-                    Vec::new()
-                }
+            let visual_changes = if let (Some(b), Some(a)) = (&b_img, &a_img) {
+                visual_diff_images(b, a, 150.0).map_err(ToolError::EngineFailure)?
             } else {
                 Vec::new()
             };
@@ -461,17 +491,13 @@ pub fn execute(
             });
         } else if !has_before && has_after {
             changed_count += 1;
-            let visual_changes = if do_visual {
-                if let Some(a_img) = images_after.get(&page_no) {
-                    let w = a_img.width() as f64 * (72.0 / 150.0);
-                    let h = a_img.height() as f64 * (72.0 / 150.0);
-                    vec![VisualChange {
-                        bbox: [0.0, 0.0, w, h],
-                        diff_pixels: (a_img.width() * a_img.height()) as usize,
-                    }]
-                } else {
-                    Vec::new()
-                }
+            let visual_changes = if let Some(a) = &a_img {
+                let w = a.width() as f64 * (72.0 / 150.0);
+                let h = a.height() as f64 * (72.0 / 150.0);
+                vec![VisualChange {
+                    bbox: [0.0, 0.0, w, h],
+                    diff_pixels: (a.width() * a.height()) as usize,
+                }]
             } else {
                 Vec::new()
             };
@@ -558,5 +584,82 @@ mod tests {
         // both mode with explicit override succeeds
         let both_params = json!({"mode": "both"});
         assert!(preflight(&both_params, None, Some(&dummy)).is_ok());
+    }
+
+    #[test]
+    fn visual_mode_exceeding_max_visual_pages_fails() {
+        let mut doc = lopdf::Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let mut page_ids = Vec::new();
+        for _ in 0..=MAX_VISUAL_PAGES {
+            let page_id = doc.add_object(lopdf::Dictionary::from_iter(vec![
+                ("Type", lopdf::Object::Name(b"Page".to_vec())),
+                ("Parent", lopdf::Object::Reference(pages_id)),
+                (
+                    "MediaBox",
+                    lopdf::Object::Array(vec![0.into(), 0.into(), 100.into(), 100.into()]),
+                ),
+            ]));
+            page_ids.push(lopdf::Object::Reference(page_id));
+        }
+        let pages_dict = lopdf::Dictionary::from_iter(vec![
+            ("Type", lopdf::Object::Name(b"Pages".to_vec())),
+            (
+                "Count",
+                lopdf::Object::Integer((MAX_VISUAL_PAGES + 1) as i64),
+            ),
+            ("Kids", lopdf::Object::Array(page_ids)),
+        ]);
+        doc.set_object(pages_id, pages_dict);
+        let catalog_id = doc.add_object(lopdf::Dictionary::from_iter(vec![
+            ("Type", lopdf::Object::Name(b"Catalog".to_vec())),
+            ("Pages", lopdf::Object::Reference(pages_id)),
+        ]));
+        doc.trailer
+            .set("Root", lopdf::Object::Reference(catalog_id));
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("doc.pdf");
+        doc.save(&pdf_path).unwrap();
+
+        let spec = ariad_core::tools::find("pdf.compare").unwrap();
+        let staged_inputs = vec![
+            (pdf_path.clone(), "pdf".to_string()),
+            (pdf_path, "pdf".to_string()),
+        ];
+        let ws = Workspace::new().unwrap();
+        let limits = Limits::local();
+        let scrubber = SecretScrubber::default();
+        let cancel = CancellationToken::new();
+        let dummy = EngineCommand::builtin(Path::new("/bin/echo"), "pdfium");
+
+        let params_val = json!({
+            "mode": "visual"
+        });
+
+        let res = execute(
+            spec,
+            &staged_inputs,
+            &params_val,
+            &ws,
+            &limits,
+            &scrubber,
+            None,
+            Some(&dummy),
+            &cancel,
+            &mut |_| {},
+            ariad_pdf::ToolClock {
+                epoch_secs: 0,
+                utc_offset_secs: 0,
+            },
+        );
+
+        assert!(res.is_err(), "must fail when page count > MAX_VISUAL_PAGES");
+        let err = res.unwrap_err();
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("200") && err_str.contains("exceeds"),
+            "error message must name the limit (200) and indicate exceeds: {err_str}"
+        );
     }
 }

@@ -16,7 +16,10 @@ use serde::{Deserialize, Serialize};
 
 pub use report::build_report_pdf;
 pub use text::{TextChange, TextChangeKind, WordItem, diff_words, extract_words_from_reader};
-pub use visual::{VisualChange, visual_diff_images};
+pub use visual::{
+    MAX_DIFF_BOXES, MAX_IMAGE_PIXELS, MAX_PAGE_PIXELS, MAX_VISUAL_BOXES_PER_PAGE, MAX_VISUAL_PAGES,
+    VisualChange, visual_diff_images,
+};
 
 use crate::{InputDoc, OutputArtifact, PdfError, ToolCtx, ToolOutput, tools::InputSource};
 

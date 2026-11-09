@@ -191,6 +191,11 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 - **Outputs**:
   - Default: Multi-artifact publication emitting `<stem>.compared.json` and `<stem>.compared.pdf`. When `-o` names a `.json` or `.pdf` file, only the requested artifact is published. When `-o` is omitted and run inline, outputs structured JSON to stdout.
 - **Runtimes**: `wasm (text), local`. On WASM or when the PDFium pack is missing, selecting `"visual"` or `"both"` fails early at preflight with exit code `5` (`engine_unavailable` / `tool_missing`).
+- **Resource Bounds & Limits**:
+  - Visual comparison is capped at 200 pages (`MAX_VISUAL_PAGES = 200`). Exceeding this limit in `"visual"` or `"both"` mode fails immediately before rendering with exit code `9` (`invalid_params`) naming the 200-page limit.
+  - Rendered page images are capped at 50 megapixels (`MAX_PAGE_PIXELS = 50_000_000`, 50 Mpx).
+  - Detected visual differences are grouped into at most 200 bounding boxes per page (`MAX_DIFF_BOXES = 200`).
+  - Visual comparison streams page by page so decoded raster images are not retained simultaneously in memory.
 - **Report Schema**:
   - `summary`: Aggregate counts (`pages_before`, `pages_after`, `pages_compared`, `pages_identical`, `pages_changed`, `total_changes`, `text_changes`, `visual_changes`).
   - `pages`: Per-page results (`page_number`, `page_before`, `page_after`, `status`: `"identical"` | `"changed"` | `"added"` | `"removed"`, `text_changes`, `visual_changes`).
