@@ -79,6 +79,7 @@ pub mod viewer_prefs;
 pub mod watermark;
 pub mod watermark_detect;
 pub mod watermark_remove;
+pub mod web_to_pdf;
 
 use schemars::{JsonSchema, Schema, generate::SchemaSettings};
 
@@ -164,6 +165,7 @@ pub use viewer_prefs::{ViewerPageLayout, ViewerPageMode, ViewerPrefsParams};
 pub use watermark::{AutoSize, WatermarkFontSize, WatermarkKind, WatermarkLayout, WatermarkParams};
 pub use watermark_detect::WatermarkDetectParams;
 pub use watermark_remove::WatermarkRemoveParams;
+pub use web_to_pdf::WebToPdfParams;
 
 /// A parameter value that the JSON schema alone cannot reject, reported without any document
 /// content so it is safe to relay as an engine failure message.
