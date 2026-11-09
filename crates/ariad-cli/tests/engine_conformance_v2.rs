@@ -92,7 +92,13 @@ fn validate_v2_stdout(output: &Output) -> Vec<Value> {
 
 #[test]
 fn v2_describe_emits_schema_valid_capabilities_with_tools() {
-    for engine in ["qpdf", "pdfium", "tesseract", TEST_PROTOCOL_PROBE_ID] {
+    for engine in [
+        "qpdf",
+        "pdfium",
+        "tesseract",
+        "verapdf",
+        TEST_PROTOCOL_PROBE_ID,
+    ] {
         let request = RequestV2::Describe {
             protocol: PROTOCOL_V2.to_owned(),
             job: format!("describe-{engine}"),

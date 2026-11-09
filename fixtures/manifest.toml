@@ -5875,6 +5875,44 @@ phase = "10"
 routes = ["cbz->pdf"]
 companions = []
 
+[[fixture]]
+id = "pdfa-2b-compliant-pdf"
+path = "fixtures/pdf/pdfa-2b-compliant.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "PDF/A-2b Compliant Test Document"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/pdf.py"
+license = "Apache-2.0"
+license_basis = "Original document authored for AriadShift compliance testing."
+attribution = "AriadShift contributors"
+sha256 = "ed9ef30c4705223af24f32effbc23c53ef47fd62bfbece42447e4adfa29b1928"
+pages = 1
+tags = ["digital-pdf", "pdf-tools"]
+phase = "10"
+routes = []
+companions = []
+
+[[fixture]]
+id = "pdfa-non-compliant-pdf"
+path = "fixtures/pdf/pdfa-non-compliant.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "PDF/A Non-Compliant Test Document"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/pdf.py"
+license = "Apache-2.0"
+license_basis = "Original document authored for AriadShift compliance testing."
+attribution = "AriadShift contributors"
+sha256 = "da5df7a1a9a0d645854a485ea671ba4be1193247560a5dcde6e148f20e0da3c0"
+pages = 1
+tags = ["digital-pdf", "pdf-tools"]
+phase = "10"
+routes = []
+companions = []
+
 [[fuzz_seed]]
 id = "fuzz-reader-text-simple-txt"
 target = "reader_text"

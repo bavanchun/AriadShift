@@ -414,7 +414,7 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 77);
+    assert_eq!(all_tools.len(), 79);
     assert!(
         all_tools
             .iter()
