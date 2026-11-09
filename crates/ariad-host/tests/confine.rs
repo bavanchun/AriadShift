@@ -858,6 +858,7 @@ fn test_convert_confined_parent_swap_race() {
                 title_fallback: None,
                 asset_base_dir: None,
                 reader_engine: None,
+                pdf_standard: None,
             };
             let asset_base = ariad_host::assets::AssetBase::confined(
                 in_confined.parent_dir.try_clone().unwrap(),
@@ -967,6 +968,7 @@ fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     let pool = SessionPool::new(PoolConfig::default());
     convert_confined_assets_in(
@@ -1051,6 +1053,7 @@ fn confined_conversions_resolve_assets_only_within_explicit_asset_base() {
             title_fallback: None,
             asset_base_dir: Some(outside_dir.clone()),
             reader_engine: None,
+            pdf_standard: None,
         };
         let outside_report = if use_pool {
             convert_confined_in(
@@ -1099,6 +1102,7 @@ fn confined_conversions_resolve_assets_only_within_explicit_asset_base() {
             title_fallback: None,
             asset_base_dir: Some(outside_dir.clone()),
             reader_engine: None,
+            pdf_standard: None,
         };
         let inside_report = if use_pool {
             convert_confined_in(

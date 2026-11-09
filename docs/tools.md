@@ -817,6 +817,33 @@ Digital signature creation, verification, removal, and visual appearances are im
 
 ---
 
+## PDF/A and PDF/UA Compliance
+
+The registry and parameter schemas in [tools.v1.json](../schemas/tools.v1.json) define these free tools:
+
+| Tool | Parameters | Runtime and output |
+|---|---|---|
+| `pdf.to_pdfa` | `level`: `"2b"` (default), `"3b"`, or `"2u"` | Local host composite; verified PDF and inline veraPDF JSON report |
+| `pdf.to_pdfua` | `flavour`: `"1"` (default) | Local host composite; unchanged verified PDF and inline accessibility/veraPDF reports |
+| `pdf.accessibility_report` | Empty object | Local and WASM; structured JSON report |
+| `pdf.validate_pdfa` / `pdf.validate_pdfua` | `flavour` (optional) | Local veraPDF pack; structured validation JSON |
+
+Both compliance composites require the opt-in `verapdf` pack and system Java >=11. Install the pack with `ashift engines install verapdf`; a missing pack or Java returns exit 5 (`tool_missing`). The pack runs out of process in the engine sandbox with network access disabled.
+
+`pdf.to_pdfa` repairs existing PDF objects without rasterizing or reflowing content: it adds an sRGB OutputIntent, synchronizes PDF/A XMP and Info dates, ensures a trailer ID, removes JavaScript and prohibited actions, and preserves transparency. It embeds unmodified Liberation 2.1.5 for unembedded Helvetica, Times and Courier variants with supported base encodings. Symbol, ZapfDingbats, unknown fonts/encodings, incompatible font advances, and missing Unicode maps that cannot be derived safely are refused. Encrypted input returns exit 12; embedded files are refused for `2b` and `2u`, and permitted for `3b` subject to validation. Asset licences and SHA-256 receipts are in [compliance-assets.toml](../crates/ariad-pdf/assets/compliance-assets.toml).
+
+Every repaired candidate must pass veraPDF before publication. A failed validation returns exit 1 with `compliance_failed` and the full structured rule report in the diagnostic; no PDF is published and existing destinations remain untouched, including with `--overwrite`. MCP additionally exposes `error.standard` and `error.report`. Successful `--json` tool outcomes include the validation report in `inline_json`.
+
+`pdf.accessibility_report` checks tagging, structure root, language, display of the document title, title metadata, figure alternative descriptions, Unicode font maps and page tab order. Its `compliant` field means these inspection checks passed; veraPDF remains the independent conformance gate. `pdf.to_pdfua` runs these checks and veraPDF against the existing PDF. If either fails, its structured error contains both reports. It does not synthesize tags or alternative text. For IR-family input, use [`convert --pdf-standard ua-1`](cli.md#ashift-convert).
+
+```bash
+ashift tool pdf.to_pdfa input.pdf --param level=2b -o archival.pdf --json
+ashift tool pdf.accessibility_report input.pdf -o accessibility.json
+ashift tool pdf.to_pdfua tagged.pdf -o verified.pdf --json
+```
+
+---
+
 ## 13. CLI Commands and Tool Exit Codes
 
 ### CLI Commands
@@ -868,7 +895,7 @@ Tool commands preserve the existing `ashift` exit codes (`0`–`6` and `130` in 
 | Exit Code | Error Code (`error.code`) | Name | Meaning |
 |---|---|---|---|
 | `0` | — | Success | Tool or recipe completed and all artifacts were atomically published. |
-| `1` | `engine_failure` / `io` | Failure | Corrupt PDF/input file, I/O failure, or general runtime tool failure. |
+| `1` | `engine_failure` / `compliance_failed` / `io` | Failure | Corrupt PDF/input file, I/O failure, or general runtime tool failure. |
 | `2` | `usage` | Usage | Invalid CLI flags, destination resolving to an input path, or passing a file `-o` to a multi-artifact tool. |
 | `3` | `unsupported_route` | Unsupported Route | Used by `convert` steps inside a recipe when a conversion route is unreachable. |
 | `4` | `limit_exceeded` | Limit Exceeded | Input size, page count (`max_pages`), decompressed stream bytes (`max_decompressed_bytes`), nesting depth, timeout (`timeout_s`), or process memory (`max_memory_mb`) exceeded `Limits`. |

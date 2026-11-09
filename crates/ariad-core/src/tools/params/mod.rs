@@ -126,7 +126,10 @@ pub use overlay::{OverlayPagesMode, OverlayParams, OverlayPosition};
 pub use overlay_common::{Anchor, DateFormat, FontFace, HexColor, Opacity};
 pub use page_labels::{PageLabelRange, PageLabelStyle, PageLabelsParams};
 pub use page_numbers::PageNumbersParams;
-pub use pdfa::{ValidatePdfUaParams, ValidatePdfaParams};
+pub use pdfa::{
+    AccessibilityReportParams, PdfaLevel, ToPdfUaParams, ToPdfaParams, ValidatePdfUaParams,
+    ValidatePdfaParams,
+};
 pub use permissions::{PdfPermissions, PermissionsParams};
 pub use portfolio::{PortfolioAction, PortfolioParams, PortfolioView};
 pub use posterize::{PosterizeParams, PosterizeTiles};

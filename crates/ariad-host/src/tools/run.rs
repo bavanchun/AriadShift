@@ -402,6 +402,12 @@ pub enum ToolError {
     /// Exit code `1` (`engine_failure`): corrupt input, engine crash, or runtime tool failure.
     #[error("{0}")]
     EngineFailure(String),
+    /// Validation refused a conformance claim; the structured report explains why.
+    #[error("{standard} compliance validation failed: {report}")]
+    ComplianceFailed {
+        standard: String,
+        report: Box<Value>,
+    },
 }
 
 fn format_encrypted_error(needs_password: bool) -> String {
@@ -418,7 +424,10 @@ impl ToolError {
     #[must_use]
     pub const fn exit_code(&self) -> u8 {
         match self {
-            Self::EngineFailure(_) | Self::InputIo(_) | Self::OutputIo(_) => 1,
+            Self::EngineFailure(_)
+            | Self::ComplianceFailed { .. }
+            | Self::InputIo(_)
+            | Self::OutputIo(_) => 1,
             Self::Usage(_) | Self::DestinationSameAsInput | Self::Confinement(_) => 2,
             Self::UnsupportedRoute(_) => 3,
             Self::LimitExceeded => 4,
@@ -438,6 +447,7 @@ impl ToolError {
     pub const fn code(&self) -> &'static str {
         match self {
             Self::EngineFailure(_) => "engine_failure",
+            Self::ComplianceFailed { .. } => "compliance_failed",
             Self::InputIo(_) | Self::OutputIo(_) => "io",
             Self::Usage(_) | Self::DestinationSameAsInput | Self::Confinement(_) => "usage",
             Self::UnsupportedRoute(_) => "unsupported_route",
@@ -491,6 +501,10 @@ impl ToolError {
             Self::InputIo(s) => Self::InputIo(scrubber.scrub(&s)),
             Self::OutputIo(s) => Self::OutputIo(scrubber.scrub(&s)),
             Self::EngineFailure(s) => Self::EngineFailure(scrubber.scrub(&s)),
+            Self::ComplianceFailed { standard, report } => Self::ComplianceFailed {
+                standard: scrubber.scrub(&standard),
+                report: Box::new(scrubber.scrub_value(&report)),
+            },
             other => other,
         }
     }
@@ -632,6 +646,7 @@ fn run_tool_inner(
     let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
     let is_compare = spec.id == "pdf.compare";
+    let is_compliance = spec.id == "pdf.to_pdfa" || spec.id == "pdf.to_pdfua";
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -673,6 +688,11 @@ fn run_tool_inner(
     } else if is_compare {
         super::compare::preflight(
             &resolved_secrets.schema_params,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_compliance {
+        super::compliance::preflight(
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
         )?;
@@ -768,6 +788,21 @@ fn run_tool_inner(
         .map_err(|e| e.scrubbed(scrubber))?
     } else if is_compare {
         super::compare::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+            &request.cancel,
+            on_event,
+            clock.clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_compliance {
+        super::compliance::execute(
             &spec,
             &staged_inputs_with_format,
             &resolved_secrets.schema_params,

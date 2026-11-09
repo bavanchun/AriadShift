@@ -174,6 +174,9 @@ pub struct ConvertRequest {
     /// Optional engine that must read the input; later mapping and writing remain automatic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reader_engine: Option<String>,
+    /// Optional PDF standard conformance (a-2b, a-2u, a-3b, ua-1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_standard: Option<String>,
 }
 
 impl ConvertRequest {
@@ -194,6 +197,7 @@ impl ConvertRequest {
             title_fallback: None,
             asset_base_dir: None,
             reader_engine: None,
+            pdf_standard: None,
         }
     }
 }
@@ -266,6 +270,11 @@ pub enum ConvertError {
     FailedWithMemoryHint {
         limit_mb: u32,
     },
+    /// A requested PDF conformance target failed independent validation.
+    ComplianceFailed {
+        standard: String,
+        report: Box<serde_json::Value>,
+    },
     Failed,
 }
 
@@ -317,6 +326,9 @@ impl std::fmt::Display for ConvertError {
                 f,
                 "conversion failed. The engine may have hit its memory limit ({limit_mb} MiB)."
             ),
+            Self::ComplianceFailed { standard, report } => {
+                write!(f, "{standard} compliance validation failed: {report}")
+            }
             Self::Failed => write!(f, "conversion failed"),
         }
     }
@@ -358,6 +370,7 @@ impl ConvertError {
             | Self::UnsupportedIrVersion
             | Self::InvalidCapabilities(_)
             | Self::FailedWithMemoryHint { .. }
+            | Self::ComplianceFailed { .. }
             | Self::Failed => 1,
         }
     }
@@ -381,6 +394,7 @@ impl ConvertError {
             Self::UnsupportedIrVersion => "unsupported_ir_version",
             Self::InvalidCapabilities(_) => "invalid_capabilities",
             Self::Failed | Self::FailedWithMemoryHint { .. } => "failed",
+            Self::ComplianceFailed { .. } => "compliance_failed",
         }
     }
 
@@ -459,6 +473,7 @@ where
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     let invocation = if engine_args.is_empty() {
         EngineInvocation::new(engine_program)
@@ -1166,6 +1181,12 @@ where
                 serde_json::Value::String(self.title_fallback()),
             );
         }
+        if let Some(standard) = &self.request.pdf_standard {
+            options.insert(
+                "pdf_standard".to_owned(),
+                serde_json::Value::String(standard.clone()),
+            );
+        }
         // Writers stamp their output with the conversion time, which honours SOURCE_DATE_EPOCH.
         let stamps_package = step.engine == engines::PANDOC.id
             && matches!(step.to, Format::Docx | Format::Epub | Format::Odt);
@@ -1195,7 +1216,14 @@ where
             self.cancel,
             &mut self.warnings,
             &mut self.on_event,
-        )?;
+        ).map_err(|error| {
+            if self.request.pdf_standard.as_deref() == Some("ua-1") && step.engine == engines::TYPST.id && matches!(error, ConvertError::Failed) {
+                ConvertError::ComplianceFailed {
+                    standard: "PDF/UA-1".into(),
+                    report: Box::new(serde_json::json!({"message": "Typst could not export PDF/UA-1; check document structure and provide figure alternative text."})),
+                }
+            } else { error }
+        })?;
 
         if step.to == Format::AriadIrJson {
             let document = read_ir_artifact(&artifact, &workspace, self.limits)?;
@@ -1389,6 +1417,34 @@ where
         return Err(ConvertError::DestinationSameAsInput);
     }
 
+    if let Some(standard) = &request.pdf_standard {
+        if !matches!(standard.as_str(), "a-2b" | "a-2u" | "a-3b" | "ua-1")
+            || route.output_format != Format::Pdf
+            || !route
+                .steps
+                .last()
+                .is_some_and(|step| step.engine == engines::TYPST.id)
+        {
+            return Err(ConvertError::UnsupportedRoute {
+                detail: Some("--pdf-standard requires an IR-to-PDF route through Typst and a supported standard".into()),
+            });
+        }
+        // Preflight veraPDF and Java >= 11 (must exit 5 if missing)
+        crate::tools::compliance::preflight(Some(&request.engine_program), None).map_err(|e| {
+            match e {
+                crate::tools::ToolError::ToolMissing { engine, hint } => {
+                    ConvertError::EngineMissing { engine, hint }
+                }
+                crate::tools::ToolError::SandboxUnavailable(detail) => {
+                    ConvertError::SandboxUnavailable(detail)
+                }
+                crate::tools::ToolError::LimitExceeded => ConvertError::LimitExceeded,
+                crate::tools::ToolError::Interrupted => ConvertError::Interrupted,
+                _ => ConvertError::Failed,
+            }
+        })?;
+    }
+
     let started = Instant::now();
     let (mut stage, start_step, warnings) = match pdf_read {
         Some(read)
@@ -1439,6 +1495,76 @@ where
     } else {
         None
     };
+
+    if let (Some(standard), Format::Pdf) = (&request.pdf_standard, route.output_format) {
+        let (tool_id, flavour) = match standard.as_str() {
+            "a-2b" => ("pdf.validate_pdfa", "2b"),
+            "a-2u" => ("pdf.validate_pdfa", "2u"),
+            "a-3b" => ("pdf.validate_pdfa", "3b"),
+            "ua-1" => ("pdf.validate_pdfua", "1"),
+            other => {
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(format!("unsupported pdf-standard '{other}'")),
+                });
+            }
+        };
+
+        let validate_spec = ariad_core::tools::find(tool_id).ok_or(ConvertError::Failed)?;
+
+        let validate_params = serde_json::json!({
+            "flavour": flavour
+        });
+
+        let mut val_workspace = Workspace::new().map_err(map_workspace_error)?;
+        let staged_input = val_workspace.input_dir().join("artifact.pdf");
+        fs::copy(&artifact_path, &staged_input).map_err(|_| ConvertError::Failed)?;
+        let staged = vec![(staged_input, "pdf".to_string())];
+        let scrubber = crate::tools::SecretScrubber::new();
+
+        let mut dummy_event = |_| {};
+        let exec = crate::tools::engine::execute(
+            validate_spec,
+            "verapdf",
+            &staged,
+            &validate_params,
+            false,
+            &val_workspace,
+            &limits,
+            &scrubber,
+            &crate::tools::SecretBag::new(),
+            Some(&request.engine_program),
+            None,
+            cancel.clone(),
+            &mut dummy_event,
+        )
+        .map_err(|e| match e {
+            crate::tools::ToolError::ToolMissing { engine, hint } => {
+                ConvertError::EngineMissing { engine, hint }
+            }
+            crate::tools::ToolError::Interrupted => ConvertError::Interrupted,
+            crate::tools::ToolError::SandboxUnavailable(detail) => {
+                ConvertError::SandboxUnavailable(detail)
+            }
+            crate::tools::ToolError::LimitExceeded => ConvertError::LimitExceeded,
+            _ => ConvertError::Failed,
+        })?;
+
+        let is_compliant = exec
+            .metrics
+            .get("compliant")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+
+        if !is_compliant {
+            let report = crate::tools::compliance::validation_report(&exec)
+                .map_err(|_| ConvertError::Failed)?;
+            return Err(ConvertError::ComplianceFailed {
+                standard: standard.clone(),
+                report: Box::new(report),
+            });
+        }
+        let _ = val_workspace.close();
+    }
 
     // Promotion is the commit point.
     if cancel.is_cancelled() {
@@ -1548,6 +1674,7 @@ where
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     let invocation = EngineInvocation::new(&request.engine_program);
     convert_executor(
@@ -1586,6 +1713,7 @@ where
             .or_else(|| stem_without_ir(&request.input)),
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     let invocation = EngineInvocation::new(&request.engine_program);
     convert_executor(

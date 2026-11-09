@@ -1,0 +1,9 @@
+Liberation 2.1.5, OFL-1.1
+
+Unmodified font files and the complete LICENSE text from:
+https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz
+Archive SHA-256: 7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0
+
+Machine-readable per-file SHA-256 receipts: ../compliance-assets.toml
+
+The full upstream LICENSE text is preserved; trailing whitespace is normalized.

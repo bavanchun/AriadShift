@@ -56,6 +56,37 @@ pub struct RenderedPdf {
     pub missing_glyphs: usize,
 }
 
+/// Supported PDF standard conformance targets for Typst export.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PdfStandard {
+    /// PDF/A-2b: Archival conformance, 2b.
+    A2b,
+    /// PDF/A-2u: Archival conformance, 2u (Unicode text).
+    A2u,
+    /// PDF/A-3b: Archival conformance, 3b.
+    A3b,
+    /// PDF/UA-1: Universal accessibility.
+    Ua1,
+}
+
+impl std::str::FromStr for PdfStandard {
+    type Err = RenderError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let norm = s.trim().to_ascii_lowercase();
+        let norm = norm.strip_prefix("pdf/").unwrap_or(&norm);
+        match norm {
+            "a-2b" | "2b" => Ok(Self::A2b),
+            "a-2u" | "2u" => Ok(Self::A2u),
+            "a-3b" | "3b" => Ok(Self::A3b),
+            "ua-1" | "ua1" | "1" => Ok(Self::Ua1),
+            _ => Err(RenderError::Compile {
+                diagnostics: vec![format!("unsupported PDF standard '{s}'")],
+            }),
+        }
+    }
+}
+
 /// Why Typst could not produce a PDF.
 ///
 /// The display messages are fixed; the diagnostics stay available for tests and local debugging
@@ -79,24 +110,50 @@ pub fn render(
     options: &TypstOptions,
     timestamp: i64,
 ) -> Result<RenderedPdf, RenderError> {
+    render_with_standard(document, options, timestamp, None)
+}
+
+/// Writes `document` as Typst markup and compiles it to PDF conforming to `standard`.
+pub fn render_with_standard(
+    document: &Document,
+    options: &TypstOptions,
+    timestamp: i64,
+    standard: Option<PdfStandard>,
+) -> Result<RenderedPdf, RenderError> {
     let output = writer::write(document, options);
-    let error = match compile_pdf(&output, timestamp) {
+    let error = match compile_pdf_with_standard(&output, timestamp, standard) {
         Ok(rendered) => return Ok(rendered),
-        Err(error @ RenderError::Compile { .. }) if !output.files.is_empty() => error,
+        Err(error @ RenderError::Compile { .. } | error @ RenderError::Export { .. })
+            if !output.files.is_empty() =>
+        {
+            error
+        }
         Err(error) => return Err(error),
     };
+    if standard == Some(PdfStandard::Ua1) {
+        return Err(error);
+    }
     let rejected = undecodable_assets(document, &options.rejected_assets, timestamp)?;
     if rejected.is_empty() {
         return Err(error);
     }
     let mut retry = options.clone();
     retry.rejected_assets.extend(rejected);
-    compile_pdf(&writer::write(document, &retry), timestamp)
+    compile_pdf_with_standard(&writer::write(document, &retry), timestamp, standard)
 }
 
 /// Compiles writer output to PDF bytes.
 pub fn compile_pdf(output: &TypstOutput, timestamp: i64) -> Result<RenderedPdf, RenderError> {
-    let compiled = compile(output, timestamp, Mode::Pdf)?;
+    compile_pdf_with_standard(output, timestamp, None)
+}
+
+/// Compiles writer output to PDF bytes conforming to `standard`.
+pub fn compile_pdf_with_standard(
+    output: &TypstOutput,
+    timestamp: i64,
+    standard: Option<PdfStandard>,
+) -> Result<RenderedPdf, RenderError> {
+    let compiled = compile(output, timestamp, Mode::Pdf, standard)?;
     Ok(RenderedPdf {
         bytes: compiled.pdf,
         page_count: compiled.page_count,
@@ -109,7 +166,7 @@ pub fn compile_pdf(output: &TypstOutput, timestamp: i64) -> Result<RenderedPdf, 
 /// The laid-out text of writer output, one string per page.
 #[doc(hidden)]
 pub fn page_texts(output: &TypstOutput, timestamp: i64) -> Result<Vec<String>, RenderError> {
-    compile(output, timestamp, Mode::Text).map(|compiled| compiled.pages)
+    compile(output, timestamp, Mode::Text, None).map(|compiled| compiled.pages)
 }
 
 /// Ids of image assets that Typst cannot decode, ignoring those already in `known`.
@@ -132,7 +189,7 @@ pub fn undecodable_assets(
             files: BTreeMap::from([(path, asset.bytes.clone())]),
             warnings: Vec::new(),
         };
-        match compile(&probe, timestamp, Mode::Layout) {
+        match compile(&probe, timestamp, Mode::Layout, None) {
             Ok(_) => {}
             Err(RenderError::Compile { .. } | RenderError::Export { .. }) => {
                 rejected.insert(id.clone());
@@ -162,7 +219,12 @@ struct Compiled {
     pages: Vec<String>,
 }
 
-fn compile(output: &TypstOutput, timestamp: i64, mode: Mode) -> Result<Compiled, RenderError> {
+fn compile(
+    output: &TypstOutput,
+    timestamp: i64,
+    mode: Mode,
+    standard: Option<PdfStandard>,
+) -> Result<Compiled, RenderError> {
     let now = utc_datetime(timestamp, 0).ok_or(RenderError::InvalidTimestamp)?;
     let world = MemoryWorld::new(output, timestamp);
     let warned = typst::compile(&world);
@@ -180,8 +242,21 @@ fn compile(output: &TypstOutput, timestamp: i64, mode: Mode) -> Result<Compiled,
         ..Compiled::default()
     };
     if mode == Mode::Pdf {
+        let standards = standard.map(|standard| match standard {
+            PdfStandard::A2b => typst_pdf::PdfStandard::A_2b,
+            PdfStandard::A2u => typst_pdf::PdfStandard::A_2u,
+            PdfStandard::A3b => typst_pdf::PdfStandard::A_3b,
+            PdfStandard::Ua1 => typst_pdf::PdfStandard::Ua_1,
+        });
+        let standards = typst_pdf::PdfStandards::new(standards.as_slice()).map_err(|err| {
+            RenderError::Export {
+                diagnostics: vec![err.message().to_string()],
+            }
+        })?;
         let options = PdfOptions {
             timestamp: Some(Timestamp::new_utc(now)),
+            standards,
+            tagged: true,
             ..PdfOptions::default()
         };
         compiled.pdf =
@@ -497,4 +572,32 @@ pub fn render_pdf(
         &js_sys::Uint8Array::from(rendered.bytes.as_slice()),
     )?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod conformance_tests {
+    use super::*;
+
+    #[test]
+    fn pdfua_export_requires_figure_alternative_text() {
+        let output = TypstOutput {
+            markup: "#set document(title: \"Figure test\")\n#image(\"image.png\")".into(),
+            files: BTreeMap::from([(
+                "image.png".into(),
+                include_bytes!("../../../fixtures/md/assets/vietnamese-route.png").to_vec(),
+            )]),
+            warnings: Vec::new(),
+        };
+        let error =
+            compile_pdf_with_standard(&output, 1_700_000_000, Some(PdfStandard::Ua1)).unwrap_err();
+        let RenderError::Export { diagnostics } = error else {
+            panic!("expected accessibility export failure");
+        };
+        assert!(
+            diagnostics
+                .iter()
+                .any(|message| message.contains("alt") || message.contains("description")),
+            "{diagnostics:?}"
+        );
+    }
 }

@@ -608,6 +608,9 @@ fn execute_recipe_tool_call(
 
 fn map_convert_error(err: ConvertError) -> ToolError {
     match err {
+        ConvertError::ComplianceFailed { standard, report } => {
+            ToolError::ComplianceFailed { standard, report }
+        }
         ConvertError::UnsupportedRoute { detail } => {
             ToolError::UnsupportedRoute(detail.unwrap_or_else(|| "unsupported route".to_owned()))
         }
