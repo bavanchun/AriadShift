@@ -123,7 +123,8 @@ pub struct ImageRef {
     pub uri: String,
 }
 
-/// Inline formatting of a text item.
+/// Inline formatting emitted by locked docling-core 2.104.0.
+/// Font metrics and colours are absent from this upstream contract.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Formatting {

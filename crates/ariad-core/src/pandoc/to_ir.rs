@@ -1,12 +1,16 @@
 use std::collections::BTreeSet;
 
+#[path = "docx_style_reader.rs"]
+mod docx_style_reader;
+pub use docx_style_reader::read_docx_styles;
+
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
     ir::{
-        Alignment as IrAlignment, AssetRef, Block as IrBlock, ColumnSpec, Document,
-        Inline as IrInline, ListItem, Metadata, RawFormat, TableCell,
+        Alignment as IrAlignment, AssetRef, Block as IrBlock, CharacterStyle, ColumnSpec, Document,
+        Inline as IrInline, ListItem, Metadata, RawFormat, StyleId, StyleSheet, TableCell,
     },
     limits::{Limits, LimitsError},
     links::allowed_link,
@@ -25,6 +29,8 @@ pub struct ToIrOutput {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum MapError {
+    #[error("invalid document styles: {reason}")]
+    InvalidStyles { reason: String },
     #[error(transparent)]
     InvalidLimits(#[from] LimitsError),
     #[error("unsupported Pandoc API version: {version:?}; expected 1.23.*")]
@@ -37,7 +43,21 @@ pub enum MapError {
 
 /// Maps Pandoc 1.23 AST JSON to AriadShift IR.
 pub fn to_ir(pandoc: &Pandoc, limits: &Limits) -> Result<ToIrOutput, MapError> {
+    to_ir_with_styles(pandoc, StyleSheet::default(), limits)
+}
+
+/// Maps Pandoc AST using definitions recovered by [`read_docx_styles`].
+/// Paragraph run properties use domain-separated `pRun` character identities;
+/// only companions present in the supplied sheet wrap a paragraph's text.
+pub fn to_ir_with_styles(
+    pandoc: &Pandoc,
+    styles: StyleSheet,
+    limits: &Limits,
+) -> Result<ToIrOutput, MapError> {
     limits.validate().map_err(MapError::InvalidLimits)?;
+    styles
+        .validate(limits.max_nesting_depth, limits.max_blocks as usize)
+        .map_err(|reason| MapError::InvalidStyles { reason })?;
 
     // Reject any api version other than 1.23.*
     if !matches!(pandoc.pandoc_api_version.as_slice(), [1, 23, ..]) {
@@ -46,19 +66,25 @@ pub fn to_ir(pandoc: &Pandoc, limits: &Limits) -> Result<ToIrOutput, MapError> {
         });
     }
 
-    let mut mapper = ToIrMapper::new(limits);
+    let mut mapper = ToIrMapper::new(limits, styles);
     let mut body = mapper.map_blocks(&pandoc.blocks, 1)?;
     mapper.footnotes.sort_by_key(|(seq, _)| *seq);
     for (_, footnote_block) in mapper.footnotes {
         body.push(footnote_block);
     }
 
+    if crate::reader::html::ir_blocks_depth(&body) > limits.max_nesting_depth {
+        return Err(MapError::NestingTooDeep {
+            limit: limits.max_nesting_depth,
+        });
+    }
     let meta = map_metadata(&pandoc.meta, limits.max_nesting_depth);
 
     Ok(ToIrOutput {
         document: (Document {
             meta,
             body,
+            styles: mapper.styles,
             ..Document::default()
         })
         .finalize_import(),
@@ -67,6 +93,10 @@ pub fn to_ir(pandoc: &Pandoc, limits: &Limits) -> Result<ToIrOutput, MapError> {
 }
 
 struct ToIrMapper<'a> {
+    styles: StyleSheet,
+    paragraph_style: Option<StyleId>,
+    paragraph_runs: BTreeSet<StyleId>,
+    missing_style_notice: bool,
     limits: &'a Limits,
     block_count: u32,
     footnote_counter: usize,
@@ -75,13 +105,86 @@ struct ToIrMapper<'a> {
 }
 
 impl<'a> ToIrMapper<'a> {
-    fn new(limits: &'a Limits) -> Self {
+    fn new(limits: &'a Limits, styles: StyleSheet) -> Self {
+        let paragraph_runs = styles
+            .paragraph
+            .keys()
+            .map(docx_style_reader::paragraph_run_id)
+            .filter(|id| styles.character.contains_key(id))
+            .collect();
         Self {
+            paragraph_runs,
+            styles,
+            paragraph_style: None,
+            missing_style_notice: false,
             limits,
             block_count: 0,
             footnote_counter: 0,
             footnotes: Vec::new(),
             warnings: Vec::new(),
+        }
+    }
+
+    fn named_style(
+        &mut self,
+        attr: &super::ast::Attr,
+        character: bool,
+    ) -> Result<Option<StyleId>, MapError> {
+        let Some((_, name)) = attr
+            .2
+            .iter()
+            .find(|(key, value)| key == "custom-style" && !value.is_empty())
+        else {
+            return Ok(None);
+        };
+        let id = docx_style_reader::style_id(name);
+        let missing = if character {
+            !self.styles.character.contains_key(&id)
+        } else {
+            !self.styles.paragraph.contains_key(&id)
+        };
+        if missing && !self.missing_style_notice {
+            self.warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                "named style references were retained without unavailable definitions",
+            ));
+            self.missing_style_notice = true;
+        }
+        if character {
+            self.styles.character.entry(id.clone()).or_default();
+        } else {
+            self.styles.paragraph.entry(id.clone()).or_default();
+        }
+        if self
+            .styles
+            .paragraph
+            .len()
+            .saturating_add(self.styles.character.len())
+            .saturating_add(self.styles.table.len())
+            > self.limits.max_blocks as usize
+        {
+            return Err(MapError::TooManyBlocks {
+                limit: self.limits.max_blocks,
+            });
+        }
+        Ok(Some(id))
+    }
+
+    fn apply_paragraph_run_style(
+        &self,
+        content: Vec<IrInline>,
+        style: Option<&StyleId>,
+    ) -> Vec<IrInline> {
+        match style
+            .map(docx_style_reader::paragraph_run_id)
+            .filter(|id| self.paragraph_runs.contains(id))
+        {
+            Some(id) if !content.is_empty() => vec![IrInline::Styled {
+                style: Some(id),
+                direct: CharacterStyle::default(),
+                content,
+            }],
+            _ => content,
         }
     }
 
@@ -126,9 +229,9 @@ impl<'a> ToIrMapper<'a> {
                 self.check_block_budget()?;
                 Ok(vec![IrBlock::Paragraph {
                     id: Default::default(),
-                    style: None,
+                    style: self.paragraph_style.clone(),
                     direct: Default::default(),
-                    content,
+                    content: self.apply_paragraph_run_style(content, self.paragraph_style.as_ref()),
                 }])
             }
             Block::LineBlock(lines) => {
@@ -280,12 +383,16 @@ impl<'a> ToIrMapper<'a> {
                     items,
                 }])
             }
-            Block::Header(level, _attr, inlines) => {
+            Block::Header(level, attr, inlines) => {
                 self.check_block_budget()?;
+                let style = self
+                    .named_style(attr, false)?
+                    .or_else(|| self.paragraph_style.clone());
                 let content = self.map_inlines(inlines, depth)?;
+                let content = self.apply_paragraph_run_style(content, style.as_ref());
                 Ok(vec![IrBlock::Heading {
                     id: Default::default(),
-                    style: None,
+                    style,
                     direct: Default::default(),
                     level: *level,
                     content,
@@ -315,9 +422,15 @@ impl<'a> ToIrMapper<'a> {
                 self.check_block_budget()?;
                 self.map_figure(figure, depth)
             }
-            Block::Div(_attr, blocks) => {
-                // Div flattens; child blocks are evaluated at depth + 1
-                self.map_blocks(blocks, depth.saturating_add(1))
+            Block::Div(attr, blocks) => {
+                let named = self.named_style(attr, false)?;
+                let parent = self.paragraph_style.clone();
+                if named.is_some() {
+                    self.paragraph_style = named;
+                }
+                let result = self.map_blocks(blocks, depth.saturating_add(1));
+                self.paragraph_style = parent;
+                result
             }
         }
     }
@@ -481,12 +594,15 @@ impl<'a> ToIrMapper<'a> {
                 Ok(vec![IrInline::Emph { content }])
             }
             Inline::Underline(inlines) => {
-                self.warnings.push(Warning::new(
-                    WarningCode::UnsupportedNode,
-                    "underline is not supported in IR and was mapped to emphasis",
-                ));
                 let content = self.map_inlines(inlines, next_depth)?;
-                Ok(vec![IrInline::Emph { content }])
+                Ok(vec![IrInline::Styled {
+                    style: None,
+                    direct: CharacterStyle {
+                        underline: Some(true),
+                        ..CharacterStyle::default()
+                    },
+                    content,
+                }])
             }
             Inline::Strong(inlines) => {
                 let content = self.map_inlines(inlines, next_depth)?;
@@ -505,11 +621,15 @@ impl<'a> ToIrMapper<'a> {
                 Ok(vec![IrInline::Subscript { content }])
             }
             Inline::SmallCaps(inlines) => {
-                self.warnings.push(Warning::new(
-                    WarningCode::UnsupportedNode,
-                    "small caps formatting is not supported in IR and was degraded to text",
-                ));
-                self.map_inlines(inlines, next_depth)
+                let content = self.map_inlines(inlines, next_depth)?;
+                Ok(vec![IrInline::Styled {
+                    style: None,
+                    direct: CharacterStyle {
+                        small_caps: Some(true),
+                        ..CharacterStyle::default()
+                    },
+                    content,
+                }])
             }
             Inline::Quoted(quote_type, inlines) => {
                 let inner = self.map_inlines(inlines, next_depth)?;
@@ -624,9 +744,18 @@ impl<'a> ToIrMapper<'a> {
                 ));
                 Ok(vec![IrInline::FootnoteRef { id }])
             }
-            Inline::Span(_attr, inlines) => {
-                // Span flattens
-                self.map_inlines(inlines, next_depth)
+            Inline::Span(attr, inlines) => {
+                let style = self.named_style(attr, true)?;
+                let content = self.map_inlines(inlines, next_depth)?;
+                if style.is_some() {
+                    Ok(vec![IrInline::Styled {
+                        style,
+                        direct: CharacterStyle::default(),
+                        content,
+                    }])
+                } else {
+                    Ok(content)
+                }
             }
         }
     }
