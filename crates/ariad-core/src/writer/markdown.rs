@@ -183,7 +183,13 @@ pub(super) fn check_output_size(
     };
     serde_json::to_writer(
         &mut counter,
-        &(&document.meta, &document.body, &document.furniture),
+        &(
+            &document.meta,
+            &document.body,
+            &document.furniture,
+            &document.styles,
+            &document.sections,
+        ),
     )
     .ok()?;
     Some(references)
@@ -206,11 +212,22 @@ pub fn write(document: &Document) -> WriteOutput {
     let Some(references) = check_output_size(document, None) else {
         return output_ceiling_exceeded();
     };
+    let prohibited_fonts = document
+        .assets
+        .values()
+        .any(|asset| !asset.can_export_bytes());
+    let style_loss = has_style_loss(document);
     let normalized_doc = super::normalize_document(document);
     let document = &normalized_doc;
 
     let mut out = String::new();
     let mut warnings = Vec::new();
+    if style_loss {
+        warnings.push(Warning::new(WarningCode::StylesDropped, "Markdown cannot retain document styles or page setup; semantic text and structure were preserved."));
+    }
+    if prohibited_fonts {
+        warnings.push(Warning::new(WarningCode::FontEmbeddingRestricted, "Restricted or unknown embedded font bytes were omitted; use a permitted family fallback."));
+    }
 
     // 1. YAML front matter
     write_front_matter(&document.meta, &mut out);
@@ -1617,4 +1634,68 @@ fn plain_text(inlines: &[Inline]) -> String {
         }
     }
     text.nfc().collect()
+}
+
+/// Inspect used styles, rather than unused definitions in the style sheet.
+fn has_style_loss(document: &Document) -> bool {
+    if !document.sections.is_empty() {
+        return true;
+    }
+    let mut inlines = Vec::new();
+    for (_, block) in crate::ir::blocks_with_paths(document) {
+        let styled = if matches!(block, Block::Table { .. }) {
+            document
+                .styles
+                .resolve_table(block.style().as_ref(), block.direct(), 100)
+                .map(|s| !s.is_empty())
+        } else {
+            document
+                .styles
+                .resolve_paragraph(block.style().as_ref(), block.direct(), 100)
+                .map(|s| !s.is_empty())
+        };
+        if styled.unwrap_or(true) {
+            return true;
+        }
+        match block {
+            Block::Paragraph { content, .. } | Block::Heading { content, .. } => {
+                inlines.extend(content)
+            }
+            Block::Table {
+                caption, footnotes, ..
+            } => inlines.extend(caption.iter().flatten().chain(footnotes)),
+            Block::Figure { caption, .. } => inlines.extend(caption),
+            _ => {}
+        }
+    }
+    if !inlines.is_empty() && !document.styles.defaults.character.is_empty() {
+        return true;
+    }
+    while let Some(inline) = inlines.pop() {
+        match inline {
+            Inline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                if document
+                    .styles
+                    .resolve_character(style.as_ref(), direct, None)
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(true)
+                {
+                    return true;
+                }
+                inlines.extend(content);
+            }
+            Inline::Emph { content }
+            | Inline::Strong { content }
+            | Inline::Strikeout { content }
+            | Inline::Superscript { content }
+            | Inline::Subscript { content }
+            | Inline::Link { content, .. } => inlines.extend(content),
+            _ => {}
+        }
+    }
+    false
 }

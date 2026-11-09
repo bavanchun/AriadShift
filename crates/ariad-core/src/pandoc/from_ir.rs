@@ -1,3 +1,6 @@
+#[path = "docx_style_writer.rs"]
+mod docx_style_writer;
+use docx_style_writer::DocxStyles;
 use std::collections::{BTreeMap, BTreeSet};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -5,8 +8,8 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::{
     ir::{
-        Alignment as IrAlignment, AssetRef, Block as IrBlock, Document, Inline as IrInline,
-        ListItem, Metadata, RawFormat,
+        Alignment as IrAlignment, AssetRef, Block as IrBlock, CharacterStyle, Document,
+        Inline as IrInline, ListItem, Metadata, ParagraphStyle, RawFormat,
     },
     warning::{Warning, WarningCode},
 };
@@ -21,12 +24,25 @@ const DOCX_PAGE_BREAK: &str = "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>";
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapOutput {
     pub pandoc: Pandoc,
+    pub docx_styles: DocxStyles,
     pub warnings: Vec<Warning>,
 }
 
-/// Maps AriadShift IR to the Pandoc 1.23 JSON AST used by the DOCX writer.
+impl MapOutput {
+    /// Maps styles for DOCX, including its reserved heading and run-style rules.
+    #[must_use]
+    pub fn for_docx(document: &Document) -> Self {
+        map_document(document, true)
+    }
+}
+
+/// Maps AriadShift IR to the target-neutral Pandoc 1.23 JSON AST.
 #[must_use]
 pub fn from_ir(document: &Document) -> MapOutput {
+    map_document(document, false)
+}
+
+fn map_document(document: &Document, docx: bool) -> MapOutput {
     let prohibited_fonts = document
         .assets
         .values()
@@ -38,6 +54,11 @@ pub fn from_ir(document: &Document) -> MapOutput {
 
     let mut mapper = Mapper {
         document,
+        docx,
+        docx_styles: DocxStyles::new(document),
+        character: document.styles.defaults.character.clone(),
+        table_character: None,
+        character_base: None,
         footnotes,
         used_footnotes: BTreeSet::new(),
         active_footnotes: BTreeSet::new(),
@@ -67,18 +88,25 @@ pub fn from_ir(document: &Document) -> MapOutput {
         ));
     }
 
+    mapper.warnings.extend(mapper.docx_styles.warnings());
     MapOutput {
         pandoc: Pandoc {
             meta: map_metadata(&document.meta),
             blocks,
             ..Pandoc::default()
         },
+        docx_styles: mapper.docx_styles,
         warnings: mapper.warnings,
     }
 }
 
 struct Mapper<'a> {
     document: &'a Document,
+    docx: bool,
+    docx_styles: DocxStyles,
+    character: CharacterStyle,
+    table_character: Option<CharacterStyle>,
+    character_base: Option<crate::ir::StyleId>,
     footnotes: BTreeMap<String, &'a [IrBlock]>,
     used_footnotes: BTreeSet<String>,
     active_footnotes: BTreeSet<String>,
@@ -95,6 +123,100 @@ impl Mapper<'_> {
     }
 
     fn map_block(&mut self, block: &IrBlock) -> Vec<Block> {
+        let parent = self.character.clone();
+        let parent_table = self.table_character.clone();
+        let is_table = matches!(block, IrBlock::Table { .. });
+        let resolved = if is_table {
+            self.document
+                .styles
+                .resolve_table(block.style().as_ref(), block.direct(), 100)
+                .map(|table| {
+                    self.table_character = Some(table.character.clone());
+                    let name = self.docx_styles.table(&table, block.style().as_ref());
+                    (table.paragraph, name)
+                })
+        } else {
+            self.document
+                .styles
+                .resolve_paragraph(block.style().as_ref(), block.direct(), 100)
+                .map(|p| {
+                    let name =
+                        self.docx_styles
+                            .paragraph(block.style().as_ref(), block.direct(), &p);
+                    (p, name)
+                })
+        };
+        let (paragraph, mut name) = match resolved {
+            Ok(value) => value,
+            Err(error) => {
+                self.warnings
+                    .push(Warning::new(WarningCode::UnsupportedNode, error));
+                (ParagraphStyle::default(), None)
+            }
+        };
+        self.character.overlay(&CharacterStyle {
+            font: paragraph.font.clone(),
+            size_pt: paragraph.size_pt,
+            color: paragraph.color.clone(),
+            ..Default::default()
+        });
+        if let Some(table) = &self.table_character {
+            self.character.overlay(table);
+            let direct = if block.direct().based_on.is_some() {
+                &paragraph
+            } else {
+                block.direct()
+            };
+            self.character.overlay(&CharacterStyle {
+                font: direct.font.clone(),
+                size_pt: direct.size_pt,
+                color: direct.color.clone(),
+                ..Default::default()
+            });
+        }
+        let mut blocks = self.map_block_content(block);
+        if let IrBlock::Heading { level, .. } = block
+            && name.is_some()
+            && self.docx
+        {
+            // Pandoc reserves Header's style. An outline paragraph style keeps
+            // heading semantics while allowing a custom size/alignment/spacing.
+            name = Some(self.docx_styles.heading(&paragraph, *level));
+            for mapped in &mut blocks {
+                if let Block::Header(_, _, content) = mapped {
+                    *mapped = Block::Para(std::mem::take(content));
+                }
+            }
+        }
+        self.character = parent;
+        self.table_character = parent_table;
+        if let Some(name) = name {
+            if is_table {
+                if let Some(Block::Table(table)) = blocks.first_mut() {
+                    table.0.2.push(("custom-style".into(), name));
+                }
+            } else {
+                // Div custom styles apply to ordinary paragraphs. Header attributes
+                // retain the semantic heading and its named style for other writers.
+                for mapped in &mut blocks {
+                    if let Block::Header(_, attr, _) = mapped {
+                        attr.2.push(("custom-style".into(), name.clone()));
+                    }
+                }
+                blocks = vec![Block::Div(
+                    (
+                        String::new(),
+                        Vec::new(),
+                        vec![("custom-style".into(), name)],
+                    ),
+                    blocks,
+                )];
+            }
+        }
+        blocks
+    }
+
+    fn map_block_content(&mut self, block: &IrBlock) -> Vec<Block> {
         match block {
             IrBlock::Heading { level, content, .. } => {
                 vec![Block::Header(
@@ -272,11 +394,106 @@ impl Mapper<'_> {
     }
 
     fn map_inline(&mut self, inline: &IrInline) -> Vec<Inline> {
+        let mapped = self.map_inline_content(inline);
+        if matches!(
+            inline,
+            IrInline::Styled { .. }
+                | IrInline::Emph { .. }
+                | IrInline::Strong { .. }
+                | IrInline::Strikeout { .. }
+                | IrInline::Superscript { .. }
+                | IrInline::Subscript { .. }
+                | IrInline::Link { .. }
+        ) {
+            return mapped;
+        }
+        if let Some(name) = self
+            .docx_styles
+            .character(&self.character, self.character_base.as_ref())
+        {
+            vec![Inline::Span(
+                (
+                    String::new(),
+                    Vec::new(),
+                    vec![("custom-style".into(), name)],
+                ),
+                mapped,
+            )]
+        } else {
+            mapped
+        }
+    }
+
+    fn semantic_character(&mut self, content: &[IrInline], direct: CharacterStyle) -> Vec<Inline> {
+        let parent = self.character.clone();
+        self.character.overlay(&direct);
+        let mapped = self.map_inlines(content);
+        self.character = parent;
+        mapped
+    }
+    fn map_inline_content(&mut self, inline: &IrInline) -> Vec<Inline> {
         match inline {
             IrInline::Text { text } => text_inlines(text),
-            IrInline::Styled { content, .. } => self.map_inlines(content),
+            IrInline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                let parent = self.character.clone();
+                let parent_base = self.character_base.clone();
+                if style.is_some() {
+                    self.character_base.clone_from(style);
+                }
+                match self
+                    .document
+                    .styles
+                    .resolve_character(style.as_ref(), direct, Some(&parent))
+                {
+                    Ok(resolved) => self.character = resolved,
+                    Err(error) => self
+                        .warnings
+                        .push(Warning::new(WarningCode::UnsupportedNode, error)),
+                }
+                let mapped = self.map_inlines(content);
+                self.character = parent;
+                self.character_base = parent_base;
+                mapped
+            }
+            IrInline::Emph { content }
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        italic: Some(true),
+                        ..Default::default()
+                    },
+                )
+            }
             IrInline::Emph { content } => vec![Inline::Emph(self.map_inlines(content))],
+            IrInline::Strong { content }
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        weight: Some(700),
+                        ..Default::default()
+                    },
+                )
+            }
             IrInline::Strong { content } => vec![Inline::Strong(self.map_inlines(content))],
+            IrInline::Strikeout { content }
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        strike: Some(true),
+                        ..Default::default()
+                    },
+                )
+            }
             IrInline::Strikeout { content } => {
                 vec![Inline::Strikeout(self.map_inlines(content))]
             }
@@ -546,6 +763,32 @@ fn collect_footnotes<'a>(blocks: &'a [IrBlock], footnotes: &mut BTreeMap<String,
             | IrBlock::Raw { .. } => {}
         }
     }
+}
+
+fn contains_styled(inlines: &[IrInline]) -> bool {
+    let mut pending: Vec<_> = inlines.iter().collect();
+    while let Some(inline) = pending.pop() {
+        match inline {
+            IrInline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                if style.is_some() || !direct.is_empty() {
+                    return true;
+                }
+                pending.extend(content);
+            }
+            IrInline::Emph { content }
+            | IrInline::Strong { content }
+            | IrInline::Strikeout { content }
+            | IrInline::Superscript { content }
+            | IrInline::Subscript { content }
+            | IrInline::Link { content, .. } => pending.extend(content),
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
