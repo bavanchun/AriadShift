@@ -14,7 +14,7 @@ use ariad_core::{
         ReadOutput,
         pdf::{self, PdfStats, ReadError},
     },
-    warning::WarningCode,
+    warning::{Warning, WarningCode},
 };
 use unicode_normalization::UnicodeNormalization;
 
@@ -217,7 +217,44 @@ fn vietnamese_typst_pdf_keeps_title_paragraphs_and_table_cells() {
             producer: None,
         }
     );
-    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+    // This Typst fixture paints its text in an ICCBased space. Until profile
+    // conversion is supported, the run colour is unknown and reported once.
+    assert_eq!(
+        output.warnings,
+        vec![Warning::new(
+            WarningCode::UnsupportedNode,
+            "Unsupported PDF colour spaces or invalid colour operands were left unknown",
+        )]
+    );
+    let mut pending: Vec<_> = document
+        .body
+        .iter()
+        .flat_map(|block| match block {
+            Block::Paragraph { content, .. } | Block::Heading { content, .. } => content.as_slice(),
+            _ => &[],
+        })
+        .collect();
+    let mut styled_runs = 0;
+    while let Some(inline) = pending.pop() {
+        match inline {
+            Inline::Styled {
+                direct, content, ..
+            } => {
+                assert!(
+                    direct.color.is_none(),
+                    "ICCBased colour must remain unknown"
+                );
+                styled_runs += 1;
+                pending.extend(content);
+            }
+            Inline::Strong { content }
+            | Inline::Emph { content }
+            | Inline::Superscript { content }
+            | Inline::Subscript { content } => pending.extend(content),
+            _ => {}
+        }
+    }
+    assert!(styled_runs > 0);
 }
 
 #[test]
