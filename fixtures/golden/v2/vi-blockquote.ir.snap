@@ -1,0 +1,57 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Lời nhắn bên cầu",
+          "type": "text"
+        }
+      ],
+      "id": "b7e630b720991895f8e45b36620adb44fb69b872cd37c4890f26fccb51f692aaf",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
+              "type": "text"
+            }
+          ],
+          "id": "b7854e9dd3827f16ae66f9a540581b13bff26773a19691c436c66f523f1c6d76d",
+          "type": "paragraph"
+        },
+        {
+          "content": [
+            {
+              "text": "Hãy để lối đi thông thoáng cho người qua đường.",
+              "type": "text"
+            }
+          ],
+          "id": "bfe896d376b8f6c4a13e8a523dc8ff6e2ad3d670e171b8e666fc4832584c7325d",
+          "type": "paragraph"
+        }
+      ],
+      "id": "bcca2a37403c3549559add0ef401acb8515846f388761ac3eaa2a80c3b2e1f495",
+      "type": "quote"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

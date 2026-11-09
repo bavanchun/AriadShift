@@ -1,0 +1,76 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "A Reminder",
+          "type": "text"
+        }
+      ],
+      "id": "bcc9ecfa34a08c6b4641bff01012255654d38a4a183286fddabcaa95c43574324",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Record",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        },
+        {
+          "text": " the bridge before the route ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "turns east",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        },
+        {
+          "text": ". ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "Ignore the old water mark",
+              "type": "text"
+            }
+          ],
+          "type": "strikeout"
+        },
+        {
+          "text": "; it still helps.",
+          "type": "text"
+        }
+      ],
+      "id": "bd76336e1742d1e677aaaa6123def7cb2a420f56b3f8f2b225e8ffa14bb9943f0",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

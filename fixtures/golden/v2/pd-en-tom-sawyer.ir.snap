@@ -1,0 +1,30 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "“Tom!” No answer. “TOM!” No answer. “What’s gone with that boy, I wonder? You TOM!”",
+          "type": "text"
+        }
+      ],
+      "id": "ba703e4a93fa4266bb3a9385716ca08778c010e0c291221058434690f06275a48",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

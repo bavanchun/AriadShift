@@ -111,7 +111,8 @@ pub(super) fn core_text(
                 | Inline::Code { text: value }
                 | Inline::Math { tex: value, .. }
                 | Inline::Raw { text: value, .. } => append(&mut text, value)?,
-                Inline::Emph { content }
+                Inline::Styled { content, .. }
+                | Inline::Emph { content }
                 | Inline::Strong { content }
                 | Inline::Strikeout { content }
                 | Inline::Superscript { content }
@@ -124,13 +125,13 @@ pub(super) fn core_text(
             Item::Block(block) => {
                 todo.push(Item::Separator);
                 match block {
-                    Block::Heading { content, .. } | Block::Paragraph { content } => {
+                    Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                         push_inlines(&mut todo, content)
                     }
                     Block::Code { text: value, .. }
                     | Block::Raw { text: value, .. }
                     | Block::Math { tex: value, .. } => append(&mut text, value)?,
-                    Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+                    Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
                         for block in blocks.iter().rev() {
                             todo.push(Item::Block(block));
                         }
@@ -162,7 +163,7 @@ pub(super) fn core_text(
                         }
                     }
                     Block::Figure { caption, .. } => push_inlines(&mut todo, caption),
-                    Block::PageBreak {} => {}
+                    Block::PageBreak { .. } => {}
                 }
             }
         }

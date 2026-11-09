@@ -1,0 +1,254 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Bảng hành trình ven sông",
+          "type": "text"
+        }
+      ],
+      "id": "b589117f1cb8afea14acade94bfea93a60d057217b5e0fcc55ef5cd21e5e2db1a",
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
+          "type": "text"
+        }
+      ],
+      "id": "b3f679e43d3aed20f7d36a744c4e16a0fd9c811e79b07cab2e9fa225d01f99bcb",
+      "type": "paragraph"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bến sông",
+                    "type": "text"
+                  }
+                ],
+                "id": "bfc4eeabe6629356b1ca2573b02f1c0bee4b33c618cb544089f2f234bc3169503",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "8",
+                    "type": "text"
+                  }
+                ],
+                "id": "bdc08934c2376314679d895ee88a79f77aff6388570b99c36723d3e9b9898087d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bóng mát",
+                    "type": "text"
+                  }
+                ],
+                "id": "be10950478710c395747089830d14415fc57e3d7067bdc4c03238a3ef7256b844",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Vườn đọc",
+                    "type": "text"
+                  }
+                ],
+                "id": "be71a0908a4dbc59f931fdcfe3cd127fca7c0231871fa6561f9b1f0416c8bfb98",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "14",
+                    "type": "text"
+                  }
+                ],
+                "id": "bf8a6205a87e623221b11f0b624ff8f8b65de01d5bb39b915d9926811f45d4542",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Có ghế dài",
+                    "type": "text"
+                  }
+                ],
+                "id": "b8ada13c0008fc6118adf000431f6cb33d7f9c20870ed182116f6906a371d1457",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Lịch khảo sát cập nhật mỗi tháng.",
+                    "type": "text"
+                  }
+                ],
+                "id": "b35e65924858d30149cd2622dd82a60ec7a3388f5d3948d328fc28add27fd67a6",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 3,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "Điểm dừng",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "id": "bf6979dfb277de5a53037bc70a07ee05c76399599e51a6a28a986f4cd44c9865d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "Phút đi bộ",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "id": "bfa76cee0a578066d69c036ea8d403125d474d3bf3848d030b9a919e9cb6092ff",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "Ghi chú",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "id": "b439d36bb7d46d8c50924173d94035bc0de572df8f54ec9c77eed29efa07cbd49",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "b6b9bb8f3e66671d0282f1ad75953b617876266c417d8b91c59853c2137078841",
+      "type": "table"
+    },
+    {
+      "content": [
+        {
+          "text": "Các khoảng thời gian là ước lượng đi bộ.",
+          "type": "text"
+        }
+      ],
+      "id": "b46c957d03f78ea13e4be281ad85025dc6657c8e159d98db9f73d986327059683",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "docx",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

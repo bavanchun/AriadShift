@@ -63,7 +63,8 @@ fn check_inlines(inlines: &[Inline], assets: &AssetStore) {
                 target: AssetRef::Asset { id },
                 ..
             } => assert!(assets.contains_key(id), "image names a missing asset"),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -77,10 +78,10 @@ fn check_inlines(inlines: &[Inline], assets: &AssetStore) {
 fn check_blocks(blocks: &[Block], assets: &AssetStore) {
     for block in blocks {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 check_inlines(content, assets);
             }
-            Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
                 check_blocks(blocks, assets)
             }
             Block::List { items, .. } => {
@@ -92,16 +93,18 @@ fn check_blocks(blocks: &[Block], assets: &AssetStore) {
                 caption,
                 head,
                 body,
+                footnotes,
                 ..
             } => {
                 if let Some(caption) = caption {
                     check_inlines(caption, assets);
                 }
+                check_inlines(footnotes, assets);
                 for cell in head.iter().chain(body).flatten() {
                     check_blocks(&cell.blocks, assets);
                 }
             }
-            Block::Figure { asset, caption } => {
+            Block::Figure { asset, caption, .. } => {
                 if let AssetRef::Asset { id } = asset {
                     assert!(assets.contains_key(id), "figure names a missing asset");
                 }

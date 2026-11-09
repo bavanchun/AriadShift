@@ -35,7 +35,7 @@ fn extract_text_from_bytes(bytes: &[u8]) -> String {
     let ir = reader::pdf::read(bytes, &Limits::local()).expect("read output pdf text");
     let mut out = String::new();
     for block in &ir.document.body {
-        if let Block::Paragraph { content } | Block::Heading { content, .. } = block {
+        if let Block::Paragraph { content, .. } | Block::Heading { content, .. } = block {
             for inline in content {
                 if let Inline::Text { text } = inline {
                     out.push_str(text);

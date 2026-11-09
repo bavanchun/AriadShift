@@ -1,0 +1,51 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Ánh đèn cuối ngõ",
+          "type": "text"
+        }
+      ],
+      "id": "bd24f69c59cbe5abc536ad2e748f26de1a96d388cfc18314c5fa9bab6eb04dbd5",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
+          "type": "text"
+        }
+      ],
+      "id": "b3f679e43d3aed20f7d36a744c4e16a0fd9c811e79b07cab2e9fa225d01f99bcb",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Cộng đồng giữ lại chiếc ghế gỗ để mọi người nghỉ chân.",
+          "type": "text"
+        }
+      ],
+      "id": "b63be076b09718643057ff2219a9ae4fa048e7cf0f397eca5744ee569c9fe3410",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

@@ -1,0 +1,47 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Truyện Kiều: Tài sắc hai chị em",
+          "type": "text"
+        }
+      ],
+      "id": "b449d92c3335cab708876809d0fdbe961eb4796c6ad1712477a39756d3e31e48f",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "Đầu lòng hai ả tố-nga,",
+              "type": "text"
+            }
+          ],
+          "id": "b258eb8b0859c1b432a9fc646a7a38538d152a7e49b7e661c133648a703c85d9f",
+          "type": "paragraph"
+        }
+      ],
+      "id": "b7135981d9776aea0431658914ea860be532843e9b345c8876e9623c3b51e099b",
+      "type": "quote"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": "vi",
+    "source_format": "html",
+    "subject": null,
+    "title": "Truyện Kiều: Tài sắc hai chị em"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

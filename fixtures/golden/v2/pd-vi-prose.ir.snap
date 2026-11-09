@@ -1,0 +1,30 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Thật là có đức rất khiêm nhường, không biết mình là thánh vậy.",
+          "type": "text"
+        }
+      ],
+      "id": "b84c71ffbea76154c6f673e246c7150057d887e8ee617c47907217ab8b7230172",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

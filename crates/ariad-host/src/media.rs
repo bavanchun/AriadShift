@@ -164,6 +164,25 @@ fn resolve_inlines(
                     }
                 }
             }
+            Inline::Styled {
+                style,
+                direct,
+                mut content,
+            } => {
+                resolve_inlines(
+                    &mut content,
+                    media_dir,
+                    dir,
+                    max_asset_bytes,
+                    assets,
+                    warnings,
+                );
+                new_inlines.push(Inline::Styled {
+                    style,
+                    direct,
+                    content,
+                });
+            }
             Inline::Emph { mut content } => {
                 resolve_inlines(
                     &mut content,
@@ -254,8 +273,13 @@ fn resolve_blocks(
 ) {
     let mut new_blocks = Vec::with_capacity(blocks.len());
     for block in blocks.drain(..) {
+        let block_id = block.id().clone();
+        let style = block.style().clone();
+        let direct = block.direct().clone();
         match block {
-            Block::Figure { asset, mut caption } => {
+            Block::Figure {
+                asset, mut caption, ..
+            } => {
                 resolve_inlines(
                     &mut caption,
                     media_dir,
@@ -267,6 +291,9 @@ fn resolve_blocks(
                 match resolve_media_asset(&asset, media_dir, dir, max_asset_bytes, assets) {
                     Ok(id) => {
                         new_blocks.push(Block::Figure {
+                            id: block_id,
+                            style,
+                            direct,
                             asset: AssetRef::Asset { id },
                             caption,
                         });
@@ -278,11 +305,18 @@ fn resolve_blocks(
                                 "figure asset could not be embedded: {reason}; falling back to caption"
                             ),
                         ));
-                        new_blocks.push(Block::Paragraph { content: caption });
+                        new_blocks.push(Block::Paragraph {
+                            id: block_id,
+                            style,
+                            direct,
+                            content: caption,
+                        });
                     }
                 }
             }
-            Block::Heading { level, mut content } => {
+            Block::Heading {
+                level, mut content, ..
+            } => {
                 resolve_inlines(
                     &mut content,
                     media_dir,
@@ -291,9 +325,15 @@ fn resolve_blocks(
                     assets,
                     warnings,
                 );
-                new_blocks.push(Block::Heading { level, content });
+                new_blocks.push(Block::Heading {
+                    id: block_id,
+                    style,
+                    direct,
+                    level,
+                    content,
+                });
             }
-            Block::Paragraph { mut content } => {
+            Block::Paragraph { mut content, .. } => {
                 resolve_inlines(
                     &mut content,
                     media_dir,
@@ -302,9 +342,14 @@ fn resolve_blocks(
                     assets,
                     warnings,
                 );
-                new_blocks.push(Block::Paragraph { content });
+                new_blocks.push(Block::Paragraph {
+                    id: block_id,
+                    style,
+                    direct,
+                    content,
+                });
             }
-            Block::Quote { mut blocks } => {
+            Block::Quote { mut blocks, .. } => {
                 resolve_blocks(
                     &mut blocks,
                     media_dir,
@@ -313,9 +358,18 @@ fn resolve_blocks(
                     assets,
                     warnings,
                 );
-                new_blocks.push(Block::Quote { blocks });
+                new_blocks.push(Block::Quote {
+                    id: block_id,
+                    style,
+                    direct,
+                    blocks,
+                });
             }
-            Block::Footnote { id, mut blocks } => {
+            Block::Footnote {
+                note_id: id,
+                mut blocks,
+                ..
+            } => {
                 resolve_blocks(
                     &mut blocks,
                     media_dir,
@@ -324,13 +378,20 @@ fn resolve_blocks(
                     assets,
                     warnings,
                 );
-                new_blocks.push(Block::Footnote { id, blocks });
+                new_blocks.push(Block::Footnote {
+                    id: block_id,
+                    style,
+                    direct,
+                    note_id: id,
+                    blocks,
+                });
             }
             Block::List {
                 ordered,
                 start,
                 tight,
                 mut items,
+                ..
             } => {
                 for item in &mut items {
                     resolve_blocks(
@@ -343,6 +404,9 @@ fn resolve_blocks(
                     );
                 }
                 new_blocks.push(Block::List {
+                    id: block_id,
+                    style,
+                    direct,
                     ordered,
                     start,
                     tight,
@@ -355,6 +419,7 @@ fn resolve_blocks(
                 mut head,
                 mut body,
                 mut footnotes,
+                ..
             } => {
                 let mut new_caption = caption;
                 if let Some(ref mut cap) = new_caption {
@@ -381,6 +446,9 @@ fn resolve_blocks(
                     warnings,
                 );
                 new_blocks.push(Block::Table {
+                    id: block_id,
+                    style,
+                    direct,
                     caption: new_caption,
                     columns,
                     head,
@@ -418,6 +486,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Url {
                     href: format!("{}/image1.png", media_dir.display()),
@@ -436,7 +507,7 @@ mod tests {
         assert_eq!(asset.bytes, PNG_BYTES);
 
         match &doc.body[0] {
-            Block::Paragraph { content } => match &content[0] {
+            Block::Paragraph { content, .. } => match &content[0] {
                 Inline::Image { target, alt, .. } => {
                     assert_eq!(target, &AssetRef::Asset { id: id.clone() });
                     assert_eq!(alt, "Test image");
@@ -455,6 +526,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Url {
                     href: format!("{}/missing.png", media_dir.display()),
@@ -470,7 +544,7 @@ mod tests {
         assert!(doc.assets.is_empty());
 
         match &doc.body[0] {
-            Block::Paragraph { content } => match &content[0] {
+            Block::Paragraph { content, .. } => match &content[0] {
                 Inline::Text { text } => {
                     assert_eq!(text, "Fallback alt text");
                 }
@@ -488,6 +562,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Url {
                     href: "media/../secret.txt".to_owned(),
@@ -520,6 +597,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Url {
                     href: format!("{}/symlink.png", media_dir.display()),
@@ -544,6 +624,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Url {
                     href: format!("{}/large.png", media_dir.display()),
@@ -571,6 +654,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Url {
                     href: format!("{}/not_image.png", media_dir.display()),
@@ -595,6 +681,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "No images".to_owned(),
             }],
@@ -638,6 +727,9 @@ mod tests {
 
         let mut doc = Document::default();
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Url {
                     href: "media/image%20with%20space.png".to_owned(),
@@ -655,7 +747,7 @@ mod tests {
         assert_eq!(doc.assets.len(), 1);
         let id = doc.assets.keys().next().unwrap();
         match &doc.body[0] {
-            Block::Paragraph { content } => match &content[0] {
+            Block::Paragraph { content, .. } => match &content[0] {
                 Inline::Image { target, .. } => {
                     assert_eq!(target, &AssetRef::Asset { id: id.clone() });
                 }
@@ -673,6 +765,9 @@ mod tests {
             let href = "hình_ảnh_minh_họa_tiếng_việt_chất_lượng_cao_12345.png";
             let mut doc = Document::default();
             doc.body.push(Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Image {
                     target: AssetRef::Url {
                         href: href.to_owned(),
@@ -686,7 +781,7 @@ mod tests {
             assert_eq!(warnings.len(), 1, "failed at prefix_len {prefix_len}");
             assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
             match &doc.body[0] {
-                Block::Paragraph { content } => match &content[0] {
+                Block::Paragraph { content, .. } => match &content[0] {
                     Inline::Text { text } => {
                         assert_eq!(text, "Hình minh họa");
                     }
@@ -705,6 +800,9 @@ mod tests {
             let href = "ảảảảảảảảảảảảảảảảảảả.png";
             let mut doc = Document::default();
             doc.body.push(Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Image {
                     target: AssetRef::Url {
                         href: href.to_owned(),
@@ -718,7 +816,7 @@ mod tests {
             assert_eq!(warnings.len(), 1, "failed at prefix_len {prefix_len}");
             assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
             match &doc.body[0] {
-                Block::Paragraph { content } => match &content[0] {
+                Block::Paragraph { content, .. } => match &content[0] {
                     Inline::Text { text } => {
                         assert_eq!(text, "Fallback alt");
                     }
@@ -727,5 +825,46 @@ mod tests {
                 other => panic!("expected Paragraph, got {other:?}"),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod styled_tests {
+    use super::*;
+    use ariad_core::ir::{CharacterStyle, ParagraphStyle};
+    #[test]
+    fn styled_content_ingests_media_without_changing_block_ids() {
+        let base = tempfile::tempdir().unwrap();
+        const PNG: &[u8] = b"\x89PNG\r\n\x1a\nimage payload";
+        fs::create_dir(base.path().join("media")).unwrap();
+        fs::write(base.path().join("media/styled.png"), PNG).unwrap();
+        let mut media_doc = Document {
+            body: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: ParagraphStyle::default(),
+                content: vec![Inline::Styled {
+                    style: None,
+                    direct: CharacterStyle::default(),
+                    content: vec![Inline::Image {
+                        target: AssetRef::Url {
+                            href: base
+                                .path()
+                                .join("media/styled.png")
+                                .to_string_lossy()
+                                .into_owned(),
+                        },
+                        alt: "image".into(),
+                        title: None,
+                    }],
+                }],
+            }],
+            ..Default::default()
+        }
+        .finalize_import();
+        let id = media_doc.body[0].id().clone();
+        assert!(ingest_media(&mut media_doc, base.path(), &Limits::local()).is_empty());
+        assert_eq!(media_doc.body[0].id(), &id);
+        assert_eq!(media_doc.assets.len(), 1);
     }
 }

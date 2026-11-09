@@ -1,0 +1,71 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Ghi chú nguồn bản đồ",
+          "type": "text"
+        }
+      ],
+      "id": "b618ca9d4495d08bfd061cbcdf8b7260fbfdf5b90694703774cd7ad7186e7a2be",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Bản ghi mở tại ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "https://example.org/river-survey",
+              "type": "text"
+            }
+          ],
+          "title": null,
+          "type": "link",
+          "url": "https://example.org/river-survey"
+        },
+        {
+          "text": ". Tên tuyến được đối chiếu với ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "sổ địa danh",
+              "type": "text"
+            }
+          ],
+          "title": null,
+          "type": "link",
+          "url": "https://example.org/place-names"
+        },
+        {
+          "text": ".",
+          "type": "text"
+        }
+      ],
+      "id": "bdd3d6619d7aa981c3a52575299770dae5ada1b7791d67b04dc10418e61e8189b",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

@@ -425,7 +425,10 @@ pub fn read(input: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     }
 
     Ok(ReadOutput {
-        document: Document {
+        document: (Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
             version: IR_VERSION.to_owned(),
             meta: metadata,
             body: body_blocks,
@@ -433,7 +436,8 @@ pub fn read(input: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             layout: None,
             provenance: None,
             furniture: Vec::new(),
-        },
+        })
+        .finalize_import(),
         warnings: mapper.warnings,
     })
 }
@@ -621,6 +625,9 @@ fn convert_node(
                     let level = local[1..].parse::<u8>().unwrap_or(1);
                     let content = trim_inlines(inlines(mapper, children));
                     Ok(ConvertedNode::Blocks(vec![Block::Heading {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         level,
                         content,
                     }]))
@@ -631,7 +638,12 @@ fn convert_node(
                         Ok(ConvertedNode::Skip)
                     } else {
                         mapper.check_block_limit()?;
-                        Ok(ConvertedNode::Blocks(vec![Block::Paragraph { content }]))
+                        Ok(ConvertedNode::Blocks(vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
+                            content,
+                        }]))
                     }
                 }
                 "blockquote" => {
@@ -640,13 +652,21 @@ fn convert_node(
                         Ok(ConvertedNode::Skip)
                     } else {
                         mapper.check_block_limit()?;
-                        Ok(ConvertedNode::Blocks(vec![Block::Quote { blocks: blks }]))
+                        Ok(ConvertedNode::Blocks(vec![Block::Quote {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
+                            blocks: blks,
+                        }]))
                     }
                 }
                 "ul" => {
                     let items = list_items(children);
                     mapper.check_block_limit()?;
                     let list = Block::List {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         ordered: false,
                         start: None,
                         tight: false,
@@ -674,6 +694,9 @@ fn convert_node(
                     let items = list_items(children);
                     mapper.check_block_limit()?;
                     let list = Block::List {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         ordered: true,
                         start,
                         tight: false,
@@ -781,7 +804,13 @@ fn convert_node(
                 "pre" => {
                     let (lang, text) = collect_pre_content(mapper.arena, handle);
                     mapper.check_block_limit()?;
-                    Ok(ConvertedNode::Blocks(vec![Block::Code { lang, text }]))
+                    Ok(ConvertedNode::Blocks(vec![Block::Code {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        lang,
+                        text,
+                    }]))
                 }
                 "figure" => Ok(ConvertedNode::Blocks(map_figure(
                     mapper,
@@ -896,7 +925,12 @@ fn convert_node(
                                     Ok(ConvertedNode::Skip)
                                 } else {
                                     mapper.check_block_limit()?;
-                                    Ok(ConvertedNode::Blocks(vec![Block::Paragraph { content }]))
+                                    Ok(ConvertedNode::Blocks(vec![Block::Paragraph {
+                                        id: Default::default(),
+                                        style: None,
+                                        direct: Default::default(),
+                                        content,
+                                    }]))
                                 }
                             }
                             _ => Ok(ConvertedNode::Blocks(blocks(mapper, children)?)),
@@ -958,7 +992,10 @@ fn convert_node(
                             .unwrap_or_default();
                         mapper.check_block_limit()?;
                         Ok(ConvertedNode::Blocks(vec![Block::Footnote {
-                            id,
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
+                            note_id: id,
                             blocks: blocks(mapper, children)?,
                         }]))
                     } else {
@@ -973,7 +1010,7 @@ fn convert_node(
 
 fn block_depth(block: &Block) -> u16 {
     match block {
-        Block::Quote { blocks } => 1 + blocks_depth(blocks),
+        Block::Quote { blocks, .. } => 1 + blocks_depth(blocks),
         Block::List { items, .. } => {
             1 + items
                 .iter()
@@ -996,7 +1033,7 @@ fn block_depth(block: &Block) -> u16 {
         | Block::Code { .. }
         | Block::Math { .. }
         | Block::Raw { .. }
-        | Block::PageBreak {}
+        | Block::PageBreak { .. }
         | Block::Figure { .. } => 0,
     }
 }
@@ -1076,7 +1113,13 @@ fn map_figure(
     };
     mapper.check_block_limit()?;
     // Replace the image in place; only its adjacent caption can be folded in.
-    children[image_index] = ConvertedNode::Blocks(vec![Block::Figure { asset, caption }]);
+    children[image_index] = ConvertedNode::Blocks(vec![Block::Figure {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        asset,
+        caption,
+    }]);
     blocks(mapper, children)
 }
 
@@ -1100,6 +1143,9 @@ fn blocks(
                 flush_inlines(mapper, &mut pending_inlines, &mut blocks)?;
                 mapper.check_block_limit()?;
                 let list = Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: false,
                     start: None,
                     tight: false,
@@ -1134,7 +1180,12 @@ fn blocks(
                 flush_inlines(mapper, &mut pending_inlines, &mut blocks)?;
                 if !cap.is_empty() {
                     mapper.check_block_limit()?;
-                    blocks.push(Block::Paragraph { content: cap });
+                    blocks.push(Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        content: cap,
+                    });
                 }
             }
             ConvertedNode::Skip => {}
@@ -1154,7 +1205,12 @@ fn flush_inlines(
         let trimmed = trim_inlines(inlines);
         if !trimmed.is_empty() {
             mapper.check_block_limit()?;
-            blocks.push(Block::Paragraph { content: trimmed });
+            blocks.push(Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content: trimmed,
+            });
         }
     }
     Ok(())
@@ -1192,13 +1248,13 @@ fn flatten_blocks_into_inlines(blocks: Vec<Block>, inlines: &mut Vec<Inline>) {
     let mut pending: Vec<Block> = blocks.into_iter().rev().collect();
     while let Some(block) = pending.pop() {
         match block {
-            Block::Paragraph { content } | Block::Heading { content, .. } => {
+            Block::Paragraph { content, .. } | Block::Heading { content, .. } => {
                 inlines.extend(content);
             }
             Block::Code { text, .. } => inlines.push(Inline::Code { text }),
-            Block::Math { tex, display } => inlines.push(Inline::Math { tex, display }),
-            Block::Raw { format, text } => inlines.push(Inline::Raw { format, text }),
-            Block::Figure { asset, caption } => {
+            Block::Math { tex, display, .. } => inlines.push(Inline::Math { tex, display }),
+            Block::Raw { format, text, .. } => inlines.push(Inline::Raw { format, text }),
+            Block::Figure { asset, caption, .. } => {
                 inlines.push(Inline::Image {
                     target: asset,
                     alt: String::new(),
@@ -1207,7 +1263,7 @@ fn flatten_blocks_into_inlines(blocks: Vec<Block>, inlines: &mut Vec<Inline>) {
                 separate_inlines(inlines);
                 inlines.extend(caption);
             }
-            Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
                 pending.extend(blocks.into_iter().rev());
             }
             Block::List { items, .. } => {
@@ -1226,7 +1282,12 @@ fn flatten_blocks_into_inlines(blocks: Vec<Block>, inlines: &mut Vec<Inline>) {
                 ..
             } => {
                 if !footnotes.is_empty() {
-                    pending.push(Block::Paragraph { content: footnotes });
+                    pending.push(Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        content: footnotes,
+                    });
                 }
                 pending.extend(head.into_iter().chain(body).rev().flat_map(|row| {
                     row.into_iter()
@@ -1234,10 +1295,15 @@ fn flatten_blocks_into_inlines(blocks: Vec<Block>, inlines: &mut Vec<Inline>) {
                         .flat_map(|cell| cell.blocks.into_iter().rev())
                 }));
                 if let Some(content) = caption {
-                    pending.push(Block::Paragraph { content });
+                    pending.push(Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        content,
+                    });
                 }
             }
-            Block::PageBreak {} => {}
+            Block::PageBreak { .. } => {}
         }
         separate_inlines(inlines);
     }
@@ -1256,7 +1322,12 @@ fn list_items(children: Vec<ConvertedNode>) -> Vec<ListItem> {
                     if !trimmed.is_empty() {
                         items.push(ListItem {
                             checked: None,
-                            blocks: vec![Block::Paragraph { content: trimmed }],
+                            blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
+                                content: trimmed,
+                            }],
                         });
                     }
                 }
@@ -1272,7 +1343,12 @@ fn list_items(children: Vec<ConvertedNode>) -> Vec<ListItem> {
                     if !trimmed.is_empty() {
                         items.push(ListItem {
                             checked: None,
-                            blocks: vec![Block::Paragraph { content: trimmed }],
+                            blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
+                                content: trimmed,
+                            }],
                         });
                     }
                 }
@@ -1292,7 +1368,12 @@ fn list_items(children: Vec<ConvertedNode>) -> Vec<ListItem> {
         if !trimmed.is_empty() {
             items.push(ListItem {
                 checked: None,
-                blocks: vec![Block::Paragraph { content: trimmed }],
+                blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content: trimmed,
+                }],
             });
         }
     }
@@ -1336,7 +1417,8 @@ fn collapse_inlines_whitespace(inlines: &mut [Inline], prev_ends_with_space: &mu
                     *prev_ends_with_space = text.ends_with(' ');
                 }
             }
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -1371,7 +1453,8 @@ fn trim_inlines_trailing(inlines: &mut Vec<Inline>) {
                 }
                 break;
             }
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -1392,7 +1475,8 @@ fn trim_inlines_trailing(inlines: &mut Vec<Inline>) {
 fn remove_empty_inlines(inlines: &mut Vec<Inline>) {
     inlines.retain_mut(|inline| match inline {
         Inline::Text { text } => !text.is_empty(),
-        Inline::Emph { content }
+        Inline::Styled { content, .. }
+        | Inline::Emph { content }
         | Inline::Strong { content }
         | Inline::Strikeout { content }
         | Inline::Superscript { content }
@@ -1733,6 +1817,9 @@ fn map_table(children: Vec<ConvertedNode>) -> Block {
         .collect();
 
     Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption,
         columns,
         head,

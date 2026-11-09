@@ -197,10 +197,11 @@ pub fn strip_html_tags(html: &str) -> String {
     out
 }
 
-/// Normalizes all string fields of a `Document` once at writer entry.
+/// Normalizes prose and display attributes once at writer entry.
 ///
 /// Converts CRLF, lone CR, U+2028, and U+0085 into LF (for multiline content)
-/// or space (for single-line attributes and URLs).
+/// or space (for single-line attributes). Opaque code, raw markup, math and
+/// destinations retain their bytes; each target writer handles its own escaping.
 #[must_use]
 pub(crate) fn normalize_document(doc: &Document) -> Document {
     Document {
@@ -224,100 +225,178 @@ pub(crate) fn normalize_document(doc: &Document) -> Document {
                 .collect(),
             source_format: doc.meta.source_format,
         },
-        body: doc.body.iter().map(normalize_block).collect(),
-        assets: doc.assets.clone(),
+        body: normalize_blocks(&doc.body),
+        assets: doc
+            .assets
+            .iter()
+            .filter(|(_, asset)| asset.can_export_bytes())
+            .map(|(id, asset)| (id.clone(), asset.clone()))
+            .collect(),
         layout: doc.layout.clone(),
         provenance: doc.provenance.clone(),
-        furniture: doc.furniture.iter().map(normalize_block).collect(),
+        furniture: normalize_blocks(&doc.furniture),
+        styles: doc.styles.clone(),
+        sections: doc.sections.clone(),
+        source_map: doc.source_map.clone(),
     }
 }
 
-fn normalize_block(b: &Block) -> Block {
-    match b {
-        Block::Heading { level, content } => Block::Heading {
+// Clone containers one level at a time. A recursive subtree clone can exhaust
+// the stack before a writer applies its own depth-dependent fallback.
+fn normalize_blocks(blocks: &[Block]) -> Vec<Block> {
+    let mut result: Vec<_> = blocks.iter().map(normalize_block_shallow).collect();
+    let mut pending: Vec<_> = blocks.iter().zip(result.iter_mut()).collect();
+    while let Some((source, target)) = pending.pop() {
+        match (source, target) {
+            (Block::Quote { blocks: source, .. }, Block::Quote { blocks: target, .. })
+            | (Block::Footnote { blocks: source, .. }, Block::Footnote { blocks: target, .. }) => {
+                *target = source.iter().map(normalize_block_shallow).collect();
+                pending.extend(source.iter().zip(target.iter_mut()));
+            }
+            (Block::List { items: source, .. }, Block::List { items: target, .. }) => {
+                *target = source
+                    .iter()
+                    .map(|item| ListItem {
+                        checked: item.checked,
+                        blocks: item.blocks.iter().map(normalize_block_shallow).collect(),
+                    })
+                    .collect();
+                for (source, target) in source.iter().zip(target) {
+                    pending.extend(source.blocks.iter().zip(target.blocks.iter_mut()));
+                }
+            }
+            (
+                Block::Table {
+                    head: source_head,
+                    body: source_body,
+                    ..
+                },
+                Block::Table {
+                    head: target_head,
+                    body: target_body,
+                    ..
+                },
+            ) => {
+                let rows = |rows: &[Vec<TableCell>]| {
+                    rows.iter()
+                        .map(|row| {
+                            row.iter()
+                                .map(|cell| TableCell {
+                                    rowspan: cell.rowspan,
+                                    colspan: cell.colspan,
+                                    header: cell.header,
+                                    blocks: cell
+                                        .blocks
+                                        .iter()
+                                        .map(normalize_block_shallow)
+                                        .collect(),
+                                })
+                                .collect()
+                        })
+                        .collect()
+                };
+                *target_head = rows(source_head);
+                *target_body = rows(source_body);
+                for (source, target) in source_head
+                    .iter()
+                    .chain(source_body)
+                    .zip(target_head.iter_mut().chain(target_body))
+                {
+                    for (source, target) in source.iter().zip(target) {
+                        pending.extend(source.blocks.iter().zip(target.blocks.iter_mut()));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    result
+}
+
+fn normalize_block_shallow(block: &Block) -> Block {
+    let id = block.id().clone();
+    let style = block.style().clone();
+    let direct = block.direct().clone();
+    match block {
+        Block::Heading { level, content, .. } => Block::Heading {
+            id,
+            style,
+            direct,
             level: *level,
             content: content.iter().map(normalize_inline).collect(),
         },
-        Block::Paragraph { content } => Block::Paragraph {
+        Block::Paragraph { content, .. } => Block::Paragraph {
+            id,
+            style,
+            direct,
             content: content.iter().map(normalize_inline).collect(),
         },
-        Block::Code { lang, text } => Block::Code {
-            lang: lang.as_deref().map(normalize_singleline),
-            text: normalize_multiline(text),
+        Block::Quote { .. } => Block::Quote {
+            id,
+            style,
+            direct,
+            blocks: vec![],
         },
-        Block::Math { tex, display } => Block::Math {
-            tex: normalize_multiline(tex),
-            display: *display,
+        Block::Footnote { note_id, .. } => Block::Footnote {
+            id,
+            style,
+            direct,
+            note_id: note_id.clone(),
+            blocks: vec![],
         },
-        Block::Quote { blocks } => Block::Quote {
-            blocks: blocks.iter().map(normalize_block).collect(),
-        },
-        Block::PageBreak {} => Block::PageBreak {},
         Block::List {
             ordered,
             start,
             tight,
-            items,
+            ..
         } => Block::List {
+            id,
+            style,
+            direct,
             ordered: *ordered,
             start: *start,
             tight: *tight,
-            items: items.iter().map(normalize_list_item).collect(),
+            items: vec![],
         },
         Block::Table {
             caption,
             columns,
-            head,
-            body,
             footnotes,
+            ..
         } => Block::Table {
+            id,
+            style,
+            direct,
             caption: caption
                 .as_ref()
-                .map(|c| c.iter().map(normalize_inline).collect()),
+                .map(|v| v.iter().map(normalize_inline).collect()),
             columns: columns.clone(),
-            head: head
-                .iter()
-                .map(|row| row.iter().map(normalize_cell).collect())
-                .collect(),
-            body: body
-                .iter()
-                .map(|row| row.iter().map(normalize_cell).collect())
-                .collect(),
+            head: vec![],
+            body: vec![],
             footnotes: footnotes.iter().map(normalize_inline).collect(),
         },
-        Block::Figure { asset, caption } => Block::Figure {
-            asset: normalize_asset_ref(asset),
+        Block::Figure { asset, caption, .. } => Block::Figure {
+            id,
+            style,
+            direct,
+            asset: asset.clone(),
             caption: caption.iter().map(normalize_inline).collect(),
         },
-        Block::Footnote { id, blocks } => Block::Footnote {
-            id: normalize_singleline(id),
-            blocks: blocks.iter().map(normalize_block).collect(),
-        },
-        Block::Raw { format, text } => Block::Raw {
-            format: *format,
-            text: normalize_multiline(text),
-        },
-    }
-}
-
-fn normalize_list_item(item: &ListItem) -> ListItem {
-    ListItem {
-        checked: item.checked,
-        blocks: item.blocks.iter().map(normalize_block).collect(),
-    }
-}
-
-fn normalize_cell(cell: &TableCell) -> TableCell {
-    TableCell {
-        rowspan: cell.rowspan,
-        colspan: cell.colspan,
-        header: cell.header,
-        blocks: cell.blocks.iter().map(normalize_block).collect(),
+        _ => block.clone(),
     }
 }
 
 fn normalize_inline(i: &Inline) -> Inline {
     match i {
+        Inline::Styled {
+            style,
+            direct,
+            content,
+        } => Inline::Styled {
+            style: style.clone(),
+            direct: direct.clone(),
+            content: content.iter().map(normalize_inline).collect(),
+        },
         Inline::Text { text } => Inline::Text {
             text: normalize_multiline(text),
         },
@@ -336,15 +415,13 @@ fn normalize_inline(i: &Inline) -> Inline {
         Inline::Subscript { content } => Inline::Subscript {
             content: content.iter().map(normalize_inline).collect(),
         },
-        Inline::Code { text } => Inline::Code {
-            text: normalize_multiline(text),
-        },
+        Inline::Code { text } => Inline::Code { text: text.clone() },
         Inline::Link {
             url,
             title,
             content,
         } => Inline::Link {
-            url: normalize_singleline(url),
+            url: url.clone(),
             title: title.as_deref().map(normalize_singleline),
             content: content.iter().map(normalize_inline).collect(),
         },
@@ -356,26 +433,20 @@ fn normalize_inline(i: &Inline) -> Inline {
         Inline::SoftBreak {} => Inline::SoftBreak {},
         Inline::LineBreak {} => Inline::LineBreak {},
         Inline::Math { tex, display } => Inline::Math {
-            tex: normalize_multiline(tex),
+            tex: tex.clone(),
             display: *display,
         },
-        Inline::FootnoteRef { id } => Inline::FootnoteRef {
-            id: normalize_singleline(id),
-        },
+        Inline::FootnoteRef { id } => Inline::FootnoteRef { id: id.clone() },
         Inline::Raw { format, text } => Inline::Raw {
             format: *format,
-            text: normalize_multiline(text),
+            text: text.clone(),
         },
     }
 }
 
 fn normalize_asset_ref(a: &AssetRef) -> AssetRef {
     match a {
-        AssetRef::Asset { id } => AssetRef::Asset {
-            id: normalize_singleline(id),
-        },
-        AssetRef::Url { href } => AssetRef::Url {
-            href: normalize_singleline(href),
-        },
+        AssetRef::Asset { id } => AssetRef::Asset { id: id.clone() },
+        AssetRef::Url { href } => AssetRef::Url { href: href.clone() },
     }
 }

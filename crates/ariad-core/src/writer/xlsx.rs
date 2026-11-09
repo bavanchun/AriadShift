@@ -608,6 +608,9 @@ mod tests {
             colspan,
             header: None,
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: text.to_owned(),
                 }],
@@ -659,6 +662,9 @@ mod tests {
         let doc = Document {
             body: vec![
                 Block::Table {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     caption: Some(vec![Inline::Text {
                         text: "Sales Data".into(),
                     }]),
@@ -668,6 +674,9 @@ mod tests {
                     footnotes: Vec::new(),
                 },
                 Block::Table {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     caption: None,
                     columns,
                     head,
@@ -715,6 +724,9 @@ mod tests {
     fn text_dump_emits_no_tables_found_warning() {
         let doc = Document {
             body: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "Only text here".into(),
                 }],
@@ -741,6 +753,9 @@ mod tests {
         // Colspan of u32::MAX must not allocate terabytes or abort
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -780,6 +795,9 @@ mod tests {
         let long_text = "A".repeat(40_000);
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -844,6 +862,9 @@ mod tests {
         // 5. Special chars & < > " in workbook.xml properly escaped
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: Some(vec![Inline::Text {
                     text: "Tom & Jerry <Fun>".into(),
                 }]),
@@ -872,19 +893,31 @@ mod tests {
         let doc = Document {
             body: vec![
                 Block::Quote {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     blocks: vec![Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![Inline::Text {
                             text: "Quote text".into(),
                         }],
                     }],
                 },
                 Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: false,
                     start: None,
                     tight: true,
                     items: vec![crate::ir::ListItem {
                         checked: None,
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text {
                                 text: "List item text".into(),
                             }],
@@ -912,6 +945,9 @@ mod tests {
     fn sheet_cap_truncates_to_255_and_emits_warning() {
         let tables: Vec<Block> = (0..260)
             .map(|i| Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: Some(vec![Inline::Text {
                     text: format!("Table {i}"),
                 }]),
@@ -947,6 +983,9 @@ mod tests {
             .collect();
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],
@@ -969,6 +1008,9 @@ mod tests {
         let body = vec![single_row; MAX_EXCEL_ROWS + 2];
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],
@@ -1008,6 +1050,9 @@ mod tests {
         let rows: Vec<Vec<TableCell>> = (0..70).map(|_| vec![make_cell("cell", 1, 2000)]).collect();
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],
@@ -1029,6 +1074,9 @@ mod tests {
     fn empty_table_emits_warning() {
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],

@@ -12,7 +12,7 @@ pub fn nfc(s: &str) -> String {
 pub fn block_depth(block: &Block) -> usize {
     match block {
         Block::Heading { .. } | Block::Paragraph { .. } => 0,
-        Block::Quote { blocks } => 1 + blocks_depth(blocks),
+        Block::Quote { blocks, .. } => 1 + blocks_depth(blocks),
         Block::List { items, .. } => {
             1 + items
                 .iter()
@@ -31,7 +31,7 @@ pub fn block_depth(block: &Block) -> usize {
         }
         Block::Figure { .. } => 0,
         Block::Footnote { blocks, .. } => 1 + blocks_depth(blocks),
-        Block::Code { .. } | Block::Math { .. } | Block::Raw { .. } | Block::PageBreak {} => 0,
+        Block::Code { .. } | Block::Math { .. } | Block::Raw { .. } | Block::PageBreak { .. } => 0,
     }
 }
 
@@ -55,7 +55,8 @@ pub fn assert_inlines_nfc(inlines: &[Inline]) {
     for inline in inlines {
         match inline {
             Inline::Text { text } => assert_eq!(text, &nfc(text), "Inline text must be NFC"),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -90,10 +91,10 @@ pub fn assert_blocks_nfc(blocks: &[Block], depth: usize, max_depth: usize) {
     );
     for block in blocks {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 assert_inlines_nfc(content);
             }
-            Block::Quote { blocks } => assert_blocks_nfc(blocks, depth + 1, max_depth),
+            Block::Quote { blocks, .. } => assert_blocks_nfc(blocks, depth + 1, max_depth),
             Block::List { items, .. } => {
                 for item in items {
                     assert_blocks_nfc(&item.blocks, depth + 1, max_depth);
@@ -119,13 +120,18 @@ pub fn assert_blocks_nfc(blocks: &[Block], depth: usize, max_depth: usize) {
             Block::Figure { caption, .. } => {
                 assert_inlines_nfc(caption);
             }
-            Block::Footnote { id: _, blocks } => {
+            Block::Footnote {
+                note_id: _, blocks, ..
+            } => {
                 // Footnote IDs are identifiers; FootnoteRef IDs are kept verbatim to maintain
-                // referential integrity without altering identifier tokens, so Block::Footnote.id
+                // referential integrity without altering identifier tokens, so Block::Footnote.note_id
                 // is preserved verbatim as well and excluded from the NFC normalization check.
                 assert_blocks_nfc(blocks, depth + 1, max_depth);
             }
-            Block::Code { .. } | Block::Math { .. } | Block::Raw { .. } | Block::PageBreak {} => {}
+            Block::Code { .. }
+            | Block::Math { .. }
+            | Block::Raw { .. }
+            | Block::PageBreak { .. } => {}
         }
     }
 }

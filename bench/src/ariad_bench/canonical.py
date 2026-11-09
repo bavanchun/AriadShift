@@ -192,7 +192,7 @@ def from_ir(doc: dict[str, Any]) -> CanonicalDoc:
             inline_type = inline.get("type", "")
             if inline_type == "text":
                 parts.append(inline.get("text", ""))
-            elif inline_type in ("emph", "strong", "strikeout", "superscript", "subscript"):
+            elif inline_type in ("emph", "strong", "strikeout", "superscript", "subscript", "styled"):
                 parts.append(process_inlines(inline.get("content", [])))
             elif inline_type == "code":
                 parts.append(inline.get("text", ""))

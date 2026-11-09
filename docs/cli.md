@@ -86,6 +86,7 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
 - `--pdf-standard <STANDARD>`: Request `a-2b`, `a-2u`, `a-3b`, or `ua-1` on a PDF route whose final writer is Typst. The host requires the `verapdf` pack and system Java >=11, validates the candidate against the requested flavour, and publishes only after compliance passes. Missing pack/Java exits 5; failed validation exits 1 without changing the destination. PDF/UA requires meaningful figure alternative text; missing descriptions are reported, never invented.
+- `--ir-version <1|2>`: Select the IR JSON wire version for single or batch JSON conversion. The default is `ariad-ir/2`; explicit `1` writes through the frozen legacy representation and reports `ir_version_loss` because identities, styles, sections, source maps and font metadata are omitted. Unsupported values and use with non-JSON output fail before destination creation.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -109,6 +110,7 @@ ashift convert notes.md --to pdf --pdf-standard a-2b
 ashift convert legacy.doc --to md
 ashift convert slides.pptx --to pdf
 ashift convert notes.md --to json
+ashift convert notes.md --to json --ir-version 1 -o legacy.ir.json
 
 # Convert with JSON output for scripts or pipelines
 ashift convert draft.md --to docx --json

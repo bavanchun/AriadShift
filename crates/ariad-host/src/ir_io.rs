@@ -4,7 +4,7 @@ use ariad_core::{
     ir::Document,
     json_depth::{self, JsonDepthError, JsonDepthScanner},
     limits::Limits,
-    pipeline::{PipelineError, validate_ir_document},
+    pipeline::PipelineError,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -162,70 +162,112 @@ pub fn read_json<T: for<'de> Deserialize<'de>>(
     Ok(value)
 }
 
-fn validate_document(document: &Document, limits: &Limits) -> Result<(), ReadError> {
-    validate_ir_document(document, limits).map_err(|error| match &error {
-        PipelineError::LimitExceeded { limit } if limit == "max_blocks" => {
-            ReadError::BlockLimitExceeded {
-                count: document.block_count(),
-                limit: limits.max_blocks,
-            }
-        }
-        _ => ReadError::Validation(error),
-    })
-}
-
-/// Reads an IR document with bounded byte size, incremental nesting depth scan,
-/// deep deserialization without whole-file buffering, and shared post-parse IR validation.
+/// Reads bounded IR, rejecting absent wire versions before applying defaults.
 pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
     limits.validate().map_err(PipelineError::from)?;
-    let byte_cap = limits.max_ir_json_bytes;
-    let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
-
-    let document: Document = read_json(reader, byte_cap, depth_budget)?;
-    validate_document(&document, limits)?;
-
-    Ok(document)
+    let mut reader = BoundedScannerReader::new(
+        reader,
+        limits.max_ir_json_bytes,
+        json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth),
+    );
+    let mut bytes = Vec::new();
+    if let Err(error) = reader.read_to_end(&mut bytes) {
+        return Err(reader
+            .overflow_error
+            .unwrap_or_else(|| ReadError::Io(reader.inner_io_error.unwrap_or(error))));
+    }
+    read_versioned(&bytes, limits)
 }
 
-#[derive(Deserialize)]
-struct VersionProbe {
-    version: Option<String>,
-}
-
-/// Reads an IR document from a byte slice with version verification,
-/// bounded depth scan, and shared post-parse IR validation.
+/// Uses the common native/WASM IR version boundary after preserving host error categories.
 pub fn read_versioned(slice: &[u8], limits: &Limits) -> Result<Document, ReadError> {
     limits.validate().map_err(PipelineError::from)?;
-    if (slice.len() as u64) > limits.max_ir_json_bytes {
+    if slice.len() as u64 > limits.max_ir_json_bytes {
         return Err(ReadError::ByteLimitExceeded {
             limit: limits.max_ir_json_bytes,
         });
     }
-
-    let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
-    let mut scanner = JsonDepthScanner::new(depth_budget);
+    let mut scanner = JsonDepthScanner::new(json_depth::json_depth_budget_for_nesting(
+        limits.max_nesting_depth,
+    ));
     scanner.feed(slice)?;
+    // Engine-produced IR has its own byte cap; the source-input cap is enforced upstream.
+    let mut ir_limits = limits.clone();
+    ir_limits.max_input_bytes = None;
+    ariad_core::pipeline::read_ir_json(slice, &ir_limits).map_err(|error| match error {
+        PipelineError::UnsupportedIrVersion { .. } => ReadError::UnsupportedVersion,
+        PipelineError::LimitExceeded { ref limit } if limit == "max_blocks" => {
+            // Preserve the useful count without accepting the document.
+            let count = read_json::<serde_json::Value>(
+                slice,
+                limits.max_ir_json_bytes,
+                json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth),
+            )
+            .ok()
+            .map(|value| count_document_blocks(&value))
+            .unwrap_or(limits.max_blocks as usize + 1);
+            ReadError::BlockLimitExceeded {
+                count,
+                limit: limits.max_blocks,
+            }
+        }
+        PipelineError::InvalidIr { .. } => match serde_json::from_slice::<serde_json::Value>(slice)
+        {
+            Err(json_error) if json_error.is_data() => ReadError::UnsupportedVersion,
+            Err(json_error) if json_error.is_syntax() || json_error.is_eof() => {
+                ReadError::Json(json_error)
+            }
+            Err(_) => ReadError::Validation(error),
+            Ok(value) if value.get("version").and_then(|v| v.as_str()).is_none() => {
+                ReadError::UnsupportedVersion
+            }
+            Ok(_) => ReadError::Validation(error),
+        },
+        _ => ReadError::Validation(error),
+    })
+}
 
-    let probe: Result<VersionProbe, serde_json::Error> = serde_json::from_slice(slice);
-    match probe {
-        Ok(v) => {
-            if !ariad_core::ir::is_supported_version(v.version.as_deref()) {
-                return Err(ReadError::UnsupportedVersion);
-            }
-        }
-        Err(err) => {
-            if err.is_data() {
-                return Err(ReadError::UnsupportedVersion);
-            }
-            return Err(ReadError::Json(err));
-        }
+fn count_document_blocks(document: &serde_json::Value) -> usize {
+    let mut stack = Vec::new();
+    for field in ["body", "furniture"] {
+        push_blocks(&mut stack, document.get(field));
     }
 
-    let mut document: Document = read_json(slice, limits.max_ir_json_bytes, depth_budget)?;
-    validate_document(&document, limits)?;
+    let mut count = 0;
+    while let Some(block) = stack.pop() {
+        count += 1;
+        match block.get("type").and_then(serde_json::Value::as_str) {
+            Some("quote" | "footnote") => push_blocks(&mut stack, block.get("blocks")),
+            Some("list") => {
+                if let Some(items) = block.get("items").and_then(serde_json::Value::as_array) {
+                    for item in items {
+                        push_blocks(&mut stack, item.get("blocks"));
+                    }
+                }
+            }
+            Some("table") => {
+                for field in ["head", "body"] {
+                    if let Some(rows) = block.get(field).and_then(serde_json::Value::as_array) {
+                        for row in rows {
+                            if let Some(cells) = row.as_array() {
+                                for cell in cells {
+                                    push_blocks(&mut stack, cell.get("blocks"));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    count
+}
 
-    document.version = ariad_core::ir::IR_VERSION.to_owned();
-    Ok(document)
+fn push_blocks<'a>(stack: &mut Vec<&'a serde_json::Value>, blocks: Option<&'a serde_json::Value>) {
+    if let Some(blocks) = blocks.and_then(serde_json::Value::as_array) {
+        stack.extend(blocks);
+    }
 }
 
 #[cfg(test)]
@@ -250,9 +292,15 @@ mod tests {
     fn read_versioned_accepts_valid_ir() {
         let doc = Document {
             version: ariad_core::ir::IR_VERSION.to_owned(),
-            body: vec![Block::Paragraph { content: vec![] }],
+            body: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content: vec![],
+            }],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let bytes = serde_json::to_vec(&doc).unwrap();
         let read = read_versioned(&bytes, &Limits::local()).unwrap();
         assert_eq!(read, doc);
@@ -293,13 +341,47 @@ mod tests {
         let doc = Document {
             version: ariad_core::ir::IR_VERSION.to_owned(),
             body: vec![
-                Block::Paragraph { content: vec![] },
-                Block::Paragraph { content: vec![] },
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content: vec![],
+                },
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content: vec![],
+                },
             ],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let bytes = serde_json::to_vec(&doc).unwrap();
         let err = read_versioned(&bytes, &limits).unwrap_err();
+        assert!(matches!(
+            err,
+            ReadError::BlockLimitExceeded { count: 2, limit: 1 }
+        ));
+    }
+
+    #[test]
+    fn block_limit_count_ignores_inline_types_that_share_block_names() {
+        let mut limits = Limits::local();
+        limits.max_blocks = 1;
+        let json = br#"{
+            "version":"ariad-ir/2",
+            "body":[
+                {"type":"paragraph","id":"first","content":[
+                    {"type":"code","text":"code"},
+                    {"type":"math","tex":"x","display":false},
+                    {"type":"raw","format":"html","text":"<b>raw</b>"}
+                ]},
+                {"type":"paragraph","id":"second","content":[]}
+            ]
+        }"#;
+
+        let err = read_versioned(json, &limits).unwrap_err();
         assert!(matches!(
             err,
             ReadError::BlockLimitExceeded { count: 2, limit: 1 }

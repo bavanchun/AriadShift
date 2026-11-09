@@ -37,6 +37,12 @@ impl Warning {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WarningCode {
+    /// Target representation cannot retain styles.
+    StylesDropped,
+    /// Embedded font permission requires a family fallback.
+    FontEmbeddingRestricted,
+    /// Explicit legacy output drops newer IR data.
+    IrVersionLoss,
     FrontMatterInvalid,
     FrontMatterKeyIgnored,
     FrontMatterAliasRejected,

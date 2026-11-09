@@ -1,0 +1,51 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Lịch chăm vườn đọc",
+          "type": "text"
+        }
+      ],
+      "id": "b958085056108df6928496eb2c8bf10cac9173a71528db67704a17089db7bdc87",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.",
+          "type": "text"
+        }
+      ],
+      "id": "bff011a60a820a887d9588574d8ee594a6a49065ef3314b0712954d1fa08b70f7",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.",
+          "type": "text"
+        }
+      ],
+      "id": "b900720b29901a04084068f02ee29389cafed1ff175298a7a6421c8b79bf95f42",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": "vi",
+    "source_format": "html",
+    "subject": null,
+    "title": "Lịch chăm vườn đọc"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

@@ -113,6 +113,9 @@ impl From<Profile> for CliProfile {
 /// Arguments for converting a document between supported formats.
 #[derive(Args)]
 struct ConvertArgs {
+    /// IR JSON wire version (default: 2); requires JSON output.
+    #[arg(long, value_parser = clap::value_parser!(u8).range(1..=2))]
+    ir_version: Option<u8>,
     /// Input document file paths.
     #[arg(value_name = "INPUT", required = true, num_args = 1..)]
     inputs: Vec<PathBuf>,
@@ -664,6 +667,7 @@ fn run_convert(mut args: ConvertArgs) -> ExitCode {
     };
     let stderr_is_terminal = io::stderr().is_terminal();
     let request = ariad_host::convert::ConvertRequest {
+        ir_version: args.ir_version,
         input,
         output,
         target_format,

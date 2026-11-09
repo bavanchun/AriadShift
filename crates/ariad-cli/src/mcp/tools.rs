@@ -618,6 +618,7 @@ impl McpServer {
                         .map_err(|e| input_error(&e))?,
                 );
                 let request = ConvertRequest {
+                    ir_version: None,
                     input,
                     output: validated_output.destination,
                     target_format: args.to,

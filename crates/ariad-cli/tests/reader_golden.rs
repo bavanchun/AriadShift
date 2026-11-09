@@ -26,8 +26,8 @@ fn convert_to_ir(fixture_path: &Path, format: &str) -> (Value, Workspace) {
         )
     });
 
-    let ir_value =
-        serde_json::to_value(&output.document).expect("serialize Document to json Value");
+    let ir_value = serde_json::to_value(output.document.to_v1().unwrap())
+        .expect("serialize Document to json Value");
     (ir_value, workspace)
 }
 

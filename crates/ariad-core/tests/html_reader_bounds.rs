@@ -1,3 +1,7 @@
+mod support;
+
+use support::assert_semantic_blocks_eq;
+
 use std::{
     fmt::Write,
     time::{Duration, Instant},
@@ -57,13 +61,16 @@ fn many_unpaired_math_helper_siblings_parse_in_linear_time() {
         let output = read(html.as_bytes(), &Limits::local()).unwrap();
         let elapsed = start.elapsed();
         eprintln!("{helpers} math helpers: {elapsed:?}");
-        assert_eq!(
-            output.document.body,
-            vec![Block::Paragraph {
+        assert_semantic_blocks_eq(
+            &output.document.body,
+            &[Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
-                    text: "visible".into()
-                }]
-            }]
+                    text: "visible".into(),
+                }],
+            }],
         );
         assert!(
             elapsed < Duration::from_secs(40),
@@ -85,13 +92,16 @@ fn nested_code_elements_collect_text_once() {
         let output = read(html.as_bytes(), &Limits::local()).unwrap();
         let elapsed = start.elapsed();
         eprintln!("nested {tag}: {elapsed:?}");
-        assert_eq!(
-            output.document.body,
-            vec![Block::Paragraph {
+        assert_semantic_blocks_eq(
+            &output.document.body,
+            &[Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Code {
-                    text: "text".into()
-                }]
-            }]
+                    text: "text".into(),
+                }],
+            }],
         );
         assert!(
             elapsed < Duration::from_secs(50),
@@ -147,17 +157,20 @@ fn blocks_inside_inline_contexts_keep_content_and_separators() {
 #[test]
 fn figure_keeps_credit_and_additional_blocks() {
     let output = read(b"<figure><img src=\"photo.png\"><figcaption>Caption</figcaption> Photo by Jane<p>Details</p></figure>", &Limits::local()).unwrap();
-    assert_eq!(
-        output.document.body[0],
-        Block::Paragraph {
+    assert_semantic_blocks_eq(
+        &output.document.body[0..1],
+        &[Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: ariad_core::ir::AssetRef::Url {
-                    href: "photo.png".into()
+                    href: "photo.png".into(),
                 },
                 alt: String::new(),
                 title: None,
-            }]
-        }
+            }],
+        }],
     );
     let text = ariad_core::writer::markdown::write(&output.document).content;
     for part in ["Caption", "Photo by Jane", "Details"] {

@@ -131,7 +131,12 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
     let mut footnotes = Vec::new();
 
     for block in &document.body {
-        if let Block::Footnote { id, blocks } = block {
+        if let Block::Footnote {
+            note_id: id,
+            blocks,
+            ..
+        } = block
+        {
             footnotes.push((id.clone(), blocks.clone()));
         } else {
             main_blocks.push(block);
@@ -191,18 +196,18 @@ struct HtmlContext<'a> {
 
 fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
     match block {
-        Block::Heading { level, content } => {
+        Block::Heading { level, content, .. } => {
             let clamped = (*level).clamp(1, 6);
             out.push_str(&format!("<h{clamped}>"));
             out.push_str(&render_inlines(content, ctx));
             out.push_str(&format!("</h{clamped}>\n"));
         }
-        Block::Paragraph { content } => {
+        Block::Paragraph { content, .. } => {
             out.push_str("<p>");
             out.push_str(&render_inlines(content, ctx));
             out.push_str("</p>\n");
         }
-        Block::Code { lang, text } => {
+        Block::Code { lang, text, .. } => {
             out.push_str("<pre>");
             if let Some(l) = lang {
                 out.push_str(&format!("<code class=\"language-{}\">", escape_attr(l)));
@@ -212,21 +217,21 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             out.push_str(&escape_html(text));
             out.push_str("</code></pre>\n");
         }
-        Block::Math { tex, display: _ } => {
+        Block::Math { tex, .. } => {
             out.push_str(&format!(
                 "<math display=\"block\"><semantics><mtext>{}</mtext><annotation encoding=\"application/x-tex\">{}</annotation></semantics></math>\n",
                 escape_html(tex),
                 escape_html(tex)
             ));
         }
-        Block::Quote { blocks } => {
+        Block::Quote { blocks, .. } => {
             out.push_str("<blockquote>\n");
             for inner in blocks {
                 write_block(inner, ctx, out);
             }
             out.push_str("</blockquote>\n");
         }
-        Block::PageBreak {} => {
+        Block::PageBreak { .. } => {
             out.push_str("<hr>\n");
         }
         Block::List {
@@ -234,6 +239,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             start,
             tight: _,
             items,
+            ..
         } => {
             if *ordered {
                 if let Some(s) = start {
@@ -261,6 +267,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             head,
             body,
             footnotes,
+            ..
         } => {
             write_table(caption.as_deref(), columns, head, body, ctx, out);
             if !footnotes.is_empty() {
@@ -269,7 +276,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
                 out.push_str("</p>\n");
             }
         }
-        Block::Figure { asset, caption } => {
+        Block::Figure { asset, caption, .. } => {
             out.push_str("<figure>\n");
             let alt = plain_text(caption);
             let img = render_image(asset, &alt, None, ctx);
@@ -282,7 +289,11 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             }
             out.push_str("</figure>\n");
         }
-        Block::Footnote { id, blocks } => {
+        Block::Footnote {
+            note_id: id,
+            blocks,
+            ..
+        } => {
             out.push_str(&format!(
                 "<div role=\"doc-footnote\" id=\"{}\">\n",
                 escape_attr(id)
@@ -292,7 +303,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             }
             out.push_str("</div>\n");
         }
-        Block::Raw { format, text } => match format {
+        Block::Raw { format, text, .. } => match format {
             RawFormat::Html => {
                 if !ctx.raw_dropped_warned {
                     ctx.warnings.push(Warning::new(
@@ -327,7 +338,7 @@ fn write_list_item(item: &ListItem, ctx: &mut HtmlContext<'_>, out: &mut String)
     }
 
     if item.blocks.len() == 1
-        && let Block::Paragraph { content } = &item.blocks[0]
+        && let Block::Paragraph { content, .. } = &item.blocks[0]
     {
         out.push_str(&render_inlines(content, ctx));
     } else {
@@ -409,7 +420,7 @@ fn write_table_cell(
     out.push('>');
 
     if cell.blocks.len() == 1
-        && let Block::Paragraph { content } = &cell.blocks[0]
+        && let Block::Paragraph { content, .. } = &cell.blocks[0]
     {
         out.push_str(&render_inlines(content, ctx));
     } else {
@@ -423,6 +434,7 @@ fn write_table_cell(
 fn render_single_inline(inline: &Inline, ctx: &mut HtmlContext<'_>) -> String {
     match inline {
         Inline::Text { text } => escape_prose(text),
+        Inline::Styled { content, .. } => render_inlines(content, ctx),
         Inline::Emph { content } => {
             format!("<em>{}</em>", render_inlines(content, ctx))
         }
@@ -637,6 +649,7 @@ fn plain_text(inlines: &[Inline]) -> String {
             Inline::Text { text: val } | Inline::Code { text: val } => text.push_str(val),
             Inline::Math { tex, .. } => text.push_str(tex),
             Inline::Link { content, .. }
+            | Inline::Styled { content, .. }
             | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }

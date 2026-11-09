@@ -1,0 +1,47 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "A Small Distance Check",
+          "type": "text"
+        }
+      ],
+      "id": "bad8d972e543aef7d42b34baea379088da28eca7d91460a7fb4b37a526b95ddbb",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "id": "b8a78683d70aa89882bf3ebc0c550a756b50668135ae8e1c8268375dcb3a94b04",
+      "lang": "python",
+      "text": "segments = [120, 85, 210]\nprint(sum(segments))\n",
+      "type": "code"
+    },
+    {
+      "content": [
+        {
+          "text": "The values are metres, not minutes.",
+          "type": "text"
+        }
+      ],
+      "id": "bbe45bf4881ed06188a160df67e6eeda5829cda5555c5a0892faeb59e92ac40bd",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

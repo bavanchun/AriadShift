@@ -116,6 +116,8 @@ export interface LimitOverrides {
 }
 
 export interface ConvertOptions {
+  /** IR JSON wire version; defaults to 2 and requires JSON output. */
+  ir_version?: 1 | 2;
   profile?: ProfileId;
   /** Title for writers that need one when the document has none, such as HTML. */
   title?: string;

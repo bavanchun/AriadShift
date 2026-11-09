@@ -326,7 +326,8 @@ fn plain_text(inlines: &[Inline]) -> String {
         match inline {
             Inline::Text { text: value } | Inline::Code { text: value } => text.push_str(value),
             Inline::Math { tex, .. } => text.push_str(tex),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -354,12 +355,12 @@ fn plain_paragraphs(blocks: &[Block]) -> Vec<String> {
     let mut stack: Vec<&Block> = blocks.iter().rev().collect();
     while let Some(block) = stack.pop() {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 paragraphs.push(plain_text(content));
             }
             Block::Code { text, .. } => paragraphs.push(text.clone()),
             Block::Math { tex, .. } => paragraphs.push(tex.clone()),
-            Block::Quote { blocks } => stack.extend(blocks.iter().rev()),
+            Block::Quote { blocks, .. } => stack.extend(blocks.iter().rev()),
             Block::List { items, .. } => {
                 stack.extend(items.iter().rev().flat_map(|item| item.blocks.iter().rev()));
             }
@@ -383,8 +384,9 @@ fn plain_paragraphs(blocks: &[Block]) -> Vec<String> {
             Block::Raw {
                 format: RawFormat::Html,
                 text,
+                ..
             } => paragraphs.push(strip_html_tags(text)),
-            Block::PageBreak {}
+            Block::PageBreak { .. }
             | Block::Footnote { .. }
             | Block::Raw {
                 format: RawFormat::Tex,
@@ -401,11 +403,15 @@ fn collect_footnotes(blocks: &[Block]) -> BTreeMap<&str, &[Block]> {
     let mut stack: Vec<&Block> = blocks.iter().rev().collect();
     while let Some(block) = stack.pop() {
         match block {
-            Block::Footnote { id, blocks } => {
+            Block::Footnote {
+                note_id: id,
+                blocks,
+                ..
+            } => {
                 footnotes.entry(id.as_str()).or_insert(blocks.as_slice());
                 stack.extend(blocks.iter().rev());
             }
-            Block::Quote { blocks } => stack.extend(blocks.iter().rev()),
+            Block::Quote { blocks, .. } => stack.extend(blocks.iter().rev()),
             Block::List { items, .. } => {
                 stack.extend(items.iter().rev().flat_map(|item| item.blocks.iter().rev()));
             }
@@ -717,19 +723,19 @@ impl<'a> Writer<'a> {
 
     fn block(&mut self, block: &'a Block, out: &mut String) {
         match block {
-            Block::Heading { level, content } => {
+            Block::Heading { level, content, .. } => {
                 let _ = write!(out, "#heading(level: {})[", (*level).clamp(1, 6));
                 self.inlines(content, out);
                 out.push_str("]\n\n");
             }
-            Block::Paragraph { content } => {
+            Block::Paragraph { content, .. } => {
                 let start = out.len();
                 self.inlines(content, out);
                 if out.len() > start {
                     out.push_str("\n\n");
                 }
             }
-            Block::Code { lang, text } => {
+            Block::Code { lang, text, .. } => {
                 out.push_str("#raw(block: true, ");
                 if let Some(lang) = lang.as_deref().map(sanitize_lang)
                     && !lang.is_empty()
@@ -747,7 +753,7 @@ impl<'a> Writer<'a> {
                 push_literal(out, &clean_code(tex));
                 out.push_str("))\n\n");
             }
-            Block::Quote { blocks } => {
+            Block::Quote { blocks, .. } => {
                 if self.enter(QUOTE_COST) {
                     let inner = self.content(blocks);
                     self.leave(QUOTE_COST);
@@ -758,7 +764,7 @@ impl<'a> Writer<'a> {
                     Self::flatten(blocks, out);
                 }
             }
-            Block::PageBreak {} => {
+            Block::PageBreak { .. } => {
                 // Typst rejects page breaks inside containers, where they carry no meaning anyway.
                 if self.nesting_cost == 0 {
                     out.push_str("#pagebreak(weak: true)\n\n");
@@ -769,6 +775,7 @@ impl<'a> Writer<'a> {
                 start,
                 tight,
                 items,
+                ..
             } => {
                 if items.is_empty() {
                     return;
@@ -786,6 +793,7 @@ impl<'a> Writer<'a> {
                 head,
                 body,
                 footnotes,
+                ..
             } => {
                 if self.enter(TABLE_COST) {
                     self.table(caption.as_deref(), columns, head, body, footnotes, out);
@@ -794,10 +802,10 @@ impl<'a> Writer<'a> {
                     Self::flatten(std::slice::from_ref(block), out);
                 }
             }
-            Block::Figure { asset, caption } => self.figure(asset, caption, out),
+            Block::Figure { asset, caption, .. } => self.figure(asset, caption, out),
             // Footnote bodies are written where they are referenced.
             Block::Footnote { .. } => {}
-            Block::Raw { format, text } => match format {
+            Block::Raw { format, text, .. } => match format {
                 RawFormat::Html => {
                     self.warn_raw_html();
                     let mut buffer = String::new();
@@ -854,7 +862,7 @@ impl<'a> Writer<'a> {
         );
         out.push_str(")#\" \"");
         let rest = match item.blocks.split_first() {
-            Some((Block::Paragraph { content }, rest)) => {
+            Some((Block::Paragraph { content, .. }, rest)) => {
                 self.inlines(content, &mut out);
                 rest
             }
@@ -1096,6 +1104,14 @@ impl<'a> Writer<'a> {
             Inline::Text { text } => push_prose_run(out, text),
             Inline::SoftBreak {} => out.push_str("#\" \""),
             Inline::LineBreak {} => out.push_str("#linebreak()"),
+            Inline::Styled { content, .. } => {
+                if self.enter(INLINE_COST) {
+                    self.inlines(content, out);
+                    self.leave(INLINE_COST);
+                } else {
+                    push_prose_run(out, &plain_text(content));
+                }
+            }
             Inline::Emph { content } => self.styled("emph", content, out),
             Inline::Strong { content } => self.styled("strong", content, out),
             Inline::Strikeout { content } => self.styled("strike", content, out),

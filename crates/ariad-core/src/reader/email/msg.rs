@@ -517,6 +517,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if !header_inlines.is_empty() {
         blocks.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: header_inlines,
         });
     }
@@ -618,6 +621,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         attachment_items.push(ListItem {
             checked: None,
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: nfc(&item_text),
                 }],
@@ -627,12 +633,18 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if !attachment_items.is_empty() {
         blocks.push(Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 2,
             content: vec![Inline::Text {
                 text: "Attachments".to_owned(),
             }],
         });
         blocks.push(Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: true,
@@ -660,7 +672,10 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         ..Document::default()
     };
 
-    Ok(ReadOutput { document, warnings })
+    Ok(ReadOutput {
+        document: document.finalize_import(),
+        warnings,
+    })
 }
 
 #[cfg(test)]
@@ -737,7 +752,7 @@ mod tests {
         let has_att = out.document.body.iter().any(|b| match b {
             Block::List { items, .. } => items.iter().any(|item| {
                 item.blocks.iter().any(|ib| match ib {
-                    Block::Paragraph { content } => content.iter().any(|c| match c {
+                    Block::Paragraph { content, .. } => content.iter().any(|c| match c {
                         Inline::Text { text } => text.contains("report.pdf (21 bytes)"),
                         _ => false,
                     }),
@@ -861,7 +876,7 @@ mod tests {
         let out = read(&bytes, &Limits::local()).unwrap();
 
         let header_fields = match &out.document.body[0] {
-            Block::Paragraph { content } => {
+            Block::Paragraph { content, .. } => {
                 let mut fields = std::collections::HashMap::new();
                 let mut current_label: Option<String> = None;
                 for inln in content {
@@ -914,7 +929,7 @@ mod tests {
         let bytes = comp.into_inner().into_inner();
         let out = read(&bytes, &Limits::local()).unwrap();
         let found = out.document.body.iter().any(|b| match b {
-            Block::Paragraph { content } => {
+            Block::Paragraph { content, .. } => {
                 content.iter().any(|c| matches!(c, Inline::Strong { .. }))
             }
             _ => false,
@@ -940,7 +955,7 @@ mod tests {
                 .any(|w| w.code == WarningCode::UnsupportedNode)
         );
         let found = out.document.body.iter().any(|b| match b {
-            Block::Paragraph { content } => content.iter().any(|c| match c {
+            Block::Paragraph { content, .. } => content.iter().any(|c| match c {
                 Inline::Text { text } => text.contains("test"),
                 _ => false,
             }),
@@ -990,7 +1005,7 @@ mod tests {
         let has_stripped = out.document.body.iter().any(|b| match b {
             Block::List { items, .. } => items.iter().any(|item| {
                 item.blocks.iter().any(|ib| match ib {
-                    Block::Paragraph { content } => content.iter().any(|c| match c {
+                    Block::Paragraph { content, .. } => content.iter().any(|c| match c {
                         Inline::Text { text } => text.contains("evilfdp.exe"),
                         _ => false,
                     }),

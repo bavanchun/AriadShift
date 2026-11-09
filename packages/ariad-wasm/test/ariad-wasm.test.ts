@@ -99,10 +99,27 @@ describe("ariad-wasm", () => {
     const ir = convert(source, "markdown", "ariad-ir+json", undefined);
     expect(ir.extension).toBe("ir.json");
     const document = JSON.parse(decoder.decode(ir.bytes));
-    expect(document.version).toBe("ariad-ir/1");
+    expect(document.version).toBe("ariad-ir/2");
     const markdown = convert(ir.bytes, "ariad-ir+json", "markdown", undefined);
     const again = convert(markdown.bytes, "markdown", "ariad-ir+json", undefined);
     expect(JSON.parse(decoder.decode(again.bytes))).toEqual(document);
+  });
+
+  it("writes explicit legacy IR and validates version options", () => {
+    const source = encoder.encode("# Legacy\n");
+    const legacy = convert(source, "markdown", "ariad-ir+json", { ir_version: 1 });
+    const document = JSON.parse(decoder.decode(legacy.bytes));
+    expect(document.version).toBe("ariad-ir/1");
+    expect(document.body[0]).not.toHaveProperty("id");
+    expect(legacy.warnings.some((warning) => warning.code === "ir_version_loss")).toBe(true);
+    const html = convert(legacy.bytes, "ariad-ir+json", "html", undefined);
+    expect(decoder.decode(html.bytes)).toContain("<h1>Legacy</h1>");
+    expect(thrown(() => convert(source, "markdown", "html", { ir_version: 1 })).code).toBe(
+      "invalid_input",
+    );
+    expect(
+      thrown(() => convert(source, "markdown", "ariad-ir+json", { ir_version: 3 } as never)).code,
+    ).toBe("invalid_input");
   });
 
   it("throws typed error objects", () => {

@@ -1,3 +1,7 @@
+mod support;
+
+use support::assert_semantic_blocks_eq;
+
 use std::collections::BTreeMap;
 
 use ariad_core::{
@@ -128,34 +132,43 @@ fn maps_headings_paragraphs_and_code_blocks() {
 
     let out = to_ir(&doc, &Limits::local()).unwrap();
     assert_eq!(out.document.body.len(), 3);
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Heading {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 2,
             content: vec![IrInline::Text {
-                text: "Heading 2".to_owned()
-            }]
-        }
+                text: "Heading 2".to_owned(),
+            }],
+        }],
     );
-    assert_eq!(
-        out.document.body[1],
-        IrBlock::Paragraph {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[1]),
+        &[IrBlock::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 IrInline::Text {
-                    text: "Text with ".to_owned()
+                    text: "Text with ".to_owned(),
                 },
                 IrInline::Code {
-                    text: "inline code".to_owned()
-                }
-            ]
-        }
+                    text: "inline code".to_owned(),
+                },
+            ],
+        }],
     );
-    assert_eq!(
-        out.document.body[2],
-        IrBlock::Code {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[2]),
+        &[IrBlock::Code {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             lang: Some("rust".to_owned()),
-            text: "fn main() {}".to_owned()
-        }
+            text: "fn main() {}".to_owned(),
+        }],
     );
 }
 
@@ -175,19 +188,22 @@ fn maps_line_block_to_paragraph_with_line_breaks_and_warning() {
     assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
     assert!(out.warnings[0].message.contains("line block"));
 
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Paragraph {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 IrInline::Text {
-                    text: "Line 1".to_owned()
+                    text: "Line 1".to_owned(),
                 },
                 IrInline::LineBreak {},
                 IrInline::Text {
-                    text: "Line 2".to_owned()
+                    text: "Line 2".to_owned(),
                 },
-            ]
-        }
+            ],
+        }],
     );
 }
 
@@ -220,23 +236,29 @@ fn maps_definition_list_to_strong_terms_with_warning() {
             assert!(!tight);
             assert_eq!(items.len(), 1);
             assert_eq!(items[0].blocks.len(), 2);
-            assert_eq!(
-                items[0].blocks[0],
-                IrBlock::Paragraph {
+            assert_semantic_blocks_eq(
+                std::slice::from_ref(&items[0].blocks[0]),
+                &[IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![IrInline::Strong {
                         content: vec![IrInline::Text {
-                            text: "Term".to_owned()
-                        }]
-                    }]
-                }
+                            text: "Term".to_owned(),
+                        }],
+                    }],
+                }],
             );
-            assert_eq!(
-                items[0].blocks[1],
-                IrBlock::Paragraph {
+            assert_semantic_blocks_eq(
+                std::slice::from_ref(&items[0].blocks[1]),
+                &[IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![IrInline::Text {
-                        text: "Definition".to_owned()
-                    }]
-                }
+                        text: "Definition".to_owned(),
+                    }],
+                }],
             );
         }
         other => panic!("expected List block, got {other:?}"),
@@ -384,16 +406,19 @@ fn maps_figure_wrapping_image() {
     };
 
     let out = to_ir(&doc, &Limits::local()).unwrap();
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Figure {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Figure {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             asset: AssetRef::Url {
-                href: "media/image1.png".to_owned()
+                href: "media/image1.png".to_owned(),
             },
             caption: vec![IrInline::Text {
-                text: "Caption text".to_owned()
-            }]
-        }
+                text: "Caption text".to_owned(),
+            }],
+        }],
     );
 }
 
@@ -413,13 +438,16 @@ fn flattens_div_and_span() {
 
     let out = to_ir(&doc, &Limits::local()).unwrap();
     assert_eq!(out.document.body.len(), 1);
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Paragraph {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![IrInline::Text {
-                text: "Inside span".to_owned()
-            }]
-        }
+                text: "Inside span".to_owned(),
+            }],
+        }],
     );
 }
 
@@ -440,48 +468,63 @@ fn maps_footnotes_to_blocks_and_footnote_refs() {
     assert_eq!(out.document.body.len(), 3);
 
     // Paragraph with FootnoteRefs
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Paragraph {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 IrInline::Text {
-                    text: "First note".to_owned()
+                    text: "First note".to_owned(),
                 },
                 IrInline::FootnoteRef {
-                    id: "fn1".to_owned()
+                    id: "fn1".to_owned(),
                 },
                 IrInline::Text {
-                    text: " second note".to_owned()
+                    text: " second note".to_owned(),
                 },
                 IrInline::FootnoteRef {
-                    id: "fn2".to_owned()
+                    id: "fn2".to_owned(),
                 },
-            ]
-        }
+            ],
+        }],
     );
 
     // Footnote blocks at the end
-    assert_eq!(
-        out.document.body[1],
-        IrBlock::Footnote {
-            id: "fn1".to_owned(),
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[1]),
+        &[IrBlock::Footnote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "fn1".to_owned(),
             blocks: vec![IrBlock::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![IrInline::Text {
-                    text: "Body 1".to_owned()
-                }]
-            }]
-        }
+                    text: "Body 1".to_owned(),
+                }],
+            }],
+        }],
     );
-    assert_eq!(
-        out.document.body[2],
-        IrBlock::Footnote {
-            id: "fn2".to_owned(),
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[2]),
+        &[IrBlock::Footnote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "fn2".to_owned(),
             blocks: vec![IrBlock::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![IrInline::Text {
-                    text: "Body 2".to_owned()
-                }]
-            }]
-        }
+                    text: "Body 2".to_owned(),
+                }],
+            }],
+        }],
     );
 }
 
@@ -517,20 +560,23 @@ fn degrades_underline_smallcaps_and_cite_with_warnings() {
             .all(|w| w.code == WarningCode::UnsupportedNode)
     );
 
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Paragraph {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 IrInline::Emph {
                     content: vec![IrInline::Text {
-                        text: "underlined".to_owned()
-                    }]
+                        text: "underlined".to_owned(),
+                    }],
                 },
                 IrInline::Text {
-                    text: " small caps [@ref]".to_owned()
+                    text: " small caps [@ref]".to_owned(),
                 },
-            ]
-        }
+            ],
+        }],
     );
 }
 
@@ -558,28 +604,37 @@ fn handles_raw_blocks_and_inlines() {
             .all(|w| w.code == WarningCode::RawDropped)
     );
 
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Raw {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Raw {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             format: RawFormat::Html,
-            text: "<div>html</div>".to_owned()
-        }
+            text: "<div>html</div>".to_owned(),
+        }],
     );
-    assert_eq!(
-        out.document.body[1],
-        IrBlock::Raw {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[1]),
+        &[IrBlock::Raw {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             format: RawFormat::Tex,
-            text: "\\latex".to_owned()
-        }
+            text: "\\latex".to_owned(),
+        }],
     );
-    assert_eq!(
-        out.document.body[2],
-        IrBlock::Paragraph {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[2]),
+        &[IrBlock::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![IrInline::Raw {
                 format: RawFormat::Html,
-                text: "<span>inline</span>".to_owned()
-            }]
-        }
+                text: "<span>inline</span>".to_owned(),
+            }],
+        }],
     );
 }
 
@@ -607,22 +662,25 @@ fn enforces_link_scheme_allow_list() {
     assert_eq!(out.warnings.len(), 1);
     assert_eq!(out.warnings[0].code, WarningCode::LinkDropped);
 
-    assert_eq!(
-        out.document.body[0],
-        IrBlock::Paragraph {
+    assert_semantic_blocks_eq(
+        std::slice::from_ref(&out.document.body[0]),
+        &[IrBlock::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 IrInline::Link {
                     url: "https://example.com".to_owned(),
                     title: None,
                     content: vec![IrInline::Text {
-                        text: "safe link".to_owned()
+                        text: "safe link".to_owned(),
                     }],
                 },
                 IrInline::Text {
-                    text: " unsafe link".to_owned()
+                    text: " unsafe link".to_owned(),
                 },
-            ]
-        }
+            ],
+        }],
     );
 }
 
@@ -665,7 +723,7 @@ fn normalizes_vietnamese_prose_to_nfc_and_drops_presentation_metadata() {
     assert_eq!(out.document.meta.language.as_deref(), Some("vi"));
 
     // Check NFC normalized body
-    let IrBlock::Paragraph { content } = &out.document.body[0] else {
+    let IrBlock::Paragraph { content, .. } = &out.document.body[0] else {
         panic!("expected paragraph");
     };
     let IrInline::Text { text } = &content[0] else {
@@ -694,7 +752,7 @@ fn nested_footnote_assigns_stable_distinct_ids_in_document_order() {
 
     assert_eq!(out.document.body.len(), 3);
 
-    let IrBlock::Paragraph { content } = &out.document.body[0] else {
+    let IrBlock::Paragraph { content, .. } = &out.document.body[0] else {
         panic!("expected paragraph");
     };
     assert_eq!(
@@ -711,14 +769,18 @@ fn nested_footnote_assigns_stable_distinct_ids_in_document_order() {
     );
 
     let IrBlock::Footnote {
-        id,
+        note_id: id,
         blocks: fn1_blocks,
+        ..
     } = &out.document.body[1]
     else {
         panic!("expected footnote def fn1");
     };
     assert_eq!(id, "fn1");
-    let IrBlock::Paragraph { content: fn1_para } = &fn1_blocks[0] else {
+    let IrBlock::Paragraph {
+        content: fn1_para, ..
+    } = &fn1_blocks[0]
+    else {
         panic!("expected footnote 1 paragraph");
     };
     assert_eq!(
@@ -735,14 +797,18 @@ fn nested_footnote_assigns_stable_distinct_ids_in_document_order() {
     );
 
     let IrBlock::Footnote {
-        id: fn2_id,
+        note_id: fn2_id,
         blocks: fn2_blocks,
+        ..
     } = &out.document.body[2]
     else {
         panic!("expected footnote def fn2");
     };
     assert_eq!(fn2_id, "fn2");
-    let IrBlock::Paragraph { content: fn2_para } = &fn2_blocks[0] else {
+    let IrBlock::Paragraph {
+        content: fn2_para, ..
+    } = &fn2_blocks[0]
+    else {
         panic!("expected footnote 2 paragraph");
     };
     assert_eq!(
@@ -800,7 +866,7 @@ fn coalesces_adjacent_text_and_space_nodes_and_supports_task_lists() {
     };
 
     let out = to_ir(&doc, &Limits::local()).unwrap();
-    let IrBlock::Paragraph { content } = &out.document.body[0] else {
+    let IrBlock::Paragraph { content, .. } = &out.document.body[0] else {
         panic!("expected paragraph");
     };
     assert_eq!(content.len(), 1);

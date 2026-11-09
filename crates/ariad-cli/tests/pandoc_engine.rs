@@ -52,12 +52,18 @@ fn run_engine(request: &Request) -> Result<runner::RunOutcome, runner::RunError>
 
 fn nested_document(depth: usize) -> Document {
     let mut block = Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Text {
             text: "nested content".to_owned(),
         }],
     };
     for _ in 0..depth {
         block = Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![block],
         };
     }
@@ -65,6 +71,7 @@ fn nested_document(depth: usize) -> Document {
         body: vec![block],
         ..Document::default()
     }
+    .finalize_import()
 }
 
 #[test]
@@ -154,13 +161,17 @@ fn eight_megabyte_memory_limit_is_a_typed_limit_exceeded_error() {
     let document = Document {
         body: (0..10_000)
             .map(|_| Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "memory limited Pandoc conversion".to_owned(),
                 }],
             })
             .collect(),
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let mut limits = Limits::local();
     limits.max_memory_mb = Some(8);
     let request = request_for(&workspace, &document, limits);
@@ -218,7 +229,7 @@ fn pandoc_engine_answers_describe_request() {
             assert_eq!(tool.name, "pandoc");
             assert_eq!(tool.status, ariad_core::protocol::ToolAvailability::Found);
             assert!(enforces_memory_limit);
-            assert_eq!(routes.len(), 4);
+            assert_eq!(routes.len(), 6);
             assert!(
                 routes
                     .iter()
@@ -228,6 +239,16 @@ fn pandoc_engine_answers_describe_request() {
                 routes
                     .iter()
                     .any(|r| r.input == "ariad-ir+json" && r.output == "epub")
+            );
+            assert!(
+                routes
+                    .iter()
+                    .any(|r| r.input == "ariad-ir+json" && r.output == "odt")
+            );
+            assert!(
+                routes
+                    .iter()
+                    .any(|r| r.input == "ariad-ir+json" && r.output == "rtf")
             );
             assert!(
                 routes

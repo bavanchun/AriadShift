@@ -206,7 +206,11 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     fill_metadata(&doc, &mut document, &mut stats);
     document.layout = Some(LayoutIndex {
         pages: geometry,
-        blocks: assembled.positions,
+        blocks: assembled
+            .positions
+            .into_iter()
+            .map(|(path, pos)| (crate::ir::BlockId::import_path(path), pos))
+            .collect(),
     });
     let stats_value = serde_json::to_value(&stats).map_err(|_| ReadError::Malformed)?;
     document.provenance = Some(Provenance(BTreeMap::from([(
@@ -240,7 +244,10 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             ),
         ));
     }
-    Ok(ReadOutput { document, warnings })
+    Ok(ReadOutput {
+        document: document.finalize_import(),
+        warnings,
+    })
 }
 
 /// A [`lopdf::Document`] loaded within [`Limits`], together with cross-reference repair status.

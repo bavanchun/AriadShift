@@ -93,6 +93,7 @@ pub(crate) fn decode_data_uri_image(
     assets.insert(
         id.clone(),
         Asset {
+            font: None,
             media_type: media_type.to_owned(),
             bytes: decoded,
         },

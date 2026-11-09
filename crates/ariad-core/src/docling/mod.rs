@@ -122,7 +122,7 @@ pub fn to_ir(document: &DoclingDocument, limits: &Limits) -> Result<ReadOutput, 
     ir.assets = std::mem::take(&mut mapper.assets);
 
     Ok(ReadOutput {
-        document: ir,
+        document: (ir).finalize_import(),
         warnings: mapper.warnings,
     })
 }
@@ -159,14 +159,17 @@ impl Mapped {
 fn place(
     mapped: Vec<Mapped>,
     prefix: &str,
-    positions: &mut BTreeMap<String, BlockPosition>,
+    positions: &mut BTreeMap<crate::ir::BlockId, BlockPosition>,
 ) -> Vec<Block> {
     mapped
         .into_iter()
         .enumerate()
         .map(|(index, item)| {
             for (suffix, position) in item.positions {
-                positions.insert(format!("{prefix}/{index}{suffix}"), position);
+                positions.insert(
+                    crate::ir::BlockId::import_path(format!("{prefix}/{index}{suffix}")),
+                    position,
+                );
             }
             item.block
         })
@@ -474,7 +477,15 @@ impl<'a> Mapper<'a> {
                 let content = self.inline_group(group, depth)?;
                 if !content.is_empty() {
                     self.count_block()?;
-                    out.push(Mapped::new(Block::Paragraph { content }, None));
+                    out.push(Mapped::new(
+                        Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
+                            content,
+                        },
+                        None,
+                    ));
                 }
             }
             _ => out.extend(self.map_children(&group.children, depth + 1, layer)?),
@@ -521,6 +532,9 @@ impl<'a> Mapper<'a> {
                 let list = list.get_or_insert_with(|| {
                     Mapped::new(
                         Block::List {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             ordered,
                             start: ordered.then_some(1),
                             tight: true,
@@ -566,7 +580,12 @@ impl<'a> Mapper<'a> {
             if !content.is_empty() {
                 self.count_block()?;
                 mapped.push(Mapped::new(
-                    Block::Paragraph { content },
+                    Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        content,
+                    },
                     self.position(&text.prov),
                 ));
             }
@@ -580,6 +599,9 @@ impl<'a> Mapper<'a> {
         }
         Ok(Some(Mapped {
             block: Block::List {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 ordered,
                 start,
                 tight: true,
@@ -659,7 +681,13 @@ impl<'a> Mapper<'a> {
                 if self.title.is_none() {
                     self.title = Some(nfc(plain_text(&content).trim()));
                 }
-                Block::Heading { level: 1, content }
+                Block::Heading {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    level: 1,
+                    content,
+                }
             }
             "section_header" => {
                 let content = self.heading_content(text, depth)?;
@@ -668,6 +696,9 @@ impl<'a> Mapper<'a> {
                 }
                 let level = text.level.unwrap_or(1).clamp(1, 5) + 1;
                 Block::Heading {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     level: u8::try_from(level).unwrap_or(6),
                     content,
                 }
@@ -677,6 +708,9 @@ impl<'a> Mapper<'a> {
                     return Ok(None);
                 }
                 Block::Code {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     lang: code_language(text.code_language.as_deref()),
                     text: text.text.clone(),
                 }
@@ -690,6 +724,9 @@ impl<'a> Mapper<'a> {
                     return Ok(None);
                 }
                 Block::Math {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     tex: text.text.clone(),
                     display: true,
                 }
@@ -706,9 +743,17 @@ impl<'a> Mapper<'a> {
                     Vec::new()
                 } else {
                     self.count_block()?;
-                    vec![Block::Paragraph { content }]
+                    vec![Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        content,
+                    }]
                 };
                 Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: false,
                     start: None,
                     tight: true,
@@ -723,7 +768,12 @@ impl<'a> Mapper<'a> {
                 if content.is_empty() {
                     return Ok(None);
                 }
-                Block::Paragraph { content }
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content,
+                }
             }
         };
         if !matches!(block, Block::List { .. }) {
@@ -920,6 +970,9 @@ impl<'a> Mapper<'a> {
         let caption = self.text_of(&table.captions)?;
         let footnotes = self.text_of(&table.footnotes)?;
         let block = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: (!caption.is_empty()).then_some(caption),
             columns: vec![
                 ColumnSpec {
@@ -957,6 +1010,9 @@ impl<'a> Mapper<'a> {
         self.count_block()?;
         Ok(vec![Mapped::new(
             Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text { text: value }],
             },
             None,
@@ -977,6 +1033,9 @@ impl<'a> Mapper<'a> {
                 self.count_block()?;
                 blocks.push(Mapped::new(
                     Block::Figure {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         asset: AssetRef::Asset { id },
                         caption,
                     },
@@ -990,14 +1049,30 @@ impl<'a> Mapper<'a> {
                 );
                 if !caption.is_empty() {
                     self.count_block()?;
-                    blocks.push(Mapped::new(Block::Paragraph { content: caption }, position));
+                    blocks.push(Mapped::new(
+                        Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
+                            content: caption,
+                        },
+                        position,
+                    ));
                 }
             }
         }
         // The IR figure has no footnotes, so they follow it as a paragraph.
         if !footnotes.is_empty() {
             self.count_block()?;
-            blocks.push(Mapped::new(Block::Paragraph { content: footnotes }, None));
+            blocks.push(Mapped::new(
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content: footnotes,
+                },
+                None,
+            ));
         }
         Ok(blocks)
     }
@@ -1040,6 +1115,7 @@ impl<'a> Mapper<'a> {
         let media_type = sniff_image_type(&bytes)?;
         let id = hex::encode(Sha256::digest(&bytes));
         self.assets.entry(id.clone()).or_insert_with(|| Asset {
+            font: None,
             media_type: media_type.to_owned(),
             bytes,
         });
@@ -1116,7 +1192,8 @@ fn plain_text(content: &[Inline]) -> String {
     for inline in content {
         match inline {
             Inline::Text { text: value } | Inline::Code { text: value } => text.push_str(value),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }

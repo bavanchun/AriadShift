@@ -1,0 +1,85 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Trình tự kiểm tra bản đồ",
+          "type": "text"
+        }
+      ],
+      "id": "bbfb5c22ba83b50df3b945fbee426d2f4ea184c848c9a26874865af7e255ba32b",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "id": "baf1e043a9282c7120a8f82c7bec6db2e49f1fd7df4d00228077a614a777419b3",
+      "items": [
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Ghi ngày khảo sát",
+                  "type": "text"
+                }
+              ],
+              "id": "bfa7d7af9725ca3eb23c9173afa925393d35ad03b4f05d7eb4eb4e44d857c6747",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Đối chiếu tên đường",
+                  "type": "text"
+                }
+              ],
+              "id": "b4b02293e99e0dfcaeac1776d362411dee252c3c83f9c682be7efd4364f68fc9b",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Đánh dấu chỗ chưa chắc chắn",
+                  "type": "text"
+                }
+              ],
+              "id": "b494a6dc521b72604951f7eb8f78dcfa6b6a38fdba3669d79b316df845af42b5f",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        }
+      ],
+      "ordered": true,
+      "start": 7,
+      "tight": true,
+      "type": "list"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}
