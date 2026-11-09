@@ -540,3 +540,186 @@ fn cross_route_sample_docx_to_html_and_html_to_docx() {
         });
     }
 }
+
+#[cfg(feature = "pdf")]
+fn convert_golden(input: &Path, target: &str, output: &Path) -> serde_json::Value {
+    let pandoc = ariad_host::pandoc_bin::locate().expect("Pandoc installed by `just pandoc`");
+    assert_eq!(pandoc.version, ariad_host::PANDOC_GOLDEN_VERSION);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ashift"));
+    command
+        .arg("convert")
+        .arg(input)
+        .args(["--to", target, "--json", "-o"])
+        .arg(output)
+        .envs([
+            ("ASHIFT_PANDOC", pandoc.path.into_os_string()),
+            ("SOURCE_DATE_EPOCH", "1700000000".into()),
+        ]);
+    if input
+        .extension()
+        .is_some_and(|extension| extension == "pdf")
+        && target != "pptx"
+    {
+        // Exercise the base reader deterministically; OCR/layout has its own suite.
+        command.args(["--engine", "pdf"]);
+    }
+    let result = command.output().expect("start conversion for golden");
+    assert!(
+        result.status.success(),
+        "{} -> {target}: {}",
+        input.display(),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        output.is_file(),
+        "successful conversion must publish an artifact"
+    );
+    serde_json::from_slice(&result.stdout).expect("conversion report JSON")
+}
+
+#[cfg(feature = "pdf")]
+#[test]
+fn pdf_exports_have_reviewable_goldens() {
+    let root = support::fixtures::repository_root();
+    let directory = tempdir().unwrap();
+    let input = root.join("fixtures/pdf/en-map-room.pdf");
+    for target in ["odt", "rtf", "txt", "xlsx"] {
+        let output = directory.path().join(format!("map-room.{target}"));
+        let report = convert_golden(&input, target, &output);
+        assert_eq!(report["route"][0]["engine"], "pdf");
+        let content = match target {
+            "odt" => {
+                let package = read_package(&output);
+                assert_eq!(
+                    package["mimetype"],
+                    b"application/vnd.oasis.opendocument.text"
+                );
+                pretty_xml(&package["content.xml"])
+            }
+            "xlsx" => {
+                let package = read_package(&output);
+                assert!(package.contains_key("xl/workbook.xml"));
+                assert!(
+                    report["warnings"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|warning| { warning["code"] == "no_tables_found" })
+                );
+                package
+                    .iter()
+                    .filter(|(name, _)| name.starts_with("xl/worksheets/"))
+                    .map(|(name, bytes)| format!("{name}\n{}", pretty_xml(bytes)))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            "rtf" => {
+                assert!(fs::read(&output).unwrap().starts_with(b"{\\rtf"));
+                let pandoc = ariad_host::pandoc_bin::locate().unwrap();
+                let readback = Command::new(pandoc.path)
+                    .args(["--from=rtf", "--to=plain"])
+                    .arg(&output)
+                    .output()
+                    .expect("read RTF with Pandoc");
+                assert!(
+                    readback.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&readback.stderr)
+                );
+                normalize_text(&String::from_utf8(readback.stdout).expect("UTF-8 RTF readback"))
+            }
+            _ => normalize_text(&fs::read_to_string(&output).unwrap()),
+        };
+        insta::assert_snapshot!(format!("pdf_to_{target}"), content);
+    }
+}
+
+#[cfg(all(feature = "pdf", feature = "typst"))]
+#[test]
+fn document_inputs_have_reviewable_pdf_goldens() {
+    use ariad_core::{limits::Limits, reader::pdf, writer::markdown};
+
+    let root = support::fixtures::repository_root();
+    let directory = tempdir().unwrap();
+    for (source, fixture) in [
+        ("txt", "txt/sample.txt"),
+        ("csv", "csv/sample.csv"),
+        ("eml", "email/sample.eml"),
+        ("msg", "email/sample.msg"),
+        ("svg", "svg/sample.svg"),
+        ("cbz", "cbz/sample.cbz"),
+    ] {
+        let output = directory.path().join(format!("{source}.pdf"));
+        let report = convert_golden(&root.join("fixtures").join(fixture), "pdf", &output);
+        let route = report["route"].as_array().unwrap();
+        if source == "cbz" {
+            assert_eq!(route.len(), 1);
+            assert_eq!(route[0]["engine"], "ariad-pdf");
+        } else {
+            assert_eq!(route[0]["engine"], "ariad-core");
+            assert_eq!(route.last().unwrap()["engine"], "typst");
+        }
+        let bytes = fs::read(&output).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        let read = pdf::read(&bytes, &Limits::local()).expect("read generated PDF");
+        let stats = pdf::PdfStats::from_document(&read.document).expect("PDF statistics");
+        assert!(stats.pages > 0);
+        let summary = format!(
+            "pages: {}\ntext_pages: {}\nimage_only_pages: {}\n\n{}",
+            stats.pages,
+            stats.text_pages,
+            stats.image_only_pages,
+            normalize_text(&markdown::write(&read.document).content)
+        );
+        insta::assert_snapshot!(format!("{source}_to_pdf"), summary);
+    }
+}
+
+#[cfg(feature = "pdf")]
+#[test]
+fn pdf_to_pptx_has_a_reviewable_golden_when_libreoffice_is_installed() {
+    if let Err(error) = ariad_host::engines::libreoffice::locate() {
+        eprintln!("skipping PPTX golden: LibreOffice >=24.2 unavailable ({error:?})");
+        return;
+    }
+    let root = support::fixtures::repository_root();
+    let directory = tempdir().unwrap();
+    let output = directory.path().join("table.pptx");
+    let report = convert_golden(
+        &root.join("fixtures/pdf-forms-detect/table.pdf"),
+        "pptx",
+        &output,
+    );
+    assert_eq!(report["route"].as_array().unwrap().len(), 1);
+    assert_eq!(report["route"][0]["engine"], "libreoffice");
+    let package = read_package(&output);
+    assert!(package.contains_key("ppt/presentation.xml"));
+    // LibreOffice changes drawing ids and font metrics across platforms. Keep
+    // the golden on slide order and imported text, rather than those internals.
+    let slides = package
+        .iter()
+        .filter(|(name, _)| name.starts_with("ppt/slides/slide") && name.ends_with(".xml"))
+        .map(|(name, bytes)| {
+            let mut reader = Reader::from_reader(bytes.as_slice());
+            let mut text = Vec::new();
+            loop {
+                match reader.read_event().expect("slide XML") {
+                    Event::Start(start) if start.local_name().as_ref() == "t" => {
+                        text.push(
+                            reader
+                                .read_text(start.name())
+                                .expect("slide text")
+                                .into_inner()
+                                .into_owned(),
+                        );
+                    }
+                    Event::Eof => break,
+                    _ => {}
+                }
+            }
+            format!("{name}\n{}", text.join("\n"))
+        })
+        .collect::<Vec<_>>();
+    assert!(!slides.is_empty(), "PPTX must contain slides");
+    insta::assert_snapshot!("pdf_to_pptx", slides.join("\n"));
+}

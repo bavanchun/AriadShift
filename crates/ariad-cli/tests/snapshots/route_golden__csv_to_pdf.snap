@@ -1,0 +1,34 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+expression: summary
+---
+pages: 1
+text_pages: 1
+image_only_pages: 0
+
+---
+title: sample
+lang: en
+---
+
+# Item
+
+# Category Status
+
+Desk lamp Lighting
+
+Repaired
+
+Toaster
+
+Kitchen
+
+Inspected
+
+Radio
+
+Audio
+
+Pending
+
+1

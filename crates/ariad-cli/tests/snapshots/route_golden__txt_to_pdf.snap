@@ -1,0 +1,18 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+expression: summary
+---
+pages: 1
+text_pages: 1
+image_only_pages: 0
+
+---
+title: sample
+lang: en
+---
+
+Neighborhood Repair Cafe
+
+Notes from the community workshop held on 12 April 2026.
+
+1

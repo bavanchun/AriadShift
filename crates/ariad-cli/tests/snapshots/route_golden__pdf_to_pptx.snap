@@ -1,0 +1,8 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+expression: "slides.join(\"\\n\")"
+---
+ppt/slides/slide1.xml
+Item
+Count
+Price
