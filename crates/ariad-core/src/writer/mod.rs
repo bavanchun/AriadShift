@@ -1,9 +1,12 @@
 //! Serializers from document IR to text and markup formats.
 
+pub mod csv;
 pub mod html;
 pub mod markdown;
 pub mod sanitize;
+pub mod text;
 pub mod typst;
+pub mod xlsx;
 
 use crate::{
     ir::{AssetRef, Block, Document, Inline, ListItem, Metadata, TableCell},
@@ -14,6 +17,13 @@ use crate::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct WriteOutput {
     pub content: String,
+    pub warnings: Vec<Warning>,
+}
+
+/// Result of serializing an IR document to a binary format.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WriteBinaryOutput {
+    pub bytes: Vec<u8>,
     pub warnings: Vec<Warning>,
 }
 

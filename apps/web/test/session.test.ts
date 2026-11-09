@@ -30,7 +30,18 @@ describe("ConverterSession", () => {
     const session = new ConverterSession(loadCore(), new MemoryStore());
     const ingested = await session.ingest(markdownFile("# Notes\n\nHello *there*.\n"));
     expect(ingested.inspection.format).toBe("markdown");
-    expect(ingested.inspection.reachable).toEqual(["ariad-ir+json", "docx", "epub", "html", "pdf"]);
+    expect(ingested.inspection.reachable).toEqual([
+      "ariad-ir+json",
+      "csv",
+      "docx",
+      "epub",
+      "html",
+      "odt",
+      "pdf",
+      "rtf",
+      "txt",
+      "xlsx",
+    ]);
 
     const route = session.plan("html", "editable");
     expect(route.steps).toHaveLength(2);

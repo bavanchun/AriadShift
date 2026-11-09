@@ -47,6 +47,9 @@ pub enum NetError {
     #[error("too many redirects (limit: {max})")]
     TooManyRedirects { max: u32 },
 
+    #[error("cross-origin redirect refused from '{from}' to '{to}'")]
+    CrossOriginRedirectRefused { from: String, to: String },
+
     #[error("invalid redirect: {0}")]
     InvalidRedirect(String),
 

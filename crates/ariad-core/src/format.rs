@@ -46,6 +46,28 @@ pub enum Format {
     Webp,
     #[serde(rename = "tiff")]
     Tiff,
+    #[serde(rename = "txt")]
+    Txt,
+    #[serde(rename = "csv")]
+    Csv,
+    #[serde(rename = "eml")]
+    Eml,
+    #[serde(rename = "msg")]
+    Msg,
+    #[serde(rename = "svg")]
+    Svg,
+    #[serde(rename = "cbz")]
+    Cbz,
+    #[serde(rename = "odg")]
+    Odg,
+    #[serde(rename = "wpd")]
+    Wpd,
+    #[serde(rename = "wps")]
+    Wps,
+    #[serde(rename = "pub")]
+    Pub,
+    #[serde(rename = "vsd")]
+    Vsd,
 }
 
 /// The stored `mimetype` payloads that identify ZIP containers by their first entry.
@@ -60,6 +82,7 @@ const MIMETYPE_FORMATS: &[(&[u8], Format)] = &[
         b"application/vnd.oasis.opendocument.presentation",
         Format::Odp,
     ),
+    (b"application/vnd.oasis.opendocument.graphics", Format::Odg),
 ];
 
 /// OOXML main parts that identify a ZIP holding `[Content_Types].xml`.
@@ -70,11 +93,18 @@ const OOXML_MAIN_PARTS: &[(&str, Format)] = &[
 ];
 
 /// Streams that identify legacy Office documents inside an OLE2 compound file.
+///
+/// `Msg` (__properties_version1.0) is checked before Office streams (WordDocument,
+/// Workbook, etc.) so that an Outlook message with embedded Office objects is
+/// correctly identified as `Msg`.
 const OLE_STREAMS: &[(&str, Format)] = &[
+    ("__properties_version1.0", Format::Msg),
     ("WordDocument", Format::Doc),
     ("Workbook", Format::Xls),
     ("Book", Format::Xls),
     ("PowerPoint Document", Format::Ppt),
+    ("VisioDocument", Format::Vsd),
+    ("Quill", Format::Pub),
 ];
 
 /// The OLE2 compound file signature.
@@ -107,6 +137,17 @@ impl Format {
         Self::Jpeg,
         Self::Webp,
         Self::Tiff,
+        Self::Txt,
+        Self::Csv,
+        Self::Eml,
+        Self::Msg,
+        Self::Svg,
+        Self::Cbz,
+        Self::Odg,
+        Self::Wpd,
+        Self::Wps,
+        Self::Pub,
+        Self::Vsd,
     ];
 
     /// The stable registry identifier for this format.
@@ -134,6 +175,17 @@ impl Format {
             Self::Jpeg => "jpeg",
             Self::Webp => "webp",
             Self::Tiff => "tiff",
+            Self::Txt => "txt",
+            Self::Csv => "csv",
+            Self::Eml => "eml",
+            Self::Msg => "msg",
+            Self::Svg => "svg",
+            Self::Cbz => "cbz",
+            Self::Odg => "odg",
+            Self::Wpd => "wpd",
+            Self::Wps => "wps",
+            Self::Pub => "pub",
+            Self::Vsd => "vsd",
         }
     }
 
@@ -168,6 +220,17 @@ impl Format {
             Self::Jpeg => &["jpg", "jpeg"],
             Self::Webp => &["webp"],
             Self::Tiff => &["tif", "tiff"],
+            Self::Txt => &["txt", "text"],
+            Self::Csv => &["csv"],
+            Self::Eml => &["eml"],
+            Self::Msg => &["msg"],
+            Self::Svg => &["svg"],
+            Self::Cbz => &["cbz"],
+            Self::Odg => &["odg"],
+            Self::Wpd => &["wpd"],
+            Self::Wps => &["wps"],
+            Self::Pub => &["pub"],
+            Self::Vsd => &["vsd"],
         }
     }
 
@@ -196,6 +259,17 @@ impl Format {
             Self::Jpeg => "image/jpeg",
             Self::Webp => "image/webp",
             Self::Tiff => "image/tiff",
+            Self::Txt => "text/plain",
+            Self::Csv => "text/csv",
+            Self::Eml => "message/rfc822",
+            Self::Msg => "application/vnd.ms-outlook",
+            Self::Svg => "image/svg+xml",
+            Self::Cbz => "application/vnd.comicbook+zip",
+            Self::Odg => "application/vnd.oasis.opendocument.graphics",
+            Self::Wpd => "application/vnd.wordperfect",
+            Self::Wps => "application/vnd.ms-works",
+            Self::Pub => "application/x-mspublisher",
+            Self::Vsd => "application/vnd.visio",
         }
     }
 
@@ -212,7 +286,15 @@ impl Format {
     pub const fn is_zip_container(self) -> bool {
         matches!(
             self,
-            Self::Docx | Self::Epub | Self::Pptx | Self::Xlsx | Self::Odt | Self::Ods | Self::Odp
+            Self::Docx
+                | Self::Epub
+                | Self::Pptx
+                | Self::Xlsx
+                | Self::Odt
+                | Self::Ods
+                | Self::Odp
+                | Self::Odg
+                | Self::Cbz
         )
     }
 
@@ -277,6 +359,12 @@ pub fn classify(
     }
 
     if let Some(format) = classify_magic(prefix) {
+        if format == Format::Svg
+            && let Some(text_fmt) = extension.and_then(Format::from_extension)
+            && matches!(text_fmt, Format::Markdown | Format::Html | Format::Txt)
+        {
+            return Some(text_fmt);
+        }
         return Some(format);
     }
 
@@ -374,6 +462,8 @@ fn classify_magic(prefix: &[u8]) -> Option<Format> {
         Some(Format::Png)
     } else if prefix.starts_with(b"\xFF\xD8\xFF") {
         Some(Format::Jpeg)
+    } else if prefix.starts_with(b"\xFFWPC") {
+        Some(Format::Wpd)
     } else if prefix.len() >= 12 && &prefix[..4] == b"RIFF" && &prefix[8..12] == b"WEBP" {
         Some(Format::Webp)
     } else if prefix.starts_with(b"II*\0")
@@ -382,8 +472,67 @@ fn classify_magic(prefix: &[u8]) -> Option<Format> {
         || prefix.starts_with(b"MM\0+")
     {
         Some(Format::Tiff)
+    } else if is_leading_svg(prefix) {
+        Some(Format::Svg)
     } else {
         None
+    }
+}
+
+fn is_leading_svg(prefix: &[u8]) -> bool {
+    let mut rest = prefix.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(prefix);
+    rest = skip_xml_whitespace(rest);
+    if is_svg_tag(rest) {
+        return true;
+    }
+    if rest.starts_with(b"<?xml")
+        && let Some(pos) = rest.windows(2).position(|w| w == b"?>")
+    {
+        let mut after = &rest[pos + 2..];
+        loop {
+            after = skip_xml_whitespace(after);
+            if after.starts_with(b"<!--") {
+                if let Some(end) = after.windows(3).position(|w| w == b"-->") {
+                    after = &after[end + 3..];
+                    continue;
+                }
+                return false;
+            }
+            if after.starts_with(b"<!DOCTYPE") || after.starts_with(b"<!doctype") {
+                if let Some(end) = after.iter().position(|&b| b == b'>') {
+                    after = &after[end + 1..];
+                    continue;
+                }
+                return false;
+            }
+            break;
+        }
+        return is_svg_tag(after);
+    }
+    false
+}
+
+fn skip_xml_whitespace(mut bytes: &[u8]) -> &[u8] {
+    while let Some((first, remainder)) = bytes.split_first() {
+        if first.is_ascii_whitespace() {
+            bytes = remainder;
+        } else {
+            break;
+        }
+    }
+    bytes
+}
+
+fn is_svg_tag(bytes: &[u8]) -> bool {
+    const SVG: &[u8] = b"<svg";
+    if bytes.len() >= SVG.len() && bytes[..SVG.len()].eq_ignore_ascii_case(SVG) {
+        match bytes.get(SVG.len()) {
+            None => true,
+            Some(&b) if b.is_ascii_whitespace() || b == b'>' || b == b'/' => true,
+            _ => false,
+        }
+    } else {
+        false
     }
 }
 
@@ -541,7 +690,7 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), count);
-        assert_eq!(count, 21);
+        assert_eq!(count, 32);
     }
 
     #[test]
@@ -776,5 +925,263 @@ mod tests {
             classify(b"{\"schema_name\":\"Other\"}", None, Some("json")),
             Some(Format::AriadIrJson)
         );
+    }
+
+    #[test]
+    fn new_formats_roundtrip_metadata_and_user_resolution() {
+        let new_formats = [
+            Format::Txt,
+            Format::Csv,
+            Format::Eml,
+            Format::Msg,
+            Format::Svg,
+            Format::Cbz,
+            Format::Odg,
+            Format::Wpd,
+            Format::Wps,
+            Format::Pub,
+            Format::Vsd,
+        ];
+        for format in new_formats {
+            assert_eq!(
+                Format::from_id(format.id()),
+                Some(format),
+                "from_id failed for {:?}",
+                format
+            );
+            assert_eq!(
+                Format::from_user_name(format.id()),
+                Some(format),
+                "from_user_name with id failed for {:?}",
+                format
+            );
+            assert!(format.is_user_facing(), "{:?} must be user-facing", format);
+            assert!(!format.media_type().is_empty());
+            assert!(!format.extensions().is_empty());
+            for ext in format.extensions() {
+                assert_eq!(
+                    Format::from_extension(ext),
+                    Some(format),
+                    "from_extension failed for {ext}"
+                );
+                assert_eq!(
+                    Format::from_user_name(ext),
+                    Some(format),
+                    "from_user_name with ext failed for {ext}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn classify_positive_and_negative_for_new_formats() {
+        // ODG vs ODT mimetype positive and negative
+        let odg_prefix = stored_zip_prefix(
+            b"mimetype",
+            b"application/vnd.oasis.opendocument.graphics",
+            true,
+        );
+        let odt_prefix = stored_zip_prefix(
+            b"mimetype",
+            b"application/vnd.oasis.opendocument.text",
+            true,
+        );
+        let entries = ["mimetype", "content.xml"];
+        assert_eq!(
+            classify(&odg_prefix, Some(&entries), None),
+            Some(Format::Odg)
+        );
+        assert_ne!(
+            classify(&odt_prefix, Some(&entries), None),
+            Some(Format::Odg)
+        );
+        assert_eq!(
+            classify(&odt_prefix, Some(&entries), None),
+            Some(Format::Odt)
+        );
+
+        // MSG vs DOC/XLS OLE streams
+        let mut ole_prefix = OLE_MAGIC.to_vec();
+        ole_prefix.extend_from_slice(&[0; 32]);
+        let msg_entries = ["Root Entry", "__properties_version1.0"];
+        let doc_entries = ["Root Entry", "WordDocument"];
+        let xls_entries = ["Root Entry", "Workbook"];
+        assert_eq!(
+            classify(&ole_prefix, Some(&msg_entries), None),
+            Some(Format::Msg)
+        );
+        assert_ne!(
+            classify(&ole_prefix, Some(&doc_entries), None),
+            Some(Format::Msg)
+        );
+        assert_eq!(
+            classify(&ole_prefix, Some(&doc_entries), None),
+            Some(Format::Doc)
+        );
+        assert_eq!(
+            classify(&ole_prefix, Some(&xls_entries), None),
+            Some(Format::Xls)
+        );
+
+        // When both Msg and WordDocument streams are present (e.g. MSG with embedded Office doc),
+        // Msg takes precedence.
+        let both_entries = ["Root Entry", "WordDocument", "__properties_version1.0"];
+        assert_eq!(
+            classify(&ole_prefix, Some(&both_entries), None),
+            Some(Format::Msg)
+        );
+        let reverse_order = ["Root Entry", "__properties_version1.0", "WordDocument"];
+        assert_eq!(
+            classify(&ole_prefix, Some(&reverse_order), None),
+            Some(Format::Msg)
+        );
+
+        // VSD positive and negative
+        let vsd_entries = ["Root Entry", "VisioDocument"];
+        assert_eq!(
+            classify(&ole_prefix, Some(&vsd_entries), None),
+            Some(Format::Vsd)
+        );
+        assert_ne!(
+            classify(&ole_prefix, Some(&xls_entries), None),
+            Some(Format::Vsd)
+        );
+
+        // PUB positive and negative
+        let pub_entries = ["Root Entry", "Quill"];
+        assert_eq!(
+            classify(&ole_prefix, Some(&pub_entries), None),
+            Some(Format::Pub)
+        );
+        assert_ne!(
+            classify(&ole_prefix, Some(&doc_entries), None),
+            Some(Format::Pub)
+        );
+
+        // WPD magic positive and negative
+        assert_eq!(
+            classify(b"\xFFWPC\x01\x02\x03\x04", None, None),
+            Some(Format::Wpd)
+        );
+        assert_eq!(classify(b"\xFFWPD\x01\x02\x03\x04", None, None), None);
+
+        // WPS extension fallback positive and negative
+        assert_eq!(
+            classify(&ole_prefix, Some(&["Root Entry", "CONTENTS"]), Some("wps")),
+            Some(Format::Wps)
+        );
+        assert_eq!(
+            classify(b"random bytes", None, Some("wps")),
+            Some(Format::Wps)
+        );
+        assert_eq!(classify(b"random bytes", None, Some("other")), None);
+
+        // SVG vs HTML / XML
+        assert_eq!(
+            classify(
+                b"<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>",
+                None,
+                None
+            ),
+            Some(Format::Svg)
+        );
+        assert_eq!(
+            classify(
+                b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg width=\"100\"></svg>",
+                None,
+                None
+            ),
+            Some(Format::Svg)
+        );
+        assert_eq!(
+            classify(
+                b"<?xml version=\"1.0\"?>\n<!-- a comment -->\n<svg></svg>",
+                None,
+                None
+            ),
+            Some(Format::Svg)
+        );
+        // HTML is not classified as SVG
+        assert_eq!(
+            classify(
+                b"<!DOCTYPE html><html><body><svg></svg></body></html>",
+                None,
+                None
+            ),
+            Some(Format::Html)
+        );
+        assert_ne!(
+            classify(b"<!DOCTYPE html><html>", None, None),
+            Some(Format::Svg)
+        );
+        // Generic XML is not classified as SVG
+        assert_eq!(
+            classify(b"<?xml version=\"1.0\"?><root><child/></root>", None, None),
+            None
+        );
+
+        // Known text extensions (md, html, txt) win over leading <svg
+        let leading_svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><circle/></svg>";
+        assert_eq!(
+            classify(leading_svg, None, Some("md")),
+            Some(Format::Markdown)
+        );
+        assert_eq!(
+            classify(leading_svg, None, Some("markdown")),
+            Some(Format::Markdown)
+        );
+        assert_eq!(
+            classify(leading_svg, None, Some("html")),
+            Some(Format::Html)
+        );
+        assert_eq!(classify(leading_svg, None, Some("htm")), Some(Format::Html));
+        assert_eq!(classify(leading_svg, None, Some("txt")), Some(Format::Txt));
+        assert_eq!(classify(leading_svg, None, Some("text")), Some(Format::Txt));
+        assert_eq!(classify(leading_svg, None, Some("svg")), Some(Format::Svg));
+        assert_eq!(classify(leading_svg, None, None), Some(Format::Svg));
+        assert_eq!(classify(leading_svg, None, Some("xml")), Some(Format::Svg));
+
+        // CBZ extension-only positive and negative
+        let cbz_prefix = b"PK\x03\x04...";
+        let cbz_entries = ["01.jpg", "02.jpg"];
+        assert_eq!(
+            classify(cbz_prefix, Some(&cbz_entries), Some("cbz")),
+            Some(Format::Cbz)
+        );
+        assert_eq!(classify(cbz_prefix, Some(&cbz_entries), None), None);
+
+        // TXT, CSV, EML extension-only positive and negative
+        assert_eq!(
+            classify(b"hello world", None, Some("txt")),
+            Some(Format::Txt)
+        );
+        assert_eq!(
+            classify(b"a,b,c\n1,2,3", None, Some("csv")),
+            Some(Format::Csv)
+        );
+        assert_eq!(
+            classify(b"From: a@b.c\nTo: d@e.f\n\nHi", None, Some("eml")),
+            Some(Format::Eml)
+        );
+        assert_eq!(classify(b"hello world", None, None), None);
+        assert_eq!(classify(b"a,b,c\n1,2,3", None, None), None);
+        assert_eq!(classify(b"From: a@b.c\nTo: d@e.f\n\nHi", None, None), None);
+    }
+
+    #[test]
+    fn zip_container_formats_are_flagged() {
+        assert!(Format::Odg.is_zip_container());
+        assert!(Format::Cbz.is_zip_container());
+        assert!(Format::Docx.is_zip_container());
+        assert!(Format::Epub.is_zip_container());
+        assert!(!Format::Txt.is_zip_container());
+        assert!(!Format::Csv.is_zip_container());
+        assert!(!Format::Eml.is_zip_container());
+        assert!(!Format::Msg.is_zip_container());
+        assert!(!Format::Svg.is_zip_container());
+        assert!(!Format::Wpd.is_zip_container());
+        assert!(!Format::Wps.is_zip_container());
+        assert!(!Format::Pub.is_zip_container());
+        assert!(!Format::Vsd.is_zip_container());
     }
 }

@@ -8,7 +8,9 @@
 #![forbid(unsafe_code)]
 
 pub mod annotations;
+pub mod cbz;
 pub mod color;
+pub mod compare;
 pub mod document;
 pub mod draw;
 pub mod error;
@@ -28,6 +30,7 @@ pub mod ocr_layer;
 pub mod optimize;
 pub mod paper;
 mod pdf_text;
+pub mod pdfa;
 #[cfg(feature = "codecs")]
 pub mod recolor;
 pub mod redact;
@@ -43,7 +46,7 @@ pub mod ctx {
     pub use crate::document::ToolCtx;
 }
 
-pub use document::{PdfDoc, ToolClock, ToolCtx, TrailerProvenance};
+pub use document::{PdfDoc, ToolClock, ToolCtx, TrailerProvenance, open_with_ctx};
 pub use error::PdfError;
 pub use info::{PageInfo, PdfInfo, PdfMetadata};
 pub use tools::{InputDoc, OutputArtifact, OutputDoc, REPAIRED_XREF_WARNING, ToolOutput, run_tool};

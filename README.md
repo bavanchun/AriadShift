@@ -174,6 +174,12 @@ Regenerate the deterministic fixture corpus and refresh its hashes with:
 just fixtures
 ```
 
+Measure multiset text recall between PDF -> PPTX and PDF -> DOCX conversions with:
+
+```sh
+python3 scripts/measure-pptx-fidelity.py
+```
+
 `just pandoc` downloads Pandoc 3.12 and verifies its archive checksum. Run it
 before working on tasks that use Pandoc.
 

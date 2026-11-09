@@ -434,6 +434,7 @@ pub fn render_tools_human(tools: &[ToolDescriptor]) -> io::Result<()> {
     )?;
     for tool in tools {
         let inputs = match tool.inputs {
+            InputArity::None => "0".to_owned(),
             InputArity::One => "1".to_owned(),
             InputArity::Many { min, max } => format!("{min}..={max}"),
         };

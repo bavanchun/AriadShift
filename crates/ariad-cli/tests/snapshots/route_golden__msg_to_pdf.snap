@@ -1,0 +1,26 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+expression: summary
+---
+pages: 1
+text_pages: 1
+image_only_pages: 0
+
+---
+title: "Project Update"
+author:
+  - "Alice Walker <alice@example.com>"
+lang: en
+---
+
+**From:** Alice Walker \<alice\@example.com> **To:** Bob Smith \<bob\@example.com> **Subject:** Project Update
+
+Hello Bob,
+
+Here is the latest progress report on the document pipeline. Best regards, Alice
+
+# Attachments
+
+- report.pdf (29 bytes)
+
+1

@@ -1,0 +1,115 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+expression: content
+---
+xl/worksheets/sheet1.xml
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1">
+<c r="A1" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Notes from the Map Room</t>
+        </is>
+      </c>
+</row>
+<row r="2">
+<c r="A2" t="inlineStr">
+        <is>
+          <t xml:space="preserve">The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.</t>
+        </is>
+      </c>
+</row>
+<row r="3">
+<c r="A3" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Mara volunteers on Thursday afternoons. She records the paper&apos;s date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.</t>
+        </is>
+      </c>
+</row>
+<row r="4">
+<c r="A4" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Visitors often arrive looking for one address and leave with a longer story. They discover a footbridge that no longer exists, a lane named after a vanished orchard, or a public stair hidden behind a market. The archive cannot answer every question, but it can show where to ask next.</t>
+        </is>
+      </c>
+</row>
+<row r="5">
+<c r="A5" t="inlineStr">
+        <is>
+          <t xml:space="preserve">The repair café opens one Saturday each month in the old tram depot. Neighbors bring lamps, clocks, radios, and small appliances that have stopped working. Volunteers set out screwdrivers and labeled trays so every loose part has a safe place.</t>
+        </is>
+      </c>
+</row>
+<row r="6">
+<c r="A6" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Archive note1</t>
+        </is>
+      </c>
+</row>
+<row r="7">
+<c r="A7" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Archive item</t>
+        </is>
+      </c>
+</row>
+<row r="8">
+<c r="A8" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Recorded detail</t>
+        </is>
+      </c>
+</row>
+<row r="9">
+<c r="A9" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Street plan</t>
+        </is>
+      </c>
+</row>
+<row r="10">
+<c r="A10" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Survey date</t>
+        </is>
+      </c>
+</row>
+<row r="11">
+<c r="A11" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Overlay</t>
+        </is>
+      </c>
+</row>
+<row r="12">
+<c r="A12" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Transparent sheet</t>
+        </is>
+      </c>
+</row>
+<row r="13">
+<c r="A13" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Map weight</t>
+        </is>
+      </c>
+</row>
+<row r="14">
+<c r="A14" t="inlineStr">
+        <is>
+          <t xml:space="preserve">Brass</t>
+        </is>
+      </c>
+</row>
+<row r="15">
+<c r="A15" t="inlineStr">
+        <is>
+          <t xml:space="preserve">1The archive keeps older map editions beside later revisions.</t>
+        </is>
+      </c>
+</row>
+</sheetData>
+</worksheet>

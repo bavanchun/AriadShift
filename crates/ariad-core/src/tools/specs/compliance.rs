@@ -1,0 +1,92 @@
+//! Tool specifications for PDF/A and PDF/UA compliance validation and conversion.
+
+use crate::tools::{
+    InputArity, Tier, ToolGroup, ToolRuntime, ToolSpec,
+    params::{
+        AccessibilityReportParams, ToPdfUaParams, ToPdfaParams, ValidatePdfUaParams,
+        ValidatePdfaParams, schema_for_params,
+    },
+    specs::ocr_scan::HOST_COMPOSITE_ENGINE,
+};
+
+/// Returns the tool specifications registered by this module.
+#[must_use]
+pub fn specs() -> Vec<ToolSpec> {
+    vec![
+        ToolSpec {
+            id: "pdf.to_pdfa",
+            version: "1",
+            group: ToolGroup::Convert,
+            summary: "Convert a PDF to PDF/A-2b, PDF/A-3b, or PDF/A-2u with mandatory veraPDF verification.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "pdf",
+            output_formats: &["pdf", "json"],
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Local],
+            engine: HOST_COMPOSITE_ENGINE,
+            params_schema: schema_for_params::<ToPdfaParams>,
+            secret_params: &[],
+        },
+        ToolSpec {
+            id: "pdf.to_pdfua",
+            version: "1",
+            group: ToolGroup::Convert,
+            summary: "Verify and convert a PDF to PDF/UA-1 with accessibility inspection and veraPDF verification.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "pdf",
+            output_formats: &["pdf", "json"],
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Local],
+            engine: HOST_COMPOSITE_ENGINE,
+            params_schema: schema_for_params::<ToPdfUaParams>,
+            secret_params: &[],
+        },
+        ToolSpec {
+            id: "pdf.accessibility_report",
+            version: "1",
+            group: ToolGroup::Compare,
+            summary: "Inspect a PDF for PDF/UA-1 accessibility requirements and output a structured JSON report.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "json",
+            output_formats: &["json"],
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            engine: "ariad-pdf",
+            params_schema: schema_for_params::<AccessibilityReportParams>,
+            secret_params: &[],
+        },
+        ToolSpec {
+            id: "pdf.validate_pdfa",
+            version: "1",
+            group: ToolGroup::Compare,
+            summary: "Validate a PDF document against PDF/A profiles using veraPDF.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "json",
+            output_formats: &[],
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Local],
+            engine: "verapdf",
+            params_schema: schema_for_params::<ValidatePdfaParams>,
+            secret_params: &[],
+        },
+        ToolSpec {
+            id: "pdf.validate_pdfua",
+            version: "1",
+            group: ToolGroup::Compare,
+            summary: "Validate a PDF document against PDF/UA accessibility profiles using veraPDF.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "json",
+            output_formats: &[],
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Local],
+            engine: "verapdf",
+            params_schema: schema_for_params::<ValidatePdfUaParams>,
+            secret_params: &[],
+        },
+    ]
+}

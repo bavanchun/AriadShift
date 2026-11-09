@@ -1,6 +1,10 @@
 //! Per-file tool specification lists concatenated into the global tool registry.
 
 pub mod annotate_forms;
+pub mod compare;
+pub mod compliance;
+pub mod convert_cbz;
+pub mod convert_tables;
 pub mod ocr_scan;
 pub mod optimize;
 pub mod organize_document;
@@ -17,6 +21,7 @@ pub mod pdfium;
 pub mod redact;
 pub mod security;
 pub mod sign;
+pub mod web;
 
 use crate::tools::ToolSpec;
 
@@ -41,5 +46,10 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(annotate_forms::specs());
     list.extend(redact::specs());
     list.extend(sign::specs());
+    list.extend(convert_tables::specs());
+    list.extend(convert_cbz::specs());
+    list.extend(compare::specs());
+    list.extend(compliance::specs());
+    list.extend(web::specs());
     list
 }

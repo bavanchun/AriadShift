@@ -18,7 +18,10 @@ use crate::{
     planner::PlanStep,
     reader::{html as reader_html, markdown as reader_markdown},
     warning::{SourcePos, Warning},
-    writer::{html as writer_html, markdown as writer_markdown},
+    writer::{
+        csv as writer_csv, html as writer_html, markdown as writer_markdown, text as writer_text,
+        xlsx as writer_xlsx,
+    },
 };
 
 /// Engine identifier of the in-process readers and writers in this crate.
@@ -173,7 +176,15 @@ pub struct WriteOptions<'a> {
 pub const fn can_read(format: Format) -> bool {
     matches!(
         format,
-        Format::Markdown | Format::Html | Format::AriadIrJson | Format::DoclingJson
+        Format::Markdown
+            | Format::Html
+            | Format::AriadIrJson
+            | Format::DoclingJson
+            | Format::Txt
+            | Format::Csv
+            | Format::Eml
+            | Format::Msg
+            | Format::Svg
     ) || (cfg!(feature = "pdf") && matches!(format, Format::Pdf))
 }
 
@@ -182,7 +193,12 @@ pub const fn can_read(format: Format) -> bool {
 pub const fn can_write(format: Format) -> bool {
     matches!(
         format,
-        Format::Markdown | Format::Html | Format::AriadIrJson
+        Format::Markdown
+            | Format::Html
+            | Format::AriadIrJson
+            | Format::Txt
+            | Format::Xlsx
+            | Format::Csv
     )
 }
 
@@ -254,6 +270,82 @@ pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, Pipel
                 },
             })?
         }
+        Format::Txt => {
+            let text = std::str::from_utf8(bytes).map_err(|error| PipelineError::InvalidInput {
+                reason: format!(
+                    "Text must be UTF-8; invalid byte at offset {}",
+                    error.valid_up_to()
+                ),
+            })?;
+            crate::reader::text::read(text, limits).map_err(|error| match error {
+                crate::reader::text::ReadError::InvalidLimits(error) => error.into(),
+                crate::reader::text::ReadError::InputTooLarge { .. } => {
+                    limit_exceeded("max_input_bytes")
+                }
+                crate::reader::text::ReadError::TooManyBlocks { .. } => {
+                    limit_exceeded("max_blocks")
+                }
+                crate::reader::text::ReadError::InvalidUtf8(reason) => {
+                    PipelineError::InvalidInput { reason }
+                }
+            })?
+        }
+        Format::Csv => crate::reader::csv::read(bytes, limits).map_err(|error| match error {
+            crate::reader::csv::ReadError::InvalidLimits(error) => error.into(),
+            crate::reader::csv::ReadError::InputTooLarge { .. } => {
+                limit_exceeded("max_input_bytes")
+            }
+            crate::reader::csv::ReadError::TooManyBlocks { .. }
+            | crate::reader::csv::ReadError::TooManyRows { .. }
+            | crate::reader::csv::ReadError::TooManyColumns { .. }
+            | crate::reader::csv::ReadError::TooManyCells { .. }
+            | crate::reader::csv::ReadError::TooManyPaddedCells { .. } => {
+                limit_exceeded("max_blocks")
+            }
+            other => PipelineError::InvalidInput {
+                reason: other.to_string(),
+            },
+        })?,
+        Format::Svg => crate::reader::svg::read(bytes, limits).map_err(|error| match error {
+            crate::reader::svg::ReadError::InvalidLimits(error) => error.into(),
+            crate::reader::svg::ReadError::InputTooLarge { .. } => {
+                limit_exceeded("max_input_bytes")
+            }
+            crate::reader::svg::ReadError::NestingTooDeep { .. } => {
+                limit_exceeded("max_nesting_depth")
+            }
+            other => PipelineError::InvalidInput {
+                reason: other.to_string(),
+            },
+        })?,
+        Format::Eml => {
+            crate::reader::email::read_eml(bytes, limits).map_err(|error| match error {
+                crate::reader::email::eml::ReadError::InvalidLimits(error) => error.into(),
+                crate::reader::email::eml::ReadError::InputTooLarge { .. } => {
+                    limit_exceeded("max_input_bytes")
+                }
+                crate::reader::email::eml::ReadError::TooManyBlocks { .. } => {
+                    limit_exceeded("max_blocks")
+                }
+                other => PipelineError::InvalidInput {
+                    reason: other.to_string(),
+                },
+            })?
+        }
+        Format::Msg => {
+            crate::reader::email::read_msg(bytes, limits).map_err(|error| match error {
+                crate::reader::email::msg::ReadError::InvalidLimits(error) => error.into(),
+                crate::reader::email::msg::ReadError::InputTooLarge { .. } => {
+                    limit_exceeded("max_input_bytes")
+                }
+                crate::reader::email::msg::ReadError::TooManyBlocks { .. } => {
+                    limit_exceeded("max_blocks")
+                }
+                other => PipelineError::InvalidInput {
+                    reason: other.to_string(),
+                },
+            })?
+        }
         Format::AriadIrJson => {
             return Ok(Read {
                 document: read_ir_json(bytes, limits)?,
@@ -285,6 +377,18 @@ pub fn write(
     let output = match format {
         Format::Markdown => writer_markdown::write(document),
         Format::Html => writer_html::write_with_title_fallback(document, options.title_fallback),
+        Format::Txt => writer_text::write(document),
+        Format::Csv => writer_csv::write(document),
+        Format::Xlsx => {
+            let output =
+                writer_xlsx::write(document).map_err(|error| PipelineError::InvalidInput {
+                    reason: error.to_string(),
+                })?;
+            return Ok(Written {
+                bytes: output.bytes,
+                warnings: output.warnings.iter().map(Notice::from).collect(),
+            });
+        }
         Format::AriadIrJson => {
             let bytes =
                 serde_json::to_vec_pretty(document).map_err(|error| PipelineError::InvalidIr {
@@ -887,6 +991,7 @@ mod tests {
     fn readers_and_writers_report_unsupported_formats() {
         assert!(!can_read(Format::Docx));
         assert!(!can_write(Format::Pdf));
+        assert!(can_write(Format::Txt));
         let error = read(Format::Docx, b"PK", &Limits::local()).unwrap_err();
         assert_eq!(
             error,

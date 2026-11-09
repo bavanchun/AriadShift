@@ -1,0 +1,5 @@
+# slug rust-triple upstream-asset sha256
+mac-arm64 aarch64-apple-darwin verapdf-installer.zip b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59
+mac-x64 x86_64-apple-darwin verapdf-installer.zip b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59
+linux-x64 x86_64-unknown-linux-gnu verapdf-installer.zip b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59
+linux-arm64 aarch64-unknown-linux-gnu verapdf-installer.zip b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59

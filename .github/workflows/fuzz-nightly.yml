@@ -55,6 +55,12 @@ jobs:
           - pdf_draw_params
           - pdf_form_interchange
           - pdf_form_structure
+          - reader_text
+          - reader_csv
+          - reader_eml
+          - reader_msg
+          - reader_svg
+          - reader_cbz
           - pdf_redact_params
     permissions:
       contents: read
@@ -108,7 +114,7 @@ jobs:
           mkdir -p "fuzz/corpus/$TARGET" "fuzz/seeds/$TARGET"
           build_options=()
           case "$TARGET" in
-            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params) build_options=(--dev --features pdf-reader) ;;
+            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|reader_cbz) build_options=(--dev --features pdf-reader) ;;
             typst_writer) build_options=(--dev --features typst-writer) ;;
           esac
           cargo +nightly-2026-10-05 fuzz run "${build_options[@]}" "$TARGET" "fuzz/corpus/$TARGET" "fuzz/seeds/$TARGET" -- -max_total_time=600 -timeout=25 -rss_limit_mb=2048

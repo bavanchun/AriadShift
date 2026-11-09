@@ -36,10 +36,12 @@ test-probe = ["ariad-host/test-probe"]
 
 [dev-dependencies]
 ariad-core.workspace = true
+ariad-host = { workspace = true, features = ["test-probe"] }
 assert_cmd.workspace = true
 hex.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
+lopdf.workspace = true
 minisign.workspace = true
 quick-xml.workspace = true
 serde = { workspace = true, features = ["derive"] }

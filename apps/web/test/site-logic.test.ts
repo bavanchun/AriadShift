@@ -41,6 +41,21 @@ describe("format pairs", () => {
     expect(ACCEPT.split(",")).toEqual(
       expect.arrayContaining([".md", ".markdown", ".html", ".htm", ".json", ".docx", ".epub"]),
     );
+    for (const ext of [
+      ".txt",
+      ".csv",
+      ".eml",
+      ".msg",
+      ".svg",
+      ".cbz",
+      ".odg",
+      ".wpd",
+      ".wps",
+      ".pub",
+      ".vsd",
+    ]) {
+      expect(ACCEPT.split(",")).not.toContain(ext);
+    }
   });
 
   it("encodes public formats as compatible Desktop route names", () => {

@@ -18,7 +18,7 @@ export const FORMATS: FormatInfo[] = [
     slug: "markdown",
     label: "Markdown",
     noun: "Markdown document",
-    extensions: ["md", "markdown"],
+    extensions: ["md", "markdown", "mdown"],
     description:
       "CommonMark with GitHub Flavored Markdown: headings, lists, tables, task lists, footnotes and math. The format most AI tools read best.",
   },
@@ -171,6 +171,105 @@ export const FORMATS: FormatInfo[] = [
     description: "Image text extraction needs the Docling engine pack in the desktop app.",
   },
   {
+    id: "txt",
+    internal: true,
+    slug: "txt",
+    label: "Plain Text (TXT)",
+    noun: "Plain text document",
+    extensions: ["txt", "text"],
+    description: "Plain text files without rich formatting.",
+  },
+  {
+    id: "csv",
+    internal: true,
+    slug: "csv",
+    label: "Comma-Separated Values (CSV)",
+    noun: "CSV spreadsheet",
+    extensions: ["csv"],
+    description: "Comma-separated tabular data.",
+  },
+  {
+    id: "eml",
+    internal: true,
+    slug: "eml",
+    label: "Email Message (EML)",
+    noun: "Email message",
+    extensions: ["eml"],
+    description: "Email message format.",
+  },
+  {
+    id: "msg",
+    internal: true,
+    slug: "msg",
+    label: "Outlook Message (MSG)",
+    noun: "Outlook email message",
+    extensions: ["msg"],
+    description: "Outlook email message format.",
+  },
+  {
+    id: "svg",
+    internal: true,
+    slug: "svg",
+    label: "Scalable Vector Graphics (SVG)",
+    noun: "SVG image",
+    extensions: ["svg"],
+    description: "Scalable Vector Graphics image format.",
+  },
+  {
+    id: "cbz",
+    internal: true,
+    slug: "cbz",
+    label: "Comic Book Archive (CBZ)",
+    noun: "Comic book archive",
+    extensions: ["cbz"],
+    description: "Comic book archive format.",
+  },
+  {
+    id: "odg",
+    internal: true,
+    slug: "odg",
+    label: "OpenDocument Graphics (ODG)",
+    noun: "OpenDocument drawing",
+    extensions: ["odg"],
+    description: "OpenDocument Drawing format.",
+  },
+  {
+    id: "wpd",
+    internal: true,
+    slug: "wpd",
+    label: "WordPerfect (WPD)",
+    noun: "WordPerfect document",
+    extensions: ["wpd"],
+    description: "WordPerfect document format.",
+  },
+  {
+    id: "wps",
+    internal: true,
+    slug: "wps",
+    label: "Microsoft Works (WPS)",
+    noun: "Microsoft Works document",
+    extensions: ["wps"],
+    description: "Microsoft Works document format.",
+  },
+  {
+    id: "pub",
+    internal: true,
+    slug: "pub",
+    label: "Microsoft Publisher (PUB)",
+    noun: "Microsoft Publisher document",
+    extensions: ["pub"],
+    description: "Microsoft Publisher document format.",
+  },
+  {
+    id: "vsd",
+    internal: true,
+    slug: "vsd",
+    label: "Microsoft Visio (VSD)",
+    noun: "Microsoft Visio diagram",
+    extensions: ["vsd"],
+    description: "Microsoft Visio diagram format.",
+  },
+  {
     id: "docling+json",
     internal: true,
     slug: "docling-json",
@@ -223,7 +322,9 @@ export function parsePairSlug(slug: string): { from: FormatInfo; to: FormatInfo 
   return from && to && from !== to ? { from, to } : undefined;
 }
 
-/** File picker `accept` value covering every format with display information. */
-export const ACCEPT = FORMATS.flatMap((format) =>
-  format.extensions.filter((extension) => !extension.includes(".")).map((ext) => `.${ext}`),
-).join(",");
+/** File picker `accept` value covering every active format with display information. */
+export const ACCEPT = FORMATS.filter((format) => !format.internal)
+  .flatMap((format) =>
+    format.extensions.filter((extension) => !extension.includes(".")).map((ext) => `.${ext}`),
+  )
+  .join(",");

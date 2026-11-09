@@ -501,6 +501,7 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.forms_flatten" => "flattened".to_owned(),
         "pdf.forms_detect" => "detected-fields".to_owned(),
         "pdf.forms_export" => "form-data".to_owned(),
+        "pdf.tables_to_csv" => "table".to_owned(),
         "pdf.decrypt" => "decrypted".to_owned(),
         "pdf.encrypt" => "encrypted".to_owned(),
         "pdf.permissions" => "permissions".to_owned(),
@@ -511,6 +512,7 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.sign" => "signed".to_owned(),
         "pdf.split" => "part".to_owned(),
         "pdf.sanitize" => "sanitized".to_owned(),
+        "pdf.compare" => "compared".to_owned(),
         other => other
             .split_once('.')
             .map_or(other, |(_, action)| action)
@@ -551,6 +553,7 @@ pub fn default_multi_artifact_name(
         "pdf.split" => "part".to_owned(),
         "pdf.extract_images" => "image".to_owned(),
         "pdf.to_images" | "pdf.render" => "page".to_owned(),
+        "pdf.tables_to_csv" => "table".to_owned(),
         _ => default_tool_suffix(tool_id),
     };
     format!("{stem}.{label}-{index_1_based:03}.{clean_ext}")
@@ -1013,6 +1016,7 @@ mod tests {
             ("pdf.forms_detect", "detected-fields"),
             ("pdf.forms_import", "filled"),
             ("pdf.forms_export", "form-data"),
+            ("pdf.compare", "compared"),
         ] {
             assert_eq!(default_tool_suffix(id), suffix);
         }
@@ -1226,5 +1230,23 @@ mod tests {
         assert_eq!(warnings.len(), 2);
         assert!(warnings[0].contains("'a.run.exe'") && warnings[0].contains("'a.run.exe.bin'"));
         assert!(warnings[1].contains("'a.z.LNK'") && warnings[1].contains("'a.z.LNK.bin'"));
+    }
+
+    #[test]
+    fn validate_extracted_artifact_extensions_accepts_txt_csv_and_svg_formats() {
+        let staged = vec![
+            StagedArtifact::new("/w/out/notes.txt", "txt", "notes.txt"),
+            StagedArtifact::new("/w/out/data.csv", "csv", "data.csv"),
+            StagedArtifact::new("/w/out/diagram.svg", "svg", "diagram.svg"),
+        ];
+        assert!(validate_extracted_artifact_extensions(&staged).is_ok());
+
+        for item in &staged {
+            assert!(Format::from_user_name(&item.format).is_some());
+            assert_eq!(quarantined_target_name(item), None);
+        }
+
+        let mismatched = vec![StagedArtifact::new("/w/out/notes.pdf", "txt", "notes.txt")];
+        assert!(validate_extracted_artifact_extensions(&mismatched).is_err());
     }
 }

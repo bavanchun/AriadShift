@@ -94,7 +94,143 @@ pub struct Metadata {
     pub date: Option<String>,
     pub subject: Option<String>,
     pub keywords: Vec<String>,
+    #[serde(
+        serialize_with = "serialize_source_format",
+        deserialize_with = "deserialize_source_format"
+    )]
+    #[schemars(schema_with = "source_format_schema")]
     pub source_format: Option<Format>,
+}
+
+/// A format supported by the core registry.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "Format")]
+pub enum IrFormat {
+    #[serde(rename = "markdown")]
+    Markdown,
+    #[serde(rename = "html")]
+    Html,
+    #[serde(rename = "docx")]
+    Docx,
+    #[serde(rename = "epub")]
+    Epub,
+    #[serde(rename = "pdf")]
+    Pdf,
+    #[serde(rename = "png")]
+    Png,
+    #[serde(rename = "ariad-ir+json")]
+    AriadIrJson,
+    #[serde(rename = "pandoc+json")]
+    PandocJson,
+    #[serde(rename = "docling+json")]
+    DoclingJson,
+    #[serde(rename = "pptx")]
+    Pptx,
+    #[serde(rename = "xlsx")]
+    Xlsx,
+    #[serde(rename = "odt")]
+    Odt,
+    #[serde(rename = "ods")]
+    Ods,
+    #[serde(rename = "odp")]
+    Odp,
+    #[serde(rename = "doc")]
+    Doc,
+    #[serde(rename = "xls")]
+    Xls,
+    #[serde(rename = "ppt")]
+    Ppt,
+    #[serde(rename = "rtf")]
+    Rtf,
+    #[serde(rename = "jpeg")]
+    Jpeg,
+    #[serde(rename = "webp")]
+    Webp,
+    #[serde(rename = "tiff")]
+    Tiff,
+}
+
+impl IrFormat {
+    #[must_use]
+    pub const fn from_format(format: Format) -> Option<Self> {
+        match format {
+            Format::Markdown => Some(Self::Markdown),
+            Format::Html => Some(Self::Html),
+            Format::Docx => Some(Self::Docx),
+            Format::Epub => Some(Self::Epub),
+            Format::Pdf => Some(Self::Pdf),
+            Format::Png => Some(Self::Png),
+            Format::AriadIrJson => Some(Self::AriadIrJson),
+            Format::PandocJson => Some(Self::PandocJson),
+            Format::DoclingJson => Some(Self::DoclingJson),
+            Format::Pptx => Some(Self::Pptx),
+            Format::Xlsx => Some(Self::Xlsx),
+            Format::Odt => Some(Self::Odt),
+            Format::Ods => Some(Self::Ods),
+            Format::Odp => Some(Self::Odp),
+            Format::Doc => Some(Self::Doc),
+            Format::Xls => Some(Self::Xls),
+            Format::Ppt => Some(Self::Ppt),
+            Format::Rtf => Some(Self::Rtf),
+            Format::Jpeg => Some(Self::Jpeg),
+            Format::Webp => Some(Self::Webp),
+            Format::Tiff => Some(Self::Tiff),
+            // Decision D1: IrFormat freezes the 21 format variants supported in ir.v1.
+            // Any format variant added after ir.v1 was released (such as Phase 10
+            // conversion parity formats or future variants) intentionally maps to
+            // None, serializing as null in JSON metadata to preserve ir.v1 schema stability.
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn to_format(self) -> Format {
+        match self {
+            Self::Markdown => Format::Markdown,
+            Self::Html => Format::Html,
+            Self::Docx => Format::Docx,
+            Self::Epub => Format::Epub,
+            Self::Pdf => Format::Pdf,
+            Self::Png => Format::Png,
+            Self::AriadIrJson => Format::AriadIrJson,
+            Self::PandocJson => Format::PandocJson,
+            Self::DoclingJson => Format::DoclingJson,
+            Self::Pptx => Format::Pptx,
+            Self::Xlsx => Format::Xlsx,
+            Self::Odt => Format::Odt,
+            Self::Ods => Format::Ods,
+            Self::Odp => Format::Odp,
+            Self::Doc => Format::Doc,
+            Self::Xls => Format::Xls,
+            Self::Ppt => Format::Ppt,
+            Self::Rtf => Format::Rtf,
+            Self::Jpeg => Format::Jpeg,
+            Self::Webp => Format::Webp,
+            Self::Tiff => Format::Tiff,
+        }
+    }
+}
+
+fn serialize_source_format<S>(value: &Option<Format>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        Some(format) => IrFormat::from_format(*format).serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_source_format<'de, D>(deserializer: D) -> Result<Option<Format>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let frozen: Option<IrFormat> = Option::deserialize(deserializer)?;
+    Ok(frozen.map(IrFormat::to_format))
+}
+
+fn source_format_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    generator.subschema_for::<Option<IrFormat>>()
 }
 
 /// The document's semantic content.
@@ -453,5 +589,130 @@ mod tests {
         assert!(table_footnotes_json.contains("\"footnotes\""));
         let roundtrip_table: Block = serde_json::from_str(&table_footnotes_json).unwrap();
         assert_eq!(roundtrip_table, table_with_footnotes);
+    }
+
+    #[test]
+    fn ir_format_freezes_v1_and_serializes_new_variants_as_null() {
+        use super::{IrFormat, Metadata};
+        use crate::format::Format;
+
+        let new_formats = [
+            Format::Txt,
+            Format::Csv,
+            Format::Eml,
+            Format::Msg,
+            Format::Svg,
+            Format::Cbz,
+            Format::Odg,
+            Format::Wpd,
+            Format::Wps,
+            Format::Pub,
+            Format::Vsd,
+        ];
+
+        for &fmt in &new_formats {
+            assert_eq!(
+                IrFormat::from_format(fmt),
+                None,
+                "{fmt:?} must not be in frozen IrFormat"
+            );
+
+            let meta = Metadata {
+                source_format: Some(fmt),
+                ..Default::default()
+            };
+            let json = serde_json::to_string(&meta).unwrap();
+            assert!(
+                json.contains("\"source_format\":null"),
+                "new format {fmt:?} must serialize as null in IR metadata, got: {json}"
+            );
+
+            let roundtripped: Metadata = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                roundtripped.source_format, None,
+                "null source_format must deserialize to None"
+            );
+        }
+    }
+
+    #[test]
+    fn ir_format_all_21_old_variants_roundtrip_identically() {
+        use super::{IrFormat, Metadata};
+        use crate::format::Format;
+
+        let old_formats = [
+            Format::Markdown,
+            Format::Html,
+            Format::Docx,
+            Format::Epub,
+            Format::Pdf,
+            Format::Png,
+            Format::AriadIrJson,
+            Format::PandocJson,
+            Format::DoclingJson,
+            Format::Pptx,
+            Format::Xlsx,
+            Format::Odt,
+            Format::Ods,
+            Format::Odp,
+            Format::Doc,
+            Format::Xls,
+            Format::Ppt,
+            Format::Rtf,
+            Format::Jpeg,
+            Format::Webp,
+            Format::Tiff,
+        ];
+
+        assert_eq!(old_formats.len(), 21);
+
+        for &fmt in &old_formats {
+            let ir_fmt = IrFormat::from_format(fmt)
+                .unwrap_or_else(|| panic!("{fmt:?} must be present in IrFormat"));
+            assert_eq!(ir_fmt.to_format(), fmt);
+
+            // Serde names must match Format serde representation
+            let ir_json = serde_json::to_string(&ir_fmt).unwrap();
+            let fmt_json = serde_json::to_string(&fmt).unwrap();
+            assert_eq!(
+                ir_json, fmt_json,
+                "IrFormat serde string must match Format serde string for {fmt:?}"
+            );
+
+            let meta = Metadata {
+                source_format: Some(fmt),
+                ..Default::default()
+            };
+            let json = serde_json::to_string(&meta).unwrap();
+            let roundtripped: Metadata = serde_json::from_str(&json).unwrap();
+            assert_eq!(roundtripped.source_format, Some(fmt));
+        }
+    }
+
+    #[test]
+    fn ir_v1_json_deserializes_with_and_without_source_format() {
+        use super::Document;
+        use crate::format::Format;
+
+        // 1. With valid old source_format
+        let json_with_format = r#"{"version":"ariad-ir/1","meta":{"source_format":"markdown"}}"#;
+        let doc: Document = serde_json::from_str(json_with_format).unwrap();
+        assert_eq!(doc.meta.source_format, Some(Format::Markdown));
+
+        // 2. With explicit null source_format
+        let json_with_null = r#"{"version":"ariad-ir/1","meta":{"source_format":null}}"#;
+        let doc_null: Document = serde_json::from_str(json_with_null).unwrap();
+        assert_eq!(doc_null.meta.source_format, None);
+
+        // 3. Without source_format field (omitted)
+        let json_omitted = r#"{"version":"ariad-ir/1","meta":{"title":"Test"}}"#;
+        let doc_omitted: Document = serde_json::from_str(json_omitted).unwrap();
+        assert_eq!(doc_omitted.meta.source_format, None);
+        assert_eq!(doc_omitted.meta.title.as_deref(), Some("Test"));
+
+        // 4. Empty document JSON
+        let json_empty = r#"{"version":"ariad-ir/1"}"#;
+        let doc_empty: Document = serde_json::from_str(json_empty).unwrap();
+        assert_eq!(doc_empty.meta.source_format, None);
     }
 }

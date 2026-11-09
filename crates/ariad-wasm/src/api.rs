@@ -282,6 +282,25 @@ pub fn convert(
     limits.validate().map_err(PipelineError::from)?;
 
     let route = plan_route(from, to, profile)?;
+    if route.steps.len() == 1
+        && route.steps[0].engine == "ariad-pdf"
+        && from == Format::Cbz
+        && to == Format::Pdf
+    {
+        let tool_ctx = ariad_pdf::ToolCtx::default();
+        let pdf_bytes = ariad_pdf::cbz::cbz_to_pdf(bytes, &limits, &tool_ctx)
+            .map_err(|err| ApiError::new("failed", err.to_string()))?;
+        return Ok(Conversion {
+            bytes: pdf_bytes,
+            meta: ConversionMeta {
+                format: to,
+                media_type: to.media_type(),
+                extension: output_extension(to),
+                route: route.steps,
+                warnings: Vec::new(),
+            },
+        });
+    }
     let converted = pipeline::execute(
         bytes,
         &route
@@ -309,6 +328,29 @@ pub fn convert(
             route: route.steps,
             warnings: converted.warnings,
         },
+    })
+}
+
+/// Stamps timestamps on package formats (`"docx"`, `"odt"`, `"epub"`).
+pub fn stamp_package(bytes: &[u8], target: &str, timestamp: &str) -> Result<Vec<u8>, ApiError> {
+    let kind = match target {
+        "docx" => ariad_core::package_meta::PackageKind::Docx,
+        "odt" => ariad_core::package_meta::PackageKind::Odt,
+        "epub" => ariad_core::package_meta::PackageKind::Epub,
+        unknown => {
+            return Err(ApiError::from(
+                ariad_core::pipeline::PipelineError::InvalidInput {
+                    reason: format!(
+                        "unknown package target `{unknown}`; expected docx, odt, or epub"
+                    ),
+                },
+            ));
+        }
+    };
+    ariad_core::package_meta::stamp_bytes_kind(bytes, kind, timestamp).map_err(|e| {
+        ApiError::from(ariad_core::pipeline::PipelineError::InvalidInput {
+            reason: e.to_string(),
+        })
     })
 }
 
@@ -1089,11 +1131,15 @@ mod tests {
             error.detail("reachable_elsewhere"),
             Some(&serde_json::json!([
                 "ariad-ir+json",
+                "csv",
                 "docx",
                 "epub",
                 "html",
                 "markdown",
-                "pdf"
+                "pdf",
+                "rtf",
+                "txt",
+                "xlsx"
             ]))
         );
         assert!(
@@ -1187,10 +1233,15 @@ mod tests {
             inspection.reachable,
             vec![
                 Format::AriadIrJson,
+                Format::Csv,
                 Format::Docx,
                 Format::Epub,
                 Format::Markdown,
-                Format::Pdf
+                Format::Odt,
+                Format::Pdf,
+                Format::Rtf,
+                Format::Txt,
+                Format::Xlsx,
             ]
         );
     }
@@ -1910,5 +1961,103 @@ mod tests {
         assert_eq!(img_pdf.media_type, "application/pdf");
         assert_eq!(img_pdf.extension, "pdf");
         assert!(img_pdf.bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn stamp_package_stamps_odt_successfully() {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored_options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        let deflated_options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        writer.start_file("mimetype", stored_options).unwrap();
+        std::io::Write::write_all(&mut writer, b"application/vnd.oasis.opendocument.text").unwrap();
+        writer.start_file("meta.xml", deflated_options).unwrap();
+        std::io::Write::write_all(
+            &mut writer,
+            br#"<?xml version="1.0" encoding="utf-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <office:meta>
+    <meta:creation-date>2000-01-01T00:00:00Z</meta:creation-date>
+    <dc:date>2000-01-01T00:00:00Z</dc:date>
+  </office:meta>
+</office:document-meta>"#,
+        )
+        .unwrap();
+        writer.start_file("content.xml", deflated_options).unwrap();
+        std::io::Write::write_all(&mut writer, b"<content>preserved</content>").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        let result = stamp_package(&bytes, "odt", "2023-11-14T22:13:20Z").unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(result)).unwrap();
+        let mut meta = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("meta.xml").unwrap(), &mut meta)
+            .unwrap();
+        assert!(meta.contains("<meta:creation-date>2023-11-14T22:13:20Z</meta:creation-date>"));
+        assert!(meta.contains("<dc:date>2023-11-14T22:13:20Z</dc:date>"));
+    }
+
+    #[test]
+    fn stamp_package_rejects_unknown_target() {
+        let err = stamp_package(b"dummy", "unknown", "2023-11-14T22:13:20Z").unwrap_err();
+        assert_eq!(err.code(), "invalid_input");
+        assert!(
+            err.detail("message")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("unknown package target")
+        );
+    }
+
+    #[test]
+    fn run_tool_pdf_compare_text_succeeds_in_wasm_and_visual_fails_early() {
+        let before = read_pdf_fixture("compare-before.pdf");
+        let after = read_pdf_fixture("compare-after.pdf");
+        let budget = 64 * 1024 * 1024;
+
+        // 1. Text mode runs in-process in WASM and produces report JSON
+        let res = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"text"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.compare text must succeed in wasm");
+        assert_eq!(res.format, "json");
+        assert_eq!(res.media_type, "application/json");
+        assert!(res.json().is_some());
+
+        // 2. Visual mode in WASM fails early with engine_unavailable ("pdfium", exit 5)
+        let visual_err = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"visual"}"#,
+            budget,
+            false,
+        )
+        .expect_err("pdf.compare visual must fail on wasm");
+        assert_eq!(visual_err.code(), "engine_unavailable");
+        assert_eq!(
+            visual_err.detail("engine"),
+            Some(&serde_json::json!("pdfium"))
+        );
+        assert_eq!(visual_err.detail("exit_code"), Some(&serde_json::json!(5)));
+
+        // 3. Both mode in WASM also fails early with engine_unavailable ("pdfium", exit 5)
+        let both_err = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"both"}"#,
+            budget,
+            false,
+        )
+        .expect_err("pdf.compare both must fail on wasm");
+        assert_eq!(both_err.code(), "engine_unavailable");
     }
 }

@@ -14,6 +14,7 @@ pub mod background;
 pub mod bates;
 pub mod booklet;
 pub mod common;
+pub mod compare;
 pub mod compress;
 pub mod crop;
 pub mod crop_whitespace;
@@ -48,6 +49,7 @@ pub mod overlay_common;
 pub mod overlay_marks_common;
 pub mod page_labels;
 pub mod page_numbers;
+pub mod pdfa;
 pub mod permissions;
 pub mod portfolio;
 pub mod posterize;
@@ -69,14 +71,17 @@ pub mod sign;
 pub mod single_page;
 pub mod split;
 pub mod stamp;
+pub mod tables_to_csv;
 pub mod text_layout;
 pub mod thumbnails;
+pub mod to_cbz;
 pub mod toc_page;
 pub mod unlock_forms;
 pub mod viewer_prefs;
 pub mod watermark;
 pub mod watermark_detect;
 pub mod watermark_remove;
+pub mod web_to_pdf;
 
 use schemars::{JsonSchema, Schema, generate::SchemaSettings};
 
@@ -90,6 +95,7 @@ pub use background::BackgroundParams;
 pub use bates::BatesParams;
 pub use booklet::{BookletBinding, BookletParams};
 pub use common::{CustomPaperSize, GridOrder, MarginSides, Margins, PaperSize, StandardPaper};
+pub use compare::{CompareMode, CompareParams};
 pub use compress::{CompressParams, CompressPreset};
 pub use crop::{CropAutoMode, CropBoxSpec, CropParams, CropRect, CropTarget};
 pub use crop_whitespace::CropWhitespaceParams;
@@ -121,6 +127,10 @@ pub use overlay::{OverlayPagesMode, OverlayParams, OverlayPosition};
 pub use overlay_common::{Anchor, DateFormat, FontFace, HexColor, Opacity};
 pub use page_labels::{PageLabelRange, PageLabelStyle, PageLabelsParams};
 pub use page_numbers::PageNumbersParams;
+pub use pdfa::{
+    AccessibilityReportParams, PdfaLevel, ToPdfUaParams, ToPdfaParams, ValidatePdfUaParams,
+    ValidatePdfaParams,
+};
 pub use permissions::{PdfPermissions, PermissionsParams};
 pub use portfolio::{PortfolioAction, PortfolioParams, PortfolioView};
 pub use posterize::{PosterizeParams, PosterizeTiles};
@@ -152,14 +162,17 @@ pub use sign::{
 pub use single_page::SinglePageParams;
 pub use split::{SplitDetectMode, SplitMode, SplitParams};
 pub use stamp::{StampParams, StampPreset};
+pub use tables_to_csv::TablesToCsvParams;
 pub use text_layout::TextLayoutParams;
 pub use thumbnails::ThumbnailsParams;
+pub use to_cbz::{ImageFormat, ToCbzParams};
 pub use toc_page::{SamePage, TocPageParams, TocPageSize};
 pub use unlock_forms::UnlockFormsParams;
 pub use viewer_prefs::{ViewerPageLayout, ViewerPageMode, ViewerPrefsParams};
 pub use watermark::{AutoSize, WatermarkFontSize, WatermarkKind, WatermarkLayout, WatermarkParams};
 pub use watermark_detect::WatermarkDetectParams;
 pub use watermark_remove::WatermarkRemoveParams;
+pub use web_to_pdf::WebToPdfParams;
 
 /// A parameter value that the JSON schema alone cannot reject, reported without any document
 /// content so it is safe to relay as an engine failure message.

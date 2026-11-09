@@ -1,6 +1,6 @@
 ---
 source: crates/ariad-cli/tests/commands_cli.rs
-assertion_line: 714
+assertion_line: 729
 expression: normalize_doctor_human_stdout(&output)
 ---
 ✓ Pandoc [VERSION] found in >= 3.12, < 4 at [PANDOC_PATH]
@@ -20,3 +20,5 @@ expression: normalize_doctor_human_stdout(&output)
   hint: run 'ashift engines install qpdf' to install the qpdf engine pack
 ✗ tesseract engine cannot be used: tool_missing: engine pack 'tesseract' is not installed; run 'ashift engines install tesseract' to install the tesseract engine pack
   hint: run 'ashift engines install tesseract' to install the tesseract engine pack
+✗ verapdf engine cannot be used: tool_missing: engine pack 'verapdf' is not installed; run 'ashift engines install verapdf' to install the verapdf engine pack
+  hint: run 'ashift engines install verapdf' to install the verapdf engine pack

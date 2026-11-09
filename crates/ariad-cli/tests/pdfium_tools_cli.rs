@@ -42,6 +42,7 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
         ("pdf.remove_blank", &[][..]),
         ("pdf.crop_whitespace", &[][..]),
         ("pdf.detect_scanned", &[][..]),
+        ("pdf.to_cbz", &[][..]),
         (
             "pdf.split",
             &["--param", "mode=blank-separator", "--param", "detect=pixel"][..],
@@ -87,7 +88,53 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
         );
     }
 
-    // By contrast, pdf.split with detect=content and image.to_pdf run in-process without the pack.
+    // pdf.compare with mode=visual requires pdfium and must exit 5 when absent.
+    let compare_fail = ashift_cmd()
+        .env("ASHIFT_DATA_DIR", &empty_data)
+        .env_remove("ASHIFT_PACK_PDFIUM")
+        .env_remove("ARIAD_TEST_PDFIUM_DIR")
+        .args([
+            "tool",
+            "pdf.compare",
+            pdf_fixture.to_str().unwrap(),
+            pdf_fixture.to_str().unwrap(),
+            "--param",
+            "mode=visual",
+        ])
+        .output()
+        .expect("run pdf.compare visual");
+    assert_eq!(
+        compare_fail.status.code(),
+        Some(5),
+        "pdf.compare mode=visual without pdfium pack must exit with code 5; stderr: {}",
+        String::from_utf8_lossy(&compare_fail.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&compare_fail.stderr);
+    assert!(
+        stderr.contains("pdfium") && stderr.contains("ashift engines install pdfium"),
+        "pdf.compare mode=visual stderr must name pdfium and its install hint, got: {stderr}"
+    );
+
+    // By contrast, pdf.compare with mode=text, pdf.split with detect=content and image.to_pdf run in-process without the pack.
+    let compare_ok = ashift_cmd()
+        .env("ASHIFT_DATA_DIR", &empty_data)
+        .env_remove("ASHIFT_PACK_PDFIUM")
+        .args([
+            "tool",
+            "pdf.compare",
+            pdf_fixture.to_str().unwrap(),
+            pdf_fixture.to_str().unwrap(),
+            "--param",
+            "mode=text",
+            "--json",
+        ])
+        .output()
+        .expect("run pdf.compare text");
+    assert!(
+        compare_ok.status.success(),
+        "pdf.compare mode=text must succeed without pdfium pack: {}",
+        String::from_utf8_lossy(&compare_ok.stderr)
+    );
     let split_content_out = temp.path().join("split-content");
     fs::create_dir_all(&split_content_out).unwrap();
     let split_ok = ashift_cmd()
@@ -140,6 +187,7 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
 #[test]
 fn cli_runs_every_pdfium_tool_end_to_end_when_pack_is_configured() {
     let Some(pack_dir) = pdfium_pack_dir() else {
+        eprintln!("skipping: PDFium pack not configured (set ASHIFT_PACK_PDFIUM)");
         return;
     };
 
@@ -384,4 +432,74 @@ fn cli_runs_every_pdfium_tool_end_to_end_when_pack_is_configured() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(cropped_path.is_file());
+
+    // 10. pdf.to_cbz
+    let info_out = ashift_cmd()
+        .args(["tool", "pdf.info", blank_sep.to_str().unwrap(), "--json"])
+        .output()
+        .expect("run pdf.info");
+    assert!(info_out.status.success());
+    let info_json: Value = serde_json::from_slice(&info_out.stdout).unwrap();
+    let pdf_page_count = info_json["page_count"].as_u64().expect("page_count field") as usize;
+    assert_eq!(pdf_page_count, 6);
+
+    let cbz_path = temp.path().join("output.cbz");
+    let out = ashift_cmd()
+        .env("ASHIFT_PACK_PDFIUM", &pack_dir)
+        .args([
+            "tool",
+            "pdf.to_cbz",
+            blank_sep.to_str().unwrap(),
+            "-o",
+            cbz_path.to_str().unwrap(),
+            "--param",
+            "dpi=72",
+            "--json",
+        ])
+        .output()
+        .expect("run pdf.to_cbz");
+    assert!(
+        out.status.success(),
+        "pdf.to_cbz failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(cbz_path.is_file());
+    let file = fs::File::open(&cbz_path).unwrap();
+    let mut zip = zip::ZipArchive::new(file).unwrap();
+    assert_eq!(
+        zip.len(),
+        pdf_page_count,
+        "CBZ page count must match PDF page count"
+    );
+
+    let mut entry_names = Vec::new();
+    let mut total_decompressed_bytes = 0u64;
+    for i in 0..zip.len() {
+        let entry = zip.by_index(i).unwrap();
+        let name = entry.name().unwrap().to_string();
+        entry_names.push(name.clone());
+
+        let size = entry.size();
+        assert!(size > 0, "entry size must be greater than zero");
+        assert!(
+            size < 2 * 1024 * 1024,
+            "entry size must be bounded (< 2 MB for 72 dpi blank page)"
+        );
+        total_decompressed_bytes += size;
+    }
+
+    let expected_names: Vec<String> = (1..=pdf_page_count)
+        .map(|i| format!("page-{i:03}.png"))
+        .collect();
+    assert_eq!(
+        entry_names, expected_names,
+        "archive entries must follow natural order matching page numbers"
+    );
+
+    let cbz_file_size = fs::metadata(&cbz_path).unwrap().len();
+    assert!(cbz_file_size > 0, "output CBZ file size must be non-zero");
+    assert!(
+        cbz_file_size <= total_decompressed_bytes + 4096,
+        "output CBZ size must be bounded by decompressed entries plus ZIP header overhead"
+    );
 }

@@ -22,8 +22,7 @@
       "type": "array",
       "items": {
         "type": "string"
-      },
-      "minItems": 1
+      }
     },
     "inputs": {
       "description": "Required input file count.",
@@ -9177,6 +9176,451 @@
       "summary": "Remove digital signatures from a PDF document.",
       "tier": "free",
       "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "pdf.tables_to_csv",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "csv",
+      "output_formats": [
+        "csv"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TablesToCsvParams",
+        "description": "Parameters for `pdf.tables_to_csv`.\n\n`pdf.tables_to_csv` extracts every table in the input PDF into its own CSV file.\nIt takes no mandatory parameters (`{}`) and rejects unknown fields.",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Extract tables from a PDF document to individual CSV files.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "pdf.to_cbz",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "cbz",
+      "output_formats": [
+        "cbz"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ToCbzParams",
+        "description": "Parameters for `pdf.to_cbz`.",
+        "type": "object",
+        "properties": {
+          "dpi": {
+            "description": "Render resolution in dots per inch (default: 150.0).",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "format": {
+            "description": "Image format for the rendered pages (default: PNG).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ImageFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pages": {
+            "description": "Pages to include (default: all pages).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PageRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quality": {
+            "description": "Encoder quality for lossy formats (1-100).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "ImageFormat": {
+            "description": "Image format for rendering CBZ pages.",
+            "oneOf": [
+              {
+                "description": "Lossless PNG (default).",
+                "type": "string",
+                "const": "png"
+              },
+              {
+                "description": "JPEG.",
+                "type": "string",
+                "const": "jpeg"
+              },
+              {
+                "description": "WebP.",
+                "type": "string",
+                "const": "webp"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Convert PDF pages into a comic book archive (CBZ).",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "compare",
+      "id": "pdf.compare",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 2,
+        "min": 2
+      },
+      "output_format": "json",
+      "output_formats": [
+        "json",
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CompareParams",
+        "description": "Parameters for `pdf.compare`.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "Comparison mode: \"text\", \"visual\", or \"both\" (default: \"text\").",
+            "$ref": "#/$defs/CompareMode",
+            "default": "text"
+          },
+          "pages": {
+            "description": "Optional page selection to compare (e.g. \"1-5\", \"odd\", \"1,3\").\nWhen omitted, all pages are compared.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PageRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "CompareMode": {
+            "description": "Comparison mode for `pdf.compare`.",
+            "oneOf": [
+              {
+                "description": "Semantic text diff over reading-order text per page (WASM-capable).",
+                "type": "string",
+                "const": "text"
+              },
+              {
+                "description": "Rasterized pixel difference with connected bounding box grouping (Local only).",
+                "type": "string",
+                "const": "visual"
+              },
+              {
+                "description": "Run both text and visual comparisons.",
+                "type": "string",
+                "const": "both"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Compare two PDF documents semantically or visually with annotated difference report.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "pdf.to_pdfa",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf",
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ToPdfaParams",
+        "description": "Parameters for `pdf.to_pdfa`.",
+        "type": "object",
+        "properties": {
+          "level": {
+            "description": "Target PDF/A conformance level (\"2b\", \"3b\", or \"2u\"). Defaults to \"2b\".",
+            "$ref": "#/$defs/PdfaLevel",
+            "default": "2b"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PdfaLevel": {
+            "description": "PDF/A target conformance level.",
+            "oneOf": [
+              {
+                "description": "PDF/A-2b: Visual conformance without tagging or Unicode requirement.",
+                "type": "string",
+                "const": "2b"
+              },
+              {
+                "description": "PDF/A-3b: Visual conformance allowing embedded files.",
+                "type": "string",
+                "const": "3b"
+              },
+              {
+                "description": "PDF/A-2u: Visual conformance with Unicode mappings for all characters.",
+                "type": "string",
+                "const": "2u"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Convert a PDF to PDF/A-2b, PDF/A-3b, or PDF/A-2u with mandatory veraPDF verification.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "pdf.to_pdfua",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf",
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ToPdfUaParams",
+        "description": "Parameters for `pdf.to_pdfua`.",
+        "type": "object",
+        "properties": {
+          "flavour": {
+            "description": "Target PDF/UA conformance level (\"1\"). Defaults to \"1\".",
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^1$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Verify and convert a PDF to PDF/UA-1 with accessibility inspection and veraPDF verification.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "compare",
+      "id": "pdf.accessibility_report",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "output_formats": [
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AccessibilityReportParams",
+        "description": "Parameters for `pdf.accessibility_report`.",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Inspect a PDF for PDF/UA-1 accessibility requirements and output a structured JSON report.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "verapdf",
+      "group": "compare",
+      "id": "pdf.validate_pdfa",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ValidatePdfaParams",
+        "description": "Parameters for `pdf.validate_pdfa`.",
+        "type": "object",
+        "properties": {
+          "flavour": {
+            "description": "PDF/A flavour to validate against (e.g., \"1a\", \"1b\", \"2a\", \"2b\", \"2u\", \"3a\", \"3b\", \"3u\", \"4\", \"4f\", \"4e\").\nIf omitted or null, the flavour is auto-detected from document metadata.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Validate a PDF document against PDF/A profiles using veraPDF.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "verapdf",
+      "group": "compare",
+      "id": "pdf.validate_pdfua",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ValidatePdfUaParams",
+        "description": "Parameters for `pdf.validate_pdfua`.",
+        "type": "object",
+        "properties": {
+          "flavour": {
+            "description": "PDF/UA flavour to validate against (e.g., \"1\", \"2\", \"ua1\", \"ua2\").\nDefaults to \"1\" (PDF/UA-1) if omitted or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Validate a PDF document against PDF/UA accessibility profiles using veraPDF.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "web.to_pdf",
+      "input_formats": [],
+      "inputs": {
+        "arity": "none"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "WebToPdfParams",
+        "description": "Parameters for `web.to_pdf`.\n\nConverts a remote web page into a PDF document via host-side SSRF-safe fetching\nfollowed by offline HTML -> IR -> Typst rendering.",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "Optional document title override. If omitted, the HTML title is used.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "Remote web page URL to convert. Must be a valid HTTPS URL.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "url"
+        ]
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Fetch a web page securely and convert it offline to PDF.",
+      "tier": "free",
+      "version": "1"
     }
   ],
   "x-status": "draft",
@@ -9184,6 +9628,19 @@
     "InputArity": {
       "description": "Required input file count for a tool (`docs/tools.md` §3).",
       "oneOf": [
+        {
+          "description": "Zero input files (tool operates purely via parameters or remote sources).",
+          "type": "object",
+          "properties": {
+            "arity": {
+              "type": "string",
+              "const": "none"
+            }
+          },
+          "required": [
+            "arity"
+          ]
+        },
         {
           "description": "Exactly 1 input file is required.",
           "type": "object",

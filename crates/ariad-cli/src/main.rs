@@ -135,6 +135,9 @@ struct ConvertArgs {
     /// Choose the engine that reads the input (for example pdf or docling).
     #[arg(long, value_name = "ENGINE")]
     engine: Option<String>,
+    /// PDF standard conformance (a-2b, a-2u, a-3b, ua-1).
+    #[arg(long = "pdf-standard", value_name = "STANDARD", value_parser = ["a-2b", "a-2u", "a-3b", "ua-1"])]
+    pdf_standard: Option<String>,
 }
 
 /// Hidden command to convert an input document to AriadShift IR.
@@ -363,7 +366,7 @@ struct ToolArgs {
     #[arg(value_name = "ID")]
     tool: String,
     /// Input document file paths.
-    #[arg(value_name = "INPUT", required = true, num_args = 1..)]
+    #[arg(value_name = "INPUT", num_args = 0..)]
     inputs: Vec<PathBuf>,
     /// Output file or directory path.
     #[arg(short = 'o', long = "output", value_name = "DIR_OR_FILE")]
@@ -670,6 +673,7 @@ fn run_convert(mut args: ConvertArgs) -> ExitCode {
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: args.engine.clone(),
+        pdf_standard: args.pdf_standard,
     };
 
     run_blocking(

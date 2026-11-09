@@ -343,14 +343,15 @@ pub fn write_pandoc(bytes: &[u8], title: Option<String>) -> Result<JsValue, JsVa
 
 /// Stamps only package dates; Pandoc stays a separate aggregated module.
 #[wasm_bindgen(js_name = stampPackage)]
-pub fn stamp_package(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>, JsValue> {
-    ariad_core::package_meta::stamp_bytes(bytes, epub, timestamp).map_err(|e| {
-        to_js_error(&api::ApiError::from(
+pub fn stamp_package(bytes: &[u8], target: &JsValue, timestamp: &str) -> Result<Vec<u8>, JsValue> {
+    let Some(s) = target.as_string() else {
+        return Err(to_js_error(&api::ApiError::from(
             ariad_core::pipeline::PipelineError::InvalidInput {
-                reason: e.to_string(),
+                reason: "package target must be a string ('docx', 'odt', or 'epub')".to_string(),
             },
-        ))
-    })
+        )));
+    };
+    api::stamp_package(bytes, &s, timestamp).map_err(|e| to_js_error(&e))
 }
 
 /// Lists every registered document tool whose supported runtimes include `wasm`.

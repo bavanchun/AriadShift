@@ -354,11 +354,22 @@ pub fn run_tool(
     if tool_id == "pdf.info" {
         return run_pdf_info(inputs, params, ctx);
     }
+    if tool_id == "pdf.accessibility_report" {
+        return run_pdf_accessibility_report(inputs, params, ctx);
+    }
     if tool_id == "image.to_pdf" {
         return run_image_to_pdf(inputs, params, ctx);
     }
 
     match tool_id {
+        #[cfg(feature = "codecs")]
+        "pdf.compare" => {
+            let parsed_params: ariad_core::tools::params::CompareParams =
+                serde_json::from_value(params.clone())
+                    .map_err(|err| PdfError::InvalidParams(err.to_string()))?;
+            parsed_params.validate().map_err(PdfError::InvalidParams)?;
+            crate::compare::run_inputs(inputs, &parsed_params, ctx)
+        }
         #[cfg(feature = "codecs")]
         "pdf.annotations" => dispatch_structural_inputs::<
             ariad_core::tools::params::annotations::AnnotationsParams,
@@ -748,6 +759,44 @@ fn run_pdf_info(
             bytes: json_bytes,
         }],
         warnings,
+        coded_warnings: Vec::new(),
+        metrics: BTreeMap::new(),
+        json: Some(json_val),
+    })
+}
+
+fn run_pdf_accessibility_report(
+    inputs: &[InputDoc],
+    _params: &Value,
+    ctx: &ToolCtx,
+) -> Result<ToolOutput, PdfError> {
+    let Some(first) = inputs.first() else {
+        return Err(PdfError::InvalidParams(
+            "pdf.accessibility_report requires exactly 1 input document".to_owned(),
+        ));
+    };
+    if inputs.len() != 1 {
+        return Err(PdfError::InvalidParams(format!(
+            "pdf.accessibility_report requires exactly 1 input document, got {}",
+            inputs.len()
+        )));
+    }
+
+    let doc = first.open_for_info(ctx)?;
+    let report = crate::pdfa::inspect_accessibility(doc.inner())?;
+    let json_val =
+        serde_json::to_value(&report).map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    let json_bytes =
+        serde_json::to_vec(&json_val).map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    let name = naming::single_output_name(&first.stem, "accessibility-report", "json");
+
+    Ok(ToolOutput {
+        artifacts: vec![OutputArtifact {
+            name,
+            format: "json".to_owned(),
+            bytes: json_bytes,
+        }],
+        warnings: Vec::new(),
         coded_warnings: Vec::new(),
         metrics: BTreeMap::new(),
         json: Some(json_val),

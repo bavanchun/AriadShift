@@ -40,11 +40,11 @@ AriadShift today converts documents (36 routes, shared IR, CLI/MCP/web/desktop/c
 | 3 | [Structural PDF tools (25 tools, wasm)](./phase-03-structural-pdf-tools.md) | A → 0.3.0 | 2 | Completed |
 | 4 | [PDFium engine: render, images, text](./phase-04-pdfium-engine-render-and-images.md) | B | 2 | Completed |
 | 5 | [Optimize and security (compress, qpdf, sanitize)](./phase-05-optimize-and-security.md) | B | 3, 4 | Completed |
-| 6 | [Overlays and watermarks (add + remove L1)](./phase-06-overlays-and-watermarks.md) | B | 3, 4 | Pending |
-| 7 | [OCR and scan tools](./phase-07-ocr-and-scan-tools.md) | B | 4 | Pending |
-| 8 | [Annotations and forms](./phase-08-annotations-and-forms.md) | B | 4 | Pending |
-| 9 | [Redaction and signatures](./phase-09-redaction-and-signatures.md) | B | 4, 5 | Pending |
-| 10 | [Conversion parity, PDF/A-UA, compare](./phase-10-conversion-parity-compliance-compare.md) | B → 0.4.0 (with 14) | 4, 7 | Pending |
+| 6 | [Overlays and watermarks (add + remove L1)](./phase-06-overlays-and-watermarks.md) | B | 3, 4 | Completed |
+| 7 | [OCR and scan tools](./phase-07-ocr-and-scan-tools.md) | B | 4 | Completed |
+| 8 | [Annotations and forms](./phase-08-annotations-and-forms.md) | B | 4 | Completed |
+| 9 | [Redaction and signatures](./phase-09-redaction-and-signatures.md) | B | 4, 5 | Completed |
+| 10 | [Conversion parity, PDF/A-UA, compare](./phase-10-conversion-parity-compliance-compare.md) | B → 0.4.0 (with 14) | 4, 7 | Completed |
 | 11 | [IR styles (`ariad-ir/2`) + fidelity score](./phase-11-ir-styles-and-fidelity-score.md) | C | 10 | Pending |
 | 12 | [Edit engine: Document + Page mode](./phase-12-document-and-page-edit-engine.md) | C | 11, 8 | Pending |
 | 13 | [Automation, recipes, offline AI, cloud tool jobs, watermark L2](./phase-13-automation-recipes-and-ai.md) | C → 0.5.0 (with 15) | 12, 6, 7 | Pending |
