@@ -529,7 +529,7 @@ fn maps_footnotes_to_blocks_and_footnote_refs() {
 }
 
 #[test]
-fn degrades_underline_smallcaps_and_cite_with_warnings() {
+fn retains_underline_and_small_caps_and_warns_for_citations() {
     let doc = Pandoc {
         pandoc_api_version: vec![1, 23, 1, 2],
         meta: BTreeMap::new(),
@@ -553,7 +553,7 @@ fn degrades_underline_smallcaps_and_cite_with_warnings() {
     };
 
     let out = to_ir(&doc, &Limits::local()).unwrap();
-    assert_eq!(out.warnings.len(), 3);
+    assert_eq!(out.warnings.len(), 1);
     assert!(
         out.warnings
             .iter()
@@ -567,13 +567,31 @@ fn degrades_underline_smallcaps_and_cite_with_warnings() {
             style: None,
             direct: Default::default(),
             content: vec![
-                IrInline::Emph {
+                IrInline::Styled {
+                    style: None,
+                    direct: ariad_core::ir::CharacterStyle {
+                        underline: Some(true),
+                        ..Default::default()
+                    },
                     content: vec![IrInline::Text {
                         text: "underlined".to_owned(),
                     }],
                 },
                 IrInline::Text {
-                    text: " small caps [@ref]".to_owned(),
+                    text: " ".to_owned(),
+                },
+                IrInline::Styled {
+                    style: None,
+                    direct: ariad_core::ir::CharacterStyle {
+                        small_caps: Some(true),
+                        ..Default::default()
+                    },
+                    content: vec![IrInline::Text {
+                        text: "small caps".to_owned(),
+                    }],
+                },
+                IrInline::Text {
+                    text: " [@ref]".to_owned(),
                 },
             ],
         }],

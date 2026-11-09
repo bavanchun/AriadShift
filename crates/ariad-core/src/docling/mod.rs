@@ -18,8 +18,8 @@ use thiserror::Error;
 use crate::{
     format::Format,
     ir::{
-        Alignment, Asset, AssetRef, Block, BlockPosition, BoundingBox, ColumnSpec, Document,
-        Inline, LayoutIndex, ListItem, PageGeometry, TableCell,
+        Alignment, Asset, AssetRef, Block, BlockPosition, BoundingBox, CharacterStyle, ColumnSpec,
+        Document, Inline, LayoutIndex, ListItem, PageGeometry, TableCell,
     },
     json_depth::{JsonDepthError, json_depth_budget_for_nesting, prescan_json_depth},
     limits::{Limits, LimitsError},
@@ -120,6 +120,14 @@ pub fn to_ir(document: &DoclingDocument, limits: &Limits) -> Result<ReadOutput, 
         ir.layout = Some(layout);
     }
     ir.assets = std::mem::take(&mut mapper.assets);
+    if crate::reader::html::ir_blocks_depth(&ir.body)
+        .max(crate::reader::html::ir_blocks_depth(&ir.furniture))
+        > limits.max_nesting_depth
+    {
+        return Err(ReadError::NestingTooDeep {
+            limit: limits.max_nesting_depth,
+        });
+    }
 
     Ok(ReadOutput {
         document: (ir).finalize_import(),
@@ -811,15 +819,17 @@ impl<'a> Mapper<'a> {
         self.charge(value.len())?;
         let mut inline = Inline::Text { text: value };
         if let Some(formatting) = &text.formatting {
-            if formatting.underline && !(formatting.bold || formatting.italic) {
-                self.warn(
-                    WarningCode::UnsupportedNode,
-                    "underline is not supported and was mapped to emphasis",
-                );
-                inline = Inline::Emph {
-                    content: vec![inline],
-                };
-            }
+            inline = Inline::Styled {
+                style: None,
+                direct: CharacterStyle {
+                    weight: Some(if formatting.bold { 700 } else { 400 }),
+                    italic: Some(formatting.italic),
+                    underline: Some(formatting.underline),
+                    strike: Some(formatting.strikethrough),
+                    ..CharacterStyle::default()
+                },
+                content: vec![inline],
+            };
             if formatting.bold {
                 inline = Inline::Strong {
                     content: vec![inline],
@@ -846,7 +856,11 @@ impl<'a> Mapper<'a> {
                         content: vec![inline],
                     };
                 }
-                _ => {}
+                "" | "baseline" => {}
+                _ => self.warn(
+                    WarningCode::UnsupportedNode,
+                    "unknown Docling script formatting was ignored",
+                ),
             }
         }
         if let Some(url) = text.hyperlink.as_deref().filter(|url| !url.is_empty()) {

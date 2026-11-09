@@ -2,7 +2,7 @@
 
 use std::{
     cell::Cell,
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     rc::Rc,
 };
 
@@ -11,6 +11,10 @@ use html5ever::{
     tendril::{StrTendril, TendrilSink},
 };
 use thiserror::Error;
+
+#[path = "inline_css.rs"]
+mod inline_css;
+use inline_css::InlineCss;
 
 use crate::{
     format::Format,
@@ -418,7 +422,7 @@ pub fn read(input: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     // Iteratively convert DOM tree into Document IR
     let mut mapper = TreeMapper::new(&arena, limits, warnings);
     let body_blocks = convert_tree_iteratively(&mut mapper, doc_handle)?;
-    if blocks_depth(&body_blocks) > mapper.limits.max_nesting_depth {
+    if ir_blocks_depth(&body_blocks) > mapper.limits.max_nesting_depth {
         return Err(ReadError::NestingTooDeep {
             limit: mapper.limits.max_nesting_depth,
         });
@@ -448,12 +452,33 @@ fn convert_tree_iteratively(
 ) -> Result<Vec<Block>, ReadError> {
     let num_nodes = mapper.arena.nodes.len();
     let mut converted: Vec<Option<ConvertedNode>> = (0..num_nodes).map(|_| None).collect();
+    let empty_style = Rc::new(InlineCss::default());
+    let mut styles = vec![empty_style; num_nodes];
+    let mut ignored_css = BTreeSet::new();
     let mut stack = vec![Visit::Enter(doc_handle, 0, false)];
 
     while let Some(task) = stack.pop() {
         match task {
             Visit::Enter(handle, ir_depth, within_inline) => {
                 let node = &mapper.arena.nodes[handle];
+                let parent = node
+                    .parent
+                    .map(|parent| Rc::clone(&styles[parent]))
+                    .unwrap_or_else(|| Rc::new(InlineCss::default()));
+                let inherited = if parent.has_box_style() {
+                    Rc::new(parent.inherited())
+                } else {
+                    Rc::clone(&parent)
+                };
+                styles[handle] = if let NodeData::Element { attrs, .. } = &node.data
+                    && let Some(css) = attrs.iter().find(|attr| &*attr.name.local == "style")
+                {
+                    let mut style = (*inherited).clone();
+                    style.apply(&css.value, &parent, &mut ignored_css);
+                    Rc::new(style)
+                } else {
+                    inherited
+                };
                 let is_container = match &node.data {
                     NodeData::Element { name, attrs, .. } => {
                         let local = &*name.local;
@@ -528,15 +553,116 @@ fn convert_tree_iteratively(
                     .iter()
                     .filter_map(|&ch| converted[ch].take())
                     .collect();
-                let output = convert_node(mapper, handle, children, within_inline)?;
+                let has_block_children = children.iter().any(|child| {
+                    matches!(
+                        child,
+                        ConvertedNode::Blocks(_)
+                            | ConvertedNode::ListItem(_)
+                            | ConvertedNode::TableRows(_)
+                            | ConvertedNode::TableRow(_)
+                            | ConvertedNode::TableCellWithAlign { .. }
+                    )
+                });
+                let own_box = !has_block_children
+                    || matches!(&node.data,
+                    NodeData::Element { name, .. } if matches!(&*name.local,
+                        "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "pre" | "blockquote" | "ul" | "ol" | "table" | "figure"));
+                let mut output = convert_node(mapper, handle, children, within_inline)?;
+                if !own_box
+                    && matches!(output, ConvertedNode::Blocks(_))
+                    && styles[handle].has_box_style()
+                {
+                    mapper.warn_unsupported_once(
+                        "CSS box spacing/background on a flattened container could not be retained",
+                    );
+                }
+                apply_node_style(&mut output, &styles[handle], &node.data, own_box);
                 converted[handle] = Some(output);
             }
         }
     }
 
+    for property in ignored_css {
+        mapper.warn_unsupported_once(format!(
+            "inline CSS `{property}` was ignored because it is unsupported or invalid"
+        ));
+    }
+
     match converted[doc_handle].take() {
         Some(ConvertedNode::Blocks(blks)) => Ok(blks),
         _ => Ok(Vec::new()),
+    }
+}
+
+/// Apply computed styles only where this node creates content. Descendant blocks
+/// already carry their own computed overrides, so flattened containers cannot
+/// overwrite them and do not introduce extra IR nesting.
+fn apply_node_style(output: &mut ConvertedNode, css: &InlineCss, data: &NodeData, own_box: bool) {
+    let atomic = match data {
+        NodeData::Text { .. } => true,
+        NodeData::Element { name, .. } => {
+            matches!(&*name.local, "code" | "kbd" | "samp" | "img" | "math")
+        }
+        _ => false,
+    };
+    match output {
+        ConvertedNode::Inlines(content)
+            if atomic && !css.character.is_empty() && !content.is_empty() =>
+        {
+            *content = vec![Inline::Styled {
+                style: None,
+                direct: css.character.clone(),
+                content: std::mem::take(content),
+            }];
+        }
+        ConvertedNode::Inlines(content)
+        | ConvertedNode::TableCaption(content)
+        | ConvertedNode::FigCaption(content)
+            if css.character.highlight.is_some() && !content.is_empty() =>
+        {
+            *content = vec![Inline::Styled {
+                style: None,
+                direct: crate::ir::CharacterStyle {
+                    highlight: css.character.highlight.clone(),
+                    ..Default::default()
+                },
+                content: std::mem::take(content),
+            }];
+        }
+        ConvertedNode::Blocks(blocks) => {
+            if own_box {
+                apply_block_style(blocks, css);
+            } else {
+                apply_block_style(blocks, &css.inherited());
+            }
+        }
+        ConvertedNode::ListItem(item) => apply_block_style(&mut item.blocks, css),
+        ConvertedNode::TableCellWithAlign { cell, .. } => apply_block_style(&mut cell.blocks, css),
+        _ => {}
+    }
+}
+
+fn apply_block_style(blocks: &mut [Block], css: &InlineCss) {
+    if css.paragraph.is_empty() {
+        return;
+    }
+    for block in blocks {
+        let direct = match block {
+            Block::Heading { direct, .. }
+            | Block::Paragraph { direct, .. }
+            | Block::Code { direct, .. }
+            | Block::Math { direct, .. }
+            | Block::Quote { direct, .. }
+            | Block::List { direct, .. }
+            | Block::Table { direct, .. }
+            | Block::Figure { direct, .. }
+            | Block::Footnote { direct, .. }
+            | Block::Raw { direct, .. }
+            | Block::PageBreak { direct, .. } => direct,
+        };
+        if direct.is_empty() {
+            *direct = css.paragraph.clone();
+        }
     }
 }
 
@@ -1010,35 +1136,63 @@ fn convert_node(
 
 fn block_depth(block: &Block) -> u16 {
     match block {
-        Block::Quote { blocks, .. } => 1 + blocks_depth(blocks),
+        Block::Quote { blocks, .. } => 1 + ir_blocks_depth(blocks),
         Block::List { items, .. } => {
             1 + items
                 .iter()
-                .map(|item| blocks_depth(&item.blocks))
+                .map(|item| ir_blocks_depth(&item.blocks))
                 .max()
                 .unwrap_or(0)
         }
-        Block::Table { head, body, .. } => {
+        Block::Table {
+            head,
+            body,
+            caption,
+            footnotes,
+            ..
+        } => {
             1 + head
                 .iter()
                 .chain(body.iter())
                 .flat_map(|row| row.iter())
-                .map(|cell| blocks_depth(&cell.blocks))
+                .map(|cell| ir_blocks_depth(&cell.blocks))
                 .max()
                 .unwrap_or(0)
+                .max(caption.as_deref().map(inlines_depth).unwrap_or(0))
+                .max(inlines_depth(footnotes))
         }
-        Block::Footnote { blocks, .. } => 1 + blocks_depth(blocks),
-        Block::Heading { .. }
-        | Block::Paragraph { .. }
-        | Block::Code { .. }
-        | Block::Math { .. }
-        | Block::Raw { .. }
-        | Block::PageBreak { .. }
-        | Block::Figure { .. } => 0,
+        Block::Footnote { blocks, .. } => 1 + ir_blocks_depth(blocks),
+        Block::Heading { content, .. } | Block::Paragraph { content, .. } => inlines_depth(content),
+        Block::Figure { caption, .. } => inlines_depth(caption),
+        Block::Code { .. } | Block::Math { .. } | Block::Raw { .. } | Block::PageBreak { .. } => 0,
     }
 }
 
-fn blocks_depth(blocks: &[Block]) -> u16 {
+fn inlines_depth(inlines: &[Inline]) -> u16 {
+    let mut maximum = 0;
+    let mut pending: Vec<_> = inlines.iter().map(|inline| (inline, 0u16)).collect();
+    while let Some((inline, depth)) = pending.pop() {
+        match inline {
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
+            | Inline::Strong { content }
+            | Inline::Strikeout { content }
+            | Inline::Superscript { content }
+            | Inline::Subscript { content }
+            | Inline::Link { content, .. } => {
+                let next = depth.saturating_add(1);
+                maximum = maximum.max(next);
+                pending.extend(content.iter().map(|inline| (inline, next)));
+            }
+            _ => maximum = maximum.max(depth),
+        }
+    }
+    maximum
+}
+
+/// Checks the generated IR after reader-specific mapping has introduced wrappers.
+/// All three readers use the same accounting for block and inline containers.
+pub(crate) fn ir_blocks_depth(blocks: &[Block]) -> u16 {
     blocks.iter().map(block_depth).max().unwrap_or(0)
 }
 
