@@ -1,0 +1,7 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+expression: summary
+---
+pages: 3
+text_pages: 0
+image_only_pages: 3

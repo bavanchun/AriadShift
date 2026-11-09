@@ -10,8 +10,8 @@ Per Principle 5 ("Evidence over claims"):
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from ariad_bench.canonical import CanonicalDoc, normalize
@@ -19,6 +19,33 @@ from ariad_bench.canonical import CanonicalDoc, normalize
 
 class ReferenceResolutionError(RuntimeError):
     """Raised when an expected reference cannot be resolved or computed."""
+
+
+# These writer targets have no base ashift reader, or intentionally lose IR
+# structure. Use an independent reader rather than requiring a round trip.
+INDEPENDENT_READBACK_FORMATS = {"txt", "csv", "xlsx", "odt", "rtf", "pptx"}
+
+
+def read_writer_output(path: Path, target: str, pandoc_bin: Path | str) -> CanonicalDoc:
+    """Read actual writer output without invoking the writer's own implementation."""
+    if target == "txt":
+        # Keep structural losses visible in the score; never reconstruct headings
+        # or tables from the input IR to make a lossy format look reversible.
+        return CanonicalDoc.from_dict({"text": path.read_text(encoding="utf-8")})
+    if target not in INDEPENDENT_READBACK_FORMATS:
+        raise ValueError(f"No independent writer readback for {target}")
+    try:
+        proc = subprocess.run(
+            [str(pandoc_bin), "-f", target, "-t", "json", str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise ReferenceResolutionError(f"Pandoc {target} readback failed: {exc}") from exc
+    return normalize(json.loads(proc.stdout))
 
 
 def get_reference_for_fixture(
