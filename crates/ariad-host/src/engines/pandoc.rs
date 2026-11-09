@@ -937,15 +937,19 @@ mod tests {
         let caps: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(caps["type"], "capabilities");
         let routes = caps["routes"].as_array().unwrap();
-        assert_eq!(routes.len(), 4);
+        assert_eq!(routes.len(), 6);
         assert_eq!(routes[0]["input"], "ariad-ir+json");
         assert_eq!(routes[0]["output"], "docx");
         assert_eq!(routes[1]["input"], "ariad-ir+json");
         assert_eq!(routes[1]["output"], "epub");
-        assert_eq!(routes[2]["input"], "docx");
-        assert_eq!(routes[2]["output"], "ariad-ir+json");
-        assert_eq!(routes[3]["input"], "epub");
-        assert_eq!(routes[3]["output"], "ariad-ir+json");
+        assert_eq!(routes[2]["input"], "ariad-ir+json");
+        assert_eq!(routes[2]["output"], "odt");
+        assert_eq!(routes[3]["input"], "ariad-ir+json");
+        assert_eq!(routes[3]["output"], "rtf");
+        assert_eq!(routes[4]["input"], "docx");
+        assert_eq!(routes[4]["output"], "ariad-ir+json");
+        assert_eq!(routes[5]["input"], "epub");
+        assert_eq!(routes[5]["output"], "ariad-ir+json");
     }
 
     #[test]
