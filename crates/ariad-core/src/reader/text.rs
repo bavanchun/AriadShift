@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn normalizes_unicode_nfc() {
         // e + combining acute accent -> é
-        let decomposed = "caf\u{0065}\u{0301}";
+        let decomposed = "cafe\u{0301}";
         let out = read(decomposed, &Limits::local()).unwrap();
         let Block::Paragraph { content } = &out.document.body[0] else {
             panic!("expected paragraph");

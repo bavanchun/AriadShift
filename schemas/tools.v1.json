@@ -22,8 +22,7 @@
       "type": "array",
       "items": {
         "type": "string"
-      },
-      "minItems": 1
+      }
     },
     "inputs": {
       "description": "Required input file count.",
@@ -9579,6 +9578,49 @@
       "summary": "Validate a PDF document against PDF/UA accessibility profiles using veraPDF.",
       "tier": "free",
       "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "web.to_pdf",
+      "input_formats": [],
+      "inputs": {
+        "arity": "none"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "WebToPdfParams",
+        "description": "Parameters for `web.to_pdf`.\n\nConverts a remote web page into a PDF document via host-side SSRF-safe fetching\nfollowed by offline HTML -> IR -> Typst rendering.",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "Optional document title override. If omitted, the HTML title is used.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "Remote web page URL to convert. Must be a valid HTTPS URL.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "url"
+        ]
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Fetch a web page securely and convert it offline to PDF.",
+      "tier": "free",
+      "version": "1"
     }
   ],
   "x-status": "draft",
@@ -9586,6 +9628,19 @@
     "InputArity": {
       "description": "Required input file count for a tool (`docs/tools.md` §3).",
       "oneOf": [
+        {
+          "description": "Zero input files (tool operates purely via parameters or remote sources).",
+          "type": "object",
+          "properties": {
+            "arity": {
+              "type": "string",
+              "const": "none"
+            }
+          },
+          "required": [
+            "arity"
+          ]
+        },
         {
           "description": "Exactly 1 input file is required.",
           "type": "object",

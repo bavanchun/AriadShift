@@ -9494,5 +9494,48 @@ expression: tools_json
     "summary": "Validate a PDF document against PDF/UA accessibility profiles using veraPDF.",
     "tier": "free",
     "version": "1"
+  },
+  {
+    "engine": "ariad-host",
+    "group": "convert",
+    "id": "web.to_pdf",
+    "input_formats": [],
+    "inputs": {
+      "arity": "none"
+    },
+    "output_format": "pdf",
+    "output_formats": [
+      "pdf"
+    ],
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `web.to_pdf`.\n\nConverts a remote web page into a PDF document via host-side SSRF-safe fetching\nfollowed by offline HTML -> IR -> Typst rendering.",
+      "properties": {
+        "title": {
+          "description": "Optional document title override. If omitted, the HTML title is used.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Remote web page URL to convert. Must be a valid HTTPS URL.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "WebToPdfParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Fetch a web page securely and convert it offline to PDF.",
+    "tier": "free",
+    "version": "1"
   }
 ]

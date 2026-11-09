@@ -145,12 +145,13 @@ pub fn visual_diff_images(
                         let nx = cx as i32 + dx;
                         let ny = cy as i32 + dy;
                         if nx >= 0 && nx < grid_w as i32 && ny >= 0 && ny < grid_h as i32 {
-                            let unx = nx as u32;
-                            let uny = ny as u32;
-                            let n_idx = (uny as usize) * (grid_w as usize) + (unx as usize);
+                            let neighbor_x = nx as u32;
+                            let neighbor_y = ny as u32;
+                            let n_idx =
+                                (neighbor_y as usize) * (grid_w as usize) + (neighbor_x as usize);
                             if !visited[n_idx] && grid_counts[n_idx] > 0 {
                                 visited[n_idx] = true;
-                                queue.push_back((unx, uny));
+                                queue.push_back((neighbor_x, neighbor_y));
                             }
                         }
                     }
