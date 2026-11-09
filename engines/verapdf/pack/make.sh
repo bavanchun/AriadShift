@@ -105,8 +105,13 @@ case ${1:-} in
         [ "$actual" = "$match" ] || die "archive SHA-256 mismatch: $actual != $match"
         ;;
     pack)
-        [ "$#" -eq 5 ] || die 'usage: make.sh pack SLUG VERAPDF_INSTALLER_ZIP ASHIFT OUT'
-        host=$2 installer_zip=$3 ashift=$4 dest=$5
+        if [ "$#" -eq 4 ]; then
+            host=$2 installer_zip=$3 ashift=$4 dest=${PACK_OUT:-"$repo/target/packs/verapdf"}
+        elif [ "$#" -eq 5 ]; then
+            host=$2 installer_zip=$3 ashift=$4 dest=$5
+        else
+            die 'usage: make.sh pack SLUG VERAPDF_INSTALLER_ZIP ASHIFT [OUT]'
+        fi
         [ "$host" = "$(slug)" ] || die 'pack target must match the host'
         [ -f "$installer_zip" ] || die "missing installer archive '$installer_zip'"
         [ -x "$ashift" ] || die "missing ashift binary '$ashift'"
@@ -194,8 +199,13 @@ EOF
             "${archives[@]}"
         ;;
     verify)
-        [ "$#" -eq 2 ] || die 'usage: make.sh verify PACK_DIR'
-        root=$2
+        if [ "$#" -eq 1 ]; then
+            root=${PACK_OUT:-"$repo/target/packs/verapdf"}
+        elif [ "$#" -eq 2 ]; then
+            root=$2
+        else
+            die 'usage: make.sh verify [PACK_DIR]'
+        fi
         [ -x "$root/bin/verapdf" ] || die 'verapdf launcher is missing'
         [ -f "$root/share/verapdf/cli.jar" ] || die 'veraPDF cli jar is missing'
         grep -q '^name = "verapdf"$' "$root/pack.toml" || die 'incorrect pack name'
@@ -203,6 +213,9 @@ EOF
         for notice in THIRD_PARTY_NOTICES.txt apache-LICENSE-2.0.txt jakarta-EDL-1.0.txt jakarta-EPL-2.0.txt rhino-NOTICE.txt verapdf-MPL-2.0.txt; do
             [ -s "$root/notices/$notice" ] || die "notice $notice is missing from pack"
         done
+        if grep -riE 'temurin|openjdk|jlink|classpath exception' "$root/notices" >/dev/null 2>&1; then
+            die "prohibited JRE terms found in pack notices: $root/notices"
+        fi
         ;;
     *) die 'unknown command' ;;
 esac

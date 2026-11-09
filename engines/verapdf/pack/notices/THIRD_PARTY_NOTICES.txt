@@ -1,8 +1,9 @@
 AriadShift veraPDF Engine Pack - Third-Party Notices
 ==================================================
 
-This package contains the veraPDF PDF/A and PDF/UA validation engine and an
-isolated, out-of-process Java Runtime Environment (Eclipse Temurin OpenJDK 25).
+This package contains the veraPDF PDF/A and PDF/UA validation engine.
+No Java Runtime Environment (JRE/JDK) is bundled in this pack; execution
+uses the user's system Java runtime (JAVA_HOME or java on PATH, Java >= 11).
 These components are run strictly out of process as a standalone tool.
 
 1. veraPDF
@@ -10,36 +11,30 @@ These components are run strictly out of process as a standalone tool.
    Source: https://github.com/veraPDF/veraPDF-apps
    See verapdf-MPL-2.0.txt
 
-2. Eclipse Temurin OpenJDK 25 Runtime (jlink-trimmed)
-   License: GNU General Public License Version 2 with Classpath Exception (GPL-2.0-with-classpath-exception)
-   Source: https://github.com/adoptium/temurin25-binaries
-   See openjdk-GPL-2.0.txt, openjdk-classpath-exception.txt, openjdk-assembly-exception.txt,
-   openjdk-runtime-source-offer.txt, openjdk-runtime-source-pointers.txt
-
-3. Apache PDFBox and Apache Commons (bundled in veraPDF)
+2. Apache PDFBox and Apache Commons (bundled in veraPDF)
    License: Apache License, Version 2.0 (Apache-2.0)
    Source: https://pdfbox.apache.org/
    See apache-LICENSE-2.0.txt
 
-4. Jakarta XML Binding (JAXB) (bundled in veraPDF)
+3. Jakarta XML Binding (JAXB) (bundled in veraPDF)
    License: Eclipse Distribution License - v 1.0 (EDL-1.0) / Eclipse Public License - v 2.0 (EPL-2.0)
    Source: https://github.com/eclipse-ee4j/jaxb-ri
    See jakarta-EDL-1.0.txt, jakarta-EPL-2.0.txt
 
-5. Mozilla Rhino (bundled in veraPDF)
+4. Mozilla Rhino (bundled in veraPDF)
    License: Mozilla Public License Version 2.0 (MPL-2.0)
    Source: https://github.com/mozilla/rhino
    See rhino-NOTICE.txt, verapdf-MPL-2.0.txt
 
-6. Jackson JSON processor (bundled in veraPDF)
+5. Jackson JSON processor (bundled in veraPDF)
    License: Apache License, Version 2.0 (Apache-2.0)
    Source: https://github.com/FasterXML/jackson
    See apache-LICENSE-2.0.txt
 
-7. FastDoubleParser
+6. FastDoubleParser
    License: MIT License
    Source: https://github.com/wrandelshofer/FastDoubleParser
 
-8. Schubfach
+7. Schubfach
    License: Apache License, Version 2.0 (Apache-2.0)
    Source: https://github.com/ulfjack/ryu

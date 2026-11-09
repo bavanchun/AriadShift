@@ -50,10 +50,21 @@ for notice in "${required_notices[@]}"; do
     [ -s "$notices_dir/$notice" ] || { echo "missing or empty notice: $notice" >&2; exit 1; }
 done
 
-# If a test pack is provided, run make.sh verify and check tampering detection
-if [ -n "${VERAPDF_TEST_PACK:-}" ]; then
-    bash "$script" verify "$VERAPDF_TEST_PACK"
-    cp -R "$VERAPDF_TEST_PACK" "$tmp/pack"
+# Ensure source notices contain zero references to bundled JRE / OpenJDK
+if grep -riE 'temurin|openjdk|jlink|classpath exception' "$notices_dir" >/dev/null 2>&1; then
+    echo "prohibited JRE references found in source notices ($notices_dir)" >&2
+    exit 1
+fi
+
+# Verify pack directory if present or explicitly specified
+pack_dir="${PACK_OUT:-${VERAPDF_TEST_PACK:-"$repo/target/packs/verapdf"}}"
+if [ -d "$pack_dir" ]; then
+    if grep -riE 'temurin|openjdk|jlink|classpath exception' "$pack_dir/notices" >/dev/null 2>&1; then
+        echo "prohibited JRE references found in pack notices ($pack_dir/notices)" >&2
+        exit 1
+    fi
+    bash "$script" verify "$pack_dir"
+    cp -R "$pack_dir" "$tmp/pack"
     for notice in verapdf-MPL-2.0.txt apache-LICENSE-2.0.txt THIRD_PARTY_NOTICES.txt; do
         mv "$tmp/pack/notices/$notice" "$tmp/notice"
         if bash "$script" verify "$tmp/pack" >/dev/null 2>&1; then
@@ -61,6 +72,9 @@ if [ -n "${VERAPDF_TEST_PACK:-}" ]; then
         fi
         mv "$tmp/notice" "$tmp/pack/notices/$notice"
     done
+elif [ -n "${PACK_OUT:-}" ] || [ -n "${VERAPDF_TEST_PACK:-}" ]; then
+    echo "specified pack directory not found: $pack_dir" >&2
+    exit 1
 fi
 
 echo 'veraPDF pack checks passed'
