@@ -122,6 +122,12 @@ Writer read-back bias applies when measuring writer edges ($\text{IR} \rightarro
 
 By contrast, **reader edges** ($X \rightarrow \text{IR}$) avoid self-scoring: generated fixtures compare against independent authored truth companions written by `fixtures/gen`, and Markdown fixtures compare against Pandoc's GFM AST.
 
+XLSX writer read-back uses Pandoc on a temporary workbook copy whose inline strings
+are expressed as shared strings. Pandoc 3.12 otherwise silently drops `inlineStr`
+cell contents. The normalization reads only the generated workbook, preserves cell
+text and formatting, and leaves the measured artifact unchanged. It does not
+reconstruct content from the input IR or reference truth.
+
 ---
 
 ## 6. Running the Benchmark Harness

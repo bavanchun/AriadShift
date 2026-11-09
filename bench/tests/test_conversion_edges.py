@@ -97,6 +97,24 @@ def test_invalid_workbook_readback_is_a_failure(tmp_path, binaries):
         read_writer_output(output, "xlsx", pandoc)
 
 
+def test_xlsx_readback_keeps_actual_inline_cell_text(corpus, binaries):
+    ashift, pandoc = binaries
+    truth = json.loads((corpus / "fixtures/sample.truth.json").read_text(encoding="utf-8"))
+    source = corpus / "source.ir.json"
+    source.write_text(json.dumps(truth["ir"]), encoding="utf-8")
+    bench = Bench(corpus, ashift, pandoc, corpus, 1)
+    output = bench.hook("__write", source, "xlsx")[0]
+    original = output.read_bytes()
+    doc = read_writer_output(output, "xlsx", pandoc)
+    assert "Archive item" in doc.text
+    assert "Street plan" in doc.text
+    assert "Recorded detail" in doc.text
+    assert "Survey date" in doc.text
+    assert doc.tables and any(cell.text == "Brass" for table in doc.tables
+                              for row in table.rows for cell in row)
+    assert output.read_bytes() == original
+
+
 @pytest.mark.parametrize("target", ["txt", "csv"])
 def test_text_only_routes_do_not_require_a_visual_reference(corpus, binaries, target):
     ashift, pandoc = binaries
