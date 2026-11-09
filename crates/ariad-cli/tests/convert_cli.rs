@@ -24,6 +24,70 @@ fn cli() -> Command {
     command
 }
 
+#[test]
+fn convert_json_exposes_fidelity_without_changing_existing_fields() {
+    let directory = tempdir().unwrap();
+    let input = directory.path().join("source.md");
+    fs::write(&input, "# Title\n\nA **bold** paragraph.\n").unwrap();
+    let html = directory.path().join("out.html");
+    let result = cli()
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "html", "--json", "-o"])
+        .arg(&html)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["output"], html.to_string_lossy().as_ref());
+    assert!(value["route"].is_array());
+    assert!(value["warnings"].is_array());
+    assert!(value["elapsed_ms"].is_u64());
+    assert_eq!(value["fidelity"]["metric_version"], "fidelity/2");
+    assert_eq!(value["fidelity"]["status"], "measured");
+    assert_eq!(value["fidelity"]["basis"], "runtime_readback");
+    assert_eq!(value["fidelity"]["score"], 1.0);
+
+    let pdf = directory.path().join("source.pdf");
+    let generated = cli()
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "pdf", "-o"])
+        .arg(&pdf)
+        .output()
+        .unwrap();
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let docx = directory.path().join("out.docx");
+    let result = cli()
+        .arg("convert")
+        .arg(&pdf)
+        .args(["--to", "docx", "--json", "-o"])
+        .arg(&docx)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["fidelity"]["status"], "measured", "{value}");
+    assert!(
+        value["fidelity"]["score"]
+            .as_f64()
+            .is_some_and(|s| (0.0..=1.0).contains(&s))
+    );
+    assert!(has_docx_document(&docx));
+}
+
 fn pandoc_path() -> PathBuf {
     if let Some(path) = std::env::var_os("ASHIFT_PANDOC") {
         return PathBuf::from(path);

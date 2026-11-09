@@ -43,13 +43,26 @@ To prevent excessive latency during large test runs, TEDS is capped at tables wi
 - **Furniture Exclusion Policy:** DOCX header and footer furniture elements (such as running headers, page numbers, and copyright notices) are excluded from scoring on both sides (omitted from authored truth companions and ignored in `from_ir`). Scoring focuses strictly on body content.
 - **List Nesting Depth:** List structures capture ordered/unordered type and item text sequences in document order. Multi-level nested list hierarchy depth is a documented limitation in 1a and is flattened sequentially in canonical form.
 
-#### Overall Fidelity (`fidelity`)
-Combines text accuracy, heading hierarchy preservation, and table structure:
+#### Legacy Fidelity
+The retained `score_fixture` diagnostic combines text accuracy, heading hierarchy preservation, and table structure. Existing committed measurements use this formula until the full corpus is rerun:
 - **Documents without tables:**
   $$\text{fidelity} = \frac{(1.0 - \text{text\_cer}) + (1.0 - \text{heading\_ted})}{2.0}$$
 - **Documents with tables:**
   $$\text{fidelity} = \frac{(1.0 - \text{text\_cer}) + (1.0 - \text{heading\_ted}) + \text{teds}}{3.0}$$
 Each term is clamped to $[0.0, 1.0]$. The edge score is the arithmetic mean across all scored fixtures, rounded to 3 decimal places.
+
+#### Measured Fidelity (`fidelity/2`)
+New runs use `score_fixture_v2`. Capability fidelity is the mean of applicable text accuracy `max(0, 1 - CER)`, structure F1, style accuracy and layout IoU. Raw CER can exceed one; an empty reference has CER zero against empty text and one against nonempty text. Scores from different metric versions require a full rerun before comparison. Legacy CER and diagnostic formulas remain available.
+
+Python `ariad_bench.fidelity.{observe,score,compare}` and Rust `ariad_core::fidelity::{observe,score,compare}` independently consume the [original shared vectors](../bench/results/fidelity-v2/conformance.json). Tests never invoke Cargo from Python. Observations cover the semantic body, excluding furniture. Authored truth containing both `canonical` and `ir` uses the authored IR for v2 observations.
+
+Alignment consumes exact NFC/whitespace-normalized semantic keys once, in traversal order. IDs locate geometry within an import. Heading keys include level ancestry and text; lists include ordered state and item text; tables include rows, cell spans, header flags and text. Per-kind F1 is `2 * matched / (reference + hypothesis)`. Structure F1 is the macro mean of kinds present on either side. Missing and duplicate structures reduce recall and precision; empty kinds are null. Conservative exact-text alignment for style runs and boxes can lose credit when text changes even if appearance remains similar.
+
+Styles use the bounded cascade: defaults, paragraph inheritance, named styles, direct overrides and nested character styles. Adjacent identical styles within a block coalesce. Size tolerance is 0.5 pt inclusive, numeric weight must match exactly and RGB colours may differ by at most 2 per channel. Family, italic, underline and strike are measured only when observed in the reference; explicit false remains evidence. Each reference-supported attribute is one denominator item. Missing hypothesis evidence is an error. No observed family means no family accuracy claim.
+
+Layout measures actual intersection/union in points with top-left origin. Alignment prefers equal text on the same page, then consumes remaining equal-text boxes; wrong-page matches score zero. The mean includes all reference boxes; missing and degenerate boxes contribute zero. Nonempty source-map fragments take precedence over single layout boxes. Missing reference style/layout is null with a reason. Reports retain reference/hypothesis/matched/observed counts. Scoring caps each observation kind at 4,096, text at 100,000 Unicode characters and CER work at four million cells after trimming equal prefixes/suffixes. Observation extraction also bounds the block/cell/inline walk before copying text; exceeding a budget is explicitly unavailable.
+
+Per-file evidence records `metric_version`, `basis`, components and coverage. Benchmark basis is `independent_reference`. Runtime `runtime_readback` measures preservation after input extraction and does not establish reader accuracy. Detailed fields never enter the planner metrics schema. Failed conversion and unavailable scoring contribute zero scalar fidelity and explicit reasons rather than disappearing from sample denominators.
 
 #### Editability (`editability`)
 Measures the proportion of structural blocks in the reference document that survive in the converted document as the same structure kind, using text-matched overlap:
@@ -164,8 +177,10 @@ just pandoc
   ```
 - **Run benchmark on specific edges or fixtures:**
   ```bash
-  uv run --package ariad-bench python -m ariad_bench run --edges "html->ariad-ir+json" --repeat 1 --out target/scratch/cap.json
+  uv run --package ariad-bench python -m ariad_bench run --edges "html->ariad-ir+json" --repeat 1 --out target/scratch/cap.json --fidelity-out target/scratch/fidelity.json
   ```
+
+`run --fidelity-out PATH` defaults to `bench/results/fidelity-v2/base.json`; `heavy` defaults to `bench/results/fidelity-v2/heavy.json`. For a scratch heavy run, first copy capabilities to scratch `--out`, because heavy updates that seed. A scratch `--fidelity-out` also redirects the default legacy heavy evidence path; an explicit non-default `--evidence` remains honored. Failures preserve attempts and completed samples. Full corpus regeneration requires integrated readers, writers and accepted truth; synthetic vectors do not establish corpus acceptance.
 
 ---
 

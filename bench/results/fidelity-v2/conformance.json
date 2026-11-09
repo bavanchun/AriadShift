@@ -1,0 +1,784 @@
+{
+  "metric_version": "fidelity/2",
+  "provenance": "Original hand-computed examples; no corpus measurements.",
+  "tolerance": 1e-12,
+  "vectors": [
+    {
+      "name": "insertions",
+      "reference": {
+        "text": "a"
+      },
+      "hypothesis": {
+        "text": "abcd"
+      },
+      "expected": {
+        "text_cer": 3.0,
+        "score": 0.0
+      }
+    },
+    {
+      "name": "empty-reference",
+      "reference": {},
+      "hypothesis": {
+        "text": "abc"
+      },
+      "expected": {
+        "text_cer": 1.0,
+        "score": 0.0
+      }
+    },
+    {
+      "name": "empty-both",
+      "reference": {},
+      "hypothesis": {},
+      "expected": {
+        "text_cer": 0.0,
+        "score": 1.0,
+        "style_accuracy": null,
+        "layout_iou": null
+      }
+    },
+    {
+      "name": "unicode",
+      "reference": {
+        "text": "ế🙂"
+      },
+      "hypothesis": {
+        "text": "ế"
+      },
+      "expected": {
+        "text_cer": 0.5
+      }
+    },
+    {
+      "name": "duplicate-heading",
+      "reference": {
+        "structures": [
+          {
+            "kind": "heading",
+            "key": "title"
+          }
+        ]
+      },
+      "hypothesis": {
+        "structures": [
+          {
+            "kind": "heading",
+            "key": "title"
+          },
+          {
+            "kind": "heading",
+            "key": "title"
+          }
+        ]
+      },
+      "expected": {
+        "structure_f1": 0.6666666666666666,
+        "score": 0.8333333333333333,
+        "structure_by_kind": {
+          "heading": {
+            "matched": 1,
+            "reference": 1,
+            "hypothesis": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "missing-structures",
+      "reference": {
+        "structures": [
+          {
+            "kind": "heading",
+            "key": "title"
+          },
+          {
+            "kind": "list",
+            "key": "items"
+          },
+          {
+            "kind": "table",
+            "key": "cells"
+          }
+        ]
+      },
+      "hypothesis": {},
+      "expected": {
+        "structure_f1": 0.0,
+        "score": 0.5
+      }
+    },
+    {
+      "name": "style-boundary",
+      "reference": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "size_pt": 12.0,
+              "weight": 400,
+              "color": "#123456"
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "size_pt": 12.5,
+              "weight": 400,
+              "color": "#143654"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "style_accuracy": 1.0,
+        "coverage": {
+          "style": {
+            "reference": 3,
+            "matched": 3,
+            "observed": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "style-outside",
+      "reference": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "size_pt": 12.0,
+              "weight": 400,
+              "color": "#123456"
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "size_pt": 12.500001,
+              "weight": 401,
+              "color": "#153456"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "style_accuracy": 0.0,
+        "score": 0.5
+      }
+    },
+    {
+      "name": "style-missing",
+      "reference": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "weight": 400
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {}
+          }
+        ]
+      },
+      "expected": {
+        "style_accuracy": 0.0,
+        "coverage": {
+          "style": {
+            "reference": 1,
+            "observed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "duplicate-run",
+      "reference": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "weight": 400
+            }
+          },
+          {
+            "text": "abc",
+            "style": {
+              "weight": 400
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "weight": 400
+            }
+          }
+        ]
+      },
+      "expected": {
+        "style_accuracy": 0.5,
+        "coverage": {
+          "style": {
+            "reference": 2,
+            "matched": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "box-intersection",
+      "reference": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 1,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 1,
+            "bbox": {
+              "left": 5,
+              "top": 0,
+              "right": 15,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "expected": {
+        "layout_iou": 0.3333333333333333,
+        "score": 0.6666666666666666
+      }
+    },
+    {
+      "name": "wrong-page",
+      "reference": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 1,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 2,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "expected": {
+        "layout_iou": 0.0,
+        "coverage": {
+          "layout": {
+            "matched": 0,
+            "observed": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "missing-box",
+      "reference": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 1,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "hypothesis": {},
+      "expected": {
+        "layout_iou": 0.0
+      }
+    },
+    {
+      "name": "degenerate-box",
+      "reference": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 1,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "hypothesis": {},
+      "expected": {
+        "layout_iou": 0.0,
+        "unavailable_reasons": {
+          "layout_geometry": "degenerate_box_scores_zero"
+        }
+      }
+    },
+    {
+      "name": "invalid-colour",
+      "reference": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "color": "#123456"
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "runs": [
+          {
+            "text": "abc",
+            "style": {
+              "color": "invalid"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "style_accuracy": 0.0
+      }
+    },
+    {
+      "name": "reordered-page-fragments",
+      "reference": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 1,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          },
+          {
+            "text": "abc",
+            "page_no": 2,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "hypothesis": {
+        "boxes": [
+          {
+            "text": "abc",
+            "page_no": 2,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          },
+          {
+            "text": "abc",
+            "page_no": 1,
+            "bbox": {
+              "left": 0,
+              "top": 0,
+              "right": 10,
+              "bottom": 10
+            }
+          }
+        ]
+      },
+      "expected": {
+        "layout_iou": 1.0,
+        "coverage": {
+          "layout": {
+            "matched": 2,
+            "observed": 2
+          }
+        }
+      }
+    }
+  ],
+  "ir_vectors": [
+    {
+      "name": "inherited-reset",
+      "reference": {
+        "styles": {
+          "defaults": {
+            "character": {
+              "weight": 700,
+              "italic": true
+            }
+          },
+          "paragraph": {
+            "base": {
+              "size_pt": 12,
+              "color": "#123456"
+            },
+            "child": {
+              "based_on": "base"
+            }
+          }
+        },
+        "body": [
+          {
+            "type": "paragraph",
+            "id": "a",
+            "style": "child",
+            "content": [
+              {
+                "type": "styled",
+                "direct": {
+                  "weight": 400,
+                  "italic": false
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "abc"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "hypothesis": {
+        "body": [
+          {
+            "type": "paragraph",
+            "id": "unrelated",
+            "direct": {
+              "size_pt": 12.5,
+              "color": "#143654"
+            },
+            "content": [
+              {
+                "type": "styled",
+                "direct": {
+                  "weight": 400,
+                  "italic": false
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "abc"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "score": 1.0,
+        "style_accuracy": 1.0,
+        "coverage": {
+          "style": {
+            "reference": 4,
+            "observed": 4,
+            "matched": 4
+          }
+        }
+      }
+    },
+    {
+      "name": "table-span-header",
+      "reference": {
+        "body": [
+          {
+            "type": "table",
+            "id": "a",
+            "caption": null,
+            "columns": [],
+            "head": [
+              [
+                {
+                  "rowspan": 1,
+                  "colspan": 2,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "b",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "abc"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            ],
+            "body": []
+          }
+        ]
+      },
+      "hypothesis": {
+        "body": [
+          {
+            "type": "table",
+            "id": "x",
+            "caption": null,
+            "columns": [],
+            "head": [],
+            "body": [
+              [
+                {
+                  "rowspan": 1,
+                  "colspan": 1,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "y",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "abc"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "text_cer": 0.0,
+        "structure_f1": 0.0,
+        "score": 0.5
+      }
+    },
+    {
+      "name": "span-chunking",
+      "reference": {
+        "body": [
+          {
+            "type": "paragraph",
+            "id": "a",
+            "content": [
+              {
+                "type": "strong",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hello world"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "hypothesis": {
+        "body": [
+          {
+            "type": "paragraph",
+            "id": "b",
+            "content": [
+              {
+                "type": "strong",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hello"
+                  },
+                  {
+                    "type": "text",
+                    "text": " world"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "text_cer": 0.0,
+        "style_accuracy": 1.0,
+        "score": 1.0
+      }
+    },
+    {
+      "name": "table-footnote",
+      "reference": {
+        "body": [
+          {
+            "type": "table",
+            "id": "table",
+            "caption": null,
+            "columns": [],
+            "head": [],
+            "body": [],
+            "footnotes": [
+              {
+                "type": "strong",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Table note"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "hypothesis": {
+        "body": [
+          {
+            "type": "table",
+            "id": "other",
+            "caption": null,
+            "columns": [],
+            "head": [],
+            "body": [],
+            "footnotes": [
+              {
+                "type": "text",
+                "text": "Table note"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "text_cer": 0.0,
+        "style_accuracy": 0.0,
+        "structure_f1": 1.0,
+        "score": 0.6666666666666666
+      }
+    },
+    {
+      "name": "null-inherits",
+      "reference": {
+        "styles": {
+          "defaults": {
+            "paragraph": {
+              "size_pt": 12,
+              "color": "#123456"
+            },
+            "character": {
+              "weight": 400
+            }
+          }
+        },
+        "body": [
+          {
+            "type": "paragraph",
+            "id": "a",
+            "direct": {
+              "size_pt": null,
+              "color": null
+            },
+            "content": [
+              {
+                "type": "styled",
+                "direct": {
+                  "weight": null
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "abc"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "hypothesis": {
+        "body": [
+          {
+            "type": "paragraph",
+            "id": "b",
+            "direct": {
+              "size_pt": 12,
+              "color": "#123456"
+            },
+            "content": [
+              {
+                "type": "styled",
+                "direct": {
+                  "weight": 400
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "abc"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "score": 1.0,
+        "style_accuracy": 1.0,
+        "coverage": {
+          "style": {
+            "reference": 3,
+            "matched": 3
+          }
+        }
+      }
+    }
+  ]
+}

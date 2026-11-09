@@ -7,6 +7,7 @@ fidelity and editability scores.
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -45,6 +46,7 @@ class TestDeterminism(unittest.TestCase):
                 fixtures_filter=test_fixtures,
                 repeat_count=1,
                 out_file=out1,
+                fidelity_out=tmp / "fidelity1.json",
             )
 
             cap2 = run_benchmark(
@@ -55,6 +57,17 @@ class TestDeterminism(unittest.TestCase):
                 fixtures_filter=test_fixtures,
                 repeat_count=1,
                 out_file=out2,
+                fidelity_out=tmp / "fidelity2.json",
+            )
+
+            evidence1 = json.loads((tmp / "fidelity1.json").read_text())
+            evidence2 = json.loads((tmp / "fidelity2.json").read_text())
+            self.assertEqual(evidence1["metric_version"], "fidelity/2")
+            self.assertEqual(evidence1["basis"], "independent_reference")
+            self.assertTrue(evidence1["samples"])
+            self.assertEqual(
+                [sample["fidelity"] for sample in evidence1["samples"]],
+                [sample["fidelity"] for sample in evidence2["samples"]],
             )
 
             edges1 = {
