@@ -72,6 +72,26 @@ impl Path {
         }
         Ok(())
     }
+    /// Move the current point without drawing.
+    pub fn move_to(&mut self, x: f64, y: f64) -> Result<(), PdfError> {
+        self.add("m", &[x, y])
+    }
+    /// Add a line segment from the current point to `(x, y)`.
+    pub fn line_to(&mut self, x: f64, y: f64) -> Result<(), PdfError> {
+        self.add("l", &[x, y])
+    }
+    /// Add a cubic Bézier curve to the path.
+    pub fn curve_to(
+        &mut self,
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        x3: f64,
+        y3: f64,
+    ) -> Result<(), PdfError> {
+        self.add("c", &[x1, y1, x2, y2, x3, y3])
+    }
     /// Add a line segment.
     pub fn line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) -> Result<(), PdfError> {
         self.add("m", &[x1, y1])?;

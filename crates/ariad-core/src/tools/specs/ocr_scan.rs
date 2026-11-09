@@ -8,6 +8,7 @@ use crate::tools::{
         image_ocr::ImageOcrParams,
         ocr::OcrParams,
         ocr_internal::{OcrOrientationParams, OcrRecognizeParams, ScanRenderParams},
+        redact_internal::RedactInspectParams,
         scan_split::ScanSplitParams,
         scanner_effect::ScannerEffectParams,
         schema_for_params,
@@ -135,6 +136,15 @@ pub fn internal_specs() -> Vec<ToolSpec> {
             IMAGE_TO_PDF_INPUT_FORMATS,
             &["json"],
             "tesseract",
+        ),
+        spec::<RedactInspectParams>(
+            "redact.inspect",
+            "Extract private geometry evidence for redaction.",
+            ToolGroup::Redact,
+            InputArity::One,
+            &["pdf"],
+            &["json"],
+            "pdfium",
         ),
     ]
 }

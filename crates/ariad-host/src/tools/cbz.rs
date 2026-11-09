@@ -94,6 +94,7 @@ pub fn execute(
         workspace,
         limits,
         scrubber,
+        &crate::tools::secrets::SecretBag::new(),
         engine_program,
         engine_command_override,
         cancel.clone(),

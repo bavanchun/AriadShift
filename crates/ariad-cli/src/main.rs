@@ -979,6 +979,37 @@ fn bounded_secret(mut reader: impl Read) -> Result<String, ToolError> {
     Ok(trim_single_trailing_newline(value))
 }
 
+const MAX_CERT_BYTES: usize = 10 * 1024 * 1024;
+
+fn bounded_secret_certificate(mut reader: impl Read) -> Result<String, ToolError> {
+    use base64::Engine;
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take((MAX_CERT_BYTES + 2) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|err| ToolError::InputIo(err.to_string()))?;
+    if bytes.len() > MAX_CERT_BYTES {
+        return Err(ToolError::LimitExceeded);
+    }
+    if bytes.is_empty() {
+        return Err(ToolError::InvalidParams(
+            "certificate secret cannot be empty".into(),
+        ));
+    }
+    if let Ok(utf8_str) = std::str::from_utf8(&bytes) {
+        let trimmed = utf8_str.trim();
+        if !trimmed.is_empty()
+            && base64::engine::general_purpose::STANDARD
+                .decode(trimmed)
+                .is_ok()
+        {
+            return Ok(trimmed.to_owned());
+        }
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
 fn bounded_secret_line(reader: impl BufRead) -> Result<String, ToolError> {
     let mut bytes = Vec::new();
     reader
@@ -1082,8 +1113,13 @@ fn parse_tool_params_and_secrets(
                 "invalid --secret {raw:?}: secret parameter name must not be empty"
             )));
         }
+        let is_cert = name.eq_ignore_ascii_case("certificate");
         let secret_value = if target == "-" {
-            bounded_secret(io::stdin())?
+            if is_cert {
+                bounded_secret_certificate(io::stdin())?
+            } else {
+                bounded_secret(io::stdin())?
+            }
         } else if let Some(file_path) = target.strip_prefix('@') {
             if file_path.is_empty() {
                 return Err(ToolError::InvalidParams(format!(
@@ -1092,7 +1128,11 @@ fn parse_tool_params_and_secrets(
             }
             let file = std::fs::File::open(file_path)
                 .map_err(|err| ToolError::InputIo(err.to_string()))?;
-            bounded_secret(file)?
+            if is_cert {
+                bounded_secret_certificate(file)?
+            } else {
+                bounded_secret(file)?
+            }
         } else {
             return Err(ToolError::InvalidParams(format!(
                 "parameter '{name}' is marked x-ariad-secret and cannot be passed as an inline literal; use --secret {name}=@<file> or --secret {name}=-"

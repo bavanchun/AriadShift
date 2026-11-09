@@ -7,6 +7,7 @@ pub mod pdf;
 pub mod qpdf;
 pub mod resolve;
 pub mod sandbox;
+pub mod sign;
 pub mod tesseract;
 mod tesseract_hocr;
 pub(crate) mod tesseract_image;

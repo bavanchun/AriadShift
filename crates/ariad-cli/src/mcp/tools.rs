@@ -151,8 +151,11 @@ pub struct RunDocToolArgs {
 /// Arguments for creating a short-lived local secret handle.
 #[derive(Deserialize, JsonSchema)]
 pub struct SecretPutArgs {
-    /// Secret value, between 1 and 4096 UTF-8 bytes.
+    /// Secret value, between 1 and 4096 UTF-8 bytes (or up to 14 MiB for base64-encoded binary certificates).
     pub value: String,
+    /// Set to true when storing a base64-encoded binary certificate (allows up to 14 MiB).
+    #[serde(default)]
+    pub certificate: Option<bool>,
 }
 
 /// Handle returned for a stored secret.
@@ -374,7 +377,8 @@ impl McpServer {
         &self,
         Parameters(args): Parameters<SecretPutArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        match self.secrets.put(args.value) {
+        let is_cert = args.certificate.unwrap_or(false);
+        match self.secrets.put_with_options(args.value, is_cert) {
             Ok(handle) => tool_success(
                 &SecretPutResult {
                     handle,

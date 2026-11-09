@@ -624,8 +624,9 @@ fn run_tool_inner(
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
-    let is_ocr_composite = effective_engine
-        == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
+    let is_redact_composite = spec.id == "pdf.redact" || spec.id == "pdf.redact_verify";
+    let is_ocr_composite = !is_redact_composite
+        && effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
         && spec.group == ariad_core::tools::ToolGroup::Ocr;
     let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
@@ -669,6 +670,12 @@ fn run_tool_inner(
         )?;
     } else if is_ocr_composite {
         super::ocr::preflight(
+            spec.id,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_redact_composite {
+        super::redact::preflight(
             spec.id,
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
@@ -765,6 +772,20 @@ fn run_tool_inner(
             clock,
         )
         .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_redact_composite {
+        super::redact::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
     } else if is_tables_to_csv {
         super::tables::execute(
             &spec,
@@ -802,6 +823,7 @@ fn run_tool_inner(
             &workspace,
             &request.limits,
             scrubber,
+            &request.secrets,
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
             request.cancel.clone(),
@@ -1557,6 +1579,36 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
             serde_json::from_value::<ariad_core::tools::params::ScannerEffectParams>(params.clone())
                 .map(|_| ())
                 .map_err(|e| e.to_string())
+        }
+        "pdf.sign" => {
+            let p: ariad_core::tools::params::SignParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_verify" => {
+            let p: ariad_core::tools::params::SignVerifyParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_remove" => {
+            let p: ariad_core::tools::params::SignRemoveParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_visual" => {
+            let p: ariad_core::tools::params::SignVisualParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_token" => {
+            let p: ariad_core::tools::params::SignTokenParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.timestamp" => {
+            let p: ariad_core::tools::params::TimestampParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
         }
         _ => Ok(()),
     }

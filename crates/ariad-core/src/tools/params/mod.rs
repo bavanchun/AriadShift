@@ -52,6 +52,8 @@ pub mod permissions;
 pub mod portfolio;
 pub mod posterize;
 pub mod qr;
+pub mod redact;
+pub mod redact_internal;
 pub mod remove_blank;
 pub mod render;
 pub mod reorder;
@@ -63,6 +65,7 @@ pub mod sanitize;
 pub mod scale;
 pub mod scan_split;
 pub mod scanner_effect;
+pub mod sign;
 pub mod single_page;
 pub mod split;
 pub mod stamp;
@@ -124,6 +127,14 @@ pub use permissions::{PdfPermissions, PermissionsParams};
 pub use portfolio::{PortfolioAction, PortfolioParams, PortfolioView};
 pub use posterize::{PosterizeParams, PosterizeTiles};
 pub use qr::{QrBackground, QrLevel, QrParams};
+pub use redact::{
+    RedactParams, RedactVerifyParams, RedactionCarrierEvidence, RedactionPreset, RedactionScope,
+    RedactionTarget, RedactionVerificationReport,
+};
+pub use redact_internal::{
+    RedactGeometry, RedactGeometryChar, RedactGeometryPage, RedactInspectParams,
+    RedactionCheckStatus, RedactionChecks, RedactionVerificationStatus,
+};
 pub use remove_blank::RemoveBlankParams;
 pub use render::{Background, Combine, RasterFormat, RenderParams, ToImagesParams};
 pub use reorder::{ReorderParams, ReorderPreset, ReorderSpec};
@@ -135,6 +146,11 @@ pub use sanitize::{SanitizeForms, SanitizeParams};
 pub use scale::{ScaleFit, ScaleParams};
 pub use scan_split::ScanSplitParams;
 pub use scanner_effect::ScannerEffectParams;
+pub use sign::{
+    KeychainParams, OfflineEvidence, SignLevel, SignParams, SignRemoveParams, SignTokenParams,
+    SignVerifyParams, SignVisualMode, SignVisualParams, TimestampParams, TokenParams,
+    VisibleSignature,
+};
 pub use single_page::SinglePageParams;
 pub use split::{SplitDetectMode, SplitMode, SplitParams};
 pub use stamp::{StampParams, StampPreset};

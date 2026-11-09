@@ -162,6 +162,7 @@ dependencies = [
  "ariad-pdf",
  "ariad-pdfium-engine",
  "libfuzzer-sys",
+ "lopdf",
  "saphyr-parser",
  "serde",
  "serde_json",
@@ -213,6 +214,7 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "unicode-normalization",
  "ureq",
+ "url",
  "uuid",
  "zip",
 ]
@@ -222,6 +224,7 @@ name = "ariad-pdf"
 version = "0.3.0"
 dependencies = [
  "ariad-core",
+ "base64 0.23.1",
  "csv",
  "flate2",
  "image",
@@ -229,6 +232,8 @@ dependencies = [
  "oxiarc-jpeg",
  "qrcode",
  "quick-xml 0.42.0",
+ "regex",
+ "regex-syntax",
  "schemars",
  "serde",
  "serde_json",

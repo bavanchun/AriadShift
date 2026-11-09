@@ -1,0 +1,50 @@
+lxml is copyright Infrae and distributed under the BSD license, with the
+following exceptions:
+
+Some code, such as selftest.py, selftest2.py and src/lxml/_elementpath.py
+are derived from ElementTree and cElementTree. See doc/licenses/elementtree.txt
+for the license text. Newer versions reuse code from CPython's 'xml.etree'
+implementation, licensed under the PSF-License v2.
+See https://docs.python.org/3/license.html
+
+A copy of difflib is used as part of lxml.html, forked from the CPython
+standard library and licensed under the PSF-License v2.
+See https://docs.python.org/3/license.html
+
+lxml.cssselect and lxml.html are copyright Ian Bicking and distributed
+under the BSD license (see doc/licenses/BSD.txt).
+
+Binary wheels
+-------------
+
+The officially distributed binary wheels include bundled versions of the libraries
+zlib, iconv, libxml2, libxslt and libexslt.
+These libraries are linked, used and distributed under their following
+respective licenses:
+
+libxml2: MIT License
+Copyright (C) 1998-2012 Daniel Veillard.  All Rights Reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+libxslt: MIT License
+Copyright (C) 2001-2002 Daniel Veillard.
+Copyright (C) 2001-2002 Thomas Broyer, Charlie Bozeman and Daniel Veillard.
+All Rights Reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+zlib: zlib License, https://www.zlib.net/zlib_license.html
+iconv: LGPL 2.1, https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html

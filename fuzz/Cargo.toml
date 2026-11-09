@@ -15,6 +15,7 @@ ariad-host = { path = "../crates/ariad-host", default-features = false }
 ariad-pdf = { path = "../crates/ariad-pdf", optional = true }
 ariad-pdfium-engine = { path = "../crates/ariad-pdfium-engine" }
 libfuzzer-sys = "0.4.13"
+lopdf = { version = "0.46.0", default-features = false }
 saphyr-parser = "0.3.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "float_roundtrip"] }
@@ -208,7 +209,6 @@ test = false
 doc = false
 bench = false
 
-
 [[bin]]
 name = "pdf_form_interchange"
 required-features = ["pdf-reader"]
@@ -264,6 +264,14 @@ bench = false
 name = "reader_cbz"
 required-features = ["pdf-reader"]
 path = "fuzz_targets/reader_cbz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pdf_redact_params"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/pdf_redact_params.rs"
 test = false
 doc = false
 bench = false

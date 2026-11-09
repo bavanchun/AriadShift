@@ -16,7 +16,9 @@ pub mod overlay_furniture;
 pub mod overlay_marks;
 pub mod overlay_watermark_removal;
 pub mod pdfium;
+pub mod redact;
 pub mod security;
+pub mod sign;
 
 use crate::tools::ToolSpec;
 
@@ -39,6 +41,8 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(security::specs());
     list.extend(ocr_scan::specs());
     list.extend(annotate_forms::specs());
+    list.extend(redact::specs());
+    list.extend(sign::specs());
     list.extend(convert_tables::specs());
     list.extend(convert_cbz::specs());
     list

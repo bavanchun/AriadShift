@@ -42,6 +42,7 @@ tokio-util = { workspace = true, features = ["rt"] }
 toml.workspace = true
 ariad-typst = { workspace = true, optional = true }
 unicode-normalization.workspace = true
+url.workspace = true
 uuid = { workspace = true, features = ["v4", "v5"] }
 zip.workspace = true
 
@@ -56,6 +57,7 @@ rustls-native-certs.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+ariad-host = { path = ".", features = ["test-probe"] }
 lopdf.workspace = true
 minisign.workspace = true
 rcgen.workspace = true

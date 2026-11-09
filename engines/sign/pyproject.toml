@@ -1,0 +1,43 @@
+[project]
+name = "ariad-sign"
+version = "0.1.0"
+description = "Digital signature engine for AriadShift, speaking the ariad-engine/2 protocol"
+requires-python = "==3.14.*"
+license = "MIT"
+dependencies = [
+    "pyhanko==0.38.0",
+    "pyhanko-certvalidator>=0.26.3",
+    "cryptography>=41.0.0",
+    "asn1crypto>=1.4.0",
+    "click>=8.0.0",
+    "pyyaml>=6.0.0",
+    "qrcode>=7.0.0",
+    "tzlocal>=4.0.0",
+]
+classifiers = [
+    "Private :: Do Not Upload",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "RUF"]
+ignore = ["S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S107"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["uv_build==0.13.5"]
+build-backend = "uv_build"

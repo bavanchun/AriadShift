@@ -1,0 +1,22 @@
+AriadShift Sign Engine Pack
+============================
+
+Copyright (c) 2026 AriadShift Authors.
+Licensed under MIT and Apache-2.0.
+
+This distribution bundles:
+- CPython runtime (PSF-2.0, see notices/Python-LICENSE.txt)
+- pyHanko (MIT) and pyhanko-certvalidator (MIT)
+- cryptography (Apache-2.0 OR BSD-3-Clause, bundles OpenSSL under Apache-2.0, see notices/OpenSSL-LICENSE.txt)
+- lxml (BSD-3-Clause, bundles libxml2/libxslt under MIT, see notices/libxml2-libxslt-LICENSES.txt)
+- PyYAML (MIT, bundles LibYAML under MIT, see notices/libyaml-LICENSE.txt)
+- cffi (MIT-0)
+- certifi (MPL-2.0 exception for unmodified root certificate bundle)
+- aiohttp, propcache, frozenlist, multidict, aiosignal (Apache-2.0)
+- asn1crypto, attrs, iniconfig, oscrypto, pluggy, tzlocal, uritools (MIT)
+- click, idna, pycparser, qrcode (BSD-3-Clause)
+- packaging (Apache-2.0 OR BSD-2-Clause), pygments (BSD-2-Clause)
+- aiohappyeyeballs (PSF-2.0)
+
+All bundled components are distributed under approved OSI open-source licenses.
+Detailed upstream license texts are available in this notices directory and the respective .dist-info metadata records.

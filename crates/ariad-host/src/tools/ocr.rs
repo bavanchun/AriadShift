@@ -123,6 +123,7 @@ impl Job<'_> {
             self.workspace,
             &limits,
             self.scrubber,
+            &crate::tools::secrets::SecretBag::new(),
             self.engine_program,
             None,
             self.cancel.clone(),

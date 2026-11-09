@@ -92,12 +92,19 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotations`, `pdf.annotations_import`, `pdf.annotations_export` |
 | `forms` | AcroForm field inspection, filling, creation, detection, and flattening | `pdf.forms_list`, `pdf.forms_fill`, `pdf.forms_create`, `pdf.forms_detect`, `pdf.forms_flatten`, `pdf.forms_import`, `pdf.forms_export` |
-| `sign` | PAdES digital signing, timestamping, and signature verification | `pdf.sign`, `pdf.sign_verify` |
+| `sign` | PAdES digital signing, timestamping, signature verification, and removal | `pdf.sign`, `pdf.sign_verify`, `pdf.sign_remove` |
 | `redact` | True object-stream and raster redaction with verification report | `pdf.redact`, `pdf.redact_verify` |
 | `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare_visual`, `pdf.compare_semantic` |
 | `edit` | Stateless page-mode in-place edits and document-mode export helpers | `pdf.edit_apply` |
 | `ai` | Offline-first summarization, Q&A with citations, translation, table extraction | `ai.summarize`, `ai.ask`, `ai.translate`, `ai.extract_tables`, `ai.recipe_from_text` |
 | `automation` | Batch recipe execution and folder watch automation | `automation.recipe_validate` |
+
+> [!IMPORTANT]
+> **Redaction Carrier Contract (`pdf.redact`, `pdf.redact_verify`)**:
+> - **Covered carriers**: Text show operators (`Tj`, `TJ`, `'`, `"`), decoded image pixels and masks (RGB, Gray, CMYK, soft masks, explicit masks), annotations and form field values (AcroForm values, annotation contents, appearance streams), metadata streams and Document Info dictionaries (UTF-8, UTF-16BE, UTF-16LE XMP metadata), thumbnails (`/Thumb`), and embedded file attachments (`/EmbeddedFiles`).
+> - **Verification pipeline**: Six gates (`pdfium_text`, `core_text`, `region_render`, `image_pixels`, `object_graph`, `rewrite_history`). Note: the image pixel gate reuses placement and selection routines from the rewriter. Standalone `pdf.redact_verify` takes no evidence parameter and never returns `verified`; it returns `unverifiable`, `partial` or `failed`, because region render and image pixel gates are unavailable without original rewrite context.
+> - **Shared images**: Any shared image XObject is rewritten in place, clearing target pixels across every page referencing the XObject.
+> - **Explicit refusals**: Uninspected carriers intersecting redaction regions or affected pages (inline images `BI`, shadings `sh`, font-setting `gs`, painted vector paths when `scope.vectors` is true, and non-image Form XObjects anywhere on processed pages) fail closed with an explicit refusal error naming the refusing carrier.
 
 ### `ToolSpec` Descriptor Example
 
@@ -417,6 +424,8 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.unlock_forms` → `report.unlocked.pdf`
   - `pdf.ocr` → `scan.ocr.pdf`
   - `pdf.sign` → `contract.signed.pdf`
+  - `pdf.sign_verify` → `contract.sign-verify.json`
+  - `pdf.sign_remove` → `contract.unsigned.pdf`
   - `pdf.redact` → `contract.redacted.pdf` (plus `contract.redaction-report.json` when verification report is requested)
   - `pdf.info` → prints structured JSON to stdout on CLI when `--json` is passed (or human summary without `-o`), and writes `report.info.json` when `-o` specifies a directory or file.
   - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio`, `pdf.layers` and `pdf.annotations`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
@@ -733,7 +742,57 @@ Before running any tool that has one or more resolved secrets in `SecretBag`:
 
 ---
 
-## 12. CLI Commands and Tool Exit Codes
+## 12. Digital Signatures and Timestamping (`sign` group)
+
+Digital signature creation, verification, removal, and visual appearances are implemented across `ariad-pdf` (pure Rust, WASM + native) and the out-of-process Python `sign` engine pack (pyHanko):
+
+### 1. `pdf.sign_visual`
+- **Engine**: `ariad-pdf` (pure Rust in-process, `wasm` and `local` runtimes).
+- **Summary**: Places a visible signature box on a document page without cryptographic CMS payload.
+- **Modes**:
+  - `type`: Typographic text layout with optional signer metadata.
+  - `draw`: Vector stroke / path rendering.
+  - `image`: Image stamp (PNG/JPEG).
+- **Parameters**: `page` (1-based index), `rect` (`[x1, y1, x2, y2]` in points), `flatten` (boolean; `true` burns into page content, `false` adds a `/Subtype /Stamp` annotation).
+
+### 2. `pdf.sign`
+- **Engine**: `sign` pack (out-of-process pyHanko).
+- **Summary**: Creates standard PAdES digital signatures.
+- **Profiles / Levels**:
+  - `B-B`: Basic cryptographic signature with signer certificate.
+  - `B-T`: Signature with a trusted RFC 3161 timestamp token.
+  - `B-LT`: Long-term validation with embedded validation info (DSS containing OCSP/CRL responses from offline evidence).
+  - `B-LTA`: Long-term archival validation with a document timestamp covering DSS.
+- **Secrets**:
+  - `certificate`: Base64-encoded PKCS#12 payload (up to 10 MiB). Filesystem paths are strictly rejected by the host. CLI (`--secret certificate=@<file>`) and MCP (`secret_put` with base64 data) read/encode the content on their side. Staged to `<work_dir>/cert.p12` mode 0600 on unix, strictly bounded to 10 MiB, cleaned up unconditionally on exit.
+  - `password` / `key_password`: Decryption passphrase for PKCS#12 archive.
+- **Brokered Network Flow (AD-15)**: The engine runs in a network-denied sandbox. All RFC 3161 timestamping requests are emitted as protocol progress events (`tsa_request`) and brokered by the host's hardened `net::Client` against an optional TSA allowlist (`ASHIFT_TSA_ALLOWLIST`, required in cloud mode `ASHIFT_CLOUD_MODE=1`). Outbound TSA requests refuse HTTP redirects. Revocation info for B-LT/B-LTA is loaded exclusively from offline evidence; live network fetching is disabled.
+
+### 3. `pdf.sign_token` (Pro Tier)
+- **Engine**: `sign` pack.
+- **Summary**: Token signing interface.
+- **Availability**: Hardware token signing via PKCS#11 and OS Keychain integration are deferred and not available in 0.4.0. Invoking with a PKCS#11 module returns `error[tool_missing]`.
+- **Parameters**: `module` (path to PKCS#11 shared library), `slot`, `token_label`, `key_label`, `pin` (`x-ariad-secret`).
+
+### 4. `pdf.timestamp`
+- **Engine**: `sign` pack.
+- **Summary**: Adds an imprint-bound RFC 3161 document timestamp to a PDF without requiring a signer certificate.
+- **Parameters**: `field_name`, `tsa_url`, `md_algorithm` (optional, default: `"sha256"`).
+
+### 5. `pdf.sign_verify`
+- **Engine**: `sign` pack.
+- **Summary**: Cryptographically verifies all embedded signatures and document timestamps in a PDF.
+- **Report**: Returns JSON report with `signatures_count`, `valid`, `integrity`, per-signature signer subject/issuer/validity dates, `signing_time`, `revocation_status`, `coverage` (`entire_file`, `entire_revision`, `partial`), and DocMDP modification analysis.
+- **Security**: Network fetching is strictly disabled (`allow_fetching = false`). Operates with the OS trust store by default, and accepts `trust_anchors` and `offline_evidence` files. Revocation status relies on embedded DSS validation info, offline evidence, or deferred validation.
+
+### 6. `pdf.sign_remove`
+- **Engine**: `sign` pack.
+- **Summary**: Removes digital signature fields and annotations from a PDF.
+- **Safety**: Refuses encrypted PDFs upfront (`error[encrypted_input]`). Cleans up `/Root/Perms /DocMDP` and `/UR3`. Requires `confirm_invalidation: true` to prevent accidental loss of integrity guarantees.
+
+---
+
+## 13. CLI Commands and Tool Exit Codes
 
 ### CLI Commands
 

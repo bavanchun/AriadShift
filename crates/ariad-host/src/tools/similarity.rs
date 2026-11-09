@@ -105,6 +105,7 @@ fn render(
         &workspace,
         limits,
         &scrubber,
+        &crate::tools::secrets::SecretBag::new(),
         program,
         None,
         cancel.clone(),

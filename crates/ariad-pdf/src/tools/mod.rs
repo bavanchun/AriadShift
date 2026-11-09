@@ -57,6 +57,8 @@ pub mod rotate;
 pub mod rotate_content;
 pub mod sanitize;
 pub mod scale;
+#[cfg(feature = "codecs")]
+pub mod sign_visual;
 pub mod single_page;
 pub mod split;
 #[cfg(feature = "codecs")]
@@ -499,6 +501,14 @@ pub fn run_tool(
             params,
             ctx,
             |docs, params, ctx| add_text::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.sign_visual" => dispatch_structural::<ariad_core::tools::params::SignVisualParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| sign_visual::run(docs, params, &inputs[0].limits, ctx),
         ),
         #[cfg(feature = "codecs")]
         "pdf.stamp" => dispatch_structural::<ariad_core::tools::params::StampParams, _>(
@@ -1005,7 +1015,7 @@ fn finalize_tool_output_impl(
     })
 }
 
-fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
+pub(crate) fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
     use lopdf::Object;
     use std::collections::HashSet;
 

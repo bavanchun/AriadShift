@@ -266,6 +266,12 @@ run `just pack-qpdf <qpdf_dir>` and set `ASHIFT_PACK_QPDF` to
 additional unreviewed libraries and is for local testing only. Signed pack
 installation is unavailable until a release and index entry exist.
 
+## The sign pack
+
+The sign engine pack delivers digital signing, verification, and timestamping via pyHanko and cryptography in a sandboxed, network-denied Python environment speaking `ariad-engine/2`.
+
+The pack is under development and is not yet published as an official release. In development environments, point `ASHIFT_SIGN_ENGINE` to the `ariad_sign` runner command line (e.g. `python -I -m ariad_sign`) or set `ASHIFT_PACK_SIGN` to an unpacked development pack directory containing `pack.toml`.
+
 ## Signing and publishing
 
 The PDFium and qpdf release workflows read `PACK_MINISIGN_KEY` and the optional `PACK_MINISIGN_KEY_PASSWORD` from the `release` environment, and select the committed public key using `PACK_SIGNING_KEY_ID`. Both require the tag commit to be an ancestor of `origin/main`. The manually dispatched `verify-pack-signing-key.yml` verifies that the configured key signs against the committed public key without publishing a pack; it cannot run until an owner or maintainer permits the dispatch ref in the `release` environment. `PACK_MINISIGN_KEY` must contain the complete two-line secret key file written by `minisign -G`, not just its base64 line. Docling signing and release publication are not automated yet ([#204](https://github.com/bavanchun/AriadShift/issues/204)).
