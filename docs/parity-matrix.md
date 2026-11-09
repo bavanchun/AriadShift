@@ -75,7 +75,7 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.extract_images` | convert | S03 extract images; extract images from scans | Extract Images | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `image.to_pdf` (JPEG, PNG, WebP, TIFF, BMP in-process via `ariad-pdf`; HEIC deferred — no permissive pure-Rust decoder) | convert | S12 image to PDF | Image to PDF; JPG to PDF; PNG to PDF; WebP to PDF; BMP to PDF; TIFF to PDF; HEIC to PDF | 4 | ariad-pdf | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
 | `pdf.tables_to_csv` | convert | S07 PDF to CSV | PDF to CSV; Extract Tables | 10 | ariad-host, docling, ariad-core | local (D4) | Free | CLI, MCP, web(h), mac |
-| `web.to_pdf` (host fetch, offline render, AD-15) | convert | S12 web URL to PDF | — | 10 (pending integration, D12/D13) | ariad-host, ariad-core, typst | local | Free | CLI, MCP, web(h), mac |
+| `web.to_pdf` (host fetch, offline render, AD-15) | convert | S12 web URL to PDF | — | 10 | ariad-host, ariad-core, typst | local | Free | CLI, MCP, web(h), mac |
 | `convert:pdf→docx` | convert | S06 PDF to DOCX | PDF to Word | 10 (styles in 11) | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
 | `convert:pdf→odt` | convert | S06 PDF to ODT | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
 | `convert:pdf→xlsx` | convert | S06 PDF to XLSX | PDF to Excel | 10 | docling, ariad-core | local (D4; wasm/cloud table detector deferred) | Free | CLI, MCP, web(h), mac |
@@ -176,10 +176,10 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.to_pdfa` (mandatory veraPDF validation, AD-13) | convert | S08 PDF to PDF/A | PDF to PDF/A | 10 (pending integration, D9) | ariad-pdf, ariad-host, verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.to_pdfua` (existing PDFs: accessibility report and failure, no repaired PDF; Typst IR export uses `--pdf-standard ua-1`, D9/D17) | convert | S09 PDF to PDF/UA | — | 10 (pending integration) | ariad-host, ariad-pdf | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.to_pdfa` (mandatory veraPDF validation, AD-13) | convert | S08 PDF to PDF/A | PDF to PDF/A | 10 | ariad-pdf, ariad-host, verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.to_pdfua` (existing PDFs: accessibility report and failure, no repaired PDF; Typst IR export uses `--pdf-standard ua-1`, D9/D17) | convert | S09 PDF to PDF/UA | — | 10 | ariad-host, ariad-pdf | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `pdf.validate_pdfa` / `pdf.validate_pdfua` | compare | S23 validate PDF/A, PDF/UA | — | 10 | verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.accessibility_report` | compare | S39 accessibility report (Enterprise or proprietary upstream) | — | 10 (pending integration, D9/D17) | ariad-pdf, verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.accessibility_report` | compare | S39 accessibility report (Enterprise or proprietary upstream) | — | 10 | ariad-pdf | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
 | `pdf.compare` (`mode`: `text`, `visual`, `both`) | compare | S36 compare two PDFs | Compare PDFs | 10 | ariad-pdf (text), pdfium (visual/both) | wasm (text), local (cloud in phase 13; D11) | Free | CLI, MCP, web, mac |
 | `edit.page_objects`, `edit.apply` (Page mode, in place) | edit | S33 PDF text editor | Edit PDF Text; PDF Editor (search, shapes, images) | 12 | pdfium | wasm, local | Pro (d) | CLI, MCP, web, mac |
 
@@ -315,12 +315,10 @@ Disposition of every row of the Stirling report's §2 feature table, in report o
 
 ## Phase 10 integration status
 
-This preparation branch includes the T0/T1/T2/T3a conversion routes, T5 compare,
-and the T7 veraPDF validators. `web.to_pdf` (D12/D13), `pdf.to_pdfa`,
-`pdf.to_pdfua`, `pdf.accessibility_report` and `convert --pdf-standard`
-(D9/D17) await T3b/T4 integration. Those rows record approved scope, not a claim
-of successful execution here. The final T6 gate must verify them after INT-5;
-they have not been rejected or moved to Not adopted.
+The conversion routes, compare, veraPDF validators, `web.to_pdf`,
+`pdf.to_pdfa`, `pdf.to_pdfua`, `pdf.accessibility_report` and
+`convert --pdf-standard` are integrated. Compliance output requires the
+veraPDF pack and system Java >=11; failed validation prevents publication.
 
 Conversion verification lives in
 [`route_golden.rs`](../crates/ariad-cli/tests/route_golden.rs),
@@ -330,9 +328,12 @@ Conversion verification lives in
 new readers and CBZ tool.
 [`compare_cli.rs`](../crates/ariad-cli/tests/compare_cli.rs) checks compare;
 [`verapdf_pack.rs`](../crates/ariad-cli/tests/verapdf_pack.rs) checks the validators.
+[`web_to_pdf_cli.rs`](../crates/ariad-cli/tests/web_to_pdf_cli.rs) checks URL
+conversion, and [`compliance_cli.rs`](../crates/ariad-cli/tests/compliance_cli.rs)
+checks PDF/A, PDF/UA and `--pdf-standard` publication gates.
 External engines must be installed for conversion gates; planning alone does not
-establish fidelity. D15 keeps new edges unmeasured until the single complete
-benchmark run. No preparation step regenerates `capabilities.json`.
+establish fidelity. Edge metrics come from the benchmark harness; edges without
+independent scored fixtures retain `metrics: null` (D15).
 
 ## Notes on Pages-Family Formats (PUB, VSD, WPD, WPS)
 

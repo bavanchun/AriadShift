@@ -198,13 +198,12 @@ for one CSV per detected table. PDF to PPTX uses the system LibreOffice PDF impo
 filter directly, without a PDFium rendering stage. Email attachments are listed,
 not opened or rendered. CBZ uses natural page order and preserves image page sizes.
 
-Integration status: the conversion routes above are available before the final
-Phase 10 benchmark regeneration. Route costs remain provisional until that run.
-`web.to_pdf`, the existing-PDF compliance tools and `convert --pdf-standard`
-are documented in the [parity matrix](parity-matrix.md#phase-10-integration-status)
-as pending integration; they are not exposed by this preparation branch.
-The approved compliance option is `--pdf-standard a-2b|a-3b|a-2u|ua-1` for
-Typst routes, with mandatory veraPDF validation before reporting conformance.
+[`web.to_pdf`](tools.md#webto_pdf) fetches a URL and its same-origin assets in
+the host, then renders offline through HTML → IR → Typst. The `pdf.to_pdfa`
+and `pdf.to_pdfua` tools and `convert --pdf-standard` require the `verapdf`
+pack and system Java >=11. They validate before publishing a conforming PDF;
+`pdf.to_pdfua` reports accessibility failures for existing PDFs without
+publishing a repaired document.
 
 #### Package metadata name encoding
 
