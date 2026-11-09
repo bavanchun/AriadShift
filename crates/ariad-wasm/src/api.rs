@@ -1934,4 +1934,54 @@ mod tests {
         assert_eq!(img_pdf.extension, "pdf");
         assert!(img_pdf.bytes.starts_with(b"%PDF-1.7"));
     }
+
+    #[test]
+    fn run_tool_pdf_compare_text_succeeds_in_wasm_and_visual_fails_early() {
+        let before = read_pdf_fixture("compare-before.pdf");
+        let after = read_pdf_fixture("compare-after.pdf");
+        let budget = 64 * 1024 * 1024;
+
+        // 1. Text mode runs in-process in WASM and produces report JSON
+        let res = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"text"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.compare text must succeed in wasm");
+        assert_eq!(res.format, "json");
+        assert_eq!(res.media_type, "application/json");
+        assert!(res.json().is_some());
+
+        // 2. Visual mode in WASM fails early with engine_unavailable ("pdfium", exit 5)
+        let visual_err = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"visual"}"#,
+            budget,
+            false,
+        )
+        .expect_err("pdf.compare visual must fail on wasm");
+        assert_eq!(visual_err.code(), "engine_unavailable");
+        assert_eq!(
+            visual_err.detail("engine"),
+            Some(&serde_json::json!("pdfium"))
+        );
+        assert_eq!(visual_err.detail("exit_code"), Some(&serde_json::json!(5)));
+
+        // 3. Both mode in WASM also fails early with engine_unavailable ("pdfium", exit 5)
+        let both_err = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"both"}"#,
+            budget,
+            false,
+        )
+        .expect_err("pdf.compare both must fail on wasm");
+        assert_eq!(both_err.code(), "engine_unavailable");
+    }
 }
