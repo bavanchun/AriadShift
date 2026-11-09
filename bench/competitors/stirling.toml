@@ -1,0 +1,35 @@
+image = "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
+platform = "linux/amd64"
+endpoint = "http://127.0.0.1:18711"
+openapi_path = "/v1/api-docs"
+routes = ["pdf->docx", "docx->pdf"]
+repeat = 3
+ocr = "off"
+profile = "editable"
+total_timeout_s = 570
+request_timeout_s = 90
+startup_timeout_s = 150
+# Integration replaces this entry with the frozen scorer callable or a thin API adapter.
+# No metric implementation or legacy metric fallback is permitted here.
+scorer = "ariad_bench.fidelity:score"
+
+[verification]
+date = "2026-11-10"
+source_url = "https://github.com/Stirling-Tools/Stirling-PDF/releases/tag/v3.3.0"
+release_published_at = "2026-11-05T08:24:34Z"
+registry = "https://hub.docker.com/r/stirlingtools/stirling-pdf"
+digest_source = "docker manifest inspect stirlingtools/stirling-pdf:3.3.0 (linux/amd64 manifest)"
+license = "MIT core with directory-specific proprietary licences; image also contains third-party components. Local evaluation only, never redistributed."
+license_url = "https://github.com/Stirling-Tools/Stirling-PDF/blob/v3.3.0/LICENSE"
+api_docs_url = "https://docs.stirlingpdf.com/Developers/API/"
+docker_docs_url = "https://docs.stirlingpdf.com/Server/Install/Docker/"
+
+[operations."pdf->docx"]
+path = "/api/v1/convert/pdf/word"
+options = { outputFormat = "docx" }
+query = { useStirlingOfficeConvert = "false" }
+
+[operations."docx->pdf"]
+path = "/api/v1/convert/file/pdf"
+options = {}
+query = { useStirlingOfficeConvert = "false" }
