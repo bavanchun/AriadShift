@@ -38,6 +38,7 @@ describe("format pairs", () => {
     expect(engineLabel("libreoffice")).toBe("LibreOffice");
     expect(engineLabel("docling")).toBe("Docling");
     expect(engineLabel("pdf")).toBe("PDF text reader");
+    expect(engineLabel("ariad-pdf")).toBe("AriadShift PDF");
     expect(ACCEPT.split(",")).toEqual(
       expect.arrayContaining([".md", ".markdown", ".html", ".htm", ".json", ".docx", ".epub"]),
     );

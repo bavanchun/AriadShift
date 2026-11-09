@@ -151,7 +151,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bash scripts/pack/sign-pack.sh --name verapdf --version 0.1.0 --manifest pack-dist/pack.toml --public-key "$PUBLIC_KEY"
-          (cd pack-dist && sha256sum * > SHA256SUMS)
+          (cd pack-dist && sha256sum -- * > SHA256SUMS)
           key_dir=$(mktemp -d "$RUNNER_TEMP/verapdf-sign.XXXXXX")
           trap 'rm -rf "$key_dir"' EXIT
           chmod 700 "$key_dir"

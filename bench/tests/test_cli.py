@@ -634,3 +634,52 @@ def test_check_capabilities_fails_when_measured_edge_becomes_null(tmp_path: Path
     ])
     assert rc == 1
 
+
+def test_validate_capabilities_rejects_unlabeled_web_engine() -> None:
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "edges": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "from": {"type": "string"},
+                        "to": {"type": "string"},
+                        "engine": {"type": "string"},
+                    },
+                },
+            },
+        },
+    }
+
+    valid_cap = {
+        "edges": [
+            {
+                "from": "markdown",
+                "to": "ariad-ir+json",
+                "engine": "ariad-core",
+            },
+        ],
+    }
+
+    # Pass when all engine IDs are labeled
+    errors = validate_capabilities(valid_cap, schema, web_engine_labels={"ariad-core"})
+    assert not errors
+
+    # Fail when an edge uses an engine ID not in ENGINE_LABELS
+    unlabeled_cap = {
+        "edges": [
+            {
+                "from": "markdown",
+                "to": "ariad-ir+json",
+                "engine": "unknown-engine",
+            },
+        ],
+    }
+    errors = validate_capabilities(unlabeled_cap, schema, web_engine_labels={"ariad-core"})
+    assert len(errors) == 1
+    assert "uses engine 'unknown-engine' which is missing from ENGINE_LABELS" in errors[0]
+
+

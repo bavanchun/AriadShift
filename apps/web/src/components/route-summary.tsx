@@ -6,6 +6,7 @@ import { formatLabel } from "@/lib/formats";
 
 const ENGINE_LABELS: Record<string, string> = {
   "ariad-core": "AriadShift core",
+  "ariad-pdf": "AriadShift PDF",
   pandoc: "Pandoc",
   pdf: "PDF text reader",
   typst: "Typst",
