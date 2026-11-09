@@ -32,7 +32,7 @@ fn markdown_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
         })
         .collect();
     let schema: Value = serde_json::from_str(
-        &fs::read_to_string(support::ir_schema_path()).expect("read generated IR schema"),
+        &fs::read_to_string(support::legacy_ir_schema_path()).expect("read generated IR schema"),
     )
     .expect("parse generated IR schema");
     let validator = jsonschema::validator_for(&schema).expect("compile generated IR schema");
@@ -51,7 +51,8 @@ fn markdown_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
         let markdown_text = fs::read_to_string(path).expect("read UTF-8 Markdown fixture");
         let result = markdown::read(&markdown_text, &Limits::local())
             .unwrap_or_else(|error| panic!("parse fixture {}: {error}", fixture.id));
-        let value = serde_json::to_value(&result.document).expect("serialize fixture IR");
+        let value =
+            serde_json::to_value(result.document.to_v1().unwrap()).expect("serialize fixture IR");
         let errors = validator
             .iter_errors(&value)
             .map(|error| error.to_string())
@@ -63,6 +64,10 @@ fn markdown_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
             errors.join("\n")
         );
 
+        assert_v2_snapshot(
+            &result.document,
+            &format!("{}.ir", path.file_stem().unwrap().to_string_lossy()),
+        );
         let snapshot_name = format!("{}.ir", path.file_stem().unwrap().to_string_lossy());
         insta::with_settings!({
             snapshot_path => "../../../fixtures/golden",
@@ -97,7 +102,7 @@ fn html_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
     );
 
     let schema: Value = serde_json::from_str(
-        &fs::read_to_string(support::ir_schema_path()).expect("read generated IR schema"),
+        &fs::read_to_string(support::legacy_ir_schema_path()).expect("read generated IR schema"),
     )
     .expect("parse generated IR schema");
     let validator = jsonschema::validator_for(&schema).expect("compile generated IR schema");
@@ -108,7 +113,8 @@ fn html_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
             fs::read(&path).unwrap_or_else(|error| panic!("read fixture {}: {error}", fixture.id));
         let result = html::read(&html_bytes, &Limits::local())
             .unwrap_or_else(|error| panic!("parse fixture {}: {error}", fixture.id));
-        let value = serde_json::to_value(&result.document).expect("serialize fixture IR");
+        let value =
+            serde_json::to_value(result.document.to_v1().unwrap()).expect("serialize fixture IR");
         let errors = validator
             .iter_errors(&value)
             .map(|error| error.to_string())
@@ -120,6 +126,7 @@ fn html_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
             errors.join("\n")
         );
 
+        assert_v2_snapshot(&result.document, &format!("{}.ir", fixture.id));
         let snapshot_name = format!("{}.ir", fixture.id);
         insta::with_settings!({
             snapshot_path => "../../../fixtures/golden",
@@ -146,7 +153,7 @@ fn docling_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
     );
 
     let schema: Value = serde_json::from_str(
-        &fs::read_to_string(support::ir_schema_path()).expect("read generated IR schema"),
+        &fs::read_to_string(support::legacy_ir_schema_path()).expect("read generated IR schema"),
     )
     .expect("parse generated IR schema");
     let validator = jsonschema::validator_for(&schema).expect("compile generated IR schema");
@@ -156,7 +163,8 @@ fn docling_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
             .unwrap_or_else(|error| panic!("read fixture {}: {error}", fixture.id));
         let result = ariad_core::docling::read(&bytes, &Limits::local())
             .unwrap_or_else(|error| panic!("map fixture {}: {error}", fixture.id));
-        let mut value = serde_json::to_value(&result.document).expect("serialize fixture IR");
+        let mut value =
+            serde_json::to_value(result.document.to_v1().unwrap()).expect("serialize fixture IR");
         let errors = validator
             .iter_errors(&value)
             .map(|error| error.to_string())
@@ -181,6 +189,7 @@ fn docling_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
             .map(|warning| format!("{:?}: {}", warning.code, warning.message))
             .collect::<Vec<_>>();
 
+        assert_v2_snapshot(&result.document, &format!("{}.ir", fixture.id));
         let snapshot_name = format!("{}.ir", fixture.id);
         insta::with_settings!({
             snapshot_path => "../../../fixtures/golden",
@@ -194,4 +203,27 @@ fn docling_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
             );
         });
     }
+}
+
+fn assert_v2_snapshot(document: &ariad_core::ir::Document, name: &str) {
+    let schema: Value =
+        serde_json::from_str(&fs::read_to_string(support::ir_schema_path()).unwrap()).unwrap();
+    let value = serde_json::to_value(document).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    assert!(validator.is_valid(&value), "v2 snapshot must validate");
+    if std::env::var("ARIAD_BLESS_IR_V2").as_deref() == Ok("1") {
+        let directory = support::repository_root().join("fixtures/golden/v2");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join(format!("{name}.snap")),
+            format!(
+                "---\nsource: crates/ariad-core/tests/ir_snapshots.rs\n---\n{}\n",
+                serde_json::to_string_pretty(&value).unwrap()
+            ),
+        )
+        .unwrap();
+    }
+    insta::with_settings!({snapshot_path => "../../../fixtures/golden/v2", prepend_module_to_snapshot => false, omit_expression => true, snapshot_suffix => ""}, {
+        insta::assert_json_snapshot!(name, value);
+    });
 }

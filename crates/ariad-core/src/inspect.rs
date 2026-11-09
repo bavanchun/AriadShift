@@ -40,11 +40,11 @@ pub fn count_document(doc: &Document) -> DocumentCounts {
 fn count_blocks(blocks: &[Block], counts: &mut DocumentCounts) {
     for block in blocks {
         match block {
-            Block::Heading { level, content } => {
+            Block::Heading { level, content, .. } => {
                 *counts.headings.entry(*level).or_default() += 1;
                 count_inlines(content, counts);
             }
-            Block::Paragraph { content } => {
+            Block::Paragraph { content, .. } => {
                 counts.paragraphs += 1;
                 count_inlines(content, counts);
             }
@@ -52,10 +52,10 @@ fn count_blocks(blocks: &[Block], counts: &mut DocumentCounts) {
                 counts.words += text.split_whitespace().count();
             }
             Block::Math { .. } => {}
-            Block::Quote { blocks } => {
+            Block::Quote { blocks, .. } => {
                 count_blocks(blocks, counts);
             }
-            Block::PageBreak {} => {}
+            Block::PageBreak { .. } => {}
             Block::List { items, .. } => {
                 for item in items {
                     count_blocks(&item.blocks, counts);
@@ -98,7 +98,8 @@ fn count_inlines(inlines: &[Inline], counts: &mut DocumentCounts) {
             Inline::Text { text } | Inline::Code { text } => {
                 counts.words += text.split_whitespace().count();
             }
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }

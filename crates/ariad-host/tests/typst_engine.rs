@@ -59,7 +59,12 @@ fn text(value: &str) -> Inline {
 }
 
 fn para(content: Vec<Inline>) -> Block {
-    Block::Paragraph { content }
+    Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        content,
+    }
 }
 
 fn cell(blocks: Vec<Block>) -> TableCell {
@@ -76,6 +81,7 @@ fn document(body: Vec<Block>) -> Document {
         body,
         ..Document::default()
     }
+    .finalize_import()
 }
 
 fn options() -> TypstOptions {
@@ -135,6 +141,9 @@ fn hostile_documents_compile_and_show_their_text_verbatim() {
         let footnote_id = format!("note {value}");
         let document = document(vec![
             Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 level: 1,
                 content: vec![Inline::Emph {
                     content: vec![text(value)],
@@ -147,10 +156,16 @@ fn hostile_documents_compile_and_show_their_text_verbatim() {
                 },
             ]),
             Block::Code {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 lang: Some((*value).to_owned()),
                 text: (*value).to_owned(),
             },
             Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: Some(vec![text(value)]),
                 columns: vec![ColumnSpec {
                     align: Alignment::Right,
@@ -164,7 +179,10 @@ fn hostile_documents_compile_and_show_their_text_verbatim() {
                 footnotes: vec![text(value)],
             },
             Block::Footnote {
-                id: footnote_id,
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                note_id: footnote_id,
                 blocks: vec![para(vec![text(value)])],
             },
         ]);
@@ -233,6 +251,9 @@ fn vietnamese_documents_are_fully_covered_by_the_embedded_fonts() {
             }],
         }]),
         Block::Code {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             lang: None,
             text: line.clone(),
         },
@@ -303,6 +324,7 @@ fn undecodable_images_fall_back_to_alt_text() {
         document.assets.insert(
             id.to_owned(),
             Asset {
+                font: None,
                 media_type: media_type.to_owned(),
                 bytes,
             },
@@ -339,7 +361,17 @@ fn nested_quotes(depth: usize) -> Block {
     let mut block = para(vec![text("quote leaf")]);
     for _ in 0..depth {
         block = Block::Quote {
-            blocks: vec![block, Block::PageBreak {}],
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            blocks: vec![
+                block,
+                Block::PageBreak {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                },
+            ],
         };
     }
     block
@@ -349,6 +381,9 @@ fn nested_lists(depth: usize) -> Block {
     let mut block = para(vec![text("list leaf")]);
     for level in 0..depth {
         block = Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: level % 2 == 0,
             start: Some(u64::MAX),
             tight: level % 3 == 0,
@@ -365,6 +400,9 @@ fn nested_tables(depth: usize) -> Block {
     let mut block = para(vec![text("table leaf")]);
     for _ in 0..depth {
         block = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: Some(vec![text("caption")]),
             columns: vec![],
             head: vec![vec![TableCell {
@@ -418,9 +456,15 @@ fn nested_mixed(depth: usize) -> Block {
     for level in 0..depth {
         block = match level % 4 {
             0 => Block::Quote {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 blocks: vec![block],
             },
             1 => Block::List {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 ordered: false,
                 start: None,
                 tight: false,
@@ -430,6 +474,9 @@ fn nested_mixed(depth: usize) -> Block {
                 }],
             },
             2 => Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![vec![cell(vec![block])]],
@@ -437,6 +484,9 @@ fn nested_mixed(depth: usize) -> Block {
                 footnotes: vec![],
             },
             _ => Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: Some(vec![nested_inline(40)]),
                 columns: vec![],
                 head: vec![],
@@ -461,7 +511,10 @@ fn deep_and_irregular_structures_compile() {
     // referenced from several places.
     for index in 0..30 {
         body.push(Block::Footnote {
-            id: format!("n{index}"),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: format!("n{index}"),
             blocks: vec![
                 para(vec![
                     text(&format!("note {index}")),
@@ -474,6 +527,9 @@ fn deep_and_irregular_structures_compile() {
         });
     }
     body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: Some(vec![text("long")]),
         columns: vec![],
         head: vec![vec![cell(vec![para(vec![
@@ -661,7 +717,11 @@ fn output_page_limit_is_checked_before_publishing_an_artifact() {
     let workspace = Workspace::new().unwrap();
     let document = document(vec![
         para(vec![text("First")]),
-        Block::PageBreak {},
+        Block::PageBreak {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+        },
         para(vec![text("Second")]),
     ]);
     fs::write(

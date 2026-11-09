@@ -169,6 +169,8 @@ pub struct Written {
 pub struct WriteOptions<'a> {
     /// Title used when the document has none, typically the input file stem.
     pub title_fallback: Option<&'a str>,
+    /// Explicit IR wire version; valid only for JSON output (1 or 2).
+    pub ir_version: Option<u8>,
 }
 
 /// Whether [`read`] supports `format`.
@@ -374,6 +376,16 @@ pub fn write(
     document: &Document,
     options: WriteOptions<'_>,
 ) -> Result<Written, PipelineError> {
+    validate_ir_version(format, options.ir_version)?;
+    if format == Format::AriadIrJson {
+        validate_ir_structure(document, &Limits::local())?;
+    }
+    let prohibited_fonts = document
+        .assets
+        .values()
+        .any(|asset| !asset.can_export_bytes());
+    let safe_document = prohibited_fonts.then(|| document.without_prohibited_fonts().0);
+    let document = safe_document.as_ref().unwrap_or(document);
     let output = match format {
         Format::Markdown => writer_markdown::write(document),
         Format::Html => writer_html::write_with_title_fallback(document, options.title_fallback),
@@ -384,26 +396,37 @@ pub fn write(
                 writer_xlsx::write(document).map_err(|error| PipelineError::InvalidInput {
                     reason: error.to_string(),
                 })?;
+            let mut warnings: Vec<_> = output.warnings.iter().map(Notice::from).collect();
+            if prohibited_fonts {
+                warnings.push(Notice::new("font_embedding_restricted", "Embedded font bytes with restricted or unknown permission were omitted; use the family fallback."));
+            }
             return Ok(Written {
                 bytes: output.bytes,
-                warnings: output.warnings.iter().map(Notice::from).collect(),
+                warnings,
             });
         }
         Format::AriadIrJson => {
-            let bytes =
-                serde_json::to_vec_pretty(document).map_err(|error| PipelineError::InvalidIr {
-                    reason: error.to_string(),
-                })?;
-            return Ok(Written {
-                bytes,
-                warnings: Vec::new(),
-            });
+            let document = document.clone().finalize_import();
+            validate_ir_document(&document, &Limits::local())?;
+            let mut warnings = Vec::new();
+            if prohibited_fonts {
+                warnings.push(Notice::new("font_embedding_restricted", "Embedded font bytes with restricted or unknown permission were omitted; use the declared font family fallback."));
+            }
+            let bytes = if options.ir_version == Some(1) {
+                warnings.push(Notice::new("ir_version_loss", "Writing ariad-ir/1 drops stable block identities, styles, sections, source maps and font metadata."));
+                serde_json::to_vec_pretty(&document.to_v1().map_err(|error| invalid_ir(&error))?)
+            } else { serde_json::to_vec_pretty(&document) }.map_err(|error| invalid_ir(&error))?;
+            return Ok(Written { bytes, warnings });
         }
         other => return Err(PipelineError::WriterUnavailable { format: other }),
     };
+    let mut warnings: Vec<_> = output.warnings.iter().map(Notice::from).collect();
+    if prohibited_fonts {
+        warnings.push(Notice::new("font_embedding_restricted", "Embedded font bytes with restricted or unknown permission were omitted; use the family fallback."));
+    }
     Ok(Written {
         bytes: output.content.into_bytes(),
-        warnings: output.warnings.iter().map(Notice::from).collect(),
+        warnings,
     })
 }
 
@@ -442,10 +465,38 @@ pub fn read_ir_json(bytes: &[u8], limits: &Limits) -> Result<Document, PipelineE
         });
     }
 
-    let mut document: Document = deserialize_bounded(bytes).map_err(|error| invalid_ir(&error))?;
+    {
+        let wire: serde_json::Value =
+            deserialize_bounded(bytes).map_err(|error| invalid_ir(&error))?;
+        crate::ir::version::validate_wire_limits(&wire, limits)?;
+    }
+    let legacy = probe.version.as_deref() != Some(IR_VERSION);
+    let mut document: Document = if legacy {
+        crate::ir::version::upgrade_legacy(
+            deserialize_bounded(bytes).map_err(|error| invalid_ir(&error))?,
+        )
+        .map_err(|error| invalid_ir(&error))?
+    } else {
+        deserialize_bounded(bytes).map_err(|error| invalid_ir(&error))?
+    };
+    validate_ir_structure(&document, limits)?;
+    if legacy {
+        document.assign_block_ids();
+    }
     validate_ir_document(&document, limits)?;
-    document.version = IR_VERSION.to_owned();
     Ok(document)
+}
+
+/// Checks output version options before any artifact is published.
+pub fn validate_ir_version(format: Format, version: Option<u8>) -> Result<(), PipelineError> {
+    if version.is_some_and(|v| !matches!(v, 1 | 2))
+        || (version.is_some() && format != Format::AriadIrJson)
+    {
+        return Err(PipelineError::InvalidInput {
+            reason: "ir_version must be 1 or 2 and requires JSON output".into(),
+        });
+    }
+    Ok(())
 }
 
 enum IrNode<'a> {
@@ -459,11 +510,52 @@ enum IrNode<'a> {
 /// furniture share the block and footnote-id budgets. Asset limits are per asset.
 /// This heap-based walk does not recurse through untrusted blocks or inlines.
 pub fn validate_ir_document(document: &Document, limits: &Limits) -> Result<(), PipelineError> {
+    validate_ir_structure(document, limits)?;
+    let invalid = |reason| PipelineError::InvalidIr { reason };
+    document
+        .styles
+        .validate(limits.max_nesting_depth, limits.max_blocks as usize)
+        .map_err(invalid)?;
+    for (_, block) in crate::ir::blocks_with_paths(document) {
+        if matches!(block, Block::Table { .. }) {
+            document
+                .styles
+                .resolve_table(
+                    block.style().as_ref(),
+                    block.direct(),
+                    limits.max_nesting_depth,
+                )
+                .map_err(invalid)?;
+        } else {
+            document
+                .styles
+                .resolve_paragraph(
+                    block.style().as_ref(),
+                    block.direct(),
+                    limits.max_nesting_depth,
+                )
+                .map_err(invalid)?;
+        }
+    }
+    document.validate_geometry().map_err(invalid)?;
+    Ok(())
+}
+
+fn validate_ir_structure(document: &Document, limits: &Limits) -> Result<(), PipelineError> {
     use sha2::{Digest, Sha256};
     use std::collections::BTreeSet;
 
     limits.validate()?;
     for (id, asset) in &document.assets {
+        if asset
+            .font
+            .as_ref()
+            .is_some_and(|f| f.family.trim().is_empty() || !asset.is_font_media_type())
+        {
+            return Err(PipelineError::InvalidIr {
+                reason: "font metadata requires a font asset and nonempty family".into(),
+            });
+        }
         if let Some(maximum) = limits.max_asset_bytes
             && asset.bytes.len() as u64 > maximum
         {
@@ -492,7 +584,7 @@ pub fn validate_ir_document(document: &Document, limits: &Limits) -> Result<(), 
                     return Err(limit_exceeded("max_blocks"));
                 }
                 match block {
-                    Block::Heading { level, content } => {
+                    Block::Heading { level, content, .. } => {
                         if !(1..=6).contains(level) {
                             return Err(PipelineError::InvalidIr {
                                 reason: "heading level must be between 1 and 6".to_owned(),
@@ -500,10 +592,14 @@ pub fn validate_ir_document(document: &Document, limits: &Limits) -> Result<(), 
                         }
                         (&[], content, depth)
                     }
-                    Block::Paragraph { content } => (&[], content, depth),
+                    Block::Paragraph { content, .. } => (&[], content, depth),
                     Block::Figure { caption, .. } => (&[], caption, depth),
-                    Block::Quote { blocks } => (blocks, &[], depth + 1),
-                    Block::Footnote { id, blocks } => {
+                    Block::Quote { blocks, .. } => (blocks, &[], depth + 1),
+                    Block::Footnote {
+                        note_id: id,
+                        blocks,
+                        ..
+                    } => {
                         if !footnote_ids.insert(id) {
                             return Err(PipelineError::InvalidIr {
                                 reason: "footnote ids must be unique".to_owned(),
@@ -527,6 +623,7 @@ pub fn validate_ir_document(document: &Document, limits: &Limits) -> Result<(), 
                         head,
                         body,
                         footnotes,
+                        ..
                     } => {
                         for row in head.iter().chain(body) {
                             let mut remaining = columns.len() as u64;
@@ -555,11 +652,22 @@ pub fn validate_ir_document(document: &Document, limits: &Limits) -> Result<(), 
                     }
                     Block::Code { .. }
                     | Block::Math { .. }
-                    | Block::PageBreak {}
+                    | Block::PageBreak { .. }
                     | Block::Raw { .. } => (&[], &[], depth),
                 }
             }
             IrNode::Inline(inline) => match inline {
+                Inline::Styled {
+                    style,
+                    direct,
+                    content,
+                } => {
+                    document
+                        .styles
+                        .resolve_character(style.as_ref(), direct, None)
+                        .map_err(|reason| PipelineError::InvalidIr { reason })?;
+                    (&[], content, depth + 1)
+                }
                 Inline::Emph { content }
                 | Inline::Strong { content }
                 | Inline::Strikeout { content }
@@ -621,6 +729,9 @@ pub fn execute(
     limits: &Limits,
     options: WriteOptions<'_>,
 ) -> Result<Converted, PipelineError> {
+    if let Some(last) = steps.last() {
+        validate_ir_version(last.to, options.ir_version)?;
+    }
     let Some(first) = steps.first() else {
         return Err(PipelineError::InvalidInput {
             reason: "the route has no steps".to_owned(),
@@ -666,7 +777,11 @@ pub fn execute(
 
     let bytes = match stage {
         Stage::Bytes(_, bytes) => bytes.into_owned(),
-        Stage::Document(document) => write(Format::AriadIrJson, &document, options)?.bytes,
+        Stage::Document(document) => {
+            let written = write(Format::AriadIrJson, &document, options)?;
+            warnings.extend(written.warnings);
+            written.bytes
+        }
     };
     Ok(Converted { bytes, warnings })
 }
@@ -678,10 +793,10 @@ fn count_linked_images(document: &Document) -> usize {
     let mut inlines: Vec<&Inline> = Vec::new();
     while let Some(block) = blocks.pop() {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 inlines.extend(content);
             }
-            Block::Quote { blocks: nested } | Block::Footnote { blocks: nested, .. } => {
+            Block::Quote { blocks: nested, .. } | Block::Footnote { blocks: nested, .. } => {
                 blocks.extend(nested);
             }
             Block::List { items, .. } => {
@@ -706,17 +821,21 @@ fn count_linked_images(document: &Document) -> usize {
                     }
                 }
             }
-            Block::Figure { asset, caption } => {
+            Block::Figure { asset, caption, .. } => {
                 if matches!(asset, AssetRef::Url { .. }) {
                     count += 1;
                 }
                 inlines.extend(caption);
             }
-            Block::Code { .. } | Block::Math { .. } | Block::PageBreak {} | Block::Raw { .. } => {}
+            Block::Code { .. }
+            | Block::Math { .. }
+            | Block::PageBreak { .. }
+            | Block::Raw { .. } => {}
         }
         while let Some(inline) = inlines.pop() {
             match inline {
-                Inline::Emph { content }
+                Inline::Styled { content, .. }
+                | Inline::Emph { content }
                 | Inline::Strong { content }
                 | Inline::Strikeout { content }
                 | Inline::Superscript { content }
@@ -766,7 +885,7 @@ mod tests {
         assert_eq!(document.version, IR_VERSION);
         let output = serde_json::to_string(&document).unwrap();
         assert!(output.contains("Legacy content"));
-        assert!(output.contains("ariad-ir/1"));
+        assert!(output.contains("ariad-ir/2"));
     }
 
     #[test]
@@ -776,6 +895,7 @@ mod tests {
             &markdown_to_html(),
             &Limits::local(),
             WriteOptions {
+                ir_version: None,
                 title_fallback: Some("notes"),
             },
         )
@@ -797,7 +917,7 @@ mod tests {
         )
         .unwrap();
         let ir_text = String::from_utf8(ir.bytes.clone()).unwrap();
-        assert!(ir_text.contains("\"version\": \"ariad-ir/1\""), "{ir_text}");
+        assert!(ir_text.contains("\"version\": \"ariad-ir/2\""), "{ir_text}");
 
         let markdown = execute(
             &ir.bytes,
@@ -939,16 +1059,25 @@ mod tests {
         std::thread::Builder::new()
             .stack_size(16 * 1024 * 1024)
             .spawn(|| {
-                let mut block = Block::Paragraph { content: vec![] };
+                let mut block = Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content: vec![],
+                };
                 for _ in 0..60 {
                     block = Block::Quote {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         blocks: vec![block],
                     };
                 }
                 let document = Document {
                     body: vec![block],
                     ..Document::default()
-                };
+                }
+                .finalize_import();
                 let bytes = serde_json::to_vec(&document).unwrap();
                 let read = read_ir_json(&bytes, &Limits::local()).unwrap();
                 assert_eq!(read, document);

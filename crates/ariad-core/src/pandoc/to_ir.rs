@@ -56,11 +56,12 @@ pub fn to_ir(pandoc: &Pandoc, limits: &Limits) -> Result<ToIrOutput, MapError> {
     let meta = map_metadata(&pandoc.meta, limits.max_nesting_depth);
 
     Ok(ToIrOutput {
-        document: Document {
+        document: (Document {
             meta,
             body,
             ..Document::default()
-        },
+        })
+        .finalize_import(),
         warnings: mapper.warnings,
     })
 }
@@ -123,7 +124,12 @@ impl<'a> ToIrMapper<'a> {
                     return Ok(Vec::new());
                 }
                 self.check_block_budget()?;
-                Ok(vec![IrBlock::Paragraph { content }])
+                Ok(vec![IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content,
+                }])
             }
             Block::LineBlock(lines) => {
                 self.check_block_budget()?;
@@ -138,12 +144,20 @@ impl<'a> ToIrMapper<'a> {
                     }
                     content.extend(self.map_inlines(line, depth)?);
                 }
-                Ok(vec![IrBlock::Paragraph { content }])
+                Ok(vec![IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content,
+                }])
             }
             Block::CodeBlock(attr, text) => {
                 self.check_block_budget()?;
                 let lang = attr.1.first().cloned();
                 Ok(vec![IrBlock::Code {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     lang,
                     text: text.clone(),
                 }])
@@ -152,6 +166,9 @@ impl<'a> ToIrMapper<'a> {
                 if format.eq_ignore_ascii_case("html") {
                     self.check_block_budget()?;
                     Ok(vec![IrBlock::Raw {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         format: RawFormat::Html,
                         text: text.clone(),
                     }])
@@ -159,6 +176,9 @@ impl<'a> ToIrMapper<'a> {
                 {
                     self.check_block_budget()?;
                     Ok(vec![IrBlock::Raw {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         format: RawFormat::Tex,
                         text: text.clone(),
                     }])
@@ -174,6 +194,9 @@ impl<'a> ToIrMapper<'a> {
                 self.check_block_budget()?;
                 let mapped_blocks = self.map_blocks(blocks, depth.saturating_add(1))?;
                 Ok(vec![IrBlock::Quote {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     blocks: mapped_blocks,
                 }])
             }
@@ -189,6 +212,9 @@ impl<'a> ToIrMapper<'a> {
                     });
                 }
                 Ok(vec![IrBlock::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: true,
                     start: Some(*start),
                     tight,
@@ -205,6 +231,9 @@ impl<'a> ToIrMapper<'a> {
                     mapped_items.push(ListItem { checked, blocks });
                 }
                 Ok(vec![IrBlock::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: false,
                     start: None,
                     tight,
@@ -221,6 +250,9 @@ impl<'a> ToIrMapper<'a> {
                 for (term, def_blocks_list) in entries {
                     let term_inlines = self.map_inlines(term, depth)?;
                     let term_para = IrBlock::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![IrInline::Strong {
                             content: term_inlines,
                         }],
@@ -239,6 +271,9 @@ impl<'a> ToIrMapper<'a> {
                 // Each definition entry expands into a strong-term paragraph plus
                 // definition block(s), so the resulting multi-block list is loose.
                 Ok(vec![IrBlock::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: false,
                     start: None,
                     tight: false,
@@ -249,6 +284,9 @@ impl<'a> ToIrMapper<'a> {
                 self.check_block_budget()?;
                 let content = self.map_inlines(inlines, depth)?;
                 Ok(vec![IrBlock::Heading {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     level: *level,
                     content,
                 }])
@@ -260,6 +298,9 @@ impl<'a> ToIrMapper<'a> {
                     "thematic break was represented as a horizontal rule",
                 ));
                 Ok(vec![IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![IrInline::Text {
                         text: "———".to_owned(),
                     }],
@@ -308,6 +349,9 @@ impl<'a> ToIrMapper<'a> {
         body_rows.extend(foot_rows);
 
         Ok(IrBlock::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: caption_inlines,
             columns,
             head: head_rows,
@@ -385,6 +429,9 @@ impl<'a> ToIrMapper<'a> {
                         caption_inlines
                     };
                     return Ok(vec![IrBlock::Figure {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         asset: AssetRef::Url {
                             href: target.0.clone(),
                         },
@@ -400,6 +447,9 @@ impl<'a> ToIrMapper<'a> {
             let mut result = mapped_blocks;
             self.check_block_budget()?;
             result.push(IrBlock::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: caption_inlines,
             });
             Ok(result)
@@ -565,7 +615,10 @@ impl<'a> ToIrMapper<'a> {
                 self.footnotes.push((
                     note_number,
                     IrBlock::Footnote {
-                        id: id.clone(),
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        note_id: id.clone(),
                         blocks: mapped_blocks,
                     },
                 ));
@@ -619,7 +672,7 @@ fn coalesce_inlines(inlines: Vec<IrInline>) -> Vec<IrInline> {
 
 fn detect_task_checkbox(blocks: &mut [IrBlock]) -> Option<bool> {
     let first_para = match blocks.first_mut() {
-        Some(IrBlock::Paragraph { content }) => content,
+        Some(IrBlock::Paragraph { content, .. }) => content,
         _ => return None,
     };
     if first_para.is_empty() {

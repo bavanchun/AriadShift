@@ -4,6 +4,15 @@ use std::fs;
 
 #[test]
 fn ir_schema_matches_the_generated_document_schema() {
+    assert_eq!(
+        fs::read_to_string(support::legacy_ir_schema_path()).unwrap(),
+        support::generated_legacy_ir_schema(),
+        "frozen v1 schema changed"
+    );
+}
+
+#[test]
+fn ir_v2_schema_matches_the_generated_document_schema() {
     let path = support::ir_schema_path();
     let expected = support::generated_ir_schema();
 

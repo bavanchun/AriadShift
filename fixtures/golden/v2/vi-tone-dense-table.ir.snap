@@ -1,0 +1,201 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Bảng chữ có nhiều dấu",
+          "type": "text"
+        }
+      ],
+      "id": "b3edddea365fc4414aeff3d99f9158dd2ccb0b6b469dd9cec00e82d38cd306150",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Phố cổ",
+                    "type": "text"
+                  }
+                ],
+                "id": "b24fb225dea4d9b641f44f3bab91e37d07f2bd1713b78c2f697c8bbbcf33f4500",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Quãng ngắn",
+                    "type": "text"
+                  }
+                ],
+                "id": "ba6c0cbcd8b6af2220689f0539b5a5cdea7c07ca0c5752369fb5683640e3c20da",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Cần rẽ sớm",
+                    "type": "text"
+                  }
+                ],
+                "id": "bfe3d97700884f4c1ca6214eaeccc75bba3760344c6d1a74ca42b234732d2420c",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bến chợ",
+                    "type": "text"
+                  }
+                ],
+                "id": "bbe65c7b918334acee0f9f476298528a37901aa29ba1a757d4e37b332b2456a67",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Đường rộng",
+                    "type": "text"
+                  }
+                ],
+                "id": "bb2cc2621b36267d20c146c65baad4a4105d920df7b76d4e5c2eaa76f2b84f84d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Dễ nhận ra",
+                    "type": "text"
+                  }
+                ],
+                "id": "b72f370bec15deebbdcc1382a439679b40ccaf23bf0d53c54f3328b7fabf9870e",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Địa điểm",
+                    "type": "text"
+                  }
+                ],
+                "id": "b80057d213bab49e2a5d9db6a1bd48f5ef129aef240b57fbbdf5b25cab8d89bb3",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Đường vòng",
+                    "type": "text"
+                  }
+                ],
+                "id": "bf2892ac36f7dd4606eb4f76904b2c1829f2c2e2c310862050482682b3745e84f",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Ý kiến",
+                    "type": "text"
+                  }
+                ],
+                "id": "b08c33447882d583b05972e5dc3256ca3db7bdcbe0d039233bf48cabd1b2f204d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "bdfb4ad2faeac9b69fb7d75652feb0ecc346ebf70b912adab6010dce3514a4dc4",
+      "type": "table"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

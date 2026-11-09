@@ -26,6 +26,7 @@ fn local_docx_conversion_preserves_a_large_data_uri_image() {
     .unwrap();
 
     let request = ConvertRequest {
+        ir_version: None,
         input,
         output: output.clone(),
         target_format: "docx".to_owned(),

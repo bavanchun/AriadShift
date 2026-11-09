@@ -1,3 +1,7 @@
+mod support;
+
+use support::assert_semantic_blocks_eq;
+
 use ariad_core::{
     ir::{Alignment, Asset, AssetRef, Block, ColumnSpec, Document, Inline, TableCell},
     limits::Limits,
@@ -15,12 +19,16 @@ fn document_with_repeated_image(asset_bytes: Vec<u8>, references: usize) -> Docu
     doc.assets.insert(
         "logo".to_owned(),
         Asset {
+            font: None,
             media_type: "image/png".to_owned(),
             bytes: asset_bytes,
         },
     );
     for _ in 0..references {
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Image {
                 target: AssetRef::Asset {
                     id: "logo".to_owned(),
@@ -73,7 +81,7 @@ fn repeated_asset_references_share_one_markdown_data_uri_and_read_back() {
         .body
         .iter()
         .filter(|block| {
-            matches!(block, Block::Paragraph { content }
+            matches!(block, Block::Paragraph { content , ..}
                 if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
         })
         .count();
@@ -102,6 +110,9 @@ fn repeated_asset_references_keep_html_output_linear() {
 fn long_leading_space_runs_are_escaped_in_linear_time() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Text {
             text: format!("{}y", " ".repeat(1_000_000)),
         }],
@@ -131,6 +142,9 @@ fn long_leading_space_runs_are_escaped_in_linear_time() {
 fn wide_table_with_empty_rows(columns: usize, rows: usize) -> Document {
     let mut doc = Document::default();
     doc.body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: None,
         columns: vec![
             ColumnSpec {
@@ -174,10 +188,16 @@ fn footnote_ids_cannot_inject_html() {
     let doc = Document {
         body: vec![
             Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::FootnoteRef { id: id.into() }],
             },
             Block::Footnote {
-                id: id.into(),
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                note_id: id.into(),
                 blocks: vec![],
             },
         ],
@@ -196,6 +216,9 @@ fn cell(text: &str) -> TableCell {
         colspan: 1,
         header: None,
         blocks: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text { text: text.into() }],
         }],
     }
@@ -217,6 +240,9 @@ fn compact_table_rows_read_back_with_empty_trailing_cells() {
     let head = vec![vec![cell("First"), cell("Second"), cell("Third")]];
     let doc = Document {
         body: vec![Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: columns.clone(),
             head: head.clone(),
@@ -249,9 +275,12 @@ fn compact_table_rows_read_back_with_empty_trailing_cells() {
         blocks: vec![],
         ..cell("")
     };
-    assert_eq!(
-        compact_read.document.body,
-        vec![Block::Table {
+    assert_semantic_blocks_eq(
+        &compact_read.document.body,
+        &[Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns,
             head,
@@ -262,7 +291,7 @@ fn compact_table_rows_read_back_with_empty_trailing_cells() {
                 vec![cell("Full"), cell("Middle"), cell("Last")],
             ],
             footnotes: vec![],
-        }]
+        }],
     );
 }
 
@@ -270,6 +299,9 @@ fn compact_table_rows_read_back_with_empty_trailing_cells() {
 fn table_annotations_are_preserved_and_header_loss_warns() {
     let doc = Document {
         body: vec![Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: Some(vec![Inline::Text {
                 text: "Table caption".into(),
             }]),
@@ -325,6 +357,9 @@ fn oversized_writer_output_is_refused_with_a_warning() {
     // Escaping expands each byte into six output bytes in HTML.
     let doc = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "\"".repeat(45 * 1024 * 1024),
             }],
@@ -349,7 +384,7 @@ fn oversized_writer_output_is_refused_with_a_warning() {
 fn shared_markdown_images_keep_their_common_title() {
     let mut doc = document_with_repeated_image(vec![0x5a; 32], 3);
     for block in &mut doc.body {
-        if let Block::Paragraph { content } = block
+        if let Block::Paragraph { content, .. } = block
             && let Inline::Image { title, .. } = &mut content[0]
         {
             *title = Some("Common title".into());
@@ -362,7 +397,7 @@ fn shared_markdown_images_keep_their_common_title() {
     assert_eq!(parsed.document.body.len(), 3);
     for block in parsed.document.body {
         assert!(
-            matches!(block, Block::Paragraph { content } if matches!(&content[0], Inline::Image { title: Some(title), .. } if title == "Common title"))
+            matches!(block, Block::Paragraph { content , ..} if matches!(&content[0], Inline::Image { title: Some(title), .. } if title == "Common title"))
         );
     }
 }
@@ -381,7 +416,7 @@ fn shared_markdown_images_warn_when_a_title_is_missing() {
 fn assert_shared_image_titles(first: Option<&str>, second: Option<&str>) {
     let mut doc = document_with_repeated_image(b"\x89PNG\r\n\x1a\n".to_vec(), 2);
     for (index, title) in [first, second].into_iter().enumerate() {
-        if let Block::Paragraph { content } = &mut doc.body[index]
+        if let Block::Paragraph { content, .. } = &mut doc.body[index]
             && let Inline::Image {
                 alt,
                 title: image_title,
@@ -412,7 +447,7 @@ fn assert_shared_image_titles(first: Option<&str>, second: Option<&str>) {
     assert_eq!(parsed.document.assets.len(), 1);
     assert_eq!(parsed.document.body.len(), 2);
     for (index, block) in parsed.document.body.iter().enumerate() {
-        assert!(matches!(block, Block::Paragraph { content }
+        assert!(matches!(block, Block::Paragraph { content , ..}
             if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, alt, title }]
                 if alt == &format!("alt {index}") && title.as_deref() == first)));
     }
@@ -421,7 +456,7 @@ fn assert_shared_image_titles(first: Option<&str>, second: Option<&str>) {
 #[test]
 fn html_repeated_assets_keep_escaped_alt_text_and_warn_once() {
     let mut doc = document_with_repeated_image(vec![0x5a; 32], 3);
-    if let Block::Paragraph { content } = &mut doc.body[1]
+    if let Block::Paragraph { content, .. } = &mut doc.body[1]
         && let Inline::Image { alt, .. } = &mut content[0]
     {
         *alt = "<img src=x onerror=alert(1)>".into();
@@ -447,6 +482,9 @@ fn html_repeated_assets_keep_escaped_alt_text_and_warn_once() {
 fn sparse_tables_keep_cells_in_later_wider_rows() {
     let doc = Document {
         body: vec![Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![],
             head: vec![],
@@ -463,10 +501,16 @@ fn images_in_furniture_and_nested_blocks_share_the_definition() {
     let mut doc = document_with_repeated_image(vec![0x5a; 32], 3);
     let block = doc.body.pop().unwrap();
     doc.furniture.push(Block::Quote {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         blocks: vec![block],
     });
     let block = doc.body.pop().unwrap();
     doc.body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: None,
         columns: vec![],
         head: vec![],
@@ -487,6 +531,9 @@ fn images_in_furniture_and_nested_blocks_share_the_definition() {
 fn writer_ceiling_does_not_reject_large_plain_text() {
     let doc = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "a".repeat(33 * 1024 * 1024),
             }],
@@ -505,6 +552,9 @@ fn markdown_warns_when_row_headers_become_plain_cells() {
     header.header = Some(true);
     let doc = Document {
         body: vec![Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![],
             head: vec![],
@@ -537,6 +587,9 @@ fn supported_deep_inline_content_stays_writable() {
     }
     let doc = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![inline],
         }],
         ..Document::default()
@@ -551,6 +604,9 @@ fn omitted_header_rows_do_not_emit_unused_asset_definitions() {
     let mut doc = document_with_repeated_image(vec![0x5a; 32], 2);
     let blocks = std::mem::take(&mut doc.body);
     doc.body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: None,
         columns: vec![],
         head: vec![

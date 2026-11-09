@@ -1272,12 +1272,18 @@ mod tests {
         let input_path = workspace.input_dir().join("document.ir.json");
         let mut doc = Document::default();
         doc.body.push(Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 1,
             content: vec![Inline::Text {
                 text: "EPUB Test Heading".to_owned(),
             }],
         });
         doc.body.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "Paragraph in test EPUB.".to_owned(),
             }],

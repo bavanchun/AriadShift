@@ -94,7 +94,12 @@ impl Emitter<'_> {
         if let Some(paragraph) = self.paragraph.take() {
             let content = inlines(&paragraph.spans, false, self.limits, 0)?;
             self.push_body(
-                Block::Paragraph { content },
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content,
+                },
                 paragraph.page_no,
                 paragraph.bbox,
             );
@@ -110,6 +115,9 @@ impl Emitter<'_> {
         if let Some(list) = self.list.take() {
             self.push_body(
                 Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: list.ordered,
                     start: list.start,
                     tight: true,
@@ -131,7 +139,17 @@ impl Emitter<'_> {
     ) -> Result<(), ReadError> {
         self.flush()?;
         let content = inlines(spans, true, self.limits, 0)?;
-        self.push_body(Block::Heading { level, content }, page_no, bbox);
+        self.push_body(
+            Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                level,
+                content,
+            },
+            page_no,
+            bbox,
+        );
         Ok(())
     }
 
@@ -145,8 +163,16 @@ impl Emitter<'_> {
             // Rotated margin text (such as an arXiv identifier) waits until the paragraph it
             // interrupts is complete.
             let content = inlines(&spans, false, self.limits, 0)?;
-            self.deferred
-                .push((Block::Paragraph { content }, page_no, block.bbox));
+            self.deferred.push((
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content,
+                },
+                page_no,
+                block.bbox,
+            ));
             return Ok(());
         }
         if let Some(open) = &mut self.paragraph
@@ -181,7 +207,12 @@ impl Emitter<'_> {
         let content = inlines(&strip_marker(spans, marker.len), false, self.limits, 1)?;
         let item = ListItem {
             checked: None,
-            blocks: vec![Block::Paragraph { content }],
+            blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content,
+            }],
         };
         let next_number = marker
             .number
@@ -287,7 +318,12 @@ pub(super) fn assemble(pages: &[PageBlocks], limits: &Limits) -> Result<Assemble
                     let path = format!("furniture/{}", out.furniture.len());
                     out.positions
                         .insert(path, position(page.page_no, block.bbox));
-                    out.furniture.push(Block::Paragraph { content });
+                    out.furniture.push(Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
+                        content,
+                    });
                 }
                 continue;
             };
@@ -311,7 +347,7 @@ pub(super) fn assemble(pages: &[PageBlocks], limits: &Limits) -> Result<Assemble
 
 fn block_is_empty(block: &Block) -> bool {
     match block {
-        Block::Heading { content, .. } | Block::Paragraph { content } => content.is_empty(),
+        Block::Heading { content, .. } | Block::Paragraph { content, .. } => content.is_empty(),
         _ => false,
     }
 }
@@ -858,6 +894,7 @@ mod tests {
                 match inline {
                     Inline::Text { text } => out.push_str(text),
                     Inline::Strong { content }
+                    | Inline::Styled { content, .. }
                     | Inline::Emph { content }
                     | Inline::Superscript { content } => flatten(content, out),
                     _ => {}
@@ -869,15 +906,15 @@ mod tests {
             .map(|block| {
                 let mut out = String::new();
                 match block {
-                    Block::Heading { level, content } => {
+                    Block::Heading { level, content, .. } => {
                         out.push_str(&format!("h{level}:"));
                         flatten(content, &mut out);
                     }
-                    Block::Paragraph { content } => flatten(content, &mut out),
+                    Block::Paragraph { content, .. } => flatten(content, &mut out),
                     Block::List { items, ordered, .. } => {
                         out.push_str(if *ordered { "ol:" } else { "ul:" });
                         for item in items {
-                            if let [Block::Paragraph { content }] = item.blocks.as_slice() {
+                            if let [Block::Paragraph { content, .. }] = item.blocks.as_slice() {
                                 flatten(content, &mut out);
                                 out.push('|');
                             }
@@ -1022,7 +1059,7 @@ mod tests {
             }],
         }];
         let out = assemble(&pages, &Limits::local()).unwrap();
-        let Block::Paragraph { content } = &out.body[0] else {
+        let Block::Paragraph { content, .. } = &out.body[0] else {
             panic!("expected a paragraph");
         };
         assert_eq!(content.len(), 3);

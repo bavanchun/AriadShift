@@ -1,0 +1,244 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Vườn mở cửa",
+          "type": "text"
+        }
+      ],
+      "id": "b73e56b9807abc8f6d6e45ccc7a7fc641f60afab3aacf6d65c60326d5dcc1e19e",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.",
+          "type": "text"
+        }
+      ],
+      "id": "bff011a60a820a887d9588574d8ee594a6a49065ef3314b0712954d1fa08b70f7",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.",
+          "type": "text"
+        }
+      ],
+      "id": "b900720b29901a04084068f02ee29389cafed1ff175298a7a6421c8b79bf95f42",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.",
+          "type": "text"
+        }
+      ],
+      "id": "b1658b7422e958c2048f2de85241bb9ed37eeb194772ae25d1adcbc1cf3f98532",
+      "type": "paragraph"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Tưới cây",
+                    "type": "text"
+                  }
+                ],
+                "id": "bad36f332c710b083492ac4b7e25c347e59bbd206bbd83fe5e8ca37f43fed7cc4",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Đã xong",
+                    "type": "text"
+                  }
+                ],
+                "id": "bc36904e58b5dd43167fc5fb6a0a154fa372986ac3ce4b4f4e741bc7a15ff3eaf",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Mở cổng",
+                    "type": "text"
+                  }
+                ],
+                "id": "b7d5de29171fbeacf0dec21d96e7605f761eb30cb21815285d8be78a10d78de7c",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Đang chờ",
+                    "type": "text"
+                  }
+                ],
+                "id": "be3c68ac3d985e14974fb707ae31001a9ea7d8f96b833630c7c16e548ef2a5851",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Việc",
+                    "type": "text"
+                  }
+                ],
+                "id": "b4ad041201cfff3d4e7dec4b44a2c26011f7ad664d441681634b530d026f5a9a9",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Trạng thái",
+                    "type": "text"
+                  }
+                ],
+                "id": "b73c851b47ebb0088208cd4c9277c3eea681f7a088253f3ec1f63a89c0815b94c",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "baa9c5269d27e0d9f4f3182bc360783f0fa3b8c15d18764b9ae56d8b984041c99",
+      "type": "table"
+    },
+    {
+      "id": "b1bdeebe3e1d4b284eade5eea87834761de75cc72dd9a9328f27e40eda0bd37cc",
+      "items": [
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Quét lối đi",
+                  "type": "text"
+                }
+              ],
+              "id": "bc7e31046cd1dcb97666ac283638dbf4079df03087d77dfb3cfa25b5d5d4bc500",
+              "type": "paragraph"
+            }
+          ],
+          "checked": true
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Đặt thêm ghế",
+                  "type": "text"
+                }
+              ],
+              "id": "bece36a93f70889b8631472ce8aeb34260e29c6f216efccb882acb250318cd250",
+              "type": "paragraph"
+            }
+          ],
+          "checked": false
+        }
+      ],
+      "ordered": false,
+      "start": null,
+      "tight": true,
+      "type": "list"
+    },
+    {
+      "content": [
+        {
+          "text": "Xem ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "lịch sinh hoạt",
+              "type": "text"
+            }
+          ],
+          "title": null,
+          "type": "link",
+          "url": "https://example.org/garden"
+        },
+        {
+          "text": ".",
+          "type": "text"
+        }
+      ],
+      "id": "b92e0af12ee55e257328fb754b0099eeea84681ba11e5e3b6c9dbac5b59d6a513",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

@@ -122,6 +122,7 @@ fn media_files(bytes: &[u8], limits: &Limits) -> Result<Media, PipelineError> {
         files.insert(
             name,
             Asset {
+                font: None,
                 media_type: kind.to_owned(),
                 bytes: data,
             },
@@ -162,7 +163,8 @@ fn embed_inlines(
     for inline in inlines {
         match inline {
             Inline::Image { target, .. } => embed(target, files, assets, warnings),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -180,10 +182,10 @@ fn embed_blocks(
 ) {
     for block in blocks {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 embed_inlines(content, files, assets, warnings)
             }
-            Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
                 embed_blocks(blocks, files, assets, warnings)
             }
             Block::List { items, .. } => {
@@ -208,7 +210,7 @@ fn embed_blocks(
                     }
                 }
             }
-            Block::Figure { asset, caption } => {
+            Block::Figure { asset, caption, .. } => {
                 embed(asset, files, assets, warnings);
                 embed_inlines(caption, files, assets, warnings);
             }
@@ -308,7 +310,7 @@ mod tests {
         assert_eq!(result.document.meta.source_format, Some(Format::Docx));
         assert_eq!(result.document.assets[&id].media_type, "image/png");
         assert_eq!(result.document.assets[&id].bytes, PNG);
-        let Block::Paragraph { content } = &result.document.body[0] else {
+        let Block::Paragraph { content, .. } = &result.document.body[0] else {
             panic!("expected paragraph");
         };
         assert!(

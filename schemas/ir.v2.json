@@ -1,0 +1,1625 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/ir.v2.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Document",
+  "description": "A format-independent document.",
+  "type": "object",
+  "properties": {
+    "assets": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Asset"
+      },
+      "default": {}
+    },
+    "body": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Block"
+      }
+    },
+    "furniture": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Block"
+      }
+    },
+    "layout": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LayoutIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "meta": {
+      "$ref": "#/$defs/Metadata",
+      "default": {
+        "authors": [],
+        "date": null,
+        "keywords": [],
+        "language": null,
+        "source_format": null,
+        "subject": null,
+        "title": null
+      }
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Provenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Section"
+      }
+    },
+    "source_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[A-Za-z][A-Za-z0-9_.-]{0,127}$": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockPosition"
+          }
+        }
+      }
+    },
+    "styles": {
+      "$ref": "#/$defs/StyleSheet"
+    },
+    "version": {
+      "type": "string",
+      "const": "ariad-ir/2",
+      "default": "ariad-ir/2"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "x-status": "final",
+  "$defs": {
+    "Alignment": {
+      "type": "string",
+      "enum": [
+        "default",
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    "Asset": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "string"
+        },
+        "font": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FontAsset"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "media_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "media_type",
+        "bytes"
+      ]
+    },
+    "AssetRef": {
+      "description": "An asset or external URL referenced by an image.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "asset"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "href": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "url"
+            }
+          },
+          "required": [
+            "type",
+            "href"
+          ]
+        }
+      ]
+    },
+    "Block": {
+      "description": "The document's semantic content.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "level": {
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "heading"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "level",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "paragraph"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "lang": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "code"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "display": {
+              "type": "boolean"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tex": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "math"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "tex",
+            "display"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Block"
+              }
+            },
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "quote"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "blocks"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "page_break"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ListItem"
+              }
+            },
+            "ordered": {
+              "type": "boolean"
+            },
+            "start": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tight": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "list"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "ordered",
+            "tight",
+            "items"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/TableCell"
+                }
+              }
+            },
+            "caption": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ColumnSpec"
+              }
+            },
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "footnotes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "head": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/TableCell"
+                }
+              }
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "table"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "columns",
+            "head",
+            "body"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "asset": {
+              "$ref": "#/$defs/AssetRef"
+            },
+            "caption": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "figure"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "asset",
+            "caption"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Block"
+              }
+            },
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "note_id": {
+              "type": "string"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "footnote"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "note_id",
+            "blocks"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "direct": {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            "format": {
+              "$ref": "#/$defs/RawFormat"
+            },
+            "id": {
+              "$ref": "#/$defs/BlockId"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "raw"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "format",
+            "text"
+          ]
+        }
+      ]
+    },
+    "BlockId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+    },
+    "BlockPosition": {
+      "description": "Position and page location for a block in the layout index.",
+      "type": "object",
+      "properties": {
+        "bbox": {
+          "$ref": "#/$defs/BoundingBox"
+        },
+        "page_no": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "page_no",
+        "bbox"
+      ]
+    },
+    "BoundingBox": {
+      "description": "Bounding box coordinates with a top-left origin: `[left, top, right, bottom]`.",
+      "type": "object",
+      "properties": {
+        "bottom": {
+          "type": "number",
+          "format": "double"
+        },
+        "left": {
+          "type": "number",
+          "format": "double"
+        },
+        "right": {
+          "type": "number",
+          "format": "double"
+        },
+        "top": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "left",
+        "top",
+        "right",
+        "bottom"
+      ]
+    },
+    "CharacterStyle": {
+      "type": "object",
+      "properties": {
+        "baseline_shift": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Colour"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "font": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FontRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "highlight": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Colour"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "italic": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "letter_spacing": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "size_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "exclusiveMinimum": 0.0
+        },
+        "small_caps": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "strike": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "underline": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "weight": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 1000,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "Colour": {
+      "type": "string",
+      "pattern": "^#[0-9a-f]{6}$"
+    },
+    "ColumnSpec": {
+      "type": "object",
+      "properties": {
+        "align": {
+          "$ref": "#/$defs/Alignment"
+        }
+      },
+      "required": [
+        "align"
+      ]
+    },
+    "FontAsset": {
+      "type": "object",
+      "properties": {
+        "embedding": {
+          "$ref": "#/$defs/FontEmbedding"
+        },
+        "family": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "family",
+        "embedding"
+      ]
+    },
+    "FontEmbedding": {
+      "type": "string",
+      "enum": [
+        "allowed",
+        "restricted",
+        "unknown"
+      ]
+    },
+    "FontRef": {
+      "type": "object",
+      "properties": {
+        "fallback": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "family": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "family"
+      ]
+    },
+    "Format": {
+      "description": "A format supported by the core registry.",
+      "type": "string",
+      "enum": [
+        "markdown",
+        "html",
+        "docx",
+        "epub",
+        "pdf",
+        "png",
+        "ariad-ir+json",
+        "pandoc+json",
+        "docling+json",
+        "pptx",
+        "xlsx",
+        "odt",
+        "ods",
+        "odp",
+        "doc",
+        "xls",
+        "ppt",
+        "rtf",
+        "jpeg",
+        "webp",
+        "tiff"
+      ]
+    },
+    "Inline": {
+      "description": "A span of inline content.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "direct": {
+              "$ref": "#/$defs/CharacterStyle"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StyleId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "styled"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "emph"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "strong"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "strikeout"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "superscript"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "subscript"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "code"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "link"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "alt": {
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/AssetRef"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "image"
+            }
+          },
+          "required": [
+            "type",
+            "target",
+            "alt"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "soft_break"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "line_break"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "display": {
+              "type": "boolean"
+            },
+            "tex": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "math"
+            }
+          },
+          "required": [
+            "type",
+            "tex",
+            "display"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "footnote_ref"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "format": {
+              "$ref": "#/$defs/RawFormat"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "raw"
+            }
+          },
+          "required": [
+            "type",
+            "format",
+            "text"
+          ]
+        }
+      ]
+    },
+    "LayoutIndex": {
+      "description": "Page geometry and per-block bounding boxes keyed by stable block path.",
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,127}$": {
+              "$ref": "#/$defs/BlockPosition"
+            }
+          }
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PageGeometry"
+          }
+        }
+      }
+    },
+    "ListItem": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "checked": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "blocks"
+      ]
+    },
+    "Margins": {
+      "type": "object",
+      "properties": {
+        "bottom_pt": {
+          "type": "number",
+          "format": "double"
+        },
+        "left_pt": {
+          "type": "number",
+          "format": "double"
+        },
+        "right_pt": {
+          "type": "number",
+          "format": "double"
+        },
+        "top_pt": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "top_pt",
+        "right_pt",
+        "bottom_pt",
+        "left_pt"
+      ]
+    },
+    "Metadata": {
+      "description": "User-facing document metadata.",
+      "type": "object",
+      "properties": {
+        "authors": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "keywords": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "source_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Format"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subject": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
+    "PageGeometry": {
+      "description": "Page dimensions and geometry with a top-left origin.",
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "number",
+          "format": "double"
+        },
+        "page_no": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "width": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "page_no",
+        "width",
+        "height"
+      ]
+    },
+    "PageSize": {
+      "type": "object",
+      "properties": {
+        "height_pt": {
+          "type": "number",
+          "format": "double"
+        },
+        "width_pt": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "width_pt",
+        "height_pt"
+      ]
+    },
+    "ParagraphAlignment": {
+      "type": "string",
+      "enum": [
+        "left",
+        "center",
+        "right",
+        "justify"
+      ]
+    },
+    "ParagraphStyle": {
+      "type": "object",
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ParagraphAlignment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "background": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Colour"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "based_on": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Colour"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "font": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FontRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "indent_first_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "indent_left_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "indent_right_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "keep_with_next": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "line_height": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "exclusiveMinimum": 0.0
+        },
+        "page_break_before": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "size_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "exclusiveMinimum": 0.0
+        },
+        "space_after_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "minimum": 0.0
+        },
+        "space_before_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Provenance": {
+      "description": "Optional source and processing metadata, keyed by a stable extension identifier.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "RawFormat": {
+      "description": "Formats permitted for raw passthrough blocks and inlines.",
+      "type": "string",
+      "enum": [
+        "html",
+        "tex"
+      ]
+    },
+    "Section": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "footer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "header": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "margins": {
+          "$ref": "#/$defs/Margins"
+        },
+        "page_size": {
+          "$ref": "#/$defs/PageSize"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "page_size",
+        "margins",
+        "columns"
+      ]
+    },
+    "StyleDefaults": {
+      "type": "object",
+      "properties": {
+        "character": {
+          "$ref": "#/$defs/CharacterStyle"
+        },
+        "paragraph": {
+          "$ref": "#/$defs/ParagraphStyle"
+        },
+        "table": {
+          "$ref": "#/$defs/TableStyle"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StyleId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+    },
+    "StyleSheet": {
+      "type": "object",
+      "properties": {
+        "character": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,127}$": {
+              "$ref": "#/$defs/CharacterStyle"
+            }
+          }
+        },
+        "defaults": {
+          "$ref": "#/$defs/StyleDefaults"
+        },
+        "paragraph": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,127}$": {
+              "$ref": "#/$defs/ParagraphStyle"
+            }
+          }
+        },
+        "table": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,127}$": {
+              "$ref": "#/$defs/TableStyle"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "TableCell": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "colspan": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "header": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rowspan": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "rowspan",
+        "colspan",
+        "blocks"
+      ]
+    },
+    "TableStyle": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Colour"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "character": {
+          "$ref": "#/$defs/CharacterStyle"
+        },
+        "paragraph": {
+          "$ref": "#/$defs/ParagraphStyle"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

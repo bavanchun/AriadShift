@@ -131,7 +131,7 @@ impl TextWriter {
             return false;
         }
         match block {
-            Block::Heading { level, content } => {
+            Block::Heading { level, content, .. } => {
                 let mut temp = Vec::new();
                 let Some(heading_text) =
                     inlines_to_string(content, &mut temp, self.remaining_bytes)
@@ -143,19 +143,19 @@ impl TextWriter {
                 let hashes = "#".repeat((*level as usize).clamp(1, 6));
                 self.push_str(&format!("{hashes} {heading_text}\n\n"))
             }
-            Block::Paragraph { content } => {
+            Block::Paragraph { content, .. } => {
                 if !self.write_inlines(content) {
                     return false;
                 }
                 self.push_str("\n\n")
             }
-            Block::Code { lang: _, text } => {
+            Block::Code { lang: _, text, .. } => {
                 if !self.push_str(text) {
                     return false;
                 }
                 self.push_str("\n\n")
             }
-            Block::Math { tex, display: _ } => {
+            Block::Math { tex, .. } => {
                 self.warn(
                     WarningCode::MathNotConverted,
                     "TeX math could not be converted for the target and was kept as text",
@@ -165,7 +165,7 @@ impl TextWriter {
                 }
                 self.push_str("\n\n")
             }
-            Block::Quote { blocks } => {
+            Block::Quote { blocks, .. } => {
                 let mut inner = TextWriter::new();
                 inner.remaining_bytes = self.remaining_bytes;
                 if !inner.write_blocks(blocks, depth + 1) {
@@ -183,12 +183,13 @@ impl TextWriter {
                 }
                 self.push_char('\n')
             }
-            Block::PageBreak {} => self.push_str("\n---\n\n"),
+            Block::PageBreak { .. } => self.push_str("\n---\n\n"),
             Block::List {
                 ordered,
                 start,
                 tight: _,
                 items,
+                ..
             } => {
                 let mut num = start.unwrap_or(1);
                 for item in items {
@@ -234,6 +235,7 @@ impl TextWriter {
                 head,
                 body,
                 footnotes,
+                ..
             } => {
                 let requested_columns = head
                     .iter()
@@ -377,7 +379,9 @@ impl TextWriter {
 
                 true
             }
-            Block::Figure { asset: _, caption } => {
+            Block::Figure {
+                asset: _, caption, ..
+            } => {
                 self.warn(
                     WarningCode::ImageNotEmbedded,
                     "figure cannot be rendered in plain text",
@@ -396,7 +400,11 @@ impl TextWriter {
                     true
                 }
             }
-            Block::Footnote { id, blocks } => {
+            Block::Footnote {
+                note_id: id,
+                blocks,
+                ..
+            } => {
                 let mut inner = TextWriter::new();
                 inner.remaining_bytes = self.remaining_bytes;
                 if !inner.write_blocks(blocks, depth + 1) {
@@ -406,7 +414,7 @@ impl TextWriter {
                 let trimmed = inner.out.trim();
                 self.push_str(&format!("[^{id}]: {trimmed}\n\n"))
             }
-            Block::Raw { format, text: _ } => {
+            Block::Raw { format, .. } => {
                 self.warn(
                     WarningCode::RawDropped,
                     format!("raw {format:?} block dropped"),
@@ -443,7 +451,8 @@ impl TextWriter {
     fn write_inline(&mut self, inline: &Inline) -> bool {
         match inline {
             Inline::Text { text } => self.push_str(text),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Subscript { content } => self.write_inlines(content),
@@ -542,16 +551,25 @@ mod tests {
     #[test]
     fn roundtrips_headings_lists_and_tables_to_readable_text() {
         let doc = Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
             version: crate::ir::IR_VERSION.to_owned(),
             meta: Metadata::default(),
             body: vec![
                 Block::Heading {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     level: 1,
                     content: vec![Inline::Text {
                         text: "Introduction".into(),
                     }],
                 },
                 Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![
                         Inline::Text {
                             text: "Here is a ".into(),
@@ -567,6 +585,9 @@ mod tests {
                     ],
                 },
                 Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: false,
                     start: None,
                     tight: true,
@@ -574,6 +595,9 @@ mod tests {
                         ListItem {
                             checked: None,
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "First item".into(),
                                 }],
@@ -582,6 +606,9 @@ mod tests {
                         ListItem {
                             checked: Some(true),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Checked task".into(),
                                 }],
@@ -590,6 +617,9 @@ mod tests {
                     ],
                 },
                 Block::Table {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     caption: Some(vec![Inline::Text {
                         text: "Sample Data".into(),
                     }]),
@@ -607,6 +637,9 @@ mod tests {
                             colspan: 1,
                             header: Some(true),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text { text: "Key".into() }],
                             }],
                         },
@@ -615,6 +648,9 @@ mod tests {
                             colspan: 1,
                             header: Some(true),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Value".into(),
                                 }],
@@ -627,6 +663,9 @@ mod tests {
                             colspan: 1,
                             header: Some(false),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Alpha".into(),
                                 }],
@@ -637,6 +676,9 @@ mod tests {
                             colspan: 1,
                             header: Some(false),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text { text: "100".into() }],
                             }],
                         },
@@ -665,10 +707,16 @@ mod tests {
     #[test]
     fn emits_warnings_for_dropped_content() {
         let doc = Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
             version: crate::ir::IR_VERSION.to_owned(),
             meta: Metadata::default(),
             body: vec![
                 Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![
                         Inline::Link {
                             url: "https://example.com".into(),
@@ -695,10 +743,16 @@ mod tests {
                     ],
                 },
                 Block::Raw {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     format: RawFormat::Html,
                     text: "<div>dropped block</div>".into(),
                 },
                 Block::Figure {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     asset: crate::ir::AssetRef::Url {
                         href: "fig.png".into(),
                     },
@@ -729,16 +783,25 @@ mod tests {
     #[test]
     fn formats_headings_lists_tables_and_footnotes() {
         let doc = Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
             version: crate::ir::IR_VERSION.to_owned(),
             meta: Metadata::default(),
             body: vec![
                 Block::Heading {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     level: 2,
                     content: vec![Inline::Text {
                         text: "Detailed Section".into(),
                     }],
                 },
                 Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![
                         Inline::Text {
                             text: "Referencing a footnote".into(),
@@ -750,6 +813,9 @@ mod tests {
                     ],
                 },
                 Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: true,
                     start: Some(10),
                     tight: true,
@@ -757,6 +823,9 @@ mod tests {
                         ListItem {
                             checked: Some(false),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Pending item".into(),
                                 }],
@@ -765,6 +834,9 @@ mod tests {
                         ListItem {
                             checked: Some(true),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Finished item".into(),
                                 }],
@@ -773,6 +845,9 @@ mod tests {
                     ],
                 },
                 Block::Table {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     caption: Some(vec![Inline::Text {
                         text: "Metrics Table".into(),
                     }]),
@@ -790,6 +865,9 @@ mod tests {
                             colspan: 1,
                             header: Some(true),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Metric".into(),
                                 }],
@@ -800,6 +878,9 @@ mod tests {
                             colspan: 1,
                             header: Some(true),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Score".into(),
                                 }],
@@ -812,6 +893,9 @@ mod tests {
                             colspan: 1,
                             header: Some(false),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "Fidelity".into(),
                                 }],
@@ -822,6 +906,9 @@ mod tests {
                             colspan: 1,
                             header: Some(false),
                             blocks: vec![Block::Paragraph {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 content: vec![Inline::Text {
                                     text: "99.5%".into(),
                                 }],
@@ -833,8 +920,14 @@ mod tests {
                     }],
                 },
                 Block::Footnote {
-                    id: "fn1".into(),
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    note_id: "fn1".into(),
                     blocks: vec![Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![Inline::Text {
                             text: "Footnote explanation text.".into(),
                         }],
@@ -876,9 +969,15 @@ mod tests {
     #[test]
     fn pipe_tables_support_alignment_markers() {
         let doc = Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
             version: crate::ir::IR_VERSION.to_owned(),
             meta: Metadata::default(),
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![
                     ColumnSpec {
@@ -900,6 +999,9 @@ mod tests {
                         colspan: 1,
                         header: Some(true),
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text { text: "L".into() }],
                         }],
                     },
@@ -908,6 +1010,9 @@ mod tests {
                         colspan: 1,
                         header: Some(true),
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text {
                                 text: "Center".into(),
                             }],
@@ -918,6 +1023,9 @@ mod tests {
                         colspan: 1,
                         header: Some(true),
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text { text: "R".into() }],
                         }],
                     },
@@ -926,6 +1034,9 @@ mod tests {
                         colspan: 1,
                         header: Some(true),
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text { text: "Def".into() }],
                         }],
                     },
@@ -947,6 +1058,9 @@ mod tests {
     #[test]
     fn warns_on_dropped_table_features_and_metadata() {
         let doc = Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
             version: crate::ir::IR_VERSION.to_owned(),
             meta: Metadata {
                 title: Some("Document Title".into()),
@@ -954,6 +1068,9 @@ mod tests {
                 ..Default::default()
             },
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![vec![
@@ -992,9 +1109,15 @@ mod tests {
     #[test]
     fn ordered_list_counter_saturates_without_overflow() {
         let doc = Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
             version: crate::ir::IR_VERSION.to_owned(),
             meta: Metadata::default(),
             body: vec![Block::List {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 ordered: true,
                 start: Some(u64::MAX),
                 tight: true,
@@ -1002,6 +1125,9 @@ mod tests {
                     ListItem {
                         checked: None,
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text {
                                 text: "first".into(),
                             }],
@@ -1010,6 +1136,9 @@ mod tests {
                     ListItem {
                         checked: None,
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text {
                                 text: "second".into(),
                             }],

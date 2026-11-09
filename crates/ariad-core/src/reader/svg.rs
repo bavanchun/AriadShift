@@ -102,6 +102,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     let id = hex::encode(Sha256::digest(bytes));
     let asset = Asset {
+        font: None,
         media_type: "image/svg+xml".to_owned(),
         bytes: bytes.to_vec(),
     };
@@ -113,6 +114,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             ..Metadata::default()
         },
         body: vec![Block::Figure {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             asset: AssetRef::Asset { id: id.clone() },
             caption,
         }],
@@ -121,7 +125,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     document.assets.insert(id, asset);
 
     Ok(ReadOutput {
-        document,
+        document: document.finalize_import(),
         warnings: Vec::new(),
     })
 }
@@ -146,7 +150,7 @@ mod tests {
         assert_eq!(out.document.body.len(), 1);
         assert_eq!(out.document.assets.len(), 1);
 
-        if let Block::Figure { asset, caption } = &out.document.body[0] {
+        if let Block::Figure { asset, caption, .. } = &out.document.body[0] {
             assert!(matches!(asset, AssetRef::Asset { .. }));
             assert_eq!(
                 caption[0],

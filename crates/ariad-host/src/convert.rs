@@ -163,6 +163,9 @@ fn stem_without_ir(path: &Path) -> Option<String> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ConvertRequest {
+    /// Explicit IR output wire version (1 or 2), valid only for JSON targets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ir_version: Option<u8>,
     pub input: PathBuf,
     pub output: PathBuf,
     pub target_format: String,
@@ -194,6 +197,7 @@ impl ConvertRequest {
             title_fallback: None,
             asset_base_dir: None,
             reader_engine: None,
+            ir_version: None,
         }
     }
 }
@@ -450,6 +454,7 @@ where
     F: FnMut(ConvertEvent),
 {
     let request = ConvertRequest {
+        ir_version: None,
         input: input.to_path_buf(),
         output: output.to_path_buf(),
         target_format: target_format.to_owned(),
@@ -928,11 +933,23 @@ where
         if self.cancel.is_cancelled() {
             return Err(ConvertError::Interrupted);
         }
-        let stage = if step.from == Format::AriadIrJson {
+        let mut stage = if step.from == Format::AriadIrJson {
             self.load_ir(stage)?
         } else {
             stage
         };
+        if step.from == Format::AriadIrJson
+            && let Stage::Ir(document) = &mut stage
+        {
+            let before = document.assets.len();
+            document.assets.retain(|_, asset| asset.can_export_bytes());
+            if before != document.assets.len() {
+                self.warnings.push(ConvertWarning {
+                    code: "font_embedding_restricted".into(),
+                    message: "Embedded font bytes with restricted or unknown permission were omitted; use the family fallback.".into(),
+                });
+            }
+        }
         if step.engine == IN_PROCESS_ENGINE {
             self.native_step(stage, step)
         } else if step.engine == engines::IN_PROCESS_PDF_ENGINE {
@@ -1423,11 +1440,20 @@ where
         Stage::Ir(document) => {
             let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
             let path = workspace.output_dir().join("document.ir.json");
-            let file = fs::File::create(&path).map_err(|_| ConvertError::Failed)?;
-            let mut writer = std::io::BufWriter::new(file);
-            serde_json::to_writer_pretty(&mut writer, &document)
-                .map_err(|_| ConvertError::Failed)?;
-            writer.flush().map_err(|_| ConvertError::Failed)?;
+            let written = ariad_core::pipeline::write(
+                Format::AriadIrJson,
+                &document,
+                ariad_core::pipeline::WriteOptions {
+                    title_fallback: None,
+                    ir_version: request.ir_version,
+                },
+            )
+            .map_err(|_| ConvertError::Failed)?;
+            warnings.extend(written.warnings.into_iter().map(|w| ConvertWarning {
+                code: w.code,
+                message: w.message,
+            }));
+            fs::write(&path, &written.bytes).map_err(|_| ConvertError::Failed)?;
             (workspace, path)
         }
         Stage::Source => return Err(ConvertError::Failed),
@@ -1539,6 +1565,7 @@ where
     F: FnMut(ConvertEvent),
 {
     let convert_request = ConvertRequest {
+        ir_version: None,
         input: request.input.clone(),
         output: request.output.clone(),
         target_format: Format::AriadIrJson.id().to_owned(),
@@ -1574,6 +1601,7 @@ where
     F: FnMut(ConvertEvent),
 {
     let convert_request = ConvertRequest {
+        ir_version: None,
         input: request.input.clone(),
         output: request.output.clone(),
         target_format: request.target_format.clone(),
@@ -1751,6 +1779,11 @@ where
         });
     };
 
+    ariad_core::pipeline::validate_ir_version(target_format, request.ir_version).map_err(
+        |error| ConvertError::UnsupportedRoute {
+            detail: Some(error.to_string()),
+        },
+    )?;
     if input_format == target_format {
         return Err(ConvertError::UnsupportedRoute {
             detail: Some(reachable_detail()),

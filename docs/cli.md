@@ -85,6 +85,7 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 - `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
+- `--ir-version <1|2>`: Select the IR JSON wire version for single or batch JSON conversion. The default is `ariad-ir/2`; explicit `1` writes through the frozen legacy representation and reports `ir_version_loss` because identities, styles, sections, source maps and font metadata are omitted. Unsupported values and use with non-JSON output fail before destination creation.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -107,6 +108,7 @@ ashift convert notes.md --to pdf
 ashift convert legacy.doc --to md
 ashift convert slides.pptx --to pdf
 ashift convert notes.md --to json
+ashift convert notes.md --to json --ir-version 1 -o legacy.ir.json
 
 # Convert with JSON output for scripts or pipelines
 ashift convert draft.md --to docx --json

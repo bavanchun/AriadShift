@@ -1,0 +1,87 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Notes from the Archive",
+          "type": "text"
+        }
+      ],
+      "id": "b5b45149835e7ff6b106fef703dd2ddd85ccc9f307f97169fc4162b8b82ea6be1",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The map was redrawn after the flood.",
+          "type": "text"
+        },
+        {
+          "id": "date",
+          "type": "footnote_ref"
+        },
+        {
+          "text": " A pencil mark near the bridge was kept.",
+          "type": "text"
+        },
+        {
+          "id": "mark",
+          "type": "footnote_ref"
+        }
+      ],
+      "id": "b81ada0fbdaf8130c2f6e6ad027a68a8ee963e5f1f9b36d8352b2848aa5878d98",
+      "type": "paragraph"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "The river reached the lower stair in late May.",
+              "type": "text"
+            }
+          ],
+          "id": "b60b74995980b610b110fa68634df03a671f106c0d1c54cd9602ba0ce7be63372",
+          "type": "paragraph"
+        }
+      ],
+      "id": "b3380b1e5d255324161d7d04e76996a0226edcfecea4ea50c4df3002ebe5227ad",
+      "note_id": "date",
+      "type": "footnote"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "The mark was not present on the earlier copy.",
+              "type": "text"
+            }
+          ],
+          "id": "b9be0a50d7e707db40177e8df4d07112bd7f70863a84426ebb03cb3b0209b2e35",
+          "type": "paragraph"
+        }
+      ],
+      "id": "bfc74cd7a42ef9fb454a68b0ea592deba0d6cb67efce840a7603ab2ed033e02bd",
+      "note_id": "mark",
+      "type": "footnote"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

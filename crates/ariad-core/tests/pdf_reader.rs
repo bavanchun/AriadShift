@@ -47,7 +47,8 @@ fn inline_text(content: &[Inline], out: &mut String) {
     for inline in content {
         match inline {
             Inline::Text { text } | Inline::Code { text } => out.push_str(text),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -64,7 +65,7 @@ fn block_texts(blocks: &[Block]) -> Vec<String> {
     let mut texts = Vec::new();
     for block in blocks {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 let mut text = String::new();
                 inline_text(content, &mut text);
                 texts.push(text);
@@ -85,7 +86,7 @@ fn headings(document: &Document) -> Vec<(u8, String)> {
         .body
         .iter()
         .filter_map(|block| match block {
-            Block::Heading { level, content } => {
+            Block::Heading { level, content, .. } => {
                 let mut text = String::new();
                 inline_text(content, &mut text);
                 Some((*level, text))
@@ -117,7 +118,11 @@ fn assert_well_formed(output: &ReadOutput) {
         for index in 0..count {
             let position = layout
                 .blocks
-                .get(&format!("{prefix}/{index}"))
+                .get(if prefix == "body" {
+                    document.body[index].id()
+                } else {
+                    document.furniture[index].id()
+                })
                 .unwrap_or_else(|| panic!("missing position for {prefix}/{index}"));
             let page = &layout.pages[position.page_no as usize - 1];
             let bbox = position.bbox;
@@ -290,7 +295,7 @@ fn vietnamese_decision_keeps_words_whole_and_moves_page_numbers_to_furniture() {
     )));
     assert_eq!(block_texts(&document.furniture), vec!["2".to_owned()]);
     assert_eq!(
-        output.document.layout.as_ref().unwrap().blocks["furniture/0"].page_no,
+        output.document.layout.as_ref().unwrap().blocks[output.document.furniture[0].id()].page_no,
         2
     );
     let stats = stats(&output);

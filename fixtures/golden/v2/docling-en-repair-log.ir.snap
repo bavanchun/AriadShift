@@ -1,0 +1,492 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Desk lamp",
+                    "type": "text"
+                  }
+                ],
+                "id": "b4661a6c8c958895e42fe2a2a6d85429a9dbbed4d46edafd705df793fc152833e",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Loose switch",
+                    "type": "text"
+                  }
+                ],
+                "id": "b31de6fcf2557bb8b59b200e5a6a42e2551aacc5ce1801a39f12519623fbf87d1",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "15",
+                    "type": "text"
+                  }
+                ],
+                "id": "bc3c341dd182b32df46065285d8813a8e56822ddd4f3792c0dd27bb9b43ee8076",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "yes",
+                    "type": "text"
+                  }
+                ],
+                "id": "b122d70fbef673c6b564993fbf70643ce99b0930b4ec089e5d7a96b19f7559177",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Toaster",
+                    "type": "text"
+                  }
+                ],
+                "id": "b179db4f20b86b76d8c2df485d9d8dfc483ac9293012d2418debc4dc6a94a0670",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Broken lever",
+                    "type": "text"
+                  }
+                ],
+                "id": "b4136187fe1a47e54ae2a368f3c63b75a1f7be82a4b251fec0da80b2699337287",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "40",
+                    "type": "text"
+                  }
+                ],
+                "id": "b6f34ff60692d17b0114b615000d42c82a2394ae836a25c31f2387a82db1bb69b",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "yes",
+                    "type": "text"
+                  }
+                ],
+                "id": "b202f18106e6eaf73a996125cff0470d438c1d907b574428801858b23b9e4126e",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Radio",
+                    "type": "text"
+                  }
+                ],
+                "id": "b32f5741dc64db539d738021210d819e35094c053c25ecd85ca4d7a0cdc2b9279",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "No sound",
+                    "type": "text"
+                  }
+                ],
+                "id": "bf5ade2ef3ff3ee9d0c9da0a2e138561cd89c2c2ba7b4851c9810e7db3c2c6fae",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "55",
+                    "type": "text"
+                  }
+                ],
+                "id": "b5024d1bb882bc9252087bcd3f1b6e23a9c8d97ec9f902d13f25fd408ae0d65b6",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "no",
+                    "type": "text"
+                  }
+                ],
+                "id": "b999a1e63f1e3f6c8d8ecdbbc84c50f5a4d2228be65b0c44b79480e54e9256889",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bicycle light",
+                    "type": "text"
+                  }
+                ],
+                "id": "b95261688f93c99c6de87a7c7f7227ed752ae1b7b9ad78338776804e55dc0d25f",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Corroded battery contacts",
+                    "type": "text"
+                  }
+                ],
+                "id": "bc515c8ec92fc23211a09527e931cdcf56ad4c6d84583745413521bff7558c16a",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "10",
+                    "type": "text"
+                  }
+                ],
+                "id": "bbded58bab8b0910c7e1dec903ec44bf7fc9b4e22ed81908a3178aa3da012c64f",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "yes",
+                    "type": "text"
+                  }
+                ],
+                "id": "b2e2c9f4cca088905713ed7eac48f2fdacfca4059d85e44ee907ec4854d111e14",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Item",
+                    "type": "text"
+                  }
+                ],
+                "id": "be92810569b5333c7a910c9725ebb8a9d5dc96344de7a66d2ed2629a988b6913a",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Fault",
+                    "type": "text"
+                  }
+                ],
+                "id": "be916f4b3fd8711574858b985500950fb3f2f93177bdc4073926193ec7e7bd805",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Minutes",
+                    "type": "text"
+                  }
+                ],
+                "id": "bf2c85c34610bee7834197237b0396e98d4ce364320d8d82710b5b72c2a168068",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Fixed",
+                    "type": "text"
+                  }
+                ],
+                "id": "ba2d18c1b5ebd2e5b753d9799789cab5452d3116d8b41f95d15e3e3a6febbee48",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "b1b0fa419c381683efa83c34d39ee1c4daf20c3bf81f6b615a21a856a0b8b4d00",
+      "type": "table"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Mai",
+                    "type": "text"
+                  }
+                ],
+                "id": "b7bb6a09f7cb5a85dcdb1f53042b40304989f87dbcfb37859e021beb4c2301447",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Sáng thứ bảy",
+                    "type": "text"
+                  }
+                ],
+                "id": "b4e55240ae4a06e722c4af2df7431dd06692c5c90c1e2b8dcf604a20c5eaa87b6",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Hùng",
+                    "type": "text"
+                  }
+                ],
+                "id": "b60d645b56fd2bd78a26eedb89d00ff06d5bcba15bf5d79aa7cf90d64082644c7",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Chiều chủ nhật",
+                    "type": "text"
+                  }
+                ],
+                "id": "ba6491742c59f77e1ea206a8c3205167e9d213b7b326cdea3e35f515f77901da6",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Tên",
+                    "type": "text"
+                  }
+                ],
+                "id": "b0bd38c33292eb9dc28b1276a4a23a9ec633eea89163b5a4bec0c9c520c257d58",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Ca trực",
+                    "type": "text"
+                  }
+                ],
+                "id": "bda5e1dcf6e008ec5fa16f85495e20a96f88851bd0d96f14e171aba87caa6eaf4",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "bd56d8d0c988aafe6628ad32f90c8740def592aa0551731ef1a668c39122a2709",
+      "type": "table"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "xlsx",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

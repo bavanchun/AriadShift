@@ -232,7 +232,10 @@ fn read_impl(
         assets: state.assets,
         ..Document::default()
     };
-    Ok(ReadOutput { document, warnings })
+    Ok(ReadOutput {
+        document: document.finalize_import(),
+        warnings,
+    })
 }
 
 fn node_key(node: &AstNode<'_>) -> usize {
@@ -518,21 +521,33 @@ fn convert_node(
         NodeValue::Document => ConvertedNode::Blocks(blocks(children)),
         NodeValue::FrontMatter(_) => ConvertedNode::Skip,
         NodeValue::Paragraph => block(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: inlines(children),
         }),
         NodeValue::Heading(heading) => block(Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: heading.level,
             content: inlines(children),
         }),
         NodeValue::CodeBlock(code) => {
             let lang = code.info.split_whitespace().next().map(str::to_owned);
             block(Block::Code {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 lang,
                 text: code.literal.clone(),
             })
         }
         NodeValue::Math(math) if math.display_math && !parent_is_inline(node) => {
             block(Block::Math {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 tex: math.literal.clone(),
                 display: true,
             })
@@ -542,6 +557,9 @@ fn convert_node(
             display: math.display_math,
         }),
         NodeValue::BlockQuote | NodeValue::MultilineBlockQuote(_) => block(Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: blocks(children),
         }),
         NodeValue::Alert(_) => {
@@ -551,6 +569,9 @@ fn convert_node(
                 "GitHub alert formatting was reduced to a block quote",
             );
             block(Block::Quote {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 blocks: blocks(children),
             })
         }
@@ -563,6 +584,9 @@ fn convert_node(
                 })
                 .collect();
             block(Block::List {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 ordered: list.list_type == ListType::Ordered,
                 start: (list.list_type == ListType::Ordered).then_some(list.start as u64),
                 tight: list.tight,
@@ -600,6 +624,9 @@ fn convert_node(
                 })
                 .collect();
             block(Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns,
                 head,
@@ -622,7 +649,12 @@ fn convert_node(
             let cell_blocks = if content.is_empty() {
                 Vec::new()
             } else {
-                vec![Block::Paragraph { content }]
+                vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content,
+                }]
             };
             ConvertedNode::TableCell(TableCell {
                 rowspan: 1,
@@ -636,7 +668,10 @@ fn convert_node(
                 .footnote_definitions
                 .insert(normalize_footnote(&definition.name));
             block(Block::Footnote {
-                id: definition.name.clone(),
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                note_id: definition.name.clone(),
                 blocks: blocks(children),
             })
         }
@@ -647,12 +682,18 @@ fn convert_node(
                 "thematic break was represented as a horizontal rule",
             );
             block(Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "———".to_owned(),
                 }],
             })
         }
         NodeValue::HtmlBlock(html) => block(Block::Raw {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             format: RawFormat::Html,
             text: html.literal.clone(),
         }),
@@ -821,6 +862,7 @@ fn inline_text(inlines: &[Inline]) -> String {
             Inline::Text { text: value } | Inline::Code { text: value } => text.push_str(value),
             Inline::Math { tex, .. } => text.push_str(tex),
             Inline::Link { content, .. }
+            | Inline::Styled { content, .. }
             | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
@@ -1159,7 +1201,7 @@ mod tests {
 
     fn paragraph_text(block: &Block) -> String {
         match block {
-            Block::Paragraph { content } | Block::Heading { content, .. } => content
+            Block::Paragraph { content, .. } | Block::Heading { content, .. } => content
                 .iter()
                 .filter_map(|inline| match inline {
                     Inline::Text { text } => Some(text.as_str()),
@@ -1216,7 +1258,7 @@ mod tests {
         ));
         assert!(output.document.body.iter().any(|block| matches!(block, Block::Table { columns, body, .. } if columns[1].align == Alignment::Center && body.len() == 1)));
         assert!(output.document.body.iter().any(|block| matches!(block, Block::List { items, .. } if items.len() == 2 && items[0].checked == Some(true) && items[1].checked == Some(false))));
-        assert!(output.document.body.iter().any(|block| matches!(block, Block::Paragraph { content } if content.iter().any(|inline| matches!(inline, Inline::Link { url, .. } if url == "https://example.com")))));
+        assert!(output.document.body.iter().any(|block| matches!(block, Block::Paragraph { content , ..} if content.iter().any(|inline| matches!(inline, Inline::Link { url, .. } if url == "https://example.com")))));
         let serialized = serde_json::to_string(&output.document).unwrap();
         assert!(serialized.contains("strikeout"));
         assert!(serialized.contains("https://example.com"));
@@ -1245,11 +1287,9 @@ mod tests {
         let output = read("Missing[^x].\n\n[^unused]: Unused.\n", &Limits::local()).unwrap();
         assert!(matches!(output.document.body[0], Block::Paragraph { .. }));
         assert!(
-            output
-                .document
-                .body
-                .iter()
-                .any(|block| matches!(block, Block::Footnote { id, .. } if id == "unused"))
+            output.document.body.iter().any(
+                |block| matches!(block, Block::Footnote { note_id: id, .. } if id == "unused")
+            )
         );
         assert!(
             output
@@ -1278,10 +1318,10 @@ mod tests {
                 .document
                 .body
                 .iter()
-                .any(|block| matches!(block, Block::Footnote { id, .. } if id == "note"))
+                .any(|block| matches!(block, Block::Footnote { note_id: id, .. } if id == "note"))
         );
         assert!(
-            matches!(&output.document.body[0], Block::Paragraph { content } if content.iter().any(|inline| matches!(inline, Inline::FootnoteRef { id } if id == "note")))
+            matches!(&output.document.body[0], Block::Paragraph { content , ..} if content.iter().any(|inline| matches!(inline, Inline::FootnoteRef { id } if id == "note")))
         );
         assert!(output.warnings.is_empty());
     }
@@ -1334,13 +1374,13 @@ mod tests {
                 assert_eq!(output.document.assets.len(), 1);
                 assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
                 let images = output.document.body.iter().filter(|block| {
-                    matches!(block, Block::Paragraph { content } if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+                    matches!(block, Block::Paragraph { content , ..} if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
                 }).count();
                 assert_eq!(images, 3, "{markdown}");
                 assert!(output.warnings.is_empty(), "{:?}", output.warnings);
                 if definition.contains("first") {
                     for block in &output.document.body {
-                        if let Block::Paragraph { content } = block {
+                        if let Block::Paragraph { content, .. } = block {
                             assert!(
                                 matches!(content.as_slice(), [Inline::Image { title: Some(title), .. }] if title == "first\nsecond")
                             );
@@ -1385,7 +1425,7 @@ mod tests {
             match &output.document.body[0] {
                 Block::Code { text, .. } => assert_eq!(text, &format!("{definition}\n")),
                 Block::Raw { text, .. } => assert_eq!(text, &literal),
-                Block::Paragraph { content } => assert!(
+                Block::Paragraph { content, .. } => assert!(
                     matches!(content.as_slice(), [Inline::Code { text }] if text == definition)
                 ),
                 other => panic!("unexpected literal: {other:?}"),
@@ -1431,7 +1471,7 @@ mod tests {
             let markdown = format!("{}\n{definition}", "![pixel][pixel]\n\n".repeat(3));
             let output = read(&markdown, &Limits::local()).unwrap();
             let images = output.document.body.iter().filter(|block| {
-                matches!(block, Block::Paragraph { content } if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+                matches!(block, Block::Paragraph { content , ..} if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
             }).count();
             assert!(images == 3 || output.warnings.iter().any(|warning| warning.message == "shared data image references could not be interned; unresolved references may remain text"), "{markdown}");
         }
@@ -1514,7 +1554,7 @@ mod tests {
     fn literal_reference_roundtrip_keeps_code_spans_and_all_shared_images() {
         let output = shared_png_roundtrip("`[example]: literal`\n");
         assert!(
-            matches!(&output.document.body[0], Block::Paragraph { content }
+            matches!(&output.document.body[0], Block::Paragraph { content , ..}
             if matches!(content.as_slice(), [Inline::Code { text }] if text == "[example]: literal"))
         );
     }
@@ -1540,12 +1580,16 @@ mod tests {
         document.assets.insert(
             "pixel".into(),
             Asset {
+                font: None,
                 media_type: "image/png".into(),
                 bytes: png.to_vec(),
             },
         );
         for _ in 0..3 {
             document.body.push(Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Image {
                     target: AssetRef::Asset { id: "pixel".into() },
                     alt: "pixel".into(),
@@ -1563,7 +1607,7 @@ mod tests {
         assert_eq!(output.document.assets.len(), 1);
         assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
         let images = output.document.body.iter().filter(|block| {
-            matches!(block, Block::Paragraph { content }
+            matches!(block, Block::Paragraph { content , ..}
                 if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
         }).count();
         assert_eq!(images, 3);
@@ -1601,7 +1645,7 @@ mod tests {
         let output = read(&markdown, &Limits::local()).unwrap();
         assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
         let images = output.document.body.iter().filter(|block| {
-            matches!(block, Block::Paragraph { content }
+            matches!(block, Block::Paragraph { content , ..}
                 if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
         }).count();
         assert!(images == 3 || output.warnings.iter().any(|warning| warning.message == "shared data image references could not be interned; unresolved references may remain text"));
@@ -1744,7 +1788,7 @@ mod tests {
             assert_eq!(asset.media_type, "image/png");
             assert_eq!(output.document.body.len(), references);
             for block in &output.document.body {
-                assert!(matches!(block, Block::Paragraph { content }
+                assert!(matches!(block, Block::Paragraph { content , ..}
                     if matches!(content.as_slice(), [Inline::Image {
                         target: AssetRef::Asset { id: target }, ..
                     }] if target == id)));
@@ -1789,7 +1833,7 @@ mod tests {
         assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
         assert_eq!(output.document.body.len(), 1_000);
         for block in &output.document.body {
-            assert!(matches!(block, Block::Paragraph { content }
+            assert!(matches!(block, Block::Paragraph { content , ..}
                 if matches!(content.as_slice(), [Inline::Image {
                     target: AssetRef::Asset { .. }, title: Some(title), ..
                 }] if title == "Shared title")));
@@ -1812,7 +1856,7 @@ mod tests {
         assert_eq!(paragraph_text(&output.document.body[2]), "a:0:0");
         assert_eq!(output.document.assets.len(), 1);
         assert!(
-            matches!(&output.document.body[5], Block::Paragraph { content }
+            matches!(&output.document.body[5], Block::Paragraph { content , ..}
             if matches!(&content[0], Inline::Link { url, title: Some(title), .. }
                 if url == uri && title == "Pixel"))
         );
@@ -1844,7 +1888,7 @@ mod tests {
             .body
             .iter()
             .filter_map(|block| {
-                if let Block::Paragraph { content } = block
+                if let Block::Paragraph { content, .. } = block
                     && let Some(Inline::Link { url, .. }) = content.first()
                 {
                     return Some(url.len());
@@ -1871,11 +1915,11 @@ mod tests {
         assert_eq!(asset.media_type, "image/png");
         assert_eq!(asset.bytes, b"\x89PNG\r\n\x1a\n");
         assert!(
-            matches!(&output.document.body[0], Block::Paragraph { content }
+            matches!(&output.document.body[0], Block::Paragraph { content , ..}
             if matches!(&content[0], Inline::Image { target: AssetRef::Asset { id: embedded }, .. } if embedded == id))
         );
         assert!(
-            matches!(&output.document.body[1], Block::Paragraph { content }
+            matches!(&output.document.body[1], Block::Paragraph { content , ..}
             if matches!(&content[0], Inline::Image { target: AssetRef::Url { href }, .. } if href == "https://example.test/image.png"))
         );
 
@@ -1902,7 +1946,7 @@ mod tests {
     fn maps_images_to_urls_and_enforces_input_and_block_limits() {
         let output = read("![alt](assets/a.png)\n", &Limits::local()).unwrap();
         assert!(
-            matches!(&output.document.body[0], Block::Paragraph { content } if matches!(&content[0], Inline::Image { target: AssetRef::Url { href }, alt, .. } if href == "assets/a.png" && alt == "alt"))
+            matches!(&output.document.body[0], Block::Paragraph { content , ..} if matches!(&content[0], Inline::Image { target: AssetRef::Url { href }, alt, .. } if href == "assets/a.png" && alt == "alt"))
         );
 
         let mut input_limited = Limits::local();
@@ -2017,13 +2061,14 @@ mod tests {
     }
     /// Deepest chain of emphasis-like inlines in a paragraph.
     fn inline_depth(block: &Block) -> usize {
-        let Block::Paragraph { content } = block else {
+        let Block::Paragraph { content, .. } = block else {
             return 0;
         };
         let mut deepest = 0;
         let mut stack: Vec<(&Inline, usize)> = content.iter().map(|inline| (inline, 1)).collect();
         while let Some((inline, depth)) = stack.pop() {
-            if let Inline::Emph { content }
+            if let Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content } = inline
             {
@@ -2126,7 +2171,7 @@ mod tests {
     fn rejected_footnote_labels_keep_all_pending_text() {
         for text in ["a [^] b", "a [^outer [^inner] b", "a [^bad] b [^ok]"] {
             let output = read(text, &Limits::local()).unwrap();
-            let Block::Paragraph { content } = &output.document.body[0] else {
+            let Block::Paragraph { content, .. } = &output.document.body[0] else {
                 panic!("expected paragraph");
             };
             let reconstructed: String = content

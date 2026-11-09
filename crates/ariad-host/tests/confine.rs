@@ -849,6 +849,7 @@ fn test_convert_confined_parent_swap_race() {
             )
         {
             let request = ariad_host::convert::ConvertRequest {
+                ir_version: None,
                 input: in_confined.path.clone(),
                 output: out_confined.destination.clone(),
                 target_format: "md".to_owned(),
@@ -958,6 +959,7 @@ fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
     std::os::unix::fs::symlink(&private, &sub).unwrap();
 
     let request = ConvertRequest {
+        ir_version: None,
         input: isolated_input,
         output: output.destination.clone(),
         target_format: "json".to_owned(),
@@ -1042,6 +1044,7 @@ fn confined_conversions_resolve_assets_only_within_explicit_asset_base() {
         (true, "pooled_outside.json", "pooled_inside.json"),
     ] {
         let outside_request = ConvertRequest {
+            ir_version: None,
             input: input_outside_ref.clone(),
             output: out_dir.join(out_outside_name),
             target_format: "json".into(),
@@ -1090,6 +1093,7 @@ fn confined_conversions_resolve_assets_only_within_explicit_asset_base() {
         );
 
         let inside_request = ConvertRequest {
+            ir_version: None,
             input: input_inside_ref.clone(),
             output: out_dir.join(out_inside_name),
             target_format: "json".into(),

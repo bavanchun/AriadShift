@@ -679,17 +679,16 @@ fn detect_heading_outlines(
         .max(1);
     let mut raw_headings: Vec<(u8, String, u32)> = Vec::new();
 
-    for (block_idx, block) in read_out.document.body.iter().enumerate() {
+    for block in &read_out.document.body {
         ctx.check()?;
-        if let Block::Heading { level, content } = block {
+        if let Block::Heading { level, content, .. } = block {
             let title = inlines_to_plain_text(content, 0).trim().to_owned();
             if !title.is_empty() {
-                let key = format!("body/{block_idx}");
                 let page = read_out
                     .document
                     .layout
                     .as_ref()
-                    .and_then(|l| l.blocks.get(&key))
+                    .and_then(|l| l.blocks.get(block.id()))
                     .map(|pos| pos.page_no)
                     .unwrap_or(1)
                     .clamp(1, page_count);
@@ -699,17 +698,16 @@ fn detect_heading_outlines(
     }
 
     if raw_headings.is_empty() {
-        for (block_idx, block) in read_out.document.body.iter().enumerate() {
+        for block in &read_out.document.body {
             ctx.check()?;
-            if let Block::Paragraph { content } = block {
+            if let Block::Paragraph { content, .. } = block {
                 let text = inlines_to_plain_text(content, 0).trim().to_owned();
                 if let Some(level) = classify_fallback_heading_line(&text) {
-                    let key = format!("body/{block_idx}");
                     let page = read_out
                         .document
                         .layout
                         .as_ref()
-                        .and_then(|l| l.blocks.get(&key))
+                        .and_then(|l| l.blocks.get(block.id()))
                         .map(|pos| pos.page_no)
                         .unwrap_or(1)
                         .clamp(1, page_count);
@@ -789,7 +787,8 @@ fn inlines_to_plain_text(inlines: &[Inline], depth: usize) -> String {
             }
             Inline::Math { tex, .. } => out.push_str(tex),
             Inline::SoftBreak {} | Inline::LineBreak {} => out.push(' '),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }

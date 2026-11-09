@@ -89,6 +89,13 @@ pub fn resolve_in(document: &mut Document, base: &AssetBase, limits: &Limits) ->
         &mut document.assets,
         &mut warnings,
     );
+    resolve_blocks(
+        &mut document.furniture,
+        base,
+        limits.max_asset_bytes,
+        &mut document.assets,
+        &mut warnings,
+    );
     warnings
 }
 
@@ -101,10 +108,10 @@ fn resolve_blocks(
 ) {
     for block in blocks {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 resolve_inlines(content, base, max_asset_bytes, assets, warnings);
             }
-            Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
                 resolve_blocks(blocks, base, max_asset_bytes, assets, warnings);
             }
             Block::List { items, .. } => {
@@ -116,22 +123,27 @@ fn resolve_blocks(
                 caption,
                 head,
                 body,
+                footnotes,
                 ..
             } => {
                 if let Some(caption) = caption {
                     resolve_inlines(caption, base, max_asset_bytes, assets, warnings);
                 }
+                resolve_inlines(footnotes, base, max_asset_bytes, assets, warnings);
                 for row in head.iter_mut().chain(body) {
                     for cell in row {
                         resolve_blocks(&mut cell.blocks, base, max_asset_bytes, assets, warnings);
                     }
                 }
             }
-            Block::Figure { asset, caption } => {
+            Block::Figure { asset, caption, .. } => {
                 resolve_reference(asset, base, max_asset_bytes, assets, warnings);
                 resolve_inlines(caption, base, max_asset_bytes, assets, warnings);
             }
-            Block::Code { .. } | Block::Math { .. } | Block::PageBreak {} | Block::Raw { .. } => {}
+            Block::Code { .. }
+            | Block::Math { .. }
+            | Block::PageBreak { .. }
+            | Block::Raw { .. } => {}
         }
     }
 }
@@ -145,7 +157,8 @@ fn resolve_inlines(
 ) {
     for inline in inlines {
         match inline {
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -582,7 +595,11 @@ fn read_open_image(
     }
 
     let media_type = sniff_image_type(&bytes).ok_or(ReadImageError::NotImage)?;
-    Ok(Asset { media_type, bytes })
+    Ok(Asset {
+        media_type,
+        bytes,
+        font: None,
+    })
 }
 
 pub(crate) fn sniff_image_type(bytes: &[u8]) -> Option<String> {
