@@ -41,6 +41,7 @@ assert_cmd.workspace = true
 hex.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
+lopdf.workspace = true
 minisign.workspace = true
 quick-xml.workspace = true
 serde = { workspace = true, features = ["derive"] }

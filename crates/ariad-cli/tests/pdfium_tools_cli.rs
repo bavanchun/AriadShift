@@ -74,7 +74,53 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
         );
     }
 
-    // By contrast, pdf.split with detect=content and image.to_pdf run in-process without the pack.
+    // pdf.compare with mode=visual requires pdfium and must exit 5 when absent.
+    let compare_fail = ashift_cmd()
+        .env("ASHIFT_DATA_DIR", &empty_data)
+        .env_remove("ASHIFT_PACK_PDFIUM")
+        .env_remove("ARIAD_TEST_PDFIUM_DIR")
+        .args([
+            "tool",
+            "pdf.compare",
+            pdf_fixture.to_str().unwrap(),
+            pdf_fixture.to_str().unwrap(),
+            "--param",
+            "mode=visual",
+        ])
+        .output()
+        .expect("run pdf.compare visual");
+    assert_eq!(
+        compare_fail.status.code(),
+        Some(5),
+        "pdf.compare mode=visual without pdfium pack must exit with code 5; stderr: {}",
+        String::from_utf8_lossy(&compare_fail.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&compare_fail.stderr);
+    assert!(
+        stderr.contains("pdfium") && stderr.contains("ashift engines install pdfium"),
+        "pdf.compare mode=visual stderr must name pdfium and its install hint, got: {stderr}"
+    );
+
+    // By contrast, pdf.compare with mode=text, pdf.split with detect=content and image.to_pdf run in-process without the pack.
+    let compare_ok = ashift_cmd()
+        .env("ASHIFT_DATA_DIR", &empty_data)
+        .env_remove("ASHIFT_PACK_PDFIUM")
+        .args([
+            "tool",
+            "pdf.compare",
+            pdf_fixture.to_str().unwrap(),
+            pdf_fixture.to_str().unwrap(),
+            "--param",
+            "mode=text",
+            "--json",
+        ])
+        .output()
+        .expect("run pdf.compare text");
+    assert!(
+        compare_ok.status.success(),
+        "pdf.compare mode=text must succeed without pdfium pack: {}",
+        String::from_utf8_lossy(&compare_ok.stderr)
+    );
     let split_content_out = temp.path().join("split-content");
     fs::create_dir_all(&split_content_out).unwrap();
     let split_ok = ashift_cmd()

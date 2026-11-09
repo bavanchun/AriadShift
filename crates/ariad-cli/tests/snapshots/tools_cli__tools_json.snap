@@ -7811,5 +7811,82 @@ expression: tools_json
     "summary": "Convert PDF pages into a comic book archive (CBZ).",
     "tier": "free",
     "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "compare",
+    "id": "pdf.compare",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "many",
+      "max": 2,
+      "min": 2
+    },
+    "output_format": "json",
+    "output_formats": [
+      "json",
+      "pdf"
+    ],
+    "params_schema": {
+      "$defs": {
+        "CompareMode": {
+          "description": "Comparison mode for `pdf.compare`.",
+          "oneOf": [
+            {
+              "const": "text",
+              "description": "Semantic text diff over reading-order text per page (WASM-capable).",
+              "type": "string"
+            },
+            {
+              "const": "visual",
+              "description": "Rasterized pixel difference with connected bounding box grouping (Local only).",
+              "type": "string"
+            },
+            {
+              "const": "both",
+              "description": "Run both text and visual comparisons.",
+              "type": "string"
+            }
+          ]
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.compare`.",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/CompareMode",
+          "default": "text",
+          "description": "Comparison mode: \"text\", \"visual\", or \"both\" (default: \"text\")."
+        },
+        "pages": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PageRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional page selection to compare (e.g. \"1-5\", \"odd\", \"1,3\").\nWhen omitted, all pages are compared."
+        }
+      },
+      "title": "CompareParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Compare two PDF documents semantically or visually with annotated difference report.",
+    "tier": "free",
+    "version": "1"
   }
 ]
