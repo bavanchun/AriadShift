@@ -7,6 +7,7 @@
 
 pub mod cbz;
 pub mod compare;
+pub mod compliance;
 pub mod engine;
 pub mod inprocess;
 mod ocr;

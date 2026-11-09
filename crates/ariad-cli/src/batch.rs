@@ -100,6 +100,7 @@ pub(crate) fn run(args: ConvertArgs) -> ExitCode {
             title_fallback: None,
             asset_base_dir: None,
             reader_engine: args.engine.clone(),
+            pdf_standard: args.pdf_standard.clone(),
         })
         .collect();
     let is_json = args.json;

@@ -1176,6 +1176,13 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             1,
         ),
         (ConvertError::Failed, 1),
+        (
+            ConvertError::ComplianceFailed {
+                standard: "a-2b".into(),
+                report: Box::new(serde_json::json!({"compliant": false})),
+            },
+            1,
+        ),
         (ConvertError::DestinationSameAsInput, 2),
         (ConvertError::UnsupportedRoute { detail: None }, 3),
         (ConvertError::LimitExceeded, 4),
@@ -1211,7 +1218,9 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::OutputIo => {}
             ConvertError::UnsupportedIrVersion => {}
             ConvertError::InvalidCapabilities(_) => {}
-            ConvertError::Failed | ConvertError::FailedWithMemoryHint { .. } => {}
+            ConvertError::Failed
+            | ConvertError::FailedWithMemoryHint { .. }
+            | ConvertError::ComplianceFailed { .. } => {}
             ConvertError::DestinationSameAsInput => {}
             ConvertError::UnsupportedRoute { .. } => {}
             ConvertError::LimitExceeded => {}

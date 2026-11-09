@@ -9382,6 +9382,135 @@
       "version": "1"
     },
     {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "pdf.to_pdfa",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf",
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ToPdfaParams",
+        "description": "Parameters for `pdf.to_pdfa`.",
+        "type": "object",
+        "properties": {
+          "level": {
+            "description": "Target PDF/A conformance level (\"2b\", \"3b\", or \"2u\"). Defaults to \"2b\".",
+            "$ref": "#/$defs/PdfaLevel",
+            "default": "2b"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PdfaLevel": {
+            "description": "PDF/A target conformance level.",
+            "oneOf": [
+              {
+                "description": "PDF/A-2b: Visual conformance without tagging or Unicode requirement.",
+                "type": "string",
+                "const": "2b"
+              },
+              {
+                "description": "PDF/A-3b: Visual conformance allowing embedded files.",
+                "type": "string",
+                "const": "3b"
+              },
+              {
+                "description": "PDF/A-2u: Visual conformance with Unicode mappings for all characters.",
+                "type": "string",
+                "const": "2u"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Convert a PDF to PDF/A-2b, PDF/A-3b, or PDF/A-2u with mandatory veraPDF verification.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-host",
+      "group": "convert",
+      "id": "pdf.to_pdfua",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf",
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ToPdfUaParams",
+        "description": "Parameters for `pdf.to_pdfua`.",
+        "type": "object",
+        "properties": {
+          "flavour": {
+            "description": "Target PDF/UA conformance level (\"1\"). Defaults to \"1\".",
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^1$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Verify and convert a PDF to PDF/UA-1 with accessibility inspection and veraPDF verification.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "compare",
+      "id": "pdf.accessibility_report",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "output_formats": [
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AccessibilityReportParams",
+        "description": "Parameters for `pdf.accessibility_report`.",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Inspect a PDF for PDF/UA-1 accessibility requirements and output a structured JSON report.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
       "engine": "verapdf",
       "group": "compare",
       "id": "pdf.validate_pdfa",

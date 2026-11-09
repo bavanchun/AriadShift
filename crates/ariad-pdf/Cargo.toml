@@ -12,7 +12,7 @@ categories = ["text-processing", "parser-implementations"]
 publish = true
 
 [features]
-codecs = ["dep:flate2", "dep:oxiarc-jpeg", "dep:subsetter", "dep:zune-core", "dep:zune-jpeg", "dep:qrcode", "dep:ttf-parser"]
+codecs = ["dep:flate2", "dep:oxiarc-jpeg", "dep:subsetter", "dep:zune-core", "dep:zune-jpeg", "dep:qrcode"]
 
 [dependencies]
 ariad-core = { workspace = true, features = ["pdf"] }
@@ -32,7 +32,7 @@ serde_json = { workspace = true, features = ["raw_value"] }
 similar = "=3.2.1"
 subsetter = { version = "=0.2.6", default-features = false, optional = true }
 thiserror.workspace = true
-ttf-parser = { version = "=0.25.1", default-features = false, features = ["std"], optional = true }
+ttf-parser = { version = "=0.25.1", default-features = false, features = ["std", "glyph-names"] }
 unicode-normalization.workspace = true
 unicode-segmentation = "=1.13.3"
 zune-core = { version = "=0.5.3", default-features = false, features = ["std"], optional = true }

@@ -67,6 +67,7 @@ struct Settings {
     /// Unix seconds used for the document date and the compiler clock.
     timestamp: i64,
     date: (i32, u8, u8),
+    pdf_standard: Option<String>,
 }
 
 impl Settings {
@@ -83,10 +84,16 @@ impl Settings {
             Some(value) => value.as_i64().ok_or_else(EngineFailure::invalid_request)?,
         };
         let date = calendar_date(timestamp).ok_or_else(EngineFailure::invalid_request)?;
+        let pdf_standard = match options.get("pdf_standard") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(standard)) => Some(standard.clone()),
+            Some(_) => return Err(EngineFailure::invalid_request()),
+        };
         Ok(Self {
             title_fallback,
             timestamp,
             date,
+            pdf_standard,
         })
     }
 }
@@ -166,12 +173,23 @@ fn convert<W: Write>(
         date: Some(settings.date),
         ..TypstOptions::default()
     };
-    let rendered = typst_render::render(&document, &options, settings.timestamp).map_err(
+    let standard = match &settings.pdf_standard {
+        None => None,
+        Some(s) => match s.parse::<typst_render::PdfStandard>() {
+            Ok(std) => Some(std),
+            Err(_) => return Err(EngineFailure::invalid_request()),
+        },
+    };
+    let rendered = typst_render::render_with_standard(&document, &options, settings.timestamp, standard).map_err(
         |error| match error {
             RenderError::InvalidTimestamp => EngineFailure::invalid_request(),
             RenderError::Compile { .. } | RenderError::Export { .. } => EngineFailure::new(
                 ErrorCode::EngineFailure,
-                "Typst could not typeset the document.",
+                if standard == Some(typst_render::PdfStandard::Ua1) {
+                    "Typst could not export PDF/UA-1; check document structure and provide figure alternative text."
+                } else {
+                    "Typst could not typeset the document."
+                },
             ),
         },
     )?;

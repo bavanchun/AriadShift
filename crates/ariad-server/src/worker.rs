@@ -441,6 +441,7 @@ impl Worker {
             title_fallback: Some(stem.clone()),
             asset_base_dir: None,
             reader_engine: None,
+            pdf_standard: None,
         };
         let (events_tx, events_rx) = mpsc::unbounded_channel::<String>();
         let progress = tokio::spawn(forward_progress(self.db.clone(), job.id, events_rx));

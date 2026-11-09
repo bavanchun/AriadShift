@@ -85,6 +85,7 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 - `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
+- `--pdf-standard <STANDARD>`: Request `a-2b`, `a-2u`, `a-3b`, or `ua-1` on a PDF route whose final writer is Typst. The host requires the `verapdf` pack and system Java >=11, validates the candidate against the requested flavour, and publishes only after compliance passes. Missing pack/Java exits 5; failed validation exits 1 without changing the destination. PDF/UA requires meaningful figure alternative text; missing descriptions are reported, never invented.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -104,6 +105,7 @@ ashift convert report.docx --to md -o output/report.md
 # Extract digital PDF text, create PDF, or normalize a legacy document
 ashift convert report.pdf --to md
 ashift convert notes.md --to pdf
+ashift convert notes.md --to pdf --pdf-standard a-2b
 ashift convert legacy.doc --to md
 ashift convert slides.pptx --to pdf
 ashift convert notes.md --to json

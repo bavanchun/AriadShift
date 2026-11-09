@@ -217,7 +217,7 @@ fn tool_run_error(err: &ToolError) -> CallToolResult {
     let code = err.code();
     let exit_code = err.exit_code();
     let msg = err.to_string();
-    let val = serde_json::json!({
+    let mut val = serde_json::json!({
         "code": code,
         "exit_code": exit_code,
         "message": &msg,
@@ -227,6 +227,10 @@ fn tool_run_error(err: &ToolError) -> CallToolResult {
             "message": &msg,
         },
     });
+    if let ToolError::ComplianceFailed { standard, report } = err {
+        val["error"]["standard"] = serde_json::json!(standard);
+        val["error"]["report"] = report.as_ref().clone();
+    }
     let mut res = CallToolResult::structured_error(val);
     res.content = vec![ContentBlock::text(format!("ashift: error[{code}]: {msg}"))];
     res
@@ -623,6 +627,7 @@ impl McpServer {
                     title_fallback: None,
                     asset_base_dir: None,
                     reader_engine: None,
+                    pdf_standard: None,
                 };
                 convert_confined_assets_in(
                     &pool,
@@ -932,6 +937,23 @@ impl McpServer {
 mod tests {
     use super::*;
     use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn compliance_failure_exposes_structured_report() {
+        let report =
+            serde_json::json!({"report": {"jobs": [{"validationResult": [{"compliant": false}]}]}});
+        let error = ToolError::ComplianceFailed {
+            standard: "PDF/A-2b".into(),
+            report: Box::new(report.clone()),
+        };
+        let result = tool_run_error(&error);
+        assert_eq!(result.is_error, Some(true));
+        let content = result.structured_content.unwrap();
+        assert_eq!(content["error"]["code"], "compliance_failed");
+        assert_eq!(content["error"]["exit_code"], 1);
+        assert_eq!(content["error"]["standard"], "PDF/A-2b");
+        assert_eq!(content["error"]["report"], report);
+    }
 
     #[test]
     fn staging_errors_match_host_codes_and_exit_statuses() {

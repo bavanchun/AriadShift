@@ -82,6 +82,11 @@ pub fn tool_suffix(tool_id: &str) -> &'static str {
         "pdf.scan_split" => "scan-split",
         "pdf.scanner_effect" => "scanner-effect",
         "image.to_pdf" => "to-pdf",
+        "pdf.to_pdfa" => "pdfa",
+        "pdf.to_pdfua" => "pdfua",
+        "pdf.validate_pdfa" => "validate-pdfa",
+        "pdf.validate_pdfua" => "validate-pdfua",
+        "pdf.accessibility_report" => "accessibility-report",
         _ => "output",
     }
 }
