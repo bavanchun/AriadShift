@@ -73,7 +73,7 @@ All CLI commands adhere to a single unified exit-code table:
 
 ### `ashift convert`
 
-Converts Markdown, HTML, DOCX and EPUB to/from IR JSON (`json`), reads PDF text, writes PDF through Typst, and uses system LibreOffice for legacy Office and ODF routes. With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
+Converts the formats below through the shared planner. Native readers cover Markdown, HTML, TXT, CSV, EML, MSG and SVG; Pandoc handles DOCX/EPUB and writes ODT/RTF; Typst renders IR to PDF; CBZ pages convert directly through `ariad-pdf`. System LibreOffice handles legacy Office/ODF imports and PDF to PPTX. With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
 
 ```bash
 ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
@@ -82,7 +82,7 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 #### Arguments and Options
 
 - `<INPUT>...`: One or more input document paths, processed in order.
-- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
+- `--to <FORMAT>`: Target format identifier (`md`/`markdown`, `html`, `docx`, `epub`, `pdf`, `json`/`ariad-ir+json`, `txt`, `csv`, `xlsx`, `odt`, `rtf`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
@@ -121,9 +121,88 @@ PDF, Typst and LibreOffice advertise `supports_session: false`; batches and MCP 
 
 When LibreOffice is found, namespace setup failure is fatal in both `best-effort` and `required` modes (`error[sandbox_unavailable]` on stderr, exit 5). `doctor` reports the failed `engine_libreoffice` check with the cause, and `engines` lists the engine as `cannot start`. Conversion keeps this error when LibreOffice was the planner's first choice; it does not silently fall back to a different-fidelity route. On Ubuntu, run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, or install an [AppArmor profile allowing `userns` for the `ashift` binary](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/#apparmor-unprivileged-user-namespace-restrictions). The sysctl changes the host-wide policy; a binary-specific profile limits that grant. Default Docker and Kubernetes container seccomp profiles also block the namespace setup. See [worker runtime requirements](server.md#worker) for cloud deployments. `ASHIFT_SANDBOX=off` explicitly bypasses this requirement by disabling engine isolation; use it only when accepting that trade-off.
 
-LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, and all Office/ODF formats → PDF. Chained routes include DOC → DOCX → IR → MD. LibreOffice only renders the input file itself; the planner never runs it on another engine's output. Markdown, HTML, EPUB and IR JSON therefore write PDF through Typst in every profile and never need LibreOffice or its namespaces. Without LibreOffice, discovery needs no private `/tmp` or namespace setup; DOCX → PDF falls back to Pandoc and Typst, and LibreOffice-only routes report the missing optional engine. Each job uses a fresh profile with macros disabled and Writer/Calc link updates set to never.
+LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, PDF → PPTX, and supported Office/ODF formats → PDF (including ODG/WPD/WPS/PUB/VSD). Chained routes include DOC → DOCX → IR → MD. LibreOffice only processes the input file itself; the planner never runs it on another engine's output. Markdown, HTML, EPUB and IR JSON therefore write PDF through Typst in every profile and never need LibreOffice or its namespaces. Without LibreOffice, discovery needs no private `/tmp` or namespace setup; DOCX → PDF falls back to Pandoc and Typst, and LibreOffice-only routes report the missing optional engine. Each job uses a fresh profile with macros disabled and Writer/Calc link updates set to never.
 
 `--to json` writes IR JSON; `--json` instead selects the conversion report on stdout.
+
+#### Conversion formats
+
+Extensions and MIME types follow the shared `Format` registry. Input/output columns
+refer to `convert`, not tool artifacts. An output is available only when a route
+from the particular input exists; use `ashift plan INPUT --to FORMAT --json`.
+
+| Format identifier | Extensions | MIME type | Input engine/path | Output engine/path |
+|---|---|---|---|---|
+| `markdown` (`md`) | `.md`, `.markdown`, `.mdown` | `text/markdown` | ariad-core | ariad-core |
+| `html` | `.html`, `.htm` | `text/html` | ariad-core | ariad-core |
+| `docx` | `.docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | Pandoc or Docling | Pandoc; LibreOffice from DOC/ODT/RTF |
+| `epub` | `.epub` | `application/epub+zip` | Pandoc | Pandoc |
+| `pdf` | `.pdf` | `application/pdf` | pdf text reader or Docling OCR/layout | Typst; LibreOffice from Office/ODF; ariad-pdf from CBZ |
+| `ariad-ir+json` (`json`) | `.json` | `application/json` | ariad-core | ariad-core |
+| `docling+json` | `.json` (usually `.docling.json`) | `application/json` | ariad-core mapper; no pack required for saved JSON | Internal Docling intermediate |
+| `pandoc+json` | `.json` | `application/json` | Internal Pandoc AST, not a CLI input route | Internal intermediate |
+| `txt` | `.txt`, `.text` | `text/plain` | ariad-core (UTF-8) | ariad-core |
+| `csv` | `.csv` | `text/csv` | ariad-core | ariad-core |
+| `eml` | `.eml` | `message/rfc822` | ariad-core | — |
+| `msg` | `.msg` | `application/vnd.ms-outlook` | ariad-core | — |
+| `svg` | `.svg` | `image/svg+xml` | ariad-core figure → Typst | — |
+| `cbz` | `.cbz` | `application/vnd.comicbook+zip` | ariad-pdf → PDF | Tool `pdf.to_cbz`, not a conversion route |
+| `xlsx` | `.xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | Docling; LibreOffice → PDF | ariad-core; LibreOffice from XLS/ODS |
+| `pptx` | `.pptx` | `application/vnd.openxmlformats-officedocument.presentationml.presentation` | Docling; LibreOffice → PDF | LibreOffice from PDF/PPT/ODP |
+| `odt` | `.odt` | `application/vnd.oasis.opendocument.text` | LibreOffice → DOCX/PDF | Pandoc |
+| `rtf` | `.rtf` | `application/rtf` | LibreOffice → DOCX/PDF | Pandoc |
+| `doc` | `.doc` | `application/msword` | LibreOffice → DOCX/PDF | — |
+| `xls` | `.xls` | `application/vnd.ms-excel` | LibreOffice → XLSX/PDF | — |
+| `ppt` | `.ppt` | `application/vnd.ms-powerpoint` | LibreOffice → PPTX/PDF | — |
+| `ods` | `.ods` | `application/vnd.oasis.opendocument.spreadsheet` | LibreOffice → XLSX/PDF | — |
+| `odp` | `.odp` | `application/vnd.oasis.opendocument.presentation` | LibreOffice → PPTX/PDF | — |
+| `odg` | `.odg` | `application/vnd.oasis.opendocument.graphics` | LibreOffice → PDF | — |
+| `wpd` | `.wpd` | `application/vnd.wordperfect` | LibreOffice → PDF (manual sample gate) | — |
+| `wps` | `.wps` | `application/vnd.ms-works` | LibreOffice → PDF (manual sample gate) | — |
+| `pub` | `.pub` | `application/x-mspublisher` | LibreOffice → PDF (manual sample gate) | — |
+| `vsd` | `.vsd` | `application/vnd.visio` | LibreOffice → PDF (manual sample gate) | — |
+| `png` | `.png` | `image/png` | Docling | — |
+| `jpeg` | `.jpg`, `.jpeg` | `image/jpeg` | Docling | — |
+| `webp` | `.webp` | `image/webp` | Docling | — |
+| `tiff` | `.tif`, `.tiff` | `image/tiff` | Docling | — |
+
+`image.to_pdf` additionally accepts BMP as a tool input; BMP is not a conversion
+format. Pages and CBR are [Not adopted](parity-matrix.md#not-adopted). WPD/WPS/PUB/VSD
+routes are registered, with conversion evidence subject to the local manual gate
+in [the parity matrix](parity-matrix.md#notes-on-pages-family-formats-pub-vsd-wpd-wps).
+
+#### PDF and document conversion routes
+
+```bash
+ashift convert report.pdf --to odt
+ashift convert report.pdf --to rtf
+ashift convert report.pdf --to txt
+ashift convert report.pdf --to xlsx --engine docling
+ashift convert report.pdf --to pptx
+ashift convert notes.txt --to pdf
+ashift convert table.csv --to pdf
+ashift convert message.eml --to pdf
+ashift convert message.msg --to pdf
+ashift convert drawing.svg --to pdf
+ashift convert comic.cbz --to pdf
+ashift convert drawing.odg --to pdf
+```
+
+PDF to ODT/RTF uses the PDF reader → IR → Pandoc; TXT uses the native writer.
+PDF to XLSX with table extraction requires local Docling. The native PDF reader
+has no table detector: without Docling, XLSX contains a text-dump sheet and emits
+`no_tables_found`. CSV conversion produces one artifact; use `pdf.tables_to_csv`
+for one CSV per detected table. PDF to PPTX uses the system LibreOffice PDF import
+filter directly, without a PDFium rendering stage. Email attachments are listed,
+not opened or rendered. CBZ uses natural page order and preserves image page sizes.
+
+Integration status: the conversion routes above are available before the final
+Phase 10 benchmark regeneration. Route costs remain provisional until that run.
+`web.to_pdf`, the existing-PDF compliance tools and `convert --pdf-standard`
+are documented in the [parity matrix](parity-matrix.md#phase-10-integration-status)
+as pending integration; they are not exposed by this preparation branch.
+The approved compliance option is `--pdf-standard a-2b|a-3b|a-2u|ua-1` for
+Typst routes, with mandatory veraPDF validation before reporting conformance.
 
 #### Package metadata name encoding
 
@@ -174,7 +253,7 @@ For several inputs, `--json` emits one document with results in input order:
 {
   "results": [
     {"input": "draft.md", "ok": true, "output": "draft.html", "route": [], "warnings": [], "elapsed_ms": 2},
-    {"input": "notes.txt", "ok": false, "error": {"code": "unsupported_route", "exit_code": 3, "message": "unsupported conversion route"}}
+    {"input": "unknown.bin", "ok": false, "error": {"code": "unsupported_route", "exit_code": 3, "message": "unsupported conversion route"}}
   ]
 }
 ```
@@ -262,7 +341,7 @@ ashift plan [OPTIONS] --to <FORMAT> <INPUT>
 #### Arguments and Options
 
 - `<INPUT>`: Path to the input document file.
-- `--to <FORMAT>`: Target format identifier (`md`, `docx`, `html`, `epub`).
+- `--to <FORMAT>`: Target format identifier, using the same identifiers and reachability rules as [`convert`](#ashift-convert).
 - `--engine <ENGINE>`: Select the input reader, with the same content-aware PDF default and no reader fallback as `convert`. PDF planning reads the text layer under the conversion limits.
 - `--profile <PROFILE>`: Optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--json`: Output plan results as JSON.

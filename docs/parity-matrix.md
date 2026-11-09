@@ -10,7 +10,7 @@ Sources (all under `plans/reports/`): `researcher-261031-2046-stirling-pdf.md` (
 
 - **Stirling** cites `S01`-`S52`, the 1-based order of the rows in the Stirling report's §2 feature table (the index at the end lists them). **Bento** lists the tool names exactly as the Bento report's §2 inventory spells them.
 - **Phase** is the plan phase (2-20) that delivers the row. `exists` means the route ships in v0.2.0.
-- **Engine**: `ariad-pdf`, `pdfium`, `qpdf`, `tesseract`, `libreoffice`, `pandoc`, `typst`, `docling`, `ai-pack`, plus `ariad-core` (IR readers and writers), `sign-pack` (pyHanko), `verapdf-pack` and `inpaint-pack`.
+- **Engine**: `ariad-pdf`, `pdf` (text reader), `pdfium`, `qpdf`, `tesseract`, `libreoffice`, `pandoc`, `typst`, `docling`, `ai-pack`, plus `ariad-host` (composite tools), `ariad-core` (IR readers and writers), `sign-pack` (pyHanko), `verapdf-pack` and `inpaint-pack`.
 - **Runtimes**: `wasm` runs in the browser, `local` runs on the user's machine (CLI, local MCP, macOS app), `cloud` is eligible only after the phase 13 server tool-jobs task. Cloud and any AI hosted by AriadShift are Pro as a runtime (rule a below), not per row.
 - **Surfaces**: `CLI`, `MCP`, `web`, `mac`. `web(h)` means the web app shows the "Run on your computer" hand-off because the tool has no browser runtime.
 - `convert:a→b` is a conversion route (AD-1: routes stay in the planner; tools never enter it). Other ids are tools.
@@ -74,19 +74,21 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.thumbnails` | convert | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `pdf.extract_images` | convert | S03 extract images; extract images from scans | Extract Images | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `image.to_pdf` (JPEG, PNG, WebP, TIFF, BMP in-process via `ariad-pdf`; HEIC deferred — no permissive pure-Rust decoder) | convert | S12 image to PDF | Image to PDF; JPG to PDF; PNG to PDF; WebP to PDF; BMP to PDF; TIFF to PDF; HEIC to PDF | 4 | ariad-pdf | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
-| `pdf.tables_to_csv` | convert | S07 PDF to CSV | PDF to CSV; Extract Tables | 10 | docling, ariad-core | local | Free | CLI, MCP, web(h), mac |
-| `web.to_pdf` (host fetch, offline render, AD-15) | convert | S12 web URL to PDF | — | 10 | ariad-core, typst | local | Free | CLI, MCP, web(h), mac |
-| `convert:pdf→docx` (also `pdf→odt`) | convert | S06 PDF to DOCX, ODT | PDF to Word | 10 (styles in 11) | docling, ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `convert:pdf→xlsx` | convert | S06 PDF to XLSX | PDF to Excel | 10 | docling, ariad-core | local (wasm text dump only) | Free | CLI, MCP, web, mac |
-| `convert:pdf→pptx` | convert | S06 PDF to PPTX | — | 10 | pdfium, libreoffice | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.tables_to_csv` | convert | S07 PDF to CSV | PDF to CSV; Extract Tables | 10 | ariad-host, docling, ariad-core | local (D4) | Free | CLI, MCP, web(h), mac |
+| `web.to_pdf` (host fetch, offline render, AD-15) | convert | S12 web URL to PDF | — | 10 (pending integration, D12/D13) | ariad-host, ariad-core, typst | local | Free | CLI, MCP, web(h), mac |
+| `convert:pdf→docx` | convert | S06 PDF to DOCX | PDF to Word | 10 (styles in 11) | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
+| `convert:pdf→odt` | convert | S06 PDF to ODT | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
+| `convert:pdf→xlsx` | convert | S06 PDF to XLSX | PDF to Excel | 10 | docling, ariad-core | local (D4; wasm/cloud table detector deferred) | Free | CLI, MCP, web(h), mac |
+| `convert:pdf→pptx` | convert | S06 PDF to PPTX | — | 10 | libreoffice | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `convert:pdf→html` | convert | S04 PDF to HTML | — | 10 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→md` | convert | — | PDF to Markdown; Prepare PDF for AI | 10 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→epub` | convert | S05 PDF to EPUB | — | 10 | ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `convert:pdf→txt` (also `pdf→rtf`) | convert | — | PDF to Text | 10 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `convert:pdf→txt` | convert | — | PDF to Text | 10 | pdf or docling, ariad-core | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
+| `convert:pdf→rtf` | convert | — | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
 | `convert:pdf→json` (IR JSON, `--to json`) | convert | — | PDF to JSON | exists | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `convert:pdf→cbz` † | convert | S10 PDF to CBZ | PDF to CBZ | 10 | pdfium, ariad-core | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.to_cbz` † | convert | S10 PDF to CBZ | PDF to CBZ | 10 | pdfium, ariad-host | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `convert:docx→pdf` (also doc, odt, rtf, xls, xlsx, ods, ppt, pptx, odp) | convert | S12 Word, Excel, PPT, ODF to PDF | Word to PDF; ODT to PDF; RTF to PDF; Excel to PDF; ODS to PDF; PowerPoint to PDF; ODP to PDF | exists (coverage verified in 10) | libreoffice | local, cloud | Free | CLI, MCP, web(h), mac |
-| `convert:pages→pdf` (Pages, WPD, WPS, PUB, VSD, ODG; only formats the system LibreOffice imports, verified in phase 10 T0) | convert | S12 ODF/Office family | Pages to PDF; WPD to PDF; WPS to PDF; PUB to PDF; VSD to PDF; ODG to PDF | 10 | libreoffice | local | Free | CLI, MCP, web(h), mac |
+| `convert:odg→pdf` (also WPD, WPS, PUB, VSD; manual sample gate below; Pages is Not adopted, D2/D14) | convert | S12 ODF/Office family | WPD to PDF; WPS to PDF; PUB to PDF; VSD to PDF; ODG to PDF | 10 | libreoffice | local | Free | CLI, MCP, web(h), mac |
 | `convert:md→pdf` (also html, epub) | convert | S12 HTML, ebook (EPUB) to PDF | Markdown to PDF; EPUB to PDF | exists | ariad-core, typst, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:eml→pdf` (also msg) | convert | S12 EML, MSG to PDF | Email (EML/MSG) to PDF | 10 | ariad-core, typst | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:svg→pdf` | convert | S12 SVG to PDF | SVG to PDF | 10 | ariad-core, typst | wasm, local, cloud | Free | CLI, MCP, web, mac |
@@ -174,11 +176,11 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.to_pdfa` (mandatory veraPDF validation, AD-13) | convert | S08 PDF to PDF/A | PDF to PDF/A | 10 | ariad-pdf, typst, verapdf-pack | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.to_pdfua` | convert | S09 PDF to PDF/UA | — | 10 | typst, ariad-core | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.validate_pdfa` / `pdf.validate_pdfua` | compare | S23 validate PDF/A, PDF/UA | — | 10 | verapdf-pack | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.accessibility_report` | compare | S39 accessibility report (Enterprise or proprietary upstream) | — | 10 | verapdf-pack, ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.compare` | compare | S36 compare two PDFs | Compare PDFs | 10 | pdfium, ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.to_pdfa` (mandatory veraPDF validation, AD-13) | convert | S08 PDF to PDF/A | PDF to PDF/A | 10 (pending integration, D9) | ariad-pdf, ariad-host, verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.to_pdfua` (existing PDFs: accessibility report and failure, no repaired PDF; Typst IR export uses `--pdf-standard ua-1`, D9/D17) | convert | S09 PDF to PDF/UA | — | 10 (pending integration) | ariad-host, ariad-pdf | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.validate_pdfa` / `pdf.validate_pdfua` | compare | S23 validate PDF/A, PDF/UA | — | 10 | verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.accessibility_report` | compare | S39 accessibility report (Enterprise or proprietary upstream) | — | 10 (pending integration, D9/D17) | ariad-pdf, verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.compare` (`mode`: `text`, `visual`, `both`) | compare | S36 compare two PDFs | Compare PDFs | 10 | ariad-pdf (text), pdfium (visual/both) | wasm (text), local (cloud in phase 13; D11) | Free | CLI, MCP, web, mac |
 | `edit.page_objects`, `edit.apply` (Page mode, in place) | edit | S33 PDF text editor | Edit PDF Text; PDF Editor (search, shapes, images) | 12 | pdfium | wasm, local | Pro (d) | CLI, MCP, web, mac |
 
 ### ai and automation
@@ -202,7 +204,7 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | Verified redaction report (`pdf.redact_verify`, `verification_report`) | redact | redaction path via jpdfium; no verification report | fake redaction, text still copyable (#762) | 9 | ariad-pdf, pdfium | local (wasm deferred to phase 14/15, cloud deferred to phase 13) | Free | CLI, MCP, web(h), mac |
 | Document mode and Page mode on one viewer (`edit.open_document`, `edit.export_document`; Page mode is `edit.apply`, Pro) | edit | one in-place text editor (S33) | in-place text editor only | 12, 16, 18 | ariad-core, typst, pandoc | wasm, local | Document mode Free; Page mode Pro (d) | CLI, MCP, web, mac |
 | Natural-language recipes (`ai.recipe_from_text`, validated against the registry, never auto-run) | ai | AI agents are metered on Cloud (S45) | workflow builder without natural language | 13 | ai-pack | local | Free (offline); hosted models Pro (a) | CLI, MCP, web(h), mac |
-| Semantic compare (reading-order text diff in phase 10; IR-block level † not in a phase file yet) | compare | S36 compare, method unverified | Compare PDFs (pixel and text) | 10 | pdfium, ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| Semantic compare (reading-order text diff in phase 10; IR-block level † not in a phase file yet) | compare | S36 compare, method unverified | Compare PDFs (pixel and text) | 10 | ariad-pdf (text), pdfium (visual/both) | wasm (text), local (cloud in phase 13; D11) | Free | CLI, MCP, web, mac |
 | Crash-safe autosave with version history (op-list replay, AD-17) | edit | version history per file (report §5.1) | no autosave (#836) | 16, 18 | ariad-core | wasm, local | Free | web, mac |
 | Watermark removal level 1 (`pdf.watermark_detect`, `pdf.watermark_remove`: layers, artifacts, repeated objects; user-selected candidates only) | overlay | — | — | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | Watermark removal level 2 (`pdf.watermark_remove_raster`: Florence-2 detection, OpenCV inpainting; LaMa only after weight-licence review) | overlay | — | — | 13 | inpaint-pack | local | Free | CLI, MCP, web(h), mac |
@@ -226,9 +228,9 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | Item | Source | Reason |
 |---|---|---|
 | PDF to video | S11 | The endpoint is commented out upstream ("ffmpeg disabled due to raised CVEs"). |
-| CBR input and output | S10, S12 | Needs a RAR codec; no permissive decoder or encoder is identified. Revisit only if one is verified in phase 10. |
+| CBR input and output | S10, S12 | D8: candidate `rars` lacks verified specification provenance and hostile-archive parser maturity; UnRAR has a non-OSI licence. No decoder is adopted. |
 | PDF/X conversion | S09 | The permissive stack report names no PDF/X converter. Stirling's PDF/A path uses Ghostscript (AGPL). |
-| MOBI to PDF; FB2 to PDF; XPS to PDF | Bento | Bento runs these through PyMuPDF (AGPL). No permissive reader is in the plan. |
+| MOBI to PDF; FB2 to PDF; XPS to PDF | Bento | D8/D16: Bento uses PyMuPDF (AGPL); no reader with verified provenance and maintenance is adopted for this stage. |
 | PSD to PDF | Bento | Bento runs it through PyMuPDF (AGPL). No permissive PSD decoder is in the plan. |
 | XML to PDF | Bento | Input semantics are undefined; the Bento report did not confirm its engine. |
 | PDF to SVG | Bento | Bento uses PyMuPDF (AGPL). The permissive stack report names no PDF-to-SVG engine, and PDFium does not export SVG. |
@@ -243,13 +245,13 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 
 ## Gap assignments (`†` rows)
 
-Every `†` task was added by the PM at the phase scout and is assigned to the phase in the Phase column: phase 3 (`pdf.rotate_content` and `pdf.decompress` in task T3, `pdf.divide_pages` and `pdf.posterize` in task T4, `pdf.portfolio` and `pdf.layers` in task T5), phase 4 (BMP and TIFF output of `pdf.render`), phase 6 (`pdf.background`, `pdf.adjust_colors`, `pdf.toc_page`), phase 7 (`pdf.scanner_effect`), phase 9 (`pdf.sign_token`, `pdf.timestamp`), phase 10 (`convert:pdf→cbz`) and phase 13 (document-title auto-rename through the `{title}` naming token, noted on the `recipe run` row). Two notes stay in cells, not as tasks: `pdf.info` reports `has_javascript` and never the script text (S29), and IR-block semantic compare stays outside phase 10, which compares text and pixels only.
+Every `†` task was added by the PM at the phase scout and is assigned to the phase in the Phase column: phase 3 (`pdf.rotate_content` and `pdf.decompress` in task T3, `pdf.divide_pages` and `pdf.posterize` in task T4, `pdf.portfolio` and `pdf.layers` in task T5), phase 4 (BMP and TIFF output of `pdf.render`), phase 6 (`pdf.background`, `pdf.adjust_colors`, `pdf.toc_page`), phase 7 (`pdf.scanner_effect`), phase 9 (`pdf.sign_token`, `pdf.timestamp`), phase 10 (`pdf.to_cbz`) and phase 13 (document-title auto-rename through the `{title}` naming token, noted on the `recipe run` row). Two notes stay in cells, not as tasks: `pdf.info` reports `has_javascript` and never the script text (S29), and IR-block semantic compare stays outside phase 10, which compares text and pixels only.
 
 ## Counts checked against the sources
 
 - **Stirling**: the report's §2 feature table has 52 rows (`S01`-`S52`). All 52 appear in the matrix, the platform table or "Not adopted" (see the index below). Six rows are Not adopted entirely (S11, S47-S51); five are platform capabilities (S37, S43, S44, S46, S52); five are partly Not adopted (S09, S10, S12, S42, S45); the other 36 map to tool or route rows.
-- **Bento**: the report's §2 inventory names 124 tools in the form it spells them (the report counts 125 tool pages in the source and 124 distinct names in the README, and groups some names, so the two counts cannot be reconciled one to one). All 124 are accounted for: 114 map to rows of the parity matrix, 3 to the platform table (View PDF, PDF Multi Tool, PDFs to ZIP) and 7 are Not adopted (Font to Outline, PSD to PDF, MOBI to PDF, FB2 to PDF, XPS to PDF, XML to PDF, PDF to SVG).
-- **Rows**: 108 in the parity matrix (14 carry `†`; the document-title auto-rename task rides on the `recipe run` row and has no row of its own), 10 in "Beyond parity", 7 platform capabilities, 15 Not adopted entries.
+- **Bento**: the report's §2 inventory names 124 tools in the form it spells them (the report counts 125 tool pages in the source and 124 distinct names in the README, and groups some names, so the two counts cannot be reconciled one to one). All 124 are accounted for: 113 map to rows of the parity matrix, 3 to the platform table (View PDF, PDF Multi Tool, PDFs to ZIP) and 8 are Not adopted (Pages to PDF, Font to Outline, PSD to PDF, MOBI to PDF, FB2 to PDF, XPS to PDF, XML to PDF, PDF to SVG).
+- **Rows**: 110 in the parity matrix (15 carry `†`; the document-title auto-rename task rides on the `recipe run` row and has no row of its own), 10 in "Beyond parity", 7 platform capabilities, 15 Not adopted entries.
 - **Pro rows (approved 2026-11-01)**: `pdf.sign_token` (b), `edit.page_objects` with `edit.apply` (d), `recipe run` and `recipe run --watch` above the cap (c). Cloud execution and AriadShift-hosted AI are Pro as runtimes (a). No other row is Pro.
 
 ## Stirling index
@@ -263,11 +265,11 @@ Disposition of every row of the Stirling report's §2 feature table, in report o
 | S03 | PDF to image, extract images, extract images from scans | `pdf.render`, `pdf.extract_images` |
 | S04 | PDF to HTML | `convert:pdf→html` |
 | S05 | PDF to EPUB | `convert:pdf→epub` |
-| S06 | PDF to DOCX, PPTX, ODT, XLSX | `convert:pdf→docx`, `convert:pdf→pptx`, `convert:pdf→xlsx` |
+| S06 | PDF to DOCX, PPTX, ODT, XLSX | `convert:pdf→docx`, `convert:pdf→odt`, `convert:pdf→pptx`, `convert:pdf→xlsx` |
 | S07 | PDF to CSV | `pdf.tables_to_csv` |
 | S08 | PDF to PDF/A | `pdf.to_pdfa` |
 | S09 | PDF to PDF/UA, PDF/X | `pdf.to_pdfua`; PDF/X is Not adopted |
-| S10 | PDF to CBZ, CBR | `convert:pdf→cbz` †; CBR is Not adopted |
+| S10 | PDF to CBZ, CBR | `pdf.to_cbz` †; CBR is Not adopted |
 | S11 | PDF to video | Not adopted |
 | S12 | Word, Excel, PPT, ODF, HTML, EML, MSG, ebook, CBZ, CBR, SVG, image, web URL to PDF | `convert:docx→pdf`, `convert:md→pdf`, `convert:eml→pdf`, `convert:cbz→pdf`, `convert:svg→pdf`, `image.to_pdf`, `web.to_pdf`; CBR and MOBI-family ebooks are Not adopted |
 | S13 | OCR (searchable, force, skip-text, deskew, rotate, languages) | `pdf.ocr`, `pdf.deskew` |
@@ -310,6 +312,27 @@ Disposition of every row of the Stirling report's §2 feature table, in report o
 | S50 | PostHog and Scarf analytics | Not adopted |
 | S51 | Sign from phone, mobile scanner | Not adopted |
 | S52 | Localisation, 40+ languages | Platform capability |
+
+## Phase 10 integration status
+
+This preparation branch includes the T0/T1/T2/T3a conversion routes, T5 compare,
+and the T7 veraPDF validators. `web.to_pdf` (D12/D13), `pdf.to_pdfa`,
+`pdf.to_pdfua`, `pdf.accessibility_report` and `convert --pdf-standard`
+(D9/D17) await T3b/T4 integration. Those rows record approved scope, not a claim
+of successful execution here. The final T6 gate must verify them after INT-5;
+they have not been rejected or moved to Not adopted.
+
+Conversion verification lives in
+[`route_golden.rs`](../crates/ariad-cli/tests/route_golden.rs),
+[`office_routes.rs`](../crates/ariad-cli/tests/office_routes.rs) and
+[`pdf_routes.rs`](../crates/ariad-cli/tests/pdf_routes.rs).
+[`convert_cli.rs`](../crates/ariad-cli/tests/convert_cli.rs) covers the
+new readers and CBZ tool.
+[`compare_cli.rs`](../crates/ariad-cli/tests/compare_cli.rs) checks compare;
+[`verapdf_pack.rs`](../crates/ariad-cli/tests/verapdf_pack.rs) checks the validators.
+External engines must be installed for conversion gates; planning alone does not
+establish fidelity. D15 keeps new edges unmeasured until the single complete
+benchmark run. No preparation step regenerates `capabilities.json`.
 
 ## Notes on Pages-Family Formats (PUB, VSD, WPD, WPS)
 
