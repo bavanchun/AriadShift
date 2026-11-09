@@ -10,6 +10,7 @@
 pub mod annotations;
 pub mod cbz;
 pub mod color;
+pub mod compare;
 pub mod document;
 pub mod draw;
 pub mod error;
