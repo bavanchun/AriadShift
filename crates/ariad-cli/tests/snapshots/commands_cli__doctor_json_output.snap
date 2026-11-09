@@ -1,6 +1,6 @@
 ---
 source: crates/ariad-cli/tests/commands_cli.rs
-assertion_line: 730
+assertion_line: 745
 expression: normalize_doctor_json_stdout(&output)
 ---
 {
@@ -88,6 +88,13 @@ expression: normalize_doctor_json_stdout(&output)
       "required": false,
       "message": "tesseract engine cannot be used: tool_missing: engine pack 'tesseract' is not installed; run 'ashift engines install tesseract' to install the tesseract engine pack",
       "hint": "run 'ashift engines install tesseract' to install the tesseract engine pack"
+    },
+    {
+      "id": "verapdf_engine",
+      "ok": false,
+      "required": false,
+      "message": "verapdf engine cannot be used: tool_missing: engine pack 'verapdf' is not installed; run 'ashift engines install verapdf' to install the verapdf engine pack",
+      "hint": "run 'ashift engines install verapdf' to install the verapdf engine pack"
     }
   ],
   "stale_workspaces": 0
