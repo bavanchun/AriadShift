@@ -96,7 +96,7 @@ fn several_inputs_default_to_their_own_directories() {
 fn a_mix_of_successes_and_failures_exits_with_the_first_failure() {
     let directory = tempdir().unwrap();
     let good = write(&directory.path().join("good.md"), "# Good\n");
-    let unsupported = write(&directory.path().join("notes.txt"), "plain text\n");
+    let unsupported = write(&directory.path().join("notes.djvu"), "plain text\n");
     let existing = write(&directory.path().join("taken.md"), "# Taken\n");
     fs::write(directory.path().join("taken.docx"), b"keep me").unwrap();
     let last = write(&directory.path().join("last.md"), "# Last\n");
@@ -140,7 +140,7 @@ fn a_mix_of_successes_and_failures_exits_with_the_first_failure() {
 fn json_reports_one_document_with_an_array_of_results() {
     let directory = tempdir().unwrap();
     let good = write(&directory.path().join("good.md"), "# Good\n");
-    let unsupported = write(&directory.path().join("notes.txt"), "plain text\n");
+    let unsupported = write(&directory.path().join("notes.djvu"), "plain text\n");
     let output = convert(&[&good, &unsupported], &["--to", "html", "--json"]);
     assert_eq!(output.status.code(), Some(3));
     let document: Value = serde_json::from_slice(&output.stdout).expect("one JSON document");
