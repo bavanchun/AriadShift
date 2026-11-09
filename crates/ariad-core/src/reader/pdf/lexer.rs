@@ -97,7 +97,29 @@ pub(super) fn next_token<'a>(data: &'a [u8], pos: &mut usize) -> Option<Token<'a
                 while data.get(*pos).is_some_and(|&next| is_regular(next)) {
                     *pos += 1;
                 }
-                return Some(Token::Number(parse_number(&data[start..*pos])));
+                let bytes = &data[start..*pos];
+                // Skip malformed numbers instead of turning them into fabricated
+                // zero-valued style evidence.
+                let mut digits = 0;
+                let mut dots = 0;
+                let valid = bytes.iter().enumerate().all(|(i, byte)| match byte {
+                    b'0'..=b'9' => {
+                        digits += 1;
+                        true
+                    }
+                    b'.' => {
+                        dots += 1;
+                        dots <= 1
+                    }
+                    b'+' | b'-' => i == 0,
+                    _ => false,
+                });
+                let value = parse_number(bytes);
+                return Some(if valid && digits > 0 && value.is_finite() {
+                    Token::Number(value)
+                } else {
+                    Token::Keyword(bytes)
+                });
             }
             _ => {
                 let start = *pos;
@@ -110,8 +132,7 @@ pub(super) fn next_token<'a>(data: &'a [u8], pos: &mut usize) -> Option<Token<'a
     }
 }
 
-/// Parses a PDF number leniently: a sign, digits and at most one decimal point. Anything after
-/// the first invalid character is ignored, and an empty number reads as zero.
+/// Parses a numeric token; the caller checks its syntax and rejects overflow.
 fn parse_number(bytes: &[u8]) -> f64 {
     let mut index = 0;
     let mut negative = false;
@@ -140,7 +161,6 @@ fn parse_number(bytes: &[u8]) -> f64 {
             _ => break,
         }
     }
-    let value = if value.is_finite() { value } else { 0.0 };
     if negative { -value } else { value }
 }
 
@@ -479,8 +499,9 @@ mod tests {
         let all = tokens(data);
         assert_eq!(all[0], Token::Keyword(b"\xff\xfe"));
         assert_eq!(all[1], Token::DictEnd);
-        assert_eq!(all[2], Token::Number(0.0));
-        assert_eq!(all[3], Token::Number(1.2));
+        // Garbage remains skippable, but must never masquerade as colour operands.
+        assert_eq!(all[2], Token::Keyword(b"--"));
+        assert_eq!(all[3], Token::Keyword(b"1.2.3"));
         assert_eq!(all[4], Token::String(b"unterminated".to_vec()));
     }
 
