@@ -786,7 +786,8 @@ pub(crate) fn execute_with_client_deadline(
         }
 
         let output_pdf_path = workspace.output_dir().join("document.pdf");
-        fs::write(&output_pdf_path, &rendered.bytes).map_err(|e| ToolError::OutputIo(e.to_string()))?;
+        fs::write(&output_pdf_path, &rendered.bytes)
+            .map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
         Ok(RawToolExecution {
             artifacts: vec![(output_pdf_path, "pdf".to_string())],
