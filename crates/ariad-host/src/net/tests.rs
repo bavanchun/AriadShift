@@ -421,6 +421,43 @@ fn test_client_redirect_to_private_ip_is_blocked() {
 }
 
 #[test]
+fn test_client_get_same_origin_refuses_cross_origin_redirect() {
+    let resolver = Arc::new(MockResolver::new());
+    let public_ip = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+    resolver.insert("start.example.com", vec![public_ip]);
+    resolver.insert("cross.example.com", vec![public_ip]);
+
+    let transport = Arc::new(MockTransport::new(|req, _| {
+        if req.host() == "start.example.com" {
+            Ok(HttpResponse {
+                status: 302,
+                headers: vec![(
+                    "location".to_owned(),
+                    "https://cross.example.com/asset".to_owned(),
+                )],
+                body: Vec::new(),
+            })
+        } else {
+            panic!("transport should never be called for cross-origin target");
+        }
+    }));
+
+    let client = Client::builder()
+        .resolver(resolver)
+        .transport(transport)
+        .build()
+        .unwrap();
+
+    let start_url = Url::parse("https://start.example.com/entry").unwrap();
+    let expected_origin = start_url.origin();
+    let err = client
+        .get_same_origin(start_url, &expected_origin)
+        .unwrap_err();
+
+    assert!(matches!(err, NetError::CrossOriginRedirectRefused { .. }));
+}
+
+#[test]
 fn test_client_redirect_loop_capped() {
     let resolver = Arc::new(MockResolver::new());
     resolver.insert(

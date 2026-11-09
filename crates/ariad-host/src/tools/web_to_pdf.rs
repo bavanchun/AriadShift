@@ -6,7 +6,7 @@
 //! via HTML -> IR -> Typst into a PDF document.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs,
     path::PathBuf,
     time::{Duration, Instant},
@@ -43,6 +43,8 @@ pub const MAX_PER_ASSET_BYTES: usize = 20 * 1024 * 1024;
 pub const MAX_CUMULATIVE_BYTES: usize = 64 * 1024 * 1024;
 /// Overall deadline across the entire `web.to_pdf` job (30 s).
 pub const TOTAL_DEADLINE: Duration = Duration::from_secs(30);
+/// Maximum timeout cap for any single HTTP request within the job (15 s).
+pub const PER_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Preflight check for `web.to_pdf`.
 pub fn preflight() -> Result<(), ToolError> {
@@ -421,6 +423,34 @@ fn infer_extension(url: &Url, content_type: &str, is_css: bool) -> &'static str 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_with_client(
     client: &Client,
+    spec: &ToolSpec,
+    params_value: &serde_json::Value,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+    clock: HostClock,
+) -> Result<RawToolExecution, ToolError> {
+    execute_with_client_deadline(
+        client,
+        TOTAL_DEADLINE.min(client.policy().total_timeout),
+        spec,
+        params_value,
+        workspace,
+        limits,
+        scrubber,
+        cancel,
+        on_event,
+        clock,
+    )
+}
+
+/// Executes `web.to_pdf` with an explicit SSRF-safe `Client` and an explicit total job deadline.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_with_client_deadline(
+    client: &Client,
+    total_deadline: Duration,
     _spec: &ToolSpec,
     params_value: &serde_json::Value,
     workspace: &Workspace,
@@ -444,12 +474,18 @@ pub(crate) fn execute_with_client(
     let target_url = Url::parse(params.url.trim())
         .map_err(|e| ToolError::InvalidParams(format!("invalid url: {e}")))?;
 
-    if start_time.elapsed() >= TOTAL_DEADLINE {
-        return Err(ToolError::LimitExceeded);
-    }
+    let remaining = match total_deadline.checked_sub(start_time.elapsed()) {
+        Some(r) if !r.is_zero() => r,
+        _ => return Err(ToolError::LimitExceeded),
+    };
+    let top_req_timeout = remaining.min(client.policy().total_timeout);
+    let top_read_timeout = remaining
+        .min(client.policy().read_timeout)
+        .min(PER_REQUEST_TIMEOUT);
+    let top_client = client.with_timeouts(top_req_timeout, top_read_timeout);
 
     // 2. Fetch top-level HTML page with redirect following
-    let (response, final_url) = client
+    let (response, final_url) = top_client
         .get_with_final_url(target_url)
         .map_err(map_net_error)?;
 
@@ -504,9 +540,6 @@ pub(crate) fn execute_with_client(
     let mut pending_assets: Vec<(Url, bool)> = Vec::new();
     let mut seen_urls: HashSet<Url> = HashSet::new();
 
-    // Map from raw_reference -> safe relative replacement path (e.g. "assets/asset_0.png")
-    let mut replacements: Vec<(String, String)> = Vec::new();
-
     for candidate in html_sub_assets {
         let resolved = match final_url.join(&candidate.raw_reference) {
             Ok(u) => u,
@@ -536,7 +569,7 @@ pub(crate) fn execute_with_client(
     fs::create_dir_all(&assets_dir).map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
     // Downloaded assets: map resolved URL -> local relative path
-    let mut downloaded_map: HashMap<Url, (String, bool)> = HashMap::new();
+    let mut downloaded_map: BTreeMap<Url, (String, bool)> = BTreeMap::new();
     let mut downloaded_files: Vec<(PathBuf, Vec<u8>)> = Vec::new();
     let mut asset_counter = 0;
 
@@ -545,16 +578,32 @@ pub(crate) fn execute_with_client(
         if cancel.is_cancelled() {
             return Err(ToolError::Interrupted);
         }
-        if start_time.elapsed() >= TOTAL_DEADLINE {
-            return Err(ToolError::LimitExceeded);
-        }
+        let remaining = match total_deadline.checked_sub(start_time.elapsed()) {
+            Some(r) if !r.is_zero() => r,
+            _ => return Err(ToolError::LimitExceeded),
+        };
 
         let (asset_url, is_css) = pending_assets[current_idx].clone();
         current_idx += 1;
 
-        let (asset_resp, effective_asset_url) = client
-            .get_with_final_url(asset_url.clone())
-            .map_err(map_net_error)?;
+        let req_timeout = remaining.min(client.policy().total_timeout);
+        let read_timeout = remaining
+            .min(client.policy().read_timeout)
+            .min(PER_REQUEST_TIMEOUT);
+        let asset_client = client.with_timeouts(req_timeout, read_timeout);
+
+        let asset_result = asset_client.get_same_origin(asset_url.clone(), &final_origin);
+        let (asset_resp, effective_asset_url) = match asset_result {
+            Ok(pair) => pair,
+            Err(NetError::CrossOriginRedirectRefused { to, .. }) => {
+                warnings.push(ConvertWarning {
+                    code: "remote_asset_skipped".to_string(),
+                    message: format!("cross-origin asset redirect '{to}' skipped"),
+                });
+                continue;
+            }
+            Err(e) => return Err(map_net_error(e)),
+        };
 
         if effective_asset_url.origin() != final_origin {
             warnings.push(ConvertWarning {
@@ -618,8 +667,10 @@ pub(crate) fn execute_with_client(
     }
 
     // 8. Rewrite HTML and CSS assets
-    for (url, (local_path, is_css)) in &downloaded_map {
-        // Compute possible matching string forms of the reference
+    let mut html_replacements: Vec<(String, String)> = Vec::new();
+    let mut css_replacements: Vec<(String, String)> = Vec::new();
+
+    for (url, (local_path, _is_css)) in &downloaded_map {
         let full_url_str = url.to_string();
         let path_and_query = format!(
             "{}{}",
@@ -631,33 +682,41 @@ pub(crate) fn execute_with_client(
             .path_segments()
             .and_then(|mut segs| segs.next_back())
             .unwrap_or("");
+        let sibling_name = local_path.strip_prefix("assets/").unwrap_or(local_path);
 
-        replacements.push((full_url_str, local_path.clone()));
+        html_replacements.push((full_url_str.clone(), local_path.clone()));
         if !path_and_query.is_empty() && path_and_query != "/" {
-            replacements.push((path_and_query, local_path.clone()));
+            html_replacements.push((path_and_query.clone(), local_path.clone()));
         }
         if !path_only.is_empty() && path_only != "/" {
-            replacements.push((path_only, local_path.clone()));
+            html_replacements.push((path_only.clone(), local_path.clone()));
         }
         if !file_name.is_empty() {
-            replacements.push((file_name.to_owned(), local_path.clone()));
+            html_replacements.push((file_name.to_owned(), local_path.clone()));
         }
 
-        // For CSS, we also want the relative sibling path inside assets/
-        if *is_css {
-            let sibling_name = local_path.strip_prefix("assets/").unwrap_or(local_path);
-            if !file_name.is_empty() {
-                replacements.push((file_name.to_owned(), sibling_name.to_owned()));
-            }
+        css_replacements.push((full_url_str, sibling_name.to_owned()));
+        if !path_and_query.is_empty() && path_and_query != "/" {
+            css_replacements.push((path_and_query, sibling_name.to_owned()));
+        }
+        if !path_only.is_empty() && path_only != "/" {
+            css_replacements.push((path_only, sibling_name.to_owned()));
+        }
+        if !file_name.is_empty() {
+            css_replacements.push((file_name.to_owned(), sibling_name.to_owned()));
         }
     }
+
+    // Sort replacements by match pattern length descending for determinism and prefix safety
+    html_replacements.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+    css_replacements.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
 
     // Write downloaded files to disk
     for (path, body) in downloaded_files {
         let is_css_file = path.extension().is_some_and(|e| e == "css");
         if is_css_file {
             let mut css_content = String::from_utf8_lossy(&body).to_string();
-            for (from, to) in &replacements {
+            for (from, to) in &css_replacements {
                 css_content = css_content.replace(&format!("\"{from}\""), &format!("\"{to}\""));
                 css_content = css_content.replace(&format!("'{from}'"), &format!("'{to}'"));
                 css_content = css_content.replace(&format!("({from})"), &format!("({to})"));
@@ -671,7 +730,7 @@ pub(crate) fn execute_with_client(
 
     // Rewrite HTML
     let mut rewritten_html = html_text;
-    for (from, to) in replacements {
+    for (from, to) in html_replacements {
         rewritten_html = rewritten_html.replace(&format!("\"{from}\""), &format!("\"{to}\""));
         rewritten_html = rewritten_html.replace(&format!("'{from}'"), &format!("'{to}'"));
         rewritten_html = rewritten_html.replace(&format!("={from}>"), &format!("={to}>"));
@@ -744,7 +803,7 @@ mod tests {
     const TINY_PNG: &[u8] = &[
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2,
         0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 0, 0,
-        3, 1, 1, 0, 24, 221, 141, 176, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+        3, 1, 1, 0, 201, 254, 146, 239, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ];
 
     fn dummy_clock() -> HostClock {
@@ -841,6 +900,34 @@ mod tests {
         let bytes = fs::read(path).unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(bytes.len() > 1000);
+
+        let pdf_doc = lopdf::Document::load_mem(&bytes).expect("load rendered pdf");
+        let text = pdf_doc.extract_text(&[1]).unwrap_or_default();
+        assert!(
+            text.contains("Sample Web Page"),
+            "PDF missing heading text: {text}"
+        );
+        assert!(
+            text.contains("Rendered via Typst offline route"),
+            "PDF missing body text: {text}"
+        );
+
+        let has_image = pdf_doc
+            .objects
+            .values()
+            .filter_map(|obj| obj.as_stream().ok())
+            .any(|stream| {
+                stream
+                    .dict
+                    .get(b"Subtype")
+                    .ok()
+                    .and_then(|o| o.as_name().ok())
+                    == Some(b"Image".as_slice())
+            });
+        assert!(
+            has_image,
+            "rendered PDF must contain embedded Image XObject stream"
+        );
     }
 
     #[test]
@@ -1266,6 +1353,161 @@ mod tests {
         assert!(
             res_huge_cumul.is_err(),
             "cumulative bytes > 64 MiB must fail"
+        );
+    }
+
+    #[test]
+    fn web_to_pdf_sub_asset_cross_origin_redirect_is_blocked_before_request() {
+        let resolver = Arc::new(MockResolver::new());
+        let public_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        resolver.insert("example.com", vec![public_addr]);
+        resolver.insert("cdn.other", vec![public_addr]);
+
+        let transport = Arc::new(MockTransport::new(move |req, _| {
+            let host = req.url.host_str().unwrap_or("");
+            if host == "cdn.other" {
+                panic!(
+                    "MockTransport was invoked for cross-origin redirect target: {}",
+                    req.url
+                );
+            }
+            if host == "example.com" {
+                if req.url.path() == "/index.html" {
+                    let html = r#"<!DOCTYPE html>
+<html>
+<head><title>Safe Page</title></head>
+<body>
+  <h1>Safe Page</h1>
+  <img src="r.png">
+</body>
+</html>"#;
+                    Ok(HttpResponse {
+                        status: 200,
+                        headers: vec![("content-type".into(), "text/html; charset=utf-8".into())],
+                        body: html.as_bytes().to_vec(),
+                    })
+                } else if req.url.path() == "/r.png" {
+                    Ok(HttpResponse {
+                        status: 302,
+                        headers: vec![("location".into(), "https://cdn.other/pic.png".into())],
+                        body: vec![],
+                    })
+                } else {
+                    Ok(HttpResponse {
+                        status: 404,
+                        headers: vec![],
+                        body: vec![],
+                    })
+                }
+            } else {
+                panic!("unexpected host requested: {host}");
+            }
+        }));
+
+        let client = Client::builder()
+            .resolver(resolver)
+            .transport(transport)
+            .https_only(true)
+            .build()
+            .unwrap();
+
+        let workspace = Workspace::new().unwrap();
+        let spec = ariad_core::tools::find("web.to_pdf").unwrap();
+        let scrubber = SecretScrubber::new();
+        let cancel = CancellationToken::new();
+
+        let outcome = execute_with_client(
+            &client,
+            spec,
+            &serde_json::json!({ "url": "https://example.com/index.html" }),
+            &workspace,
+            &Limits::local(),
+            &scrubber,
+            &cancel,
+            &mut |_| {},
+            dummy_clock(),
+        )
+        .expect("execution must succeed by skipping cross-origin redirected asset");
+
+        let remote_asset_skipped = outcome
+            .warnings
+            .iter()
+            .any(|w| w.code == "remote_asset_skipped");
+        assert!(
+            remote_asset_skipped,
+            "must emit remote_asset_skipped warning, got: {:?}",
+            outcome.warnings
+        );
+    }
+
+    #[test]
+    fn web_to_pdf_enforces_total_job_deadline_across_requests() {
+        let resolver = Arc::new(MockResolver::new());
+        let public_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        resolver.insert("timeout.example", vec![public_addr]);
+
+        let transport = Arc::new(MockTransport::new(move |req, _| {
+            if req.url.path() == "/index.html" {
+                let html = r#"<!DOCTYPE html>
+<html>
+<head><title>Timeout Page</title></head>
+<body>
+  <h1>Timeout Test</h1>
+  <img src="asset1.png">
+  <img src="asset2.png">
+</body>
+</html>"#;
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![("content-type".into(), "text/html; charset=utf-8".into())],
+                    body: html.as_bytes().to_vec(),
+                })
+            } else if req.url.path() == "/asset1.png" {
+                // Sleep past the total budget to trigger deadline expiry
+                std::thread::sleep(Duration::from_millis(50));
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![("content-type".into(), "image/png".into())],
+                    body: TINY_PNG.to_vec(),
+                })
+            } else {
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![("content-type".into(), "image/png".into())],
+                    body: TINY_PNG.to_vec(),
+                })
+            }
+        }));
+
+        let client = Client::builder()
+            .resolver(resolver)
+            .transport(transport)
+            .total_timeout(Duration::from_millis(30))
+            .https_only(true)
+            .build()
+            .unwrap();
+
+        let workspace = Workspace::new().unwrap();
+        let spec = ariad_core::tools::find("web.to_pdf").unwrap();
+        let scrubber = SecretScrubber::new();
+        let cancel = CancellationToken::new();
+
+        let result = execute_with_client_deadline(
+            &client,
+            Duration::from_millis(30),
+            spec,
+            &serde_json::json!({ "url": "https://timeout.example/index.html" }),
+            &workspace,
+            &Limits::local(),
+            &scrubber,
+            &cancel,
+            &mut |_| {},
+            dummy_clock(),
+        );
+
+        assert!(
+            matches!(result, Err(ToolError::LimitExceeded)),
+            "expected ToolError::LimitExceeded when total job deadline is exceeded across requests, got: {result:?}"
         );
     }
 }

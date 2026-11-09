@@ -78,6 +78,14 @@ impl Client {
         &self.policy
     }
 
+    /// Returns a shallow clone of this client with modified timeout parameters.
+    pub fn with_timeouts(&self, total_timeout: Duration, read_timeout: Duration) -> Self {
+        let mut cloned = self.clone();
+        cloned.policy.total_timeout = total_timeout;
+        cloned.policy.read_timeout = read_timeout;
+        cloned
+    }
+
     /// Executes an HTTP GET request to `url`.
     pub fn get(&self, url: Url) -> Result<HttpResponse, NetError> {
         self.send(HttpRequest::get(url))
@@ -86,6 +94,15 @@ impl Client {
     /// Executes an HTTP GET request to `url`, returning the response and final URL after redirects.
     pub fn get_with_final_url(&self, url: Url) -> Result<(HttpResponse, Url), NetError> {
         self.send_with_final_url(HttpRequest::get(url))
+    }
+
+    /// Executes an HTTP GET request to `url`, enforcing that any redirect stays within `allowed_origin`.
+    pub fn get_same_origin(
+        &self,
+        url: Url,
+        allowed_origin: &url::Origin,
+    ) -> Result<(HttpResponse, Url), NetError> {
+        self.send_with_final_url_guard(HttpRequest::get(url), Some(allowed_origin))
     }
 
     /// Executes an HTTP POST request to `url` with `body` and `content_type`.
@@ -107,7 +124,17 @@ impl Client {
     /// returning the response and the final effective URL after redirects.
     pub fn send_with_final_url(
         &self,
+        request: HttpRequest,
+    ) -> Result<(HttpResponse, Url), NetError> {
+        self.send_with_final_url_guard(request, None)
+    }
+
+    /// Executes an SSRF-safe HTTP request with redirect following, DNS pinning,
+    /// and optional same-origin redirect enforcement.
+    pub fn send_with_final_url_guard(
+        &self,
         mut request: HttpRequest,
+        allowed_origin: Option<&url::Origin>,
     ) -> Result<(HttpResponse, Url), NetError> {
         let start = Instant::now();
         let url_policy = UrlPolicy {
@@ -115,6 +142,15 @@ impl Client {
             allow_loopback: self.policy.allow_loopback,
             allowed_ports: self.policy.allowed_ports.clone(),
         };
+
+        if let Some(expected) = allowed_origin
+            && &request.url.origin() != expected
+        {
+            return Err(NetError::CrossOriginRedirectRefused {
+                from: request.url.to_string(),
+                to: request.url.to_string(),
+            });
+        }
 
         let mut redirect_count = 0;
 
@@ -185,6 +221,15 @@ impl Client {
                 })?;
 
                 let next_url = validate_redirect(&request.url, location, &url_policy)?;
+
+                if let Some(expected) = allowed_origin
+                    && &next_url.origin() != expected
+                {
+                    return Err(NetError::CrossOriginRedirectRefused {
+                        from: request.url.to_string(),
+                        to: next_url.to_string(),
+                    });
+                }
 
                 // RFC 7231 / RFC 9110 redirect method rewrite semantics:
                 match response.status {
