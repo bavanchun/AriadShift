@@ -265,9 +265,7 @@ impl DocxStyles {
                         }
                         direct_events.push(event.into_owned());
                     }
-                    writer
-                        .write_event(properties[0].clone())
-                        .map_err(|e| e.to_string())?;
+                    let mut retained = Vec::new();
                     let mut skip = 0usize;
                     for event in &properties[1..properties.len() - 1] {
                         match event {
@@ -285,12 +283,34 @@ impl DocxStyles {
                             _ if skip > 0 => continue,
                             _ => {}
                         }
-                        writer
-                            .write_event(event.clone())
-                            .map_err(|e| e.to_string())?;
+                        retained.push(event.clone());
                     }
-                    for event in direct_events {
-                        writer.write_event(event).map_err(|e| e.to_string())?;
+                    // Merge whole child subtrees so existing properties such as
+                    // vertAlign stay in schema order without splitting nested XML.
+                    let mut children: Vec<Vec<Event<'_>>> = Vec::new();
+                    let mut depth = 0usize;
+                    for event in retained.into_iter().chain(direct_events) {
+                        if depth == 0 {
+                            children.push(Vec::new());
+                        }
+                        match &event {
+                            Event::Start(_) => depth += 1,
+                            Event::End(_) => depth -= 1,
+                            _ => {}
+                        }
+                        children.last_mut().expect("child started").push(event);
+                    }
+                    children.sort_by_key(|child| match &child[0] {
+                        Event::Start(e) | Event::Empty(e) => run_property_order(e.name().as_ref()),
+                        _ => usize::MAX,
+                    });
+                    writer
+                        .write_event(properties[0].clone())
+                        .map_err(|e| e.to_string())?;
+                    for child in children {
+                        for event in child {
+                            writer.write_event(event).map_err(|e| e.to_string())?;
+                        }
                     }
                     writer
                         .write_event(properties.last().expect("closed properties").clone())
@@ -360,10 +380,10 @@ impl DocxStyles {
                 element(&mut out, "basedOn", &format!("Heading{level}"));
             }
             out.push_str("<w:pPr>");
+            paragraph_properties(&mut out, value);
             if let Some(level) = self.headings.get(id) {
                 element(&mut out, "outlineLvl", &(level - 1).to_string());
             }
-            paragraph_properties(&mut out, value);
             out.push_str("</w:pPr><w:rPr>");
             character_properties(
                 &mut out,
@@ -390,16 +410,17 @@ impl DocxStyles {
             if let Some(base) = self.table_bases.get(id) {
                 element(&mut out, "basedOn", base);
             }
+            out.push_str("<w:pPr>");
+            paragraph_properties(&mut out, &value.paragraph);
+            out.push_str("</w:pPr><w:rPr>");
+            character_properties(&mut out, &value.character);
+            out.push_str("</w:rPr>");
             if let Some(background) = &value.background {
                 out.push_str("<w:tblPr>");
                 shading(&mut out, background.as_str());
                 out.push_str("</w:tblPr>");
             }
-            out.push_str("<w:pPr>");
-            paragraph_properties(&mut out, &value.paragraph);
-            out.push_str("</w:pPr><w:rPr>");
-            character_properties(&mut out, &value.character);
-            out.push_str("</w:rPr></w:style>");
+            out.push_str("</w:style>");
         }
         out
     }
@@ -460,6 +481,9 @@ fn paragraph_properties(out: &mut String, p: &ParagraphStyle) {
     if let Some(value) = p.page_break_before {
         element(out, "pageBreakBefore", if value { "1" } else { "0" });
     }
+    if let Some(value) = &p.background {
+        shading(out, value.as_str());
+    }
     if p.space_before_pt.is_some() || p.space_after_pt.is_some() || p.line_height.is_some() {
         out.push_str("<w:spacing");
         for (name, value, factor) in [
@@ -504,18 +528,61 @@ fn paragraph_properties(out: &mut String, p: &ParagraphStyle) {
             },
         );
     }
-    if let Some(value) = &p.background {
-        shading(out, value.as_str());
-    }
+}
+fn run_property_order(name: &str) -> usize {
+    // WordprocessingML run-property order, including properties retained from Pandoc.
+    const ORDER: &[&str] = &[
+        "rStyle",
+        "rFonts",
+        "b",
+        "bCs",
+        "i",
+        "iCs",
+        "caps",
+        "smallCaps",
+        "strike",
+        "dstrike",
+        "outline",
+        "shadow",
+        "emboss",
+        "imprint",
+        "noProof",
+        "snapToGrid",
+        "vanish",
+        "webHidden",
+        "color",
+        "spacing",
+        "w",
+        "kern",
+        "position",
+        "sz",
+        "szCs",
+        "highlight",
+        "u",
+        "effect",
+        "bdr",
+        "shd",
+        "fitText",
+        "vertAlign",
+        "rtl",
+        "cs",
+        "em",
+        "lang",
+        "eastAsianLayout",
+        "specVanish",
+        "oMath",
+        "rPrChange",
+    ];
+    let name = name.strip_prefix("w:").unwrap_or(name);
+    ORDER
+        .iter()
+        .position(|property| *property == name)
+        .unwrap_or(ORDER.len())
 }
 fn character_properties(out: &mut String, c: &CharacterStyle) {
     if let Some(font) = &c.font {
         let family = xml(&font.family);
         out.push_str(&format!("<w:rFonts w:ascii=\"{family}\" w:hAnsi=\"{family}\" w:eastAsia=\"{family}\" w:cs=\"{family}\"/>"));
-    }
-    if let Some(value) = c.size_pt {
-        element(out, "sz", &units(value, 2.0));
-        element(out, "szCs", &units(value, 2.0));
     }
     if let Some(value) = c.weight {
         element(out, "b", if value >= 600 { "1" } else { "0" });
@@ -523,26 +590,30 @@ fn character_properties(out: &mut String, c: &CharacterStyle) {
     }
     for (name, value) in [
         ("i", c.italic),
-        ("strike", c.strike),
         ("smallCaps", c.small_caps),
+        ("strike", c.strike),
     ] {
         if let Some(value) = value {
             element(out, name, if value { "1" } else { "0" });
         }
     }
-    if let Some(value) = c.underline {
-        element(out, "u", if value { "single" } else { "none" });
-    }
     if let Some(value) = &c.color {
         element(out, "color", value.as_str().trim_start_matches('#'));
     }
-    if let Some(value) = &c.highlight {
-        shading(out, value.as_str());
+    if let Some(value) = c.letter_spacing {
+        element(out, "spacing", &units(value, 20.0));
     }
     if let Some(value) = c.baseline_shift {
         element(out, "position", &units(value, 2.0));
     }
-    if let Some(value) = c.letter_spacing {
-        element(out, "spacing", &units(value, 20.0));
+    if let Some(value) = c.size_pt {
+        element(out, "sz", &units(value, 2.0));
+        element(out, "szCs", &units(value, 2.0));
+    }
+    if let Some(value) = c.underline {
+        element(out, "u", if value { "single" } else { "none" });
+    }
+    if let Some(value) = &c.highlight {
+        shading(out, value.as_str());
     }
 }

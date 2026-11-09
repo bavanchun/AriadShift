@@ -379,6 +379,172 @@ fn test_reference_template() -> Vec<u8> {
 }
 
 #[test]
+fn docx_style_children_follow_ooxml_sequence_order() {
+    use ariad_core::ir::TableStyle;
+    use quick_xml::{Reader, events::Event};
+    use std::{
+        collections::BTreeMap,
+        io::{Cursor, Read},
+    };
+
+    let mut doc = styled_document();
+    let paragraph = doc.styles.paragraph.get_mut(&id("Body")).unwrap();
+    paragraph.keep_with_next = Some(true);
+    paragraph.page_break_before = Some(true);
+    paragraph.background = Some("#ddeeff".to_owned().try_into().unwrap());
+    paragraph.indent_left_pt = Some(12.0);
+    let paragraph = paragraph.clone();
+    let character = doc.styles.character.get_mut(&id("Accent")).unwrap();
+    character.font = Some(FontRef {
+        family: "Libertinus Serif".into(),
+        fallback: vec![],
+    });
+    character.size_pt = Some(16.0);
+    character.small_caps = Some(true);
+    character.strike = Some(true);
+    character.color = Some("#123456".to_owned().try_into().unwrap());
+    character.letter_spacing = Some(1.0);
+    character.baseline_shift = Some(2.0);
+    character.highlight = Some("#ddeeff".to_owned().try_into().unwrap());
+    let character = character.clone();
+    doc.styles.table.insert(
+        id("Grid"),
+        TableStyle {
+            paragraph,
+            character,
+            background: Some("#ddeeff".to_owned().try_into().unwrap()),
+        },
+    );
+    doc.body.push(Block::Heading {
+        id: Default::default(),
+        style: Some(id("Body")),
+        direct: Default::default(),
+        level: 2,
+        content: vec![text("Styled heading")],
+    });
+    let mapped = ariad_core::pandoc::MapOutput::for_docx(&doc);
+    let bytes = mapped
+        .docx_styles
+        .reference_doc(&test_reference_template(), &Default::default())
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut xml = String::new();
+    archive
+        .by_name("word/styles.xml")
+        .unwrap()
+        .read_to_string(&mut xml)
+        .unwrap();
+    let mut reader = Reader::from_str(&xml);
+    let mut path: Vec<String> = Vec::new();
+    let mut style = String::new();
+    let mut sequences: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+    loop {
+        match reader.read_event().unwrap() {
+            event @ (Event::Start(_) | Event::Empty(_)) => {
+                let (Event::Start(e) | Event::Empty(e)) = &event else {
+                    unreachable!()
+                };
+                let name = e.local_name().as_ref().to_owned();
+                if name == "style" {
+                    style = e
+                        .try_get_attribute("w:styleId")
+                        .unwrap()
+                        .unwrap()
+                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                        .unwrap()
+                        .into_owned();
+                }
+                if let Some(parent) = path.last()
+                    && matches!(parent.as_str(), "style" | "pPr" | "rPr")
+                {
+                    sequences
+                        .entry((style.clone(), parent.clone()))
+                        .or_default()
+                        .push(name.clone());
+                }
+                if matches!(event, Event::Start(_)) {
+                    path.push(name);
+                }
+            }
+            Event::End(_) => {
+                path.pop();
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    let style_order = ["name", "basedOn", "pPr", "rPr", "tblPr"];
+    let paragraph_order = [
+        "keepNext",
+        "pageBreakBefore",
+        "shd",
+        "spacing",
+        "ind",
+        "jc",
+        "outlineLvl",
+    ];
+    let run_order = [
+        "rFonts",
+        "b",
+        "bCs",
+        "i",
+        "smallCaps",
+        "strike",
+        "color",
+        "spacing",
+        "position",
+        "sz",
+        "szCs",
+        "u",
+        "shd",
+    ];
+    for ((style, parent), children) in &sequences {
+        let order: &[&str] = match parent.as_str() {
+            "style" => &style_order,
+            "pPr" => &paragraph_order,
+            "rPr" => &run_order,
+            _ => unreachable!(),
+        };
+        let expected: Vec<_> = order
+            .iter()
+            .filter(|name| children.iter().any(|child| child == **name))
+            .copied()
+            .collect();
+        assert_eq!(children, &expected, "{style}/{parent}");
+    }
+    for (style, parent, expected) in [
+        (
+            "AriadPStyleBody",
+            "style",
+            vec!["name", "basedOn", "pPr", "rPr"],
+        ),
+        ("AriadPStyleBody", "pPr", paragraph_order[..6].to_vec()),
+        ("AriadCStyleAccent", "rPr", run_order.to_vec()),
+        (
+            "AriadTStyleGrid",
+            "style",
+            style_order
+                .iter()
+                .copied()
+                .filter(|name| *name != "basedOn")
+                .collect(),
+        ),
+    ] {
+        assert_eq!(
+            sequences[&(style.into(), parent.into())],
+            expected,
+            "{style}/{parent}"
+        );
+    }
+    assert!(
+        sequences
+            .iter()
+            .any(|((_, parent), children)| parent == "pPr"
+                && children.last().is_some_and(|name| name == "outlineLvl"))
+    );
+}
+
+#[test]
 fn generated_reference_styles_enforce_the_supplied_archive_budget() {
     let mapped = ariad_core::pandoc::from_ir(&styled_document());
     let limits = ariad_core::limits::Limits {

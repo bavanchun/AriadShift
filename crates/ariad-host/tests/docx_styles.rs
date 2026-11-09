@@ -176,6 +176,178 @@ fn assert_xml_valid(xml: &str) {
     let mut reader = quick_xml::Reader::from_str(xml);
     while !matches!(reader.read_event().unwrap(), quick_xml::events::Event::Eof) {}
 }
+
+#[derive(Debug, Default)]
+struct XmlNode {
+    name: String,
+    attrs: BTreeMap<String, String>,
+    children: Vec<XmlNode>,
+    text: String,
+}
+impl XmlNode {
+    fn child(&self, name: &str) -> &Self {
+        self.children
+            .iter()
+            .find(|node| node.name == name)
+            .unwrap_or_else(|| panic!("missing {name} in {self:?}"))
+    }
+    fn attr(&self, name: &str) -> &str {
+        self.attrs
+            .get(name)
+            .unwrap_or_else(|| panic!("missing {name} in {self:?}"))
+    }
+}
+fn parse_xml(xml: &str) -> XmlNode {
+    use quick_xml::{Reader, XmlVersion, events::Event};
+    let mut reader = Reader::from_str(xml);
+    let mut stack = vec![XmlNode::default()];
+    loop {
+        match reader.read_event().unwrap() {
+            event @ (Event::Start(_) | Event::Empty(_)) => {
+                let (Event::Start(e) | Event::Empty(e)) = &event else {
+                    unreachable!()
+                };
+                let node = XmlNode {
+                    name: e.local_name().as_ref().to_owned(),
+                    attrs: e
+                        .attributes()
+                        .map(|attr| {
+                            let attr = attr.unwrap();
+                            (
+                                attr.key.as_ref().to_owned(),
+                                attr.normalized_value(XmlVersion::Implicit1_0)
+                                    .unwrap()
+                                    .into_owned(),
+                            )
+                        })
+                        .collect(),
+                    ..Default::default()
+                };
+                if matches!(event, Event::Start(_)) {
+                    stack.push(node);
+                } else {
+                    stack.last_mut().unwrap().children.push(node);
+                }
+            }
+            Event::End(_) => {
+                let node = stack.pop().unwrap();
+                stack.last_mut().unwrap().children.push(node);
+            }
+            Event::Text(e) => stack
+                .last_mut()
+                .unwrap()
+                .text
+                .push_str(&e.xml_content(XmlVersion::Implicit1_0)),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    assert_eq!(stack.len(), 1);
+    stack.pop().unwrap().children.pop().unwrap()
+}
+fn assert_property_order(node: &XmlNode) {
+    let order: &[&str] = match node.name.as_str() {
+        "pPr" => &[
+            "pStyle",
+            "keepNext",
+            "keepLines",
+            "pageBreakBefore",
+            "widowControl",
+            "numPr",
+            "pBdr",
+            "shd",
+            "tabs",
+            "spacing",
+            "ind",
+            "jc",
+            "outlineLvl",
+            "rPr",
+            "sectPr",
+            "pPrChange",
+        ],
+        "rPr" => &[
+            "rStyle",
+            "rFonts",
+            "b",
+            "bCs",
+            "i",
+            "iCs",
+            "caps",
+            "smallCaps",
+            "strike",
+            "dstrike",
+            "outline",
+            "shadow",
+            "emboss",
+            "imprint",
+            "noProof",
+            "snapToGrid",
+            "vanish",
+            "webHidden",
+            "color",
+            "spacing",
+            "w",
+            "kern",
+            "position",
+            "sz",
+            "szCs",
+            "highlight",
+            "u",
+            "effect",
+            "bdr",
+            "shd",
+            "fitText",
+            "vertAlign",
+            "rtl",
+            "cs",
+            "em",
+            "lang",
+            "eastAsianLayout",
+            "specVanish",
+            "oMath",
+            "rPrChange",
+        ],
+        _ => &[],
+    };
+    if !order.is_empty() {
+        let actual: Vec<_> = node
+            .children
+            .iter()
+            .map(|child| child.name.as_str())
+            .collect();
+        let expected: Vec<_> = order
+            .iter()
+            .filter(|name| actual.contains(name))
+            .copied()
+            .collect();
+        assert_eq!(actual, expected, "{}", node.name);
+    }
+    for child in &node.children {
+        assert_property_order(child);
+    }
+}
+fn pandoc_text(node: &serde_json::Value) -> String {
+    if let Some(nodes) = node.as_array() {
+        return nodes.iter().map(pandoc_text).collect();
+    }
+    match node["t"].as_str() {
+        Some("Str") => node["c"].as_str().unwrap().into(),
+        Some("Space") => " ".into(),
+        Some(_) => pandoc_text(&node["c"]),
+        None => String::new(),
+    }
+}
+fn custom_style(attr: &serde_json::Value) -> &str {
+    attr[2]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|pair| pair[0] == "custom-style")
+        .unwrap()[1]
+        .as_str()
+        .unwrap()
+}
+
 #[test]
 fn docx_styles_emit_definitions_and_custom_style_references() {
     let (_workspace, bytes) = convert(&document());
@@ -250,27 +422,123 @@ fn docx_styles_roundtrip_through_real_pandoc() {
         String::from_utf8_lossy(&output.stderr)
     );
     let ast: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let json = serde_json::to_string(&ast).unwrap();
-    for expected in [
-        "custom-style",
-        "AriadPDirect",
-        "AriadCDirect",
-        "Tiếng",
-        "Việt",
-        "reset",
-    ] {
-        assert!(json.contains(expected), "missing {expected}: {json}");
+    let styles = parse_xml(&member(&bytes, "word/styles.xml"));
+    let content = parse_xml(&member(&bytes, "word/document.xml"));
+    assert_property_order(&content);
+    let paragraph = content.child("body").child("p");
+    let paragraph_id = paragraph.child("pPr").child("pStyle").attr("w:val");
+    assert!(paragraph_id.starts_with("AriadPDirect"));
+    let definition = |style_id: &str| {
+        styles
+            .children
+            .iter()
+            .find(|style| {
+                style
+                    .attrs
+                    .get("w:styleId")
+                    .is_some_and(|id| id == style_id)
+            })
+            .unwrap()
+    };
+    let assert_font = |properties: &XmlNode| {
+        let fonts = properties.child("rFonts");
+        for attribute in ["w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"] {
+            assert_eq!(fonts.attr(attribute), "Libertinus Serif");
+        }
+        assert_eq!(properties.child("sz").attr("w:val"), "36");
+        assert_eq!(properties.child("color").attr("w:val"), "123456");
+    };
+    let paragraph_style = definition(paragraph_id);
+    assert_eq!(paragraph_style.attr("w:type"), "paragraph");
+    assert_font(paragraph_style.child("rPr"));
+    let div = &ast["blocks"][0];
+    assert_eq!(div["t"], "Div");
+    assert_eq!(
+        custom_style(&div["c"][0]),
+        paragraph_style.child("name").attr("w:val")
+    );
+    assert_eq!(pandoc_text(&div["c"][1]), "Tiếng Việt reset");
+    let para = &div["c"][1][0];
+    assert_eq!(para["t"], "Para");
+    for (target, weight) in [("Tiếng Việt", "1"), ("reset", "0")] {
+        let run = paragraph
+            .children
+            .iter()
+            .filter(|node| node.name == "r")
+            .find(|run| run.child("t").text.trim() == target)
+            .unwrap();
+        let run_id = run.child("rPr").child("rStyle").attr("w:val");
+        assert!(run_id.starts_with("AriadCDirect"));
+        let style = definition(run_id);
+        assert_eq!(style.attr("w:type"), "character");
+        assert_font(style.child("rPr"));
+        assert_eq!(style.child("rPr").child("b").attr("w:val"), weight);
+        assert_eq!(style.child("rPr").child("bCs").attr("w:val"), weight);
+        assert_font(run.child("rPr"));
+        assert_eq!(run.child("rPr").child("b").attr("w:val"), weight);
+        let span = para["c"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["t"] == "Span" && pandoc_text(&node["c"][1]) == target)
+            .unwrap();
+        assert_eq!(
+            custom_style(&span["c"][0]),
+            style.child("name").attr("w:val")
+        );
     }
-    // Package inspection establishes actual style values independently of AST attributes.
-    let styles = member(&bytes, "word/styles.xml");
-    for expected in [
-        "Libertinus Serif",
-        "w:sz w:val=\"36\"",
-        "w:b w:val=\"1\"",
-        "w:color w:val=\"123456\"",
-    ] {
-        assert!(styles.contains(expected));
-    }
+}
+
+#[test]
+fn docx_materialized_run_properties_follow_ooxml_sequence_order() {
+    let mut doc = document();
+    let character = doc.styles.character.get_mut(&id("Accent")).unwrap();
+    character.small_caps = Some(true);
+    character.strike = Some(true);
+    character.letter_spacing = Some(1.0);
+    character.baseline_shift = Some(2.0);
+    character.highlight = Some("#ddeeff".to_owned().try_into().unwrap());
+    let Block::Paragraph { content, .. } = &mut doc.body[0] else {
+        panic!()
+    };
+    *content = vec![Inline::Superscript {
+        content: std::mem::take(content),
+    }];
+    doc.assign_block_ids();
+    let (_workspace, bytes) = convert(&doc);
+    let content = parse_xml(&member(&bytes, "word/document.xml"));
+    assert_property_order(&content);
+    let run = content.child("body").child("p").child("r");
+    let names: Vec<_> = run
+        .child("rPr")
+        .children
+        .iter()
+        .map(|child| child.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "rStyle",
+            "rFonts",
+            "b",
+            "bCs",
+            "i",
+            "smallCaps",
+            "strike",
+            "color",
+            "spacing",
+            "position",
+            "sz",
+            "szCs",
+            "u",
+            "shd",
+            "vertAlign"
+        ]
+    );
+    assert_eq!(
+        run.child("rPr").child("vertAlign").attr("w:val"),
+        "superscript"
+    );
 }
 
 #[test]
