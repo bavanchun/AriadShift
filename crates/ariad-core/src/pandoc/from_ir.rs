@@ -28,9 +28,21 @@ pub struct MapOutput {
     pub warnings: Vec<Warning>,
 }
 
-/// Maps AriadShift IR to the Pandoc 1.23 JSON AST used by the DOCX writer.
+impl MapOutput {
+    /// Maps styles for DOCX, including its reserved heading and run-style rules.
+    #[must_use]
+    pub fn for_docx(document: &Document) -> Self {
+        map_document(document, true)
+    }
+}
+
+/// Maps AriadShift IR to the target-neutral Pandoc 1.23 JSON AST.
 #[must_use]
 pub fn from_ir(document: &Document) -> MapOutput {
+    map_document(document, false)
+}
+
+fn map_document(document: &Document, docx: bool) -> MapOutput {
     let prohibited_fonts = document
         .assets
         .values()
@@ -42,6 +54,7 @@ pub fn from_ir(document: &Document) -> MapOutput {
 
     let mut mapper = Mapper {
         document,
+        docx,
         docx_styles: DocxStyles::new(document),
         character: document.styles.defaults.character.clone(),
         table_character: None,
@@ -89,6 +102,7 @@ pub fn from_ir(document: &Document) -> MapOutput {
 
 struct Mapper<'a> {
     document: &'a Document,
+    docx: bool,
     docx_styles: DocxStyles,
     character: CharacterStyle,
     table_character: Option<CharacterStyle>,
@@ -163,6 +177,7 @@ impl Mapper<'_> {
         let mut blocks = self.map_block_content(block);
         if let IrBlock::Heading { level, .. } = block
             && name.is_some()
+            && self.docx
         {
             // Pandoc reserves Header's style. An outline paragraph style keeps
             // heading semantics while allowing a custom size/alignment/spacing.
@@ -445,7 +460,7 @@ impl Mapper<'_> {
                 mapped
             }
             IrInline::Emph { content }
-                if !self.character.is_empty() || contains_styled(content) =>
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
             {
                 self.semantic_character(
                     content,
@@ -457,7 +472,7 @@ impl Mapper<'_> {
             }
             IrInline::Emph { content } => vec![Inline::Emph(self.map_inlines(content))],
             IrInline::Strong { content }
-                if !self.character.is_empty() || contains_styled(content) =>
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
             {
                 self.semantic_character(
                     content,
@@ -469,7 +484,7 @@ impl Mapper<'_> {
             }
             IrInline::Strong { content } => vec![Inline::Strong(self.map_inlines(content))],
             IrInline::Strikeout { content }
-                if !self.character.is_empty() || contains_styled(content) =>
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
             {
                 self.semantic_character(
                     content,

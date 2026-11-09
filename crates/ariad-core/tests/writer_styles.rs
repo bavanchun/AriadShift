@@ -264,7 +264,7 @@ fn character_defaults_and_semantic_emphasis_obey_inner_resets() {
     let typst = typst::write(&doc, &TypstOptions::default()).markup;
     assert!(typst.contains("weight: 700"));
     assert!(typst.contains("weight: 400"));
-    let mapped = ariad_core::pandoc::from_ir(&doc);
+    let mapped = ariad_core::pandoc::MapOutput::for_docx(&doc);
     let ast = serde_json::to_string(&mapped.pandoc).unwrap();
     assert!(
         !ast.contains("\"Strong\""),
@@ -510,4 +510,28 @@ fn named_empty_styles_keep_their_pandoc_references() {
     ] {
         assert!(json.contains(name), "missing {name}: {json}");
     }
+}
+
+#[test]
+fn target_neutral_pandoc_preserves_styled_headings_and_semantic_emphasis() {
+    let mut doc = styled_document();
+    doc.body = vec![Block::Heading {
+        id: Default::default(),
+        style: Some(id("Body")),
+        direct: Default::default(),
+        level: 2,
+        content: vec![Inline::Strong {
+            content: vec![text("Styled heading")],
+        }],
+    }];
+    doc.assign_block_ids();
+    let mapped = ariad_core::pandoc::from_ir(&doc);
+    let ast = serde_json::to_string(&mapped.pandoc).unwrap();
+    assert!(ast.contains("\"Header\""), "{ast}");
+    assert!(ast.contains("\"Strong\""), "{ast}");
+    let mapped = ariad_core::pandoc::MapOutput::for_docx(&doc);
+    let ast = serde_json::to_string(&mapped.pandoc).unwrap();
+    assert!(!ast.contains("\"Header\""), "{ast}");
+    assert!(!ast.contains("\"Strong\""), "{ast}");
+    assert!(ast.contains("custom-style"));
 }

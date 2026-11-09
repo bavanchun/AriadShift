@@ -173,7 +173,11 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                         ir_io::ReadError::Io(_) => EngineFailure::io(),
                         _ => EngineFailure::invalid_request(),
                     })?;
-                let mut mapped = from_ir(&document);
+                let mut mapped = if req_output.format == "docx" {
+                    ariad_core::pandoc::MapOutput::for_docx(&document)
+                } else {
+                    from_ir(&document)
+                };
 
                 if is_epub {
                     let ns = uuid::Uuid::new_v5(
