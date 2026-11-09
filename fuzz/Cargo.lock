@@ -119,7 +119,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-engine-io"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ariad-core",
  "serde",
@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-host"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-pdf"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ariad-core",
  "base64 0.23.1",
@@ -237,6 +237,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "similar",
  "subsetter",
  "thiserror",
  "ttf-parser",
@@ -249,7 +250,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-pdfium-engine"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
@@ -266,7 +267,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-typst"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ariad-core",
  "jiff",
@@ -405,6 +406,16 @@ checksum = "3a32acac15fe1967bc3986b2a6347dffc965602354ea6f450ad07e8bfd253583"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
+]
+
+[[package]]
+name = "bstr"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f"
+dependencies = [
+ "memchr",
+ "serde_core",
 ]
 
 [[package]]
@@ -3736,6 +3747,15 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "similar"
+version = "3.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f8bec09ae8fae0f4f265a4559a9334be3929d8504e9b536df0a41302bd1733"
+dependencies = [
+ "bstr",
+]
 
 [[package]]
 name = "simplecss"

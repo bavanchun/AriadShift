@@ -48,6 +48,11 @@ pub const PER_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Preflight check for `web.to_pdf`.
 pub fn preflight() -> Result<(), ToolError> {
+    #[cfg(not(feature = "typst"))]
+    {
+        return Err(ToolError::from_missing_engine("typst"));
+    }
+    #[cfg(feature = "typst")]
     Ok(())
 }
 
@@ -765,22 +770,32 @@ pub(crate) fn execute_with_client_deadline(
     };
     let timestamp = clock.clock.epoch_secs;
 
-    let rendered = crate::typst_render::render(&document, &options, timestamp)
-        .map_err(|e| ToolError::EngineFailure(e.to_string()))?;
-
-    for w in &rendered.writer_warnings {
-        warnings.push(safe_warning(w));
+    #[cfg(not(feature = "typst"))]
+    {
+        let _ = (&document, &options, timestamp);
+        return Err(ToolError::from_missing_engine("typst"));
     }
 
-    let output_pdf_path = workspace.output_dir().join("document.pdf");
-    fs::write(&output_pdf_path, &rendered.bytes).map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    #[cfg(feature = "typst")]
+    {
+        let rendered = crate::typst_render::render(&document, &options, timestamp)
+            .map_err(|e| ToolError::EngineFailure(e.to_string()))?;
 
-    Ok(RawToolExecution {
-        artifacts: vec![(output_pdf_path, "pdf".to_string())],
-        warnings,
-        metrics: std::collections::BTreeMap::new(),
-        inline_json: None,
-    })
+        for w in &rendered.writer_warnings {
+            warnings.push(safe_warning(w));
+        }
+
+        let output_pdf_path = workspace.output_dir().join("document.pdf");
+        fs::write(&output_pdf_path, &rendered.bytes)
+            .map_err(|e| ToolError::OutputIo(e.to_string()))?;
+
+        Ok(RawToolExecution {
+            artifacts: vec![(output_pdf_path, "pdf".to_string())],
+            warnings,
+            metrics: std::collections::BTreeMap::new(),
+            inline_json: None,
+        })
+    }
 }
 
 fn map_net_error(err: NetError) -> ToolError {
