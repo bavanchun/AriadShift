@@ -252,7 +252,8 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 let log_path = workspace.join("log").join("pandoc-log.json");
                 let pandoc_json =
                     serde_json::to_vec(&mapped.pandoc).map_err(|_| EngineFailure::failure())?;
-                let writer_config = PandocWriterConfig {
+                let reference_path = Path::new(&work_dir).join("ariad-reference.docx");
+                let mut writer_config = PandocWriterConfig {
                     binary_path: &binary.path,
                     limits: &limits,
                     work_dir: &work_dir,
@@ -260,8 +261,34 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     log_path: &log_path,
                     output_path: &output_path,
                     target_format,
+                    reference_doc: None,
                 };
+                if target_format == "docx" && !mapped.docx_styles.is_empty() {
+                    let template_path = Path::new(&work_dir).join("ariad-reference-base.docx");
+                    let template_config = PandocWriterConfig {
+                        output_path: &template_path,
+                        ..writer_config
+                    };
+                    let empty = serde_json::to_vec(&Pandoc::default())
+                        .map_err(|_| EngineFailure::failure())?;
+                    run_pandoc(&template_config, &empty)?;
+                    let template = fs::read(&template_path).map_err(|_| EngineFailure::io())?;
+                    let reference = mapped
+                        .docx_styles
+                        .reference_doc(&template, &limits)
+                        .map_err(|_| EngineFailure::invalid_request())?;
+                    fs::write(&reference_path, reference).map_err(|_| EngineFailure::io())?;
+                    writer_config.reference_doc = Some(&reference_path);
+                }
                 run_pandoc(&writer_config, &pandoc_json)?;
+                if target_format == "docx" && !mapped.docx_styles.is_empty() {
+                    let bytes = fs::read(&output_path).map_err(|_| EngineFailure::io())?;
+                    let bytes = mapped
+                        .docx_styles
+                        .finish_docx(&bytes, &limits)
+                        .map_err(|_| EngineFailure::failure())?;
+                    fs::write(&output_path, bytes).map_err(|_| EngineFailure::io())?;
+                }
 
                 for warning in pandoc_log_warnings(&log_path)? {
                     emit(output, warning).map_err(|_| EngineFailure::io())?;
@@ -532,7 +559,9 @@ fn validate_convert_request(
     Ok(workspace.to_path_buf())
 }
 
+#[derive(Clone, Copy)]
 struct PandocWriterConfig<'a> {
+    reference_doc: Option<&'a Path>,
     binary_path: &'a Path,
     limits: &'a Limits,
     work_dir: &'a str,
@@ -544,6 +573,9 @@ struct PandocWriterConfig<'a> {
 
 fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(), EngineFailure> {
     let mut command = Command::new(config.binary_path);
+    if let Some(reference) = config.reference_doc {
+        command.arg("--reference-doc").arg(reference);
+    }
     if let Some(max_memory_mb) = config.limits.max_memory_mb {
         command
             .arg("+RTS")
@@ -667,7 +699,16 @@ fn run_pandoc_reader(
     command
         .arg("--sandbox")
         .arg(log_argument)
-        .args(["-f", input_format, "-t", "json"])
+        .args([
+            "-f",
+            if input_format == "docx" {
+                "docx+styles"
+            } else {
+                input_format
+            },
+            "-t",
+            "json",
+        ])
         .arg(extract_media_arg)
         .arg(input_path)
         .current_dir(work_dir)

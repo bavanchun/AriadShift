@@ -77,11 +77,35 @@ fn cell(blocks: Vec<Block>) -> TableCell {
 }
 
 fn document(body: Vec<Block>) -> Document {
-    Document {
+    let mut document = Document {
         body,
         ..Document::default()
+    };
+    // These renderer-bound fixtures include deliberately excessive nesting.
+    // Give them explicit identities without invoking bounded import hashing.
+    let mut pending: Vec<_> = document.body.iter_mut().collect();
+    let mut next = 0usize;
+    while let Some(block) = pending.pop() {
+        if block.id().as_str().is_empty() {
+            *block.id_mut() = ariad_core::ir::BlockId::new(format!("TestBlock{next}")).unwrap();
+        }
+        next += 1;
+        match block {
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => pending.extend(blocks),
+            Block::List { items, .. } => {
+                for item in items {
+                    pending.extend(&mut item.blocks);
+                }
+            }
+            Block::Table { head, body, .. } => {
+                for cell in head.iter_mut().chain(body).flatten() {
+                    pending.extend(&mut cell.blocks);
+                }
+            }
+            _ => {}
+        }
     }
-    .finalize_import()
+    document
 }
 
 fn options() -> TypstOptions {
@@ -638,6 +662,7 @@ fn engine_round_trip_writes_a_reproducible_pdf() {
         title: None,
         content: vec![text("unsafe")],
     }]));
+    document.assign_block_ids();
     let options = json!({
         "title_fallback": "Fallback Stem",
         "timestamp": TIMESTAMP,
@@ -741,4 +766,88 @@ fn output_page_limit_is_checked_before_publishing_an_artifact() {
             .any(|event| matches!(event, Event::Artifact { .. }))
     );
     assert!(!workspace.output_dir().join("document.pdf").exists());
+}
+
+#[test]
+fn styled_text_renders_with_resets_sections_and_permitted_font_fallback() {
+    use ariad_core::ir::{CharacterStyle, FontRef, Margins, PageSize, ParagraphStyle, Section};
+    let mut doc = document(vec![Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: ParagraphStyle {
+            size_pt: Some(16.0),
+            line_height: Some(1.4),
+            indent_first_pt: Some(8.0),
+            indent_left_pt: Some(4.0),
+            indent_right_pt: Some(5.0),
+            keep_with_next: Some(true),
+            background: Some("#ddeeff".to_owned().try_into().unwrap()),
+            ..Default::default()
+        },
+        content: vec![Inline::Styled {
+            style: None,
+            direct: CharacterStyle {
+                font: Some(FontRef {
+                    family: "x\"); panic(\"injected\")".into(),
+                    fallback: vec!["Libertinus Serif".into()],
+                }),
+                weight: Some(700),
+                italic: Some(true),
+                underline: Some(true),
+                strike: Some(true),
+                small_caps: Some(false),
+                letter_spacing: Some(0.2),
+                baseline_shift: Some(1.0),
+                highlight: Some("#ffffaa".to_owned().try_into().unwrap()),
+                ..Default::default()
+            },
+            content: vec![
+                text("Tiếng Việt "),
+                Inline::Styled {
+                    style: None,
+                    direct: CharacterStyle {
+                        weight: Some(400),
+                        italic: Some(false),
+                        underline: Some(false),
+                        ..Default::default()
+                    },
+                    content: vec![text("được giữ")],
+                },
+            ],
+        }],
+    }]);
+    doc.sections.push(Section {
+        start: None,
+        page_size: PageSize {
+            width_pt: 500.0,
+            height_pt: 700.0,
+        },
+        margins: Margins {
+            top_pt: 30.0,
+            right_pt: 35.0,
+            bottom_pt: 40.0,
+            left_pt: 45.0,
+        },
+        columns: 2,
+        header: None,
+        footer: None,
+    });
+    let pdf = rendered(&doc);
+    assert_eq!(pdf.missing_glyphs, 0);
+    assert!(
+        pdf.writer_warnings
+            .iter()
+            .any(|w| w.message.contains("substituted"))
+    );
+    assert_eq!(
+        visible_text(&doc, &options()),
+        without_whitespace("Tiếng Việt được giữ")
+    );
+    let parsed = lopdf::Document::load_mem(&pdf.bytes).unwrap();
+    let page = parsed
+        .get_object(*parsed.get_pages().values().next().unwrap())
+        .unwrap()
+        .as_dict()
+        .unwrap();
+    assert!(format!("{:?}", page.get(b"MediaBox").unwrap()).contains("500"));
 }
