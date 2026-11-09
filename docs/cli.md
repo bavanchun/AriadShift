@@ -143,7 +143,7 @@ decode these names as UTF-8. Preserving name bytes and flags exactly is a v1.x i
 
 #### JSON Output Shape
 
-For one input, `--json` preserves the existing report shape:
+For one input, `--json` keeps `output`, `route`, `warnings` and `elapsed_ms`, and adds `fidelity`. This example shows unavailable read-back evidence:
 
 ```json
 {
@@ -166,11 +166,28 @@ For one input, `--json` preserves the existing report shape:
       "message": "The input file extension does not match the detected format."
     }
   ],
-  "elapsed_ms": 42
+  "elapsed_ms": 42,
+  "fidelity": {
+    "metric_version": "fidelity/2",
+    "status": "unavailable",
+    "basis": "runtime_readback",
+    "score": null,
+    "text_cer": null,
+    "structure_f1": null,
+    "structure_by_kind": {},
+    "style_accuracy": null,
+    "layout_iou": null,
+    "coverage": {},
+    "unavailable_reasons": {"report": "readback_limit_exceeded"}
+  }
 }
 ```
 
-For several inputs, `--json` emits one document with results in input order:
+Measured reports compare observations captured from the first input IR with one output read-back through existing readers. They measure preservation after extraction, independently of planner estimates. See [fidelity definitions](bench.md#measured-fidelity-fidelity2) for the aggregate, tolerances and coverage. `structure_by_kind` contains heading/list/table precision, recall, F1 and counts. `coverage` contains reference/hypothesis/matched/observed counts for text, style and layout; missing components are null with reasons. Batch successes and MCP conversion results carry the same report.
+
+Read-back adds at most one engine invocation, capped at five seconds, 512 MiB engine memory, 2 MiB input, 8 MiB IR, 16 MiB decompressed content, 2,048 archive entries, 4,096 blocks and 100 pages; stricter caller limits prevail. Native readers and the shared scorer enforce their bounds. Unsupported read-back, missing input IR, limits or engine failures return `unavailable` without failing a completed conversion. Scoring retains the caller's isolation policy and never recursively converts or launches Python.
+
+For several inputs, `--json` emits one document with results in input order. The successful entry below abbreviates the route and omits `fidelity` for readability:
 
 ```json
 {

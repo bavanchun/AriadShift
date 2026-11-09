@@ -13,6 +13,7 @@ use std::{
 pub use ariad_core::planner::Profile;
 use ariad_core::{
     docling,
+    fidelity::{self, FidelityBasis, FidelityReport, Observations},
     format::Format,
     ir::Document,
     limits::Limits,
@@ -216,15 +217,17 @@ pub struct ConvertReport {
     pub elapsed: Duration,
     pub output_bytes: u64,
     pub inline_markdown: Option<String>,
+    pub fidelity: FidelityReport,
 }
 
 /// Serialized output for `convert --json`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConvertOutput {
     pub output: String,
     pub route: Vec<PlanStep>,
     pub warnings: Vec<ConvertWarning>,
     pub elapsed_ms: u64,
+    pub fidelity: FidelityReport,
 }
 
 impl From<&ConvertReport> for ConvertOutput {
@@ -234,6 +237,7 @@ impl From<&ConvertReport> for ConvertOutput {
             route: report.route.clone(),
             warnings: report.warnings.clone(),
             elapsed_ms: u64::try_from(report.elapsed.as_millis()).unwrap_or(u64::MAX),
+            fidelity: report.fidelity.clone(),
         }
     }
 }
@@ -915,6 +919,7 @@ struct RouteRun<'a, F> {
     cancel: &'a CancellationToken,
     warnings: Vec<ConvertWarning>,
     on_event: F,
+    fidelity_reference: Option<Result<Observations, String>>,
 }
 
 impl<F> RouteRun<'_, F>
@@ -941,6 +946,9 @@ where
         if step.from == Format::AriadIrJson
             && let Stage::Ir(document) = &mut stage
         {
+            if self.fidelity_reference.is_none() {
+                self.fidelity_reference = Some(fidelity::observe(document));
+            }
             let before = document.assets.len();
             document.assets.retain(|_, asset| asset.can_export_bytes());
             if before != document.assets.len() {
@@ -1426,10 +1434,20 @@ where
         cancel: &cancel,
         warnings,
         on_event,
+        fidelity_reference: match &stage {
+            Stage::Ir(document) => Some(fidelity::observe(document)),
+            _ => None,
+        },
     };
     for step in route.steps.iter().skip(start_step) {
         stage = run.step(stage, step)?;
+        if run.fidelity_reference.is_none()
+            && let Stage::Ir(document) = &stage
+        {
+            run.fidelity_reference = Some(fidelity::observe(document));
+        }
     }
+    let fidelity_reference = run.fidelity_reference;
     let mut warnings = run.warnings;
 
     if cancel.is_cancelled() {
@@ -1460,6 +1478,14 @@ where
     };
 
     let output_bytes = fs::metadata(&artifact_path).map(|m| m.len()).unwrap_or(0);
+    let fidelity = measure_fidelity_readback(
+        fidelity_reference,
+        &artifact_path,
+        route.output_format,
+        invocation,
+        &limits,
+        &cancel,
+    );
     let inline_markdown = if route.output_format == Format::Markdown && output_bytes <= 256 * 1024 {
         fs::read_to_string(&artifact_path).ok()
     } else {
@@ -1495,7 +1521,91 @@ where
         elapsed: started.elapsed(),
         output_bytes,
         inline_markdown,
+        fidelity,
     })
+}
+
+/// A single bounded read-back uses existing readers directly; it never converts or scores recursively.
+fn measure_fidelity_readback(
+    reference: Option<Result<Observations, String>>,
+    artifact: &Path,
+    format: Format,
+    invocation: &EngineInvocation<'_>,
+    conversion_limits: &Limits,
+    cancel: &CancellationToken,
+) -> FidelityReport {
+    let basis = FidelityBasis::RuntimeReadback;
+    let reference = match reference {
+        Some(Ok(reference)) => reference,
+        Some(Err(reason)) => return FidelityReport::unavailable(basis, reason),
+        None => return FidelityReport::unavailable(basis, "input_ir_unavailable"),
+    };
+    let mut limits = conversion_limits.clone();
+    limits.max_input_bytes = Some(
+        limits
+            .max_input_bytes
+            .unwrap_or(u64::MAX)
+            .min(2 * 1024 * 1024),
+    );
+    limits.max_ir_json_bytes = limits.max_ir_json_bytes.min(8 * 1024 * 1024);
+    limits.max_decompressed_bytes = limits.max_decompressed_bytes.min(16 * 1024 * 1024);
+    limits.max_archive_entries = limits.max_archive_entries.min(2048);
+    limits.max_blocks = limits.max_blocks.min(4096);
+    limits.max_pages = Some(limits.max_pages.unwrap_or(u32::MAX).min(100));
+    limits.timeout_s = Some(limits.timeout_s.unwrap_or(u64::MAX).min(5));
+    limits.max_memory_mb = Some(limits.max_memory_mb.unwrap_or(u32::MAX).min(512));
+    if cancel.is_cancelled() {
+        return FidelityReport::unavailable(basis, "readback_cancelled");
+    }
+    let readback = (|| {
+        // Enforce the byte cap before either the native or engine reader is selected.
+        if fs::metadata(artifact)
+            .map_err(|_| ConvertError::InputIo)?
+            .len()
+            > limits.max_input_bytes.unwrap_or(0)
+        {
+            return Err(ConvertError::LimitExceeded);
+        }
+        if matches!(
+            format,
+            Format::Docx | Format::Epub | Format::Odt | Format::Pdf
+        ) {
+            let engine = if format == Format::Pdf {
+                engines::PDF.id
+            } else {
+                engines::PANDOC.id
+            };
+            let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+            // The same invocation preserves the caller's engine isolation policy.
+            let result = read_to_ir_with_engine(
+                artifact,
+                format,
+                engine,
+                &mut workspace,
+                &limits,
+                invocation,
+                cancel.clone(),
+            );
+            let _ = workspace.close();
+            return result.map(|read| read.document);
+        }
+        let bytes = read_bounded_file(artifact, limits.max_input_bytes)?;
+        ariad_core::pipeline::read(format, &bytes, &limits)
+            .map(|read| read.document)
+            .map_err(|err| match err {
+                ariad_core::pipeline::PipelineError::LimitExceeded { .. } => {
+                    ConvertError::LimitExceeded
+                }
+                _ => ConvertError::UnsupportedRoute { detail: None },
+            })
+    })();
+    match readback {
+        Ok(document) => match fidelity::observe(&document) {
+            Ok(hypothesis) => fidelity::score(&reference, &hypothesis, basis),
+            Err(reason) => FidelityReport::unavailable(basis, reason),
+        },
+        Err(error) => FidelityReport::unavailable(basis, format!("readback_{}", error.code())),
+    }
 }
 
 /// Request for converting an input document to AriadShift IR.

@@ -529,6 +529,10 @@ Progress events use **pages** as their canonical unit (`done: u64`, `total: u64`
 
 ---
 
+### Document Fidelity Attachment
+
+`ariad_host::tools::fidelity::attach_document_fidelity(&mut ToolOutcome, &FidelityReport)` adds the actual shared report at `metrics.fidelity`. It preserves artifacts, warnings, elapsed metrics and inline results. Use a measured conversion/read-back report, or an explicit unavailable report; never a planner estimate. The versioned contract and coverage are described in [benchmark methodology](bench.md#measured-fidelity-fidelity2) and [CLI output](cli.md#json-output-shape). An executable contract test attaches a real conversion report to an actual PDF tool outcome. The `edit.export_document` tool belongs to the next editor phase and is not registered here; its live integration must call this helper after export.
+
 ## 8. Determinism
 
 For every in-process tool in `ariad-pdf` (and deterministic native writers), running the same tool with **the same input bytes, the same `params`, and the same `SOURCE_DATE_EPOCH`** produces **byte-identical output**:

@@ -19,7 +19,8 @@ import time
 import tomllib
 
 from ariad_bench.canonical import CanonicalDoc, normalize
-from ariad_bench.metrics import aggregate_edge_metrics, measure_execution, score_fixture
+from ariad_bench.metrics import aggregate_edge_metrics, measure_execution, score_fixture_v2 as score_fixture
+from ariad_bench.fidelity import METRIC_VERSION, unavailable
 from ariad_bench.run import find_binary
 from ariad_bench.visual import pdf_ssim
 
@@ -44,10 +45,12 @@ class Bench:
         self.serial = 0
         self.edge_scores: dict[tuple[str, str, str], list] = {}
         self.samples: list[dict] = []
+        self.attempted: list[dict] = []
 
     def execute(
         self, command: list[str], stdin: Path | None = None
     ) -> tuple[str, float, int]:
+        self.attempted.append(dict(command=command))
         code, stdout, stderr, wall, rss = measure_execution(
             command,
             env=self.env,
@@ -197,6 +200,7 @@ class Bench:
         route: bool = False,
         reference: CanonicalDoc | None = None,
     ):
+        self.attempted.append(dict(fixture=fixture["id"], engine=engine, target=target, ocr=ocr, route=route))
         score = score_fixture(
             self.reference(fixture) if reference is None else reference,
             normalize(ir),
@@ -310,9 +314,13 @@ class Bench:
         self.record(fixture, engine, target, ocr, runs, ir, route=True)
 
 
-def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence: Path):
+def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence: Path, fidelity_out: Path | None = None):
     if repeat < 1:
         raise ValueError("--repeat must be positive")
+    if (fidelity_out is not None
+        and fidelity_out.resolve() != (root / "bench/results/fidelity-v2/heavy.json").resolve()
+        and evidence.resolve() == (root / "bench/results/heavy-routes.json").resolve()):
+        evidence = fidelity_out
     data = json.loads(out.read_text(encoding="utf-8"))
     records = tomllib.loads(
         (root / "fixtures/manifest.toml").read_text(encoding="utf-8")
@@ -329,46 +337,54 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
         prefix="ariad-heavy-", dir=os.environ.get("ARIAD_BENCH_TMPDIR")
     ) as scratch:
         bench = Bench(root, ashift, pandoc, Path(scratch).resolve(), repeat)
-        for fixture in fixtures:
-            fmt, scan = fixture["format"], "scan" in fixture["tags"]
-            if fmt in ("pdf", "png"):
-                if fmt == "pdf" and not scan:
-                    bench.measure(fixture, "pdf", IR)
-                    bench.route(fixture, "pdf", "markdown")
-                for ocr in ["tesseract", "rapidocr"] if scan else ["off"]:
-                    bench.measure(fixture, "docling", DOCLING, ocr)
-                    bench.route(fixture, "docling", "markdown", ocr)
-                    if scan:
-                        bench.route(fixture, "docling", "docx", ocr)
-            elif fmt in ("pptx", "xlsx", "docx"):
-                bench.measure(fixture, "docling", DOCLING)
-                if fmt != "docx":
-                    bench.route(fixture, "docling", "markdown")
-                bench.measure(fixture, "libreoffice", "pdf")
-                if fmt == "docx":
+        try:
+            for fixture in fixtures:
+                fmt, scan = fixture["format"], "scan" in fixture["tags"]
+                if fmt in ("pdf", "png"):
+                    if fmt == "pdf" and not scan:
+                        bench.measure(fixture, "pdf", IR)
+                        bench.route(fixture, "pdf", "markdown")
+                    for ocr in ["tesseract", "rapidocr"] if scan else ["off"]:
+                        bench.measure(fixture, "docling", DOCLING, ocr)
+                        bench.route(fixture, "docling", "markdown", ocr)
+                        if scan:
+                            bench.route(fixture, "docling", "docx", ocr)
+                elif fmt in ("pptx", "xlsx", "docx"):
+                    bench.measure(fixture, "docling", DOCLING)
+                    if fmt != "docx":
+                        bench.route(fixture, "docling", "markdown")
+                    bench.measure(fixture, "libreoffice", "pdf")
+                    if fmt == "docx":
+                        bench.route(fixture, "typst", "pdf")
+                elif fmt in ("odt", "ods", "odp", "doc", "rtf", "xls", "ppt"):
+                    bench.measure(fixture, "libreoffice", "pdf")
+                    if fmt in ("odt", "doc", "rtf"):
+                        bench.measure(fixture, "libreoffice", "docx")
+                elif fmt == "md":
+                    truth_path = root / next(
+                        c["path"]
+                        for c in fixture["companions"]
+                        if c["path"].endswith(".truth.json")
+                    )
+                    path = Path(scratch) / f"{fixture['id']}.json"
+                    path.write_text(
+                        json.dumps(
+                            json.loads(truth_path.read_text(encoding="utf-8"))["ir"]
+                        ),
+                        encoding="utf-8",
+                    )
+                    bench.measure(
+                        {**fixture, "format": IR, "path": str(path)}, "typst", "pdf"
+                    )
                     bench.route(fixture, "typst", "pdf")
-            elif fmt in ("odt", "ods", "odp", "doc", "rtf", "xls", "ppt"):
-                bench.measure(fixture, "libreoffice", "pdf")
-                if fmt in ("odt", "doc", "rtf"):
-                    bench.measure(fixture, "libreoffice", "docx")
-            elif fmt == "md":
-                truth_path = root / next(
-                    c["path"]
-                    for c in fixture["companions"]
-                    if c["path"].endswith(".truth.json")
-                )
-                path = Path(scratch) / f"{fixture['id']}.json"
-                path.write_text(
-                    json.dumps(
-                        json.loads(truth_path.read_text(encoding="utf-8"))["ir"]
-                    ),
-                    encoding="utf-8",
-                )
-                bench.measure(
-                    {**fixture, "format": IR, "path": str(path)}, "typst", "pdf"
-                )
-                bench.route(fixture, "typst", "pdf")
-                bench.route(fixture, "libreoffice", "pdf")
+                    bench.route(fixture, "libreoffice", "pdf")
+        except (RuntimeError, ValueError, OSError) as error:
+            detailed_path = fidelity_out or root / "bench/results/fidelity-v2/heavy.json"
+            detailed_path.parent.mkdir(parents=True, exist_ok=True)
+            detailed_path.write_text(json.dumps(dict(metric_version=METRIC_VERSION,
+                attempted=bench.attempted, samples=bench.samples,
+                failure=unavailable(str(error))), indent=2) + "\n", encoding="utf-8")
+            raise
         for edge in data["edges"]:
             key = (edge["from"], edge["to"], edge["engine"])
             if key in bench.edge_scores:
@@ -426,6 +442,7 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
                 ],
             }
         measured = {
+            "metric_version": METRIC_VERSION,
             "generated_at": data["generated_at"],
             "pack": pack,
             "repeat": repeat,
@@ -447,10 +464,14 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
                 }
                 for f in fixtures
             ],
+            "attempted": bench.attempted,
             "samples": bench.samples,
         }
         evidence.parent.mkdir(parents=True, exist_ok=True)
         evidence.write_text(json.dumps(measured, indent=2) + "\n", encoding="utf-8")
+        detailed_path = fidelity_out or root / "bench/results/fidelity-v2/heavy.json"
+        detailed_path.parent.mkdir(parents=True, exist_ok=True)
+        detailed_path.write_text(json.dumps(measured, indent=2) + "\n", encoding="utf-8")
         out.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         return data
 
@@ -459,6 +480,7 @@ def build_parser(parser: argparse.ArgumentParser):
     parser.add_argument("--ashift", type=Path)
     parser.add_argument("--pandoc", type=Path)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--fidelity-out", type=Path, default=Path("bench/results/fidelity-v2/heavy.json"))
     parser.add_argument(
         "--out", type=Path, default=Path("crates/ariad-core/data/capabilities.json")
     )
@@ -479,7 +501,7 @@ def main(argv: list[str]) -> int:
     )
     pandoc = find_binary("pandoc", args.pandoc, [root / ".tools/pandoc/bin/pandoc"])
     try:
-        run(root, ashift, pandoc, args.repeat, args.out, args.evidence)
+        run(root, ashift, pandoc, args.repeat, args.out, args.evidence, args.fidelity_out)
     except (RuntimeError, ValueError) as error:
         parser.exit(1, f"{error}\n")
     return 0
