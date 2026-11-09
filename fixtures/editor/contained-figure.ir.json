@@ -1,0 +1,209 @@
+{
+  "assets": {
+    "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266": {
+      "bytes": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAMCAIAAADkharWAAAAKUlEQVR4nGN89vk9AymAiSTVdNHAAmcZZcbiUXdu+mJ6OYlkDYzDIB4A1DoIqeyqtdgAAAAASUVORK5CYII=",
+      "media_type": "image/png"
+    }
+  },
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Editable neighbour before contained-figure.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b7ef2485ef9e74d3e5645f35fa97d5c306c5caa25fd66d1ded0a1aeb5eac7611a",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Editor case: contained-figure",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "bb6bd8496ffd7444b5c64b93b63e4c79b606cddac050b4c620fbde2e33d87bae4",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "blocks": [
+        {
+          "asset": {
+            "id": "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266",
+            "type": "asset"
+          },
+          "caption": [
+            {
+              "text": "Original bench diagram",
+              "type": "text"
+            },
+            {
+              "content": [
+                {
+                  "text": " at dawn",
+                  "type": "text"
+                }
+              ],
+              "type": "emph"
+            }
+          ],
+          "direct": {},
+          "id": "b07305d86ba4ca29eb3a0fa6eb97a115918db31cf35ae2dab9c339bb4d2f880c3",
+          "type": "figure"
+        }
+      ],
+      "direct": {},
+      "id": "bbe0bdb0895f830553366196723a08fa673ae718fc1fb6781f01f95e554a625c6",
+      "type": "quote"
+    },
+    {
+      "content": [
+        {
+          "text": "Editable neighbour after contained-figure.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b0d9a1ec442ed27f29a605f00df7dbd5de305b49ec123c5af95541bac1f823860",
+      "type": "paragraph"
+    }
+  ],
+  "layout": {
+    "blocks": {
+      "b07305d86ba4ca29eb3a0fa6eb97a115918db31cf35ae2dab9c339bb4d2f880c3": {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      },
+      "b0d9a1ec442ed27f29a605f00df7dbd5de305b49ec123c5af95541bac1f823860": {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      },
+      "b7ef2485ef9e74d3e5645f35fa97d5c306c5caa25fd66d1ded0a1aeb5eac7611a": {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      },
+      "bb6bd8496ffd7444b5c64b93b63e4c79b606cddac050b4c620fbde2e33d87bae4": {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      },
+      "bbe0bdb0895f830553366196723a08fa673ae718fc1fb6781f01f95e554a625c6": {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    },
+    "pages": [
+      {
+        "height": 842.0,
+        "page_no": 1,
+        "width": 595.0
+      }
+    ]
+  },
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "ariad-ir+json",
+    "subject": "Original editor preservation corpus",
+    "title": "Editor preservation: contained-figure"
+  },
+  "provenance": {
+    "org.ariadshift.editor-corpus": {
+      "case": "contained-figure",
+      "font_permission_evidence": {
+        "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+      },
+      "source": "original-authoring"
+    }
+  },
+  "source_map": {
+    "b07305d86ba4ca29eb3a0fa6eb97a115918db31cf35ae2dab9c339bb4d2f880c3": [
+      {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b0d9a1ec442ed27f29a605f00df7dbd5de305b49ec123c5af95541bac1f823860": [
+      {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b7ef2485ef9e74d3e5645f35fa97d5c306c5caa25fd66d1ded0a1aeb5eac7611a": [
+      {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bb6bd8496ffd7444b5c64b93b63e4c79b606cddac050b4c620fbde2e33d87bae4": [
+      {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bbe0bdb0895f830553366196723a08fa673ae718fc1fb6781f01f95e554a625c6": [
+      {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    ]
+  },
+  "version": "ariad-ir/2"
+}

@@ -1,0 +1,278 @@
+{
+  "case": "reused-footnote",
+  "features": [
+    "reused-footnote"
+  ],
+  "future_gates": [
+    "tiptap-native-roundtrip",
+    "textkit-native-roundtrip",
+    "edit-export-fidelity"
+  ],
+  "ir": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "text": "Editable neighbour before reused-footnote.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b7629ed27955450e2608733eff5e005664c8a4c53f6a99c1ef752c9a90d7356f2",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Editor case: reused-footnote",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "bf8e223f2f144decaf68ab8a21daa31b7d6e311604b435743af1af70caba61b66",
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Read the survey note",
+            "type": "text"
+          },
+          {
+            "id": "survey-note",
+            "type": "footnote_ref"
+          },
+          {
+            "text": " and the same observation again",
+            "type": "text"
+          },
+          {
+            "id": "survey-note",
+            "type": "footnote_ref"
+          }
+        ],
+        "direct": {},
+        "id": "bc8d053aa9f4041c9b3d487727dbfc0e1943ac220fcf8732373a54b25418dcd17",
+        "type": "paragraph"
+      },
+      {
+        "blocks": [
+          {
+            "content": [
+              {
+                "text": "The survey records seats, not visitors.",
+                "type": "text"
+              }
+            ],
+            "direct": {},
+            "id": "b5f672e80038dc5818612aeed3fe99eccdcf94e249d74fe455a2e7210cc708d25",
+            "type": "paragraph"
+          }
+        ],
+        "direct": {},
+        "id": "b8499b8ce237e86e1d19859311441f6520f86dbdea2d218ee067d9d661092a1a7",
+        "note_id": "survey-note",
+        "type": "footnote"
+      },
+      {
+        "content": [
+          {
+            "text": "Editable neighbour after reused-footnote.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b31a374ed6218799a533bc5ac33a8d6c2363dd98c9ff4325c3d455f2bfdf84836",
+        "type": "paragraph"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "b31a374ed6218799a533bc5ac33a8d6c2363dd98c9ff4325c3d455f2bfdf84836": {
+          "bbox": {
+            "bottom": 96.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 80.0
+          },
+          "page_no": 1
+        },
+        "b5f672e80038dc5818612aeed3fe99eccdcf94e249d74fe455a2e7210cc708d25": {
+          "bbox": {
+            "bottom": 92.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 76.0
+          },
+          "page_no": 1
+        },
+        "b7629ed27955450e2608733eff5e005664c8a4c53f6a99c1ef752c9a90d7356f2": {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        },
+        "b8499b8ce237e86e1d19859311441f6520f86dbdea2d218ee067d9d661092a1a7": {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        },
+        "bc8d053aa9f4041c9b3d487727dbfc0e1943ac220fcf8732373a54b25418dcd17": {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        },
+        "bf8e223f2f144decaf68ab8a21daa31b7d6e311604b435743af1af70caba61b66": {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 842.0,
+          "page_no": 1,
+          "width": 595.0
+        }
+      ]
+    },
+    "meta": {
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "language": "en",
+      "source_format": "ariad-ir+json",
+      "subject": "Original editor preservation corpus",
+      "title": "Editor preservation: reused-footnote"
+    },
+    "provenance": {
+      "org.ariadshift.editor-corpus": {
+        "case": "reused-footnote",
+        "font_permission_evidence": {
+          "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+        },
+        "source": "original-authoring"
+      }
+    },
+    "source_map": {
+      "b31a374ed6218799a533bc5ac33a8d6c2363dd98c9ff4325c3d455f2bfdf84836": [
+        {
+          "bbox": {
+            "bottom": 96.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 80.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b5f672e80038dc5818612aeed3fe99eccdcf94e249d74fe455a2e7210cc708d25": [
+        {
+          "bbox": {
+            "bottom": 92.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 76.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b7629ed27955450e2608733eff5e005664c8a4c53f6a99c1ef752c9a90d7356f2": [
+        {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b8499b8ce237e86e1d19859311441f6520f86dbdea2d218ee067d9d661092a1a7": [
+        {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        }
+      ],
+      "bc8d053aa9f4041c9b3d487727dbfc0e1943ac220fcf8732373a54b25418dcd17": [
+        {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        }
+      ],
+      "bf8e223f2f144decaf68ab8a21daa31b7d6e311604b435743af1af70caba61b66": [
+        {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        }
+      ]
+    },
+    "version": "ariad-ir/2"
+  },
+  "layout": {
+    "first_bbox": {
+      "bottom": 76.0,
+      "left": 54.0,
+      "right": 540.0,
+      "top": 60.0
+    },
+    "first_block_source_fragments": 1,
+    "page_height_pt": 842.0,
+    "page_width_pt": 595.0,
+    "reference_kind": "authored-ir-geometry",
+    "section_count": 0
+  },
+  "origin": "independent-original-specification",
+  "preservation": [
+    "adjacent-text-edit",
+    "stable-id-reorder",
+    "opaque-byte-equality",
+    "explicit-delete-removes-payload",
+    "ambiguous-orphan-is-reported"
+  ],
+  "schema": "ariad-editor-truth/1",
+  "semantics": {
+    "editable_after": "Editable neighbour after reused-footnote.",
+    "editable_before": "Editable neighbour before reused-footnote.",
+    "note_id": "survey-note",
+    "note_reference_count": 2,
+    "note_text": "The survey records seats, not visitors."
+  },
+  "styles": {
+    "applicable": false
+  }
+}
