@@ -50,7 +50,7 @@ jobs:
         with:
           cache: false
       - name: Set up Java
-        uses: actions/setup-java@8df10395026ec2b094151be97873b422f97c0b96 # v4
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
@@ -151,7 +151,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bash scripts/pack/sign-pack.sh --name verapdf --version 0.1.0 --manifest pack-dist/pack.toml --public-key "$PUBLIC_KEY"
-          (cd pack-dist && sha256sum * > SHA256SUMS)
+          (cd pack-dist && sha256sum -- * > SHA256SUMS)
           key_dir=$(mktemp -d "$RUNNER_TEMP/verapdf-sign.XXXXXX")
           trap 'rm -rf "$key_dir"' EXIT
           chmod 700 "$key_dir"

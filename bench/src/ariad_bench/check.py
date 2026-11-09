@@ -5,16 +5,46 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
 import jsonschema
 
 
+def extract_web_engine_labels(
+    route_summary_path: Path | None = None,
+) -> set[str]:
+    """Extract engine IDs declared in ENGINE_LABELS from route-summary.tsx."""
+    if route_summary_path is None:
+        route_summary_path = (
+            Path(__file__).resolve().parents[3]
+            / "apps"
+            / "web"
+            / "src"
+            / "components"
+            / "route-summary.tsx"
+        )
+    if not route_summary_path.is_file():
+        return set()
+
+    content = route_summary_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"const\s+ENGINE_LABELS:\s*Record<[^>]+>\s*=\s*\{([^}]+)\};", content
+    )
+    if not match:
+        return set()
+
+    body = match.group(1)
+    keys = re.findall(r"""['"]?([a-zA-Z0-9_\-]+)['"]?\s*:""", body)
+    return set(keys)
+
+
 def validate_capabilities(
     capabilities_data: dict[str, Any],
     schema_data: dict[str, Any],
     committed_data: dict[str, Any] | None = None,
+    web_engine_labels: set[str] | None = None,
 ) -> list[str]:
     """Validate capabilities dictionary against the JSON schema and benchmark invariants."""
     errors: list[str] = []
@@ -34,10 +64,14 @@ def validate_capabilities(
                     c_edge.get("engine", ""),
                 ))
 
+    if web_engine_labels is None:
+        web_engine_labels = extract_web_engine_labels()
+
     # Invariants:
     # 1. Every measured edge must have at least 2 scored fixtures
     # 2. Every measured edge must have numeric peak_mem_mb
     # 3. An edge measured in committed baseline must not become unmeasured (null metrics)
+    # 4. Every non-empty engine ID must be present in web ENGINE_LABELS
     edges = capabilities_data.get("edges", [])
     for idx, edge in enumerate(edges):
         metrics = edge.get("metrics")
@@ -46,6 +80,11 @@ def validate_capabilities(
         engine = edge.get("engine", "")
         edge_label = f"{from_fmt} -> {to_fmt} ({engine})"
         edge_key = (from_fmt, to_fmt, engine)
+
+        if web_engine_labels and engine and engine not in web_engine_labels:
+            errors.append(
+                f"Edge {edge_label} uses engine '{engine}' which is missing from ENGINE_LABELS in apps/web/src/components/route-summary.tsx."
+            )
 
         if metrics is not None:
             samples = metrics.get("samples", 0)
