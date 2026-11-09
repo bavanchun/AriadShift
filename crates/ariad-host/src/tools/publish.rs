@@ -512,6 +512,7 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.sign" => "signed".to_owned(),
         "pdf.split" => "part".to_owned(),
         "pdf.sanitize" => "sanitized".to_owned(),
+        "pdf.compare" => "compared".to_owned(),
         other => other
             .split_once('.')
             .map_or(other, |(_, action)| action)
@@ -1015,6 +1016,7 @@ mod tests {
             ("pdf.forms_detect", "detected-fields"),
             ("pdf.forms_import", "filled"),
             ("pdf.forms_export", "form-data"),
+            ("pdf.compare", "compared"),
         ] {
             assert_eq!(default_tool_suffix(id), suffix);
         }
