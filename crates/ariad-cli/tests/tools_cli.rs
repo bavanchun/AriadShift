@@ -414,7 +414,12 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 85);
+    assert_eq!(all_tools.len(), 86);
+    assert!(
+        all_tools
+            .iter()
+            .any(|tool| tool["id"] == "web.to_pdf" && tool["runtimes"] == json!(["local"]))
+    );
     assert!(
         all_tools
             .iter()
