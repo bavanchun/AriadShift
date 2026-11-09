@@ -682,4 +682,3 @@ def test_validate_capabilities_rejects_unlabeled_web_engine() -> None:
     assert len(errors) == 1
     assert "uses engine 'unknown-engine' which is missing from ENGINE_LABELS" in errors[0]
 
-
