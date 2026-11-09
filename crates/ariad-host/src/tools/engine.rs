@@ -330,7 +330,14 @@ fn map_run_error(
                     needs_password: true,
                 },
                 ErrorCode::ToolMissing | ErrorCode::ToolVersion => {
-                    ToolError::from_missing_engine(effective_engine)
+                    if effective_engine == "verapdf" && scrubbed.contains("Java") {
+                        ToolError::ToolMissing {
+                            engine: "verapdf".into(),
+                            hint: scrubbed,
+                        }
+                    } else {
+                        ToolError::from_missing_engine(effective_engine)
+                    }
                 }
                 ErrorCode::UnsupportedRoute => ToolError::EngineFailure(format!(
                     "engine '{effective_engine}' does not implement tool '{}': {scrubbed}",

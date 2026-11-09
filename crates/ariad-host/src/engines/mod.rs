@@ -11,6 +11,7 @@ pub mod tesseract;
 mod tesseract_hocr;
 pub(crate) mod tesseract_image;
 pub mod typst;
+pub mod verapdf;
 
 pub use resolve::{ResolveError, resolve_pack, resolve_pack_in, resolve_pack_with_options};
 
@@ -66,6 +67,7 @@ pub fn serve_builtin(
         "libreoffice" => libreoffice::serve(input, output),
         "qpdf" => qpdf::serve(input, output),
         "tesseract" => tesseract::serve(input, output),
+        "verapdf" => verapdf::serve(input, output),
         _ => {
             // A pack engine is served by the pack's own executable. Only test-probe builds
             // answer for one, with a stand-in that never runs real tool code.
@@ -600,7 +602,7 @@ pub const VERAPDF: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
-    pack_program_env: None,
+    pack_program_env: Some("ASHIFT_VERAPDF_PROGRAM"),
 };
 
 /// Local AI inference pack (`ariad-engine/2`).

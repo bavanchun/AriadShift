@@ -306,6 +306,17 @@ fn command_from_installed_pack(
             "ASHIFT_ADAPTER_PACK_ROOT".into(),
             root.clone().into_os_string(),
         ));
+        if engine_id == "verapdf" {
+            if let Some(v) = std::env::var_os("JAVA_HOME") {
+                variables.push(("JAVA_HOME".into(), v));
+            }
+            if let Some(v) = std::env::var_os(super::verapdf::JAVA_ENV) {
+                variables.push((super::verapdf::JAVA_ENV.into(), v));
+            }
+            if let Some(v) = std::env::var_os("HOME") {
+                variables.push(("HOME".into(), v));
+            }
+        }
         let command = EngineCommand {
             env: variables,
             install_root: Some(root),

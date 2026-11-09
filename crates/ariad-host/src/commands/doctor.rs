@@ -348,7 +348,12 @@ pub fn doctor(
         &engines::QPDF,
         cancel.clone(),
     ));
-    checks.push(pack_v2_check(engine_program, &engines::TESSERACT, cancel));
+    checks.push(pack_v2_check(
+        engine_program,
+        &engines::TESSERACT,
+        cancel.clone(),
+    ));
+    checks.push(pack_v2_check(engine_program, &engines::VERAPDF, cancel));
 
     Ok(DoctorReport {
         checks,

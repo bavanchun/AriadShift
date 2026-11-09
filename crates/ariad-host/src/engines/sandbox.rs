@@ -33,7 +33,7 @@ pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] = &[
     ("qpdf", EnginePaths::default),
     ("tesseract", EnginePaths::default),
     ("sign", EnginePaths::default),
-    ("verapdf", EnginePaths::default),
+    ("verapdf", verapdf_paths),
     ("ai", EnginePaths::default),
     ("inpaint", EnginePaths::default),
     ("probe", EnginePaths::default),
@@ -71,6 +71,40 @@ fn pdfium_paths() -> EnginePaths {
     EnginePaths {
         private_tmp: true,
         ..EnginePaths::default()
+    }
+}
+
+/// The veraPDF pack engine runs an isolated Java runtime in a subprocess.
+/// It needs access to the system Java installation and a private /tmp for the job.
+fn verapdf_paths() -> EnginePaths {
+    let candidates = super::verapdf::candidate_java_paths();
+    let mut exec = Vec::new();
+    let mut read_only = Vec::new();
+    for candidate in candidates {
+        if let Ok(canon) = std::fs::canonicalize(&candidate) {
+            if canon.is_file() {
+                exec.push(canon.clone());
+                if let Some(parent) = canon.parent() {
+                    if parent.file_name().is_some_and(|n| n == "bin") {
+                        if let Some(home) = parent.parent() {
+                            exec.push(home.to_path_buf());
+                        }
+                    } else {
+                        exec.push(parent.to_path_buf());
+                    }
+                }
+            } else if canon.is_dir() {
+                exec.push(canon);
+            }
+        }
+    }
+    if cfg!(target_os = "linux") {
+        read_only.push(PathBuf::from("/opt"));
+    }
+    EnginePaths {
+        read_only,
+        exec,
+        private_tmp: true,
     }
 }
 
