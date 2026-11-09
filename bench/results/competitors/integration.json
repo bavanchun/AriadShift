@@ -1,0 +1,285 @@
+{
+  "ashift_sha256": "fe4715b9e750d5351d5885f72dcf9b9180d973f98cb3dada18d693dc2473598b",
+  "cleanup": "completed",
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}"
+      ],
+      "elapsed_ms": 64.52335900030448,
+      "exit_code": 0,
+      "pid": 614971,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "version",
+        "--format",
+        "{{json .Server}}"
+      ],
+      "elapsed_ms": 64.69126499905542,
+      "exit_code": 0,
+      "pid": 614984,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "image",
+        "inspect",
+        "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
+      ],
+      "elapsed_ms": 265.3117200006818,
+      "exit_code": 0,
+      "pid": 615003,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "create",
+        "--internal",
+        "--driver",
+        "bridge",
+        "--label",
+        "org.ariadshift.benchmark.owner=3b7e3680f6c14568ac6dd2aebb06edd3",
+        "ariad-bench-network-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 215.59626199996273,
+      "exit_code": 0,
+      "pid": 615015,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "inspect",
+        "ariad-bench-network-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 121.65347199879761,
+      "exit_code": 0,
+      "pid": 615140,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "create",
+        "--name",
+        "ariad-bench-stirling-3b7e3680f6c1",
+        "--label",
+        "org.ariadshift.benchmark.owner=3b7e3680f6c14568ac6dd2aebb06edd3",
+        "--network",
+        "ariad-bench-network-3b7e3680f6c1",
+        "--memory",
+        "3g",
+        "--cpus",
+        "2",
+        "--pids-limit",
+        "512",
+        "--security-opt",
+        "no-new-privileges",
+        "--env",
+        "SECURITY_ENABLELOGIN=false",
+        "--env",
+        "SYSTEM_ENABLEANALYTICS=false",
+        "--env",
+        "SYSTEM_ENABLEPOSTHOG=false",
+        "--env",
+        "SYSTEM_ENABLESCARF=false",
+        "--env",
+        "SYSTEM_DEFAULTLOCALE=en-US",
+        "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
+      ],
+      "elapsed_ms": 720.5855960000918,
+      "exit_code": 0,
+      "pid": 615230,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "start",
+        "ariad-bench-stirling-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 470.1673680010572,
+      "exit_code": 0,
+      "pid": 615348,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "container",
+        "inspect",
+        "ariad-bench-stirling-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 75.31546100108244,
+      "exit_code": 0,
+      "pid": 615461,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/heavy/en-map.pdf",
+        "--to",
+        "docx",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-t6-real-261110-0153/test_stirling_real_local_pdf_d0/tmp4r55ur5l/probe-ariadshift-pdf.docx",
+        "--overwrite",
+        "--engine",
+        "pdf"
+      ],
+      "elapsed_ms": 466.81928200086986,
+      "exit_code": 0,
+      "pid": 621127,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/heavy/en-map.docx",
+        "--to",
+        "pdf",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-t6-real-261110-0153/test_stirling_real_local_pdf_d0/tmp4r55ur5l/probe-ariadshift-docx.pdf",
+        "--overwrite"
+      ],
+      "elapsed_ms": 3617.5367799987725,
+      "exit_code": 0,
+      "pid": 622556,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "container",
+        "inspect",
+        "ariad-bench-stirling-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 32.45476800111646,
+      "exit_code": 0,
+      "pid": 623181,
+      "timeout_s": 5
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "3",
+        "ariad-bench-stirling-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 3521.4887950005505,
+      "exit_code": 0,
+      "pid": 623191,
+      "timeout_s": 10
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "ariad-bench-stirling-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 615.1630499989551,
+      "exit_code": 0,
+      "pid": 623435,
+      "timeout_s": 5
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "inspect",
+        "ariad-bench-network-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 32.43038099935802,
+      "exit_code": 0,
+      "pid": 623448,
+      "timeout_s": 5
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "rm",
+        "ariad-bench-network-3b7e3680f6c1"
+      ],
+      "elapsed_ms": 114.33426000075997,
+      "exit_code": 0,
+      "pid": 623460,
+      "timeout_s": 5
+    }
+  ],
+  "config_sha256": "08b3300b665fd16cb9e2352f43bc6112a3d2e632d7e13c65f39308717b3ba432",
+  "image": {
+    "docker_version": "29.9.2",
+    "id": "sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7",
+    "license_labels": {
+      "org.opencontainers.image.licenses": "NOASSERTION"
+    },
+    "network_internal": true,
+    "openapi_sha256": "c2a051d03785ae2a7cee48e496df2b658680625d68b1f976d85a67d939e57441",
+    "openapi_version": "3.3.0",
+    "platform": "linux/amd64",
+    "reference": "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7",
+    "repo_digests": [
+      "stirlingtools/stirling-pdf@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
+    ]
+  },
+  "kind": "integration",
+  "metadata_redactions": {
+    "ASHIFT_BIN": "explicit hashed conversion binary",
+    "HOME": "user home directory",
+    "WORKTREE": "repository checkout"
+  },
+  "samples": [
+    {
+      "conversion_ms": 469.6551319993887,
+      "output_sha256": "aad91b11ede8647419a823e9beab51ab4b66f038e1582d4a4c4cb5c516300f52",
+      "product": "ariadshift",
+      "route": "pdf->docx",
+      "sha256": "9956e5ec5ca2d86b482eeed5859fa880b0f06b24587a95e9e9f50264245e334b",
+      "status": "converted"
+    },
+    {
+      "conversion_ms": 19687.300194000272,
+      "output_sha256": "6ef316d2a5a12ca3310621818ba1e1c0c2b2bc9212736656b7a864202285f816",
+      "product": "stirling",
+      "route": "pdf->docx",
+      "sha256": "9956e5ec5ca2d86b482eeed5859fa880b0f06b24587a95e9e9f50264245e334b",
+      "status": "converted"
+    },
+    {
+      "conversion_ms": 3618.1794149997586,
+      "output_sha256": "00af542b3db05030375e01c553222fddb5cbef252ef142f03c5da1ea7502ce8a",
+      "product": "ariadshift",
+      "route": "docx->pdf",
+      "sha256": "438042061d630dd60569766e37959e00c7f01337941c5ecb1067509e5560e6a7",
+      "status": "converted"
+    },
+    {
+      "conversion_ms": 760.4436380006518,
+      "output_sha256": "c7fbc6d04aae026d727dc3cf54fe2d1f89db7722c96df6029c31616cc80448d9",
+      "product": "stirling",
+      "route": "docx->pdf",
+      "sha256": "438042061d630dd60569766e37959e00c7f01337941c5ecb1067509e5560e6a7",
+      "status": "converted"
+    }
+  ],
+  "schema": "ariad-competitors/1"
+}
