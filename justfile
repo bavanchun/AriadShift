@@ -380,6 +380,28 @@ pack-tesseract-verify out="target/packs/tesseract":
     export ARIAD_TEST_TESSERACT_PACK="$ASHIFT_PACK_TESSERACT"
     cargo test -p ariad-host --features test-probe --test tesseract_adapter
 
+# Build a host veraPDF development pack from verified installer inputs.
+pack-verapdf out="target/packs/verapdf":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    slug=$(bash engines/verapdf/pack/make.sh slug)
+    installer_zip=${VERAPDF_INSTALLER_ZIP:-}
+    if [ -z "$installer_zip" ]; then
+        installer_zip=$work/verapdf-installer.zip
+        curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/verapdf-installer.zip -o "$installer_zip"
+    fi
+    cargo build -p ariad-cli --bin ashift
+    bash engines/verapdf/pack/make.sh pack "$slug" "$installer_zip" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
+    bash engines/verapdf/pack/make.sh verify "{{out}}"
+
+pack-verapdf-verify out="target/packs/verapdf":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash engines/verapdf/pack/make.sh verify "{{out}}"
+    VERAPDF_TEST_PACK="{{out}}" bash scripts/test-pack-verapdf.sh
+
 # Test the shared pack builder, the pdfium wrapper and the signing guard (offline).
 pack-tooling-test:
     bash scripts/pack/test-pack-tooling.sh

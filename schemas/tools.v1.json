@@ -9380,6 +9380,76 @@
       "summary": "Compare two PDF documents semantically or visually with annotated difference report.",
       "tier": "free",
       "version": "1"
+    },
+    {
+      "engine": "verapdf",
+      "group": "compare",
+      "id": "pdf.validate_pdfa",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ValidatePdfaParams",
+        "description": "Parameters for `pdf.validate_pdfa`.",
+        "type": "object",
+        "properties": {
+          "flavour": {
+            "description": "PDF/A flavour to validate against (e.g., \"1a\", \"1b\", \"2a\", \"2b\", \"2u\", \"3a\", \"3b\", \"3u\", \"4\", \"4f\", \"4e\").\nIf omitted or null, the flavour is auto-detected from document metadata.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Validate a PDF document against PDF/A profiles using veraPDF.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "verapdf",
+      "group": "compare",
+      "id": "pdf.validate_pdfua",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ValidatePdfUaParams",
+        "description": "Parameters for `pdf.validate_pdfua`.",
+        "type": "object",
+        "properties": {
+          "flavour": {
+            "description": "PDF/UA flavour to validate against (e.g., \"1\", \"2\", \"ua1\", \"ua2\").\nDefaults to \"1\" (PDF/UA-1) if omitted or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Validate a PDF document against PDF/UA accessibility profiles using veraPDF.",
+      "tier": "free",
+      "version": "1"
     }
   ],
   "x-status": "draft",

@@ -1228,10 +1228,18 @@ impl EngineProcess {
                     .env("TEMP", tmp_dir);
             }
 
-            for name in ["ASHIFT_PANDOC", crate::engines::libreoffice::SOFFICE_ENV] {
+            for name in [
+                "ASHIFT_PANDOC",
+                crate::engines::libreoffice::SOFFICE_ENV,
+                crate::engines::verapdf::JAVA_ENV,
+                "JAVA_HOME",
+            ] {
                 if let Some(value) = std::env::var_os(name) {
                     command.env(name, value);
                 }
+            }
+            if let Some(home) = std::env::var_os("HOME") {
+                command.env("HOME", home);
             }
             #[cfg(debug_assertions)]
             for variable in ["ARIAD_TEST_ENGINE", "ARIAD_TEST_SANDBOX_SUPPORT"] {
