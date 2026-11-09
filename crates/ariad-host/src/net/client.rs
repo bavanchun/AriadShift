@@ -83,6 +83,11 @@ impl Client {
         self.send(HttpRequest::get(url))
     }
 
+    /// Executes an HTTP GET request to `url`, returning the response and final URL after redirects.
+    pub fn get_with_final_url(&self, url: Url) -> Result<(HttpResponse, Url), NetError> {
+        self.send_with_final_url(HttpRequest::get(url))
+    }
+
     /// Executes an HTTP POST request to `url` with `body` and `content_type`.
     pub fn post(
         &self,
@@ -94,7 +99,16 @@ impl Client {
     }
 
     /// Executes an SSRF-safe HTTP request with redirect following and DNS pinning.
-    pub fn send(&self, mut request: HttpRequest) -> Result<HttpResponse, NetError> {
+    pub fn send(&self, request: HttpRequest) -> Result<HttpResponse, NetError> {
+        self.send_with_final_url(request).map(|(resp, _)| resp)
+    }
+
+    /// Executes an SSRF-safe HTTP request with redirect following and DNS pinning,
+    /// returning the response and the final effective URL after redirects.
+    pub fn send_with_final_url(
+        &self,
+        mut request: HttpRequest,
+    ) -> Result<(HttpResponse, Url), NetError> {
         let start = Instant::now();
         let url_policy = UrlPolicy {
             https_only: self.policy.https_only,
@@ -221,7 +235,7 @@ impl Client {
                 continue;
             }
 
-            return Ok(response);
+            return Ok((response, request.url));
         }
     }
 }

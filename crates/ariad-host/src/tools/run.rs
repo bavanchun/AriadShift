@@ -630,6 +630,7 @@ fn run_tool_inner(
         && spec.group == ariad_core::tools::ToolGroup::Ocr;
     let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
+    let is_web_to_pdf = spec.id == "web.to_pdf";
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -663,7 +664,9 @@ fn run_tool_inner(
         extracts_attachments,
     )?;
 
-    if is_cbz {
+    if is_web_to_pdf {
+        super::web_to_pdf::preflight()?;
+    } else if is_cbz {
         super::cbz::preflight(
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
@@ -744,7 +747,19 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let mut raw_exec = if is_cbz {
+    let mut raw_exec = if is_web_to_pdf {
+        super::web_to_pdf::execute(
+            &spec,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_cbz {
         super::cbz::execute(
             &spec,
             &staged_inputs_with_format,
@@ -1504,6 +1519,11 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
         }
         "pdf.forms_import" => {
             let p: ariad_core::tools::params::forms::FormsImportParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "web.to_pdf" => {
+            let p: ariad_core::tools::params::WebToPdfParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             p.validate()
         }
