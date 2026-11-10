@@ -55,8 +55,8 @@ WORKDIR /src
 COPY . .
 # Same steps as `just wasm-build`: emit both browser modules before Next resolves them.
 RUN sh scripts/install-wasm-bindgen.sh
-RUN --mount=type=cache,target=/root/.cargo/registry \
-    --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry-web,target=/root/.cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-target-web,target=/src/target,sharing=locked \
     cargo build --locked -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown --profile wasm-release \
     && .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg \
         target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm \
