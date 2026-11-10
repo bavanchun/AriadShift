@@ -124,6 +124,8 @@ fn recipe_rejects_literal_secrets_unconfirmed_imports_and_quota_overflow() {
 
     // 1. Recipe with a literal secret in step params is rejected with exit code 9.
     let bad_recipe = Recipe::new(vec![Step::Tool {
+        r#if: None,
+        on_error: None,
         tool: ToolId::parse("pdf.decrypt").unwrap(),
         params: json!({ "password": "literal-recipe-password" }),
     }]);
@@ -134,6 +136,8 @@ fn recipe_rejects_literal_secrets_unconfirmed_imports_and_quota_overflow() {
 
     // 2. Imported recipe without `confirmed: true` is rejected with exit code 9.
     let valid_recipe = Recipe::new(vec![Step::Tool {
+        r#if: None,
+        on_error: None,
         tool: ToolId::parse("pdf.info").unwrap(),
         params: json!({}),
     }]);
@@ -173,6 +177,8 @@ fn recipe_executes_pipeline_and_renders_naming_template_atomically() {
     fs::create_dir_all(&out_dir).expect("create out_dir");
 
     let mut recipe = Recipe::new(vec![Step::Convert {
+        r#if: None,
+        on_error: None,
         to: Format::Html,
         profile: None,
     }]);
@@ -541,10 +547,14 @@ printf '%s\n' '{{"type":"result","ok":true}}'
 
     let recipe = Recipe::new(vec![
         Step::Tool {
+            r#if: None,
+            on_error: None,
             tool: ToolId::parse("pdf.decrypt").unwrap(),
             params: json!({ "password": { "$secret": "prompt" } }),
         },
         Step::Tool {
+            r#if: None,
+            on_error: None,
             tool: ToolId::parse("pdf.linearize").unwrap(),
             params: json!({}),
         },
