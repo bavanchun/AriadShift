@@ -46,6 +46,8 @@ pub const TOOL_IDS: &[&str] = &[
     "pdf.deskew",
     "pdf.scan_split",
     "pdf.scanner_effect",
+    "edit.page_objects",
+    "edit.apply",
 ];
 
 /// Contract version reported for `pdf.split`, whose spec lives with the structural PDF tools.
@@ -59,7 +61,8 @@ pub fn capabilities() -> EventV2 {
 }
 
 fn capabilities_with(library_found: bool) -> EventV2 {
-    let specs = specs();
+    let mut specs = specs();
+    specs.extend(ariad_core::tools::specs::edit::specs());
     let tools = TOOL_IDS
         .iter()
         .map(|id| ToolCapability {
@@ -161,6 +164,8 @@ pub fn handle_with<W: Write>(
 pub fn run_tool(ctx: &mut ToolContext<'_>, params: Value) -> ToolResult {
     ctx.check()?;
     match ctx.tool().to_owned().as_str() {
+        "edit.page_objects" => crate::edit::page_objects::run(ctx, parse(params)?),
+        "edit.apply" => crate::edit::apply::run(ctx, parse(params)?),
         "scan.render" => crate::scan::render::run(ctx, parse::<ScanRenderParams>(params)?),
         "redact.inspect" => crate::redact::inspect(ctx, parse::<RedactInspectParams>(params)?),
         "pdf.deskew" => crate::scan::tools::deskew(ctx, parse::<DeskewParams>(params)?),
@@ -305,6 +310,8 @@ mod tests {
                 "pdf.deskew",
                 "pdf.scan_split",
                 "pdf.scanner_effect",
+                "edit.page_objects",
+                "edit.apply",
             ]
         );
         assert_eq!(events[1], json!({"type":"result","ok":true}));
@@ -312,7 +319,11 @@ mod tests {
 
     #[test]
     fn every_registered_pdfium_spec_is_served() {
-        for spec in specs().iter().filter(|spec| spec.engine == ENGINE_ID) {
+        for spec in specs()
+            .iter()
+            .chain(ariad_core::tools::specs::edit::specs().iter())
+            .filter(|spec| spec.engine == ENGINE_ID)
+        {
             assert!(TOOL_IDS.contains(&spec.id), "{} is not served", spec.id);
         }
     }
@@ -335,6 +346,11 @@ mod tests {
             ("pdf.scan_split", json!({})),
             ("pdf.scanner_effect", json!({})),
             ("pdf.forms_detect", json!({})),
+            ("edit.page_objects", json!({})),
+            (
+                "edit.apply",
+                json!({"ops": [{"op": "replace_text", "page": 1, "object_id": "p1_obj0", "text": "Hello"}]}),
+            ),
             (
                 "pdf.split",
                 json!({"mode": "blank-separator", "detect": "pixel"}),

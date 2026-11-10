@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 ariad-core.workspace = true
 ariad-engine-io.workspace = true
-ariad-pdf.workspace = true
+ariad-pdf = { workspace = true, features = ["codecs"] }
 lopdf.workspace = true
 flate2.workspace = true
 # PDFium is loaded at run time from the pack directory; no static or bundled feature is enabled,
@@ -31,6 +31,7 @@ zip = { version = "=9.2.1", default-features = false, features = ["deflate"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+unicode-normalization.workspace = true
 
 [dev-dependencies]
 ariad-pdf = { workspace = true, features = ["codecs"] }
