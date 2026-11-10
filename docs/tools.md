@@ -19,6 +19,7 @@ The native host and browser build enable `ariad-pdf`'s `codecs` feature for font
 - [8. Determinism](#8-determinism)
 - [9. Recipes (`ariad-recipe/1`) and Untrusted Recipe Rules](#9-recipes-ariad-recipe1-and-untrusted-recipe-rules)
 - [10. Tool Tiers and Access Control (`ToolAccess`)](#10-tool-tiers-and-access-control-toolaccess)
+- [Document and Page Editing (`edit` group)](#document-and-page-editing-edit-group)
 - [11. Secrets Contract (`x-ariad-secret`)](#11-secrets-contract-x-ariad-secret)
 - [12. CLI Commands and Tool Exit Codes](#12-cli-commands-and-tool-exit-codes)
 - [13. MCP Surface (`list_doc_tools` and `run_doc_tool`)](#13-mcp-surface-list_doc_tools-and-run_doc_tool)
@@ -38,7 +39,7 @@ tool_id(inputs[], params) -> artifacts[]
 - **Separate registry (AD-1)**: Tools are registered in `ariad-core::tools`, separate from the conversion capability graph (`capabilities.json`). Conversions stay routes; tools never enter the route planner.
 - **In-process structural PDF crate (AD-2)**: `crates/ariad-pdf` (pure Rust built on `lopdf`, `#![forbid(unsafe_code)]`, bounded by `Limits`, fuzzed) executes structural PDF tools (`pdf.info`, `pdf.merge`, `pdf.split`, `pdf.rotate`, `pdf.reorder`, `pdf.crop`, `pdf.metadata`, and invisible OCR text-layer writing) in-process on every runtime, including `wasm32-unknown-unknown` in the browser and offline on macOS.
 - **Out-of-process engine protocol v2 (AD-3)**: `ariad-engine/2` extends `ariad-engine/1` with `op = "run_tool"` and `capabilities.tools[]` while keeping `/1` frozen and unchanged. Each engine declares the protocol version it speaks statically in `EngineSpec.protocol` (`V1` or `V2`) with no runtime handshake. `run_tool` is strictly one-shot and never uses warm sessions (`session_key() == None`). The v2-only `encrypted_input` error indicates a missing or incorrect input password and maps to exit 12; v1 rejects that code.
-- **Stateless edit operations (AD-17)**: Page-mode edits (`pdf.edit_apply` / `edit.apply {ops: [...]}`) are stateless tool invocations taking document bytes plus an ordered operation list and returning new PDF bytes. Document-mode editing happens in the surface editor (Tiptap on web, TextKit on macOS) and exports a full `ariad-ir/2` document. No engine session holds edit state.
+- **Stateless edit operations (AD-17)**: Page-mode edits (`edit.apply {ops: [...]}`) are stateless tool invocations taking document bytes plus an ordered operation list and returning new PDF bytes. Document-mode editing happens in the surface editor (Tiptap on web, TextKit on macOS) and exports a full `ariad-ir/2` document. No engine session holds edit state.
 
 ---
 
@@ -95,7 +96,7 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | `sign` | PAdES digital signing, timestamping, signature verification, and removal | `pdf.sign`, `pdf.sign_verify`, `pdf.sign_remove` |
 | `redact` | True object-stream and raster redaction with verification report | `pdf.redact`, `pdf.redact_verify` |
 | `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare` |
-| `edit` | Stateless page-mode in-place edits and document-mode export helpers | `pdf.edit_apply` |
+| `edit` | Stateless page-mode in-place edits and document-mode reflow | `edit.open_document`, `edit.export_document`, `edit.page_objects`, `edit.apply` |
 | `ai` | Offline-first summarization, Q&A with citations, translation, table extraction | `ai.summarize`, `ai.ask`, `ai.translate`, `ai.extract_tables`, `ai.recipe_from_text` |
 | `automation` | Batch recipe execution and folder watch automation | `automation.recipe_validate` |
 
@@ -556,7 +557,7 @@ Progress events use **pages** as their canonical unit (`done: u64`, `total: u64`
 
 ### Document Fidelity Attachment
 
-`ariad_host::tools::fidelity::attach_document_fidelity(&mut ToolOutcome, &FidelityReport)` adds the actual shared report at `metrics.fidelity`. It preserves artifacts, warnings, elapsed metrics and inline results. Use a measured conversion/read-back report, or an explicit unavailable report; never a planner estimate. The versioned contract and coverage are described in [benchmark methodology](bench.md#measured-fidelity-fidelity2) and [CLI output](cli.md#json-output-shape). An executable contract test attaches a real conversion report to an actual PDF tool outcome. The `edit.export_document` tool belongs to the next editor phase and is not registered here; its live integration must call this helper after export.
+`ariad_host::tools::fidelity::attach_document_fidelity(&mut ToolOutcome, &FidelityReport)` adds the actual shared report at `metrics.fidelity`. It preserves artifacts, warnings, elapsed metrics and inline results. Use a measured conversion/read-back report, or an explicit unavailable report; never a planner estimate. The versioned contract and coverage are described in [benchmark methodology](bench.md#measured-fidelity-fidelity2) and [CLI output](cli.md#json-output-shape). `edit.export_document` measures the edited IR against the exported document's read-back and returns this report at `metrics.fidelity`.
 
 ## 8. Determinism
 
@@ -687,6 +688,19 @@ backed by the `ToolAccess` type in `ariad-core`:
 - `Tier::Pro` tools return `true` only when `plan` grants Pro tool access.
 - When `allowed(spec.tier, plan)` returns `false`, execution stops before opening inputs or launching engines and returns exit code `11` (`tier_not_allowed`).
 
+### Local Plan Context (`ASHIFT_PLAN`)
+
+`ashift tool`, `ashift recipe run` and local MCP `run_doc_tool` resolve their plan from the launching process's `ASHIFT_PLAN` environment variable. Unset means `free`; set values are trimmed and parsed as exactly `free`, `pro`, `team`, or `enterprise`. Empty, unknown, case-mismatched or non-UTF-8 values fail closed with `invalid_params` (exit 9), before reading inputs, requesting secrets or launching engines. The selected plan is passed to the host's existing tier and recipe-quota checks.
+
+This variable supplies local execution context; it does not authenticate a paid subscription. Local MCP clients inherit the server's plan context and cannot select it through `run_doc_tool` arguments. Cloud workspace entitlements have their own server-side source.
+
+```bash
+ASHIFT_PLAN=pro ashift tool edit.page_objects report.pdf --json
+ASHIFT_PLAN=pro ashift tool edit.apply report.pdf --params-json edits.json -o edited.pdf --json
+ASHIFT_PLAN=pro ashift recipe run edits.recipe.json report.pdf -o out/ --yes --json
+ASHIFT_PLAN=pro ashift mcp --allow-dir "$PWD"
+```
+
 ### Enforcement Authority per Surface
 
 | Surface | Enforcement Level | Notes |
@@ -701,6 +715,49 @@ backed by the `ToolAccess` type in `ariad-core`:
 `allowed(tier, plan)` stays pure and tier-only. A second pure function in the same module, `ariad-core::tools::access`, decides the batch cap: `within_run_quota(plan, RunSize { files, bytes }) -> bool`. The recipe runner calls it before a run starts and before each watch trigger (each trigger counts as one run). The cap is 25 files or 250 MB combined input per run; a run above either limit needs a plan that grants Pro. Host and server enforcement is authoritative and browser enforcement is advisory, the same split as AD-9 in the table above.
 
 Billing, payment providers, and subscription management are out of scope of the tool contract; there are no credit meters or per-page token deductions.
+
+---
+
+## Document and Page Editing (`edit` group)
+
+The registry contains 96 tools, including four edit tools. List their exact schemas with `ashift tools --group edit --json`; local MCP exposes the same group through `list_doc_tools` and executes all four through `run_doc_tool`.
+
+| Tool | Tier | Inputs and output | Parameters |
+|---|---|---|---|
+| `edit.open_document` | Free | One PDF, DOCX, HTML or Markdown document → IR JSON | Optional `target_format` (`pdf`, `docx`, `html`, `md`) and PDF-only `pages` |
+| `edit.export_document` | Free | Edited IR JSON, optionally followed by the original document → PDF, DOCX, HTML or Markdown | `format` (default `pdf`) |
+| `edit.page_objects` | Pro | One PDF → page-object JSON | Optional `pages` |
+| `edit.apply` | Pro | One PDF → edited PDF | `ops` (1–1000 ordered operations), `save` (`full`, default, or `incremental`) |
+
+### Document mode
+
+`edit.open_document` writes a full `ariad-ir/2` document with stable block IDs, styles, available `layout` geometry, and `source_map` entries keyed by block ID. Its tool outcome reports `metrics.block_count`, `metrics.source_map_count`, and `metrics.fidelity_preview`: a preview for each export format, or just `target_format` when selected. PDF page selection happens before import. DOCX uses out-of-process Pandoc; PDF, HTML and Markdown use shared native readers. Image-only PDFs need OCR before opening for text editing.
+
+Edit the full IR, preserving IDs for existing blocks and assigning new IDs to added blocks. Remove deleted blocks' entries from `source_map` and `layout.blocks`. Export with `edit.export_document`; PDF uses the shared in-memory Typst compiler, DOCX uses Pandoc, and HTML/Markdown use native writers.
+
+Every export reports measured `metrics.fidelity` (`fidelity/2`, `basis: "runtime_readback"`) against the edited IR. `metrics.change_list` contains `added`, `removed`, and `modified` block-ID arrays. With a second input, changes compare the original document with the edited IR. With only edited IR, changes compare that IR with the exported read-back, whose block IDs may differ. The fidelity score always measures export preservation, independently of the optional original input.
+
+### Page mode
+
+`edit.page_objects` returns `schema: "ariad-pdf-page-objects/1"`, `page_count`, and selected `pages`, including page size, rotation and text/image/path objects with geometry and available font, size and colour information. Object IDs use `p{page}_obj{index}` (1-based page, 0-based object index). IDs refer to the supplied revision; inspect again after saving a new revision.
+
+`edit.apply` supports these tagged operations:
+
+| `op` | Fields besides `page` |
+|---|---|
+| `replace_text` | `object_id`, `text` |
+| `set_text_style` | `object_id`; optional `font_name`, `font_size`, `color` |
+| `move_object` | `object_id`, `dx_pt`, `dy_pt` |
+| `delete_object` | `object_id` |
+| `add_text` | `text`, `x_pt`, `y_pt`, `font_size`; optional `font_name`, `color` |
+| `add_image` | `bbox: [left, bottom, right, top]`, `image_base64` |
+| `replace_image` | `object_id`, `image_base64` |
+
+Positions and font sizes use PDF points; pages are 1-based. Colours accept `#RRGGBB` or `#RRGGBBAA`. Replacement text is NFC-normalized. The engine retains an embedded font when it covers and encodes the text, otherwise substitutes a matching bundled Liberation Sans/Serif/Mono family and style with Vietnamese coverage. A structured `font_substituted` warning names `page`, `object_id`, `from`, and `to` in its JSON message. Uncovered characters fail closed with a `glyph_unavailable` engine diagnostic (`engine_failure`, exit 1 at the host); no partial PDF is published.
+
+Page tools execute in the isolated PDFium pack. On WASM, Free callers receive `not_allowed` (exit 11); entitled callers receive `engine_unavailable` (exit 5) until browser PDFium execution is available. Registry listing alone does not establish browser execution support for the Document-mode host orchestration.
+
+Save the last PDF bytes and ordered operation list for recovery. A failed or killed edit publishes no partial output; replaying the same list on the same saved bytes produces identical PDF bytes for both save modes. `incremental` requires a valid, unrepaired input cross-reference table and appends a revision with the original bytes as an exact prefix. Earlier signatures' byte-range digests remain intact; signature validation can still report subsequent document changes or certification-policy violations. A full rewrite does not preserve those signed byte ranges.
 
 ---
 
@@ -1004,4 +1061,4 @@ When `run_doc_tool` or `list_doc_tools` fails, the MCP server returns a tool res
 | Path outside allowed roots or self-overwrite | `usage` | `2` | `400` |
 | Corrupt input or runtime engine failure | `engine_failure` | `1` | `500` |
 
-Document exports consume the shared `ariad-ir/2` style cascade (defaults, containing table paragraph baseline, named inheritance, direct overrides) and ID-keyed geometry. The production Document-mode export caller remains in the edit-engine stage; the reusable fidelity attachment helper is implemented and tested now. See [the IR contract](../ARCHITECTURE.md#62-document-ir) and [editor preservation](editor-roundtrip.md).
+Document exports consume the shared `ariad-ir/2` style cascade (defaults, containing table paragraph baseline, named inheritance, direct overrides) and ID-keyed geometry. `edit.export_document` reports measured read-back fidelity and block changes through the same CLI/MCP outcome contract. See [the IR contract](../ARCHITECTURE.md#62-document-ir) and [editor preservation](editor-roundtrip.md).
