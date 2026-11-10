@@ -118,10 +118,13 @@ struct Mapper<'a> {
 
 impl Mapper<'_> {
     fn map_blocks(&mut self, blocks: &[IrBlock]) -> Vec<Block> {
-        blocks
-            .iter()
-            .flat_map(|block| self.map_block(block))
-            .collect()
+        // Keep iterator adapter frames off the recursive path. At the supported
+        // nesting limit they exhaust a Windows-sized 1 MiB caller stack.
+        let mut mapped = Vec::new();
+        for block in blocks {
+            mapped.extend(self.map_block(block));
+        }
+        mapped
     }
 
     fn map_block(&mut self, block: &IrBlock) -> Vec<Block> {
@@ -268,10 +271,10 @@ impl Mapper<'_> {
                 items,
                 ..
             } => {
-                let items = items
-                    .iter()
-                    .map(|item| self.map_list_item(item, *tight))
-                    .collect();
+                let mut mapped_items = Vec::with_capacity(items.len());
+                for item in items {
+                    mapped_items.push(self.map_list_item(item, *tight));
+                }
                 if *ordered {
                     vec![Block::OrderedList(
                         (
@@ -279,10 +282,10 @@ impl Mapper<'_> {
                             ListNumberStyle::Decimal,
                             ListNumberDelim::Period,
                         ),
-                        items,
+                        mapped_items,
                     )]
                 } else {
-                    vec![Block::BulletList(items)]
+                    vec![Block::BulletList(mapped_items)]
                 }
             }
             IrBlock::Table {

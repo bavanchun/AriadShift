@@ -421,6 +421,8 @@ struct RecipeRunArgs {
     json: bool,
 }
 
+const CLI_STACK_SIZE: usize = 8 * 1024 * 1024;
+
 fn main() -> ExitCode {
     // The sandbox launcher runs before anything else so it restricts and `exec`s the engine
     // without parsing the engine's own arguments.
@@ -430,6 +432,25 @@ fn main() -> ExitCode {
     {
         return ariad_host::sandbox::launch(std::env::args_os().skip(2));
     }
+    // Windows starts executables with a 1 MiB main stack. Give every command,
+    // including engine subprocesses, the same headroom as native Unix builds.
+    match std::thread::Builder::new()
+        .name("ashift".into())
+        .stack_size(CLI_STACK_SIZE)
+        .spawn(run_cli)
+    {
+        Ok(thread) => thread.join().unwrap_or_else(|_| {
+            let _ = writeln!(io::stderr(), "ashift: command failed");
+            ExitCode::from(1)
+        }),
+        Err(_) => {
+            let _ = writeln!(io::stderr(), "ashift: could not start command thread");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_cli() -> ExitCode {
     match Cli::try_parse() {
         Ok(cli) => match cli.command {
             Some(Command::Convert(args)) => run_convert(args),
@@ -461,6 +482,7 @@ fn main() -> ExitCode {
 
 fn run_mcp_entry(args: mcp::McpArgs) -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_current_thread()
+        .thread_stack_size(CLI_STACK_SIZE)
         .enable_all()
         .build()
     {
@@ -570,6 +592,7 @@ where
     let cancel = CancellationToken::new();
     let task_cancel = cancel.clone();
     let runtime = match tokio::runtime::Builder::new_current_thread()
+        .thread_stack_size(CLI_STACK_SIZE)
         .enable_all()
         .build()
     {

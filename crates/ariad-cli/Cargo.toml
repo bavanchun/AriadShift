@@ -37,8 +37,6 @@ test-probe = ["ariad-host/test-probe"]
 [dev-dependencies]
 ariad-core.workspace = true
 ariad-host = { workspace = true, features = ["test-probe"] }
-# Test-only dispatch supplies a deterministic process-kill point; production uses the pack.
-ariad-pdfium-engine = { path = "../ariad-pdfium-engine" }
 assert_cmd.workspace = true
 hex.workspace = true
 insta.workspace = true

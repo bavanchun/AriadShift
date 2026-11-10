@@ -54,6 +54,7 @@ struct EditContext<'a> {
     limits: &'a Limits,
     cancel: &'a CancellationToken,
     engine_program: Option<&'a Path>,
+    #[cfg(feature = "typst")]
     clock: HostClock,
     started: Instant,
     warnings: Vec<ConvertWarning>,
@@ -247,6 +248,7 @@ pub(crate) fn execute(
         limits,
         cancel,
         engine_program,
+        #[cfg(feature = "typst")]
         clock,
         started: Instant::now(),
         warnings: vec![],
