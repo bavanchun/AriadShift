@@ -207,8 +207,8 @@ pub fn execute(
     // using the workspace's O_NOFOLLOW handle rather than re-opening by raw path.
     let mut inline_json = None;
     let inline_cap = limits.max_decompressed_bytes.min(32 * 1024 * 1024);
-    if spec.output_format.eq_ignore_ascii_case("json")
-        && artifacts.len() == 1
+    if artifacts.len() == 1
+        && artifacts[0].1.eq_ignore_ascii_case("json")
         && let Ok(file) = workspace.open_artifact(&artifacts[0].0)
     {
         let mut bytes = Vec::new();
@@ -233,7 +233,7 @@ pub fn execute(
 
 fn engine_limits(engine: &str, limits: &Limits) -> Limits {
     let mut effective = limits.clone();
-    if matches!(engine, "pdfium" | "tesseract" | "sign") {
+    if matches!(engine, "pdfium" | "tesseract" | "sign" | "ai" | "inpaint") {
         let defaults = Limits::cloud();
         effective.timeout_s = effective.timeout_s.or(defaults.timeout_s);
         effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);
@@ -471,6 +471,17 @@ mod pdfium_limit_tests {
         assert_eq!(engine_limits("pdfium", &explicit), explicit);
         assert_eq!(engine_limits("tesseract", &local).max_memory_mb, Some(4096));
         assert_eq!(engine_limits("tesseract", &explicit), explicit);
+        for engine in ["ai", "inpaint"] {
+            assert_eq!(
+                engine_limits(engine, &local).timeout_s,
+                Limits::cloud().timeout_s
+            );
+            assert_eq!(
+                engine_limits(engine, &local).max_memory_mb,
+                Limits::cloud().max_memory_mb
+            );
+            assert_eq!(engine_limits(engine, &explicit), explicit);
+        }
         assert_eq!(engine_limits("qpdf", &local), local);
     }
 }

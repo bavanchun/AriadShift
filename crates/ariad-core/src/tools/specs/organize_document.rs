@@ -54,7 +54,7 @@ fn layers_params_schema() -> Schema {
         .into_root_schema_for::<LayersParams>()
 }
 
-const RUNTIMES_WASM_LOCAL: &[ToolRuntime] = &[ToolRuntime::Wasm, ToolRuntime::Local];
+const RUNTIMES: &[ToolRuntime] = &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud];
 const INPUT_FORMATS_PDF: &[&str] = &["pdf"];
 
 /// Static specification for `pdf.metadata`.
@@ -68,7 +68,7 @@ pub const PDF_METADATA_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &[],
     tier: Tier::Free,
-    runtimes: RUNTIMES_WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: metadata_params_schema,
     secret_params: &[],
@@ -85,7 +85,7 @@ pub const PDF_OUTLINE_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &[],
     tier: Tier::Free,
-    runtimes: RUNTIMES_WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: outline_params_schema,
     secret_params: &[],
@@ -102,7 +102,7 @@ pub const PDF_ATTACHMENTS_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &[],
     tier: Tier::Free,
-    runtimes: RUNTIMES_WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: attachments_params_schema,
     secret_params: &[],
@@ -119,7 +119,7 @@ pub const PDF_PAGE_LABELS_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &[],
     tier: Tier::Free,
-    runtimes: RUNTIMES_WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: page_labels_params_schema,
     secret_params: &[],
@@ -136,7 +136,7 @@ pub const PDF_VIEWER_PREFS_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &[],
     tier: Tier::Free,
-    runtimes: RUNTIMES_WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: viewer_prefs_params_schema,
     secret_params: &[],
@@ -153,7 +153,7 @@ pub const PDF_PORTFOLIO_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &[],
     tier: Tier::Free,
-    runtimes: RUNTIMES_WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: portfolio_params_schema,
     secret_params: &[],
@@ -170,7 +170,7 @@ pub const PDF_LAYERS_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &[],
     tier: Tier::Free,
-    runtimes: RUNTIMES_WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: layers_params_schema,
     secret_params: &[],

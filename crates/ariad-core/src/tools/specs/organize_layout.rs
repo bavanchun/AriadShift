@@ -23,7 +23,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<NupParams>,
             secret_params: &[],
@@ -38,7 +38,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<BookletParams>,
             secret_params: &[],
@@ -53,7 +53,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<OverlayParams>,
             secret_params: &[],
@@ -68,7 +68,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<DividePagesParams>,
             secret_params: &[],
@@ -83,7 +83,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<PosterizeParams>,
             secret_params: &[],
@@ -117,7 +117,10 @@ mod tests {
             assert_eq!(spec.group, ToolGroup::Organize);
             assert_eq!(spec.tier, Tier::Free);
             assert_eq!(spec.engine, "ariad-pdf");
-            assert_eq!(spec.runtimes, &[ToolRuntime::Wasm, ToolRuntime::Local]);
+            assert_eq!(
+                spec.runtimes,
+                &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud]
+            );
             assert_eq!(spec.input_formats, &["pdf"]);
             assert_eq!(spec.output_format, "pdf");
         }

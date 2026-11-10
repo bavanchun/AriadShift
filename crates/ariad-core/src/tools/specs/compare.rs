@@ -8,7 +8,7 @@ use crate::tools::{
 /// Allowed output artifact formats for `pdf.compare`.
 pub const PDF_COMPARE_OUTPUT_FORMATS: &[&str] = &["json", "pdf"];
 
-const WASM_LOCAL: &[ToolRuntime] = &[ToolRuntime::Wasm, ToolRuntime::Local];
+const RUNTIMES: &[ToolRuntime] = &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud];
 
 /// Specification for `pdf.compare`.
 pub const PDF_COMPARE_SPEC: ToolSpec = ToolSpec {
@@ -21,7 +21,7 @@ pub const PDF_COMPARE_SPEC: ToolSpec = ToolSpec {
     output_format: "json",
     output_formats: PDF_COMPARE_OUTPUT_FORMATS,
     tier: Tier::Free,
-    runtimes: WASM_LOCAL,
+    runtimes: RUNTIMES,
     engine: "ariad-pdf",
     params_schema: schema_for_params::<CompareParams>,
     secret_params: &[],

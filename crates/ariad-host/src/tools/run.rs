@@ -608,6 +608,11 @@ fn run_tool_inner(
             .map_err(|msg| ToolError::InvalidParams(scrubber.scrub(&msg)))?;
     }
 
+    let is_ai = spec.group == ariad_core::tools::ToolGroup::Ai;
+    if is_ai {
+        super::ai::check_access(&spec, &resolved_secrets.engine_params, request.plan)?;
+    }
+
     // Validate optional naming template early if provided (exit code 9).
     if let Some(ref template) = request.naming_template {
         ariad_core::tools::validate_naming_template(template)
@@ -634,6 +639,7 @@ fn run_tool_inner(
     // 8. Pre-validate output target confinement and engine availability before staging or running.
     let emits_json = (spec.id != "pdf.forms_export"
         && spec.id != "pdf.compare"
+        && spec.id != "ai.summarize"
         && spec.output_format.eq_ignore_ascii_case("json"))
         || tool_action_emits_json(spec.id, &resolved_secrets.schema_params);
     let extracts_attachments =
@@ -649,6 +655,23 @@ fn run_tool_inner(
     let is_compare = spec.id == "pdf.compare";
     let is_web_to_pdf = spec.id == "web.to_pdf";
     let is_compliance = spec.id == "pdf.to_pdfa" || spec.id == "pdf.to_pdfua";
+
+    if spec.id == "pdf.watermark_remove_raster"
+        && let OutputTarget::Path(path) = &request.output
+        && !path.is_dir()
+        && !path
+            .as_os_str()
+            .to_string_lossy()
+            .ends_with(['/', std::path::MAIN_SEPARATOR])
+        && !path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+    {
+        return Err(ToolError::Usage(
+            "raster watermark removal requires a PDF file or an output directory".into(),
+        ));
+    }
 
     if spec.id == "pdf.ocr"
         && matches!(
@@ -682,7 +705,9 @@ fn run_tool_inner(
         extracts_attachments,
     )?;
 
-    if is_document_edit {
+    if is_ai && super::ai::is_cloud(&resolved_secrets.schema_params) {
+        super::ai::preflight()?;
+    } else if is_document_edit {
         super::edit_document::preflight(spec.id, &resolved_secrets.schema_params)?;
     } else if is_web_to_pdf {
         super::web_to_pdf::preflight()?;
@@ -778,7 +803,19 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let mut raw_exec = if is_document_edit {
+    let mut raw_exec = if is_ai {
+        super::ai::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.engine_params,
+            resolved_secrets.has_secrets,
+            &workspace,
+            request,
+            scrubber,
+            on_event,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_document_edit {
         super::edit_document::execute(
             &spec,
             &staged_inputs_with_format,
@@ -956,14 +993,20 @@ fn run_tool_inner(
         return Err(ToolError::Interrupted);
     }
 
-    if is_compare && let OutputTarget::Path(ref path) = request.output {
+    if (is_compare || spec.id == "pdf.watermark_remove_raster")
+        && let OutputTarget::Path(ref path) = request.output
+    {
         let is_dir = path.is_dir()
             || path
                 .as_os_str()
                 .to_string_lossy()
                 .ends_with(['/', std::path::MAIN_SEPARATOR]);
         if !is_dir {
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let ext = if spec.id == "pdf.watermark_remove_raster" {
+                "pdf"
+            } else {
+                path.extension().and_then(|e| e.to_str()).unwrap_or("")
+            };
             raw_exec
                 .artifacts
                 .retain(|(_, fmt)| fmt.eq_ignore_ascii_case(ext));
@@ -1022,6 +1065,15 @@ fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
     }
     let action = params.get("action").and_then(Value::as_str);
     match spec_id {
+        "ai.summarize" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .unwrap_or("json")
+            .eq_ignore_ascii_case("json"),
+        "ai.translate" | "ai.extract_tables" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .is_some_and(|f| f.eq_ignore_ascii_case("json")),
         "pdf.outline" => action == Some("export"),
         "pdf.forms_export" => params
             .get("format")
@@ -1368,7 +1420,11 @@ fn preflight_output_target(
                 };
                 validate_target_filename(file_name, allowed_dirs.is_some())?;
                 if extracts_attachments {
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    let ext = if spec.id == "pdf.watermark_remove_raster" {
+                        "pdf"
+                    } else {
+                        path.extension().and_then(|e| e.to_str()).unwrap_or("")
+                    };
                     if !is_safe_extracted_extension(ext) {
                         return Err(ToolError::Confinement(format!(
                             "output path '{}' does not have a valid extracted attachment extension",
@@ -1500,6 +1556,18 @@ fn publish_tool_outputs(
                     "output.pdf"
                 })
                 .to_owned()
+        } else if spec.id == "pdf.watermark_remove_raster" && multi {
+            if format.eq_ignore_ascii_case("pdf") {
+                format!("{first_stem}.watermark_remove_raster.pdf")
+            } else {
+                format!(
+                    "{first_stem}.{}",
+                    staged_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("preview.png")
+                )
+            }
         } else if is_out_of_process
             && let Some(engine_named) = replace_staged_input_stem(staged_path, first_input)
         {
@@ -1591,13 +1659,43 @@ fn validate_with_compiled(validator: &jsonschema::Validator, params: &Value) -> 
     Ok(())
 }
 
-fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String> {
+pub(super) fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String> {
     use ariad_core::tools::params::{
         CropWhitespaceParams, ExtractImagesParams, ImageToPdfParams, RemoveBlankParams,
         RenderParams, SplitParams, ThumbnailsParams, ToImagesParams,
     };
 
     match tool_id {
+        "pdf.watermark_remove_raster" => {
+            let p: ariad_core::tools::params::WatermarkRemoveRasterParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "ai.recipe_from_text" => {
+            let p: ariad_core::tools::params::AiRecipeFromTextParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "ai.extract_tables" => {
+            let p: ariad_core::tools::params::AiExtractTablesParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "ai.translate" => {
+            let p: ariad_core::tools::params::AiTranslateParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "ai.ask" => {
+            let p: ariad_core::tools::params::AiAskParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "ai.summarize" => {
+            let p: ariad_core::tools::params::AiSummarizeParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
         "pdf.annotations" => {
             let p: ariad_core::tools::params::annotations::AnnotationsParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;

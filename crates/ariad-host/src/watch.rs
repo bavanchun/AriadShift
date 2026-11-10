@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 
 use crate::tools::{
     publish::PublishedArtifact,
-    recipe::{RecipeRequest, run_recipe},
+    recipe::{RecipeRequest, run_recipe_with_sources},
     run::{InputRef, ToolError},
 };
 
@@ -107,7 +107,8 @@ async fn run_watch_inner(request: &WatchRequest) -> Result<WatchOutcome, ToolErr
         recipe.allowed_dirs.as_ref(),
     )?;
     drop(output_dir);
-    if fs::canonicalize(&recipe.output_dir).map_err(output_io)? == watch_dir {
+    let output_root = fs::canonicalize(&recipe.output_dir).map_err(output_io)?;
+    if output_root == watch_dir {
         return Err(ToolError::InvalidParams(
             "watch and output directories must differ".into(),
         ));
@@ -186,6 +187,7 @@ async fn run_watch_inner(request: &WatchRequest) -> Result<WatchOutcome, ToolErr
             .iter()
             .fold(0_u64, |sum, (_, stamp, _)| sum.saturating_add(stamp.size));
         check_quota(recipe.plan, settled.len(), bytes)?;
+        let mut batch = Vec::new();
         for (name, stamp, already_claimed) in settled {
             if recipe.cancel.is_cancelled() {
                 return Ok(outcome);
@@ -210,52 +212,92 @@ async fn run_watch_inner(request: &WatchRequest) -> Result<WatchOutcome, ToolErr
                     Err(e) => return Err(input_io(e)),
                 }
             }
-            let result = process_claim(request, &claimed, &recipe_hash, &ledger).await;
-            match result {
-                Ok(ClaimOutcome::Duplicate) => {
+            match content_hash(request, &claimed) {
+                Ok(hash)
+                    if ledger
+                        .get(&format!("{hash}:{recipe_hash}"))
+                        .is_some_and(|entry| {
+                            entry.artifacts.iter().all(|path| {
+                                path.is_file()
+                                    && fs::canonicalize(path).is_ok_and(|artifact| {
+                                        artifact.parent() == Some(output_root.as_path())
+                                    })
+                            })
+                        }) =>
+                {
                     archive_input(&claimed, &done, &name)?;
                     outcome.skipped_idempotent += 1;
                 }
-                Ok(ClaimOutcome::Executed(run)) => {
-                    outcome.runs_executed += 1;
-                    ledger.insert(
-                        format!("{}:{recipe_hash}", run.content_hash),
-                        LedgerEntry {
-                            filename: name.to_string_lossy().into_owned(),
-                            completed_at_epoch_s: SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs(),
-                            artifacts: run.artifacts.iter().map(|a| a.path.clone()).collect(),
-                        },
-                    );
+                Ok(hash) => batch.push((claimed, name, hash)),
+                Err(ToolError::Interrupted) => return Ok(outcome),
+                Err(error) => {
+                    archive_failure(
+                        &claimed,
+                        &failed,
+                        &name,
+                        &error.scrubbed(&recipe.secrets.scrubber()),
+                    )?;
+                    outcome.failed += 1;
+                }
+            }
+        }
+        if !batch.is_empty() {
+            let mut batch_recipe = recipe.clone();
+            batch_recipe.inputs = batch
+                .iter()
+                .map(|(path, _, _)| InputRef::new(path))
+                .collect();
+            if let Some(allowed) = &recipe.allowed_dirs {
+                let mut dirs = vec![processing.clone()];
+                dirs.extend(allowed.dirs());
+                batch_recipe.allowed_dirs = Some(
+                    crate::confine::AllowedDirs::new(&dirs, &[])
+                        .map_err(|e| ToolError::Confinement(e.to_string()))?,
+                );
+            }
+            outcome.runs_executed += 1;
+            let result =
+                tokio::task::spawn_blocking(move || run_recipe_with_sources(&batch_recipe))
+                    .await
+                    .map_err(|_| ToolError::EngineFailure("watch recipe worker failed".into()))?;
+            match result {
+                Ok((run, sources)) => {
+                    let mut entries = Ledger::new();
+                    for (index, (_, name, hash)) in batch.iter().enumerate() {
+                        entries
+                            .entry(format!("{hash}:{recipe_hash}"))
+                            .or_insert_with(|| LedgerEntry {
+                                filename: name.to_string_lossy().into_owned(),
+                                completed_at_epoch_s: SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs(),
+                                artifacts: Vec::new(),
+                            })
+                            .artifacts
+                            .extend(
+                                run.artifacts
+                                    .iter()
+                                    .zip(&sources)
+                                    .filter(|(_, origins)| origins.contains(&index))
+                                    .map(|(artifact, _)| artifact.path.clone()),
+                            );
+                    }
+                    ledger.extend(entries);
                     persist_ledger(&ledger_path, &ledger)?;
-                    archive_input(&claimed, &done, &name)?;
-                    outcome.processed += 1;
+                    for (path, name, _) in batch {
+                        archive_input(&path, &done, &name)?;
+                        outcome.processed += 1;
+                    }
                     outcome.artifacts.extend(run.artifacts);
                 }
-                Err(ToolError::Interrupted) => {
-                    // Leave the claimed input available for a deliberate retry.
-                    if !input.try_exists().map_err(input_io)? {
-                        fs::rename(&claimed, &input).map_err(input_io)?;
-                    }
-                    return Ok(outcome);
-                }
+                Err(ToolError::Interrupted) => return Ok(outcome),
                 Err(error) => {
-                    outcome.runs_executed += 1;
                     let error = error.scrubbed(&recipe.secrets.scrubber());
-                    let archived = archive_input(&claimed, &failed, &name)?;
-                    let mut error_name = archived.into_os_string();
-                    error_name.push(".error.json");
-                    let report =
-                        serde_json::json!({"code": error.code(), "message": error.to_string()});
-                    fs::write(
-                        PathBuf::from(error_name),
-                        serde_json::to_vec_pretty(&report)
-                            .map_err(|e| ToolError::OutputIo(e.to_string()))?,
-                    )
-                    .map_err(output_io)?;
-                    outcome.failed += 1;
+                    for (path, name, _) in batch {
+                        archive_failure(&path, &failed, &name, &error)?;
+                        outcome.failed += 1;
+                    }
                 }
             }
         }
@@ -270,20 +312,24 @@ async fn run_watch_inner(request: &WatchRequest) -> Result<WatchOutcome, ToolErr
     }
 }
 
-struct ExecutedClaim {
-    content_hash: String,
-    artifacts: Vec<PublishedArtifact>,
-}
-enum ClaimOutcome {
-    Duplicate,
-    Executed(ExecutedClaim),
-}
-async fn process_claim(
-    request: &WatchRequest,
+fn archive_failure(
     path: &Path,
-    recipe_hash: &str,
-    ledger: &Ledger,
-) -> Result<ClaimOutcome, ToolError> {
+    failed: &Path,
+    name: &std::ffi::OsStr,
+    error: &ToolError,
+) -> Result<(), ToolError> {
+    let archived = archive_input(path, failed, name)?;
+    let mut report_path = archived.into_os_string();
+    report_path.push(".error.json");
+    let report = serde_json::json!({"code":error.code(), "message":error.to_string()});
+    fs::write(
+        PathBuf::from(report_path),
+        serde_json::to_vec_pretty(&report).map_err(|e| ToolError::OutputIo(e.to_string()))?,
+    )
+    .map_err(output_io)
+}
+
+fn content_hash(request: &WatchRequest, path: &Path) -> Result<String, ToolError> {
     let mut file = crate::convert::open_regular_input(path)
         .map_err(|_| ToolError::InputIo("watch input is not a readable regular file".into()))?;
     if let Some(max) = request.recipe.limits.max_input_bytes
@@ -314,35 +360,7 @@ async fn process_claim(
         check_quota(request.recipe.plan, 1, bytes_read)?;
         hasher.update(&buffer[..count]);
     }
-    let content_hash = hex::encode(hasher.finalize());
-    let key = format!("{content_hash}:{recipe_hash}");
-    if ledger
-        .get(&key)
-        .is_some_and(|entry| entry.artifacts.iter().all(|path| path.is_file()))
-    {
-        return Ok(ClaimOutcome::Duplicate);
-    }
-    let mut recipe = request.recipe.clone();
-    recipe.inputs = vec![InputRef::new(path)];
-    if let Some(allowed) = &request.recipe.allowed_dirs {
-        let mut dirs = vec![
-            path.parent()
-                .expect("claimed input has a parent")
-                .to_path_buf(),
-        ];
-        dirs.extend(allowed.dirs());
-        recipe.allowed_dirs = Some(
-            crate::confine::AllowedDirs::new(&dirs, &[])
-                .map_err(|e| ToolError::Confinement(e.to_string()))?,
-        );
-    }
-    let result = tokio::task::spawn_blocking(move || run_recipe(&recipe))
-        .await
-        .map_err(|_| ToolError::EngineFailure("watch recipe worker failed".into()))??;
-    Ok(ClaimOutcome::Executed(ExecutedClaim {
-        content_hash,
-        artifacts: result.artifacts,
-    }))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn check_quota(plan: Plan, files: usize, bytes: u64) -> Result<(), ToolError> {

@@ -36,7 +36,7 @@ pub const EDIT_EXPORT_DOCUMENT_SPEC: ToolSpec = ToolSpec {
     output_format: "pdf",
     output_formats: &["pdf", "docx", "html", "md"],
     tier: Tier::Free,
-    runtimes: WASM_LOCAL,
+    runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
     engine: "ariad-core",
     params_schema: schema_for_params::<EditExportDocumentParams>,
     secret_params: &[],

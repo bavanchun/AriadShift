@@ -22,7 +22,7 @@ pub fn specs() -> Vec<ToolSpec> {
         output_format: "cbz",
         output_formats: TO_CBZ_OUTPUT_FORMATS,
         tier: Tier::Free,
-        runtimes: &[ToolRuntime::Local],
+        runtimes: &[ToolRuntime::Local, ToolRuntime::Cloud],
         engine: HOST_COMPOSITE_ENGINE,
         params_schema: schema_for_params::<ToCbzParams>,
         secret_params: &[],

@@ -230,6 +230,7 @@ struct PipelineItem {
     stem: String,
     format: String,
     title: Option<String>,
+    sources: Vec<usize>,
 }
 
 /// Executes a [`RecipeRequest`] synchronously with no event callback.
@@ -246,13 +247,22 @@ where
     F: FnMut(ToolEvent),
 {
     let scrubber = request.secrets.scrubber();
-    run_recipe_inner(request, &mut on_event).map_err(|e| e.scrubbed(&scrubber))
+    run_recipe_inner(request, &mut on_event)
+        .map(|(outcome, _)| outcome)
+        .map_err(|e| e.scrubbed(&scrubber))
+}
+
+/// Internal artifact provenance for watch-ledger entries, in published artifact order.
+pub(crate) fn run_recipe_with_sources(
+    request: &RecipeRequest,
+) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
+    run_recipe_inner(request, &mut |_| {}).map_err(|e| e.scrubbed(&request.secrets.scrubber()))
 }
 
 fn run_recipe_inner(
     request: &RecipeRequest,
     on_event: &mut dyn FnMut(ToolEvent),
-) -> Result<RecipeOutcome, ToolError> {
+) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
     let started = Instant::now();
     let scrubber = request.secrets.scrubber();
     let clock = super::inprocess::capture_clock()?;
@@ -306,7 +316,7 @@ fn run_recipe_inner(
     let mut input_paths = Vec::with_capacity(request.inputs.len());
     let mut current_items = Vec::with_capacity(request.inputs.len());
 
-    for input_ref in &request.inputs {
+    for (source_index, input_ref) in request.inputs.iter().enumerate() {
         let meta = if let Some(ref allowed) = request.allowed_dirs {
             let confined =
                 crate::confine::confine_input(&input_ref.path, allowed).map_err(|err| {
@@ -365,6 +375,7 @@ fn run_recipe_inner(
             stem,
             format,
             title: None,
+            sources: vec![source_index],
         };
         if request
             .recipe
@@ -439,9 +450,14 @@ fn run_recipe_inner(
                     .get(tool.as_str())
                     .or_else(|| ariad_core::tools::find(tool.as_str()))
                     .ok_or_else(|| ToolError::UnknownTool(tool.to_string()))?;
+                let selected_sources: Vec<_> = selected
+                    .iter()
+                    .flat_map(|&index| current_items[index].sources.iter().copied())
+                    .collect();
                 let groups = match spec.inputs {
                     InputArity::One => selected.iter().map(|&idx| vec![idx]).collect::<Vec<_>>(),
-                    InputArity::None => vec![Vec::new()],
+                    InputArity::None if !selected.is_empty() => vec![Vec::new()],
+                    InputArity::None => Vec::new(),
                     InputArity::Many { .. } if !selected.is_empty() => vec![selected],
                     InputArity::Many { .. } => Vec::new(),
                 };
@@ -485,6 +501,14 @@ fn run_recipe_inner(
                                     stem,
                                     format: art.format,
                                     title: items.first().and_then(|item| item.title.clone()),
+                                    sources: if items.is_empty() {
+                                        selected_sources.clone()
+                                    } else {
+                                        items
+                                            .iter()
+                                            .flat_map(|item| item.sources.iter().copied())
+                                            .collect()
+                                    },
                                 });
                             }
                         }
@@ -537,6 +561,7 @@ fn run_recipe_inner(
                                     .unwrap_or(to.id())
                                     .to_owned(),
                                 title: item.title.clone(),
+                                sources: item.sources.clone(),
                             });
                         }
                         Err(error) => handle_step_error(
@@ -617,13 +642,20 @@ fn run_recipe_inner(
     metrics.insert("elapsed_ms".to_owned(), json!(elapsed_ms));
 
     let warnings = warnings.iter().map(|w| scrubber.scrub_warning(w)).collect();
-    Ok(RecipeOutcome {
-        version: RECIPE_VERSION.to_owned(),
-        steps: step_outcomes,
-        artifacts: published,
-        warnings,
-        metrics,
-    })
+    let sources = current_items
+        .iter()
+        .map(|item| item.sources.clone())
+        .collect();
+    Ok((
+        RecipeOutcome {
+            version: RECIPE_VERSION.to_owned(),
+            steps: step_outcomes,
+            artifacts: published,
+            warnings,
+            metrics,
+        },
+        sources,
+    ))
 }
 
 fn handle_step_error(

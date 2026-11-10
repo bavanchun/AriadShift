@@ -68,7 +68,14 @@ fn edit_tools_have_canonical_access_runtimes_and_formats() {
         assert_eq!(spec.engine, engine);
         assert_eq!(spec.input_formats, input_formats);
         assert_eq!(spec.output_format, output);
-        assert_eq!(spec.runtimes, &[ToolRuntime::Wasm, ToolRuntime::Local]);
+        assert_eq!(
+            spec.runtimes,
+            if spec.id == "edit.export_document" {
+                &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud][..]
+            } else {
+                &[ToolRuntime::Wasm, ToolRuntime::Local][..]
+            }
+        );
         assert!(ToolAccess::PRO.allows_spec(spec));
         assert_eq!(ToolAccess::FREE.allows_spec(spec), tier == Tier::Free);
         assert!(spec.secret_params.is_empty());
@@ -472,10 +479,13 @@ fn pdf_info_is_registered_with_expected_metadata_and_schema() {
     assert!(!spec.accepts_core_format(Format::Docx));
     assert_eq!(spec.output_format, "json");
     assert_eq!(spec.tier, Tier::Free);
-    assert_eq!(spec.runtimes, &[ToolRuntime::Wasm, ToolRuntime::Local]);
+    assert_eq!(
+        spec.runtimes,
+        &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud]
+    );
     assert!(spec.supports_runtime(ToolRuntime::Wasm));
     assert!(spec.supports_runtime(ToolRuntime::Local));
-    assert!(!spec.supports_runtime(ToolRuntime::Cloud));
+    assert!(spec.supports_runtime(ToolRuntime::Cloud));
     assert_eq!(Runtime::from(ToolRuntime::Wasm), Runtime::Wasm);
     assert_eq!(ToolRuntime::from(Runtime::Local), ToolRuntime::Local);
     assert_eq!(spec.engine, "ariad-pdf");

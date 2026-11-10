@@ -415,7 +415,7 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 96);
+    assert_eq!(all_tools.len(), 102);
     let edit_out = ashift_cmd()
         .args(["tools", "--group", "edit", "--json"])
         .output()
@@ -450,12 +450,11 @@ fn tools_command_lists_registry_json_and_human() {
     assert!(
         all_tools
             .iter()
-            .any(|tool| tool["id"] == "pdf.to_cbz" && tool["runtimes"] == json!(["local"]))
+            .any(|tool| tool["id"] == "pdf.to_cbz" && tool["runtimes"] == json!(["local", "cloud"]))
     );
     assert!(
-        all_tools
-            .iter()
-            .any(|tool| tool["id"] == "pdf.compare" && tool["runtimes"] == json!(["wasm", "local"]))
+        all_tools.iter().any(|tool| tool["id"] == "pdf.compare"
+            && tool["runtimes"] == json!(["wasm", "local", "cloud"]))
     );
     for id in [
         "pdf.annotations",
@@ -492,7 +491,7 @@ fn tools_command_lists_registry_json_and_human() {
         assert!(
             all_tools
                 .iter()
-                .any(|tool| tool["id"] == id && tool["runtimes"] == json!(["local"]))
+                .any(|tool| tool["id"] == id && tool["runtimes"] == json!(["local", "cloud"]))
         );
     }
     for id in [

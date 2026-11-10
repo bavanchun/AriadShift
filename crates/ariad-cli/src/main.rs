@@ -405,13 +405,30 @@ struct RecipeRunArgs {
     #[arg(value_name = "RECIPE.JSON")]
     recipe: PathBuf,
     /// Input document file paths.
-    #[arg(value_name = "INPUT", required = true, num_args = 1..)]
+    #[arg(value_name = "INPUT", required_unless_present = "watch", conflicts_with = "watch", num_args = 1..)]
     inputs: Vec<PathBuf>,
     /// Output directory for published artifacts.
-    #[arg(short = 'o', long = "output", value_name = "DIR", required = true)]
-    output: PathBuf,
+    #[arg(
+        short = 'o',
+        long = "output",
+        value_name = "DIR",
+        required_unless_present = "watch"
+    )]
+    output: Option<PathBuf>,
+    /// Watch a directory for settled input files.
+    #[arg(long, value_name = "DIR")]
+    watch: Option<PathBuf>,
+    /// Process one settled directory snapshot, then exit.
+    #[arg(long, requires = "watch")]
+    watch_once: bool,
+    /// File stability window for watch mode, in milliseconds.
+    #[arg(long, default_value_t = 200, requires = "watch")]
+    settle_ms: u64,
+    /// File recipes are imported and always require confirmation.
+    #[arg(long = "origin", default_value = "imported", value_parser = ["imported"])]
+    _origin: String,
     /// Confirm running an imported recipe without an interactive prompt.
-    #[arg(long)]
+    #[arg(long, alias = "confirmed")]
     yes: bool,
     /// Overwrite existing destination file(s) if present.
     #[arg(long)]
@@ -1270,14 +1287,18 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
         Ok(plan) => plan,
         Err(error) => return report_error("recipe", &error),
     };
+    let origin = ariad_core::tools::RecipeOrigin::Imported;
+    let output = args.output.clone().unwrap_or_else(|| {
+        args.watch
+            .as_ref()
+            .expect("watch or output required")
+            .join("out")
+    });
     let raw = match std::fs::read_to_string(&args.recipe) {
         Ok(text) => text,
         Err(err) => return report_error("recipe", &ToolError::InputIo(err.to_string())),
     };
-    let recipe = match ariad_core::tools::Recipe::from_json_str(
-        &raw,
-        ariad_core::tools::RecipeOrigin::Imported,
-    ) {
+    let recipe = match ariad_core::tools::Recipe::from_json_str(&raw, origin) {
         Ok(recipe) => recipe,
         Err(err) => return report_error("recipe", &ToolError::InvalidParams(err.to_string())),
     };
@@ -1318,7 +1339,7 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
         false
     };
 
-    if let Err(err) = recipe.validate(ariad_core::tools::RecipeOrigin::Imported) {
+    if let Err(err) = recipe.validate(origin) {
         return report_error("recipe", &ToolError::InvalidParams(err.to_string()));
     }
     if !confirmed {
@@ -1373,12 +1394,51 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
     let stderr_is_terminal = io::stderr().is_terminal();
     let inputs: Vec<InputRef> = args.inputs.into_iter().map(InputRef::new).collect();
 
-    let request = RecipeRequest::new(recipe, inputs, args.output)
+    let request = RecipeRequest::new(recipe, inputs, output)
         .with_plan(plan)
-        .with_origin(ariad_core::tools::RecipeOrigin::Imported, confirmed)
+        .with_origin(origin, confirmed)
         .with_secrets(secrets)
         .with_overwrite(args.overwrite)
         .with_engine_program(engine_program);
+
+    if let Some(watch_dir) = args.watch {
+        return run_blocking(
+            "recipe",
+            move |cancel| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| ToolError::OutputIo(e.to_string()))?;
+                runtime.block_on(ariad_host::watch::run_watch_folder(
+                    &ariad_host::watch::WatchRequest {
+                        watch_dir,
+                        recipe: request.with_cancel(cancel),
+                        once: args.watch_once,
+                        settle_ms: args.settle_ms,
+                    },
+                ))
+            },
+            move |outcome| {
+                if is_json {
+                    render::render_json(&serde_json::json!({
+                        "ok": true, "processed": outcome.processed, "runs_executed": outcome.runs_executed,
+                        "skipped_idempotent": outcome.skipped_idempotent, "failed": outcome.failed,
+                        "artifacts": outcome.artifacts,
+                    })).map_err(|e| ToolError::OutputIo(e.to_string()))
+                } else {
+                    for artifact in outcome.artifacts {
+                        writeln!(
+                            io::stdout(),
+                            "{}",
+                            render::escape_control_chars(&artifact.path.display().to_string())
+                        )
+                        .map_err(|e| ToolError::OutputIo(e.to_string()))?;
+                    }
+                    Ok(())
+                }
+            },
+        );
+    }
 
     run_blocking(
         "recipe",

@@ -22,7 +22,7 @@ pub fn specs() -> Vec<ToolSpec> {
                 output_formats: &[],
                 params_schema: schema_for_params::<$params>,
                 tier: Tier::Free,
-                runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+                runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
                 engine: "ariad-pdf",
                 secret_params: &[],
             }

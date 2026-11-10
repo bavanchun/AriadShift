@@ -99,7 +99,7 @@ async fn pro_watch_processes_one_hundred_pdfs_and_skips_reintroduced_content() {
     let first = run_watch_folder(&request).await.unwrap();
     assert_eq!(
         (first.processed, first.runs_executed, first.failed),
-        (100, 100, 0)
+        (100, 1, 0)
     );
     assert_eq!(first.artifacts.len(), 100);
     for artifact in &first.artifacts {
@@ -462,12 +462,17 @@ async fn once_watch_defers_files_changed_during_the_stability_window() {
     request.settle_ms = 50;
     let input = request.watch_dir.join("changing.pdf");
     fs::write(&input, b"partial").unwrap();
-    let writer = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(10));
-        write_pdf(&input, 1, "Settled");
-    });
-    let first = run_watch_folder(&request).await.unwrap();
-    writer.join().unwrap();
+    let watch = run_watch_folder(&request);
+    tokio::pin!(watch);
+    // Poll through the first snapshot before changing the file. A writer thread
+    // with a fixed sleep can finish before that snapshot under filesystem load.
+    std::future::poll_fn(|cx| {
+        assert!(std::future::Future::poll(watch.as_mut(), cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    write_pdf(&input, 1, "Settled");
+    let first = watch.await.unwrap();
     assert_eq!(first.runs_executed, 0);
     assert!(request.watch_dir.join("changing.pdf").is_file());
     assert_eq!(run_watch_folder(&request).await.unwrap().processed, 1);
@@ -550,4 +555,97 @@ async fn watcher_refuses_concurrent_ownership_and_releases_the_os_lock() {
     ));
     drop(lock);
     assert_eq!(run_watch_folder(&request).await.unwrap().processed, 0);
+}
+
+#[tokio::test]
+async fn missing_output_does_not_invalidate_other_inputs_in_the_batch() {
+    let root = TempDir::new().unwrap();
+    let request = watch_request(root.path(), Plan::Free);
+    for name in ["first.pdf", "second.pdf"] {
+        write_pdf(&request.watch_dir.join(name), 1, name);
+    }
+    let first = run_watch_folder(&request).await.unwrap();
+    assert_eq!((first.processed, first.runs_executed), (2, 1));
+    let first_output = first
+        .artifacts
+        .iter()
+        .find(|a| {
+            a.path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("first.")
+        })
+        .unwrap();
+    fs::remove_file(&first_output.path).unwrap();
+    fs::copy(
+        request.watch_dir.join(".done/second.pdf"),
+        request.watch_dir.join("second.pdf"),
+    )
+    .unwrap();
+    let duplicate = run_watch_folder(&request).await.unwrap();
+    assert_eq!(
+        (
+            duplicate.skipped_idempotent,
+            duplicate.runs_executed,
+            duplicate.failed
+        ),
+        (1, 0, 0)
+    );
+    fs::copy(
+        request.watch_dir.join(".done/first.pdf"),
+        request.watch_dir.join("first.pdf"),
+    )
+    .unwrap();
+    let restored = run_watch_folder(&request).await.unwrap();
+    assert_eq!((restored.processed, restored.runs_executed), (1, 1));
+}
+
+#[tokio::test]
+async fn changing_output_directory_regenerates_outputs_in_the_new_destination() {
+    let root = TempDir::new().unwrap();
+    let mut request = watch_request(root.path(), Plan::Free);
+    let input = request.watch_dir.join("source.pdf");
+    write_pdf(&input, 1, "Source");
+    let first = run_watch_folder(&request).await.unwrap();
+    assert_eq!(first.processed, 1);
+    fs::copy(request.watch_dir.join(".done/source.pdf"), &input).unwrap();
+    request.recipe.output_dir = root.path().join("different-output");
+    let second = run_watch_folder(&request).await.unwrap();
+    assert_eq!(
+        (
+            second.processed,
+            second.runs_executed,
+            second.skipped_idempotent
+        ),
+        (1, 1, 0)
+    );
+    assert!(
+        second.artifacts[0]
+            .path
+            .starts_with(&request.recipe.output_dir)
+    );
+    assert!(first.artifacts[0].path.is_file());
+}
+
+#[test]
+fn false_condition_skips_a_tool_that_takes_no_inputs() {
+    let root = TempDir::new().unwrap();
+    let input = root.path().join("source.pdf");
+    write_pdf(&input, 1, "Source");
+    let request = RecipeRequest::new(
+        recipe(json!([{
+            "tool":"ai.recipe_from_text", "params":{"prompt":"Rotate all pages by 90 degrees"},
+            "if":"page_count > 1"
+        }])),
+        vec![InputRef::new(&input)],
+        root.path().join("output"),
+    );
+    let outcome = run_recipe(&request).unwrap();
+    assert_eq!(outcome.artifacts.len(), 1);
+    assert_eq!(outcome.artifacts[0].format, "pdf");
+    assert_eq!(
+        fs::read(&outcome.artifacts[0].path).unwrap(),
+        fs::read(input).unwrap()
+    );
 }

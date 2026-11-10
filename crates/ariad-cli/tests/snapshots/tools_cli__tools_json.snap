@@ -23,7 +23,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Inspect PDF version, page count, encryption status, geometry, metadata, and structural features.",
@@ -101,7 +102,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Merge two or more PDF documents into a single PDF.",
@@ -259,7 +261,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Split a PDF document into multiple part PDFs by page ranges, interval, bookmarks, size, or blank separators.",
@@ -301,7 +304,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Extract selected pages from a PDF document into a new PDF.",
@@ -343,7 +347,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Delete selected pages from a PDF document while keeping at least one remaining page.",
@@ -418,7 +423,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Reorder PDF pages using an explicit page range sequence or a named preset (reverse, duplex-interleave, odd-then-even).",
@@ -454,7 +460,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Interleave pages alternately from two PDF documents, optionally reversing the second document.",
@@ -627,7 +634,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Insert blank pages of matching or specified paper size after selected PDF pages.",
@@ -680,7 +688,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Rotate selected PDF pages by a multiple of 90 degrees without re-rendering.",
@@ -803,7 +812,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Set the CropBox or MediaBox of selected PDF pages in points.",
@@ -971,7 +981,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Scale selected PDF pages to a target paper size using Form XObjects.",
@@ -998,7 +1009,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Concatenate all pages of a PDF document vertically into a single continuous page.",
@@ -1053,7 +1065,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Rotate PDF page content by an arbitrary angle using a Form XObject and transform matrix.",
@@ -1119,7 +1132,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Decompress PDF streams and expand object streams within decoded-size limits.",
@@ -1353,7 +1367,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Place multiple PDF pages onto each output sheet in an N-up grid layout.",
@@ -1515,7 +1530,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Impose PDF pages into saddle-stitch booklet spreads padded to a multiple of 4.",
@@ -1602,7 +1618,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Overlay or underlay pages from a second PDF onto selected pages of a base PDF.",
@@ -1678,7 +1695,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Subdivide each selected PDF page into a cols by rows grid of cropped cell pages.",
@@ -1880,7 +1898,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Enlarge selected PDF pages across multiple tiled output sheets with overlap and crop marks.",
@@ -2007,7 +2026,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Set, remove, or strip PDF /Info dictionary and XMP metadata fields.",
@@ -2108,7 +2128,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Export, import, clear, or generate PDF outline bookmarks from headings.",
@@ -2183,7 +2204,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "List, add, extract, or remove embedded file attachments in a PDF.",
@@ -2297,7 +2319,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Rewrite the PDF /PageLabels number tree across 1-based page ranges.",
@@ -2450,7 +2473,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Configure PDF catalog /ViewerPreferences, /PageLayout, /PageMode, and /OpenAction.",
@@ -2530,7 +2554,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Create, list, or extract a PDF portfolio (/Collection) with embedded files.",
@@ -2605,7 +2630,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "List, toggle default visibility, or remove Optional Content Group (OCG) layers.",
@@ -2701,7 +2727,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Replace text and vector colours on selected pages.",
@@ -2778,7 +2805,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Adjust brightness, contrast, saturation and gamma.",
@@ -3081,7 +3109,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Add a removable text or image watermark.",
@@ -3354,7 +3383,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Add a removable text stamp.",
@@ -3548,7 +3578,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Place an image on selected pages.",
@@ -3802,7 +3833,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Place text on selected pages.",
@@ -4016,7 +4048,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Place a vector QR code on selected pages.",
@@ -4184,7 +4217,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Add page numbers.",
@@ -4355,7 +4389,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Add headers and footers.",
@@ -4529,7 +4564,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Add a Bates sequence.",
@@ -4735,7 +4771,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Insert linked contents pages from the outline.",
@@ -4797,7 +4834,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Add a page background.",
@@ -4837,7 +4875,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Invert page content colours.",
@@ -4885,7 +4924,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Find possible watermarks for review.",
@@ -4926,10 +4966,183 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Remove explicitly selected watermark candidates.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "inpaint",
+    "group": "overlay",
+    "id": "pdf.watermark_remove_raster",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "output_formats": [
+      "pdf",
+      "png"
+    ],
+    "params_schema": {
+      "$defs": {
+        "AutoMask": {
+          "description": "Automatic mask selection.",
+          "oneOf": [
+            {
+              "const": "auto",
+              "description": "Detect a candidate raster watermark mask.",
+              "type": "string"
+            }
+          ]
+        },
+        "InpaintMethod": {
+          "description": "Inpainting method used by the isolated raster watermark engine.",
+          "oneOf": [
+            {
+              "const": "telea",
+              "description": "Fast marching inpainting.",
+              "type": "string"
+            },
+            {
+              "const": "ns",
+              "description": "Navier-Stokes inpainting.",
+              "type": "string"
+            }
+          ]
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        },
+        "RasterMaskRect": {
+          "additionalProperties": false,
+          "description": "A rectangle in raster coordinates, optionally restricted to one PDF page.",
+          "properties": {
+            "height": {
+              "description": "Positive height.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            },
+            "page": {
+              "default": null,
+              "description": "1-based page, or every selected page when omitted.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "width": {
+              "description": "Positive width.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            },
+            "x": {
+              "description": "Left coordinate.",
+              "format": "double",
+              "minimum": 0,
+              "type": "number"
+            },
+            "y": {
+              "description": "Top coordinate.",
+              "format": "double",
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "type": "object"
+        },
+        "RasterWatermarkMask": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AutoMask",
+              "description": "The string `\"auto\"`."
+            },
+            {
+              "description": "Explicit raster coordinates.",
+              "items": {
+                "$ref": "#/$defs/RasterMaskRect"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "description": "Automatic detection or an explicit nonempty rectangle list."
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.watermark_remove_raster` (preview is enabled by default).",
+      "properties": {
+        "mask": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RasterWatermarkMask"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Mask (automatic detection when omitted)."
+        },
+        "method": {
+          "$ref": "#/$defs/InpaintMethod",
+          "default": "telea",
+          "description": "Inpainting method (Telea by default)."
+        },
+        "pages": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PageRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Selected PDF pages, or all pages when omitted."
+        },
+        "preview": {
+          "default": true,
+          "description": "Return a preview for review before applying the result.",
+          "type": "boolean"
+        },
+        "radius": {
+          "default": null,
+          "description": "Inpainting radius (3 pixels when omitted).",
+          "format": "double",
+          "maximum": 25.0,
+          "minimum": 1.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "title": "WatermarkRemoveRasterParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Preview or remove raster watermarks with inpainting.",
     "tier": "free",
     "version": "1"
   },
@@ -5071,7 +5284,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Render PDF pages to PNG, JPEG, WebP, BMP or TIFF images at a chosen resolution.",
@@ -5216,7 +5430,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Convert PDF pages to images, optionally stacked into one tall image (alias of pdf.render with 300 dpi default).",
@@ -5267,7 +5482,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Render small page thumbnails and a JSON index of them.",
@@ -5377,7 +5593,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Combine PNG, JPEG, WebP, TIFF or BMP images into one PDF, one image per page.",
@@ -5449,7 +5666,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Extract the embedded images of a PDF, keeping their stored encoding where possible.",
@@ -5488,7 +5706,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Report characters, words and lines with bounding boxes, font name, size and colour as JSON.",
@@ -5532,7 +5751,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Remove blank pages detected from low-resolution renders.",
@@ -5579,7 +5799,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Set each page's crop box to its content bounding box plus optional padding.",
@@ -5605,7 +5826,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Report per page whether a text layer exists and how much of the page an image covers.",
@@ -5720,7 +5942,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Compress a PDF document.",
@@ -5746,7 +5969,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Convert a PDF document to grayscale.",
@@ -5772,7 +5996,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Repair a damaged PDF document.",
@@ -5798,7 +6023,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Optimize a PDF document for progressive loading.",
@@ -6308,7 +6534,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Recognize text on PDF pages.",
@@ -6382,7 +6609,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Recognize text in images.",
@@ -6440,7 +6668,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Correct page orientation.",
@@ -6506,7 +6735,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Correct page skew.",
@@ -6577,7 +6807,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Split scanned regions into pages.",
@@ -6687,7 +6918,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Apply a scanner effect.",
@@ -7972,7 +8204,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "True object-stream and raster redaction with verification report.",
@@ -8235,7 +8468,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Independently verify document redaction against requested targets.",
@@ -9212,7 +9446,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Convert PDF pages into a comic book archive (CBZ).",
@@ -9289,7 +9524,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Compare two PDF documents semantically or visually with annotated difference report.",
@@ -9348,7 +9584,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Convert a PDF to PDF/A-2b, PDF/A-3b, or PDF/A-2u with mandatory veraPDF verification.",
@@ -9388,7 +9625,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Verify and convert a PDF to PDF/UA-1 with accessibility inspection and veraPDF verification.",
@@ -9418,7 +9656,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Inspect a PDF for PDF/UA-1 accessibility requirements and output a structured JSON report.",
@@ -9453,7 +9692,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Validate a PDF document against PDF/A profiles using veraPDF.",
@@ -9488,7 +9728,8 @@ expression: tools_json
       "type": "object"
     },
     "runtimes": [
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Validate a PDF document against PDF/UA accessibility profiles using veraPDF.",
@@ -9650,7 +9891,8 @@ expression: tools_json
     },
     "runtimes": [
       "wasm",
-      "local"
+      "local",
+      "cloud"
     ],
     "secret_params": [],
     "summary": "Export an edited ariad-ir/2 document to PDF, DOCX, HTML, or Markdown with measured fidelity score and block change list.",
@@ -9998,6 +10240,602 @@ expression: tools_json
     "secret_params": [],
     "summary": "Apply an ordered sequence of stateless in-place page edits (replace_text, set_text_style, move_object, delete_object, add_text, add_image, replace_image) with font fallback and optional incremental save.",
     "tier": "pro",
+    "version": "1"
+  },
+  {
+    "engine": "ai",
+    "group": "ai",
+    "id": "ai.summarize",
+    "input_formats": [
+      "pdf",
+      "docx",
+      "html",
+      "md",
+      "json"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "output_formats": [
+      "json",
+      "md"
+    ],
+    "params_schema": {
+      "$defs": {
+        "AiProvider": {
+          "description": "Execution provider; cloud requires explicit caller consent.",
+          "oneOf": [
+            {
+              "const": "local",
+              "description": "`local`.",
+              "type": "string"
+            },
+            {
+              "const": "cloud",
+              "description": "`cloud`.",
+              "type": "string"
+            }
+          ]
+        },
+        "SummaryLength": {
+          "description": "Requested summary detail.",
+          "oneOf": [
+            {
+              "const": "brief",
+              "description": "`brief`.",
+              "type": "string"
+            },
+            {
+              "const": "standard",
+              "description": "`standard`.",
+              "type": "string"
+            },
+            {
+              "const": "detailed",
+              "description": "`detailed`.",
+              "type": "string"
+            }
+          ]
+        },
+        "SummaryOutputFormat": {
+          "description": "Summary artifact format.",
+          "oneOf": [
+            {
+              "const": "json",
+              "description": "`json`.",
+              "type": "string"
+            },
+            {
+              "const": "md",
+              "description": "`md`.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `ai.summarize`.",
+      "properties": {
+        "api_key": {
+          "default": null,
+          "description": "API credential, supplied only through a secret channel.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        },
+        "cloud_consent": {
+          "default": false,
+          "description": "Explicit permission to send document content to a cloud provider.",
+          "type": "boolean"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SummaryOutputFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Summary format (JSON when omitted)."
+        },
+        "language": {
+          "default": null,
+          "description": "Optional output language.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "length": {
+          "$ref": "#/$defs/SummaryLength",
+          "default": "standard",
+          "description": "Requested detail (standard by default)."
+        },
+        "model": {
+          "default": null,
+          "description": "Optional provider model identifier.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/AiProvider",
+          "default": "local",
+          "description": "Execution provider (local by default)."
+        }
+      },
+      "title": "AiSummarizeParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "api_key"
+    ],
+    "summary": "Summarize a document in the requested language.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ai",
+    "group": "ai",
+    "id": "ai.ask",
+    "input_formats": [
+      "pdf",
+      "docx",
+      "html",
+      "md",
+      "json"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$defs": {
+        "AiProvider": {
+          "description": "Execution provider; cloud requires explicit caller consent.",
+          "oneOf": [
+            {
+              "const": "local",
+              "description": "`local`.",
+              "type": "string"
+            },
+            {
+              "const": "cloud",
+              "description": "`cloud`.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `ai.ask`.",
+      "properties": {
+        "api_key": {
+          "default": null,
+          "description": "API credential, supplied only through a secret channel.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        },
+        "cloud_consent": {
+          "default": false,
+          "description": "Explicit permission to send document content to a cloud provider.",
+          "type": "boolean"
+        },
+        "max_citations": {
+          "default": null,
+          "description": "Citation limit (5 when omitted).",
+          "format": "uint32",
+          "maximum": 20,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "default": null,
+          "description": "Optional provider model identifier.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/AiProvider",
+          "default": "local",
+          "description": "Execution provider (local by default)."
+        },
+        "question": {
+          "description": "Nonempty question about the document.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "AiAskParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "api_key"
+    ],
+    "summary": "Answer a document question with citations.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ai",
+    "group": "ai",
+    "id": "ai.translate",
+    "input_formats": [
+      "pdf",
+      "docx",
+      "html",
+      "md",
+      "json"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "output_formats": [
+      "pdf",
+      "docx",
+      "html",
+      "md",
+      "json"
+    ],
+    "params_schema": {
+      "$defs": {
+        "AiProvider": {
+          "description": "Execution provider; cloud requires explicit caller consent.",
+          "oneOf": [
+            {
+              "const": "local",
+              "description": "`local`.",
+              "type": "string"
+            },
+            {
+              "const": "cloud",
+              "description": "`cloud`.",
+              "type": "string"
+            }
+          ]
+        },
+        "TranslateOutputFormat": {
+          "description": "Translation artifact format.",
+          "oneOf": [
+            {
+              "const": "pdf",
+              "description": "`pdf`.",
+              "type": "string"
+            },
+            {
+              "const": "docx",
+              "description": "`docx`.",
+              "type": "string"
+            },
+            {
+              "const": "html",
+              "description": "`html`.",
+              "type": "string"
+            },
+            {
+              "const": "md",
+              "description": "`md`.",
+              "type": "string"
+            },
+            {
+              "const": "json",
+              "description": "`json`.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `ai.translate`.",
+      "properties": {
+        "api_key": {
+          "default": null,
+          "description": "API credential, supplied only through a secret channel.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        },
+        "cloud_consent": {
+          "default": false,
+          "description": "Explicit permission to send document content to a cloud provider.",
+          "type": "boolean"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TranslateOutputFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Translation format (PDF when omitted)."
+        },
+        "model": {
+          "default": null,
+          "description": "Optional provider model identifier.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/AiProvider",
+          "default": "local",
+          "description": "Execution provider (local by default)."
+        },
+        "source_lang": {
+          "default": null,
+          "description": "Optional source language (detected when omitted).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_lang": {
+          "description": "Nonempty target language identifier.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_lang"
+      ],
+      "title": "AiTranslateParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "api_key"
+    ],
+    "summary": "Translate a document into another language.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ai",
+    "group": "ai",
+    "id": "ai.extract_tables",
+    "input_formats": [
+      "pdf",
+      "docx",
+      "html",
+      "md",
+      "json"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "csv",
+    "output_formats": [
+      "csv",
+      "xlsx",
+      "json"
+    ],
+    "params_schema": {
+      "$defs": {
+        "AiProvider": {
+          "description": "Execution provider; cloud requires explicit caller consent.",
+          "oneOf": [
+            {
+              "const": "local",
+              "description": "`local`.",
+              "type": "string"
+            },
+            {
+              "const": "cloud",
+              "description": "`cloud`.",
+              "type": "string"
+            }
+          ]
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        },
+        "TableOutputFormat": {
+          "description": "Extracted table artifact format.",
+          "oneOf": [
+            {
+              "const": "csv",
+              "description": "`csv`.",
+              "type": "string"
+            },
+            {
+              "const": "xlsx",
+              "description": "`xlsx`.",
+              "type": "string"
+            },
+            {
+              "const": "json",
+              "description": "`json`.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `ai.extract_tables`.",
+      "properties": {
+        "api_key": {
+          "default": null,
+          "description": "API credential, supplied only through a secret channel.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        },
+        "cloud_consent": {
+          "default": false,
+          "description": "Explicit permission to send document content to a cloud provider.",
+          "type": "boolean"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableOutputFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Table format (CSV when omitted)."
+        },
+        "model": {
+          "default": null,
+          "description": "Optional provider model identifier.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pages": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PageRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional PDF page selector."
+        },
+        "provider": {
+          "$ref": "#/$defs/AiProvider",
+          "default": "local",
+          "description": "Execution provider (local by default)."
+        }
+      },
+      "title": "AiExtractTablesParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "api_key"
+    ],
+    "summary": "Extract document tables into structured data.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ai",
+    "group": "ai",
+    "id": "ai.recipe_from_text",
+    "input_formats": [],
+    "inputs": {
+      "arity": "none"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$defs": {
+        "AiProvider": {
+          "description": "Execution provider; cloud requires explicit caller consent.",
+          "oneOf": [
+            {
+              "const": "local",
+              "description": "`local`.",
+              "type": "string"
+            },
+            {
+              "const": "cloud",
+              "description": "`cloud`.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `ai.recipe_from_text`.",
+      "properties": {
+        "api_key": {
+          "default": null,
+          "description": "API credential, supplied only through a secret channel.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        },
+        "cloud_consent": {
+          "default": false,
+          "description": "Explicit permission to send document content to a cloud provider.",
+          "type": "boolean"
+        },
+        "model": {
+          "default": null,
+          "description": "Optional provider model identifier.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "Nonempty instruction to turn into an imported recipe for review.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/AiProvider",
+          "default": "local",
+          "description": "Execution provider (local by default)."
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "AiRecipeFromTextParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "api_key"
+    ],
+    "summary": "Draft an imported recipe from a natural-language instruction.",
+    "tier": "free",
     "version": "1"
   }
 ]

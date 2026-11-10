@@ -592,6 +592,14 @@ impl ToolSpec {
     ) -> bool {
         let norm = normalize_tool_format(artifact_format)
             .unwrap_or_else(|| artifact_format.trim().trim_start_matches('.'));
+        if self.id == "pdf.watermark_remove_raster" {
+            return norm.eq_ignore_ascii_case("pdf")
+                || (norm.eq_ignore_ascii_case("png")
+                    && params
+                        .get("preview")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(true));
+        }
         if matches!(
             self.id,
             "ai.summarize" | "ai.translate" | "ai.extract_tables"
