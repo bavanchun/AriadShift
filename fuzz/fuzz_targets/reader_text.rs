@@ -1,6 +1,6 @@
 #![no_main]
 
-use ariad_core::{limits::Limits, reader::text};
+use ariad_core::{format::Format, limits::Limits, reader::text};
 use libfuzzer_sys::fuzz_target;
 
 const MAX_INPUT_BYTES: usize = 256 * 1024;
@@ -16,6 +16,12 @@ fuzz_target!(|data: &[u8]| {
     let limits = Limits::local();
 
     if let Ok(output) = text::read(text, &limits) {
+        assert_eq!(
+            output.document.meta.source_format,
+            Some(Format::Txt),
+            "text reader must set source_format to Format::Txt"
+        );
+
         let serialized =
             serde_json::to_string(&output.document).expect("document IR must serialize to JSON");
 
@@ -33,6 +39,6 @@ fuzz_target!(|data: &[u8]| {
         de.disable_recursion_limit();
         let deserialized = ariad_core::ir::Document::deserialize(&mut de)
             .expect("serialized document IR must deserialize from JSON");
-        assert_eq!(output.document, deserialized);
+        ariad_fuzz::assert_ir_v1_round_trip(&output.document, &deserialized);
     }
 });
