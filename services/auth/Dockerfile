@@ -40,7 +40,7 @@ COPY . .
 # The service runs its TypeScript sources directly (Node.js type stripping),
 # so there is no build step: deploy copies src/ and installs production
 # dependencies from the workspace lockfile.
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm --filter @ariadshift/auth --prod deploy /out
 
 FROM ${NODE} AS auth
