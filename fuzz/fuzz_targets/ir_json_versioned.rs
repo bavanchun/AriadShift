@@ -4,7 +4,7 @@
 //! input: byte cap, depth prescan, version probe, bounded parse and block count.
 
 use ariad_core::{
-    ir::{Document, IR_VERSION, is_supported_version},
+    ir::{IR_VERSION, is_supported_version},
     json_depth::{json_depth_budget_for_nesting, prescan_json_depth},
     limits::Limits,
     pipeline::PipelineError,
@@ -45,17 +45,10 @@ fn check(data: &[u8], limits: &Limits) {
             let budget = json_depth_budget_for_nesting(limits.max_nesting_depth);
             assert!(prescan_json_depth(data, budget).is_ok());
             assert!(document.block_count() <= limits.max_blocks as usize);
-            // Apart from upgrading the version, the version check only narrows what the plain
-            // bounded reader accepts.
+            // The plain bounded reader upgrades supported versions the same way, so both agree.
             let plain = read(data, limits).expect("the plain reader accepts a versioned document");
-            assert_eq!(declared.as_deref(), Some(plain.version.as_str()));
-            assert_eq!(
-                Document {
-                    version: IR_VERSION.to_owned(),
-                    ..plain
-                },
-                document
-            );
+            assert_eq!(plain.version, IR_VERSION);
+            assert_eq!(plain, document);
         }
         Err(ReadError::UnsupportedVersion) => {
             if let Some(declared) = declared_version(data) {

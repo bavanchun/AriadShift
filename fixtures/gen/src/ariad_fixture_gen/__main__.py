@@ -12,7 +12,7 @@ from ariad_fixture_gen.manifest import update_generated_hashes
 
 
 def _check(root: Path, outputs: dict[str, bytes]) -> list[str]:
-    records = tomllib.loads((root / "fixtures/manifest.toml").read_text())["fixture"]
+    records = tomllib.loads((root / "fixtures/manifest.toml").read_text(encoding="utf-8"))["fixture"]
     hashes = {}
     for record in records:
         if record["origin"] == "generated":

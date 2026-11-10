@@ -28,7 +28,7 @@ REQUIRED_CASES = {
 
 
 def _records(root=ROOT):
-    return [item for item in tomllib.loads((root / "fixtures/manifest.toml").read_text())["fixture"]
+    return [item for item in tomllib.loads((root / "fixtures/manifest.toml").read_text(encoding="utf-8"))["fixture"]
             if item["path"].startswith("fixtures/editor/")]
 
 
@@ -77,7 +77,7 @@ def test_editor_generation_is_byte_deterministic(tmp_path):
     assert second.returncode == 0, second.stderr
     assert _files(root) == before
     assert before["fixtures/existing-sentinel.txt"] == b"existing family: keep these exact bytes\r\n"
-    original = tomllib.loads((ROOT / "fixtures/manifest.toml").read_text())["fixture"]
+    original = tomllib.loads((ROOT / "fixtures/manifest.toml").read_text(encoding="utf-8"))["fixture"]
     regenerated = tomllib.loads(before["fixtures/manifest.toml"].decode())["fixture"]
     assert [item for item in original if not item["path"].startswith(corpus.PREFIX)] == [
         item for item in regenerated if not item["path"].startswith(corpus.PREFIX)]
@@ -154,8 +154,8 @@ def test_real_docx_pdf_and_text_containers():
     pdf = (ROOT / "fixtures/editor/vi-styled-pair.pdf").read_bytes()
     assert pdf.startswith(b"%PDF-") and b"%%EOF" in pdf[-40:]
     assert b"/Font" in pdf and b"/MediaBox" in pdf
-    assert (ROOT / "fixtures/editor/vi-field-notes.md").read_text().startswith("# Ghi chép bên sông")
-    assert 'rowspan="2"' in (ROOT / "fixtures/editor/vi-field-notes.html").read_text()
+    assert (ROOT / "fixtures/editor/vi-field-notes.md").read_text(encoding="utf-8").startswith("# Ghi chép bên sông")
+    assert 'rowspan="2"' in (ROOT / "fixtures/editor/vi-field-notes.html").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("drift", ["none", "bytes", "hash", "missing", "undeclared", "unemitted"])
@@ -169,14 +169,14 @@ def test_check_is_read_only_and_rejects_drift(tmp_path, drift):
     if drift == "bytes":
         path.write_bytes(path.read_bytes() + b" ")
     elif drift == "hash":
-        manifest.write_text(manifest.read_text().replace(record["sha256"], "0" * 64))
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace(record["sha256"], "0" * 64), encoding="utf-8")
     elif drift == "missing":
         path.unlink()
     elif drift == "undeclared":
-        manifest.write_text(manifest.read_text().replace('path = "fixtures/editor/linked-footnote.ir.json"',
-            'path = "fixtures/editor/renamed.ir.json"'))
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('path = "fixtures/editor/linked-footnote.ir.json"',
+            'path = "fixtures/editor/renamed.ir.json"'), encoding="utf-8")
     elif drift == "unemitted":
-        manifest.write_text(manifest.read_text() + '\n[[fixture]]\npath = "fixtures/editor/extra.ir.json"\norigin = "generated"\nsha256 = "' + "0" * 64 + '"\n')
+        manifest.write_text(manifest.read_text(encoding="utf-8") + '\n[[fixture]]\npath = "fixtures/editor/extra.ir.json"\norigin = "generated"\nsha256 = "' + "0" * 64 + '"\n', encoding="utf-8")
     before = _files(root)
     checked = _run(root, "--check")
     assert (checked.returncode == 0) == (drift == "none"), checked.stdout + checked.stderr
