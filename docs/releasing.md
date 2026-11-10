@@ -107,7 +107,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
 
 ### 2. Promote `dev` to `main` with a merge commit
 
-1. Confirm `dev` is green on all three OSes with no known regression, and obtain the maintainer's explicit go-ahead ([git-workflow.md](git-workflow.md) "Promotion and hotfixes").
+1. Confirm `dev` is green (`ci.yml` `CI passed` on the `dev` head) and that the heavy workflows (Docling pack `pack-docling.yml`, Cloud E2E `cloud-e2e.yml`, Release rehearsal `release.yml`, and required engine pack workflows `pack-*`) are green on `dev`, with no known regression, and obtain the maintainer's explicit go-ahead ([git-workflow.md](git-workflow.md) "Promotion and hotfixes").
 2. Open a promotion pull request from `dev` into `main` titled `chore: promote dev to main`:
    ```bash
    gh pr create --base main --head dev --title "chore: promote dev to main" --body "Promote dev to main for vX.Y.Z."
@@ -180,7 +180,7 @@ Product release tag runs exclude `pack-*` tags and verify that the tagged commit
 
 - **`plan`**: Runs `cargo-dist` to compute the release manifest (`dist-manifest.json`), target matrix, and artifact list. On pull requests touching release paths, `release.yml` runs in rehearsal mode (`publishing == 'false'`) and stops after building artifacts. If `plan` fails, check `dist-workspace.toml` and `Cargo.toml` version consistency.
 - **`build-local-artifacts`**: Builds `ashift` (`ashift.exe` on Windows) with `cargo-auditable` across the five release targets (`aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-pc-windows-msvc`) and packages each archive with `LICENSE`, `NOTICE`, `THIRD_PARTY_LICENSES`, and a `.sha256` checksum. If a target build fails before `host` runs, no release has been published yet; fix the defect on `dev`, promote, and cut the next version tag.
-- **`build-global-artifacts`**: Generates the shell and PowerShell installers, the Homebrew formula (`ashift.rb`), and CycloneDX SBOMs (`*.cdx.xml`) for `ariad-core`, `ariad-typst`, `ariad-host`, and `ariad-cli`.
+- **`build-global-artifacts`**: Generates the shell and PowerShell installers, the Homebrew formula (`ashift.rb`), and CycloneDX SBOMs (`*.cdx.xml`) for `ariad-core`, `ariad-pdf`, `ariad-engine-io`, `ariad-pdfium-engine`, `ariad-typst`, `ariad-host`, `ariad-cli`, `ariad-server`, `ariad-wasm`, and `ariad-desktop`.
 - **`host`** (`contents: write`, tag runs only): Uploads all archives, checksums, installers, and SBOMs and creates the GitHub Release via `gh release create`. Once `host` succeeds, the GitHub Release and its assets are public.
 - **`prepare-homebrew-formula`** (unprivileged, no secrets): Checks out `bavanchun/homebrew-tap` without credentials, downloads all `artifacts-*` workflow artifacts into `homebrew-tap/Formula/` (`merge-multiple: true`), runs `brew update` and `brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true`, and uploads `homebrew-tap/Formula/*.rb` as the `prepared-homebrew-formula` artifact. If `brew update` or the tap checkout fails here, re-run the job; `host` does not need to re-run.
 - **`publish-homebrew-formula`** (`environment: release`): Checks out `bavanchun/homebrew-tap`, downloads `prepared-homebrew-formula` into `Formula/`, commits `Formula/ashift.rb` (or logs `Formula already up-to-date` on re-run), and pushes `HEAD:main` using `HOMEBREW_TAP_TOKEN` (masked via `::add-mask::`). No `brew` commands run in this job. Safe to re-run if the push fails.

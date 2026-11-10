@@ -1,0 +1,58 @@
+# License review for the out-of-process veraPDF engine pack.
+# Approved under Decision D10: veraPDF 1.30.3 under MPL-2.0, unmodified,
+# invoked out of process with system Java runtime (Java >= 11), opt-in pack.
+
+pack = "verapdf"
+version = "0.1.0"
+license = "MPL-2.0 AND Apache-2.0 AND EPL-2.0 AND EDL-1.0 AND BSD-3-Clause AND MIT"
+
+[[components]]
+name = "verapdf"
+version = "1.30.3"
+license = "MPL-2.0"
+source = "https://github.com/veraPDF/veraPDF-apps/releases/tag/v1.30.3"
+archive_url = "https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip"
+archive_sha256 = "b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59"
+modified = false
+
+[[components]]
+name = "jakarta-xml-bind-api"
+version = "4.0.2"
+license = "EPL-2.0 OR BSD-3-Clause"
+source = "https://github.com/jakartaee/jaxb-api"
+modified = false
+
+[[components]]
+name = "apache-pdfbox"
+version = "3.0.4"
+license = "Apache-2.0"
+source = "https://github.com/apache/pdfbox"
+modified = false
+
+[[components]]
+name = "mozilla-rhino"
+version = "1.7.15"
+license = "MPL-2.0 AND BSD-3-Clause"
+source = "https://github.com/mozilla/rhino"
+modified = false
+
+[[components]]
+name = "fastdoubleparser"
+version = "1.0.1"
+license = "MIT"
+source = "https://github.com/wrandelshofer/FastDoubleParser"
+modified = false
+
+[[components]]
+name = "schubfach"
+version = "1.0.0"
+license = "Apache-2.0"
+source = "https://github.com/ulfjack/ryu"
+modified = false
+
+[[components]]
+name = "jackson"
+version = "2.18.2"
+license = "Apache-2.0"
+source = "https://github.com/FasterXML/jackson"
+modified = false

@@ -19,6 +19,21 @@ use ariad_pdf::{InputDoc, PdfError, ToolCtx};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+fn tool_context() -> ToolCtx {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let date = js_sys::Date::new_0();
+        let seconds = (date.get_time() / 1000.0).floor();
+        if seconds.is_finite() && seconds >= i64::MIN as f64 && seconds < i64::MAX as f64 {
+            return ToolCtx::new().with_clock(ariad_pdf::ToolClock {
+                epoch_secs: seconds as i64,
+                utc_offset_secs: 0,
+            });
+        }
+    }
+    ToolCtx::new()
+}
+
 /// The edges of the embedded capabilities that can run in the browser.
 pub fn browser_capabilities() -> &'static Capabilities {
     static BROWSER: OnceLock<Capabilities> = OnceLock::new();
@@ -267,6 +282,25 @@ pub fn convert(
     limits.validate().map_err(PipelineError::from)?;
 
     let route = plan_route(from, to, profile)?;
+    if route.steps.len() == 1
+        && route.steps[0].engine == "ariad-pdf"
+        && from == Format::Cbz
+        && to == Format::Pdf
+    {
+        let tool_ctx = ariad_pdf::ToolCtx::default();
+        let pdf_bytes = ariad_pdf::cbz::cbz_to_pdf(bytes, &limits, &tool_ctx)
+            .map_err(|err| ApiError::new("failed", err.to_string()))?;
+        return Ok(Conversion {
+            bytes: pdf_bytes,
+            meta: ConversionMeta {
+                format: to,
+                media_type: to.media_type(),
+                extension: output_extension(to),
+                route: route.steps,
+                warnings: Vec::new(),
+            },
+        });
+    }
     let converted = pipeline::execute(
         bytes,
         &route
@@ -294,6 +328,29 @@ pub fn convert(
             route: route.steps,
             warnings: converted.warnings,
         },
+    })
+}
+
+/// Stamps timestamps on package formats (`"docx"`, `"odt"`, `"epub"`).
+pub fn stamp_package(bytes: &[u8], target: &str, timestamp: &str) -> Result<Vec<u8>, ApiError> {
+    let kind = match target {
+        "docx" => ariad_core::package_meta::PackageKind::Docx,
+        "odt" => ariad_core::package_meta::PackageKind::Odt,
+        "epub" => ariad_core::package_meta::PackageKind::Epub,
+        unknown => {
+            return Err(ApiError::from(
+                ariad_core::pipeline::PipelineError::InvalidInput {
+                    reason: format!(
+                        "unknown package target `{unknown}`; expected docx, odt, or epub"
+                    ),
+                },
+            ));
+        }
+    };
+    ariad_core::package_meta::stamp_bytes_kind(bytes, kind, timestamp).map_err(|e| {
+        ApiError::from(ariad_core::pipeline::PipelineError::InvalidInput {
+            reason: e.to_string(),
+        })
     })
 }
 
@@ -332,7 +389,7 @@ pub struct ToolRun {
     pub bytes: Vec<u8>,
     /// Produced artifacts in deterministic order.
     pub artifacts: Vec<ToolArtifact>,
-    /// Structured JSON payload when `format == "json"`.
+    /// Structured JSON payload, including reports accompanying binary artifacts.
     pub data: Option<Value>,
     /// Non-fatal warnings emitted during execution.
     pub warnings: Vec<Notice>,
@@ -341,7 +398,7 @@ pub struct ToolRun {
 }
 
 impl ToolRun {
-    /// Returns the structured JSON payload when the tool output format is `"json"`.
+    /// Returns the structured JSON payload, if present.
     #[must_use]
     pub fn json(&self) -> Option<&Value> {
         self.data.as_ref()
@@ -353,17 +410,22 @@ impl Serialize for ToolRun {
     where
         S: serde::Serializer,
     {
-        if let Some(ref data) = self.data {
+        if self.format == "json"
+            && let Some(ref data) = self.data
+        {
             data.serialize(serializer)
         } else {
             use serde::ser::SerializeMap;
-            let mut map = serializer.serialize_map(Some(6))?;
+            let mut map = serializer.serialize_map(Some(6 + usize::from(self.data.is_some())))?;
             map.serialize_entry("tool", &self.tool)?;
             map.serialize_entry("format", &self.format)?;
             map.serialize_entry("media_type", &self.media_type)?;
             map.serialize_entry("extension", &self.extension)?;
             map.serialize_entry("warnings", &self.warnings)?;
             map.serialize_entry("metrics", &self.metrics)?;
+            if let Some(data) = &self.data {
+                map.serialize_entry("data", data)?;
+            }
             map.end()
         }
     }
@@ -467,8 +529,7 @@ pub fn check_browser_access(
 /// - `artifacts`: every [`ToolArtifact`] (`{ name, format, media_type, extension, bytes }`)
 ///   produced by the tool in deterministic order,
 /// - `bytes`: the primary artifact's bytes (or empty when no artifact was emitted),
-/// - `data`: `Some(Value)` for JSON-emitting tools such as `pdf.info`, or `None` for binary
-///   artifact tools (`pdf.*` structural tools), and
+/// - `data`: `Some(Value)` for structured output or a report accompanying a binary artifact, and
 /// - `warnings`: non-fatal [`Notice`] findings emitted during execution, and
 /// - `metrics`: tool-specific measurements.
 pub fn run_tool<I, B, N, S>(
@@ -675,7 +736,7 @@ where
         .collect();
 
     let tool_output =
-        ariad_pdf::tools::run_tool(spec.id, &input_docs, &params_value, &ToolCtx::default())
+        ariad_pdf::tools::run_tool(spec.id, &input_docs, &params_value, &tool_context())
             .map_err(|err| map_pdf_error(spec.id, err))?;
 
     let check_artifact_formats = !tool_action_extracts_attachments(spec.id, &params_value)
@@ -769,6 +830,7 @@ fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: 
     match spec_id {
         "pdf.attachments" => action == Some("add") && input_index >= 1,
         "pdf.portfolio" => action == Some("create"),
+        "pdf.annotations_import" | "pdf.forms_import" => input_index >= 1,
         _ => false,
     }
 }
@@ -785,7 +847,18 @@ fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
     let action = params.get("action").and_then(Value::as_str);
     match spec_id {
         "pdf.outline" => action == Some("export"),
-        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" => action == Some("list"),
+        "pdf.forms_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .unwrap_or("json")
+            .eq_ignore_ascii_case("json"),
+        "pdf.annotations_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .is_some_and(|format| format.eq_ignore_ascii_case("json")),
+        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" | "pdf.annotations" => {
+            action == Some("list")
+        }
         _ => false,
     }
 }
@@ -798,6 +871,8 @@ fn tool_output_format_meta(output_format: &str) -> (&'static str, &'static str, 
         "md" | "markdown" => ("markdown", "text/markdown", "md"),
         "html" | "htm" => ("html", "text/html", "html"),
         "csv" => ("csv", "text/csv", "csv"),
+        "fdf" => ("fdf", "application/fdf", "fdf"),
+        "xfdf" => ("xfdf", "application/xfdf", "xfdf"),
         "txt" => ("txt", "text/plain", "txt"),
         "xml" => ("xml", "application/xml", "xml"),
         "png" => ("png", "image/png", "png"),
@@ -935,6 +1010,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn annotation_form_payload_and_format_metadata() {
+        let empty = serde_json::json!({});
+        for id in ["pdf.forms_import", "pdf.annotations_import"] {
+            assert!(!tool_input_is_attachment_payload(id, &empty, 0));
+            assert!(tool_input_is_attachment_payload(id, &empty, 1));
+        }
+        assert!(tool_action_emits_json(
+            "pdf.annotations",
+            &serde_json::json!({"action":"list"})
+        ));
+        assert!(tool_action_emits_json("pdf.forms_export", &empty));
+        assert!(!tool_action_emits_json(
+            "pdf.forms_export",
+            &serde_json::json!({"format":"csv"})
+        ));
+        assert!(tool_action_emits_json(
+            "pdf.annotations_export",
+            &serde_json::json!({"format":"json"})
+        ));
+        assert!(!tool_action_emits_json("pdf.annotations_export", &empty));
+        assert_eq!(
+            tool_output_format_meta("fdf"),
+            ("fdf", "application/fdf", "fdf")
+        );
+        assert_eq!(
+            tool_output_format_meta("xfdf"),
+            ("xfdf", "application/xfdf", "xfdf")
+        );
+    }
+
+    #[test]
     fn pdf_tool_exposes_coded_warnings_and_metrics() {
         use lopdf::{Object, dictionary};
         let input = read_pdf_fixture("form-acroform.pdf");
@@ -1025,11 +1131,15 @@ mod tests {
             error.detail("reachable_elsewhere"),
             Some(&serde_json::json!([
                 "ariad-ir+json",
+                "csv",
                 "docx",
                 "epub",
                 "html",
                 "markdown",
-                "pdf"
+                "pdf",
+                "rtf",
+                "txt",
+                "xlsx"
             ]))
         );
         assert!(
@@ -1123,10 +1233,15 @@ mod tests {
             inspection.reachable,
             vec![
                 Format::AriadIrJson,
+                Format::Csv,
                 Format::Docx,
                 Format::Epub,
                 Format::Markdown,
-                Format::Pdf
+                Format::Odt,
+                Format::Pdf,
+                Format::Rtf,
+                Format::Txt,
+                Format::Xlsx,
             ]
         );
     }
@@ -1209,6 +1324,42 @@ mod tests {
     }
 
     #[test]
+    fn watermark_removal_returns_pdf_and_structured_report() {
+        let bytes = std::fs::read(pdf_fixtures_dir().join("watermark-layer.pdf")).unwrap();
+        let inputs = [bytes];
+        let names = ["watermark.pdf"];
+        let detected = run_tool(
+            &inputs,
+            names,
+            "pdf.watermark_detect",
+            "{}",
+            64 * 1024 * 1024,
+            false,
+        )
+        .unwrap();
+        let id = detected.data.unwrap()["candidates"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let params = serde_json::json!({"candidates": [id]}).to_string();
+        let result = run_tool(
+            &inputs,
+            names,
+            "pdf.watermark_remove",
+            &params,
+            64 * 1024 * 1024,
+            false,
+        )
+        .unwrap();
+        assert_eq!(result.format, "pdf");
+        assert!(result.bytes.starts_with(b"%PDF-"));
+        assert_eq!(result.data.as_ref().unwrap()["removed"][0]["id"], id);
+        let serialized = serde_json::to_value(&result).unwrap();
+        assert_eq!(serialized["format"], "pdf");
+        assert_eq!(serialized["data"]["removed"][0]["id"], id);
+    }
+
+    #[test]
     fn run_tool_pdf_info_equals_truth_for_every_corpus_file() {
         let dir = pdf_fixtures_dir();
         let mut truth_paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
@@ -1222,6 +1373,12 @@ mod tests {
             })
             .collect();
         truth_paths.sort();
+        // Some scan fixtures carry tool-specific truth rather than pdf.info data.
+        truth_paths.retain(|path| {
+            let bytes = std::fs::read(path).expect("read fixture truth");
+            let truth: Value = serde_json::from_slice(&bytes).expect("parse fixture truth");
+            truth.get("pdf_info").is_some()
+        });
         assert_eq!(truth_paths.len(), 22);
 
         let budget = 64 * 1024 * 1024;
@@ -1804,5 +1961,103 @@ mod tests {
         assert_eq!(img_pdf.media_type, "application/pdf");
         assert_eq!(img_pdf.extension, "pdf");
         assert!(img_pdf.bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn stamp_package_stamps_odt_successfully() {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored_options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        let deflated_options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        writer.start_file("mimetype", stored_options).unwrap();
+        std::io::Write::write_all(&mut writer, b"application/vnd.oasis.opendocument.text").unwrap();
+        writer.start_file("meta.xml", deflated_options).unwrap();
+        std::io::Write::write_all(
+            &mut writer,
+            br#"<?xml version="1.0" encoding="utf-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <office:meta>
+    <meta:creation-date>2000-01-01T00:00:00Z</meta:creation-date>
+    <dc:date>2000-01-01T00:00:00Z</dc:date>
+  </office:meta>
+</office:document-meta>"#,
+        )
+        .unwrap();
+        writer.start_file("content.xml", deflated_options).unwrap();
+        std::io::Write::write_all(&mut writer, b"<content>preserved</content>").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        let result = stamp_package(&bytes, "odt", "2023-11-14T22:13:20Z").unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(result)).unwrap();
+        let mut meta = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("meta.xml").unwrap(), &mut meta)
+            .unwrap();
+        assert!(meta.contains("<meta:creation-date>2023-11-14T22:13:20Z</meta:creation-date>"));
+        assert!(meta.contains("<dc:date>2023-11-14T22:13:20Z</dc:date>"));
+    }
+
+    #[test]
+    fn stamp_package_rejects_unknown_target() {
+        let err = stamp_package(b"dummy", "unknown", "2023-11-14T22:13:20Z").unwrap_err();
+        assert_eq!(err.code(), "invalid_input");
+        assert!(
+            err.detail("message")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("unknown package target")
+        );
+    }
+
+    #[test]
+    fn run_tool_pdf_compare_text_succeeds_in_wasm_and_visual_fails_early() {
+        let before = read_pdf_fixture("compare-before.pdf");
+        let after = read_pdf_fixture("compare-after.pdf");
+        let budget = 64 * 1024 * 1024;
+
+        // 1. Text mode runs in-process in WASM and produces report JSON
+        let res = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"text"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.compare text must succeed in wasm");
+        assert_eq!(res.format, "json");
+        assert_eq!(res.media_type, "application/json");
+        assert!(res.json().is_some());
+
+        // 2. Visual mode in WASM fails early with engine_unavailable ("pdfium", exit 5)
+        let visual_err = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"visual"}"#,
+            budget,
+            false,
+        )
+        .expect_err("pdf.compare visual must fail on wasm");
+        assert_eq!(visual_err.code(), "engine_unavailable");
+        assert_eq!(
+            visual_err.detail("engine"),
+            Some(&serde_json::json!("pdfium"))
+        );
+        assert_eq!(visual_err.detail("exit_code"), Some(&serde_json::json!(5)));
+
+        // 3. Both mode in WASM also fails early with engine_unavailable ("pdfium", exit 5)
+        let both_err = run_tool(
+            [before.as_slice(), after.as_slice()],
+            ["before.pdf", "after.pdf"],
+            "pdf.compare",
+            r#"{"mode":"both"}"#,
+            budget,
+            false,
+        )
+        .expect_err("pdf.compare both must fail on wasm");
+        assert_eq!(both_err.code(), "engine_unavailable");
     }
 }

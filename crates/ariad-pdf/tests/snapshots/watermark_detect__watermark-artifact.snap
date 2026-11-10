@@ -1,0 +1,71 @@
+---
+source: crates/ariad-pdf/tests/watermark_detect.rs
+expression: detection
+---
+{
+  "candidates": [
+    {
+      "bbox": [
+        107.37280082702637,
+        305.47456016540525,
+        360.7974315643311,
+        558.89919090271
+      ],
+      "confidence": 0.9800000190734863,
+      "id": "wm1.3f19999a.616c6c.04a3793dd630b6defff33e051c5fe8baee8537811de56ed197cf8b622357865c",
+      "kind": "artifact",
+      "origin": "other",
+      "pages": [
+        1,
+        2,
+        3
+      ],
+      "preview": {
+        "bbox": [
+          107.37280082702637,
+          305.47456016540525,
+          360.7974315643311,
+          558.89919090271
+        ],
+        "page": 1
+      },
+      "rotate": 0,
+      "signals": [
+        "page_center"
+      ],
+      "summary": "artifact"
+    },
+    {
+      "bbox": [
+        72.0,
+        757.6,
+        336.0,
+        772.0
+      ],
+      "confidence": 0.6000000238418579,
+      "id": "wm1.3f19999a.616c6c.78306361aec678801c94e86c546fd55019098c0469502dad43f6c84ec1fc04ed",
+      "kind": "repeated_text",
+      "origin": "other",
+      "pages": [
+        1,
+        2,
+        3
+      ],
+      "preview": {
+        "bbox": [
+          72.0,
+          757.6,
+          336.0,
+          772.0
+        ],
+        "page": 1
+      },
+      "rotate": 0,
+      "signals": [
+        "watermark_word"
+      ],
+      "summary": "Operations Procedure with Artifact Watermark"
+    }
+  ],
+  "page_count": 3
+}

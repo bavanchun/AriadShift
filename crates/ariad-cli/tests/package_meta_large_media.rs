@@ -35,6 +35,7 @@ fn local_docx_conversion_preserves_a_large_data_uri_image() {
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     convert_with_limits(&request, Limits::local(), CancellationToken::new(), |_| {})
         .expect("convert Markdown with large embedded image under local limits");

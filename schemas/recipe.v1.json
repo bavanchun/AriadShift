@@ -89,7 +89,18 @@
         "rtf",
         "jpeg",
         "webp",
-        "tiff"
+        "tiff",
+        "txt",
+        "csv",
+        "eml",
+        "msg",
+        "svg",
+        "cbz",
+        "odg",
+        "wpd",
+        "wps",
+        "pub",
+        "vsd"
       ]
     },
     "Profile": {

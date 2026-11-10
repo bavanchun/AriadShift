@@ -52,18 +52,28 @@ export function browserEngines(core: Core): Core {
       }
       const mapped = wasm.writePandoc(bytes, options.title);
       const output = await pandoc.convert(mapped.bytes, "json", to === "epub" ? "epub3" : to);
-      const stamped = wasm.stampPackage(
-        output.bytes,
-        to === "epub",
-        new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
-      );
+      const stamped =
+        to === "rtf"
+          ? output.bytes
+          : wasm.stampPackage(
+              output.bytes,
+              to === "epub" ? "epub" : to,
+              new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+            );
+      let media_type = "application/octet-stream";
+      if (to === "epub") {
+        media_type = "application/epub+zip";
+      } else if (to === "docx") {
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      } else if (to === "odt") {
+        media_type = "application/vnd.oasis.opendocument.text";
+      } else if (to === "rtf") {
+        media_type = "application/rtf";
+      }
       return {
         bytes: stamped,
         format: to,
-        media_type:
-          to === "epub"
-            ? "application/epub+zip"
-            : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type,
         extension: to,
         route: [],
         warnings: [...warnings, ...mapped.warnings, ...output.warnings],

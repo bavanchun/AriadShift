@@ -108,10 +108,15 @@ fn pdf_info_matches_every_corpus_truth_file() {
         })
         .collect();
     truth_paths.sort();
+    truth_paths.retain(|path| {
+        let bytes = std::fs::read(path).expect("read fixture truth");
+        let truth: serde_json::Value = serde_json::from_slice(&bytes).expect("parse fixture truth");
+        truth.get("pdf_info").is_some()
+    });
     assert_eq!(
         truth_paths.len(),
         22,
-        "expected 22 truth files in fixtures/pdf-tools"
+        "expected 22 pdf.info truth files in fixtures/pdf-tools"
     );
 
     for truth_path in truth_paths {

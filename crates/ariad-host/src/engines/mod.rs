@@ -1,3 +1,4 @@
+mod adapter;
 pub mod common;
 pub mod docling;
 pub mod libreoffice;
@@ -6,7 +7,12 @@ pub mod pdf;
 pub mod qpdf;
 pub mod resolve;
 pub mod sandbox;
+pub mod sign;
+pub mod tesseract;
+mod tesseract_hocr;
+pub(crate) mod tesseract_image;
 pub mod typst;
+pub mod verapdf;
 
 pub use resolve::{ResolveError, resolve_pack, resolve_pack_in, resolve_pack_with_options};
 
@@ -54,11 +60,15 @@ pub fn serve_builtin(
     output: impl std::io::Write,
 ) -> std::process::ExitCode {
     match engine {
+        #[cfg(feature = "test-probe")]
+        TEST_PROTOCOL_PROBE_ID => test_pack_engine::serve(&TEST_PROTOCOL_PROBE, input, output),
         "pandoc" => pandoc::serve(input, output),
         "pdf" => pdf::serve(input, output),
         "typst" => typst::serve(input, output),
         "libreoffice" => libreoffice::serve(input, output),
         "qpdf" => qpdf::serve(input, output),
+        "tesseract" => tesseract::serve(input, output),
+        "verapdf" => verapdf::serve(input, output),
         _ => {
             // A pack engine is served by the pack's own executable. Only test-probe builds
             // answer for one, with a stand-in that never runs real tool code.
@@ -71,6 +81,16 @@ pub fn serve_builtin(
         }
     }
 }
+
+/// Identifier reserved for the synthetic protocol engine in test-probe builds.
+#[cfg(feature = "test-probe")]
+pub const TEST_PROTOCOL_PROBE_ID: &str = "__protocol_probe";
+
+#[cfg(feature = "test-probe")]
+const TEST_PROTOCOL_PROBE: EngineSpec = EngineSpec {
+    id: TEST_PROTOCOL_PROBE_ID,
+    ..QPDF
+};
 
 /// Runs the protocol probe for a pack engine in test-probe builds.
 #[cfg(feature = "test-probe")]
@@ -338,6 +358,7 @@ mod test_pack_engine {
             let default_tool = match engine_id {
                 "pdfium" => Some(("pdf.render", "1")),
                 "qpdf" => Some(("pdf.linearize", "1")),
+                super::TEST_PROTOCOL_PROBE_ID => Some(("pdf.linearize", "1")),
                 "tesseract" => Some(("ocr.recognize", "1")),
                 "sign" => Some(("pdf.sign", "1")),
                 "verapdf" => Some(("pdf.validate_pdfa", "1")),
@@ -359,14 +380,28 @@ mod test_pack_engine {
 /// The in-process engine identifier for pure-Rust operations.
 pub const IN_PROCESS_ENGINE: &str = "ariad-core";
 
+/// The in-process engine identifier for pure-Rust PDF operations (CBZ -> PDF).
+pub const IN_PROCESS_PDF_ENGINE: &str = "ariad-pdf";
+
 /// Routes the in-process `ariad-core` engine executes.
 pub const NATIVE_ROUTES: &[(Format, Format)] = &[
     (Format::DoclingJson, Format::AriadIrJson),
     (Format::Markdown, Format::AriadIrJson),
     (Format::Html, Format::AriadIrJson),
+    (Format::Txt, Format::AriadIrJson),
+    (Format::Csv, Format::AriadIrJson),
+    (Format::Eml, Format::AriadIrJson),
+    (Format::Msg, Format::AriadIrJson),
+    (Format::Svg, Format::AriadIrJson),
     (Format::AriadIrJson, Format::Markdown),
     (Format::AriadIrJson, Format::Html),
+    (Format::AriadIrJson, Format::Txt),
+    (Format::AriadIrJson, Format::Xlsx),
+    (Format::AriadIrJson, Format::Csv),
 ];
+
+/// Routes the in-process `ariad-pdf` engine executes.
+pub const ARIAD_PDF_ROUTES: &[(Format, Format)] = &[(Format::Cbz, Format::Pdf)];
 
 /// Static description of an engine that `ashift __engine <id>` or an engine pack serves out of process.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -403,6 +438,8 @@ pub const PANDOC: EngineSpec = EngineSpec {
         (Format::AriadIrJson, Format::Epub),
         (Format::Docx, Format::AriadIrJson),
         (Format::Epub, Format::AriadIrJson),
+        (Format::AriadIrJson, Format::Odt),
+        (Format::AriadIrJson, Format::Rtf),
     ],
     install_hint: "run 'just pandoc' or install Pandoc >=3.12,<4 and set ASHIFT_PANDOC",
     supported: Some(">=3.12, <4"),
@@ -463,6 +500,12 @@ pub const LIBREOFFICE: EngineSpec = EngineSpec {
         (Format::Ppt, Format::Pdf),
         (Format::Odp, Format::Pdf),
         (Format::Pptx, Format::Pdf),
+        (Format::Pdf, Format::Pptx),
+        (Format::Odg, Format::Pdf),
+        (Format::Pub, Format::Pdf),
+        (Format::Vsd, Format::Pdf),
+        (Format::Wpd, Format::Pdf),
+        (Format::Wps, Format::Pdf),
     ],
     install_hint: "install LibreOffice 24.2 or newer from libreoffice.org or set ASHIFT_SOFFICE",
     supported: Some(">=24.2"),
@@ -535,7 +578,7 @@ pub const TESSERACT: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
-    pack_program_env: None,
+    pack_program_env: Some("ASHIFT_TESSERACT_PROGRAM"),
 };
 
 /// PAdES digital signing and verification pack (`ariad-engine/2`).
@@ -563,7 +606,7 @@ pub const VERAPDF: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
-    pack_program_env: None,
+    pack_program_env: Some("ASHIFT_VERAPDF_PROGRAM"),
 };
 
 /// Local AI inference pack (`ariad-engine/2`).
@@ -627,6 +670,8 @@ pub fn is_pack_engine(id: &str) -> bool {
 pub fn is_executable(from: Format, to: Format, engine: &str) -> bool {
     if engine == IN_PROCESS_ENGINE {
         NATIVE_ROUTES.contains(&(from, to))
+    } else if engine == IN_PROCESS_PDF_ENGINE {
+        ARIAD_PDF_ROUTES.contains(&(from, to))
     } else {
         spec(engine).is_some_and(|spec| spec.routes.contains(&(from, to)))
     }
@@ -752,6 +797,20 @@ fn in_process_availability() -> EngineAvailability {
     }
 }
 
+fn in_process_pdf_availability() -> EngineAvailability {
+    EngineAvailability {
+        engine: IN_PROCESS_PDF_ENGINE.to_owned(),
+        available: true,
+        tool_status: Some(ToolStatus {
+            name: IN_PROCESS_PDF_ENGINE.to_owned(),
+            version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+            status: ToolAvailability::Found,
+        }),
+        version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+        startup_failure: None,
+    }
+}
+
 /// Reports `ariad-core` plus every registered out-of-process engine.
 ///
 /// An empty `engine_args` starts `engine_program __engine <id>` for each engine; non-empty
@@ -782,10 +841,10 @@ pub fn availability_of(
     cancel: CancellationToken,
 ) -> Result<AvailabilityReport, RunError> {
     let mut report = AvailabilityReport {
-        engines: vec![in_process_availability()],
+        engines: vec![in_process_availability(), in_process_pdf_availability()],
     };
     for &id in engines {
-        if id == IN_PROCESS_ENGINE || report.get(id).is_some() {
+        if id == IN_PROCESS_ENGINE || id == IN_PROCESS_PDF_ENGINE || report.get(id).is_some() {
             continue;
         }
         report
@@ -895,6 +954,36 @@ mod tests {
 
 #[cfg(test)]
 mod dispatch_tests {
+    #[cfg(feature = "test-probe")]
+    #[test]
+    fn synthetic_protocol_engine_has_a_reserved_id() {
+        let id = super::TEST_PROTOCOL_PROBE_ID;
+        assert!(super::spec(id).is_none());
+        assert!(super::pack_spec(id).is_none());
+        let request = b"{\"op\":\"describe\",\"protocol\":\"ariad-engine/2\",\"job\":\"d\"}\n";
+        let mut output = Vec::new();
+        assert_eq!(
+            super::serve_builtin(id, std::io::Cursor::new(request), &mut output),
+            std::process::ExitCode::SUCCESS
+        );
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("\"engine\":\"__protocol_probe\"")
+        );
+    }
+
+    #[cfg(not(feature = "test-probe"))]
+    #[test]
+    fn production_builds_reject_the_synthetic_protocol_engine() {
+        let mut output = Vec::new();
+        assert_eq!(
+            super::serve_builtin("__protocol_probe", std::io::Cursor::new([]), &mut output),
+            std::process::ExitCode::from(2)
+        );
+        assert!(output.is_empty());
+    }
+
     #[cfg(not(feature = "test-probe"))]
     #[test]
     fn production_builds_never_answer_for_a_direct_pack_engine() {

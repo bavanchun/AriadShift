@@ -405,7 +405,9 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_md.status.code(), Some(3));
     let stderr_md = String::from_utf8_lossy(&result_md.stderr);
-    assert!(stderr_md.contains("reachable targets from md: docx, epub, html, json, pdf"));
+    assert!(stderr_md.contains(
+        "reachable targets from md: csv, docx, epub, html, json, odt, pdf, rtf, txt, xlsx"
+    ));
 
     let result_docx = cli()
         .args(["convert"])
@@ -415,7 +417,9 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_docx.status.code(), Some(3));
     let stderr_docx = String::from_utf8_lossy(&result_docx.stderr);
-    assert!(stderr_docx.contains("reachable targets from docx: epub, html, json, md, pdf"));
+    assert!(stderr_docx.contains(
+        "reachable targets from docx: csv, epub, html, json, md, odt, pdf, rtf, txt, xlsx"
+    ));
 }
 
 #[test]
@@ -1141,7 +1145,9 @@ fn unsupported_target_format_error_lists_reachable_formats() {
     let stderr = String::from_utf8_lossy(&res.stderr);
     assert!(stderr.contains("unsupported conversion route"));
     assert!(stderr.contains("unknown target format 'unsupported_fmt'"));
-    assert!(stderr.contains("reachable targets from md: docx, epub, html"));
+    assert!(stderr.contains(
+        "reachable targets from md: csv, docx, epub, html, json, odt, pdf, rtf, txt, xlsx",
+    ));
     assert!(!output.exists());
 }
 
@@ -1170,6 +1176,13 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             1,
         ),
         (ConvertError::Failed, 1),
+        (
+            ConvertError::ComplianceFailed {
+                standard: "a-2b".into(),
+                report: Box::new(serde_json::json!({"compliant": false})),
+            },
+            1,
+        ),
         (ConvertError::DestinationSameAsInput, 2),
         (ConvertError::UnsupportedRoute { detail: None }, 3),
         (ConvertError::LimitExceeded, 4),
@@ -1205,7 +1218,9 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::OutputIo => {}
             ConvertError::UnsupportedIrVersion => {}
             ConvertError::InvalidCapabilities(_) => {}
-            ConvertError::Failed | ConvertError::FailedWithMemoryHint { .. } => {}
+            ConvertError::Failed
+            | ConvertError::FailedWithMemoryHint { .. }
+            | ConvertError::ComplianceFailed { .. } => {}
             ConvertError::DestinationSameAsInput => {}
             ConvertError::UnsupportedRoute { .. } => {}
             ConvertError::LimitExceeded => {}
@@ -1313,5 +1328,248 @@ fn target_format_inferred_from_output_extension_and_overridden_by_to_flag() {
             batch_stderr.contains("--to"),
             "expected batch usage error suggesting --to, got: {batch_stderr}"
         );
+    }
+}
+
+#[test]
+fn plans_and_converts_phase10_reader_routes() {
+    let directory = tempdir().expect("create test directory");
+    let root = support::fixtures::repository_root();
+
+    let routes = [
+        ("txt", root.join("fixtures/txt/sample.txt")),
+        ("csv", root.join("fixtures/csv/sample.csv")),
+        ("eml", root.join("fixtures/email/sample.eml")),
+        ("msg", root.join("fixtures/email/sample.msg")),
+        ("svg", root.join("fixtures/svg/sample.svg")),
+        ("cbz", root.join("fixtures/cbz/sample.cbz")),
+    ];
+
+    for (fmt, fixture_path) in routes {
+        assert!(
+            fixture_path.is_file(),
+            "fixture must exist: {}",
+            fixture_path.display()
+        );
+
+        // 1. ashift plan --json
+        let plan_res = cli()
+            .args(["plan"])
+            .arg(&fixture_path)
+            .args(["--to", "pdf", "--json"])
+            .output()
+            .expect("run ashift plan");
+        assert!(
+            plan_res.status.success(),
+            "plan failed for {fmt}: {}",
+            String::from_utf8_lossy(&plan_res.stderr)
+        );
+        let plan_val: serde_json::Value =
+            serde_json::from_slice(&plan_res.stdout).expect("valid plan JSON");
+        assert!(
+            plan_val["route"].as_array().is_some_and(|r| !r.is_empty()),
+            "plan for {fmt} must have route steps"
+        );
+
+        // 2. ashift convert
+        let out_pdf = directory.path().join(format!("{fmt}_out.pdf"));
+        let conv_res = cli()
+            .args(["convert"])
+            .arg(&fixture_path)
+            .args(["--to", "pdf", "-o"])
+            .arg(&out_pdf)
+            .output()
+            .expect("run ashift convert");
+        assert!(
+            conv_res.status.success(),
+            "convert failed for {fmt}: {}",
+            String::from_utf8_lossy(&conv_res.stderr)
+        );
+        assert!(out_pdf.is_file(), "output PDF should exist for {fmt}");
+        let pdf_bytes = fs::read(&out_pdf).expect("read output PDF");
+        assert!(
+            pdf_bytes.starts_with(b"%PDF-"),
+            "valid PDF header for {fmt}"
+        );
+    }
+}
+
+#[test]
+fn converts_svg_with_hostile_inputs() {
+    let directory = tempdir().expect("create test directory");
+
+    // The SVG conversion route embeds the entire SVG as an image asset (svg.rs:98-120),
+    // and the PDF engine renders SVG text as vector paths rather than text stream operators
+    // in the PDF text layer, meaning marker text cannot be observed via text extraction.
+    // Consequently, file access time (atime) is the sole signal proving external file hrefs
+    // were not accessed or read during conversion.
+    // The test verifies atime tracking is functional on this filesystem and skips with a
+    // "skipping:" message if atime is unsupported (e.g. noatime mount or accessed() error)
+    // so it never passes silently when the signal is unavailable.
+    let probe_path = directory.path().join("atime_probe.tmp");
+    fs::write(&probe_path, b"probe").expect("write atime probe");
+    let probe_atime_0 = match fs::metadata(&probe_path).and_then(|m| m.accessed()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("skipping: accessed() timestamp unsupported: {e}");
+            return;
+        }
+    };
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let _ = fs::read(&probe_path);
+    let probe_atime_1 = match fs::metadata(&probe_path).and_then(|m| m.accessed()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("skipping: accessed() timestamp unsupported: {e}");
+            return;
+        }
+    };
+    if probe_atime_1 <= probe_atime_0 {
+        eprintln!("skipping: filesystem does not update atime on file reads (noatime mount)");
+        return;
+    }
+
+    // 1. Local listener to prove no network access occurs when SVG references an external HTTP URL
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local TCP listener");
+    listener.set_nonblocking(true).expect("set non-blocking");
+    let listener_port = listener.local_addr().expect("local addr").port();
+
+    // 2. Readable sentinel file with unique marker inside a valid SVG to prove no unauthorized local file access occurs
+    let sentinel_secret = "ARIAD_TEST_SENTINEL_SECRET_TOKEN_77492";
+    let sentinel_path = directory.path().join("sentinel.svg");
+    let sentinel_svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50">
+  <text x="5" y="15">{sentinel_secret}</text>
+  <rect width="50" height="50" fill="blue"/>
+</svg>"#
+    );
+    fs::write(&sentinel_path, sentinel_svg).expect("write sentinel SVG file");
+    let atime_before = match fs::metadata(&sentinel_path).and_then(|m| m.accessed()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("skipping: sentinel file accessed() timestamp unsupported: {e}");
+            return;
+        }
+    };
+
+    let http_svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="http://127.0.0.1:{listener_port}/hostile-probe.png" width="100" height="100"/>
+  <text x="10" y="20">External HTTP</text>
+</svg>"#
+    );
+
+    let file_svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="{}" width="100" height="100"/>
+  <text x="10" y="20">External File</text>
+</svg>"#,
+        sentinel_path.display()
+    );
+
+    let hostile_cases = [
+        ("external_http_href", http_svg),
+        ("external_file_href", file_svg),
+        (
+            "embedded_data_uri",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" width="100" height="100"/>
+  <text x="10" y="20">Data URI</text>
+</svg>"#
+                .to_string(),
+        ),
+        (
+            "script_tag",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <script>alert('xss')</script>
+  <circle cx="50" cy="50" r="40" fill="red"/>
+</svg>"#
+                .to_string(),
+        ),
+    ];
+
+    for (name, content) in hostile_cases {
+        let svg_path = directory.path().join(format!("{name}.svg"));
+        fs::write(&svg_path, content).expect("write hostile SVG");
+
+        let out_pdf = directory.path().join(format!("{name}.pdf"));
+        let res = cli()
+            .args(["convert"])
+            .arg(&svg_path)
+            .args(["--to", "pdf", "-o"])
+            .arg(&out_pdf)
+            .output()
+            .expect("convert hostile SVG");
+
+        assert!(
+            res.status.success(),
+            "convert hostile SVG {name} failed: {}",
+            String::from_utf8_lossy(&res.stderr)
+        );
+        assert!(out_pdf.is_file(), "output PDF should exist for {name}");
+        let pdf_bytes = fs::read(&out_pdf).expect("read output PDF");
+        assert!(
+            pdf_bytes.starts_with(b"%PDF-"),
+            "valid PDF header for {name}"
+        );
+
+        if name == "external_http_href" {
+            // Assert that the local listener was NOT contacted by the conversion
+            match listener.accept() {
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    // Success: zero network requests were made to the external HTTP href
+                }
+                Ok((_, addr)) => {
+                    panic!("Hostile SVG unexpectedly contacted local listener at {addr}");
+                }
+                Err(e) => {
+                    panic!("Unexpected listener error: {e}");
+                }
+            }
+        } else if name == "external_file_href" {
+            // 1. Verify access time on the sentinel file was not modified (not opened or read)
+            let atime_after = match fs::metadata(&sentinel_path).and_then(|m| m.accessed()) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!(
+                        "skipping: sentinel file accessed() timestamp after conversion unsupported: {e}"
+                    );
+                    return;
+                }
+            };
+            assert_eq!(
+                atime_before, atime_after,
+                "sentinel file must not have been accessed during conversion"
+            );
+
+            // 2. Assert raw bytes do not leak into output PDF
+            assert!(
+                !pdf_bytes
+                    .windows(sentinel_secret.len())
+                    .any(|w| w == sentinel_secret.as_bytes()),
+                "output PDF must not leak raw contents from external file href"
+            );
+
+            // 3. Decompress PDF streams and verify parsed text does not contain sentinel secret
+            let ir =
+                ariad_core::reader::pdf::read(&pdf_bytes, &ariad_core::limits::Limits::local())
+                    .expect("read output PDF text");
+            let mut extracted = String::new();
+            for block in &ir.document.body {
+                if let ariad_core::ir::Block::Paragraph { content }
+                | ariad_core::ir::Block::Heading { content, .. } = block
+                {
+                    for inline in content {
+                        if let ariad_core::ir::Inline::Text { text } = inline {
+                            extracted.push_str(text);
+                        }
+                    }
+                }
+            }
+            assert!(
+                !extracted.contains(sentinel_secret),
+                "output PDF decompressed text must not leak contents from external file href"
+            );
+        }
     }
 }

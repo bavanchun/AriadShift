@@ -1,5 +1,11 @@
 //! Per-file tool specification lists concatenated into the global tool registry.
 
+pub mod annotate_forms;
+pub mod compare;
+pub mod compliance;
+pub mod convert_cbz;
+pub mod convert_tables;
+pub mod ocr_scan;
 pub mod optimize;
 pub mod organize_document;
 pub mod organize_geometry;
@@ -7,8 +13,15 @@ pub mod organize_info;
 pub mod organize_layout;
 pub mod organize_pages;
 pub mod organize_sequence;
+pub mod overlay_color;
+pub mod overlay_furniture;
+pub mod overlay_marks;
+pub mod overlay_watermark_removal;
 pub mod pdfium;
+pub mod redact;
 pub mod security;
+pub mod sign;
+pub mod web;
 
 use crate::tools::ToolSpec;
 
@@ -22,8 +35,21 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(organize_geometry::specs());
     list.extend(organize_layout::specs());
     list.extend(organize_document::specs());
+    list.extend(overlay_color::specs());
+    list.extend(overlay_marks::specs());
+    list.extend(overlay_furniture::specs());
+    list.extend(overlay_watermark_removal::specs());
     list.extend(pdfium::specs());
     list.extend(optimize::specs());
     list.extend(security::specs());
+    list.extend(ocr_scan::specs());
+    list.extend(annotate_forms::specs());
+    list.extend(redact::specs());
+    list.extend(sign::specs());
+    list.extend(convert_tables::specs());
+    list.extend(convert_cbz::specs());
+    list.extend(compare::specs());
+    list.extend(compliance::specs());
+    list.extend(web::specs());
     list
 }

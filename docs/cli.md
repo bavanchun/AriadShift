@@ -17,6 +17,7 @@ All conversion and transformation logic lives in `ariad-host` and `ariad-core`; 
   - [`ashift engines install`](#ashift-engines-install)
   - [`ashift engines remove`](#ashift-engines-remove)
   - [`ashift engines verify`](#ashift-engines-verify)
+  - [`ashift engines languages`](#ashift-engines-languages)
   - [`ashift doctor`](#ashift-doctor)
   - [`ashift tools`](#ashift-tools)
   - [`ashift tool`](#ashift-tool)
@@ -44,7 +45,7 @@ All CLI commands adhere to a single unified exit-code table:
 | `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
 | `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
 | `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
-| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. PDFium tools (`pdf.render` and the other tools of the `pdfium` engine): the `pdfium` pack is not installed or fails verification at resolve (damaged files, a mismatched `engine_protocol`, or an entrypoint outside the pack root); the error carries the install hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. |
+| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. PDFium tools (`pdf.render` and the other tools of the `pdfium` engine): the `pdfium` pack is not installed or fails verification at resolve (damaged files, a mismatched `engine_protocol`, or an entrypoint outside the pack root); the error carries the install hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. Digital signature tools (`pdf.sign`, `pdf.sign_token`, `pdf.timestamp`, `pdf.sign_verify`, `pdf.sign_remove`): the `sign` pack is not installed; the error carries the install hint `run 'ashift engines install sign' to install the sign engine pack`. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
 | `8` | Unknown Tool | Requested tool ID (`ashift tool <id>`) is not in the tool registry (`error[unknown_tool]`). |
 | `9` | Invalid Params | Tool parameters failed JSON Schema validation, violated `x-ariad-secret` rules (such as an inline secret on `--param` or `--params-json`), or an imported recipe was not confirmed (`error[invalid_params]`). |
@@ -72,7 +73,7 @@ All CLI commands adhere to a single unified exit-code table:
 
 ### `ashift convert`
 
-Converts Markdown, HTML, DOCX and EPUB to/from IR JSON (`json`), reads PDF text, writes PDF through Typst, and uses system LibreOffice for legacy Office and ODF routes. With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
+Converts the formats below through the shared planner. Native readers cover Markdown, HTML, TXT, CSV, EML, MSG and SVG; Pandoc handles DOCX/EPUB and writes ODT/RTF; Typst renders IR to PDF; CBZ pages convert directly through `ariad-pdf`. System LibreOffice handles legacy Office/ODF imports and PDF to PPTX. With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
 
 ```bash
 ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
@@ -81,9 +82,10 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 #### Arguments and Options
 
 - `<INPUT>...`: One or more input document paths, processed in order.
-- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
+- `--to <FORMAT>`: Target format identifier (`md`/`markdown`, `html`, `docx`, `epub`, `pdf`, `json`/`ariad-ir+json`, `txt`, `csv`, `xlsx`, `odt`, `rtf`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
+- `--pdf-standard <STANDARD>`: Request `a-2b`, `a-2u`, `a-3b`, or `ua-1` on a PDF route whose final writer is Typst. The host requires the `verapdf` pack and system Java >=11, validates the candidate against the requested flavour, and publishes only after compliance passes. Missing pack/Java exits 5; failed validation exits 1 without changing the destination. PDF/UA requires meaningful figure alternative text; missing descriptions are reported, never invented.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -103,6 +105,7 @@ ashift convert report.docx --to md -o output/report.md
 # Extract digital PDF text, create PDF, or normalize a legacy document
 ashift convert report.pdf --to md
 ashift convert notes.md --to pdf
+ashift convert notes.md --to pdf --pdf-standard a-2b
 ashift convert legacy.doc --to md
 ashift convert slides.pptx --to pdf
 ashift convert notes.md --to json
@@ -120,9 +123,87 @@ PDF, Typst and LibreOffice advertise `supports_session: false`; batches and MCP 
 
 When LibreOffice is found, namespace setup failure is fatal in both `best-effort` and `required` modes (`error[sandbox_unavailable]` on stderr, exit 5). `doctor` reports the failed `engine_libreoffice` check with the cause, and `engines` lists the engine as `cannot start`. Conversion keeps this error when LibreOffice was the planner's first choice; it does not silently fall back to a different-fidelity route. On Ubuntu, run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, or install an [AppArmor profile allowing `userns` for the `ashift` binary](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/#apparmor-unprivileged-user-namespace-restrictions). The sysctl changes the host-wide policy; a binary-specific profile limits that grant. Default Docker and Kubernetes container seccomp profiles also block the namespace setup. See [worker runtime requirements](server.md#worker) for cloud deployments. `ASHIFT_SANDBOX=off` explicitly bypasses this requirement by disabling engine isolation; use it only when accepting that trade-off.
 
-LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, and all Office/ODF formats → PDF. Chained routes include DOC → DOCX → IR → MD. LibreOffice only renders the input file itself; the planner never runs it on another engine's output. Markdown, HTML, EPUB and IR JSON therefore write PDF through Typst in every profile and never need LibreOffice or its namespaces. Without LibreOffice, discovery needs no private `/tmp` or namespace setup; DOCX → PDF falls back to Pandoc and Typst, and LibreOffice-only routes report the missing optional engine. Each job uses a fresh profile with macros disabled and Writer/Calc link updates set to never.
+LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, PDF → PPTX, and supported Office/ODF formats → PDF (including ODG/WPD/WPS/PUB/VSD). Chained routes include DOC → DOCX → IR → MD. LibreOffice only processes the input file itself; the planner never runs it on another engine's output. Markdown, HTML, EPUB and IR JSON therefore write PDF through Typst in every profile and never need LibreOffice or its namespaces. Without LibreOffice, discovery needs no private `/tmp` or namespace setup; DOCX → PDF falls back to Pandoc and Typst, and LibreOffice-only routes report the missing optional engine. Each job uses a fresh profile with macros disabled and Writer/Calc link updates set to never.
 
 `--to json` writes IR JSON; `--json` instead selects the conversion report on stdout.
+
+#### Conversion formats
+
+Extensions and MIME types follow the shared `Format` registry. Input/output columns
+refer to `convert`, not tool artifacts. An output is available only when a route
+from the particular input exists; use `ashift plan INPUT --to FORMAT --json`.
+
+| Format identifier | Extensions | MIME type | Input engine/path | Output engine/path |
+|---|---|---|---|---|
+| `markdown` (`md`) | `.md`, `.markdown`, `.mdown` | `text/markdown` | ariad-core | ariad-core |
+| `html` | `.html`, `.htm` | `text/html` | ariad-core | ariad-core |
+| `docx` | `.docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | Pandoc or Docling | Pandoc; LibreOffice from DOC/ODT/RTF |
+| `epub` | `.epub` | `application/epub+zip` | Pandoc | Pandoc |
+| `pdf` | `.pdf` | `application/pdf` | pdf text reader or Docling OCR/layout | Typst; LibreOffice from Office/ODF; ariad-pdf from CBZ |
+| `ariad-ir+json` (`json`) | `.json` | `application/json` | ariad-core | ariad-core |
+| `docling+json` | `.json` (usually `.docling.json`) | `application/json` | ariad-core mapper; no pack required for saved JSON | Internal Docling intermediate |
+| `pandoc+json` | `.json` | `application/json` | Internal Pandoc AST, not a CLI input route | Internal intermediate |
+| `txt` | `.txt`, `.text` | `text/plain` | ariad-core (UTF-8) | ariad-core |
+| `csv` | `.csv` | `text/csv` | ariad-core | ariad-core |
+| `eml` | `.eml` | `message/rfc822` | ariad-core | — |
+| `msg` | `.msg` | `application/vnd.ms-outlook` | ariad-core | — |
+| `svg` | `.svg` | `image/svg+xml` | ariad-core figure → Typst | — |
+| `cbz` | `.cbz` | `application/vnd.comicbook+zip` | ariad-pdf → PDF | Tool `pdf.to_cbz`, not a conversion route |
+| `xlsx` | `.xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | Docling; LibreOffice → PDF | ariad-core; LibreOffice from XLS/ODS |
+| `pptx` | `.pptx` | `application/vnd.openxmlformats-officedocument.presentationml.presentation` | Docling; LibreOffice → PDF | LibreOffice from PDF/PPT/ODP |
+| `odt` | `.odt` | `application/vnd.oasis.opendocument.text` | LibreOffice → DOCX/PDF | Pandoc |
+| `rtf` | `.rtf` | `application/rtf` | LibreOffice → DOCX/PDF | Pandoc |
+| `doc` | `.doc` | `application/msword` | LibreOffice → DOCX/PDF | — |
+| `xls` | `.xls` | `application/vnd.ms-excel` | LibreOffice → XLSX/PDF | — |
+| `ppt` | `.ppt` | `application/vnd.ms-powerpoint` | LibreOffice → PPTX/PDF | — |
+| `ods` | `.ods` | `application/vnd.oasis.opendocument.spreadsheet` | LibreOffice → XLSX/PDF | — |
+| `odp` | `.odp` | `application/vnd.oasis.opendocument.presentation` | LibreOffice → PPTX/PDF | — |
+| `odg` | `.odg` | `application/vnd.oasis.opendocument.graphics` | LibreOffice → PDF | — |
+| `wpd` | `.wpd` | `application/vnd.wordperfect` | LibreOffice → PDF (manual sample gate) | — |
+| `wps` | `.wps` | `application/vnd.ms-works` | LibreOffice → PDF (manual sample gate) | — |
+| `pub` | `.pub` | `application/x-mspublisher` | LibreOffice → PDF (manual sample gate) | — |
+| `vsd` | `.vsd` | `application/vnd.visio` | LibreOffice → PDF (manual sample gate) | — |
+| `png` | `.png` | `image/png` | Docling | — |
+| `jpeg` | `.jpg`, `.jpeg` | `image/jpeg` | Docling | — |
+| `webp` | `.webp` | `image/webp` | Docling | — |
+| `tiff` | `.tif`, `.tiff` | `image/tiff` | Docling | — |
+
+`image.to_pdf` additionally accepts BMP as a tool input; BMP is not a conversion
+format. Pages and CBR are [Not adopted](parity-matrix.md#not-adopted). WPD/WPS/PUB/VSD
+routes are registered, with conversion evidence subject to the local manual gate
+in [the parity matrix](parity-matrix.md#notes-on-pages-family-formats-pub-vsd-wpd-wps).
+
+#### PDF and document conversion routes
+
+```bash
+ashift convert report.pdf --to odt
+ashift convert report.pdf --to rtf
+ashift convert report.pdf --to txt
+ashift convert report.pdf --to xlsx --engine docling
+ashift convert report.pdf --to pptx
+ashift convert notes.txt --to pdf
+ashift convert table.csv --to pdf
+ashift convert message.eml --to pdf
+ashift convert message.msg --to pdf
+ashift convert drawing.svg --to pdf
+ashift convert comic.cbz --to pdf
+ashift convert drawing.odg --to pdf
+```
+
+PDF to ODT/RTF uses the PDF reader → IR → Pandoc; TXT uses the native writer.
+PDF to XLSX with table extraction requires local Docling. The native PDF reader
+has no table detector: without Docling, XLSX contains a text-dump sheet and emits
+`no_tables_found`. CSV conversion produces one artifact; use `pdf.tables_to_csv`
+for one CSV per detected table. PDF to PPTX uses the system LibreOffice PDF import
+filter directly, without a PDFium rendering stage. Email attachments are listed,
+not opened or rendered. CBZ uses natural page order and preserves image page sizes.
+
+[`web.to_pdf`](tools.md#webto_pdf) fetches a URL and its same-origin assets in
+the host, then renders offline through HTML → IR → Typst. The `pdf.to_pdfa`
+and `pdf.to_pdfua` tools and `convert --pdf-standard` require the `verapdf`
+pack and system Java >=11. They validate before publishing a conforming PDF;
+`pdf.to_pdfua` reports accessibility failures for existing PDFs without
+publishing a repaired document.
 
 #### Package metadata name encoding
 
@@ -173,7 +254,7 @@ For several inputs, `--json` emits one document with results in input order:
 {
   "results": [
     {"input": "draft.md", "ok": true, "output": "draft.html", "route": [], "warnings": [], "elapsed_ms": 2},
-    {"input": "notes.txt", "ok": false, "error": {"code": "unsupported_route", "exit_code": 3, "message": "unsupported conversion route"}}
+    {"input": "unknown.bin", "ok": false, "error": {"code": "unsupported_route", "exit_code": 3, "message": "unsupported conversion route"}}
   ]
 }
 ```
@@ -261,7 +342,7 @@ ashift plan [OPTIONS] --to <FORMAT> <INPUT>
 #### Arguments and Options
 
 - `<INPUT>`: Path to the input document file.
-- `--to <FORMAT>`: Target format identifier (`md`, `docx`, `html`, `epub`).
+- `--to <FORMAT>`: Target format identifier, using the same identifiers and reachability rules as [`convert`](#ashift-convert).
 - `--engine <ENGINE>`: Select the input reader, with the same content-aware PDF default and no reader fallback as `convert`. PDF planning reads the text layer under the conversion limits.
 - `--profile <PROFILE>`: Optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--json`: Output plan results as JSON.
@@ -495,6 +576,20 @@ ashift engines verify <NAME> [--version <VERSION>] [--json]
 
 ---
 
+### `ashift engines languages`
+
+List, install or remove pinned extra Tesseract language models:
+
+```bash
+ashift engines languages list
+ashift engines languages install fra
+ashift engines languages remove fra
+```
+
+Only explicit installation downloads a model. See [packs.md](packs.md#the-tesseract-pack) for verification and cache behavior.
+
+---
+
 ### `ashift doctor`
 
 Runs environment and dependency diagnostic checks to verify the local machine is ready for conversions.
@@ -519,6 +614,7 @@ ashift doctor [OPTIONS]
 8. **Docling engine** (`docling_engine`, not required): the engine from `ASHIFT_DOCLING_ENGINE` or the `docling` pack answers `describe`; the message lists the Docling version and the models found. Without an engine the check fails and the hint says how to install one.
 9. **Tesseract** (`tesseract`, not required; only when the Docling engine answered): Tesseract 5 is on `PATH` for Vietnamese OCR. Otherwise Vietnamese OCR is unavailable and the hint gives the install command.
 10. **pdfium engine** (`pdfium_engine`, not required): resolves the `pdfium` pack (signature and file digests when installed, or the `ASHIFT_PACK_PDFIUM` development directory) and runs a `describe` round trip over `ariad-engine/2`. Without the pack the check fails with the message `pdfium engine is not installed` and the install hint; with it, the message gives the engine version and the protocol (`ariad-engine/2`). A pack that does not verify, declares the wrong protocol, or cannot start under the sandbox fails the check with the cause. `doctor` never fails because of it.
+11. **Tesseract pack** (`tesseract_engine`, not required): resolves the Tesseract pack and checks its version and `ariad-engine/2` describe response. This is separate from the system Tesseract check used by Docling.
 
 #### macOS engine sandbox
 
@@ -689,7 +785,7 @@ ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--param
 - `-o, --output <DIR_OR_FILE>`: Explicit output file or directory. When omitted, single-output and multi-output tools publish beside the first input using default naming, while `pdf.info` prints its inspection summary (or structured JSON with `--json`) without writing a file to disk.
 - `--param <KEY=VALUE>`: Repeatable parameter override (`VALUE` is parsed as JSON when valid, otherwise as a string).
 - `--params-json <FILE|->`: Read the tool parameter JSON object from a file or `-` (stdin). Explicit `--param` flags override keys from `--params-json`.
-- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Secrets are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
+- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Text secrets (such as passwords and passphrases) are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Binary secrets (such as PKCS#12 certificates for `pdf.sign`: `--secret certificate=@cert.p12` or stdin `-`) are read directly by the CLI up to 10 MiB, base64-encoded, and provided to the host. The host strictly rejects filesystem paths passed in the `certificate` secret, accepting only base64 data. Staged certificate material is written to isolated 0600 workspace files and scrubbed immediately after execution. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
 - `--overwrite`: Replace existing destination file(s).
 - `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
 
@@ -788,6 +884,12 @@ ashift tool pdf.portfolio fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tool
 
 # Remove a named optional-content layer (/OCProperties) and its marked content (-> watermark-layer.layers.pdf)
 ashift tool pdf.layers fixtures/pdf-tools/watermark-layer.pdf --param action=remove --param 'names=["AriadShift Watermark"]' -o out/
+
+# Digitally sign a PDF using a PKCS#12 certificate and password
+ashift tool pdf.sign document.pdf --secret certificate=@cert.p12 --secret password=@pass.txt --param level=b-b -o signed.pdf
+
+# Verify all digital signatures and timestamps in a PDF
+ashift tool pdf.sign_verify signed.pdf --json
 ```
 
 ---
@@ -834,4 +936,6 @@ The `--profile` flag guides route selection when multiple routes connect a forma
 - `SSL_CERT_FILE`, `SSL_CERT_DIR`: Trusted CA certificates for pack downloads on Linux, when the system store is not in a standard location.
 - `ASHIFT_SANDBOX`: `off`, `best-effort` (CLI default), or `required`. Linux engines run through Landlock and seccomp with workspace write access and declared runtime read/execute access. Missing kernel confinement support produces `warning[sandbox_unavailable]` in best-effort mode; required mode refuses it with exit 5. Launcher enforcement errors, including namespace setup denial for a discovered LibreOffice installation, are fatal in every mode except `off` (`sandbox_unavailable`, exit 5). On Ubuntu, allow `userns` for `ashift` in AppArmor or use `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`; default container seccomp profiles also block setup. `ASHIFT_SANDBOX=off` explicitly trades engine isolation for running without the launcher. Unknown values fail closed. macOS uses [Seatbelt when available](#macos-engine-sandbox) and retains process groups; Windows retains Job Objects and cannot satisfy required mode.
 - Linux local IPC: `required` needs Landlock filesystem rules and seccomp, while `AF_UNIX` remains allowed. Pathname UNIX socket confinement needs Landlock ABI 9; abstract sockets and signals need ABI 6. On older kernels local services may remain reachable. `doctor --json` reports `landlock_unix_sockets` and `landlock_scopes`; use ABI 9 or stronger container isolation when local IPC must be blocked.
+- `ASHIFT_CLOUD_MODE`: When set to `1`, enables cloud mode restrictions. In cloud mode, outbound TSA requests for digital signatures and timestamping require an explicit allowlist in `ASHIFT_TSA_ALLOWLIST`; unconfigured TSA requests fail closed.
+- `ASHIFT_TSA_ALLOWLIST`: Comma-separated list of allowed TSA URLs or base domains (for example `https://freetsa.org/tsr, https://tsa.example.com`). Required in cloud mode (`ASHIFT_CLOUD_MODE=1`); optional in standalone CLI mode. Outbound TSA requests refuse HTTP redirects.
 - `SOURCE_DATE_EPOCH`: Unix timestamp in seconds used for deterministic, byte-reproducible ZIP archives (DOCX and EPUB) and for the Typst PDF date. LibreOffice outputs are structurally tested and are not byte-reproducible.

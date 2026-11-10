@@ -1,0 +1,135 @@
+{
+  "version": "ariad-truth/0",
+  "id": "forms-cyclic",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 1,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "Synthetic cyclic PDF structures",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": true,
+  "field_names": [
+    "cycle"
+  ],
+  "form_fields": [
+    {
+      "name": "cycle",
+      "type": "text",
+      "value": null,
+      "page": 1,
+      "rect": null
+    }
+  ],
+  "has_annotations": true,
+  "annotations": [
+    {
+      "subtype": "Text",
+      "page": 1,
+      "rect": [
+        40,
+        40,
+        60,
+        60
+      ],
+      "reply_to": "second"
+    },
+    {
+      "subtype": "Text",
+      "page": 1,
+      "rect": [
+        70,
+        40,
+        90,
+        60
+      ],
+      "reply_to": "first"
+    }
+  ],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 1,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Synthetic cyclic PDF structures",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": true,
+    "has_annotations": true,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Synthetic cyclic PDF structures",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "cycles": [
+    "Kids",
+    "Parent",
+    "Annots",
+    "IRT",
+    "Popup"
+  ]
+}

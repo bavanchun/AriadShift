@@ -21,6 +21,7 @@ cap-std.workspace = true
 directories.workspace = true
 flate2.workspace = true
 hex.workspace = true
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
 jiff.workspace = true
 jsonschema.workspace = true
 minisign-verify.workspace = true
@@ -41,6 +42,7 @@ tokio-util = { workspace = true, features = ["rt"] }
 toml.workspace = true
 ariad-typst = { workspace = true, optional = true }
 unicode-normalization.workspace = true
+url.workspace = true
 uuid = { workspace = true, features = ["v4", "v5"] }
 zip.workspace = true
 
@@ -55,6 +57,7 @@ rustls-native-certs.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+ariad-host = { path = ".", features = ["test-probe"] }
 lopdf.workspace = true
 minisign.workspace = true
 rcgen.workspace = true

@@ -209,7 +209,7 @@ def test_heavy_evidence_covers_required_routes_and_matches_inputs():
     assert all(
         0 <= s["ssim"] <= 1 and s["visual_profile"] == "faithful"
         for s in samples
-        if s["route"]
+        if s["route"] and s["target"] not in ("txt", "csv")
     )
     mapper = [s for s in samples if s["source"] == "docling+json"]
     assert mapper

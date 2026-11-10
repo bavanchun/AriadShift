@@ -3,26 +3,35 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from ariad_bench.canonical import CanonicalDoc, normalize
+from ariad_bench.canonical import normalize
 from ariad_bench.metrics import (
     SingleFixtureScore,
     aggregate_edge_metrics,
     measure_execution,
     score_fixture,
 )
-from ariad_bench.references import get_reference_for_fixture
+from ariad_bench.references import (
+    INDEPENDENT_READBACK_FORMATS,
+    get_reference_for_fixture,
+    read_writer_output,
+)
+
+OUTPUT_EXTENSIONS = {
+    "markdown": "md", "html": "html", "docx": "docx", "epub": "epub",
+    "txt": "txt", "csv": "csv", "xlsx": "xlsx", "odt": "odt", "rtf": "rtf",
+}
 
 
 def find_binary(name: str, explicit_path: Path | str | None, candidates: list[Path]) -> Path:
@@ -131,7 +140,7 @@ def run_benchmark(
             if edges_filter and edge_key not in edges_filter:
                 continue
 
-            if engine in {"pdf", "typst", "libreoffice", "docling"} or from_fmt == "docling+json":
+            if engine in {"pdf", "typst", "libreoffice", "docling", "ariad-pdf"} or from_fmt == "docling+json":
                 print(f"  [skip] {edge_key} ({engine}): measured by the heavy subcommand")
                 continue
 
@@ -244,7 +253,16 @@ def run_benchmark(
                 target_route_suffix = "->md" if to_fmt == "markdown" else f"->{to_fmt}"
                 for f in manifest_records:
                     routes = f.get("routes", [])
-                    if any(r.endswith(target_route_suffix) for r in routes):
+                    # New writers share the authored IR corpus, even before the
+                    # manifest gains complete source-to-target route annotations.
+                    has_truth = any(
+                        c.get("path", "").endswith(".truth.json")
+                        for c in f.get("companions", [])
+                    )
+                    if any(r.endswith(target_route_suffix) for r in routes) or (
+                        to_fmt in INDEPENDENT_READBACK_FORMATS
+                        and (has_truth or match_format(f.get("format", ""), "markdown"))
+                    ):
                         candidate_fixtures.append(f)
 
                 if fixtures_filter:
@@ -324,8 +342,7 @@ def run_benchmark(
                         continue
 
                     # 2. Write IR to target format
-                    ext_map = {"markdown": "md", "html": "html", "docx": "docx", "epub": "epub"}
-                    ext = ext_map.get(to_fmt, to_fmt)
+                    ext = OUTPUT_EXTENSIONS.get(to_fmt, to_fmt)
                     tmp_out = tmp_path / f"{safe_fid}.{ext}"
 
                     wall_times: list[float] = []
@@ -372,7 +389,33 @@ def run_benchmark(
                         scored_fixture_ids.add(fid)
                         continue
 
-                    # 3. Read back to IR
+                    # 3. Read single-mode writer targets independently. Missing
+                    # ashift reader edges must not turn successful writes into failures.
+                    if to_fmt in INDEPENDENT_READBACK_FORMATS:
+                        try:
+                            hyp_doc = read_writer_output(tmp_out, to_fmt, pandoc_bin)
+                        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                            failure_err = f"Independent readback failed: {exc}"
+                            edge_failures.setdefault(edge_key, []).append((fid, failure_err))
+                            print(f"  [fail] {fid} {failure_err}")
+                            score = SingleFixtureScore(
+                                text_cer=1.0, heading_ted=1.0, teds=0.0,
+                                fidelity=0.0, editability=0.0,
+                                wall_ms=sorted(wall_times)[len(wall_times) // 2],
+                                peak_rss_bytes=max_rss, tables_skipped=0,
+                            )
+                        else:
+                            score = score_fixture(
+                                ref_doc, hyp_doc,
+                                wall_ms=sorted(wall_times)[len(wall_times) // 2],
+                                peak_rss_bytes=max_rss,
+                            )
+                        edge_scores.append(score)
+                        scored_fixture_ids.add(fid)
+                        total_tables_skipped += score.tables_skipped
+                        continue
+
+                    # Existing round-tripping formats use the ashift IR reader.
                     tmp_readback = tmp_path / f"{safe_fid}.readback.ir.json"
                     cmd_readback = [
                         str(ashift_bin),

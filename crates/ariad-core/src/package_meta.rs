@@ -8,6 +8,14 @@ use thiserror::Error;
 use zip::{ZipArchive, ZipWriter};
 const CORE_PROPERTIES: &str = "docProps/core.xml";
 pub const MAX_ENTRY_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The package type to stamp.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackageKind {
+    Docx,
+    Epub,
+    Odt,
+}
 #[derive(Debug, Error)]
 pub enum PackageMetaError {
     #[error("package metadata I/O failed")]
@@ -36,6 +44,25 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
     input: R,
     output: W,
     epub: bool,
+    timestamp: &str,
+) -> Result<W, PackageMetaError> {
+    stamp_into_kind(
+        input,
+        output,
+        if epub {
+            PackageKind::Epub
+        } else {
+            PackageKind::Docx
+        },
+        timestamp,
+    )
+}
+
+/// Stamps dates for the given package kind without changing compressed data in unrelated entries.
+pub fn stamp_into_kind<R: Read + Seek, W: Write + Seek>(
+    input: R,
+    output: W,
+    kind: PackageKind,
     timestamp: &str,
 ) -> Result<W, PackageMetaError> {
     let archive = ZipArchive::new(input)?;
@@ -68,10 +95,10 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
         let name = entry.name()?.into_owned();
-        let target = if epub {
-            name.ends_with(".opf") && !name.starts_with("__MACOSX")
-        } else {
-            name == CORE_PROPERTIES
+        let target = match kind {
+            PackageKind::Epub => name.ends_with(".opf") && !name.starts_with("__MACOSX"),
+            PackageKind::Docx => name == CORE_PROPERTIES,
+            PackageKind::Odt => name == "meta.xml",
         };
         if !target {
             // Re-encode the decoded name so EFS describes the name the ZIP reader decoded.
@@ -94,7 +121,7 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
         if xml.len() as u64 > MAX_ENTRY_BYTES {
             return Err(PackageMetaError::EntryTooLarge);
         }
-        let stamped = stamp_properties(&xml, timestamp, epub)?;
+        let stamped = stamp_properties(&xml, timestamp, kind)?;
         writer.start_file(name, options)?;
         writer.write_all(&stamped)?;
     }
@@ -106,6 +133,23 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
 
 /// Stamps a package held entirely in memory.
 pub fn stamp_bytes(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>, PackageMetaError> {
+    stamp_bytes_kind(
+        bytes,
+        if epub {
+            PackageKind::Epub
+        } else {
+            PackageKind::Docx
+        },
+        timestamp,
+    )
+}
+
+/// Stamps a package of the specified kind held entirely in memory.
+pub fn stamp_bytes_kind(
+    bytes: &[u8],
+    kind: PackageKind,
+    timestamp: &str,
+) -> Result<Vec<u8>, PackageMetaError> {
     // Memory-only callers also need a total budget for raw-copied entries.
     let mut archive = ZipArchive::new(Cursor::new(bytes))?;
     let mut total = 0u64;
@@ -115,7 +159,8 @@ pub fn stamp_bytes(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>,
             return Err(PackageMetaError::EntryTooLarge);
         }
     }
-    stamp_into(Cursor::new(bytes), Cursor::new(Vec::new()), epub, timestamp).map(Cursor::into_inner)
+    stamp_into_kind(Cursor::new(bytes), Cursor::new(Vec::new()), kind, timestamp)
+        .map(Cursor::into_inner)
 }
 
 /// Count physical records without relying on the ZIP index, which merges aliases.
@@ -161,22 +206,24 @@ enum TimestampField {
 }
 
 impl TimestampField {
-    fn local_name(self, epub: bool) -> &'static str {
-        match (self, epub) {
-            (Self::Created, false) => "created",
-            (Self::Created, true) => "date",
-            (Self::Modified, false) => "modified",
-            (Self::Modified, true) => "meta",
+    fn local_name(self, kind: PackageKind) -> &'static str {
+        match (self, kind) {
+            (Self::Created, PackageKind::Docx) => "created",
+            (Self::Created, PackageKind::Epub) => "date",
+            (Self::Created, PackageKind::Odt) => "creation-date",
+            (Self::Modified, PackageKind::Docx) => "modified",
+            (Self::Modified, PackageKind::Epub) => "meta",
+            (Self::Modified, PackageKind::Odt) => "date",
         }
     }
 }
 
-fn timestamp_field(element: &BytesStart<'_>, epub: bool) -> Option<TimestampField> {
+fn timestamp_field(element: &BytesStart<'_>, kind: PackageKind) -> Option<TimestampField> {
     let name = element.name().local_name();
-    if name.as_ref() == TimestampField::Created.local_name(epub) {
+    if name.as_ref() == TimestampField::Created.local_name(kind) {
         Some(TimestampField::Created)
-    } else if name.as_ref() == TimestampField::Modified.local_name(epub)
-        && (!epub
+    } else if name.as_ref() == TimestampField::Modified.local_name(kind)
+        && (kind != PackageKind::Epub
             || element.attributes().flatten().any(|attribute| {
                 attribute.key.local_name().as_ref() == "property"
                     && attribute.value.as_ref() == "dcterms:modified"
@@ -188,7 +235,11 @@ fn timestamp_field(element: &BytesStart<'_>, epub: bool) -> Option<TimestampFiel
     }
 }
 
-fn stamp_properties(xml: &[u8], timestamp: &str, epub: bool) -> Result<Vec<u8>, PackageMetaError> {
+fn stamp_properties(
+    xml: &[u8],
+    timestamp: &str,
+    kind: PackageKind,
+) -> Result<Vec<u8>, PackageMetaError> {
     let mut reader = Reader::from_reader(xml);
     let mut writer = Writer::new(Vec::with_capacity(xml.len()));
     let mut active: Option<TimestampField> = None;
@@ -200,7 +251,7 @@ fn stamp_properties(xml: &[u8], timestamp: &str, epub: bool) -> Result<Vec<u8>, 
             .map_err(|_| PackageMetaError::InvalidProperties)?;
         match event {
             Event::Start(start) => {
-                if let Some(target) = timestamp_field(&start, epub) {
+                if let Some(target) = timestamp_field(&start, kind) {
                     if active.is_some() || stamped[target as usize] {
                         return Err(PackageMetaError::InvalidProperties);
                     }
@@ -211,7 +262,7 @@ fn stamp_properties(xml: &[u8], timestamp: &str, epub: bool) -> Result<Vec<u8>, 
             Event::Text(_) | Event::CData(_) if active.is_some() => {}
             Event::End(end) => {
                 if let Some(target) = active {
-                    if end.name().local_name().as_ref() != target.local_name(epub) {
+                    if end.name().local_name().as_ref() != target.local_name(kind) {
                         return Err(PackageMetaError::InvalidProperties);
                     }
                     writer.write_event(Event::Text(BytesText::new(timestamp)))?;
@@ -221,8 +272,8 @@ fn stamp_properties(xml: &[u8], timestamp: &str, epub: bool) -> Result<Vec<u8>, 
                 writer.write_event(Event::End(end))?;
             }
             Event::Empty(empty) => {
-                if let Some(target) = timestamp_field(&empty, epub) {
-                    if !epub || active.is_some() || stamped[target as usize] {
+                if let Some(target) = timestamp_field(&empty, kind) {
+                    if kind == PackageKind::Docx || active.is_some() || stamped[target as usize] {
                         return Err(PackageMetaError::InvalidProperties);
                     }
                     writer.write_event(Event::Start(empty.borrow()))?;
@@ -432,7 +483,12 @@ mod tests {
                 r#"<metadata><title>Keep</title><date>old</date><meta property="dcterms:modified"><![CDATA[old]]></meta><meta property="other">Keep</meta></metadata>"#,
             ),
         ] {
-            let stamped = stamp_properties(xml.as_bytes(), TIMESTAMP, epub).unwrap();
+            let kind = if epub {
+                PackageKind::Epub
+            } else {
+                PackageKind::Docx
+            };
+            let stamped = stamp_properties(xml.as_bytes(), TIMESTAMP, kind).unwrap();
             let stamped = String::from_utf8(stamped).unwrap();
             assert_eq!(stamped.matches(TIMESTAMP).count(), 2);
             assert!(!stamped.contains("old"));
@@ -446,7 +502,7 @@ mod tests {
     #[test]
     fn expands_empty_epub_dates_but_rejects_empty_docx_dates() {
         let xml = br#"<metadata><date/><meta property="dcterms:modified"/></metadata>"#;
-        let stamped = stamp_properties(xml, TIMESTAMP, true).unwrap();
+        let stamped = stamp_properties(xml, TIMESTAMP, PackageKind::Epub).unwrap();
         let stamped = String::from_utf8(stamped).unwrap();
         assert!(stamped.contains(&format!("<date>{TIMESTAMP}</date>")));
         assert!(stamped.contains(&format!(
@@ -456,7 +512,7 @@ mod tests {
             stamp_properties(
                 b"<properties><created/><modified>old</modified></properties>",
                 TIMESTAMP,
-                false
+                PackageKind::Docx
             ),
             Err(PackageMetaError::InvalidProperties)
         ));
@@ -464,37 +520,102 @@ mod tests {
 
     #[test]
     fn rejects_missing_duplicate_or_nested_timestamp_fields() {
-        for (epub, xml) in [
-            (false, "<properties><created>old</created></properties>"),
+        for (kind, xml) in [
             (
-                false,
+                PackageKind::Docx,
+                "<properties><created>old</created></properties>",
+            ),
+            (
+                PackageKind::Docx,
                 "<properties><created>old</created><created>old</created><modified>old</modified></properties>",
             ),
             (
-                false,
+                PackageKind::Docx,
                 "<properties><created><nested>old</nested></created><modified>old</modified></properties>",
             ),
             (
-                true,
+                PackageKind::Epub,
                 r#"<metadata><date>old</date><meta property="other">old</meta></metadata>"#,
             ),
             (
-                true,
+                PackageKind::Epub,
                 r#"<metadata><date/><date/><meta property="dcterms:modified"/></metadata>"#,
             ),
             (
-                true,
+                PackageKind::Epub,
                 r#"<metadata><date><nested>old</nested></date><meta property="dcterms:modified"/></metadata>"#,
+            ),
+            (
+                PackageKind::Odt,
+                "<office:document-meta><office:meta><meta:creation-date>old</meta:creation-date></office:meta></office:document-meta>",
             ),
         ] {
             assert!(
                 matches!(
-                    stamp_properties(xml.as_bytes(), TIMESTAMP, epub),
+                    stamp_properties(xml.as_bytes(), TIMESTAMP, kind),
                     Err(PackageMetaError::InvalidProperties)
                 ),
                 "{xml}"
             );
         }
+    }
+
+    #[test]
+    fn stamps_odt_package_and_preserves_stored_mimetype() {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let stored_options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let deflated_options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        writer.start_file("mimetype", stored_options).unwrap();
+        writer
+            .write_all(b"application/vnd.oasis.opendocument.text")
+            .unwrap();
+        writer.start_file("meta.xml", deflated_options).unwrap();
+        writer
+            .write_all(
+                br#"<?xml version="1.0" encoding="utf-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <office:meta>
+    <meta:creation-date>2000-01-01T00:00:00Z</meta:creation-date>
+    <dc:date>2000-01-01T00:00:00Z</dc:date>
+  </office:meta>
+</office:document-meta>"#,
+            )
+            .unwrap();
+        writer.start_file("content.xml", deflated_options).unwrap();
+        writer.write_all(b"<content>preserved</content>").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        let stamped_bytes = stamp_bytes_kind(&bytes, PackageKind::Odt, TIMESTAMP).unwrap();
+        let mut archive = ZipArchive::new(Cursor::new(stamped_bytes)).unwrap();
+
+        {
+            let first = archive.by_index(0).unwrap();
+            assert_eq!(first.name().unwrap(), "mimetype");
+            assert_eq!(first.compression(), zip::CompressionMethod::Stored);
+        }
+
+        let mut meta = String::new();
+        archive
+            .by_name("meta.xml")
+            .unwrap()
+            .read_to_string(&mut meta)
+            .unwrap();
+        assert!(meta.contains(&format!(
+            "<meta:creation-date>{TIMESTAMP}</meta:creation-date>"
+        )));
+        assert!(meta.contains(&format!("<dc:date>{TIMESTAMP}</dc:date>")));
+        assert!(!meta.contains("2000-01-01T00:00:00Z"));
+
+        let mut content = String::new();
+        archive
+            .by_name("content.xml")
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
+        assert_eq!(content, "<content>preserved</content>");
     }
 
     #[test]

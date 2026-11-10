@@ -45,9 +45,10 @@ fn secrets_are_absent_from_outcomes_and_invalid_passwords_fail() {
             .iter()
             .any(|w| w.code == "owner_equals_user")
     );
-    let failure = run_tool(&request("bad\npassword")).unwrap_err();
-    assert_eq!(failure.exit_code(), 9);
-    assert!(!failure.to_string().contains("bad\npassword"));
+    let failure = SecretBag::new()
+        .with("owner_password", "bad\npassword")
+        .unwrap_err();
+    assert!(!failure.contains("bad\npassword"));
 }
 
 #[test]

@@ -101,43 +101,7 @@ where
         let (page_w, page_h, draw_x, draw_y, draw_w, draw_h) =
             compute_page_placement(prepared.width, prepared.height, params);
 
-        let smask_ref = if let Some(alpha_bytes) = prepared.smask {
-            let smask_stream = build_flate_stream(
-                dictionary! {
-                    "Type" => "XObject",
-                    "Subtype" => "Image",
-                    "Width" => i64::from(prepared.width),
-                    "Height" => i64::from(prepared.height),
-                    "ColorSpace" => "DeviceGray",
-                    "BitsPerComponent" => 8_i64,
-                },
-                alpha_bytes,
-            )?;
-            Some(doc.add_object(smask_stream))
-        } else {
-            None
-        };
-
-        let mut img_dict = dictionary! {
-            "Type" => "XObject",
-            "Subtype" => "Image",
-            "Width" => i64::from(prepared.width),
-            "Height" => i64::from(prepared.height),
-            "ColorSpace" => prepared.color_space.as_pdf_name(),
-            "BitsPerComponent" => i64::from(prepared.bits_per_component),
-        };
-        if let Some(smask_id) = smask_ref {
-            img_dict.set("SMask", Object::Reference(smask_id));
-        }
-
-        let img_stream = match prepared.encoding {
-            ImageEncoding::JpegPassthrough => {
-                img_dict.set("Filter", "DCTDecode");
-                Stream::new(img_dict, prepared.data)
-            }
-            ImageEncoding::FlateRaw => build_flate_stream(img_dict, prepared.data)?,
-        };
-        let img_id = doc.add_object(img_stream);
+        let img_id = embed_prepared(&mut doc, prepared)?.id;
 
         let content_ops = format!(
             "q {} 0 0 {} {} {} cm /Im0 Do Q\n",
@@ -190,6 +154,134 @@ where
     let mut out = Vec::new();
     doc.save_to(&mut out).map_err(|_| PdfError::Malformed)?;
     Ok(out)
+}
+
+/// Embedded image and its intrinsic dimensions in pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct ImageXObject {
+    /// Object ID of the image XObject.
+    pub id: lopdf::ObjectId,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// EXIF orientation, in the range 1 through 8.
+    pub orientation: u8,
+}
+
+/// Embed a validated, bounded image in an existing document, preserving JPEG bytes.
+pub fn embed_image(
+    doc: &mut Document,
+    bytes: &[u8],
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<ImageXObject, PdfError> {
+    ctx.check()?;
+    limits.validate().map_err(ReadError::from)?;
+    if let Some(max) = limits.max_input_bytes
+        && bytes.len() as u64 > max
+    {
+        return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
+            actual: bytes.len() as u64,
+            limit: max,
+        }));
+    }
+    let limit = CONTENT_BUDGET_BASE
+        .saturating_add(CONTENT_BUDGET_PER_INPUT_BYTE.saturating_mul(bytes.len() as u64))
+        .min((usize::MAX / 4) as u64)
+        .min(limits.max_decompressed_bytes);
+    let mut decoded = 0;
+    let prepared = prepare_image(bytes, limit, &mut decoded, ctx)?;
+    let orientation = jpeg_orientation(bytes, ctx)?;
+    let mut image = embed_prepared(doc, prepared)?;
+    image.orientation = orientation;
+    Ok(image)
+}
+
+fn jpeg_orientation(bytes: &[u8], ctx: &ToolCtx) -> Result<u8, PdfError> {
+    if !bytes.starts_with(b"\xff\xd8") {
+        return Ok(1);
+    }
+    let mut offset = 2usize;
+    while offset + 4 <= bytes.len() {
+        ctx.check()?;
+        if bytes[offset] != 0xff {
+            break;
+        }
+        while bytes.get(offset) == Some(&0xff) {
+            offset += 1;
+            if offset.is_multiple_of(65_536) {
+                ctx.check()?;
+            }
+        }
+        let Some(&marker) = bytes.get(offset) else {
+            break;
+        };
+        offset += 1;
+        if matches!(marker, 0xd9 | 0xda) {
+            break;
+        }
+        if matches!(marker, 0x01 | 0xd0..=0xd8) {
+            continue;
+        }
+        let Some(size) = bytes
+            .get(offset..offset + 2)
+            .map(|b| usize::from(u16::from_be_bytes([b[0], b[1]])))
+        else {
+            break;
+        };
+        if size < 2 {
+            break;
+        }
+        let Some(end) = offset.checked_add(size).filter(|end| *end <= bytes.len()) else {
+            break;
+        };
+        let body = &bytes[offset + 2..end];
+        if marker == 0xe1
+            && body.starts_with(b"Exif\0\0")
+            && let Some(orientation) = image::metadata::Orientation::from_exif_chunk(&body[6..])
+        {
+            return Ok(orientation.to_exif());
+        }
+        offset = end;
+    }
+    Ok(1)
+}
+
+fn embed_prepared(doc: &mut Document, prepared: PreparedImage) -> Result<ImageXObject, PdfError> {
+    let smask_ref = if let Some(alpha_bytes) = prepared.smask {
+        let smask_stream = build_flate_stream(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => i64::from(prepared.width),
+                "Height" => i64::from(prepared.height), "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8_i64,
+            },
+            alpha_bytes,
+        )?;
+        Some(doc.add_object(smask_stream))
+    } else {
+        None
+    };
+    let mut img_dict = dictionary! {
+        "Type" => "XObject", "Subtype" => "Image", "Width" => i64::from(prepared.width),
+        "Height" => i64::from(prepared.height), "ColorSpace" => prepared.color_space.as_pdf_name(),
+        "BitsPerComponent" => i64::from(prepared.bits_per_component),
+    };
+    if let Some(smask_id) = smask_ref {
+        img_dict.set("SMask", Object::Reference(smask_id));
+    }
+    let stream = match prepared.encoding {
+        ImageEncoding::JpegPassthrough => {
+            img_dict.set("Filter", "DCTDecode");
+            Stream::new(img_dict, prepared.data)
+        }
+        ImageEncoding::FlateRaw => build_flate_stream(img_dict, prepared.data)?,
+    };
+    Ok(ImageXObject {
+        id: doc.add_object(stream),
+        width: prepared.width,
+        height: prepared.height,
+        orientation: 1,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1123,7 +1215,10 @@ fn fmt_pt(v: f64) -> String {
     }
 }
 
-fn build_flate_stream(mut dict: lopdf::Dictionary, raw: Vec<u8>) -> Result<Stream, PdfError> {
+pub(crate) fn build_flate_stream(
+    mut dict: lopdf::Dictionary,
+    raw: Vec<u8>,
+) -> Result<Stream, PdfError> {
     let mut stream = Stream::new(dict.clone(), raw.clone());
     stream.compress().map_err(|_| PdfError::Malformed)?;
     if stream.dict.has(b"Filter") {

@@ -189,6 +189,7 @@ where
     let mut env: Vec<_> = std::env::vars_os()
         .filter(|(key, _)| {
             key == "ASHIFT_DATA_DIR"
+                || key == "ASHIFT_PANDOC"
                 || key == "ASHIFT_SOFFICE"
                 || key
                     .to_str()

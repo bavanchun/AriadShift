@@ -16,6 +16,16 @@ pub(crate) const INPUT_STEM_TRAILER_KEY: &[u8] = b"AriadInputStem";
 #[must_use]
 pub fn tool_suffix(tool_id: &str) -> &'static str {
     match tool_id {
+        "pdf.annotations" => "annotations",
+        "pdf.annotations_import" => "annotated",
+        "pdf.annotations_export" => "annotations",
+        "pdf.forms_list" => "fields",
+        "pdf.forms_fill" => "filled",
+        "pdf.forms_create" => "form",
+        "pdf.forms_flatten" => "flattened",
+        "pdf.forms_detect" => "detected-fields",
+        "pdf.forms_import" => "filled",
+        "pdf.forms_export" => "form-data",
         "pdf.info" => "info",
         "pdf.merge" => "merged",
         "pdf.split" => "part",
@@ -32,6 +42,21 @@ pub fn tool_suffix(tool_id: &str) -> &'static str {
         "pdf.decompress" => "decompressed",
         "pdf.compress" => "compressed",
         "pdf.grayscale" => "grayscale",
+        "pdf.page_numbers" => "numbered",
+        "pdf.header_footer" => "header-footer",
+        "pdf.bates" => "bates",
+        "pdf.toc_page" => "toc",
+        "pdf.background" => "background",
+        "pdf.invert_colors" => "inverted",
+        "pdf.watermark" => "watermarked",
+        "pdf.add_image" => "image-added",
+        "pdf.add_text" => "text-added",
+        "pdf.stamp" => "stamped",
+        "pdf.qr" => "qr",
+        "pdf.watermark_remove" => "unwatermarked",
+        "pdf.watermark_detect" => "watermarks",
+        "pdf.replace_color" => "recolored",
+        "pdf.adjust_colors" => "adjusted",
         "pdf.encrypt" => "encrypted",
         "pdf.decrypt" => "decrypted",
         "pdf.permissions" => "permissions",
@@ -53,7 +78,15 @@ pub fn tool_suffix(tool_id: &str) -> &'static str {
         "pdf.sanitize" => "sanitized",
         "pdf.remove_blank" => "remove-blank",
         "pdf.crop_whitespace" => "cropped",
+        "pdf.deskew" => "deskewed",
+        "pdf.scan_split" => "scan-split",
+        "pdf.scanner_effect" => "scanner-effect",
         "image.to_pdf" => "to-pdf",
+        "pdf.to_pdfa" => "pdfa",
+        "pdf.to_pdfua" => "pdfua",
+        "pdf.validate_pdfa" => "validate-pdfa",
+        "pdf.validate_pdfua" => "validate-pdfua",
+        "pdf.accessibility_report" => "accessibility-report",
         _ => "output",
     }
 }
@@ -159,6 +192,39 @@ pub fn doc_stem(doc: &PdfDoc) -> Option<String> {
         .and_then(|obj| obj.as_str().ok())
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
         .map(ToOwned::to_owned)
+}
+
+/// Derive a portable ASCII field identifier from a human-readable label.
+#[must_use]
+pub fn field_name_from_label(label: &str) -> String {
+    use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+    let mut result = String::new();
+    let mut separator = false;
+    for ch in label.nfd() {
+        if is_combining_mark(ch) {
+            continue;
+        }
+        let ch = match ch {
+            'đ' | 'Đ' => 'd',
+            _ => ch.to_ascii_lowercase(),
+        };
+        if ch.is_ascii_alphanumeric() {
+            if separator && !result.is_empty() && result.len() < 40 {
+                result.push('_');
+            }
+            separator = false;
+            if result.len() < 40 {
+                result.push(ch);
+            }
+        } else {
+            separator = true;
+        }
+    }
+    if result.is_empty() {
+        "field".into()
+    } else {
+        result.trim_end_matches('_').into()
+    }
 }
 
 #[cfg(test)]

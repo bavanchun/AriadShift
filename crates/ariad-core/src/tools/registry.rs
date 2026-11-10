@@ -285,6 +285,8 @@ pub struct ToolGroupParseError(pub String);
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "arity", rename_all = "snake_case")]
 pub enum InputArity {
+    /// Zero input files (tool operates purely via parameters or remote sources).
+    None,
     /// Exactly 1 input file is required.
     One,
     /// Between `min` and `max` input files (inclusive) are required (`1 <= min <= max`).
@@ -313,6 +315,7 @@ impl InputArity {
     #[must_use]
     pub const fn accepts(self, count: usize) -> bool {
         match self {
+            Self::None => count == 0,
             Self::One => count == 1,
             Self::Many { min, max } => count >= min && count <= max,
         }
@@ -322,6 +325,7 @@ impl InputArity {
     #[must_use]
     pub const fn min(self) -> usize {
         match self {
+            Self::None => 0,
             Self::One => 1,
             Self::Many { min, .. } => min,
         }
@@ -331,6 +335,7 @@ impl InputArity {
     #[must_use]
     pub const fn max(self) -> usize {
         match self {
+            Self::None => 0,
             Self::One => 1,
             Self::Many { max, .. } => max,
         }
@@ -340,7 +345,7 @@ impl InputArity {
     #[must_use]
     pub const fn is_valid(self) -> bool {
         match self {
-            Self::One => true,
+            Self::None | Self::One => true,
             Self::Many { min, max } => min >= 1 && min <= max,
         }
     }
@@ -489,11 +494,22 @@ pub struct ToolSpec {
 #[must_use]
 pub fn normalize_tool_format(raw: &str) -> Option<&'static str> {
     let trimmed = raw.trim().trim_start_matches('.');
+    for format in ["fdf", "xfdf", "csv"] {
+        if trimmed.eq_ignore_ascii_case(format) {
+            return Some(format);
+        }
+    }
     if trimmed.eq_ignore_ascii_case("bmp") {
         return Some("bmp");
     }
     if trimmed.eq_ignore_ascii_case("zip") {
         return Some("zip");
+    }
+    if trimmed.eq_ignore_ascii_case("txt") {
+        return Some("txt");
+    }
+    if trimmed.eq_ignore_ascii_case("hocr") {
+        return Some("hocr");
     }
     Format::from_user_name(trimmed).map(|fmt| match fmt {
         Format::AriadIrJson => "json",
@@ -574,6 +590,28 @@ impl ToolSpec {
     ) -> bool {
         let norm = normalize_tool_format(artifact_format)
             .unwrap_or_else(|| artifact_format.trim().trim_start_matches('.'));
+        if self.id == "pdf.annotations" {
+            let expected =
+                if params.get("action").and_then(serde_json::Value::as_str) == Some("list") {
+                    "json"
+                } else {
+                    "pdf"
+                };
+            return norm.eq_ignore_ascii_case(expected);
+        }
+        if matches!(self.id, "pdf.annotations_export" | "pdf.forms_export") {
+            let expected = match params.get("format") {
+                Some(value) => match value.as_str() {
+                    Some(format) => format,
+                    None => return false,
+                },
+                None if self.id == "pdf.annotations_export" => "xfdf",
+                None => "json",
+            };
+            return self.accepts_output_format(expected)
+                && normalize_tool_format(expected)
+                    .is_some_and(|format| norm.eq_ignore_ascii_case(format));
+        }
         if self.id == "pdf.outline"
             && params.get("action").and_then(serde_json::Value::as_str) == Some("export")
         {
@@ -587,7 +625,29 @@ impl ToolSpec {
         if !self.accepts_output_format(norm) {
             return false;
         }
-        if let Some(picked) = params.get("format").and_then(serde_json::Value::as_str) {
+        if self.id == "pdf.ocr" {
+            return match params
+                .get("output")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("pdf")
+            {
+                "pdf" => norm == "pdf",
+                "pdf+txt" => matches!(norm, "pdf" | "txt"),
+                "pdf+hocr" => matches!(norm, "pdf" | "hocr"),
+                _ => false,
+            };
+        }
+        if self.id == "image.ocr" {
+            return params
+                .get("output")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("pdf")
+                == norm;
+        }
+        // Page numbering uses `format` for its text template, not an artifact type.
+        if self.id != "pdf.page_numbers"
+            && let Some(picked) = params.get("format").and_then(serde_json::Value::as_str)
+        {
             if picked.eq_ignore_ascii_case("original") {
                 return true;
             }
@@ -621,9 +681,14 @@ impl ToolSpec {
     /// out-of-process `"pdfium"` engine.
     #[must_use]
     pub fn engine_for_params(&self, params: &serde_json::Value) -> &'static str {
-        if self.id == "pdf.split"
-            && params.get("detect").and_then(serde_json::Value::as_str) == Some("pixel")
-        {
+        let requires_pdfium = (self.id == "pdf.split"
+            && params.get("detect").and_then(serde_json::Value::as_str) == Some("pixel"))
+            || (self.id == "pdf.compare"
+                && matches!(
+                    params.get("mode").and_then(serde_json::Value::as_str),
+                    Some("visual" | "both")
+                ));
+        if requires_pdfium {
             "pdfium"
         } else {
             self.engine
@@ -661,7 +726,6 @@ pub struct ToolDescriptor {
     /// Required input file count.
     pub inputs: InputArity,
     /// Accepted input format identifiers.
-    #[schemars(length(min = 1))]
     pub input_formats: Vec<String>,
     /// Primary output format identifier.
     pub output_format: String,
@@ -768,10 +832,19 @@ pub fn validate_specs(specs: &[ToolSpec]) -> Result<(), RegistryError> {
                 reason: "inputs arity bounds must satisfy 1 <= min <= max",
             });
         }
-        if spec.input_formats.is_empty() || spec.input_formats.iter().any(|f| f.trim().is_empty()) {
+        if spec.inputs != InputArity::None
+            && (spec.input_formats.is_empty()
+                || spec.input_formats.iter().any(|f| f.trim().is_empty()))
+        {
             return Err(RegistryError::InvalidSpec {
                 id: spec.id.to_owned(),
                 reason: "input_formats must be non-empty",
+            });
+        }
+        if spec.inputs == InputArity::None && !spec.input_formats.is_empty() {
+            return Err(RegistryError::InvalidSpec {
+                id: spec.id.to_owned(),
+                reason: "input_formats must be empty for 0-input tools",
             });
         }
         if spec.output_format.trim().is_empty() {

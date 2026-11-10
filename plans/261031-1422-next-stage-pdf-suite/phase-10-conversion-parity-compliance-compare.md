@@ -1,7 +1,7 @@
 ---
 phase: 10
 title: "Conversion parity, PDF/A and PDF/UA, compare"
-status: pending
+status: completed
 priority: P1
 effort: "6 tasks, ~10 worker-days"
 dependencies: [4, 7]
@@ -55,7 +55,7 @@ Add the new `Format` variants (`csv`, `txt`, `eml`, `msg`, `svg`, `cbz`, `url`�
 
 ## Acceptance
 
-- [ ] Every conversion row in `docs/parity-matrix.md` for phase 10 is reachable via `ashift plan`/`convert` (or listed "Not adopted" with reason).
-- [ ] `pdf.to_pdfa` outputs pass veraPDF on the corpus or the tool fails with the report — no false claims (tested with a deliberately non-fixable input).
-- [ ] Compare report highlights all seeded changes in a generated before/after pair.
-- [ ] Engine preview 0.4.0 prepared (owner GO).
+- [x] Every conversion row in `docs/parity-matrix.md` for phase 10 is reachable via `ashift plan`/`convert` (or listed "Not adopted" with reason).
+- [x] `pdf.to_pdfa` outputs pass veraPDF on the corpus or the tool fails with the report — no false claims (tested with a deliberately non-fixable input).
+- [x] Compare report highlights all seeded changes in a generated before/after pair.
+- [x] Engine preview 0.4.0 prepared (owner GO).

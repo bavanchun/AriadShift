@@ -14,6 +14,7 @@ use ariad_core::{
         v2::{MAX_INLINE_PARAMS_BYTES, OutputDir, PROTOCOL_V2, RequestV2},
     },
 };
+use ariad_host::engines::TEST_PROTOCOL_PROBE_ID;
 use serde_json::{Value, json};
 
 fn v2_validator() -> jsonschema::Validator {
@@ -91,7 +92,13 @@ fn validate_v2_stdout(output: &Output) -> Vec<Value> {
 
 #[test]
 fn v2_describe_emits_schema_valid_capabilities_with_tools() {
-    for engine in ["qpdf", "pdfium", "tesseract"] {
+    for engine in [
+        "qpdf",
+        "pdfium",
+        "tesseract",
+        "verapdf",
+        TEST_PROTOCOL_PROBE_ID,
+    ] {
         let request = RequestV2::Describe {
             protocol: PROTOCOL_V2.to_owned(),
             job: format!("describe-{engine}"),
@@ -148,9 +155,7 @@ fn v2_run_tool_multi_input_multi_artifact_and_warning_events_conform_to_schema()
         limits: Limits::local(),
     };
 
-    // The test-probe tesseract engine supports synthetic multi-artifact requests;
-    // qpdf now dispatches to the real adapter instead of the protocol probe.
-    let events = validate_v2_stdout(&run_v2_engine("tesseract", &request));
+    let events = validate_v2_stdout(&run_v2_engine(TEST_PROTOCOL_PROBE_ID, &request));
     assert_eq!(events.last().unwrap()["ok"], true);
     assert_eq!(events.last().unwrap()["metrics"]["inputs"], 2);
     assert_eq!(events.last().unwrap()["metrics"]["artifacts"], 2);
@@ -205,7 +210,7 @@ fn v2_run_tool_loads_params_from_params_file_inside_work_dir() {
         limits: Limits::local(),
     };
 
-    let events = validate_v2_stdout(&run_v2_engine("tesseract", &request));
+    let events = validate_v2_stdout(&run_v2_engine(TEST_PROTOCOL_PROBE_ID, &request));
     let last = events.last().unwrap();
     assert_eq!(last["ok"], true);
     assert_eq!(last["metrics"]["artifacts"], 3);
@@ -436,4 +441,98 @@ fn v2_real_pdfium_pack_binary_conforms_to_schema_when_configured() {
         let events = validate_v2_stdout(&run_real_pdfium(&req));
         assert_eq!(events.last().unwrap()["ok"], true, "tool {tool}");
     }
+}
+
+#[test]
+fn real_sign_engine_conformance() {
+    let repo_root = support::fixtures::repository_root();
+    let py = if cfg!(windows) {
+        repo_root.join("engines/sign/.venv/Scripts/python.exe")
+    } else {
+        repo_root.join("engines/sign/.venv/bin/python3")
+    };
+
+    if !py.is_file() {
+        if std::env::var_os("ARIAD_REQUIRE_SIGN_PACK").is_some() {
+            panic!(
+                "ARIAD_REQUIRE_SIGN_PACK set but sign engine virtualenv missing at {}",
+                py.display()
+            );
+        }
+        eprintln!(
+            "skipping: sign engine virtualenv not found at {}",
+            py.display()
+        );
+        return;
+    }
+
+    let run_real_sign = |request: &RequestV2| -> Output {
+        let validator = v2_validator();
+        let value = serde_json::to_value(request).expect("request to JSON value");
+        assert_schema_valid(&validator, &value);
+        let mut bytes = serde_json::to_vec(request).expect("serialize v2 request");
+        bytes.push(b'\n');
+        let mut child = Command::new(&py)
+            .args(["-I", "-m", "ariad_sign"])
+            .current_dir(&repo_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn real ariad_sign engine");
+        child
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(&bytes)
+            .expect("write request");
+        child.wait_with_output().expect("wait for real sign engine")
+    };
+
+    // 1. Test describe
+    let describe = RequestV2::Describe {
+        protocol: PROTOCOL_V2.to_owned(),
+        job: "real-sign-describe".to_owned(),
+    };
+    let events = validate_v2_stdout(&run_real_sign(&describe));
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["type"], "capabilities");
+    assert_eq!(events[0]["engine"], "sign");
+    assert_eq!(events[0]["tool"]["status"], "found");
+    let tools = events[0]["tools"].as_array().expect("tools array");
+    assert!(
+        tools.iter().any(|t| t["id"] == "pdf.sign"),
+        "must advertise pdf.sign"
+    );
+    assert!(
+        tools.iter().any(|t| t["id"] == "pdf.sign_verify"),
+        "must advertise pdf.sign_verify"
+    );
+    assert_eq!(events[1]["type"], "result");
+    assert_eq!(events[1]["ok"], true);
+
+    // 2. Test run_tool (pdf.sign_verify)
+    let workspace = ariad_host::workspace::Workspace::new().expect("create workspace");
+    let fixture = support::fixtures::repository_root().join("fixtures/pdf-tools/annotations.pdf");
+    let staged_input = workspace.input_dir().join("annotations.pdf");
+    fs::copy(&fixture, &staged_input).expect("stage fixture");
+
+    let req = RequestV2::RunTool {
+        protocol: PROTOCOL_V2.to_owned(),
+        job: "real-sign-verify".to_owned(),
+        tool: "pdf.sign_verify".to_owned(),
+        inputs: vec![Input {
+            path: staged_input.display().to_string(),
+            format: "pdf".to_owned(),
+        }],
+        output: OutputDir {
+            dir: workspace.output_dir().display().to_string(),
+        },
+        params: json!({}),
+        params_file: None,
+        work_dir: workspace.work_dir().display().to_string(),
+        limits: Limits::local(),
+    };
+    let events = validate_v2_stdout(&run_real_sign(&req));
+    assert_eq!(events.last().unwrap()["ok"], true, "pdf.sign_verify failed");
 }

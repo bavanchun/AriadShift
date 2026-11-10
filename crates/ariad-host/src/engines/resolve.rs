@@ -123,10 +123,32 @@ fn reinstall_hint(id: &str) -> String {
 }
 
 fn install_hint(id: &str) -> String {
+    if id == "tesseract"
+        && let Some(hint) =
+            tesseract_unsupported_hint(packs::build_target(), &packs::host_targets())
+    {
+        return hint.to_owned();
+    }
     super::pack_spec(id).map_or_else(
         || format!("run 'ashift engines install {id}' to install the {id} engine pack"),
         |spec| spec.install_hint.to_owned(),
     )
+}
+
+fn tesseract_unsupported_hint(triple: &str, targets: &[String]) -> Option<&'static str> {
+    if triple.contains("-windows-") {
+        Some(
+            "Tesseract packs are unavailable on Windows; see https://github.com/bavanchun/AriadShift/issues/202",
+        )
+    } else if triple.contains("-linux-")
+        && !targets.iter().any(|target| target.ends_with("-linux-gnu"))
+    {
+        Some(
+            "Tesseract packs require glibc on Linux; see https://github.com/bavanchun/AriadShift/issues/202",
+        )
+    } else {
+        None
+    }
 }
 
 /// Locates the host sandbox launcher binary (`ashift` or `engine-probe`) when a caller does not
@@ -222,6 +244,29 @@ pub fn resolve_pack_with_options(
         }
         return Ok((command, docling.options));
     }
+    if engine_id == super::sign::ENGINE_ID && std::env::var_os(super::sign::OVERRIDE_ENV).is_some()
+    {
+        let sign_engine = super::sign::resolve().ok_or_else(|| ResolveError::NotInstalled {
+            engine: engine_id.to_owned(),
+            hint: install_hint(engine_id),
+        })?;
+        let launcher = launcher_override
+            .map(Path::to_path_buf)
+            .or_else(default_launcher);
+        let mut command = EngineCommand {
+            engine: engine_id.to_owned(),
+            program: sign_engine.program,
+            args: sign_engine.args,
+            env: sign_engine.env,
+            install_root: sign_engine.install_root,
+            launcher,
+            sandbox: None,
+        };
+        if let Some(launcher) = launcher_override {
+            command = command.with_launcher(launcher);
+        }
+        return Ok((command, sign_engine.options));
+    }
     let pack = match packs::try_resolve(engine_id) {
         Ok(Some(pack)) => pack,
         Ok(None) => {
@@ -284,6 +329,17 @@ fn command_from_installed_pack(
             "ASHIFT_ADAPTER_PACK_ROOT".into(),
             root.clone().into_os_string(),
         ));
+        if engine_id == "verapdf" {
+            if let Some(v) = std::env::var_os("JAVA_HOME") {
+                variables.push(("JAVA_HOME".into(), v));
+            }
+            if let Some(v) = std::env::var_os(super::verapdf::JAVA_ENV) {
+                variables.push((super::verapdf::JAVA_ENV.into(), v));
+            }
+            if let Some(v) = std::env::var_os("HOME") {
+                variables.push(("HOME".into(), v));
+            }
+        }
         let command = EngineCommand {
             env: variables,
             install_root: Some(root),
@@ -334,5 +390,28 @@ fn map_pack_error(engine_id: &str, error: PackError) -> ResolveError {
             reason: other.to_string(),
             hint: reinstall_hint(engine_id),
         },
+    }
+}
+
+#[cfg(test)]
+mod tesseract_target_tests {
+    use super::tesseract_unsupported_hint;
+
+    #[test]
+    fn support_depends_on_system_targets_not_binary_linkage() {
+        let musl = vec!["x86_64-unknown-linux-musl".to_owned()];
+        let gnu = vec!["x86_64-unknown-linux-gnu".to_owned(), musl[0].clone()];
+        assert!(
+            tesseract_unsupported_hint("x86_64-pc-windows-msvc", &[])
+                .unwrap()
+                .contains("Windows")
+        );
+        assert!(
+            tesseract_unsupported_hint(&musl[0], &musl)
+                .unwrap()
+                .contains("glibc")
+        );
+        assert_eq!(tesseract_unsupported_hint(&musl[0], &gnu), None);
+        assert_eq!(tesseract_unsupported_hint(&gnu[0], &gnu), None);
     }
 }

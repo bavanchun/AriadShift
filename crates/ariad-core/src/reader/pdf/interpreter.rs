@@ -54,6 +54,8 @@ pub(super) const SPACE: u8 = 1;
 pub(super) const CHUNK_START: u8 = 2;
 /// The glyph is filled and stroked, which producers use to embolden text.
 pub(super) const STROKED: u8 = 4;
+/// Invisible text, commonly used for OCR.
+pub(super) const INVISIBLE: u8 = 8;
 
 /// An affine transform `[a b c d e f]` mapping `(x, y)` to `(ax + cy + e, bx + dy + f)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -751,6 +753,9 @@ impl Interpreter<'_, '_> {
         }
         if stroked {
             flags |= STROKED;
+        }
+        if self.gstate.render_mode == 3 {
+            flags |= INVISIBLE;
         }
         let end = self.out.text.len();
         self.state.budget.charge_glyph(end - start)?;

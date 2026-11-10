@@ -379,12 +379,33 @@ impl RawWord {
     }
 }
 
-fn extract_page_layout(
+pub(crate) fn extract_page_layout(
     ctx: &ToolContext<'_>,
     page: &PdfPage<'_>,
     page_number: u32,
     total_chars: &mut usize,
     max_chars: usize,
+) -> Result<PageTextLayout, EngineFailure> {
+    extract_page_layout_mode(ctx, page, page_number, total_chars, max_chars, false)
+}
+
+pub(crate) fn extract_visible_page_layout(
+    ctx: &ToolContext<'_>,
+    page: &PdfPage<'_>,
+    page_number: u32,
+    total_chars: &mut usize,
+    max_chars: usize,
+) -> Result<PageTextLayout, EngineFailure> {
+    extract_page_layout_mode(ctx, page, page_number, total_chars, max_chars, true)
+}
+
+fn extract_page_layout_mode(
+    ctx: &ToolContext<'_>,
+    page: &PdfPage<'_>,
+    page_number: u32,
+    total_chars: &mut usize,
+    max_chars: usize,
+    visible_only: bool,
 ) -> Result<PageTextLayout, EngineFailure> {
     let width_pt = round3(f64::from(page.width().value));
     let height_pt = round3(f64::from(page.height().value));
@@ -401,6 +422,14 @@ fn extract_page_layout(
             ctx.check()?;
         }
 
+        if visible_only
+            && matches!(
+                char_item.render_mode(),
+                Ok(PdfPageTextRenderMode::Invisible | PdfPageTextRenderMode::InvisibleClipping)
+            )
+        {
+            continue;
+        }
         let text_str = char_item
             .unicode_string()
             .or_else(|| char_item.unicode_char().map(|ch| ch.to_string()))

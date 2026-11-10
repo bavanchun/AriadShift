@@ -4,6 +4,9 @@ This document specifies the normative contract for AriadShift document tools (`a
 
 All tool registration, parameter validation, access control, page-range parsing, and recipe definitions live in `ariad-core::tools`. Structural PDF operations run in-process inside `ariad-pdf` (including on `wasm32`), while rendering, encryption, OCR, signing, validation, and AI tools run out of process over `ariad-engine/2` orchestrated by `ariad-host`. Product surfaces (`ashift` CLI, MCP servers, `apps/web`, `apps/macos`) carry no document manipulation logic.
 
+For OCR and scan tool parameters, engine packs, and output behavior, see [OCR and scan tools](ocr.md).
+The native host and browser build enable `ariad-pdf`'s `codecs` feature for font, QR and image colour operations. Library consumers that disable it omit codec-dependent tools and dependencies; `image.to_pdf` remains available.
+
 ## Table of Contents
 
 - [1. Architecture Boundary: Tools vs. Conversions](#1-architecture-boundary-tools-vs-conversions)
@@ -82,19 +85,26 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | Group | Purpose | Example Tools |
 |---|---|---|
 | `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.crop_whitespace`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers`, `pdf.remove_blank`, `pdf.detect_scanned`, `pdf.text_layout` |
-| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
+| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `web.to_pdf`, `pdf.tables_to_csv` |
 | `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.grayscale`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize`, `pdf.unlock_forms` |
-| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
+| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.replace_color`, `pdf.adjust_colors`, `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`, `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`, `pdf.watermark_detect`, `pdf.watermark_remove` |
 | `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
-| `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
-| `forms` | AcroForm field inspection, filling, creation, and flattening | `pdf.forms_inspect`, `pdf.forms_fill`, `pdf.forms_flatten` |
-| `sign` | PAdES digital signing, timestamping, and signature verification | `pdf.sign`, `pdf.sign_verify` |
+| `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotations`, `pdf.annotations_import`, `pdf.annotations_export` |
+| `forms` | AcroForm field inspection, filling, creation, detection, and flattening | `pdf.forms_list`, `pdf.forms_fill`, `pdf.forms_create`, `pdf.forms_detect`, `pdf.forms_flatten`, `pdf.forms_import`, `pdf.forms_export` |
+| `sign` | PAdES digital signing, timestamping, signature verification, and removal | `pdf.sign`, `pdf.sign_verify`, `pdf.sign_remove` |
 | `redact` | True object-stream and raster redaction with verification report | `pdf.redact`, `pdf.redact_verify` |
-| `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare_visual`, `pdf.compare_semantic` |
+| `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare` |
 | `edit` | Stateless page-mode in-place edits and document-mode export helpers | `pdf.edit_apply` |
 | `ai` | Offline-first summarization, Q&A with citations, translation, table extraction | `ai.summarize`, `ai.ask`, `ai.translate`, `ai.extract_tables`, `ai.recipe_from_text` |
 | `automation` | Batch recipe execution and folder watch automation | `automation.recipe_validate` |
+
+> [!IMPORTANT]
+> **Redaction Carrier Contract (`pdf.redact`, `pdf.redact_verify`)**:
+> - **Covered carriers**: Text show operators (`Tj`, `TJ`, `'`, `"`), decoded image pixels and masks (RGB, Gray, CMYK, soft masks, explicit masks), annotations and form field values (AcroForm values, annotation contents, appearance streams), metadata streams and Document Info dictionaries (UTF-8, UTF-16BE, UTF-16LE XMP metadata), thumbnails (`/Thumb`), and embedded file attachments (`/EmbeddedFiles`).
+> - **Verification pipeline**: Six gates (`pdfium_text`, `core_text`, `region_render`, `image_pixels`, `object_graph`, `rewrite_history`). Note: the image pixel gate reuses placement and selection routines from the rewriter. Standalone `pdf.redact_verify` takes no evidence parameter and never returns `verified`; it returns `unverifiable`, `partial` or `failed`, because region render and image pixel gates are unavailable without original rewrite context.
+> - **Shared images**: Any shared image XObject is rewritten in place, clearing target pixels across every page referencing the XObject.
+> - **Explicit refusals**: Uninspected carriers intersecting redaction regions or affected pages (inline images `BI`, shadings `sh`, font-setting `gs`, painted vector paths when `scope.vectors` is true, and non-image Form XObjects anywhere on processed pages) fail closed with an explicit refusal error naming the refusing carrier.
 
 ### `ToolSpec` Descriptor Example
 
@@ -139,11 +149,89 @@ All parameter structs live in `ariad-core::tools::params::*` (pure `serde` + `sc
 
 ### Multi-Format Tools (`output_format` and `output_formats`)
 
+`pdf.watermark_detect` returns candidates with input-bound identifiers, page numbers and bounding boxes. Image objects it cannot inspect are counted in `unsupported_images` and reported in a warning; they are not candidates. `pdf.watermark_remove` requires explicit candidate identifiers from that input; it rejects empty, wildcard, unknown or ambiguous selections. A removal request supports at most eight distinct detection queries and shares one work budget across detection and removal. Near the decode limit, detection can succeed while removal fails with the standard limit error because the rewrite also consumes that budget. It publishes a PDF and also returns an inline JSON report of removed and unselected candidates. The host and MCP expose that report as `inline_json`, the CLI includes it in `--json` output, and WASM exposes it as `data`. Removing third-party marks emits a warning.
+
+Text and image marks use the bundled Libertinus fonts and visual page coordinates. Image marks take the image as the second input; bytes determine its type. AriadShift watermarks use a removable marked-content and optional-content layer. Pagination marks use Header or Footer artifacts, while background and inversion use private artifact markers. Inversion uses Difference blending and does not invert annotations. Colour adjustment may skip unsupported image encodings with a warning.
+
+Page numbering and headers support page labels. Headers and footers expand `{filename}`, `{date}`, `{n}`, `{total}` and `{label}`; the original Unicode filename is cleaned of path components and control characters. The date comes from an explicit parameter or the clock injected into `ToolCtx` by the host. Contents pages derive from the document outline, keep links to original pages and shift page labels; generation is bounded to 50 pages.
+
+`pdf.annotations` lists, adds, updates, deletes or flattens annotations. Listing emits JSON; other actions emit a PDF. Annotation interchange uses XFDF or JSON. XFDF page numbers are zero-based; tool parameters and JSON use one-based pages. Links accept the shared safe-link policy. Widgets are handled by the form tools. Hidden or non-viewable annotations and widgets remain when flattening.
+
+The form tools list, fill, create and flatten AcroForm fields. Existing read-only fields are skipped, calculations and JavaScript are never executed, and XFA content is reported but not edited. Rewriting a signed input emits `signed_input_rewritten`; it does not preserve the signature. New field names cannot contain dots. Radio and checkbox creation requires an `export_value`; `tab_order` orders new widgets in the page annotation array. Non-ASCII appearances use the bundled Libertinus font; supported Standard-14 fonts are reused for ASCII text.
+
+Form data imports accept FDF, XFDF, JSON or CSV; exports use the requested `format`. The second input to an import is a data file, not a PDF. Each CSV or JSON batch record produces a separate PDF, with a default limit of 1,000 records and a maximum of 10,000. Batch processing enforces `records * input_bytes <= max_decompressed_bytes` to reject early before opening or allocating to bound memory, serializing and dropping each `PdfDoc` per record. CSV cells use `|` to separate values only for multi-select list fields; other fields keep literal pipes. Exported cells and headers that start with spreadsheet formula characters (`=`, `+`, `-`, `@`, tab or carriage return) are prefixed with an apostrophe; import strips one leading apostrophe when followed by those characters. XFDF DTDs and external entities are rejected, and file references are never opened.
+
+XFDF export drops characters that XML cannot represent and emits `invalid_xml_characters`. When a document has duplicate fully qualified field names, import, fill, flatten and export use the first field and emit `duplicate_field_name`.
+
+`pdf.forms_detect` uses the out-of-process PDFium pack locally to propose fields from vector rules, boxes and text; it can use a raster fallback on scanned pages. Proposals are suggestions for user review and can be passed to `pdf.forms_create`. Browser detection is deferred until the PDFium WASM integration; the other nine tools run in `ariad-pdf` locally and in WASM.
+
 Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"png"`, or `"json"`). Tools that can emit artifacts in more than one format additionally declare a non-empty `output_formats` allowlist (serialized in `schemas/tools.v1.json` only when non-empty so single-format descriptors remain unchanged):
 
 - `pdf.render` and `pdf.to_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "webp", "bmp", "tiff"]`
 - `pdf.thumbnails`: `output_format: "png"`, `output_formats: ["png", "json"]`
 - `pdf.extract_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "zip"]`
+- `pdf.annotations`: PDF for editing actions and JSON for `list`.
+- `pdf.annotations_export`: XFDF (default) or JSON.
+- `pdf.forms_export`: JSON (default), FDF, XFDF or CSV.
+- `pdf.tables_to_csv`: `output_format: "csv"`, extracts every table to an individual CSV file.
+- `pdf.compare`: `output_format: "json"`, `output_formats: ["json", "pdf"]`
+
+### `pdf.tables_to_csv`
+
+`pdf.tables_to_csv` extracts every table in an input PDF into its own CSV file (`<stem>.table-001.csv`, `<stem>.table-002.csv`, ...).
+
+- **Parameters**: Takes no mandatory parameters (`{}`) and rejects unknown fields (`additionalProperties: false`).
+- **Outputs**: Emits one or more CSV files with RFC 4180 escaping and formula-injection guarding (`=`, `+`, `-`, `@`, `\t`, `\r` prefixed with `'`). Capped at 255 tables and 50 MiB total CSV output.
+- **Runtime**: `local` only (executed host-side via `ariad-host` using Docling table detection).
+- **Error handling**: If the document contains no tables or Docling table detection finds no tables, execution fails before publishing with exit code `1` (`engine_failure`, error message `"no tables found in document"`). If Docling execution fails, the Docling error is surfaced directly without fallback to the native reader.
+
+### `pdf.compare`
+
+`pdf.compare` performs semantic text diffing and rasterized visual comparison between two PDF documents (`inputs[0]` before, `inputs[1]` after), emitting a structured JSON difference report (`<stem>.compared.json`) and an annotated PDF report (`<stem>.compared.pdf`) highlighting changes.
+
+- **Parameters**:
+  - `mode` (`"text"` | `"visual"` | `"both"`, default `"text"`): Comparison mode.
+    - `"text"`: Reading-order semantic word diff using `similar` 3.2.1 Myers diff with bounding boxes (WASM-capable, in-process via `ariad-pdf` or host composite with PDFium `pdf.text_layout` word coordinates).
+    - `"visual"`: Rasterized pixel difference with 16px connected bounding box grouping (local only, renders via `pdfium`).
+    - `"both"`: Executes both semantic text diffing and rasterized visual comparison.
+  - `pages` (optional string): Page selection to compare (e.g. `"1-5"`, `"odd"`, `"1,3"`). Defaults to comparing all pages.
+- **Outputs**:
+  - Default: Multi-artifact publication emitting `<stem>.compared.json` and `<stem>.compared.pdf`. When `-o` names a `.json` or `.pdf` file, only the requested artifact is published. When `-o` is omitted and run inline, outputs structured JSON to stdout.
+- **Runtimes**: `wasm (text), local`. On WASM or when the PDFium pack is missing, selecting `"visual"` or `"both"` fails early at preflight with exit code `5` (`engine_unavailable` / `tool_missing`).
+- **Resource Bounds & Limits**:
+  - Visual comparison is capped at 200 pages (`MAX_VISUAL_PAGES = 200`). Exceeding this limit in `"visual"` or `"both"` mode fails immediately before rendering with exit code `9` (`invalid_params`) naming the 200-page limit.
+  - Rendered page images are capped at 50 megapixels (`MAX_PAGE_PIXELS = 50_000_000`, 50 Mpx).
+  - Detected visual differences are grouped into at most 200 bounding boxes per page (`MAX_DIFF_BOXES = 200`).
+  - Visual comparison streams page by page so decoded raster images are not retained simultaneously in memory.
+- **Report Schema**:
+  - `summary`: Aggregate counts (`pages_before`, `pages_after`, `pages_compared`, `pages_identical`, `pages_changed`, `total_changes`, `text_changes`, `visual_changes`).
+  - `pages`: Per-page results (`page_number`, `page_before`, `page_after`, `status`: `"identical"` | `"changed"` | `"added"` | `"removed"`, `text_changes`, `visual_changes`).
+    - `text_changes`: Array of `{ kind, text_before?, text_after?, bbox: [left, bottom, right, top] }` where `kind` is `"insert"` (emerald highlight on after doc), `"delete"` (red rectangle), `"replace"` (amber highlight), or `"move"` (blue rectangle).
+    - `visual_changes`: Array of `{ bbox: [left, bottom, right, top], diff_pixels }` (purple rectangle).
+
+### `web.to_pdf`
+
+`web.to_pdf` fetches a remote web page securely and converts it offline into a PDF document via the HTML -> IR -> Typst pipeline.
+
+- **Parameters** (`WebToPdfParams`):
+  - `url` (string, required): Remote web page URL to convert. Must be a valid non-empty HTTPS URL (`additionalProperties: false`).
+  - `title` (string, optional): Document title override. If omitted, the HTML `<title>` tag is used.
+- **SSRF and Network Safeguards (AD-15)**:
+  - Enforces HTTPS only (`https_only: true`, `allow_loopback: false`).
+  - DNS resolution uses `resolve_and_pin_public`, which rejects the entire DNS answer if any returned IP address is private (RFC 1918), loopback, link-local, CGNAT (`100.64.0.0/10`), cloud metadata (`169.254.169.254`), multicast, unspecified, IPv4-mapped IPv6, or NAT64 (`64:ff9b::/96`). Outbound connection is pinned to the verified public IP.
+  - Redirects (`<= 5`): Every redirect target is re-validated and re-resolved against public IP rules.
+  - No `Cookie`, `Authorization`, or `Referer` headers are sent.
+- **Scope, Same-Origin Enforcement, and Caps (D12)**:
+  - Top-level response must have `Content-Type: text/html` or `application/xhtml+xml` (case-insensitive, ignoring charset); other content types fail with exit code `1`.
+  - Same-origin sub-assets: Fetches same-origin images (`<img>`, `srcset`), same-origin stylesheets (`<link rel="stylesheet">`), and same-origin CSS sub-assets (`@import`, `url(...)`).
+  - Cross-origin assets: Any cross-origin image, stylesheet, or CSS reference is skipped without network fetch and emits a warning with code `"remote_asset_skipped"`.
+  - JavaScript: Never executed. Any HTML containing `<script` tags emits a warning with code `"js_content_not_rendered"`.
+  - Resource caps: Top-level HTML `<= 10 MiB`, sub-assets `<= 50` total, `<= 20 MiB` per asset, cumulative bytes `<= 64 MiB`, and overall deadline `30 s`. Exceeding any cap terminates immediately with exit code `4` (`limit_exceeded`).
+  - Offline rendering: Verified HTML and same-origin assets are stored in a confined directory in the workspace, then rendered through the offline `HTML -> IR -> Typst` pipeline with `AssetBase` confined to that directory.
+- **Inputs & Output**:
+  - `inputs`: `InputArity::None` (takes zero file inputs; invocation operates via `--param url=https://...`).
+  - `output_format`: `pdf` (`output_formats: ["pdf"]`).
+- **Runtime**: `local` only (`HOST_COMPOSITE_ENGINE = "ariad-host"`). Access: `Tier::Free`.
 
 Before PDFium opens a document, the engine checks page image dimensions and data against the job's limits. Inline images may use image masks without a color space, lossless ASCIIHex, ASCII85, Flate, RunLength or LZW filters, and CCITT or JPEG as the final filter. JPEG frame dimensions are checked against the image dictionary. Color-space aliases and filters the engine cannot safely inspect still cause `limit_exceeded` before the page is opened. Page budgets include repeated form invocations, inline image data and Type3 glyph uses; unusually complex pages may exceed these limits.
 
@@ -175,12 +263,14 @@ Engine availability for `pdf.split` is decided **before execution** via `ToolSpe
 
 Each `ToolSpec` declares its input arity:
 
+- `none`: Zero input files are required. The tool operates purely via parameters or remote sources (for example, `web.to_pdf`).
 - `one`: Exactly 1 input file is required (for example, `pdf.info`, `pdf.rotate`, `pdf.split`, `pdf.compress`).
 - `many(min, max)`: Between `min` and `max` input files (inclusive) are required (`1 <= min <= max`).
   - `pdf.merge`: `many(2, 500)`
   - `pdf.alternate_mix`: `many(2, 2)`
   - `pdf.overlay`: `many(2, 2)`
-  - `pdf.compare_visual` / `pdf.compare_semantic`: `many(2, 2)`
+  - `pdf.annotations_import` / `pdf.forms_import`: `many(2, 2)` (base PDF followed by data file)
+  - `pdf.compare`: `many(2, 2)`
   - `pdf.attachments`: `many(1, 100)` (`list` / `extract` / `remove` take 1 PDF; `add` takes the base PDF followed by attachment files)
   - `pdf.portfolio`: `many(1, 100)` (`create` takes 1..=100 input files; `list` / `extract` take 1 portfolio PDF)
 
@@ -188,7 +278,7 @@ Supplying fewer or more inputs than `inputs` allows fails before engine dispatch
 
 ### Accepted Formats
 
-Each `ToolSpec` declares `input_formats` using canonical format identifiers (for example, `["pdf"]` or `["png", "jpeg", "tiff", "webp"]`). The host sniffs every input file's actual content (magic bytes and container inspection, identical to `ashift inspect`) rather than trusting the filename extension. If any input's detected format is not in `input_formats`, execution fails before dispatch with exit code `10` (`wrong_input`). Regular files are required; directories, FIFOs, sockets, and device nodes are rejected upfront.
+Each `ToolSpec` declares `input_formats` using canonical format identifiers (for example, `["pdf"]` or `["png", "jpeg", "tiff", "webp"]`). The host sniffs every input file's actual content (magic bytes and container inspection, identical to `ashift inspect`) rather than trusting the filename extension. If any input's detected format is not in `input_formats`, execution fails before dispatch with exit code `10` (`wrong_input`). Regular files are required; directories, FIFOs, sockets, and device nodes are rejected upfront. The data payload at input 1 of `pdf.annotations_import` and `pdf.forms_import` is exempt from PDF format sniffing; the corresponding bounded interchange parser identifies it.
 
 ### Ordering Semantics
 
@@ -197,7 +287,7 @@ Input order is preserved end-to-end across CLI arguments, MCP `inputs` arrays, W
 - **`pdf.merge`**: Pages are concatenated in the exact order the input files are provided (`inputs[0]`, then `inputs[1]`, ..., `inputs[N - 1]`). When `outline: "per-file"` is active, top-level bookmarks are generated in the same order using each input's file stem.
 - **`pdf.overlay`**: `inputs[0]` is the base document; `inputs[1]` is the overlay document applied over or under `inputs[0]`.
 - **`pdf.alternate_mix`**: Pages interleave starting with page 1 of `inputs[0]`, followed by page 1 of `inputs[1]` (or the last page of `inputs[1]` when `reverse_second: true`).
-- **`pdf.compare_*`**: `inputs[0]` is the baseline ("before") document and `inputs[1]` is the revised ("after") document.
+- **`pdf.compare`**: `inputs[0]` is the baseline ("before") document and `inputs[1]` is the revised ("after") document.
 
 ### Encrypted Input Preflight
 
@@ -362,6 +452,8 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.page_labels` → `report.labeled.pdf`
   - `pdf.viewer_prefs` → `report.prefs.pdf`
   - `pdf.layers` (`set_default_visibility` / `remove`) → `report.layers.pdf`; (`list`) → `report.layers.json`
+  - `pdf.annotations` → `report.annotations.pdf`, or `report.annotations.json` for `list`; import → `report.annotated.pdf`; export → `report.annotations.<xfdf|json>`.
+  - `pdf.forms_list` → `report.fields.json`; `pdf.forms_fill` → `report.filled.pdf`; `pdf.forms_create` → `report.form.pdf`; `pdf.forms_flatten` → `report.flattened.pdf`; `pdf.forms_detect` → `report.detected-fields.json`; `pdf.forms_export` → `report.form-data.<json|fdf|xfdf|csv>`.
   - `pdf.remove_blank` → `report.remove-blank.pdf`
   - `pdf.crop_whitespace` → `report.cropped.pdf`
   - `pdf.detect_scanned` → `report.detect-scanned.json`
@@ -382,15 +474,19 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.unlock_forms` → `report.unlocked.pdf`
   - `pdf.ocr` → `scan.ocr.pdf`
   - `pdf.sign` → `contract.signed.pdf`
+  - `pdf.sign_verify` → `contract.sign-verify.json`
+  - `pdf.sign_remove` → `contract.unsigned.pdf`
   - `pdf.redact` → `contract.redacted.pdf` (plus `contract.redaction-report.json` when verification report is requested)
   - `pdf.info` → prints structured JSON to stdout on CLI when `--json` is passed (or human summary without `-o`), and writes `report.info.json` when `-o` specifies a directory or file.
-  - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio` and `pdf.layers`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
+  - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio`, `pdf.layers` and `pdf.annotations`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
 - **Multi-artifact tools**:
+  - `pdf.forms_import` batches → `<stem>.filled-001.pdf`, `<stem>.filled-002.pdf`, ...; an optional `name_column` supplies sanitized, deduplicated names.
   - `pdf.split` → `<stem>.part-001.pdf`, `<stem>.part-002.pdf`, ... (1-based index, zero-padded to at least 3 digits: `001`..`999`, widening to 4+ digits when parts >= 1,000).
   - `pdf.to_images` / `pdf.render` → `<stem>.page-001.<ext>`, `<stem>.page-002.<ext>`, ... (`combine = "none"`), or `<stem>.pages.<ext>` (`combine = "vertical" | "horizontal"`).
   - `pdf.thumbnails` → `<stem>.page-001.png`, `<stem>.page-002.png`, ... plus `<stem>.thumbnails.json`.
   - `pdf.extract_images` → `<stem>.page-001.image-001.<ext>`, ... (`archive = false`), or `<stem>.images.zip` (`archive = true`).
   - `pdf.attachments` and `pdf.portfolio` (`action = "extract"`) → `<stem>.attachment-001.<sanitized-name>` confined inside `<output_dir>`. The attachment's own name and extension are kept and its bytes are written unchanged, except that executable, script, shortcut and installer types (for example `.exe`, `.py`, `.lnk`, `.sh`, `.pkg`) get `.bin` appended to the file name, with one warning per renamed file. Files never get an executable bit. Entries are numbered in name order.
+  - `pdf.tables_to_csv` → `<stem>.table-001.csv`, `<stem>.table-002.csv`, ... (1-based index, zero-padded to 3 digits) inside `<output_dir>`. Each discovered table in the document is exported to a separate CSV file with formula-injection guarding. If no tables are found in the document, execution fails before publishing with exit code `1` (`engine_failure`, error message `"no tables found in document"`). In the browser (WASM runtime), without Docling layout analysis, PDF -> XLSX and PDF -> CSV conversions run as fallback text dumps issuing the `no_tables_found` warning.
 
 When `-o <FILE>` is passed to a single-artifact tool, that exact file path is used. Passing a non-directory `-o <FILE>` to a multi-artifact tool (such as `pdf.split`) is rejected upfront with exit code `2` (`usage`).
 
@@ -441,12 +537,12 @@ Exceeding any limit terminates the job immediately and returns `limit_exceeded` 
 ### Sandbox and Network Isolation (AD-15)
 
 - **Mandatory confinement**: Out-of-process engines (`pdfium`, `qpdf`, `tesseract`, `sign`, `verapdf`, `ai`, `inpaint`) declare `sandbox_required: true` in their `EngineSpec` and refuse to start if OS sandbox isolation (Linux Landlock + seccomp, macOS Seatbelt) is unavailable unless the user explicitly sets `ASHIFT_SANDBOX=off`. Writable filesystem roots are restricted to `<workspace>/out` and the job's private `work_dir` (`TMPDIR`).
-- **Zero engine network access (AD-15)**: No engine ever receives network access. Whenever a tool requires remote data — RFC 3161 timestamp authority (TSA) responses, OCSP responses, CRLs for `pdf.sign`, or web page HTML/assets for `pdf.from_url` — the trusted host (`ariad-host`) fetches the resource beforehand using its SSRF-safe HTTP client:
+- **Zero engine network access (AD-15)**: No engine ever receives network access. Whenever a tool requires remote data — RFC 3161 timestamp authority (TSA) responses, OCSP responses, CRLs for `pdf.sign`, or web page HTML/assets for `web.to_pdf` — the trusted host (`ariad-host`) fetches the resource beforehand using its SSRF-safe HTTP client:
   - HTTPS only (plain HTTP is allowed only for explicit loopback development).
   - DNS is resolved once per hop and rejected if **any** resolved IP address is loopback, private (RFC 1918 / RFC 4193), link-local, CGNAT, multicast, broadcast, or cloud metadata (`169.254.169.254`, `fd00:ec2::254`).
   - Every redirect target is re-validated against the same URL and DNS rules (bounded redirect count).
   - Strict response byte size and wall-clock time caps are enforced.
-  - The host writes the verified bytes into `<work_dir>` and passes the local file path to the offline engine. For `pdf.from_url`, the host renders the fetched static HTML offline (`HTML -> IR -> Typst`); JavaScript-driven pages are never executed and emit a `js_not_executed` warning.
+  - The host writes the verified bytes into `<work_dir>` and passes the local file path to the offline engine. For `web.to_pdf`, the host renders the fetched static HTML offline (`HTML -> IR -> Typst`); JavaScript-driven pages are never executed and emit a `js_content_not_rendered` warning. Any cross-origin assets are skipped with a `remote_asset_skipped` warning.
 
 ### Progress Unit
 
@@ -467,6 +563,16 @@ For every in-process tool in `ariad-pdf` (and deterministic native writers), run
 3. **Object numbering and serialization**: Orphan objects are garbage-collected before save, surviving indirect objects are renumbered in deterministic breadth-first traversal order from the `Catalog` root, and dictionary entries are written in lexicographical key order.
 
 Golden tests and CI determinism checks run every in-process tool twice under a fixed `SOURCE_DATE_EPOCH` and assert `sha256(run_1) == sha256(run_2)`.
+
+The PDF drawing API resolves a `{date}` token from an explicit ISO date first,
+then the caller-supplied `ToolCtx` clock. Native hosts parse `SOURCE_DATE_EPOCH`
+once per run and supply it as a UTC clock and reproducible serialization epoch;
+otherwise they supply the current UTC clock. Recipe steps and output naming use
+the same clock. Browser hosts supply their clock, and embedders may supply an
+explicit UTC offset. The PDF library reads neither the environment nor the wall
+clock for dates. An invalid explicit date is an error rather than a fallback. If
+`SOURCE_DATE_EPOCH` is invalid or set to an empty value, every native tool,
+recipe and MCP tool call fails with `invalid SOURCE_DATE_EPOCH`.
 
 ---
 
@@ -544,7 +650,7 @@ Any recipe loaded from an external `.json` file, shared URL, clipboard import, m
    - CLI (`ashift recipe run`): Prints the step summary and prompts interactively on `/dev/tty`, or requires the explicit `--yes` flag in non-interactive scripts.
    - Web and macOS: Shows a confirmation sheet listing all steps and target folder before any step runs.
    - Natural-language recipes generated by `ai.recipe_from_text` are also treated as untrusted and never auto-execute without user confirmation.
-2. **Forbidden steps in imported recipes**: Imported recipes are strictly forbidden from configuring watch-folder automation (`watch`) or network-fetch steps (such as `pdf.from_url`). Presence of either in an imported recipe fails validation with exit code `9`.
+2. **Forbidden steps in imported recipes**: Imported recipes are strictly forbidden from configuring watch-folder automation (`watch`) or network-fetch steps (such as `web.to_pdf`). Presence of either in an imported recipe fails validation with exit code `9`.
 3. **No literal secrets**: Imported and trusted recipes alike reject any literal value on an `x-ariad-secret` parameter; a recipe step may only contain `"password": {"$secret": "prompt"}` (see [§11](#11-secrets-contract-x-ariad-secret)).
 4. **Deep links are route-only**: `ariadshift://` deep links may only navigate to a named view, conversion pair, or tool ID (for example, `ariadshift://tool/pdf.merge`). Deep links **never** accept filesystem paths, parameter blobs, or inline recipes.
 
@@ -686,7 +792,84 @@ Before running any tool that has one or more resolved secrets in `SecretBag`:
 
 ---
 
-## 12. CLI Commands and Tool Exit Codes
+## 12. Digital Signatures and Timestamping (`sign` group)
+
+Digital signature creation, verification, removal, and visual appearances are implemented across `ariad-pdf` (pure Rust, WASM + native) and the out-of-process Python `sign` engine pack (pyHanko):
+
+### 1. `pdf.sign_visual`
+- **Engine**: `ariad-pdf` (pure Rust in-process, `wasm` and `local` runtimes).
+- **Summary**: Places a visible signature box on a document page without cryptographic CMS payload.
+- **Modes**:
+  - `type`: Typographic text layout with optional signer metadata.
+  - `draw`: Vector stroke / path rendering.
+  - `image`: Image stamp (PNG/JPEG).
+- **Parameters**: `page` (1-based index), `rect` (`[x1, y1, x2, y2]` in points), `flatten` (boolean; `true` burns into page content, `false` adds a `/Subtype /Stamp` annotation).
+
+### 2. `pdf.sign`
+- **Engine**: `sign` pack (out-of-process pyHanko).
+- **Summary**: Creates standard PAdES digital signatures.
+- **Profiles / Levels**:
+  - `B-B`: Basic cryptographic signature with signer certificate.
+  - `B-T`: Signature with a trusted RFC 3161 timestamp token.
+  - `B-LT`: Long-term validation with embedded validation info (DSS containing OCSP/CRL responses from offline evidence).
+  - `B-LTA`: Long-term archival validation with a document timestamp covering DSS.
+- **Secrets**:
+  - `certificate`: Base64-encoded PKCS#12 payload (up to 10 MiB). Filesystem paths are strictly rejected by the host. CLI (`--secret certificate=@<file>`) and MCP (`secret_put` with base64 data) read/encode the content on their side. Staged to `<work_dir>/cert.p12` mode 0600 on unix, strictly bounded to 10 MiB, cleaned up unconditionally on exit.
+  - `password` / `key_password`: Decryption passphrase for PKCS#12 archive.
+- **Brokered Network Flow (AD-15)**: The engine runs in a network-denied sandbox. All RFC 3161 timestamping requests are emitted as protocol progress events (`tsa_request`) and brokered by the host's hardened `net::Client` against an optional TSA allowlist (`ASHIFT_TSA_ALLOWLIST`, required in cloud mode `ASHIFT_CLOUD_MODE=1`). Outbound TSA requests refuse HTTP redirects. Revocation info for B-LT/B-LTA is loaded exclusively from offline evidence; live network fetching is disabled.
+
+### 3. `pdf.sign_token` (Pro Tier)
+- **Engine**: `sign` pack.
+- **Summary**: Token signing interface.
+- **Availability**: Hardware token signing via PKCS#11 and OS Keychain integration are deferred and not available in 0.4.0. Invoking with a PKCS#11 module returns `error[tool_missing]`.
+- **Parameters**: `module` (path to PKCS#11 shared library), `slot`, `token_label`, `key_label`, `pin` (`x-ariad-secret`).
+
+### 4. `pdf.timestamp`
+- **Engine**: `sign` pack.
+- **Summary**: Adds an imprint-bound RFC 3161 document timestamp to a PDF without requiring a signer certificate.
+- **Parameters**: `field_name`, `tsa_url`, `md_algorithm` (optional, default: `"sha256"`).
+
+### 5. `pdf.sign_verify`
+- **Engine**: `sign` pack.
+- **Summary**: Cryptographically verifies all embedded signatures and document timestamps in a PDF.
+- **Report**: Returns JSON report with `signatures_count`, `valid`, `integrity`, per-signature signer subject/issuer/validity dates, `signing_time`, `revocation_status`, `coverage` (`entire_file`, `entire_revision`, `partial`), and DocMDP modification analysis.
+- **Security**: Network fetching is strictly disabled (`allow_fetching = false`). Operates with the OS trust store by default, and accepts `trust_anchors` and `offline_evidence` files. Revocation status relies on embedded DSS validation info, offline evidence, or deferred validation.
+
+### 6. `pdf.sign_remove`
+- **Engine**: `sign` pack.
+- **Summary**: Removes digital signature fields and annotations from a PDF.
+- **Safety**: Refuses encrypted PDFs upfront (`error[encrypted_input]`). Cleans up `/Root/Perms /DocMDP` and `/UR3`. Requires `confirm_invalidation: true` to prevent accidental loss of integrity guarantees.
+
+---
+
+## PDF/A and PDF/UA Compliance
+
+The registry and parameter schemas in [tools.v1.json](../schemas/tools.v1.json) define these free tools:
+
+| Tool | Parameters | Runtime and output |
+|---|---|---|
+| `pdf.to_pdfa` | `level`: `"2b"` (default), `"3b"`, or `"2u"` | Local host composite; verified PDF and inline veraPDF JSON report |
+| `pdf.to_pdfua` | `flavour`: `"1"` (default) | Local host composite; unchanged verified PDF and inline accessibility/veraPDF reports |
+| `pdf.accessibility_report` | Empty object | Local and WASM; structured JSON report |
+| `pdf.validate_pdfa` / `pdf.validate_pdfua` | `flavour` (optional) | Local veraPDF pack; structured validation JSON |
+
+Both compliance composites require the opt-in `verapdf` pack and system Java >=11. Install the pack with `ashift engines install verapdf`; a missing pack or Java returns exit 5 (`tool_missing`). The pack runs out of process in the engine sandbox with network access disabled.
+
+`pdf.to_pdfa` repairs existing PDF objects without rasterizing or reflowing content: it adds an sRGB OutputIntent, synchronizes PDF/A XMP and Info dates, ensures a trailer ID, removes JavaScript and prohibited actions, and preserves transparency. It embeds unmodified Liberation 2.1.5 for unembedded Helvetica, Times and Courier variants with supported base encodings. Symbol, ZapfDingbats, unknown fonts/encodings, incompatible font advances, and missing Unicode maps that cannot be derived safely are refused. Encrypted input returns exit 12; embedded files are refused for `2b` and `2u`, and permitted for `3b` subject to validation. Asset licences and SHA-256 receipts are in [compliance-assets.toml](../crates/ariad-pdf/assets/compliance-assets.toml).
+
+Every repaired candidate must pass veraPDF before publication. A failed validation returns exit 1 with `compliance_failed` and the full structured rule report in the diagnostic; no PDF is published and existing destinations remain untouched, including with `--overwrite`. MCP additionally exposes `error.standard` and `error.report`. Successful `--json` tool outcomes include the validation report in `inline_json`.
+
+`pdf.accessibility_report` checks tagging, structure root, language, display of the document title, title metadata, figure alternative descriptions, Unicode font maps and page tab order. Its `compliant` field means these inspection checks passed; veraPDF remains the independent conformance gate. `pdf.to_pdfua` runs these checks and veraPDF against the existing PDF. If either fails, its structured error contains both reports. It does not synthesize tags or alternative text. For IR-family input, use [`convert --pdf-standard ua-1`](cli.md#ashift-convert).
+
+```bash
+ashift tool pdf.to_pdfa input.pdf --param level=2b -o archival.pdf --json
+ashift tool pdf.accessibility_report input.pdf -o accessibility.json
+ashift tool pdf.to_pdfua tagged.pdf -o verified.pdf --json
+```
+
+---
+
+## 13. CLI Commands and Tool Exit Codes
 
 ### CLI Commands
 
@@ -737,7 +920,7 @@ Tool commands preserve the existing `ashift` exit codes (`0`–`6` and `130` in 
 | Exit Code | Error Code (`error.code`) | Name | Meaning |
 |---|---|---|---|
 | `0` | — | Success | Tool or recipe completed and all artifacts were atomically published. |
-| `1` | `engine_failure` / `io` | Failure | Corrupt PDF/input file, I/O failure, or general runtime tool failure. |
+| `1` | `engine_failure` / `compliance_failed` / `io` | Failure | Corrupt PDF/input file, I/O failure, or general runtime tool failure. |
 | `2` | `usage` | Usage | Invalid CLI flags, destination resolving to an input path, or passing a file `-o` to a multi-artifact tool. |
 | `3` | `unsupported_route` | Unsupported Route | Used by `convert` steps inside a recipe when a conversion route is unreachable. |
 | `4` | `limit_exceeded` | Limit Exceeded | Input size, page count (`max_pages`), decompressed stream bytes (`max_decompressed_bytes`), nesting depth, timeout (`timeout_s`), or process memory (`max_memory_mb`) exceeded `Limits`. |

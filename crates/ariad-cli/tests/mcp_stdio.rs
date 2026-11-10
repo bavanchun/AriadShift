@@ -2612,7 +2612,7 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let listed = list_resp["result"]["structuredContent"]
         .as_array()
         .expect("list_doc_tools array");
-    assert_eq!(listed.len(), 44);
+    assert_eq!(listed.len(), 92);
     assert_eq!(listed[0]["id"], "pdf.info");
     assert_eq!(listed[0]["group"], "organize");
     assert_eq!(listed[0]["engine"], "ariad-pdf");
@@ -2743,6 +2743,212 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let read_resp = client.read_response(707);
     assert!(read_resp.get("result").is_some(), "{read_resp}");
 
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_lists_and_inspects_forms_and_annotations() {
+    let temp_dir = TempDir::new().unwrap();
+    let input = temp_dir.path().join("form.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-forms/forms-all-types.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", temp_dir.path().to_str().unwrap()],
+        Vec::new(),
+    );
+    client.initialize();
+    client.send_request(
+        800,
+        "tools/call",
+        json!({"name":"list_doc_tools", "arguments":{"group":"forms"}}),
+    );
+    let response = client.read_response(800);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let tools = response["result"]["structuredContent"].as_array().unwrap();
+    assert!(tools.iter().any(|tool| tool["id"] == "pdf.forms_list"));
+    assert!(tools.iter().any(|tool| tool["id"] == "pdf.forms_detect"));
+    client.send_request(
+        801,
+        "tools/call",
+        json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.forms_list", "inputs":[input]}}),
+    );
+    let response = client.read_response(801);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    assert!(
+        response["result"]["structuredContent"]["inline_json"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field["name"] == "name")
+    );
+    client.send_request(802, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.annotations", "inputs":[input], "params":{"action":"list"}}}));
+    let response = client.read_response(802);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    assert!(response["result"]["structuredContent"]["inline_json"]["annotations"].is_array());
+    let output = temp_dir.path().join("output");
+    fs::create_dir(&output).unwrap();
+    client.send_request(803, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.forms_fill", "inputs":[input], "output_dir":output, "params":{"values":{"name":"An Nguyễn"}}}}));
+    let response = client.read_response(803);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let filled = fs::read_dir(&output)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    client.send_request(
+        804,
+        "tools/call",
+        json!({"name":"run_doc_tool", "arguments":{"tool":"pdf.forms_list", "inputs":[filled]}}),
+    );
+    let response = client.read_response(804);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    assert!(
+        response["result"]["structuredContent"]["inline_json"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field["name"] == "name" && field["value"] == "An Nguyễn")
+    );
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_ocr_and_scan_tools_with_development_packs() {
+    let (Some(tesseract), Some(pdfium)) = (
+        std::env::var_os("ARIAD_TEST_TESSERACT_PACK"),
+        std::env::var_os("ARIAD_TEST_PDFIUM_PACK"),
+    ) else {
+        eprintln!("skipping: development OCR packs are unavailable");
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    let mut client = McpTestClient::spawn_with_env(
+        &["--allow-dir", dir.path().to_str().unwrap()],
+        Vec::new(),
+        &[
+            ("ASHIFT_PACK_TESSERACT", &tesseract),
+            ("ASHIFT_PACK_PDFIUM", &pdfium),
+        ],
+    );
+    client.initialize();
+    for (index, (tool, source)) in [
+        ("pdf.ocr", "fixtures/scan/vi-garden-300dpi.pdf"),
+        ("image.ocr", "fixtures/scan/vi-garden-300dpi.png"),
+        (
+            "pdf.auto_rotate",
+            "fixtures/pdf-tools/scan-rotated-90-vi.pdf",
+        ),
+        ("pdf.deskew", "fixtures/pdf-tools/scanned-skewed-vi.pdf"),
+        ("pdf.scan_split", "fixtures/pdf-tools/scan-photos-3.pdf"),
+        ("pdf.scanner_effect", "fixtures/scan/vi-garden-300dpi.pdf"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let extension = std::path::Path::new(source).extension().unwrap();
+        let input = dir
+            .path()
+            .join(format!("input-{index}"))
+            .with_extension(extension);
+        fs::copy(repository_root().join(source), &input).unwrap();
+        let output = dir.path().join(format!("output-{index}"));
+        fs::create_dir(&output).unwrap();
+        let id = 920 + index as u64;
+        client.send_request(
+            id,
+            "tools/call",
+            json!({"name":"run_doc_tool", "arguments": {
+                "tool":tool, "inputs":[input], "output_dir":output, "params":{"dpi":150}
+            }}),
+        );
+        let response = client.read_response(id);
+        assert_eq!(response["result"]["isError"], false, "{tool}: {response}");
+        let path = fs::read_dir(output)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert!(fs::read(path).unwrap().starts_with(b"%PDF-"), "{tool}");
+    }
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_image_ocr_with_development_pack() {
+    let Some(pack) = std::env::var_os("ARIAD_TEST_TESSERACT_PACK") else {
+        eprintln!("skipping: development Tesseract pack is unavailable");
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("scan.png");
+    fs::copy(
+        repository_root().join("fixtures/scan/vi-garden-300dpi.png"),
+        &input,
+    )
+    .unwrap();
+    let output = dir.path().join("out");
+    fs::create_dir(&output).unwrap();
+    let mut client = McpTestClient::spawn_with_env(
+        &["--allow-dir", dir.path().to_str().unwrap()],
+        Vec::new(),
+        &[("ASHIFT_PACK_TESSERACT", &pack)],
+    );
+    client.initialize();
+    client.send_request(
+        900,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {"tool": "image.ocr", "inputs": [input], "output_dir": output,
+                "params": {"output": "txt"}}
+        }),
+    );
+    let response = client.read_response(900);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let text = fs::read_dir(output)
+        .unwrap()
+        .map(|entry| fs::read_to_string(entry.unwrap().path()).unwrap())
+        .collect::<String>();
+    assert!(text.contains("Khu vườn đọc sách"), "{text}");
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn watermark_removal_mcp_returns_pdf_and_report() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("watermark.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-tools/watermark-layer.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client =
+        McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], Vec::new());
+    client.initialize();
+    client.send_request(
+        1700,
+        "tools/call",
+        json!({"name":"run_doc_tool","arguments":{"tool":"pdf.watermark_detect","inputs":[input]}}),
+    );
+    let detected = client.read_response(1700);
+    assert_eq!(detected["result"]["isError"], false, "{detected}");
+    let id = detected["result"]["structuredContent"]["inline_json"]["candidates"][0]["id"]
+        .as_str()
+        .unwrap();
+    client.send_request(1701, "tools/call", json!({"name":"run_doc_tool","arguments":{
+        "tool":"pdf.watermark_remove", "inputs":[input], "params":{"candidates":[id]}, "output_dir":dir.path()
+    }}));
+    let result = client.read_response(1701);
+    assert_eq!(result["result"]["isError"], false, "{result}");
+    let structured = &result["result"]["structuredContent"];
+    assert_eq!(structured["inline_json"]["removed"][0]["id"], id);
+    let path = std::path::Path::new(structured["artifacts"][0]["path"].as_str().unwrap());
+    assert!(fs::read(path).unwrap().starts_with(b"%PDF-"));
     client.close_and_assert_purity();
 }
 

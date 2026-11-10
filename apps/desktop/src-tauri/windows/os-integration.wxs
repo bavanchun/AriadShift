@@ -190,6 +190,102 @@
             <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
           </RegistryKey>
         </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.txt\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.text\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.csv\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.eml\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.msg\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.svg\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.cbz\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.odg\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.wpd\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.wps\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.pub\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\SystemFileAssociations\.vsd\shell\AriadShift.Convert" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="MUIVerb" Type="string" Value="Convert with AriadShift" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[!Path]&quot;,0" />
+          <RegistryValue Name="MultiSelectModel" Type="string" Value="Player" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
       </Component>
       <Component Id="BundleResources" Guid="{d2a051c7-c38d-e60c-1b17-3babdef119b9}">
         <RegistryValue Root="HKCU" Key="Software\AriadShift\OsIntegration" Name="BundleResources" Type="integer" Value="1" KeyPath="yes" />

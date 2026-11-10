@@ -1,0 +1,20 @@
+{
+  "version": "ariad-truth/0",
+  "id": "scan-mixed-text-vi",
+  "unscored": true,
+  "unscored_reason": "PDF scan tools test corpus fixture (routes = [])",
+  "pages": [
+    {
+      "visible_text": true,
+      "invisible_text": false
+    },
+    {
+      "visible_text": false,
+      "invisible_text": false
+    },
+    {
+      "visible_text": false,
+      "invisible_text": true
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+name: verapdf pack
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - engines/verapdf/**
+      - scripts/pack/**
+      - scripts/test-pack-verapdf.sh
+      - justfile
+      - .github/workflows/pack-verapdf.yml
+  push:
+    tags: ['pack-verapdf-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  tooling:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: shellcheck engines/verapdf/pack/*.sh scripts/test-pack-verapdf.sh
+      - run: bash scripts/test-pack-verapdf.sh
+
+  source-build:
+    name: Build (${{ matrix.slug }})
+    needs: tooling
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {slug: linux-x64, os: ubuntu-26.04}
+          - {slug: linux-arm64, os: ubuntu-26.04-arm}
+          - {slug: mac-arm64, os: macos-26}
+          - {slug: mac-x64, os: macos-26-intel}
+    env:
+      SLUG: ${{ matrix.slug }}
+      APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Linux tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd unzip
+      - name: Enable namespaces for sandbox tests
+        if: runner.os == 'Linux'
+        run: |
+          # bubblewrap sandbox needs unprivileged userns on GitHub-hosted Ubuntu runners
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install macOS tools
+        if: runner.os == 'macOS'
+        run: brew install zstd gnu-tar
+      - name: Download pinned inputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/verapdf-input"
+          curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip -o "$RUNNER_TEMP/verapdf-input/verapdf-installer.zip"
+      - name: Build manifest tool
+        run: cargo build -p ariad-cli --bin ashift
+      - name: Assemble and verify unsigned pack
+        run: |
+          bash engines/verapdf/pack/make.sh pack "$SLUG" "$RUNNER_TEMP/verapdf-input/verapdf-installer.zip" "$GITHUB_WORKSPACE/target/debug/ashift" "$RUNNER_TEMP/verapdf-pack"
+          bash engines/verapdf/pack/make.sh verify "$RUNNER_TEMP/verapdf-pack"
+          VERAPDF_TEST_PACK="$RUNNER_TEMP/verapdf-pack" bash scripts/test-pack-verapdf.sh
+      - name: Exercise veraPDF pack tests
+        if: matrix.slug != 'linux-arm64'
+        env:
+          ARIAD_REQUIRE_VERAPDF_PACK: '1'
+          ASHIFT_PACK_VERAPDF: ${{ runner.temp }}/verapdf-pack
+        run: |
+          cargo test --locked -p ariad-host engines::verapdf
+          cargo test --locked -p ariad-cli --test verapdf_pack
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verapdf-pack-${{ matrix.slug }}
+          path: ${{ runner.temp }}/verapdf-pack-dist/*.tar.zst
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+
+  manifest:
+    needs: source-build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: verapdf-pack-*
+          path: pack-dist
+          merge-multiple: true
+      - run: cargo build -p ariad-cli --bin ashift
+      - run: bash engines/verapdf/pack/make.sh merge pack-dist "$GITHUB_WORKSPACE/target/debug/ashift"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verapdf-manifest
+          path: pack-dist/pack.toml
+          if-no-files-found: error
+
+  release:
+    needs: manifest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/pack-verapdf-v')
+    runs-on: ubuntu-26.04
+    environment: release
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      PACK_SIGNING_KEY_ID: ${{ vars.PACK_SIGNING_KEY_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the trusted public key
+        run: |
+          [[ "$PACK_SIGNING_KEY_ID" =~ ^[0-9A-Fa-f]{16}$ ]]
+          echo "PUBLIC_KEY=crates/ariad-host/data/pack-keys/${PACK_SIGNING_KEY_ID,,}.pub" >> "$GITHUB_ENV"
+      - name: Require approval and stable branch ancestry
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign zstd
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: verapdf-pack-*
+          path: pack-dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verapdf-manifest
+          path: pack-dist
+      - name: Sign and publish
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.PACK_MINISIGN_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.PACK_MINISIGN_KEY_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/pack/sign-pack.sh --name verapdf --version 0.1.0 --manifest pack-dist/pack.toml --public-key "$PUBLIC_KEY"
+          (cd pack-dist && sha256sum -- * > SHA256SUMS)
+          key_dir=$(mktemp -d "$RUNNER_TEMP/verapdf-sign.XXXXXX")
+          trap 'rm -rf "$key_dir"' EXIT
+          chmod 700 "$key_dir"
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key_dir/key"
+          chmod 600 "$key_dir/key"
+          printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key_dir/key" -m pack-dist/SHA256SUMS -t "verapdf evidence $TAG"
+          minisign -V -p "$PUBLIC_KEY" -m pack-dist/SHA256SUMS
+          (cd pack-dist && sha256sum --check SHA256SUMS)
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes 'Signed verapdf engine pack.' pack-dist/pack.toml pack-dist/pack.toml.minisig pack-dist/*.tar.zst pack-dist/SHA256SUMS pack-dist/SHA256SUMS.minisig

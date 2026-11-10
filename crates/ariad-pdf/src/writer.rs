@@ -8,7 +8,7 @@
 //!    (`/Root` catalog, `/Info`, etc.) starting at `(1, 0)`.
 //! 5. Sorts all dictionary keys lexicographically.
 //! 6. Derives `/CreationDate`, `/ModDate`, and trailer `/ID` deterministically from
-//!    `SOURCE_DATE_EPOCH` when set, or from the SHA-256 content digest when unset (never reading
+//!    a caller-supplied epoch when set, or from the SHA-256 content digest when unset (never reading
 //!    the wall clock or OS RNG).
 //! 7. Always writes a complete, valid PDF from scratch (no incremental `/Prev` updates), even when
 //!    the input document was opened with a repaired cross-reference table.
@@ -36,8 +36,7 @@ pub struct SaveOptions {
     /// When `true`, do not create an `/Info` dictionary if the document has none (used when
     /// `pdf.metadata` runs with `strip_all: true`).
     pub omit_info_if_absent: bool,
-    /// Optional explicit Unix timestamp in seconds (UTC), overriding the `SOURCE_DATE_EPOCH`
-    /// environment variable when `Some`.
+    /// Optional explicit Unix timestamp in seconds (UTC), overriding the context epoch.
     pub epoch_override: Option<i64>,
     /// Save eligible objects and the cross-reference table as PDF 1.5 streams.
     pub object_streams: bool,
@@ -98,9 +97,9 @@ pub fn save_document_with_options(
     // 6. Compute canonical SHA-256 content hash over the normalized document.
     let content_hash = compute_document_hash(doc, ctx)?;
 
-    // 7. Derive deterministic `/CreationDate`, `/ModDate`, and `/ID` from `SOURCE_DATE_EPOCH`
+    // 7. Derive deterministic `/CreationDate`, `/ModDate`, and `/ID` from the supplied epoch
     //    (when set) or from `content_hash` (when unset).
-    let epoch = options.epoch_override.or_else(read_source_date_epoch_env);
+    let epoch = options.epoch_override.or(ctx.source_date_epoch);
     let (date_bytes, id_digest) = if let Some(epoch_secs) = epoch {
         let date_str = format_pdf_date_utc(epoch_secs);
         let digest = sha256_chunks(&[
@@ -493,6 +492,20 @@ fn hash_stream(stream: &Stream) -> [u8; 32] {
     hasher.finalize()
 }
 
+#[cfg(feature = "codecs")]
+pub(crate) fn canonical_object_hash(object: &Object) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_object_canonical(object, &mut hasher);
+    hasher.finalize()
+}
+
+#[cfg(feature = "codecs")]
+pub(crate) fn canonical_dictionary_hash(dict: &Dictionary) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_dictionary_canonical(dict, None, &mut hasher);
+    hasher.finalize()
+}
+
 fn compute_document_hash(doc: &Document, ctx: &ToolCtx) -> Result<[u8; 32], PdfError> {
     let mut hasher = Sha256::new();
     hasher.update(b"pdf-version:");
@@ -585,12 +598,6 @@ fn hash_dictionary_canonical(dict: &Dictionary, skip_key: Option<&[u8]>, hasher:
     }
 }
 
-fn read_source_date_epoch_env() -> Option<i64> {
-    std::env::var("SOURCE_DATE_EPOCH")
-        .ok()
-        .and_then(|raw| raw.trim().parse::<i64>().ok())
-}
-
 /// Formats a Unix epoch timestamp in seconds as a UTC PDF date string (`D:YYYYMMDDHHmmSSZ`).
 #[must_use]
 pub fn format_pdf_date_utc(epoch_secs: i64) -> Vec<u8> {
@@ -616,7 +623,7 @@ pub fn format_pdf_date_utc(epoch_secs: i64) -> Vec<u8> {
     format!("D:{year:04}{m:02}{d:02}{hour:02}{minute:02}{second:02}Z").into_bytes()
 }
 
-fn sha256_chunks(chunks: &[&[u8]]) -> [u8; 32] {
+pub(crate) fn sha256_chunks(chunks: &[&[u8]]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for chunk in chunks {
         hasher.update(chunk);

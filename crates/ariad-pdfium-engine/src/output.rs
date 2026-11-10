@@ -275,6 +275,25 @@ impl<'a> ToolContext<'a> {
         &mut self,
         pages: Option<&PageRange>,
     ) -> Result<Vec<u8>, EngineFailure> {
+        self.load_validated_pdf_inner(pages, false)
+            .map(|(bytes, _)| bytes)
+    }
+
+    /// Validates and canonicalizes PDF bytes, retaining a digest of the exact source.
+    pub(crate) fn load_validated_pdf_with_source_digest(
+        &mut self,
+        pages: Option<&PageRange>,
+    ) -> Result<(Vec<u8>, [u8; 32]), EngineFailure> {
+        let (bytes, digest) = self.load_validated_pdf_inner(pages, true)?;
+        Ok((bytes, digest.ok_or_else(EngineFailure::io)?))
+    }
+
+    fn load_validated_pdf_inner(
+        &mut self,
+        pages: Option<&PageRange>,
+        hash_source: bool,
+    ) -> Result<(Vec<u8>, Option<[u8; 32]>), EngineFailure> {
+        use sha2::{Digest, Sha256};
         self.check()?;
         self.limits
             .validate()
@@ -289,6 +308,7 @@ impl<'a> ToolContext<'a> {
         }
 
         let mut bytes = std::fs::read(&input_path).map_err(|_| EngineFailure::io())?;
+        let source_digest = hash_source.then(|| Sha256::digest(&bytes).into());
         self.check()?;
         crate::canonical::normalize_zero_prev(self, &mut bytes)?;
 
@@ -307,7 +327,18 @@ impl<'a> ToolContext<'a> {
             .map_err(map_pdf_open_error)?;
 
         self.warn_repaired_xref(&doc)?;
-        crate::canonical::canonicalize_selected(self, &mut doc, bytes.len(), pages)
+        let canonical =
+            crate::canonical::canonicalize_selected(self, &mut doc, bytes.len(), pages)?;
+        Ok((canonical, source_digest))
+    }
+
+    /// Build a structural PDF context sharing this job's deadline and cancellation flag.
+    #[must_use]
+    pub fn pdf_tool_context(&self) -> PdfToolCtx {
+        let mut ctx = PdfToolCtx::with_cancel(Arc::clone(&self.cancel.0))
+            .with_max_pages(self.limits.max_pages);
+        ctx.deadline = self.deadline;
+        ctx
     }
 
     /// Resolves `range` against `total_pages` with [`DuplicatePolicy::Reject`] and enforces

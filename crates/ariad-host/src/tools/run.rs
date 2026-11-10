@@ -42,9 +42,9 @@ use crate::{
             PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
             default_single_artifact_name, ensure_no_parent_traversal,
             extracted_quarantine_warnings, is_safe_extracted_extension, open_confined_output_dir,
-            publish_atomic, render_naming_template, replace_staged_input_stem,
-            validate_extracted_artifact_extensions, validate_output_path_for_spec,
-            validate_spec_artifact_extensions, validate_target_filename,
+            publish_atomic, replace_staged_input_stem, validate_extracted_artifact_extensions,
+            validate_output_path_for_spec, validate_spec_artifact_extensions,
+            validate_target_filename,
         },
         secrets::{SecretBag, SecretScrubber},
     },
@@ -402,6 +402,12 @@ pub enum ToolError {
     /// Exit code `1` (`engine_failure`): corrupt input, engine crash, or runtime tool failure.
     #[error("{0}")]
     EngineFailure(String),
+    /// Validation refused a conformance claim; the structured report explains why.
+    #[error("{standard} compliance validation failed: {report}")]
+    ComplianceFailed {
+        standard: String,
+        report: Box<Value>,
+    },
 }
 
 fn format_encrypted_error(needs_password: bool) -> String {
@@ -418,7 +424,10 @@ impl ToolError {
     #[must_use]
     pub const fn exit_code(&self) -> u8 {
         match self {
-            Self::EngineFailure(_) | Self::InputIo(_) | Self::OutputIo(_) => 1,
+            Self::EngineFailure(_)
+            | Self::ComplianceFailed { .. }
+            | Self::InputIo(_)
+            | Self::OutputIo(_) => 1,
             Self::Usage(_) | Self::DestinationSameAsInput | Self::Confinement(_) => 2,
             Self::UnsupportedRoute(_) => 3,
             Self::LimitExceeded => 4,
@@ -438,6 +447,7 @@ impl ToolError {
     pub const fn code(&self) -> &'static str {
         match self {
             Self::EngineFailure(_) => "engine_failure",
+            Self::ComplianceFailed { .. } => "compliance_failed",
             Self::InputIo(_) | Self::OutputIo(_) => "io",
             Self::Usage(_) | Self::DestinationSameAsInput | Self::Confinement(_) => "usage",
             Self::UnsupportedRoute(_) => "unsupported_route",
@@ -491,6 +501,10 @@ impl ToolError {
             Self::InputIo(s) => Self::InputIo(scrubber.scrub(&s)),
             Self::OutputIo(s) => Self::OutputIo(scrubber.scrub(&s)),
             Self::EngineFailure(s) => Self::EngineFailure(scrubber.scrub(&s)),
+            Self::ComplianceFailed { standard, report } => Self::ComplianceFailed {
+                standard: scrubber.scrub(&standard),
+                report: Box::new(scrubber.scrub_value(&report)),
+            },
             other => other,
         }
     }
@@ -525,14 +539,24 @@ pub fn run_tool_with_events<F>(
 where
     F: FnMut(ToolEvent),
 {
+    let clock = inprocess::capture_clock()?;
+    run_tool_with_clock(request, &mut on_event, clock)
+}
+
+pub(crate) fn run_tool_with_clock(
+    request: &ToolRequest,
+    on_event: &mut dyn FnMut(ToolEvent),
+    clock: inprocess::HostClock,
+) -> Result<ToolOutcome, ToolError> {
     let base_scrubber = request.secrets.scrubber();
-    let result = run_tool_inner(request, &mut on_event);
+    let result = run_tool_inner(request, on_event, clock);
     result.map_err(|err| err.scrubbed(&base_scrubber))
 }
 
 fn run_tool_inner(
     request: &ToolRequest,
     on_event: &mut dyn FnMut(ToolEvent),
+    clock: inprocess::HostClock,
 ) -> Result<ToolOutcome, ToolError> {
     let started = Instant::now();
 
@@ -608,11 +632,42 @@ fn run_tool_inner(
     }
 
     // 8. Pre-validate output target confinement and engine availability before staging or running.
-    let emits_json = spec.output_format.eq_ignore_ascii_case("json")
+    let emits_json = (spec.id != "pdf.forms_export"
+        && spec.id != "pdf.compare"
+        && spec.output_format.eq_ignore_ascii_case("json"))
         || tool_action_emits_json(spec.id, &resolved_secrets.schema_params);
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
+    let is_redact_composite = spec.id == "pdf.redact" || spec.id == "pdf.redact_verify";
+    let is_ocr_composite = !is_redact_composite
+        && effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
+        && spec.group == ariad_core::tools::ToolGroup::Ocr;
+    let is_cbz = spec.id == "pdf.to_cbz";
+    let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
+    let is_compare = spec.id == "pdf.compare";
+    let is_web_to_pdf = spec.id == "web.to_pdf";
+    let is_compliance = spec.id == "pdf.to_pdfa" || spec.id == "pdf.to_pdfua";
+
+    if spec.id == "pdf.ocr"
+        && matches!(
+            resolved_secrets
+                .schema_params
+                .get("output")
+                .and_then(Value::as_str),
+            Some("pdf+txt" | "pdf+hocr")
+        )
+        && let OutputTarget::Path(path) = &request.output
+        && !path.is_dir()
+        && !path
+            .as_os_str()
+            .to_string_lossy()
+            .ends_with(['/', std::path::MAIN_SEPARATOR])
+    {
+        return Err(ToolError::Usage(
+            "OCR with a sidecar requires an output directory".into(),
+        ));
+    }
 
     let mut input_paths: Vec<PathBuf> = request.inputs.iter().map(|i| i.path.clone()).collect();
     preflight_output_target(
@@ -626,7 +681,39 @@ fn run_tool_inner(
         extracts_attachments,
     )?;
 
-    if effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some() {
+    if is_web_to_pdf {
+        super::web_to_pdf::preflight()?;
+    } else if is_cbz {
+        super::cbz::preflight(
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_compare {
+        super::compare::preflight(
+            &resolved_secrets.schema_params,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_compliance {
+        super::compliance::preflight(
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_ocr_composite {
+        super::ocr::preflight(
+            spec.id,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_redact_composite {
+        super::redact::preflight(
+            spec.id,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if is_tables_to_csv {
+        super::tables::preflight(request.engine_program.as_deref())?;
+    } else if effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some() {
         let _ = engine::resolve_engine_command(
             effective_engine,
             request.engine_program.as_deref(),
@@ -688,8 +775,106 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let mut raw_exec = if !is_out_of_process {
-        inprocess::execute_with_names(
+    let mut raw_exec = if is_web_to_pdf {
+        super::web_to_pdf::execute(
+            &spec,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_cbz {
+        super::cbz::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+            &request.cancel,
+            on_event,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_compare {
+        super::compare::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+            &request.cancel,
+            on_event,
+            clock.clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_compliance {
+        super::compliance::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+            &request.cancel,
+            on_event,
+            clock.clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_ocr_composite {
+        super::ocr::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_redact_composite {
+        super::redact::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_tables_to_csv {
+        super::tables::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if !is_out_of_process {
+        inprocess::execute_with_names_and_clock(
             &spec,
             &staged_inputs_with_names,
             &resolved_secrets.schema_params,
@@ -698,6 +883,7 @@ fn run_tool_inner(
             scrubber,
             &request.cancel,
             on_event,
+            clock,
         )
         .map_err(|e| e.scrubbed(scrubber))?
     } else {
@@ -710,6 +896,7 @@ fn run_tool_inner(
             &workspace,
             &request.limits,
             scrubber,
+            &request.secrets,
             request.engine_program.as_deref(),
             request.engine_command.as_ref(),
             request.cancel.clone(),
@@ -752,13 +939,27 @@ fn run_tool_inner(
         return Err(ToolError::Interrupted);
     }
 
+    if is_compare && let OutputTarget::Path(ref path) = request.output {
+        let is_dir = path.is_dir()
+            || path
+                .as_os_str()
+                .to_string_lossy()
+                .ends_with(['/', std::path::MAIN_SEPARATOR]);
+        if !is_dir {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            raw_exec
+                .artifacts
+                .retain(|(_, fmt)| fmt.eq_ignore_ascii_case(ext));
+        }
+    }
+
     // 11. Plan and execute atomic multi-artifact publication.
     let (published, publish_warnings) = publish_tool_outputs(
         &workspace,
         &spec,
         &resolved_secrets.schema_params,
         is_out_of_process,
-        emits_json || raw_exec.inline_json.is_some(),
+        emits_json,
         extracts_attachments,
         &raw_exec.artifacts,
         &input_paths,
@@ -767,6 +968,7 @@ fn run_tool_inner(
         request.allowed_dirs.as_ref(),
         request.overwrite,
         request.fail_publish_at_index,
+        clock.clock,
     )
     .map_err(|e| e.scrubbed(scrubber))?;
 
@@ -797,7 +999,18 @@ fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
     let action = params.get("action").and_then(Value::as_str);
     match spec_id {
         "pdf.outline" => action == Some("export"),
-        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" => action == Some("list"),
+        "pdf.forms_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .unwrap_or("json")
+            .eq_ignore_ascii_case("json"),
+        "pdf.annotations_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .is_some_and(|format| format.eq_ignore_ascii_case("json")),
+        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" | "pdf.annotations" => {
+            action == Some("list")
+        }
         _ => false,
     }
 }
@@ -812,6 +1025,7 @@ fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: 
     match spec_id {
         "pdf.attachments" => action == Some("add") && input_index >= 1,
         "pdf.portfolio" => action == Some("create"),
+        "pdf.annotations_import" | "pdf.forms_import" => input_index >= 1,
         _ => false,
     }
 }
@@ -1161,6 +1375,7 @@ fn publish_tool_outputs(
     allowed_dirs: Option<&AllowedDirs>,
     overwrite: bool,
     fail_at_index: Option<usize>,
+    clock: ariad_pdf::ToolClock,
 ) -> Result<(Vec<PublishedArtifact>, Vec<String>), ToolError> {
     if raw_artifacts.is_empty() {
         return Ok((Vec::new(), Vec::new()));
@@ -1179,8 +1394,10 @@ fn publish_tool_outputs(
         OutputTarget::None => return Ok((Vec::new(), Vec::new())),
         OutputTarget::DefaultBesideInput => {
             // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`, `layers list`,
-            // `pdf.text_layout`, `pdf.detect_scanned`) without `-o` emit structured JSON inline without writing a file next to input.
-            if (spec.id == "pdf.info" || emits_json) && naming_template.is_none() {
+            // `pdf.text_layout`, `pdf.detect_scanned`, `pdf.compare`) without `-o` emit structured JSON inline without writing a file next to input.
+            if (spec.id == "pdf.info" || spec.id == "pdf.compare" || emits_json)
+                && naming_template.is_none()
+            {
                 return Ok((Vec::new(), Vec::new()));
             }
             let parent = first_input
@@ -1241,18 +1458,31 @@ fn publish_tool_outputs(
         let target_name = if let Some(ref single_name) = explicit_single_filename {
             single_name.clone()
         } else if let Some(template) = naming_template {
-            render_naming_template(template, first_stem, index_1_based)
-                .map_err(PublishError::from)?
-        } else if extracts_attachments {
+            super::publish::render_naming_template_with_clock(
+                template,
+                first_stem,
+                index_1_based,
+                clock,
+                params.get("date").and_then(Value::as_str),
+            )
+            .map_err(PublishError::from)?
+        } else if extracts_attachments || (spec.id == "pdf.forms_import" && multi) {
             staged_path
                 .file_name()
                 .and_then(|s| s.to_str())
-                .unwrap_or("attachment.bin")
+                .unwrap_or(if extracts_attachments {
+                    "attachment.bin"
+                } else {
+                    "output.pdf"
+                })
                 .to_owned()
         } else if is_out_of_process
             && let Some(engine_named) = replace_staged_input_stem(staged_path, first_input)
         {
             engine_named
+        } else if spec.id == "pdf.compare" {
+            let clean_ext = format.trim_start_matches('.');
+            format!("{first_stem}.compared.{clean_ext}")
         } else if multi {
             default_multi_artifact_name(first_input, spec.id, index_1_based, format)
         } else {
@@ -1344,6 +1574,36 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
     };
 
     match tool_id {
+        "pdf.annotations" => {
+            let p: ariad_core::tools::params::annotations::AnnotationsParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_fill" => {
+            let p: ariad_core::tools::params::forms::FormsFillParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_create" => {
+            let p: ariad_core::tools::params::forms::FormsCreateParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_detect" => {
+            let p: ariad_core::tools::params::forms::FormsDetectParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "pdf.forms_import" => {
+            let p: ariad_core::tools::params::forms::FormsImportParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
+        "web.to_pdf" => {
+            let p: ariad_core::tools::params::WebToPdfParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate()
+        }
         "pdf.split" => {
             let p: SplitParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
@@ -1384,6 +1644,107 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             p.validate().map_err(|e| e.to_string())
         }
+        "pdf.to_cbz" => {
+            let p: ariad_core::tools::params::ToCbzParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.ocr" => serde_json::from_value::<ariad_core::tools::params::OcrParams>(params.clone())
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        "image.ocr" => {
+            serde_json::from_value::<ariad_core::tools::params::ImageOcrParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.auto_rotate" => {
+            serde_json::from_value::<ariad_core::tools::params::AutoRotateParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.deskew" => {
+            serde_json::from_value::<ariad_core::tools::params::DeskewParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.scan_split" => {
+            serde_json::from_value::<ariad_core::tools::params::ScanSplitParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.scanner_effect" => {
+            serde_json::from_value::<ariad_core::tools::params::ScannerEffectParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.sign" => {
+            let p: ariad_core::tools::params::SignParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_verify" => {
+            let p: ariad_core::tools::params::SignVerifyParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_remove" => {
+            let p: ariad_core::tools::params::SignRemoveParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_visual" => {
+            let p: ariad_core::tools::params::SignVisualParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.sign_token" => {
+            let p: ariad_core::tools::params::SignTokenParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.timestamp" => {
+            let p: ariad_core::tools::params::TimestampParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.compare" => {
+            serde_json::from_value::<ariad_core::tools::params::CompareParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod annotation_form_routing_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn import_payload_and_annotation_list_are_routed_by_action() {
+        let empty = json!({});
+        for id in ["pdf.forms_import", "pdf.annotations_import"] {
+            assert!(!tool_input_is_attachment_payload(id, &empty, 0));
+            assert!(tool_input_is_attachment_payload(id, &empty, 1));
+        }
+        assert!(tool_action_emits_json(
+            "pdf.annotations",
+            &json!({"action":"list"})
+        ));
+        assert!(!tool_action_emits_json(
+            "pdf.annotations",
+            &json!({"action":"add"})
+        ));
+        assert!(tool_action_emits_json("pdf.forms_export", &empty));
+        assert!(!tool_action_emits_json(
+            "pdf.forms_export",
+            &json!({"format":"csv"})
+        ));
+        assert!(tool_action_emits_json(
+            "pdf.annotations_export",
+            &json!({"format":"json"})
+        ));
+        assert!(!tool_action_emits_json("pdf.annotations_export", &empty));
+        assert!(validate_semantic_params("pdf.forms_import", &json!({"max_records":0})).is_err());
     }
 }

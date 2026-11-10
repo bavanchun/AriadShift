@@ -146,6 +146,9 @@ check-release-workflow:
 test-winget-manifest:
     sh scripts/test-winget-manifest.sh
 
+test-fuzz-gate:
+    uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
+
 test-ci-scope:
     sh scripts/test-ci-scope.sh
     uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
@@ -189,7 +192,11 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope test-hardening-ci-wiring
+static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope test-ci-sccache test-hardening-ci-wiring
+
+test-ci-sccache:
+    shellcheck -x scripts/ci-sccache.sh
+    uv run --no-project --with-requirements scripts/r2-cache-requirements.txt python scripts/test-r2-cache-prune.py
 
 # Keep mandatory database proof and workflow publication policy executable.
 test-hardening-ci-wiring:
@@ -312,6 +319,23 @@ pack-docling-verify out="target/pack-docling" input="fixtures/scan/vi-garden-300
 pack-docling-test out="target/pack-docling":
     uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance --out "{{out}}"
 
+# Sign engine virtual environment and tools.
+sign_root := justfile_directory() / "engines" / "sign"
+sign_python := sign_root / ".venv" / if os() == "windows" { "Scripts/python.exe" } else { "bin/python" }
+
+# Sync the sign engine environment.
+sign-dev:
+    uv sync --directory engines/sign --frozen
+
+# Lint and test the sign engine and shared common licenses.
+sign-test:
+    uv run --directory engines/sign --frozen ruff check src
+    uv run --directory engines/sign --frozen pytest tests ../common/tests
+
+# Build the unsigned sign engine pack for this host into target/pack-sign.
+pack-sign out="target/pack-sign":
+    python3 engines/sign/pack/build.py build --out "{{out}}"
+
 # Build the unsigned pdfium engine pack for this host into target/packs/pdfium, an unpacked
 # development pack: `export ASHIFT_PACK_PDFIUM=$PWD/target/packs/pdfium`. The components go to
 # target/packs/pdfium-dist. Downloads the pinned PDFium archive unless PDFIUM_ARCHIVE names a copy.
@@ -332,6 +356,54 @@ pack-qpdf qpdf_dir out="target/packs/qpdf":
 
 pack-qpdf-verify out="target/packs/qpdf":
     bash engines/qpdf/pack/make.sh verify "{{out}}"
+
+# Build a host Tesseract development pack from verified source and model inputs.
+pack-tesseract out="target/packs/tesseract":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    inputs=${TESSERACT_INPUT_DIR:-$work/input}
+    if [ -z "${TESSERACT_INPUT_DIR:-}" ]; then
+        python3 engines/tesseract/pack/fetch-inputs.py "$inputs"
+    fi
+    bash engines/tesseract/pack/compile-tesseract.sh "$inputs/tesseract.tar.gz" "$inputs/leptonica.tar.gz" "$work/runtime"
+    cargo build -p ariad-cli --bin ashift
+    PACK_REQUIRES_ASHIFT='>=0.2.0, <2.0.0' bash engines/tesseract/pack/make.sh pack "$(bash engines/tesseract/pack/make.sh slug)" "$work/runtime" "$inputs/tessdata" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
+    bash engines/tesseract/pack/make.sh verify "{{out}}"
+
+pack-tesseract-verify out="target/packs/tesseract":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash engines/tesseract/pack/make.sh verify "{{out}}"
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    export XDG_DATA_HOME="$work"
+    export ASHIFT_PACK_TESSERACT="$(cd "{{out}}" && pwd -P)"
+    export ARIAD_TEST_TESSERACT_PACK="$ASHIFT_PACK_TESSERACT"
+    cargo test -p ariad-host --features test-probe --test tesseract_adapter
+
+# Build a host veraPDF development pack from verified installer inputs.
+pack-verapdf out="target/packs/verapdf":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    slug=$(bash engines/verapdf/pack/make.sh slug)
+    installer_zip=${VERAPDF_INSTALLER_ZIP:-}
+    if [ -z "$installer_zip" ]; then
+        installer_zip=$work/verapdf-installer.zip
+        curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip -o "$installer_zip"
+    fi
+    cargo build -p ariad-cli --bin ashift
+    bash engines/verapdf/pack/make.sh pack "$slug" "$installer_zip" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
+    bash engines/verapdf/pack/make.sh verify "{{out}}"
+
+pack-verapdf-verify out="target/packs/verapdf":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash engines/verapdf/pack/make.sh verify "{{out}}"
+    VERAPDF_TEST_PACK="{{out}}" bash scripts/test-pack-verapdf.sh
 
 # Test the shared pack builder, the pdfium wrapper and the signing guard (offline).
 pack-tooling-test:
@@ -356,7 +428,7 @@ fuzz target="" seconds="60":
         mkdir -p "fuzz/corpus/$t"
         build_options=()
         case "$t" in
-            pdf_reader|pdf_open_bounded|pdf_tools_structural) build_options=(--dev --features pdf-reader) ;;
+            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|reader_cbz) build_options=(--dev --features pdf-reader) ;;
             typst_writer) build_options=(--dev --features typst-writer) ;;
         esac
         cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048

@@ -20,7 +20,7 @@ use ariad_core::{
     protocol::{ErrorCode, Event, Input, Output, PROTOCOL, Request},
     reader::{html as reader_html, markdown as reader_markdown},
     warning::Warning,
-    writer::{html as writer_html, markdown as writer_markdown},
+    writer::{html as writer_html, markdown as writer_markdown, text as writer_text},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -110,10 +110,13 @@ pub fn executor_edges() -> Vec<(Format, Format, &'static str)> {
     let native = engines::NATIVE_ROUTES
         .iter()
         .map(|&(from, to)| (from, to, IN_PROCESS_ENGINE));
+    let ariad_pdf = engines::ARIAD_PDF_ROUTES
+        .iter()
+        .map(|&(from, to)| (from, to, engines::IN_PROCESS_PDF_ENGINE));
     let external = engines::REGISTRY
         .iter()
         .flat_map(|spec| spec.routes.iter().map(|&(from, to)| (from, to, spec.id)));
-    native.chain(external).collect()
+    native.chain(ariad_pdf).chain(external).collect()
 }
 
 /// Detects a user-facing format from a path's extension.
@@ -171,6 +174,9 @@ pub struct ConvertRequest {
     /// Optional engine that must read the input; later mapping and writing remain automatic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reader_engine: Option<String>,
+    /// Optional PDF standard conformance (a-2b, a-2u, a-3b, ua-1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf_standard: Option<String>,
 }
 
 impl ConvertRequest {
@@ -191,6 +197,7 @@ impl ConvertRequest {
             title_fallback: None,
             asset_base_dir: None,
             reader_engine: None,
+            pdf_standard: None,
         }
     }
 }
@@ -263,6 +270,11 @@ pub enum ConvertError {
     FailedWithMemoryHint {
         limit_mb: u32,
     },
+    /// A requested PDF conformance target failed independent validation.
+    ComplianceFailed {
+        standard: String,
+        report: Box<serde_json::Value>,
+    },
     Failed,
 }
 
@@ -314,6 +326,9 @@ impl std::fmt::Display for ConvertError {
                 f,
                 "conversion failed. The engine may have hit its memory limit ({limit_mb} MiB)."
             ),
+            Self::ComplianceFailed { standard, report } => {
+                write!(f, "{standard} compliance validation failed: {report}")
+            }
             Self::Failed => write!(f, "conversion failed"),
         }
     }
@@ -355,6 +370,7 @@ impl ConvertError {
             | Self::UnsupportedIrVersion
             | Self::InvalidCapabilities(_)
             | Self::FailedWithMemoryHint { .. }
+            | Self::ComplianceFailed { .. }
             | Self::Failed => 1,
         }
     }
@@ -378,6 +394,7 @@ impl ConvertError {
             Self::UnsupportedIrVersion => "unsupported_ir_version",
             Self::InvalidCapabilities(_) => "invalid_capabilities",
             Self::Failed | Self::FailedWithMemoryHint { .. } => "failed",
+            Self::ComplianceFailed { .. } => "compliance_failed",
         }
     }
 
@@ -456,6 +473,7 @@ where
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     let invocation = if engine_args.is_empty() {
         EngineInvocation::new(engine_program)
@@ -839,6 +857,21 @@ pub fn read_document_to_ir(
             }
             parsed.document
         }
+        Format::Txt | Format::Csv | Format::Svg | Format::Eml | Format::Msg => {
+            let bytes = read_bounded_file(path, limits.max_input_bytes)?;
+            let parsed =
+                ariad_core::pipeline::read(format, &bytes, limits).map_err(|err| match err {
+                    ariad_core::pipeline::PipelineError::LimitExceeded { .. }
+                    | ariad_core::pipeline::PipelineError::InvalidLimits { .. } => {
+                        ConvertError::LimitExceeded
+                    }
+                    _ => ConvertError::InputIo,
+                })?;
+            for w in &parsed.warnings {
+                warnings.push(sanitize_warning(&w.code, &w.message));
+            }
+            parsed.document
+        }
         _ => {
             return Err(ConvertError::UnsupportedRoute {
                 detail: Some(format!(
@@ -917,8 +950,50 @@ where
         };
         if step.engine == IN_PROCESS_ENGINE {
             self.native_step(stage, step)
+        } else if step.engine == engines::IN_PROCESS_PDF_ENGINE {
+            self.ariad_pdf_step(stage, step)
         } else {
             self.engine_step(stage, step)
+        }
+    }
+
+    fn ariad_pdf_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
+        match (step.from, step.to) {
+            (Format::Cbz, Format::Pdf) => {
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let input_path = match &stage {
+                    Stage::Source => copy_and_preflight_input(
+                        &self.request.input,
+                        step.from.id(),
+                        &workspace,
+                        self.limits,
+                    )?,
+                    Stage::File { path, .. } => {
+                        copy_and_preflight_input(path, step.from.id(), &workspace, self.limits)?
+                    }
+                    Stage::Ir(_) => return Err(ConvertError::Failed),
+                };
+                let bytes = read_bounded_file(&input_path, self.limits.max_input_bytes)?;
+                let tool_ctx = ariad_pdf::ToolCtx::default();
+                let pdf_bytes = ariad_pdf::cbz::cbz_to_pdf(&bytes, self.limits, &tool_ctx)
+                    .map_err(|err| match err {
+                        ariad_pdf::PdfError::LimitExceeded(_) => ConvertError::LimitExceeded,
+                        _ => ConvertError::Failed,
+                    })?;
+                let path = workspace.output_dir().join("document.pdf");
+                fs::write(&path, &pdf_bytes).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
+            _ => Err(ConvertError::UnsupportedRoute {
+                detail: Some(format!(
+                    "unsupported ariad-pdf step {} -> {}",
+                    step.from.user_name(),
+                    step.to.user_name()
+                )),
+            }),
         }
     }
 
@@ -957,7 +1032,16 @@ where
                 Ok(Stage::Ir(Box::new(read.document)))
             }
 
-            (Format::Markdown | Format::Html, Format::AriadIrJson) => {
+            (
+                Format::Markdown
+                | Format::Html
+                | Format::Txt
+                | Format::Csv
+                | Format::Svg
+                | Format::Eml
+                | Format::Msg,
+                Format::AriadIrJson,
+            ) => {
                 let (path, base_dir) = match &stage {
                     Stage::Source => (
                         self.request.input.as_path(),
@@ -989,12 +1073,14 @@ where
                     .extend(asset_warnings.iter().map(safe_warning));
                 Ok(Stage::Ir(Box::new(document)))
             }
-            (Format::AriadIrJson, Format::Markdown | Format::Html) => {
+            (Format::AriadIrJson, Format::Markdown | Format::Html | Format::Txt) => {
                 let Stage::Ir(document) = stage else {
                     return Err(ConvertError::Failed);
                 };
                 let output = if step.to == Format::Markdown {
                     writer_markdown::write(&document)
+                } else if step.to == Format::Txt {
+                    writer_text::write(&document)
                 } else {
                     writer_html::write_with_title_fallback(
                         &document,
@@ -1008,6 +1094,38 @@ where
                     .output_dir()
                     .join(format!("document.{}", step.to.user_name()));
                 fs::write(&path, output.content.as_bytes()).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
+            (Format::AriadIrJson, Format::Xlsx) => {
+                let Stage::Ir(document) = stage else {
+                    return Err(ConvertError::Failed);
+                };
+                let out =
+                    ariad_core::writer::xlsx::write(&document).map_err(|_| ConvertError::Failed)?;
+                if out.bytes.is_empty() {
+                    return Err(ConvertError::Failed);
+                }
+                self.warnings.extend(out.warnings.iter().map(safe_warning));
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let path = workspace.output_dir().join("document.xlsx");
+                fs::write(&path, &out.bytes).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
+            (Format::AriadIrJson, Format::Csv) => {
+                let Stage::Ir(document) = stage else {
+                    return Err(ConvertError::Failed);
+                };
+                let out = ariad_core::writer::csv::write(&document);
+                self.warnings.extend(out.warnings.iter().map(safe_warning));
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let path = workspace.output_dir().join("document.csv");
+                fs::write(&path, out.content.as_bytes()).map_err(|_| ConvertError::Failed)?;
                 Ok(Stage::File {
                     workspace: Box::new(workspace),
                     path,
@@ -1063,9 +1181,15 @@ where
                 serde_json::Value::String(self.title_fallback()),
             );
         }
+        if let Some(standard) = &self.request.pdf_standard {
+            options.insert(
+                "pdf_standard".to_owned(),
+                serde_json::Value::String(standard.clone()),
+            );
+        }
         // Writers stamp their output with the conversion time, which honours SOURCE_DATE_EPOCH.
-        let stamps_package =
-            step.engine == engines::PANDOC.id && matches!(step.to, Format::Docx | Format::Epub);
+        let stamps_package = step.engine == engines::PANDOC.id
+            && matches!(step.to, Format::Docx | Format::Epub | Format::Odt);
         let timestamp = if step.to == Format::AriadIrJson {
             None
         } else {
@@ -1092,7 +1216,14 @@ where
             self.cancel,
             &mut self.warnings,
             &mut self.on_event,
-        )?;
+        ).map_err(|error| {
+            if self.request.pdf_standard.as_deref() == Some("ua-1") && step.engine == engines::TYPST.id && matches!(error, ConvertError::Failed) {
+                ConvertError::ComplianceFailed {
+                    standard: "PDF/UA-1".into(),
+                    report: Box::new(serde_json::json!({"message": "Typst could not export PDF/UA-1; check document structure and provide figure alternative text."})),
+                }
+            } else { error }
+        })?;
 
         if step.to == Format::AriadIrJson {
             let document = read_ir_artifact(&artifact, &workspace, self.limits)?;
@@ -1121,10 +1252,11 @@ where
         drop(lease);
         let _ = workspace.close();
         if let (true, Some(timestamp)) = (stamps_package, timestamp) {
-            let stamped = if step.to == Format::Docx {
-                package_meta::stamp_docx(&path, timestamp)
-            } else {
-                package_meta::stamp_epub(&path, timestamp)
+            let stamped = match step.to {
+                Format::Docx => package_meta::stamp_docx(&path, timestamp),
+                Format::Epub => package_meta::stamp_epub(&path, timestamp),
+                Format::Odt => package_meta::stamp_odt(&path, timestamp),
+                _ => Ok(()),
             };
             stamped.map_err(|_| ConvertError::Failed)?;
         }
@@ -1285,6 +1417,34 @@ where
         return Err(ConvertError::DestinationSameAsInput);
     }
 
+    if let Some(standard) = &request.pdf_standard {
+        if !matches!(standard.as_str(), "a-2b" | "a-2u" | "a-3b" | "ua-1")
+            || route.output_format != Format::Pdf
+            || !route
+                .steps
+                .last()
+                .is_some_and(|step| step.engine == engines::TYPST.id)
+        {
+            return Err(ConvertError::UnsupportedRoute {
+                detail: Some("--pdf-standard requires an IR-to-PDF route through Typst and a supported standard".into()),
+            });
+        }
+        // Preflight veraPDF and Java >= 11 (must exit 5 if missing)
+        crate::tools::compliance::preflight(Some(&request.engine_program), None).map_err(|e| {
+            match e {
+                crate::tools::ToolError::ToolMissing { engine, hint } => {
+                    ConvertError::EngineMissing { engine, hint }
+                }
+                crate::tools::ToolError::SandboxUnavailable(detail) => {
+                    ConvertError::SandboxUnavailable(detail)
+                }
+                crate::tools::ToolError::LimitExceeded => ConvertError::LimitExceeded,
+                crate::tools::ToolError::Interrupted => ConvertError::Interrupted,
+                _ => ConvertError::Failed,
+            }
+        })?;
+    }
+
     let started = Instant::now();
     let (mut stage, start_step, warnings) = match pdf_read {
         Some(read)
@@ -1335,6 +1495,76 @@ where
     } else {
         None
     };
+
+    if let (Some(standard), Format::Pdf) = (&request.pdf_standard, route.output_format) {
+        let (tool_id, flavour) = match standard.as_str() {
+            "a-2b" => ("pdf.validate_pdfa", "2b"),
+            "a-2u" => ("pdf.validate_pdfa", "2u"),
+            "a-3b" => ("pdf.validate_pdfa", "3b"),
+            "ua-1" => ("pdf.validate_pdfua", "1"),
+            other => {
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(format!("unsupported pdf-standard '{other}'")),
+                });
+            }
+        };
+
+        let validate_spec = ariad_core::tools::find(tool_id).ok_or(ConvertError::Failed)?;
+
+        let validate_params = serde_json::json!({
+            "flavour": flavour
+        });
+
+        let mut val_workspace = Workspace::new().map_err(map_workspace_error)?;
+        let staged_input = val_workspace.input_dir().join("artifact.pdf");
+        fs::copy(&artifact_path, &staged_input).map_err(|_| ConvertError::Failed)?;
+        let staged = vec![(staged_input, "pdf".to_string())];
+        let scrubber = crate::tools::SecretScrubber::new();
+
+        let mut dummy_event = |_| {};
+        let exec = crate::tools::engine::execute(
+            validate_spec,
+            "verapdf",
+            &staged,
+            &validate_params,
+            false,
+            &val_workspace,
+            &limits,
+            &scrubber,
+            &crate::tools::SecretBag::new(),
+            Some(&request.engine_program),
+            None,
+            cancel.clone(),
+            &mut dummy_event,
+        )
+        .map_err(|e| match e {
+            crate::tools::ToolError::ToolMissing { engine, hint } => {
+                ConvertError::EngineMissing { engine, hint }
+            }
+            crate::tools::ToolError::Interrupted => ConvertError::Interrupted,
+            crate::tools::ToolError::SandboxUnavailable(detail) => {
+                ConvertError::SandboxUnavailable(detail)
+            }
+            crate::tools::ToolError::LimitExceeded => ConvertError::LimitExceeded,
+            _ => ConvertError::Failed,
+        })?;
+
+        let is_compliant = exec
+            .metrics
+            .get("compliant")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+
+        if !is_compliant {
+            let report = crate::tools::compliance::validation_report(&exec)
+                .map_err(|_| ConvertError::Failed)?;
+            return Err(ConvertError::ComplianceFailed {
+                standard: standard.clone(),
+                report: Box::new(report),
+            });
+        }
+        let _ = val_workspace.close();
+    }
 
     // Promotion is the commit point.
     if cancel.is_cancelled() {
@@ -1444,6 +1674,7 @@ where
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     let invocation = EngineInvocation::new(&request.engine_program);
     convert_executor(
@@ -1482,6 +1713,7 @@ where
             .or_else(|| stem_without_ir(&request.input)),
         asset_base_dir: None,
         reader_engine: None,
+        pdf_standard: None,
     };
     let invocation = EngineInvocation::new(&request.engine_program);
     convert_executor(
@@ -1562,7 +1794,7 @@ fn plan_with_available_engines(
         .steps
         .iter()
         .map(|step| step.engine.as_str())
-        .filter(|engine| *engine != IN_PROCESS_ENGINE)
+        .filter(|engine| *engine != IN_PROCESS_ENGINE && *engine != engines::IN_PROCESS_PDF_ENGINE)
         .collect();
     if needed.is_empty() {
         return Ok(initial);
@@ -1937,6 +2169,9 @@ fn safe_warning_message(code: &str) -> String {
         "ocr_required" => "A page has no text layer; reading it needs OCR.",
         "text_unmapped" => "Some characters have no Unicode mapping and were replaced.",
         "math_not_converted" => "Math could not be converted and was kept as TeX text.",
+        "no_tables_found" => {
+            "No tables were found in the document; output was formatted as a text dump."
+        }
         _ => "The document could not be converted without a warning.",
     };
     msg.to_owned()
@@ -2141,6 +2376,18 @@ mod tests {
         assert_eq!(sanitized.code, "font_missing");
         assert!(!sanitized.message.contains("secret"));
         assert!(!sanitized.message.contains("/private"));
+
+        let table_warning = Warning::new(
+            WarningCode::NoTablesFound,
+            "document at /private/secret.pdf has no tables",
+        );
+        let sanitized = safe_warning(&table_warning);
+        assert_eq!(sanitized.code, "no_tables_found");
+        assert_eq!(
+            sanitized.message,
+            "No tables were found in the document; output was formatted as a text dump."
+        );
+        assert!(!sanitized.message.contains("secret"));
     }
 
     #[test]
@@ -2227,6 +2474,79 @@ mod tests {
         assert_eq!(err, ConvertError::LimitExceeded);
 
         let _ = workspace.close();
+    }
+
+    #[test]
+    fn copy_and_preflight_input_rejects_cbz_with_path_traversal() {
+        use super::{ConvertError, Limits, Workspace, copy_and_preflight_input};
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let hostile_cbz = temp_dir.path().join("hostile.cbz");
+
+        {
+            let file = std::fs::File::create(&hostile_cbz).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("../../../escape.png", options).unwrap();
+            zip.write_all(b"fake image bytes").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut workspace = Workspace::new().unwrap();
+        let limits = Limits::local();
+
+        let err = copy_and_preflight_input(&hostile_cbz, "cbz", &workspace, &limits).unwrap_err();
+        assert_eq!(err, ConvertError::Failed);
+
+        let _ = workspace.close();
+    }
+
+    #[test]
+    fn cbz_to_pdf_conversion_preserves_typed_limit_error() {
+        use super::{ConvertError, ConvertRequest, Limits, convert_with_limits};
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cbz_path = temp_dir.path().join("input.cbz");
+        let pdf_out = temp_dir.path().join("output.pdf");
+
+        let png: [u8; 69] = [
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x14, 0x08, 0x00, 0x00, 0x00,
+            0x00, 0x91, 0x85, 0xf3, 0x8a, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0x60, 0x18, 0xbe, 0x00, 0x00, 0x00, 0xdc, 0x00, 0x01, 0xf1, 0xc4, 0xae,
+            0xe0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            for i in 0..501 {
+                zip.start_file(format!("page_{i:04}.png"), options).unwrap();
+                zip.write_all(&png).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+
+        let request =
+            ConvertRequest::new(cbz_path, pdf_out, "pdf", std::path::PathBuf::from("ashift"));
+
+        let mut limits = Limits::local();
+        limits.max_archive_entries = 1000;
+
+        let err = convert_with_limits(
+            &request,
+            limits,
+            tokio_util::sync::CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap_err();
+        assert_eq!(err, ConvertError::LimitExceeded);
     }
 
     #[test]

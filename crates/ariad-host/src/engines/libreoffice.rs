@@ -379,7 +379,11 @@ fn convert(
             "--nodefault",
             "--nofirststartwizard",
         ])
-        .arg(&user_installation)
+        .arg(&user_installation);
+    if from == Format::Pdf && to == Format::Pptx {
+        command.arg("--infilter=impress_pdf_import");
+    }
+    command
         .arg("--convert-to")
         .arg(target)
         .arg("--outdir")

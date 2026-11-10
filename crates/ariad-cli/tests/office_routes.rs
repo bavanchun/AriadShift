@@ -7,6 +7,7 @@ mod support;
 
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -391,4 +392,544 @@ mod lifecycle {
             assert!(!directory.path().join("output.pdf").exists());
         }
     }
+}
+
+#[test]
+fn pdf_converts_to_pptx_via_libreoffice() {
+    if !libreoffice_available() {
+        return;
+    }
+    let directory = tempdir().unwrap();
+    let input = support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+    let output = directory.path().join("table.pptx");
+    let result = convert_json(&input, "pptx", &output);
+    assert_eq!(
+        route_of(&result),
+        ["pdf-libreoffice->pptx"],
+        "pdf -> pptx route"
+    );
+    assert!(zip_has(&output, "ppt/presentation.xml"));
+}
+
+#[test]
+fn odg_converts_to_pdf_via_libreoffice() {
+    if !libreoffice_available() {
+        return;
+    }
+    let directory = tempdir().unwrap();
+    let odg_path = directory.path().join("test_drawing.odg");
+    write_dummy_odg(&odg_path);
+
+    let output = directory.path().join("test_drawing.pdf");
+    let result = convert_json(&odg_path, "pdf", &output);
+    assert_eq!(
+        route_of(&result),
+        ["odg-libreoffice->pdf"],
+        "odg -> pdf route"
+    );
+    let bytes = fs::read(&output).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"), "odg did not produce a PDF");
+}
+
+fn write_dummy_odg(path: &Path) {
+    let file = fs::File::create(path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("mimetype", stored).unwrap();
+    zip.write_all(b"application/vnd.oasis.opendocument.graphics")
+        .unwrap();
+
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("META-INF/manifest.xml", deflated).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">
+  <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.graphics"/>
+  <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>"#,
+    )
+    .unwrap();
+
+    zip.start_file("content.xml", deflated).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.3">
+  <office:body>
+    <office:drawing>
+      <draw:page draw:name="page1">
+        <draw:custom-shape svg:width="8cm" svg:height="4cm" svg:x="1cm" svg:y="1cm"/>
+      </draw:page>
+    </office:drawing>
+  </office:body>
+</office:document-content>"#,
+    )
+    .unwrap();
+    zip.finish().unwrap();
+}
+
+#[test]
+fn pages_family_routes_planning_only_without_conversion() {
+    let directory = tempdir().unwrap();
+    for fmt in ["odg", "pub", "vsd", "wpd", "wps"] {
+        let input_file = directory.path().join(format!("sample.{fmt}"));
+        if fmt == "odg" {
+            write_dummy_odg(&input_file);
+        } else {
+            fs::write(&input_file, b"dummy content").unwrap();
+        }
+        let out = cli()
+            .args([
+                "plan",
+                input_file.to_str().unwrap(),
+                "--to",
+                "pdf",
+                "--json",
+            ])
+            .output()
+            .expect("start ashift plan");
+        assert!(
+            out.status.success(),
+            "planning failed for {fmt} -> pdf: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let plan: Value = serde_json::from_slice(&out.stdout).expect("parse plan JSON");
+        assert_eq!(plan["route"][0]["engine"], "libreoffice");
+    }
+
+    let pdf_file = support::fixtures::repository_root().join("fixtures/pdf-forms-detect/table.pdf");
+    let pptx_plan = cli()
+        .args(["plan", pdf_file.to_str().unwrap(), "--to", "pptx", "--json"])
+        .output()
+        .expect("start ashift plan");
+    assert!(
+        pptx_plan.status.success(),
+        "planning failed for pdf -> pptx: {}",
+        String::from_utf8_lossy(&pptx_plan.stderr)
+    );
+    let plan: Value = serde_json::from_slice(&pptx_plan.stdout).expect("parse plan JSON");
+    assert_eq!(plan["route"][0]["engine"], "libreoffice");
+}
+
+#[test]
+fn xlsx_created_from_ir_with_tables_opens_in_libreoffice() {
+    if !libreoffice_available() {
+        return;
+    }
+    let directory = tempdir().unwrap();
+    let ir_json = r#"{
+      "version": "ariad-ir/1",
+      "meta": {},
+      "body": [
+        {
+          "type": "table",
+          "caption": [{"type": "text", "text": "First Table"}],
+          "columns": [{"align": "left"}, {"align": "right"}],
+          "head": [
+            [
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Item"}]}]},
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Price"}]}]}
+            ]
+          ],
+          "body": [
+            [
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Apple"}]}]},
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "1.50"}]}]}
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "caption": [{"type": "text", "text": "Second Table"}],
+          "columns": [{"align": "left"}],
+          "head": [],
+          "body": [
+            [
+              {"rowspan": 1, "colspan": 1, "blocks": [{"type": "paragraph", "content": [{"type": "text", "text": "Only Cell"}]}]}
+            ]
+          ]
+        }
+      ]
+    }"#;
+    let ir_file = directory.path().join("document.ir.json");
+    fs::write(&ir_file, ir_json).unwrap();
+
+    let xlsx_file = directory.path().join("document.xlsx");
+    let result = convert_json(&ir_file, "xlsx", &xlsx_file);
+    assert_eq!(
+        route_of(&result),
+        ["ariad-ir+json-ariad-core->xlsx"],
+        "ir -> xlsx route"
+    );
+    assert!(zip_has(&xlsx_file, "xl/worksheets/sheet1.xml"));
+    assert!(zip_has(&xlsx_file, "xl/worksheets/sheet2.xml"));
+    assert!(
+        !zip_has(&xlsx_file, "xl/worksheets/sheet3.xml"),
+        "expected exactly 2 sheets"
+    );
+
+    let wb_xml = {
+        let file = fs::File::open(&xlsx_file).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut f = archive.by_name("xl/workbook.xml").unwrap();
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut f, &mut s).unwrap();
+        s
+    };
+    assert!(wb_xml.contains("name=\"First Table\""));
+    assert!(wb_xml.contains("name=\"Second Table\""));
+
+    let soffice = ariad_host::engines::libreoffice::locate().unwrap();
+    let lo_pdf = directory.path().join("document.pdf");
+    let lo_run = Command::new(&soffice.path)
+        .args(["--headless", "--convert-to", "pdf", "--outdir"])
+        .arg(directory.path())
+        .arg(&xlsx_file)
+        .output()
+        .expect("run soffice conversion");
+    assert!(
+        lo_run.status.success(),
+        "LibreOffice failed to open/convert generated XLSX"
+    );
+    assert!(
+        lo_pdf.exists(),
+        "LibreOffice failed to produce PDF from generated XLSX"
+    );
+}
+
+fn engine_probe_path() -> PathBuf {
+    let probe = Path::new(env!("CARGO_BIN_EXE_ashift"))
+        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
+    if probe.exists() {
+        return probe;
+    }
+    let repo_probe = support::fixtures::repository_root().join("target/debug/engine-probe");
+    if repo_probe.exists() {
+        return repo_probe;
+    }
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let mut cmd = std::process::Command::new(cargo);
+    cmd.args([
+        "build",
+        "-p",
+        "ariad-host",
+        "--bin",
+        "engine-probe",
+        "--features",
+        "ariad-host/test-probe",
+    ]);
+    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        cmd.env("CARGO_TARGET_DIR", target_dir);
+    }
+    let _ = cmd.status();
+    if probe.exists() { probe } else { repo_probe }
+}
+
+fn docling_cli(fixture: &Path) -> Option<Command> {
+    if std::env::var_os("ASHIFT_PACK_DOCLING").is_some()
+        || std::env::var_os("ASHIFT_DOCLING_ENGINE").is_some()
+    {
+        return Some(cli());
+    }
+    if ariad_host::engines::resolve_pack("docling").is_ok() {
+        return Some(cli());
+    }
+    let probe = engine_probe_path();
+    if probe.exists() {
+        let mut command = cli();
+        command.env("ASHIFT_SANDBOX", "off");
+        command.env(
+            "ASHIFT_DOCLING_ENGINE",
+            format!("\"{}\" docling \"{}\"", probe.display(), fixture.display()),
+        );
+        return Some(command);
+    }
+    eprintln!(
+        "skipping: docling pack not installed and engine-probe binary not found at {}",
+        probe.display()
+    );
+    None
+}
+
+#[test]
+fn pages_family_conversion_attempts_or_explicit_skips() {
+    if !libreoffice_available() {
+        return;
+    }
+    // ODG is tested by odg_converts_to_pdf_via_libreoffice.
+    // For pub, vsd, wpd, wps: verify if real non-copyleft fixtures exist.
+    // If not committed due to repository licensing rules, skip with explicit explanation.
+    for fmt in ["pub", "vsd", "wpd", "wps"] {
+        let fixture_path =
+            support::fixtures::repository_root().join(format!("fixtures/office/sample.{fmt}"));
+        if !fixture_path.exists() {
+            eprintln!(
+                "skipping: real test fixture for {fmt} not committed; the search for permissive \
+                 samples found none that could be verified; manual local verification described in docs/parity-matrix.md"
+            );
+            continue;
+        }
+        let directory = tempdir().unwrap();
+        let output = directory.path().join(format!("output_{fmt}.pdf"));
+        let result = convert_json(&fixture_path, "pdf", &output);
+        assert_eq!(route_of(&result), [format!("{fmt}-libreoffice->pdf")]);
+        assert!(output.exists());
+    }
+}
+
+#[test]
+fn pdf_to_xlsx_and_csv_route_planning_and_conversion_with_docling() {
+    let docling_fixture =
+        support::fixtures::repository_root().join("fixtures/docling/en-map-room.docling.json");
+    if docling_cli(&docling_fixture).is_none() {
+        return;
+    }
+    let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
+    let directory = tempdir().unwrap();
+
+    // 1. Plan pdf -> xlsx: default route must select docling engine without --engine docling
+    let plan_xlsx = docling_cli(&docling_fixture)
+        .unwrap()
+        .args([
+            "plan",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "xlsx",
+            "--json",
+        ])
+        .output()
+        .expect("plan pdf -> xlsx");
+    assert!(plan_xlsx.status.success());
+    let plan: Value = serde_json::from_slice(&plan_xlsx.stdout).unwrap();
+    assert_eq!(
+        plan["route"][0]["engine"], "docling",
+        "pdf -> xlsx must plan via docling tables"
+    );
+
+    // 2. Convert pdf -> xlsx: route must run through docling
+    let xlsx_out = directory.path().join("table.xlsx");
+    let conv_xlsx = docling_cli(&docling_fixture)
+        .unwrap()
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "xlsx",
+            "--json",
+            "-o",
+            xlsx_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert pdf -> xlsx");
+    assert!(
+        conv_xlsx.status.success(),
+        "pdf -> xlsx failed: {}",
+        String::from_utf8_lossy(&conv_xlsx.stderr)
+    );
+    let route = route_of(&conv_xlsx);
+    assert!(
+        route.iter().any(|s| s.contains("docling")),
+        "route must contain docling: {route:?}"
+    );
+    assert!(xlsx_out.exists());
+    assert!(zip_has(&xlsx_out, "xl/worksheets/sheet1.xml"));
+    assert!(
+        !zip_has(&xlsx_out, "xl/worksheets/sheet2.xml"),
+        "expected exactly 1 sheet for 1 table"
+    );
+
+    // Verify sheet content contains table cell text
+    let sheet1_xml = {
+        let file = fs::File::open(&xlsx_out).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut f = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut f, &mut s).unwrap();
+        s
+    };
+    assert!(
+        sheet1_xml.contains("Archive item") || sheet1_xml.contains("Street plan"),
+        "sheet1.xml missing table content: {sheet1_xml}"
+    );
+
+    // 3. Plan pdf -> csv: default route must select docling engine without --engine docling
+    let plan_csv = docling_cli(&docling_fixture)
+        .unwrap()
+        .args([
+            "plan",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "csv",
+            "--json",
+        ])
+        .output()
+        .expect("plan pdf -> csv");
+    assert!(plan_csv.status.success());
+    let plan: Value = serde_json::from_slice(&plan_csv.stdout).unwrap();
+    assert_eq!(
+        plan["route"][0]["engine"], "docling",
+        "pdf -> csv must plan via docling tables"
+    );
+
+    // 4. Convert pdf -> csv: route must run through docling
+    let csv_out = directory.path().join("table.csv");
+    let conv_csv = docling_cli(&docling_fixture)
+        .unwrap()
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "csv",
+            "--json",
+            "-o",
+            csv_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert pdf -> csv");
+    assert!(
+        conv_csv.status.success(),
+        "pdf -> csv failed: {}",
+        String::from_utf8_lossy(&conv_csv.stderr)
+    );
+    assert!(csv_out.exists());
+    let csv_content = fs::read_to_string(&csv_out).unwrap();
+    assert!(
+        csv_content.contains("Archive item") || csv_content.contains("Street plan"),
+        "table.csv missing table content: {csv_content}"
+    );
+}
+
+#[test]
+fn xlsx_reread_through_docling_has_one_sheet_per_table() {
+    let docling_fixture =
+        support::fixtures::repository_root().join("fixtures/docling/en-map-room.docling.json");
+    if docling_cli(&docling_fixture).is_none() {
+        return;
+    }
+    let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
+    let directory = tempdir().unwrap();
+    let xlsx_out = directory.path().join("table.xlsx");
+
+    let conv = docling_cli(&docling_fixture)
+        .unwrap()
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "xlsx",
+            "--json",
+            "-o",
+            xlsx_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert pdf -> xlsx");
+    assert!(conv.status.success());
+
+    // Verify sheet count directly from the produced XLSX package (open zip and count xl/worksheets/sheet*.xml)
+    let file = fs::File::open(&xlsx_out).expect("open produced XLSX");
+    let zip = zip::ZipArchive::new(file).expect("read XLSX zip archive");
+    let sheet_count = zip
+        .file_names()
+        .filter(|name| {
+            if let Ok(name) = name {
+                name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml")
+            } else {
+                false
+            }
+        })
+        .count();
+    assert_eq!(
+        sheet_count, 1,
+        "produced XLSX should have exactly 1 worksheet for 1 table in en-map-room"
+    );
+
+    // Re-read XLSX through Docling into IR JSON
+    let reread_json = directory.path().join("reread.json");
+    let reread = docling_cli(&docling_fixture)
+        .unwrap()
+        .args([
+            "convert",
+            xlsx_out.to_str().unwrap(),
+            "--to",
+            "json",
+            "--json",
+            "-o",
+            reread_json.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert xlsx -> json");
+    assert!(
+        reread.status.success(),
+        "re-reading XLSX through docling failed: {}",
+        String::from_utf8_lossy(&reread.stderr)
+    );
+    let report: Value = serde_json::from_slice(&reread.stdout).unwrap();
+    assert!(
+        report["route"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["engine"] == "docling"),
+        "re-reading XLSX must plan through docling: {report:?}"
+    );
+
+    let ir_bytes = fs::read(&reread_json).expect("read reread.json");
+    let ir: Value = serde_json::from_slice(&ir_bytes).expect("parse IR JSON");
+    let body = ir["body"].as_array().expect("body array");
+    let tables: Vec<&Value> = body.iter().filter(|b| b["type"] == "table").collect();
+    assert_eq!(
+        tables.len(),
+        1,
+        "expected 1 table in re-read IR from en-map-room.pdf"
+    );
+}
+
+#[test]
+fn pdf_to_xlsx_without_docling_falls_back_to_text_dump_with_warning() {
+    let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
+    let directory = tempdir().unwrap();
+    let empty_data = directory.path().join("empty-data");
+    fs::create_dir_all(&empty_data).unwrap();
+    let xlsx_out = directory.path().join("fallback.xlsx");
+
+    // Convert WITHOUT passing --engine pdf; simulate docling absence via environment
+    let conv = cli()
+        .env("ASHIFT_DATA_DIR", &empty_data)
+        .env_remove("ASHIFT_PACK_DOCLING")
+        .env_remove("ASHIFT_DOCLING_ENGINE")
+        .args([
+            "convert",
+            pdf_fixture.to_str().unwrap(),
+            "--to",
+            "xlsx",
+            "--json",
+            "-o",
+            xlsx_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("convert without docling");
+    assert!(
+        conv.status.success(),
+        "fallback conversion failed: {}",
+        String::from_utf8_lossy(&conv.stderr)
+    );
+    let report: Value = serde_json::from_slice(&conv.stdout).unwrap();
+    let route: Vec<&str> = report["route"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|step| step["engine"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        route[0], "pdf",
+        "must fall back to native pdf engine when docling is absent: {route:?}"
+    );
+    let warnings = report["warnings"].as_array().expect("warnings array");
+    assert!(
+        warnings.iter().any(|w| w["code"] == "no_tables_found"),
+        "fallback text dump must issue no_tables_found warning: {warnings:?}"
+    );
+    assert!(xlsx_out.exists());
+    assert!(zip_has(&xlsx_out, "xl/worksheets/sheet1.xml"));
 }

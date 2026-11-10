@@ -1,0 +1,12 @@
+[verapdf]
+version = "1.30.3"
+url = "https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip"
+size = 32971125
+sha256 = "b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59"
+license = "MPL-2.0"
+izpack_installer_path = "verapdf-greenfield-1.30.3/verapdf-izpack-installer-1.30.3.jar"
+izpack_installer_size = 33217113
+izpack_installer_sha256 = "fcba8d703b82295a87c18738b3e035c66e3309b42c9e9c361557be7c76b4a163"
+cli_jar_name = "cli-1.30.3.jar"
+cli_jar_size = 16057132
+cli_jar_sha256 = "19f6edd5c92841a38d9b3b018a555b7ba173b13e4e0d29edecc232e5ba6c1d70"

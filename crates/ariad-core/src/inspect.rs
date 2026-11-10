@@ -264,10 +264,15 @@ mod tests {
             inspection.reachable,
             vec![
                 Format::AriadIrJson,
+                Format::Csv,
                 Format::Docx,
                 Format::Epub,
                 Format::Html,
-                Format::Pdf
+                Format::Odt,
+                Format::Pdf,
+                Format::Rtf,
+                Format::Txt,
+                Format::Xlsx,
             ]
         );
         assert_eq!(inspection.reachable_elsewhere, Vec::<Format>::new());

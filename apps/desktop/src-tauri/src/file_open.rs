@@ -74,10 +74,13 @@ pub fn registered_inputs() -> Vec<Format> {
 
 /// Whether the app can take this path as a conversion input.
 fn accepts(path: &Path) -> bool {
+    let edges = &ariad_core::planner::embedded().edges;
     path.extension()
         .and_then(|extension| extension.to_str())
         .and_then(Format::from_extension)
-        .is_some()
+        .is_some_and(|format| {
+            format.is_user_facing() && edges.iter().any(|edge| edge.from == format)
+        })
         && path.is_file()
 }
 
@@ -193,7 +196,7 @@ mod tests {
     #[test]
     fn keeps_supported_files_and_resolves_relative_paths() {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["a.md", "b.PDF", "c.docx", "notes.txt"] {
+        for name in ["a.md", "b.PDF", "c.docx", "notes.djvu"] {
             fs::write(dir.path().join(name), b"x").unwrap();
         }
         fs::create_dir(dir.path().join("folder.md")).unwrap();
@@ -203,7 +206,7 @@ mod tests {
                 "a.md",
                 "b.PDF",
                 &absolute,
-                "notes.txt",
+                "notes.djvu",
                 "missing.md",
                 "folder.md",
                 "a.md",
@@ -378,5 +381,102 @@ mod tests {
              `node apps/desktop/os-integration/generate.mjs`",
             path.display()
         );
+    }
+
+    #[test]
+    fn accepts_routable_text_and_rejects_unsupported_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let txt = dir.path().join("notes.txt");
+        fs::write(&txt, b"hello").unwrap();
+        assert!(accepts(&txt));
+        let unsupported = dir.path().join("notes.djvu");
+        fs::write(&unsupported, b"hello").unwrap();
+        assert!(!accepts(&unsupported));
+    }
+
+    #[test]
+    fn desktop_and_web_formats_match_core_format_definitions() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let desktop_path = root.join("../src/formats.ts");
+        let web_path = root.join("../../web/src/lib/formats.ts");
+
+        let desktop_content = fs::read_to_string(&desktop_path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", desktop_path.display()));
+        let web_content = fs::read_to_string(&web_path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", web_path.display()));
+
+        let user_facing_formats: Vec<Format> = Format::ALL
+            .iter()
+            .copied()
+            .filter(|f| f.is_user_facing())
+            .collect();
+
+        // 1. Verify desktop allFormats
+        let all_formats_block = desktop_content
+            .split("export const allFormats: Record<string, string[]> = {")
+            .nth(1)
+            .expect("allFormats in desktop formats.ts")
+            .split("};")
+            .next()
+            .expect("closing brace of allFormats in desktop formats.ts");
+
+        let mut desktop_map = std::collections::HashMap::new();
+        for line in all_formats_block.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("//") {
+                continue;
+            }
+            if let Some((key, rest)) = line.split_once(':') {
+                let key = key.trim().trim_matches('"');
+                if let Some(start) = rest.find('[')
+                    && let Some(end) = rest.rfind(']')
+                {
+                    let exts: Vec<String> = rest[start + 1..end]
+                        .split(',')
+                        .map(|s| s.trim().trim_matches('"').to_owned())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    desktop_map.insert(key.to_owned(), exts);
+                }
+            }
+        }
+
+        assert_eq!(
+            desktop_map.len(),
+            user_facing_formats.len(),
+            "desktop allFormats count must equal core user-facing format count"
+        );
+
+        for format in &user_facing_formats {
+            let key = match *format {
+                Format::Markdown => "md",
+                Format::AriadIrJson => "json",
+                other => other.id(),
+            };
+            let exts = desktop_map
+                .get(key)
+                .unwrap_or_else(|| panic!("desktop allFormats missing key {key} for {:?}", format));
+            let expected_exts: Vec<String> =
+                format.extensions().iter().map(|&s| s.to_owned()).collect();
+            assert_eq!(
+                exts, &expected_exts,
+                "desktop extensions for {key} must match core format extensions"
+            );
+        }
+
+        // 2. Verify web FORMATS
+        for format in &user_facing_formats {
+            let id = format.id();
+            assert!(
+                web_content.contains(&format!("id: \"{id}\"")),
+                "web FORMATS missing id {id}"
+            );
+            for ext in format.extensions() {
+                assert!(
+                    web_content.contains(&format!("\"{ext}\"")),
+                    "web FORMATS missing extension {ext} for format {id}"
+                );
+            }
+        }
     }
 }

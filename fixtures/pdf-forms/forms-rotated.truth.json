@@ -1,0 +1,296 @@
+{
+  "version": "ariad-truth/0",
+  "id": "forms-rotated",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 2,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 90,
+      "blank": false,
+      "crop_box": [
+        20,
+        30,
+        575,
+        812
+      ]
+    },
+    {
+      "page": 2,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 270,
+      "blank": false,
+      "crop_box": [
+        20,
+        30,
+        575,
+        812
+      ]
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    },
+    {
+      "page": 2,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    90,
+    270
+  ],
+  "metadata": {
+    "title": "Rotated form and annotation coverage",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": true,
+  "field_names": [
+    "text_1",
+    "checkbox_1",
+    "text_2",
+    "checkbox_2"
+  ],
+  "form_fields": [
+    {
+      "name": "text_1",
+      "type": "text",
+      "value": "",
+      "page": 1,
+      "rect": [
+        100,
+        700,
+        300,
+        724
+      ],
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            100,
+            700,
+            300,
+            724
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "checkbox_1",
+      "type": "checkbox",
+      "value": "Off",
+      "page": 1,
+      "rect": [
+        100,
+        650,
+        120,
+        670
+      ],
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            100,
+            650,
+            120,
+            670
+          ],
+          "on_state": "On"
+        }
+      ]
+    },
+    {
+      "name": "text_2",
+      "type": "text",
+      "value": "",
+      "page": 2,
+      "rect": [
+        100,
+        700,
+        300,
+        724
+      ],
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            100,
+            700,
+            300,
+            724
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "checkbox_2",
+      "type": "checkbox",
+      "value": "Off",
+      "page": 2,
+      "rect": [
+        100,
+        650,
+        120,
+        670
+      ],
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            100,
+            650,
+            120,
+            670
+          ],
+          "on_state": "On"
+        }
+      ]
+    }
+  ],
+  "has_annotations": true,
+  "annotations": [
+    {
+      "subtype": "Highlight",
+      "page": 1,
+      "rect": [
+        100,
+        600,
+        220,
+        620
+      ],
+      "contents": "Highlight 1",
+      "has_appearance": false
+    },
+    {
+      "subtype": "Text",
+      "page": 1,
+      "rect": [
+        100,
+        550,
+        120,
+        570
+      ],
+      "contents": "Text 1",
+      "has_appearance": false
+    },
+    {
+      "subtype": "Highlight",
+      "page": 2,
+      "rect": [
+        100,
+        600,
+        220,
+        620
+      ],
+      "contents": "Highlight 2",
+      "has_appearance": false
+    },
+    {
+      "subtype": "Text",
+      "page": 2,
+      "rect": [
+        100,
+        550,
+        120,
+        570
+      ],
+      "contents": "Text 2",
+      "has_appearance": false
+    }
+  ],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 2,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 90,
+        "blank": false,
+        "crop_box": [
+          20,
+          30,
+          575,
+          812
+        ]
+      },
+      {
+        "page": 2,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 270,
+        "blank": false,
+        "crop_box": [
+          20,
+          30,
+          575,
+          812
+        ]
+      }
+    ],
+    "metadata": {
+      "title": "Rotated form and annotation coverage",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": true,
+    "has_annotations": true,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Rotated form and annotation coverage",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  }
+}

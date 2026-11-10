@@ -44,6 +44,7 @@ pub(super) struct CMap {
     singles: HashMap<(u8, u32), Vec<u16>>,
     /// Sorted by `(len, low)`.
     ranges: Vec<Range>,
+    strict_invalid: bool,
 }
 
 impl CMap {
@@ -64,11 +65,19 @@ impl CMap {
             }
         }
         cmap.ranges.sort_by_key(|range| (range.len, range.low));
+        if cmap
+            .ranges
+            .windows(2)
+            .any(|pair| pair[0].len == pair[1].len && pair[1].low <= pair[0].high)
+        {
+            cmap.strict_invalid = true;
+        }
         cmap
     }
 
     fn parse_codespace(&mut self, data: &[u8], pos: &mut usize) {
         let mut low: Option<Vec<u8>> = None;
+        let mut ended = false;
         while let Some(token) = next_token(data, pos) {
             match token {
                 Token::String(bytes) => match low.take() {
@@ -86,70 +95,111 @@ impl CMap {
                             range.low[..first.len()].copy_from_slice(&first);
                             range.high[..bytes.len()].copy_from_slice(&bytes);
                             self.codespace.push(range);
+                        } else {
+                            self.strict_invalid = true;
                         }
                     }
                 },
-                Token::Keyword(_) => return,
-                _ => {}
+                Token::Keyword(keyword) => {
+                    self.strict_invalid |= keyword != b"endcodespacerange" || low.is_some();
+                    ended = true;
+                    break;
+                }
+                _ => self.strict_invalid = true,
             }
         }
+        self.strict_invalid |= !ended;
     }
 
     fn parse_bfchar(&mut self, data: &[u8], pos: &mut usize, entries: &mut usize) {
         let mut source: Option<Vec<u8>> = None;
+        let mut ended = false;
         while let Some(token) = next_token(data, pos) {
             match token {
                 Token::String(bytes) => match source.take() {
                     None => source = Some(bytes),
                     Some(code) => {
+                        self.strict_invalid |= !valid_target_bytes(&bytes);
                         if let Some((len, code)) = code_value(&code)
                             && *entries < MAX_ENTRIES
                         {
                             *entries += 1;
-                            self.singles.insert((len, code), utf16_units(&bytes));
+                            if self
+                                .singles
+                                .insert((len, code), utf16_units(&bytes))
+                                .is_some()
+                            {
+                                self.strict_invalid = true;
+                            }
+                        } else {
+                            self.strict_invalid = true;
                         }
                     }
                 },
                 // A glyph name as target is not resolvable here; drop the pair.
-                Token::Name(_) => source = None,
-                Token::Keyword(_) => return,
-                _ => {}
+                Token::Name(_) => {
+                    self.strict_invalid = true;
+                    source = None;
+                }
+                Token::Keyword(keyword) => {
+                    self.strict_invalid |= keyword != b"endbfchar" || source.is_some();
+                    ended = true;
+                    break;
+                }
+                _ => self.strict_invalid = true,
             }
         }
+        self.strict_invalid |= !ended;
     }
 
     fn parse_bfrange(&mut self, data: &[u8], pos: &mut usize, entries: &mut usize) {
         let mut codes: Vec<Vec<u8>> = Vec::with_capacity(2);
+        let mut ended = false;
         while let Some(token) = next_token(data, pos) {
             match token {
                 Token::String(bytes) if codes.len() < 2 => codes.push(bytes),
                 Token::String(bytes) => {
+                    self.strict_invalid |= !valid_target_bytes(&bytes);
                     let target = RangeTarget::Increment(utf16_units(&bytes));
                     self.push_range(&codes, target, entries);
                     codes.clear();
                 }
                 Token::ArrayStart => {
-                    let list = target_list(data, pos);
+                    let (list, invalid) = target_list(data, pos);
+                    self.strict_invalid |= invalid;
                     if codes.len() == 2 {
                         *entries = entries.saturating_add(list.len());
                         self.push_range(&codes, RangeTarget::List(list), entries);
+                    } else {
+                        self.strict_invalid = true;
                     }
                     codes.clear();
                 }
-                Token::Keyword(_) => return,
-                _ => codes.clear(),
+                Token::Keyword(keyword) => {
+                    self.strict_invalid |= keyword != b"endbfrange" || !codes.is_empty();
+                    ended = true;
+                    break;
+                }
+                _ => {
+                    self.strict_invalid = true;
+                    codes.clear();
+                }
             }
         }
+        self.strict_invalid |= !ended;
     }
 
     fn push_range(&mut self, codes: &[Vec<u8>], target: RangeTarget, entries: &mut usize) {
         let [low, high] = codes else {
+            self.strict_invalid = true;
             return;
         };
         let (Some((len, low)), Some((high_len, high))) = (code_value(low), code_value(high)) else {
+            self.strict_invalid = true;
             return;
         };
         if len != high_len || high < low || *entries >= MAX_ENTRIES {
+            self.strict_invalid = true;
             return;
         }
         *entries += 1;
@@ -192,7 +242,27 @@ impl CMap {
     /// Returns the code and its byte length, or `None` when the CMap has no codespace. Bytes
     /// matching no range consume the shortest declared code length.
     pub(super) fn next_code(&self, bytes: &[u8]) -> Option<(u32, usize)> {
+        if bytes.is_empty() {
+            return None;
+        }
         let shortest = self.codespace.iter().map(|range| range.len).min()?;
+        if let Some(code) = self.match_code(bytes, false) {
+            return Some(code);
+        }
+        let len = usize::from(shortest).min(bytes.len()).max(1);
+        code_value(&bytes[..len]).map(|(_, code)| (code, len))
+    }
+
+    /// Splits only codes actually covered by a declared codespace range.
+    pub(super) fn next_code_strict(&self, bytes: &[u8]) -> Option<(u32, usize)> {
+        if self.strict_invalid {
+            return None;
+        }
+        self.match_code(bytes, true)
+    }
+
+    fn match_code(&self, bytes: &[u8], reject_ambiguity: bool) -> Option<(u32, usize)> {
+        let mut found = None;
         for len in 1..=bytes.len().min(4) {
             let prefix = &bytes[..len];
             let matched = self.codespace.iter().any(|range| {
@@ -203,17 +273,46 @@ impl CMap {
                         .all(|(index, &byte)| range.low[index] <= byte && byte <= range.high[index])
             });
             if matched {
-                return Some((code_value(prefix)?.1, len));
+                if !reject_ambiguity {
+                    return Some((code_value(prefix)?.1, len));
+                }
+                if found.is_some() {
+                    return None;
+                }
+                found = Some((code_value(prefix)?.1, len));
             }
         }
-        let len = usize::from(shortest).min(bytes.len()).max(1);
-        code_value(&bytes[..len]).map(|(_, code)| (code, len))
+        found
     }
 
     /// Appends the Unicode text of `code` (of `len` bytes) to `out`; returns whether it mapped.
     pub(super) fn lookup(&self, code: u32, len: u8, out: &mut String) -> bool {
+        self.lookup_impl(code, len, out, false)
+    }
+
+    /// Looks up a mapping without dropping malformed UTF-16 code units.
+    pub(super) fn lookup_strict(&self, code: u32, len: u8, out: &mut String) -> bool {
+        if self.strict_invalid {
+            return false;
+        }
+        if self.singles.contains_key(&(len, code)) {
+            let index = self
+                .ranges
+                .partition_point(|range| (range.len, range.low) <= (len, code));
+            if index
+                .checked_sub(1)
+                .and_then(|i| self.ranges.get(i))
+                .is_some_and(|range| range.len == len && code <= range.high)
+            {
+                return false;
+            }
+        }
+        self.lookup_impl(code, len, out, true)
+    }
+
+    fn lookup_impl(&self, code: u32, len: u8, out: &mut String, strict: bool) -> bool {
         if let Some(units) = self.singles.get(&(len, code)) {
-            return push_utf16(units.iter().copied(), out);
+            return push_utf16(units.iter().copied(), out, strict);
         }
         let index = self
             .ranges
@@ -232,32 +331,58 @@ impl CMap {
                     let Some((&last, head)) = units.split_last() else {
                         return false;
                     };
-                    let last = last.wrapping_add(offset as u16);
-                    push_utf16(head.iter().copied().chain(std::iter::once(last)), out)
+                    let last = if strict {
+                        let Ok(offset) = u16::try_from(offset) else {
+                            return false;
+                        };
+                        let Some(last) = last.checked_add(offset) else {
+                            return false;
+                        };
+                        last
+                    } else {
+                        last.wrapping_add(offset as u16)
+                    };
+                    push_utf16(
+                        head.iter().copied().chain(std::iter::once(last)),
+                        out,
+                        strict,
+                    )
                 }
                 RangeTarget::List(targets) => targets
                     .get(offset as usize)
-                    .is_some_and(|units| push_utf16(units.iter().copied(), out)),
+                    .is_some_and(|units| push_utf16(units.iter().copied(), out, strict)),
             };
         }
         false
     }
 }
 
-fn target_list(data: &[u8], pos: &mut usize) -> Vec<Vec<u16>> {
+fn target_list(data: &[u8], pos: &mut usize) -> (Vec<Vec<u16>>, bool) {
     let mut list = Vec::new();
+    let mut invalid = false;
+    let mut ended = false;
     while let Some(token) = next_token(data, pos) {
         match token {
             Token::String(bytes) => {
+                invalid |= !valid_target_bytes(&bytes);
                 if list.len() < MAX_ENTRIES {
                     list.push(utf16_units(&bytes));
+                } else {
+                    invalid = true;
                 }
             }
-            Token::ArrayEnd | Token::Keyword(_) => break,
-            _ => {}
+            Token::ArrayEnd => {
+                ended = true;
+                break;
+            }
+            Token::Keyword(_) => {
+                invalid = true;
+                break;
+            }
+            _ => invalid = true,
         }
     }
-    list
+    (list, invalid || !ended)
 }
 
 /// Big-endian code value of 1 to 4 bytes.
@@ -283,10 +408,23 @@ fn utf16_units(bytes: &[u8]) -> Vec<u16> {
         .collect()
 }
 
+fn valid_target_bytes(bytes: &[u8]) -> bool {
+    !bytes.is_empty() && bytes.len().is_multiple_of(2) && bytes.len() <= MAX_TARGET_UNITS * 2
+}
+
 /// Appends UTF-16 units as text, skipping unpaired surrogates; returns whether anything was added.
-fn push_utf16(units: impl Iterator<Item = u16>, out: &mut String) -> bool {
+fn push_utf16(units: impl Iterator<Item = u16>, out: &mut String, strict: bool) -> bool {
     let before = out.len();
-    out.extend(char::decode_utf16(units).filter_map(Result::ok));
+    for item in char::decode_utf16(units) {
+        match item {
+            Ok(character) => out.push(character),
+            Err(_) if strict => {
+                out.truncate(before);
+                return false;
+            }
+            Err(_) => {}
+        }
+    }
     out.len() > before
 }
 
@@ -323,6 +461,8 @@ mod tests {
         assert_eq!(cmap.next_code(&[0x41, 0x81]), Some((0x41, 1)));
         assert_eq!(cmap.next_code(&[0x81, 0x40]), Some((0x8140, 2)));
         assert_eq!(cmap.next_code(&[0xFF, 0x40]), Some((0xFF, 1)));
+        assert_eq!(cmap.next_code_strict(&[0xFF, 0x40]), None);
+        assert_eq!(cmap.next_code_strict(&[0x81]), None);
         assert_eq!(CMap::parse(b"").next_code(&[1, 2]), None);
     }
 
@@ -331,5 +471,35 @@ mod tests {
         let cmap = CMap::parse(b"1 beginbfrange <00000000> <FFFFFFFF> <0041> endbfrange");
         assert_eq!(text(&cmap, 0x0000_0002, 4).as_deref(), Some("C"));
         assert_eq!(text(&cmap, 0xFFFF_FFFF, 4).as_deref(), Some("\u{40}"));
+    }
+
+    #[test]
+    fn strict_lookup_refuses_partial_utf16_and_overflow() {
+        let cmap = CMap::parse(
+            b"1 beginbfchar <01> <0041D800> endbfchar 1 beginbfrange <02> <03> <FFFF> endbfrange",
+        );
+        let mut output = String::new();
+        assert!(cmap.lookup(1, 1, &mut output));
+        assert_eq!(output, "A");
+        output.clear();
+        assert!(!cmap.lookup_strict(1, 1, &mut output));
+        assert!(output.is_empty());
+        assert!(!cmap.lookup_strict(3, 1, &mut output));
+        let odd = CMap::parse(b"1 beginbfchar <04> <004100> endbfchar");
+        assert!(!odd.lookup_strict(4, 1, &mut output));
+    }
+
+    #[test]
+    fn strict_mapping_rejects_ambiguous_and_truncated_cmaps() {
+        let ambiguous =
+            CMap::parse(b"2 begincodespacerange <00> <FF> <0000> <FFFF> endcodespacerange");
+        assert_eq!(ambiguous.next_code(&[0, 1]), Some((0, 1)));
+        assert_eq!(ambiguous.next_code_strict(&[0, 1]), None);
+        let overlapping = CMap::parse(
+            b"1 beginbfchar <01> <0041> endbfchar 1 beginbfrange <01> <02> <0042> endbfrange",
+        );
+        assert!(!overlapping.lookup_strict(1, 1, &mut String::new()));
+        let truncated = CMap::parse(b"1 beginbfchar <01> <0041>");
+        assert!(!truncated.lookup_strict(1, 1, &mut String::new()));
     }
 }

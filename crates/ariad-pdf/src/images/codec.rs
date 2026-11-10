@@ -433,17 +433,19 @@ impl<'a> DecodeSession<'a> {
             &mut self.budget,
             self.max_depth,
             self.release_temporary,
+            false,
         )
     }
 }
 
-fn decode_with_budget(
+pub(crate) fn decode_with_budget(
     doc: &PdfDoc,
     stream_id: ObjectId,
     ctx: &ToolCtx,
     budget: &mut DecodeBudget,
     max_depth: u16,
     release_temporary: bool,
+    raw_samples: bool,
 ) -> Result<DecodedImage, ImageError> {
     ctx.check()?;
     let pdf = doc.inner();
@@ -479,11 +481,19 @@ fn decode_with_budget(
         budget,
     )?;
     let components = space.components();
-    let decode_object = d
-        .get(b"Decode")
-        .ok()
-        .map(|o| resolve(pdf, o, max_depth))
-        .transpose()?;
+    let identity_decode = Object::Array(
+        (0..components)
+            .flat_map(|_| [Object::Integer(0), Object::Integer(1)])
+            .collect(),
+    );
+    let decode_object = if raw_samples {
+        Some(&identity_decode)
+    } else {
+        d.get(b"Decode")
+            .ok()
+            .map(|o| resolve(pdf, o, max_depth))
+            .transpose()?
+    };
     let filters = if d.has(b"Filter") {
         stream
             .filters()

@@ -9,6 +9,7 @@ pub mod ir;
 pub mod json_depth;
 pub mod limits;
 pub mod links;
+pub mod ocr;
 pub mod pandoc;
 pub mod pipeline;
 pub mod planner;

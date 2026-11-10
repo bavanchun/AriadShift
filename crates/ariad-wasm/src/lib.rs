@@ -343,14 +343,15 @@ pub fn write_pandoc(bytes: &[u8], title: Option<String>) -> Result<JsValue, JsVa
 
 /// Stamps only package dates; Pandoc stays a separate aggregated module.
 #[wasm_bindgen(js_name = stampPackage)]
-pub fn stamp_package(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>, JsValue> {
-    ariad_core::package_meta::stamp_bytes(bytes, epub, timestamp).map_err(|e| {
-        to_js_error(&api::ApiError::from(
+pub fn stamp_package(bytes: &[u8], target: &JsValue, timestamp: &str) -> Result<Vec<u8>, JsValue> {
+    let Some(s) = target.as_string() else {
+        return Err(to_js_error(&api::ApiError::from(
             ariad_core::pipeline::PipelineError::InvalidInput {
-                reason: e.to_string(),
+                reason: "package target must be a string ('docx', 'odt', or 'epub')".to_string(),
             },
-        ))
-    })
+        )));
+    };
+    api::stamp_package(bytes, &s, timestamp).map_err(|e| to_js_error(&e))
 }
 
 /// Lists every registered document tool whose supported runtimes include `wasm`.
@@ -417,7 +418,9 @@ fn tool_run_to_js(run: &api::ToolRun) -> Result<JsValue, JsValue> {
     let bytes = js_sys::Uint8Array::from(run.bytes.as_slice());
     let warnings = to_js(&run.warnings)?;
 
-    if let Some(ref data) = run.data {
+    if run.format == "json"
+        && let Some(ref data) = run.data
+    {
         let result = to_js(data)?;
         let data_clone = to_js(data)?;
         define_hidden_prop(&result, "tool", &JsValue::from_str(run.tool))?;
@@ -434,7 +437,11 @@ fn tool_run_to_js(run: &api::ToolRun) -> Result<JsValue, JsValue> {
         let result = to_js(run)?;
         js_sys::Reflect::set(&result, &JsValue::from_str("bytes"), &bytes)?;
         js_sys::Reflect::set(&result, &JsValue::from_str("artifacts"), &artifacts)?;
-        js_sys::Reflect::set(&result, &JsValue::from_str("data"), &JsValue::NULL)?;
+        let data = match &run.data {
+            Some(data) => to_js(data)?,
+            None => JsValue::NULL,
+        };
+        js_sys::Reflect::set(&result, &JsValue::from_str("data"), &data)?;
         Ok(result)
     }
 }

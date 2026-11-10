@@ -137,6 +137,7 @@ pub struct RunDocToolArgs {
     /// Canonical tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
     pub tool: String,
     /// Input document filesystem paths or `file://` URIs inside `--allow-dir`.
+    #[serde(default)]
     pub inputs: Vec<String>,
     /// Optional directory inside `--allow-dir` for published outputs (defaults to the first input's parent directory).
     pub output_dir: Option<String>,
@@ -151,8 +152,11 @@ pub struct RunDocToolArgs {
 /// Arguments for creating a short-lived local secret handle.
 #[derive(Deserialize, JsonSchema)]
 pub struct SecretPutArgs {
-    /// Secret value, between 1 and 4096 UTF-8 bytes.
+    /// Secret value, between 1 and 4096 UTF-8 bytes (or up to 14 MiB for base64-encoded binary certificates).
     pub value: String,
+    /// Set to true when storing a base64-encoded binary certificate (allows up to 14 MiB).
+    #[serde(default)]
+    pub certificate: Option<bool>,
 }
 
 /// Handle returned for a stored secret.
@@ -213,7 +217,7 @@ fn tool_run_error(err: &ToolError) -> CallToolResult {
     let code = err.code();
     let exit_code = err.exit_code();
     let msg = err.to_string();
-    let val = serde_json::json!({
+    let mut val = serde_json::json!({
         "code": code,
         "exit_code": exit_code,
         "message": &msg,
@@ -223,6 +227,10 @@ fn tool_run_error(err: &ToolError) -> CallToolResult {
             "message": &msg,
         },
     });
+    if let ToolError::ComplianceFailed { standard, report } = err {
+        val["error"]["standard"] = serde_json::json!(standard);
+        val["error"]["report"] = report.as_ref().clone();
+    }
     let mut res = CallToolResult::structured_error(val);
     res.content = vec![ContentBlock::text(format!("ashift: error[{code}]: {msg}"))];
     res
@@ -374,7 +382,8 @@ impl McpServer {
         &self,
         Parameters(args): Parameters<SecretPutArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        match self.secrets.put(args.value) {
+        let is_cert = args.certificate.unwrap_or(false);
+        match self.secrets.put_with_options(args.value, is_cert) {
             Ok(handle) => tool_success(
                 &SecretPutResult {
                     handle,
@@ -618,6 +627,7 @@ impl McpServer {
                     title_fallback: None,
                     asset_base_dir: None,
                     reader_engine: None,
+                    pdf_standard: None,
                 };
                 convert_confined_assets_in(
                     &pool,
@@ -927,6 +937,23 @@ impl McpServer {
 mod tests {
     use super::*;
     use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn compliance_failure_exposes_structured_report() {
+        let report =
+            serde_json::json!({"report": {"jobs": [{"validationResult": [{"compliant": false}]}]}});
+        let error = ToolError::ComplianceFailed {
+            standard: "PDF/A-2b".into(),
+            report: Box::new(report.clone()),
+        };
+        let result = tool_run_error(&error);
+        assert_eq!(result.is_error, Some(true));
+        let content = result.structured_content.unwrap();
+        assert_eq!(content["error"]["code"], "compliance_failed");
+        assert_eq!(content["error"]["exit_code"], 1);
+        assert_eq!(content["error"]["standard"], "PDF/A-2b");
+        assert_eq!(content["error"]["report"], report);
+    }
 
     #[test]
     fn staging_errors_match_host_codes_and_exit_statuses() {

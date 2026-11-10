@@ -8,8 +8,16 @@
 //!   opened input required cross-reference table reconstruction (`doc.repaired_xref() == true`).
 //! - Deterministic PDF serialization of [`OutputDoc`] artifacts via [`crate::writer::save_with_options`].
 
+pub mod add_image;
+#[cfg(feature = "codecs")]
+pub mod add_text;
+#[cfg(feature = "codecs")]
+pub mod adjust_colors;
 pub mod alternate_mix;
 pub mod attachments;
+pub mod background;
+#[cfg(feature = "codecs")]
+pub mod bates;
 pub mod booklet;
 #[cfg(feature = "codecs")]
 pub mod compress;
@@ -19,27 +27,56 @@ pub mod delete_pages;
 pub mod divide_pages;
 pub mod extract_pages;
 #[cfg(feature = "codecs")]
+mod furniture_common;
+#[cfg(feature = "codecs")]
 pub mod grayscale;
+#[cfg(feature = "codecs")]
+pub mod header_footer;
 pub mod insert_blank;
+pub mod invert_colors;
 pub mod layers;
+mod mark_image;
+mod marks_common;
 pub mod merge;
 pub mod metadata;
 pub mod nup;
 pub mod outline;
 pub mod overlay;
 pub mod page_labels;
+#[cfg(feature = "codecs")]
+pub mod page_numbers;
 pub(crate) mod page_set;
 pub mod portfolio;
 pub mod posterize;
+#[cfg(feature = "codecs")]
+pub mod qr;
 pub mod reorder;
+#[cfg(feature = "codecs")]
+pub mod replace_color;
 pub mod rotate;
 pub mod rotate_content;
 pub mod sanitize;
 pub mod scale;
+#[cfg(feature = "codecs")]
+pub mod sign_visual;
 pub mod single_page;
 pub mod split;
+#[cfg(feature = "codecs")]
+pub mod stamp;
+#[cfg(feature = "codecs")]
+pub mod toc_page;
 pub mod unlock_forms;
 pub mod viewer_prefs;
+#[cfg(feature = "codecs")]
+pub mod watermark;
+#[cfg(feature = "codecs")]
+pub mod watermark_detect;
+#[cfg(feature = "codecs")]
+mod watermark_identity;
+#[cfg(feature = "codecs")]
+pub mod watermark_remove;
+#[cfg(feature = "codecs")]
+mod watermark_scan;
 
 use ariad_core::{
     limits::Limits,
@@ -317,11 +354,217 @@ pub fn run_tool(
     if tool_id == "pdf.info" {
         return run_pdf_info(inputs, params, ctx);
     }
+    if tool_id == "pdf.accessibility_report" {
+        return run_pdf_accessibility_report(inputs, params, ctx);
+    }
     if tool_id == "image.to_pdf" {
         return run_image_to_pdf(inputs, params, ctx);
     }
 
     match tool_id {
+        #[cfg(feature = "codecs")]
+        "pdf.compare" => {
+            let parsed_params: ariad_core::tools::params::CompareParams =
+                serde_json::from_value(params.clone())
+                    .map_err(|err| PdfError::InvalidParams(err.to_string()))?;
+            parsed_params.validate().map_err(PdfError::InvalidParams)?;
+            crate::compare::run_inputs(inputs, &parsed_params, ctx)
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.annotations" => dispatch_structural_inputs::<
+            ariad_core::tools::params::annotations::AnnotationsParams,
+            _,
+        >(tool_id, inputs, params, ctx, crate::annotations::run::run),
+        #[cfg(feature = "codecs")]
+        "pdf.annotations_import" => dispatch_structural_inputs::<
+            ariad_core::tools::params::annotations::AnnotationsImportParams,
+            _,
+        >(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            crate::interchange::run::annotations_import,
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.annotations_export" => dispatch_structural_inputs::<
+            ariad_core::tools::params::annotations::AnnotationsExportParams,
+            _,
+        >(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            crate::interchange::run::annotations_export,
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.forms_list" => dispatch_structural_inputs::<
+            ariad_core::tools::params::forms::FormsListParams,
+            _,
+        >(tool_id, inputs, params, ctx, crate::forms::run::list_inputs),
+        #[cfg(feature = "codecs")]
+        "pdf.forms_fill" => dispatch_structural_inputs::<
+            ariad_core::tools::params::forms::FormsFillParams,
+            _,
+        >(tool_id, inputs, params, ctx, crate::forms::run::fill_inputs),
+        #[cfg(feature = "codecs")]
+        "pdf.forms_create" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsCreateParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::forms::run::create_inputs,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.forms_flatten" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsFlattenParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::forms::run::flatten_inputs,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.forms_import" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsImportParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::interchange::run::forms_import,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.forms_export" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsExportParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::interchange::run::forms_export,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.page_numbers" => {
+            dispatch_structural::<ariad_core::tools::params::PageNumbersParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                |docs, params, ctx| page_numbers::run(docs, params, &inputs[0].limits, ctx),
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.header_footer" => dispatch_structural_inputs::<
+            ariad_core::tools::params::HeaderFooterParams,
+            _,
+        >(tool_id, inputs, params, ctx, header_footer::run_inputs),
+        #[cfg(feature = "codecs")]
+        "pdf.bates" => dispatch_structural::<ariad_core::tools::params::BatesParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| bates::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.toc_page" => dispatch_structural::<ariad_core::tools::params::TocPageParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| toc_page::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        "pdf.background" => dispatch_structural::<ariad_core::tools::params::BackgroundParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| background::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        "pdf.invert_colors" => dispatch_structural::<
+            ariad_core::tools::params::InvertColorsParams,
+            _,
+        >(tool_id, inputs, params, ctx, |docs, params, ctx| {
+            invert_colors::run(docs, params, &inputs[0].limits, ctx)
+        }),
+        #[cfg(feature = "codecs")]
+        "pdf.watermark" => dispatch_structural_inputs::<
+            ariad_core::tools::params::WatermarkParams,
+            _,
+        >(tool_id, inputs, params, ctx, watermark::run_inputs),
+        "pdf.add_image" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::AddImageParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                add_image::run_inputs,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.add_text" => dispatch_structural::<ariad_core::tools::params::AddTextParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| add_text::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.sign_visual" => dispatch_structural::<ariad_core::tools::params::SignVisualParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| sign_visual::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.stamp" => dispatch_structural::<ariad_core::tools::params::StampParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| stamp::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.qr" => dispatch_structural::<ariad_core::tools::params::QrParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| qr::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.watermark_remove" => dispatch_structural_inputs::<
+            ariad_core::tools::params::WatermarkRemoveParams,
+            _,
+        >(
+            tool_id, inputs, params, ctx, watermark_remove::run_inputs
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.watermark_detect" => dispatch_structural_inputs::<
+            ariad_core::tools::params::WatermarkDetectParams,
+            _,
+        >(
+            tool_id, inputs, params, ctx, watermark_detect::run_inputs
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.replace_color" => dispatch_structural::<
+            ariad_core::tools::params::ReplaceColorParams,
+            _,
+        >(tool_id, inputs, params, ctx, |docs, params, ctx| {
+            replace_color::run(docs, params, &inputs[0].limits, ctx)
+        }),
+        #[cfg(feature = "codecs")]
+        "pdf.adjust_colors" => dispatch_structural::<
+            ariad_core::tools::params::AdjustColorsParams,
+            _,
+        >(tool_id, inputs, params, ctx, |docs, params, ctx| {
+            adjust_colors::run(docs, params, &inputs[0].limits, ctx)
+        }),
         #[cfg(feature = "codecs")]
         "pdf.compress" => {
             dispatch_structural_inputs::<ariad_core::tools::params::CompressParams, _>(
@@ -516,6 +759,44 @@ fn run_pdf_info(
             bytes: json_bytes,
         }],
         warnings,
+        coded_warnings: Vec::new(),
+        metrics: BTreeMap::new(),
+        json: Some(json_val),
+    })
+}
+
+fn run_pdf_accessibility_report(
+    inputs: &[InputDoc],
+    _params: &Value,
+    ctx: &ToolCtx,
+) -> Result<ToolOutput, PdfError> {
+    let Some(first) = inputs.first() else {
+        return Err(PdfError::InvalidParams(
+            "pdf.accessibility_report requires exactly 1 input document".to_owned(),
+        ));
+    };
+    if inputs.len() != 1 {
+        return Err(PdfError::InvalidParams(format!(
+            "pdf.accessibility_report requires exactly 1 input document, got {}",
+            inputs.len()
+        )));
+    }
+
+    let doc = first.open_for_info(ctx)?;
+    let report = crate::pdfa::inspect_accessibility(doc.inner())?;
+    let json_val =
+        serde_json::to_value(&report).map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    let json_bytes =
+        serde_json::to_vec(&json_val).map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    let name = naming::single_output_name(&first.stem, "accessibility-report", "json");
+
+    Ok(ToolOutput {
+        artifacts: vec![OutputArtifact {
+            name,
+            format: "json".to_owned(),
+            bytes: json_bytes,
+        }],
+        warnings: Vec::new(),
         coded_warnings: Vec::new(),
         metrics: BTreeMap::new(),
         json: Some(json_val),
@@ -783,7 +1064,7 @@ fn finalize_tool_output_impl(
     })
 }
 
-fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
+pub(crate) fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
     use lopdf::Object;
     use std::collections::HashSet;
 

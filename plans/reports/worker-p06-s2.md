@@ -1,0 +1,11 @@
+# Added marks
+
+Status: implementation and focused verification complete; registry integration and independent review are pending.
+
+`pdf.watermark` accepts text or a positional image, and `pdf.stamp` creates removable OCG and artifact streams. `pdf.add_text`, `pdf.add_image` and `pdf.qr` add plain page content. All placement uses the shared visual page geometry and rotation-aware bounding boxes. Text and image tile placements are grouped into one marked stream per page so a large grid does not repeatedly rewrite page resources. Their shared drawing API now provides bounded `draw_many` variants; the single-placement API delegates to the same implementation. Existing page streams remain untouched.
+
+Text, stamps and QR parameters follow the approved defaults; custom stamp colour defaults to approved green when no colour is specified. Text supports the bundled regular and bold Libertinus faces, stamps use the injected date clock and approved tokens, and QR modules are vector rectangles merged into horizontal runs. Image inputs are validated by bytes; PNG, JPEG, WebP, TIFF and BMP are supported, JPEG data remains passthrough, and EXIF orientation is honored. Intrinsic resolution metadata is read from PNG pHYs/EXIF, JPEG JFIF/EXIF, TIFF, BMP, and WebP EXIF, with 96 DPI fallback. A provably opaque page-covering first image triggers `watermark_hidden_under_content` for an underlay.
+
+`qrcode =0.14.1`, with default features disabled, is MIT OR Apache-2.0 and was verified against the crates.io sparse index as not yanked; its downloaded manifest confirms the license. It introduces no transitive dependencies. `Cargo.lock` is updated. Shared registration, notices and schemas remain phase integration work.
+
+The expanded tool run passed 21 tests across the five tools, including Vietnamese extraction, deterministic output, byte-validated image arity, all five raster encodings, 16-bit PNG, real CMYK JPEG, EXIF orientation, physical DPI, QR module geometry, encrypted input, removable stamp layers and opaque-scan warnings. Eleven drawing regression tests and three PDFium font/round-trip checks also passed. The core specification tests, relevant clippy and the wasm32 target check passed. Independent review and phase-wide checks remain outstanding.

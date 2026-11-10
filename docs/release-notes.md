@@ -2,7 +2,47 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
-## 0.3.0 (unreleased)
+## 0.4.0 (unreleased)
+
+Overlay, watermark, OCR, scan, annotation and form tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools, plus local OCR and scan operations and AcroForm and annotation editing. (#206, #212, #216)
+
+### Added
+
+- **PAdES digital signatures, verification, visual appearances, and timestamps.** Six tools deliver digital signature operations: `pdf.sign`, `pdf.sign_verify`, `pdf.sign_remove`, `pdf.sign_visual`, `pdf.sign_token`, and `pdf.timestamp`. Features include PAdES levels B-B, B-T, B-LT, and B-LTA (without silent downgrade), pure-Rust visual signature stamping with drawn, typed, or image marks (`pdf.sign_visual`), hardware/software token signing backend interface (`pdf.sign_token`), standalone RFC 3161 timestamping (`pdf.timestamp`), comprehensive signature verification reporting (`pdf.sign_verify`) with offline evidence and modification analysis, and clean signature removal (`pdf.sign_remove`) with explicit confirmation (`confirm_invalidation: true`). Out-of-process signature operations run through the network-isolated `sign` engine pack with pyHanko 0.38.0; revocation verification relies on offline evidence or deferred validation, timestamping is brokered through the host network client, and PKCS#11 / OS Keychain integration is deferred.
+- **SSRF-safe network client (`ariad_host::net`).** Host-level network client with DNS pinning (all-address public IP validation, refusal of private, loopback, link-local, multicast, and cloud metadata ranges), redirect protections, and response size and timeout limits, used for trusted external timestamp fetching.
+- **True PDF redaction and independent verification.** `pdf.redact` and `pdf.redact_verify` deliver true content removal across covered carriers (text show operators, decoded image pixels and masks, annotations/form fields, metadata streams and Info, thumbnails, embedded file attachments), backed by a host-managed composite pipeline and multi-engine verification.
+  - `pdf.redact` extracts character geometry via PDFium out-of-process, executes an in-process full canonical rewrite and garbage collection in `ariad-pdf`, and verifies the candidate document through six gates (fresh PDFium text extraction, core reader text re-extraction, rendered raster opacity check at 150 DPI, image pixel clearing, decoded object-graph stream scan, and rewrite history validation) before atomic publication. The image pixel gate shares placement and selection routines with the rewriter. Shared images are blanked across every page referencing the XObject. Uninspected or unhandled carriers under redaction regions (inline images `BI`, shadings `sh`, font-setting `gs`, vector paths when `scope.vectors` is true, and non-image Form XObjects anywhere on processed pages) fail closed and are explicitly refused with the offending carrier named.
+  - `pdf.redact_verify` independently inspects existing documents against requested targets and carrier scopes without producing output files. Because it accepts no evidence parameter and cannot verify rendered regions or image pixels without original rewrite context, standalone `pdf.redact_verify` never returns `verified`; it returns `unverifiable`, `partial` or `failed`.
+  - Targets support exact text matches, bounded regular expressions, built-in presets (Vietnamese CCCD and CMND, credit cards with Luhn validation, IBAN with mod-97 validation, phone, and email), bounding rectangles, and entire pages, capped at 100,000 targets and 100 patterns per request.
+  - All verification reports and errors guarantee zero target text or pattern disclosure. Encrypted inputs are refused upfront; signed inputs are refused unless explicit signature invalidation is confirmed.
+- **OCR and scan tools.** `pdf.ocr` and `image.ocr` add searchable PDF, text and hOCR outputs; `pdf.auto_rotate`, `pdf.deskew`, `pdf.scan_split` and `pdf.scanner_effect` prepare or transform scanned pages. The CLI, recipes and local MCP expose these tools. OCR uses the out-of-process Tesseract pack and PDF operations also use PDFium. See [ocr.md](ocr.md). (#212)
+- **Opt-in OCR languages.** The Tesseract pack includes English, Vietnamese and orientation data; additional verified models can be installed explicitly with `ashift engines languages install`. (#212)
+- **PDF annotations and AcroForms.** `pdf.annotations` lists, adds, updates, deletes and flattens markups; `pdf.annotations_import` and `pdf.annotations_export` exchange XFDF and JSON. `pdf.forms_list`, `pdf.forms_fill`, `pdf.forms_create`, `pdf.forms_flatten`, `pdf.forms_import` and `pdf.forms_export` run in-process locally and in WASM. Form data supports FDF, XFDF, JSON and CSV, including batch fill. (#216)
+- **Form-field proposals.** `pdf.forms_detect` uses the local PDFium pack to suggest fields from lines, boxes, text and scanned pages; users review proposals before creating fields. (#216)
+- **15 overlay and watermark PDF tools**, all in the Free tier and runnable on the CLI, local MCP server, and in the browser via `ariad-wasm`. All 15 run in-process in `ariad-pdf` with no external engine packs:
+  - Page marks: `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`.
+  - Page furniture: `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`.
+  - Colour adjustment: `pdf.replace_color`, `pdf.adjust_colors`.
+  - Watermark inspection and removal: `pdf.watermark_detect`, `pdf.watermark_remove`.
+- **Removable watermark markers.** AriadShift watermarks and stamps wrap drawing streams in an Optional Content Group named "AriadShift Watermark" and tag page content with `/Artifact /Watermark` marked content, allowing AriadShift-added marks to be cleanly identified and removed without touching original page content.
+- **Embedded subset fonts.** Pure-Rust subsetting and embedding of bundled Libertinus regular and bold fonts with full Unicode and Vietnamese diacritics coverage, ensuring deterministic visual rendering and accurate text extraction across PDF viewers.
+- **Page geometry and tokens.** Drawing operations position content deterministically in visual page space, respecting `/Rotate`, `CropBox`, and `UserUnit`. Running headers, footers, stamps, and page numbers support `{n}`, `{total}`, `{label}`, `{filename}`, and `{date}` tokens with escaping.
+- **Vector QR codes.** `pdf.qr` renders vector paths directly into the page content stream without rasterization, preserving sharp edges at any scale.
+- **Watermark detection and reporting.** `pdf.watermark_detect` scans for OCG watermarks, marked artifacts, annotations, and repeated XObjects or text runs, returning opaque input-bound candidate identifiers with bounding boxes, confidence scores, and an inline JSON report exposed across CLI, MCP, and WASM surfaces.
+
+### Changed
+
+- **Strict `SOURCE_DATE_EPOCH` validation.** An invalid, empty, non-numeric, or out-of-range `SOURCE_DATE_EPOCH` environment variable now immediately fails every tool invocation, recipe execution (`ashift recipe run`), and local MCP call with an invalid-parameters error (`ToolError::InvalidParams`), ensuring reproducible runs fail fast rather than continuing with nondeterministic output.
+- **New dependencies `qrcode` and `ttf-parser`.** `ariad-pdf` adds pure-Rust dependencies `qrcode` (0.14.1) for vector QR code generation and `ttf-parser` (0.25.1) for TrueType font parsing and subsetting. `deny.toml` ignores advisory RUSTSEC-2026-0192 under the strict condition that `ttf-parser` parses only bundled, hash-pinned fonts, never untrusted user PDF streams or system fonts; replacing the unmaintained crate is tracked in #205.
+
+### Known limitations
+
+- **Sign pack and token signing availability.** The `sign` engine pack is not yet published as a pre-built binary release; it can be used via development builds or by pointing `ASHIFT_SIGN_ENGINE` or `ASHIFT_PACK_SIGN` to a built engine directory. Hardware token signing via PKCS#11 and OS Keychain integration are deferred and not available in 0.4.0; `pdf.sign_token` returns `error[tool_missing]` when invoked for PKCS#11 modules.
+- **Tesseract pack availability.** The pack is not yet published; Windows and musl systems are deferred. See [packs.md](packs.md#the-tesseract-pack). (#202, #212)
+- **Form actions and signatures.** Embedded form and annotation JavaScript is never executed, calculations are not run, and XFA is reported but not edited. Rewriting a signed PDF invalidates its signatures and emits a warning. Form detection is local-only until PDFium WASM integration. CSV export prefixes spreadsheet formula-like cells with an apostrophe. (#216)
+- **Watermark removal limits.** `pdf.watermark_remove` acts strictly on explicit, user-selected candidate identifiers returned by `pdf.watermark_detect`; wildcard selections, blank candidate lists, or automatic "remove all" operations are refused. A removal request supports at most eight distinct detection queries and at most 1,000 selected candidate identifiers per invocation. Detection and removal share a single decode and work budget within the request; near the decode limit, detection can succeed while removal fails with a limit error. Unsupported image formats or uninspected image objects are reported as warnings and not removed. Removing third-party watermarks emits a warning.
+
+## 0.3.0 (2026-11-03)
 
 Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium rendering and image tools, and optimize and security operations. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. The `ariad-engine/1` and `ariad-ir/1` contracts are unchanged. The desktop and web interfaces do not yet offer tool screens; the CLI and local MCP server expose the tools.
 
@@ -52,11 +92,12 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 - **Confined tool artifacts.** Engine-reported output files are checked with symlink-safe handles, confined to the job's output directory and size-capped before they are read. Inputs staged for MCP tools are never reopened by path after confinement.
 - **Secrets stay out of messages.** Secret parameters are matched case-insensitively and recursively, scrubbed from errors and debug output, and scoped per recipe step. `params_file` must live inside the job directory.
 - **Pack verification at resolve time.** Installed engine packs are re-verified against a digest record bound to the minisign-verified manifest, and unlisted executables or extra files in a pack root are rejected.
-- **Fuzz coverage.** CI adds four fuzz targets for page ranges, recipes, bounded PDF opening and the structural tools, for 22 targets in all.
+- **Fuzz coverage.** CI adds four fuzz targets for page ranges, recipes, bounded PDF opening and the structural tools (22 fuzz targets run in CI).
 
 ### Known limitations
 
 - **Docling pack.** The Docling engine pack is not yet published; `ashift engines install docling` cannot resolve it until a later release. (#204)
+- **PDFium pack and worker images.** The PDFium pack has no Windows build yet, and release container images for the Docling worker were not built because the Docling pack is deferred (#204).
 - **qpdf pack does not ship in 0.3.0.** Its release gate refuses distribution until the GNU runtime review is complete. qpdf-dependent tools require a separately available compatible pack. (#188)
 - **Signed PDFs.** Rewriting a signed PDF raises a warning and does not preserve existing signatures; incremental-update support remains open. (#186)
 - **Compression.** Six of ten corpus files met or beat Stirling level 6 with the specified similarity criterion, below the original seven-of-ten target. Text-heavy parity remains open. (#187)

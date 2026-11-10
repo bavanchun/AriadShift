@@ -47,6 +47,7 @@ pub fn execute(
     workspace: &Workspace,
     limits: &Limits,
     scrubber: &SecretScrubber,
+    secrets: &super::secrets::SecretBag,
     engine_program: Option<&Path>,
     engine_command_override: Option<&EngineCommand>,
     cancel: CancellationToken,
@@ -58,6 +59,50 @@ pub fn execute(
 
     let command =
         resolve_engine_command(effective_engine, engine_program, engine_command_override)?;
+
+    if effective_engine == "tesseract" && spec.id == "ocr.recognize" {
+        let params: ariad_core::tools::params::OcrRecognizeParams =
+            serde_json::from_value(engine_params.clone())
+                .map_err(|_| ToolError::EngineFailure("invalid OCR parameters".into()))?;
+        for language in params.languages {
+            if command.install_root.as_ref().is_some_and(|root| {
+                root.join("tessdata")
+                    .join(format!("{language}.traineddata"))
+                    .is_file()
+            }) {
+                continue;
+            }
+            let context =
+                crate::packs::PackContext::from_env().map_err(|_| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: "OCR language cache is unavailable".into(),
+                })?;
+            let source = crate::packs::languages::verified_path(&context, &language, &cancel)
+                .map_err(|error| match error {
+                    crate::packs::PackError::Interrupted => ToolError::Interrupted,
+                    _ => ToolError::ToolMissing {
+                        engine: "tesseract".into(),
+                        hint: format!("OCR language '{language}' could not be verified"),
+                    },
+                })?
+                .ok_or_else(|| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: format!("OCR language '{language}' is not installed; run 'ashift engines languages install {language}'"),
+                })?;
+            let directory = workspace.work_dir().join("ocr-models");
+            fs::create_dir_all(&directory)
+                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+            fs::copy(source, directory.join(format!("{language}.traineddata")))
+                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+        }
+    }
+
+    let _cert_guard =
+        if effective_engine == "sign" && (spec.id == "pdf.sign" || spec.id == "pdf.sign_token") {
+            super::sign::stage_binary_certificate(workspace, engine_params, secrets)?
+        } else {
+            super::sign::SecretFileGuard(None)
+        };
 
     let inputs: Vec<Input> = staged_inputs
         .iter()
@@ -75,7 +120,7 @@ pub fn execute(
         None
     };
 
-    let effective_limits = pdfium_limits(effective_engine, limits);
+    let effective_limits = engine_limits(effective_engine, limits);
     let request = RequestV2::RunTool {
         protocol: PROTOCOL_V2.to_owned(),
         job: format!("tool-{}", Uuid::new_v4()),
@@ -91,11 +136,31 @@ pub fn execute(
     };
 
     let mut warnings = Vec::new();
+    let mut tsa_guards = Vec::new();
     let run_result = runner::run_command_v2(&command, &request, cancel, |event| match event {
         EventV2::Warning { code, message } => {
             warnings.push(scrubber.scrub_warning(&ConvertWarning { code, message }));
         }
         EventV2::Progress { stage, done, total } => {
+            if stage == "tsa_request" {
+                let req_path = workspace.work_dir().join("tsa_req.bin");
+                if let Ok(req_bytes) = fs::read(&req_path) {
+                    let tsa_url = engine_params
+                        .get("tsa_url")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    match super::sign::broker_tsa_timestamp(workspace, tsa_url, &req_bytes, None) {
+                        Ok(guard) => {
+                            let _ = fs::remove_file(&req_path);
+                            tsa_guards.push(guard);
+                        }
+                        Err(e) => {
+                            let _ =
+                                fs::write(workspace.work_dir().join("tsa_err.txt"), e.to_string());
+                        }
+                    }
+                }
+            }
             on_event(ToolEvent::Progress {
                 stage: scrubber.scrub(&stage),
                 done,
@@ -105,8 +170,12 @@ pub fn execute(
         _ => {}
     });
 
-    // Defense-in-depth: ensure `<work_dir>/params.json` is removed immediately after the engine exits.
+    // Defense-in-depth: ensure `<work_dir>/params.json` and transient broker files are removed immediately after the engine exits.
     let _ = fs::remove_file(&params_file_path);
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_err.txt"));
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_req.bin"));
+    let _ = fs::remove_file(workspace.work_dir().join("tsa_resp.bin"));
+    drop(tsa_guards);
 
     let outcome = run_result.map_err(|err| map_run_error(err, spec, effective_engine, scrubber))?;
 
@@ -162,9 +231,9 @@ pub fn execute(
     })
 }
 
-fn pdfium_limits(engine: &str, limits: &Limits) -> Limits {
+fn engine_limits(engine: &str, limits: &Limits) -> Limits {
     let mut effective = limits.clone();
-    if engine == "pdfium" {
+    if matches!(engine, "pdfium" | "tesseract" | "sign") {
         let defaults = Limits::cloud();
         effective.timeout_s = effective.timeout_s.or(defaults.timeout_s);
         effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);
@@ -293,7 +362,14 @@ fn map_run_error(
                     needs_password: true,
                 },
                 ErrorCode::ToolMissing | ErrorCode::ToolVersion => {
-                    ToolError::from_missing_engine(effective_engine)
+                    if effective_engine == "verapdf" && scrubbed.contains("Java") {
+                        ToolError::ToolMissing {
+                            engine: "verapdf".into(),
+                            hint: scrubbed,
+                        }
+                    } else {
+                        ToolError::from_missing_engine(effective_engine)
+                    }
                 }
                 ErrorCode::UnsupportedRoute => ToolError::EngineFailure(format!(
                     "engine '{effective_engine}' does not implement tool '{}': {scrubbed}",
@@ -384,7 +460,7 @@ mod pdfium_limit_tests {
     fn local_pdfium_uses_default_ceilings_without_overriding_explicit_limits() {
         let local = Limits::local();
         let defaults = Limits::cloud();
-        let effective = pdfium_limits("pdfium", &local);
+        let effective = engine_limits("pdfium", &local);
         assert_eq!(effective.timeout_s, defaults.timeout_s);
         assert_eq!(effective.max_memory_mb, defaults.max_memory_mb);
         let explicit = Limits {
@@ -392,7 +468,9 @@ mod pdfium_limit_tests {
             max_memory_mb: Some(512),
             ..local.clone()
         };
-        assert_eq!(pdfium_limits("pdfium", &explicit), explicit);
-        assert_eq!(pdfium_limits("qpdf", &local), local);
+        assert_eq!(engine_limits("pdfium", &explicit), explicit);
+        assert_eq!(engine_limits("tesseract", &local).max_memory_mb, Some(4096));
+        assert_eq!(engine_limits("tesseract", &explicit), explicit);
+        assert_eq!(engine_limits("qpdf", &local), local);
     }
 }

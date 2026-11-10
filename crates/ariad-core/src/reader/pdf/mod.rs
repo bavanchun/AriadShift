@@ -27,6 +27,7 @@ mod lexer;
 mod lists;
 mod objects;
 mod symbolic;
+mod text_decode;
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -36,6 +37,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub use interpreter::{MAX_FORM_DEPTH, MAX_PAGE_GLYPHS, MAX_PAGE_OPERATORS};
+pub use text_decode::{PdfDecodedGlyph, PdfTextDecoder};
 
 use self::{
     assemble::{PageBlocks, assemble},

@@ -398,8 +398,23 @@ fn without_sandbox_json(raw: &str) -> String {
     res
 }
 
+fn normalize_tesseract_hint(raw: &str) -> String {
+    raw.replace(
+        "Tesseract packs are unavailable on Windows; see https://github.com/bavanchun/AriadShift/issues/202",
+        "run 'ashift engines install tesseract' to install the tesseract engine pack",
+    )
+}
+
+#[test]
+fn tesseract_hint_normalization_matches_across_platforms() {
+    let windows = "tesseract engine cannot be used: tool_missing: engine pack 'tesseract' is not installed; Tesseract packs are unavailable on Windows; see https://github.com/bavanchun/AriadShift/issues/202\n  hint: Tesseract packs are unavailable on Windows; see https://github.com/bavanchun/AriadShift/issues/202";
+    let linux = "tesseract engine cannot be used: tool_missing: engine pack 'tesseract' is not installed; run 'ashift engines install tesseract' to install the tesseract engine pack\n  hint: run 'ashift engines install tesseract' to install the tesseract engine pack";
+    assert_eq!(normalize_tesseract_hint(windows), linux);
+    assert_eq!(normalize_tesseract_hint(linux), linux);
+}
+
 fn normalize_doctor_human_stdout(output: &Output) -> String {
-    let raw = without_sandbox_lines(&normalize_stdout(output));
+    let raw = normalize_tesseract_hint(&without_sandbox_lines(&normalize_stdout(output)));
     let p_path = pandoc_path().display().to_string();
     let data_path = data_dir_path().display().to_string();
     let mut lines = Vec::new();
@@ -424,7 +439,7 @@ fn normalize_doctor_human_stdout(output: &Output) -> String {
 }
 
 fn normalize_doctor_json_stdout(output: &Output) -> String {
-    let raw = without_sandbox_json(&normalize_stdout(output));
+    let raw = normalize_tesseract_hint(&without_sandbox_json(&normalize_stdout(output)));
     let mut lines = Vec::new();
     for line in raw.lines() {
         if line.contains("found in >=") {
@@ -1116,44 +1131,65 @@ fn doctor_json_has_no_leaked_paths() {
     let v: serde_json::Value = serde_json::from_slice(&output.stdout).expect("parse json");
     let pandoc = pandoc_path().to_string_lossy().to_string();
 
-    fn assert_no_leak(val: &serde_json::Value, pandoc_str: &str) {
-        match val {
-            serde_json::Value::String(s) => {
-                assert!(
-                    !s.contains(pandoc_str),
-                    "doctor JSON string '{s}' must not leak pandoc path '{pandoc_str}'"
-                );
-                for token in s.split_whitespace() {
-                    // The fixed system launcher is public diagnostic context, not a user path.
-                    #[cfg(target_os = "macos")]
-                    if token.trim_matches(['(', ')', ';', ',']) == "/usr/bin/sandbox-exec" {
-                        continue;
-                    }
-                    assert!(
-                        !token.contains('/') && !token.contains('\\'),
-                        "doctor JSON string '{s}' must not contain path-like token '{token}'"
-                    );
-                }
-            }
-            serde_json::Value::Array(arr) => {
-                for elem in arr {
-                    assert_no_leak(elem, pandoc_str);
-                }
-            }
-            serde_json::Value::Object(map) => {
-                for (k, v) in map {
-                    assert!(
-                        !k.contains(pandoc_str) && !k.contains('/') && !k.contains('\\'),
-                        "doctor JSON key '{k}' must not leak path or contain path separators"
-                    );
-                    assert_no_leak(v, pandoc_str);
-                }
-            }
-            _ => {}
-        }
-    }
-
     assert_no_leak(&v, &pandoc);
+}
+
+fn assert_no_leak(val: &serde_json::Value, pandoc_str: &str) {
+    match val {
+        serde_json::Value::String(s) => {
+            assert!(
+                !s.contains(pandoc_str),
+                "doctor JSON string '{s}' must not leak pandoc path '{pandoc_str}'"
+            );
+            for token in s.split_whitespace() {
+                let token = token.trim_matches(['(', ')', ';', ',', '\'', '"']);
+                // The fixed system launcher is public diagnostic context, not a user path.
+                #[cfg(target_os = "macos")]
+                if token == "/usr/bin/sandbox-exec" {
+                    continue;
+                }
+                if (token.starts_with("https://") || token.starts_with("http://"))
+                    && !token.contains('\\')
+                {
+                    continue;
+                }
+                assert!(
+                    !token.contains('/') && !token.contains('\\'),
+                    "doctor JSON string '{s}' must not contain path-like token '{token}'"
+                );
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for elem in arr {
+                assert_no_leak(elem, pandoc_str);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                assert!(
+                    !k.contains(pandoc_str) && !k.contains('/') && !k.contains('\\'),
+                    "doctor JSON key '{k}' must not leak path or contain path separators"
+                );
+                assert_no_leak(v, pandoc_str);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn doctor_path_check_allows_urls() {
+    let message =
+        serde_json::json!("See https://example.com/issue/202 and (http://example.com/help). ");
+    assert_no_leak(&message, "/private/pandoc");
+}
+
+#[test]
+#[should_panic(expected = "must not contain path-like token")]
+fn doctor_path_check_rejects_windows_path_in_message() {
+    let message =
+        serde_json::json!(r"See https://example.com/help; file C:\Users\Alice\secret.txt");
+    assert_no_leak(&message, "/private/pandoc");
 }
 
 #[test]

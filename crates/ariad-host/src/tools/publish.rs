@@ -475,9 +475,33 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.decompress" => "decompressed".to_owned(),
         "pdf.compress" => "compressed".to_owned(),
         "pdf.grayscale" => "grayscale".to_owned(),
+        "pdf.page_numbers" => "numbered".to_owned(),
+        "pdf.header_footer" => "header-footer".to_owned(),
+        "pdf.bates" => "bates".to_owned(),
+        "pdf.toc_page" => "toc".to_owned(),
+        "pdf.background" => "background".to_owned(),
+        "pdf.invert_colors" => "inverted".to_owned(),
+        "pdf.watermark" => "watermarked".to_owned(),
+        "pdf.add_image" => "image-added".to_owned(),
+        "pdf.add_text" => "text-added".to_owned(),
+        "pdf.stamp" => "stamped".to_owned(),
+        "pdf.qr" => "qr".to_owned(),
+        "pdf.watermark_remove" => "unwatermarked".to_owned(),
+        "pdf.watermark_detect" => "watermarks".to_owned(),
+        "pdf.replace_color" => "recolored".to_owned(),
+        "pdf.adjust_colors" => "adjusted".to_owned(),
         "pdf.ocr" => "ocr".to_owned(),
         "pdf.redact" => "redacted".to_owned(),
         "pdf.info" => "info".to_owned(),
+        "pdf.annotations" | "pdf.annotations_export" => "annotations".to_owned(),
+        "pdf.annotations_import" => "annotated".to_owned(),
+        "pdf.forms_list" => "fields".to_owned(),
+        "pdf.forms_fill" | "pdf.forms_import" => "filled".to_owned(),
+        "pdf.forms_create" => "form".to_owned(),
+        "pdf.forms_flatten" => "flattened".to_owned(),
+        "pdf.forms_detect" => "detected-fields".to_owned(),
+        "pdf.forms_export" => "form-data".to_owned(),
+        "pdf.tables_to_csv" => "table".to_owned(),
         "pdf.decrypt" => "decrypted".to_owned(),
         "pdf.encrypt" => "encrypted".to_owned(),
         "pdf.permissions" => "permissions".to_owned(),
@@ -488,6 +512,7 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.sign" => "signed".to_owned(),
         "pdf.split" => "part".to_owned(),
         "pdf.sanitize" => "sanitized".to_owned(),
+        "pdf.compare" => "compared".to_owned(),
         other => other
             .split_once('.')
             .map_or(other, |(_, action)| action)
@@ -528,6 +553,7 @@ pub fn default_multi_artifact_name(
         "pdf.split" => "part".to_owned(),
         "pdf.extract_images" => "image".to_owned(),
         "pdf.to_images" | "pdf.render" => "page".to_owned(),
+        "pdf.tables_to_csv" => "table".to_owned(),
         _ => default_tool_suffix(tool_id),
     };
     format!("{stem}.{label}-{index_1_based:03}.{clean_ext}")
@@ -561,9 +587,24 @@ pub fn render_naming_template(
     stem: &str,
     index_1_based: usize,
 ) -> Result<String, NamingTemplateError> {
+    let clock = super::inprocess::capture_clock().map_err(|_| NamingTemplateError::InvalidDate)?;
+    render_naming_template_with_clock(template, stem, index_1_based, clock.clock, None)
+}
+
+pub(crate) fn render_naming_template_with_clock(
+    template: &str,
+    stem: &str,
+    index_1_based: usize,
+    clock: ariad_pdf::ToolClock,
+    explicit_date: Option<&str>,
+) -> Result<String, NamingTemplateError> {
     validate_naming_template(template)?;
     let clean_stem = sanitize_stem(stem);
-    let date_str = current_utc_date_string();
+    let date_str = ariad_pdf::draw::tokens::resolve_date(
+        explicit_date,
+        &ariad_pdf::ToolCtx::new().with_clock(clock),
+    )
+    .map_err(|_| NamingTemplateError::InvalidDate)?;
     let n_str = format!("{index_1_based:03}");
 
     let rendered = template
@@ -597,21 +638,6 @@ fn sanitize_stem(raw: &str) -> String {
     } else {
         trimmed.to_owned()
     }
-}
-
-fn current_utc_date_string() -> String {
-    let ts = std::env::var("SOURCE_DATE_EPOCH")
-        .ok()
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .and_then(|secs| jiff::Timestamp::from_second(secs).ok())
-        .unwrap_or_else(jiff::Timestamp::now);
-    let zoned = ts.to_zoned(jiff::tz::TimeZone::UTC);
-    format!(
-        "{:04}-{:02}-{:02}",
-        zoned.year(),
-        zoned.month(),
-        zoned.day()
-    )
 }
 
 /// Validates that `path` contains no parent-directory (`..`) traversal components.
@@ -978,6 +1004,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn form_and_annotation_tools_use_their_documented_suffixes() {
+        for (id, suffix) in [
+            ("pdf.annotations", "annotations"),
+            ("pdf.annotations_import", "annotated"),
+            ("pdf.annotations_export", "annotations"),
+            ("pdf.forms_list", "fields"),
+            ("pdf.forms_fill", "filled"),
+            ("pdf.forms_create", "form"),
+            ("pdf.forms_flatten", "flattened"),
+            ("pdf.forms_detect", "detected-fields"),
+            ("pdf.forms_import", "filled"),
+            ("pdf.forms_export", "form-data"),
+            ("pdf.compare", "compared"),
+        ] {
+            assert_eq!(default_tool_suffix(id), suffix);
+        }
+    }
+
+    #[test]
+    fn naming_uses_the_supplied_clock_and_explicit_date() {
+        let clock = ariad_pdf::ToolClock {
+            epoch_secs: 0,
+            utc_offset_secs: -3600,
+        };
+        assert_eq!(
+            render_naming_template_with_clock("{stem}-{date}.pdf", "a", 1, clock, None).unwrap(),
+            "a-1969-12-31.pdf"
+        );
+        assert_eq!(
+            render_naming_template_with_clock(
+                "{stem}-{date}.pdf",
+                "a",
+                1,
+                clock,
+                Some("2024-02-29")
+            )
+            .unwrap(),
+            "a-2024-02-29.pdf"
+        );
+        assert!(
+            render_naming_template_with_clock("{stem}-{date}.pdf", "a", 1, clock, Some("invalid"))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn staged_artifact_suffix_replaces_control_and_bidi_characters() {
         assert_eq!(
             replace_staged_input_stem(
@@ -1158,5 +1230,23 @@ mod tests {
         assert_eq!(warnings.len(), 2);
         assert!(warnings[0].contains("'a.run.exe'") && warnings[0].contains("'a.run.exe.bin'"));
         assert!(warnings[1].contains("'a.z.LNK'") && warnings[1].contains("'a.z.LNK.bin'"));
+    }
+
+    #[test]
+    fn validate_extracted_artifact_extensions_accepts_txt_csv_and_svg_formats() {
+        let staged = vec![
+            StagedArtifact::new("/w/out/notes.txt", "txt", "notes.txt"),
+            StagedArtifact::new("/w/out/data.csv", "csv", "data.csv"),
+            StagedArtifact::new("/w/out/diagram.svg", "svg", "diagram.svg"),
+        ];
+        assert!(validate_extracted_artifact_extensions(&staged).is_ok());
+
+        for item in &staged {
+            assert!(Format::from_user_name(&item.format).is_some());
+            assert_eq!(quarantined_target_name(item), None);
+        }
+
+        let mismatched = vec![StagedArtifact::new("/w/out/notes.pdf", "txt", "notes.txt")];
+        assert!(validate_extracted_artifact_extensions(&mismatched).is_err());
     }
 }

@@ -5,13 +5,22 @@
 //! batch quotas, validates `x-ariad-secret` rules, scrubs secret values from all outputs, and
 //! atomically publishes output artifacts into the target directory.
 
+pub mod cbz;
+pub mod compare;
+pub mod compliance;
 pub mod engine;
 pub mod inprocess;
+mod ocr;
+mod ocr_text;
 pub mod publish;
 pub mod recipe;
+pub mod redact;
 pub mod run;
 pub mod secrets;
+pub mod sign;
 pub mod similarity;
+pub mod tables;
+pub mod web_to_pdf;
 
 pub use publish::{
     PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,

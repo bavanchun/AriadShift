@@ -135,6 +135,9 @@ struct ConvertArgs {
     /// Choose the engine that reads the input (for example pdf or docling).
     #[arg(long, value_name = "ENGINE")]
     engine: Option<String>,
+    /// PDF standard conformance (a-2b, a-2u, a-3b, ua-1).
+    #[arg(long = "pdf-standard", value_name = "STANDARD", value_parser = ["a-2b", "a-2u", "a-3b", "ua-1"])]
+    pdf_standard: Option<String>,
 }
 
 /// Hidden command to convert an input document to AriadShift IR.
@@ -225,6 +228,24 @@ enum EnginesAction {
     Remove(PackRemoveArgs),
     /// Re-hash an installed engine pack's files and re-check its signature.
     Verify(PackVerifyArgs),
+    /// List, install, or remove extra OCR language models.
+    Languages(LanguageArgs),
+}
+
+#[derive(Args)]
+struct LanguageArgs {
+    #[command(subcommand)]
+    action: LanguageAction,
+}
+
+#[derive(Subcommand)]
+enum LanguageAction {
+    /// List available models and verified local cache entries.
+    List,
+    /// Download and verify one model from the pinned catalogue.
+    Install { language: String },
+    /// Remove one cached model.
+    Remove { language: String },
 }
 
 /// Arguments for installing an engine pack.
@@ -345,7 +366,7 @@ struct ToolArgs {
     #[arg(value_name = "ID")]
     tool: String,
     /// Input document file paths.
-    #[arg(value_name = "INPUT", required = true, num_args = 1..)]
+    #[arg(value_name = "INPUT", num_args = 0..)]
     inputs: Vec<PathBuf>,
     /// Output file or directory path.
     #[arg(short = 'o', long = "output", value_name = "DIR_OR_FILE")]
@@ -652,6 +673,7 @@ fn run_convert(mut args: ConvertArgs) -> ExitCode {
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: args.engine.clone(),
+        pdf_standard: args.pdf_standard,
     };
 
     run_blocking(
@@ -778,6 +800,7 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
         Some(EnginesAction::Install(args)) => return run_pack_install(args),
         Some(EnginesAction::Remove(args)) => return run_pack_remove(args),
         Some(EnginesAction::Verify(args)) => return run_pack_verify(args),
+        Some(EnginesAction::Languages(args)) => return run_languages(args),
         None => {}
     }
     let engine_program = match std::env::current_exe() {
@@ -805,6 +828,43 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
             } else {
                 render::render_engines_human(&rows).map_err(|_| ConvertError::OutputIo)
             }
+        },
+    )
+}
+
+fn run_languages(args: LanguageArgs) -> ExitCode {
+    run_blocking(
+        "OCR language operation",
+        move |cancel| {
+            let context = packs::PackContext::from_env()?;
+            match args.action {
+                LanguageAction::List => packs::languages::list(&context, &cancel),
+                LanguageAction::Install { language } => {
+                    packs::languages::install(&context, &language, &cancel)
+                        .map(|status| vec![status])
+                }
+                LanguageAction::Remove { language } => {
+                    packs::languages::remove(&context, &language)?;
+                    Ok(Vec::new())
+                }
+            }
+        },
+        |statuses| {
+            for status in statuses {
+                writeln!(
+                    io::stdout(),
+                    "{}\t{}\t{} bytes",
+                    status.language,
+                    if status.installed {
+                        "installed"
+                    } else {
+                        "available"
+                    },
+                    status.size
+                )
+                .map_err(stdout_error)?;
+            }
+            Ok(())
         },
     )
 }
@@ -923,6 +983,37 @@ fn bounded_secret(mut reader: impl Read) -> Result<String, ToolError> {
     Ok(trim_single_trailing_newline(value))
 }
 
+const MAX_CERT_BYTES: usize = 10 * 1024 * 1024;
+
+fn bounded_secret_certificate(mut reader: impl Read) -> Result<String, ToolError> {
+    use base64::Engine;
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take((MAX_CERT_BYTES + 2) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|err| ToolError::InputIo(err.to_string()))?;
+    if bytes.len() > MAX_CERT_BYTES {
+        return Err(ToolError::LimitExceeded);
+    }
+    if bytes.is_empty() {
+        return Err(ToolError::InvalidParams(
+            "certificate secret cannot be empty".into(),
+        ));
+    }
+    if let Ok(utf8_str) = std::str::from_utf8(&bytes) {
+        let trimmed = utf8_str.trim();
+        if !trimmed.is_empty()
+            && base64::engine::general_purpose::STANDARD
+                .decode(trimmed)
+                .is_ok()
+        {
+            return Ok(trimmed.to_owned());
+        }
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
 fn bounded_secret_line(reader: impl BufRead) -> Result<String, ToolError> {
     let mut bytes = Vec::new();
     reader
@@ -1026,8 +1117,13 @@ fn parse_tool_params_and_secrets(
                 "invalid --secret {raw:?}: secret parameter name must not be empty"
             )));
         }
+        let is_cert = name.eq_ignore_ascii_case("certificate");
         let secret_value = if target == "-" {
-            bounded_secret(io::stdin())?
+            if is_cert {
+                bounded_secret_certificate(io::stdin())?
+            } else {
+                bounded_secret(io::stdin())?
+            }
         } else if let Some(file_path) = target.strip_prefix('@') {
             if file_path.is_empty() {
                 return Err(ToolError::InvalidParams(format!(
@@ -1036,7 +1132,11 @@ fn parse_tool_params_and_secrets(
             }
             let file = std::fs::File::open(file_path)
                 .map_err(|err| ToolError::InputIo(err.to_string()))?;
-            bounded_secret(file)?
+            if is_cert {
+                bounded_secret_certificate(file)?
+            } else {
+                bounded_secret(file)?
+            }
         } else {
             return Err(ToolError::InvalidParams(format!(
                 "parameter '{name}' is marked x-ariad-secret and cannot be passed as an inline literal; use --secret {name}=@<file> or --secret {name}=-"
