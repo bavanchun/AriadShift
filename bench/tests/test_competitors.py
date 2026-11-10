@@ -168,6 +168,12 @@ def test_competitor_timeout_cleans_owned_resources(tmp_path):
     """A real child and grandchild exit; an unrelated real process survives."""
     import subprocess
 
+    def is_running(pid):
+        try:
+            return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+
     pid_file = tmp_path / "grandchild.pid"
     script = (
         "import subprocess,sys,time; from pathlib import Path; "
@@ -180,13 +186,23 @@ def test_competitor_timeout_cleans_owned_resources(tmp_path):
             run.Runner(5).run([sys.executable, "-c", script, str(pid_file)], timeout=0.5)
         grandchild = int(pid_file.read_text(encoding="utf-8"))
         deadline = time.monotonic() + 2
-        while psutil.pid_exists(grandchild) and psutil.Process(grandchild).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+        while is_running(grandchild) and time.monotonic() < deadline:
             time.sleep(0.01)
-        assert not psutil.pid_exists(grandchild) or psutil.Process(grandchild).status() == psutil.STATUS_ZOMBIE
+        assert not is_running(grandchild)
         assert unrelated.poll() is None
     finally:
         unrelated.terminate()
         unrelated.wait(timeout=3)
+
+
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="Requires POSIX process groups")
+def test_competitor_cleanup_tolerates_exited_process_group():
+    import subprocess
+
+    with subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True) as process:
+        process.wait(timeout=3)
+        run.terminate_process_tree(process)
+        assert process.returncode == 0
 
 
 def test_competitor_rejects_invalid_output_and_unavailable_scorer(tmp_path):
