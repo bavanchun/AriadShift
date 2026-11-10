@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import tomllib
 from zipfile import ZipFile
 
 from lxml import etree
+from PIL import Image
 import pytest
 
 from ariad_fixture_gen import editor_roundtrip as corpus
@@ -49,6 +51,24 @@ def _sandbox(tmp_path):
     (tmp_path / "fixtures/manifest.toml").write_bytes((ROOT / "fixtures/manifest.toml").read_bytes())
     (tmp_path / "fixtures/existing-sentinel.txt").write_bytes(b"existing family: keep these exact bytes\r\n")
     return tmp_path
+
+
+def test_editor_png_preserves_canonical_bytes_and_pixels_without_encoding(monkeypatch):
+    def reject_save(*args, **kwargs):
+        raise AssertionError("The editor PNG must not be re-encoded")
+
+    monkeypatch.setattr(Image.Image, "save", reject_save)
+    png = corpus._png()
+    assert len(png) == 98
+    assert hashlib.sha256(png).hexdigest() == "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266"
+    with Image.open(BytesIO(png)) as image:
+        assert image.format == "PNG"
+        assert image.mode == "RGB"
+        assert image.size == (16, 12)
+        for y in range(12):
+            for x in range(16):
+                expected = (24, 92, 76) if 3 <= x < 13 and 4 <= y < 8 else (230, 243, 239)
+                assert image.getpixel((x, y)) == expected
 
 
 def test_editor_corpus_has_twenty_distinct_primary_documents():

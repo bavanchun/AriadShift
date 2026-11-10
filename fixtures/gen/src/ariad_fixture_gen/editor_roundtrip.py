@@ -111,13 +111,21 @@ def _note(*, nested: bool = False) -> dict:
 
 
 def _png() -> bytes:
+    # Freeze the authored PNG's compression stream across Pillow builds/platforms.
+    png = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000100000000c0802000000e485aad6"
+        "0000002949444154789c637cf6f93d0329808924d574d1c002671965c6e251776e"
+        "fa627a3989640d8cc3201e00d43a08a9ecaab5d80000000049454e44ae426082"
+    )
     image = Image.new("RGB", (16, 12), "#e6f3ef")
     for x in range(3, 13):
         for y in range(4, 8):
             image.putpixel((x, y), (24, 92, 76))
-    output = BytesIO()
-    image.save(output, format="PNG", optimize=False)
-    return output.getvalue()
+    with Image.open(BytesIO(png)) as decoded:
+        assert decoded.mode == image.mode
+        assert decoded.size == image.size
+        assert decoded.tobytes() == image.tobytes()
+    return png
 
 
 def _feature_blocks(case: str, asset_id: str) -> list[dict]:

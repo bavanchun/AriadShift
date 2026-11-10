@@ -81,6 +81,8 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 
 IR JSON defaults to `ariad-ir/2` with stable block IDs, ID-keyed layout/source maps, named and direct styles, and page sections. The shared cascade is paragraph defaults, the containing table paragraph baseline, named paragraph inheritance, then direct overrides. Character spans inherit outer values and retain explicit false resets. DOCX reads named and direct OOXML formatting through `docx+styles`; HTML reads a safe inline CSS subset, PDF retains evidenced font/size/weight/colour (including verified matrix/TRC sRGB ICC profiles; other ICC colour spaces remain unknown), and Docling retains its formatting flags. Typst, HTML and DOCX write supported styles; Markdown reports style loss. See [the IR contract](../ARCHITECTURE.md#62-document-ir).
 
+DOCX table styles may inherit from the built-in `TableNormal` baseline without an explicit definition, as in Pandoc's default output. Other missing style parents and inheritance across different style types are rejected.
+
 DOCX text-box stories remain under the semantic reader's control. Their content and formatting may be omitted, with an explicit `unsupported_node` warning; they do not cause the entire DOCX to be rejected as malformed.
 
 Unsupported PDF colour values remain unknown and emit `styles_dropped`; missing Unicode mappings and truncated content retain their separate content-loss warnings.
