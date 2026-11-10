@@ -146,6 +146,9 @@ check-release-workflow:
 test-winget-manifest:
     sh scripts/test-winget-manifest.sh
 
+test-fuzz-gate:
+    uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
+
 test-ci-scope:
     sh scripts/test-ci-scope.sh
     uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
@@ -425,7 +428,7 @@ fuzz target="" seconds="60":
         mkdir -p "fuzz/corpus/$t"
         build_options=()
         case "$t" in
-            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure) build_options=(--dev --features pdf-reader) ;;
+            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|reader_cbz) build_options=(--dev --features pdf-reader) ;;
             typst_writer) build_options=(--dev --features typst-writer) ;;
         esac
         cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048
