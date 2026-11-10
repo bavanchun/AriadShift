@@ -1,6 +1,6 @@
 [verapdf]
 version = "1.30.3"
-url = "https://software.verapdf.org/rel/verapdf-installer.zip"
+url = "https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip"
 size = 32971125
 sha256 = "b512bf24945503a33fc10738ecffc1f2dccaaf8593a448e94ee9ac86a9559a59"
 license = "MPL-2.0"

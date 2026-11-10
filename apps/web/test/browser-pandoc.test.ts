@@ -71,8 +71,7 @@ describe("browserEngines Pandoc media types and package stamping", () => {
     stampCalls = [];
     const core = browserEngines(fakeCore());
     const pandocEngine = core.engines.get("pandoc");
-    if (!pandocEngine) throw new Error("Pandoc engine was not registered");
-    expect(pandocEngine).toBeDefined();
+    if (!pandocEngine) throw new Error("Pandoc engine is not registered");
 
     const inputIr = new TextEncoder().encode('{"version":"ariad-ir/1","body":[]}');
     const result = await pandocEngine.convert(inputIr, "ariad-ir+json", "odt", {});
@@ -90,8 +89,7 @@ describe("browserEngines Pandoc media types and package stamping", () => {
     stampCalls = [];
     const core = browserEngines(fakeCore());
     const pandocEngine = core.engines.get("pandoc");
-    if (!pandocEngine) throw new Error("Pandoc engine was not registered");
-    expect(pandocEngine).toBeDefined();
+    if (!pandocEngine) throw new Error("Pandoc engine is not registered");
 
     const inputIr = new TextEncoder().encode('{"version":"ariad-ir/1","body":[]}');
     const result = await pandocEngine.convert(inputIr, "ariad-ir+json", "rtf", {});
@@ -108,7 +106,7 @@ describe("browserEngines Pandoc media types and package stamping", () => {
     stampCalls = [];
     const core = browserEngines(fakeCore());
     const pandocEngine = core.engines.get("pandoc");
-    if (!pandocEngine) throw new Error("Pandoc engine was not registered");
+    if (!pandocEngine) throw new Error("Pandoc engine is not registered");
 
     const inputIr = new TextEncoder().encode('{"version":"ariad-ir/1","body":[]}');
 

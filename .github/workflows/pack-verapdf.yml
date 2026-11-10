@@ -57,13 +57,18 @@ jobs:
       - name: Install Linux tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd unzip
+      - name: Enable namespaces for sandbox tests
+        if: runner.os == 'Linux'
+        run: |
+          # bubblewrap sandbox needs unprivileged userns on GitHub-hosted Ubuntu runners
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Install macOS tools
         if: runner.os == 'macOS'
         run: brew install zstd gnu-tar
       - name: Download pinned inputs
         run: |
           mkdir -p "$RUNNER_TEMP/verapdf-input"
-          curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/verapdf-installer.zip -o "$RUNNER_TEMP/verapdf-input/verapdf-installer.zip"
+          curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip -o "$RUNNER_TEMP/verapdf-input/verapdf-installer.zip"
       - name: Build manifest tool
         run: cargo build -p ariad-cli --bin ashift
       - name: Assemble and verify unsigned pack

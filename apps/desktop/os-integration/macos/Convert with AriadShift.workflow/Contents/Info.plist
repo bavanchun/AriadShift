@@ -51,6 +51,17 @@
 				<string>public.jpeg</string>
 				<string>org.webmproject.webp</string>
 				<string>public.tiff</string>
+				<string>public.plain-text</string>
+				<string>public.comma-separated-values-text</string>
+				<string>com.apple.mail.email</string>
+				<string>com.ariadnev.ariadshift.outlook-msg</string>
+				<string>public.svg-image</string>
+				<string>public.cbz-archive</string>
+				<string>org.oasis-open.opendocument.graphics</string>
+				<string>org.libreoffice.wpd-document</string>
+				<string>org.libreoffice.wks-document</string>
+				<string>org.libreoffice.mspub-document</string>
+				<string>org.libreoffice.visio-document</string>
 			</array>
 		</dict>
 	</array>

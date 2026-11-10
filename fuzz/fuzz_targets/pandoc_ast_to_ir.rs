@@ -50,6 +50,7 @@ fuzz_target!(|data: &[u8]| {
                 Err(MapError::UnsupportedApiVersion { .. })
                 | Err(MapError::NestingTooDeep { .. })
                 | Err(MapError::TooManyBlocks { .. })
+                | Err(MapError::InvalidStyles { .. })
                 | Err(MapError::InvalidLimits(_)) => {
                     // Valid typed errors from to_ir validation
                 }

@@ -146,6 +146,9 @@ check-release-workflow:
 test-winget-manifest:
     sh scripts/test-winget-manifest.sh
 
+test-fuzz-gate:
+    uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
+
 test-ci-scope:
     sh scripts/test-ci-scope.sh
     uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
@@ -390,7 +393,7 @@ pack-verapdf out="target/packs/verapdf":
     installer_zip=${VERAPDF_INSTALLER_ZIP:-}
     if [ -z "$installer_zip" ]; then
         installer_zip=$work/verapdf-installer.zip
-        curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/verapdf-installer.zip -o "$installer_zip"
+        curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip -o "$installer_zip"
     fi
     cargo build -p ariad-cli --bin ashift
     bash engines/verapdf/pack/make.sh pack "$slug" "$installer_zip" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
@@ -425,7 +428,7 @@ fuzz target="" seconds="60":
         mkdir -p "fuzz/corpus/$t"
         build_options=()
         case "$t" in
-            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure) build_options=(--dev --features pdf-reader) ;;
+            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|reader_cbz) build_options=(--dev --features pdf-reader) ;;
             typst_writer) build_options=(--dev --features typst-writer) ;;
         esac
         cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048

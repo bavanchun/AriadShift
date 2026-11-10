@@ -90,6 +90,61 @@
       "id": "tiff",
       "extensions": ["tif", "tiff"],
       "media_type": "image/tiff"
+    },
+    {
+      "id": "txt",
+      "extensions": ["txt", "text"],
+      "media_type": "text/plain"
+    },
+    {
+      "id": "csv",
+      "extensions": ["csv"],
+      "media_type": "text/csv"
+    },
+    {
+      "id": "eml",
+      "extensions": ["eml"],
+      "media_type": "message/rfc822"
+    },
+    {
+      "id": "msg",
+      "extensions": ["msg"],
+      "media_type": "application/vnd.ms-outlook"
+    },
+    {
+      "id": "svg",
+      "extensions": ["svg"],
+      "media_type": "image/svg+xml"
+    },
+    {
+      "id": "cbz",
+      "extensions": ["cbz"],
+      "media_type": "application/vnd.comicbook+zip"
+    },
+    {
+      "id": "odg",
+      "extensions": ["odg"],
+      "media_type": "application/vnd.oasis.opendocument.graphics"
+    },
+    {
+      "id": "wpd",
+      "extensions": ["wpd"],
+      "media_type": "application/vnd.wordperfect"
+    },
+    {
+      "id": "wps",
+      "extensions": ["wps"],
+      "media_type": "application/vnd.ms-works"
+    },
+    {
+      "id": "pub",
+      "extensions": ["pub"],
+      "media_type": "application/x-mspublisher"
+    },
+    {
+      "id": "vsd",
+      "extensions": ["vsd"],
+      "media_type": "application/vnd.visio"
     }
   ]
 }

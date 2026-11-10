@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn keeps_supported_files_and_resolves_relative_paths() {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["a.md", "b.PDF", "c.docx", "notes.txt"] {
+        for name in ["a.md", "b.PDF", "c.docx", "notes.djvu"] {
             fs::write(dir.path().join(name), b"x").unwrap();
         }
         fs::create_dir(dir.path().join("folder.md")).unwrap();
@@ -206,7 +206,7 @@ mod tests {
                 "a.md",
                 "b.PDF",
                 &absolute,
-                "notes.txt",
+                "notes.djvu",
                 "missing.md",
                 "folder.md",
                 "a.md",
@@ -384,11 +384,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unroutable_format_txt() {
+    fn accepts_routable_text_and_rejects_unsupported_formats() {
         let dir = tempfile::tempdir().unwrap();
         let txt = dir.path().join("notes.txt");
         fs::write(&txt, b"hello").unwrap();
-        assert!(!accepts(&txt));
+        assert!(accepts(&txt));
+        let unsupported = dir.path().join("notes.djvu");
+        fs::write(&unsupported, b"hello").unwrap();
+        assert!(!accepts(&unsupported));
     }
 
     #[test]
