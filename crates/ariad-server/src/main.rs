@@ -25,13 +25,15 @@ struct Cli {
 enum Command {
     #[command(name = "__convert", hide = true)]
     Convert,
+    #[command(name = "__tool", hide = true)]
+    Tool,
     #[command(name = "__check-helper-network", hide = true)]
     CheckHelperNetwork,
     /// Serve the /v1 HTTP API.
     Api,
     /// Run conversion jobs from the queues of the given engine packs.
     Worker {
-        /// Packs whose queues this worker reads (core, office, docling).
+        /// Worker pack queues to consume (see the Pack schema).
         #[arg(long, value_delimiter = ',', default_value = "core")]
         packs: Vec<String>,
     },
@@ -47,7 +49,10 @@ fn main() -> ExitCode {
         eprintln!("ariad-server: cannot protect worker credentials: {err}");
         return ExitCode::FAILURE;
     }
-    if matches!(cli.command, Command::Convert | Command::CheckHelperNetwork) {
+    if matches!(
+        cli.command,
+        Command::Convert | Command::Tool | Command::CheckHelperNetwork
+    ) {
         if let Err(err) = ariad_server::sandbox::deny_helper_network() {
             eprintln!("ariad-server: cannot deny helper network access: {err}");
             return ExitCode::FAILURE;
@@ -55,7 +60,12 @@ fn main() -> ExitCode {
         if matches!(cli.command, Command::CheckHelperNetwork) {
             return ExitCode::SUCCESS;
         }
-        return match ariad_host::convert::isolated::serve(CancellationToken::new()) {
+        let result = if matches!(cli.command, Command::Tool) {
+            ariad_server::tool_runner::serve()
+        } else {
+            ariad_host::convert::isolated::serve(CancellationToken::new())
+        };
+        return match result {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
                 eprintln!("ariad-server: {err}");
@@ -110,7 +120,9 @@ async fn run(command: Command) -> ExitCode {
     let service = match &command {
         Command::Api => "ariad-server-api",
         Command::Worker { .. } => "ariad-server-worker",
-        Command::Migrate | Command::Convert | Command::CheckHelperNetwork => "ariad-server",
+        Command::Migrate | Command::Convert | Command::Tool | Command::CheckHelperNetwork => {
+            "ariad-server"
+        }
     };
     let telemetry = match TelemetryConfig::from_env(&env)
         .map_err(|e| e.to_string())
@@ -164,7 +176,7 @@ async fn execute(command: Command, env: &Env) -> Result<(), String> {
                 .await
                 .map_err(|e| e.to_string())
         }
-        Command::Convert | Command::CheckHelperNetwork => Ok(()),
+        Command::Convert | Command::Tool | Command::CheckHelperNetwork => Ok(()),
     }
 }
 

@@ -151,7 +151,16 @@ async fn oauth_metadata_challenge_and_audience_are_enforced() {
         .collect();
     assert_eq!(
         names,
-        ["list_engines", "plan", "inspect", "convert", "job_status"]
+        [
+            "list_engines",
+            "plan",
+            "inspect",
+            "convert",
+            "job_status",
+            "list_doc_tools",
+            "run_doc_tool",
+            "run_recipe"
+        ]
     );
     let discovery = rpc(&h, &alice, "server/discover", json!({}))
         .send()
@@ -533,5 +542,165 @@ async fn inline_fleet_refusal_preserves_upload_allowance_for_recovery() {
         exhausted.to_string().contains("upload allowance"),
         "{exhausted}"
     );
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn document_tools_and_confirmed_recipes_use_cloud_admission_and_real_workers() {
+    let Some(mut h) = Harness::start(
+        "mcp_document_tools",
+        Options {
+            restricted_logins: true,
+            ..Default::default()
+        },
+    )
+    .await
+    else {
+        return;
+    };
+    let auth = Auth::ApiKey(insert_api_key(&h.db.pool, "recipe-owner").await);
+    let listing = call(
+        &h,
+        &auth,
+        "list_doc_tools",
+        json!({"group":"organize", "runtime":"local", "tier":"free"}),
+    )
+    .await;
+    assert_ne!(listing["isError"], true, "{listing}");
+    let tools = listing["structuredContent"]["tools"].as_array().unwrap();
+    assert!(tools.iter().any(|t| t["id"] == "pdf.merge"));
+    assert!(
+        tools
+            .iter()
+            .all(|t| t["group"] == "organize" && t["tier"] == "free")
+    );
+    let pro = ariad_core::tools::all()
+        .iter()
+        .find(|s| s.tier == ariad_core::tools::Tier::Pro)
+        .unwrap();
+    let denied = call(&h, &auth, "run_doc_tool", json!({"tool":pro.id})).await;
+    assert_eq!(
+        denied["structuredContent"]["error"]["code"], "tier_not_allowed",
+        "{denied}"
+    );
+    assert_eq!(denied["structuredContent"]["status"], 403);
+    let secret = call(
+        &h,
+        &auth,
+        "run_doc_tool",
+        json!({"tool":"pdf.decrypt", "params":{"password":"literal-secret"}}),
+    )
+    .await;
+    assert_eq!(
+        secret["structuredContent"]["error"]["code"],
+        "invalid_params"
+    );
+    assert!(!secret.to_string().contains("literal-secret"));
+    let upload = h
+        .upload(
+            &auth,
+            "recipe.pdf",
+            include_bytes!("../../../fixtures/pdf/en-map-room.pdf"),
+        )
+        .await;
+    let rotated = call(
+        &h,
+        &auth,
+        "run_doc_tool",
+        json!({"tool":"pdf.rotate", "upload_id":upload["id"], "params":{"angle":90}}),
+    )
+    .await;
+    assert_ne!(rotated["isError"], true, "{rotated}");
+    h.start_worker();
+    let finished = wait_for_success(
+        &h,
+        &auth,
+        rotated["structuredContent"]["job"]["id"].as_str().unwrap(),
+    )
+    .await;
+    assert_eq!(
+        finished["structuredContent"]["outputs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let recipe = json!({"version":"ariad-recipe/1", "steps":[
+        {"tool":"pdf.merge", "params":{}},
+        {"tool":"pdf.split", "params":{"mode":"every", "every":1}}
+    ]});
+    let unconfirmed = call(
+        &h,
+        &auth,
+        "run_recipe",
+        json!({"recipe":recipe, "upload_ids":[upload["id"], upload["id"]], "confirmed":false}),
+    )
+    .await;
+    assert_eq!(
+        unconfirmed["structuredContent"]["error"]["code"], "confirmation_required",
+        "{unconfirmed}"
+    );
+    for forbidden in [
+        json!({"version":"ariad-recipe/1", "watch":"/private/path", "steps":[{"tool":"pdf.rotate", "params":{"angle":90}}]}),
+        json!({"version":"ariad-recipe/1", "steps":[{"tool":"web.to_pdf", "params":{"url":"https://example.test"}}]}),
+        json!({"version":"ariad-recipe/1", "steps":[{"tool":"pdf.decrypt", "params":{"password":"literal-secret"}}]}),
+    ] {
+        let rejected = call(
+            &h,
+            &auth,
+            "run_recipe",
+            json!({"recipe":forbidden, "upload_id":upload["id"], "confirmed":true}),
+        )
+        .await;
+        assert_eq!(
+            rejected["structuredContent"]["error"]["code"], "invalid_params",
+            "{rejected}"
+        );
+        assert!(!rejected.to_string().contains("literal-secret"));
+    }
+    let denied = call(&h, &auth, "run_recipe", json!({"recipe":{"version":"ariad-recipe/1", "steps":[{"tool":pro.id, "params":{}}]}, "confirmed":true, "upload_id":upload["id"]})).await;
+    assert_eq!(
+        denied["structuredContent"]["error"]["code"], "tier_not_allowed",
+        "{denied}"
+    );
+    let quota = call(
+        &h,
+        &auth,
+        "run_recipe",
+        json!({"recipe":recipe, "confirmed":true, "upload_ids":vec![upload["id"].clone();26]}),
+    )
+    .await;
+    assert_eq!(
+        quota["structuredContent"]["error"]["code"], "tier_not_allowed",
+        "{quota}"
+    );
+    let queued = call(
+        &h,
+        &auth,
+        "run_recipe",
+        json!({"recipe":recipe, "upload_ids":[upload["id"], upload["id"]], "confirmed":true}),
+    )
+    .await;
+    assert_ne!(queued["isError"], true, "{queued}");
+    let finished = wait_for_success(
+        &h,
+        &auth,
+        queued["structuredContent"]["job"]["id"].as_str().unwrap(),
+    )
+    .await;
+    let outputs = finished["structuredContent"]["outputs"].as_array().unwrap();
+    assert!(outputs.len() >= 2, "{finished}");
+    for output in outputs {
+        let bytes = h
+            .http
+            .get(output["url"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+    }
     h.stop().await;
 }

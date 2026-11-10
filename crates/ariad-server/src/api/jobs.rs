@@ -20,7 +20,11 @@ use crate::{
 
 pub(crate) async fn job_dto(state: &AppState, row: &JobRow) -> ApiResult<Job> {
     let steps = db::job_steps(&state.db, row.id).await?;
-    Ok(job_from_row(row, steps))
+    let mut job = job_from_row(row, steps);
+    if row.tool_id.is_some() {
+        job.upload_ids = Some(db::job_input_ids(&state.db, row).await?);
+    }
+    Ok(job)
 }
 
 /// The API representation of a job row and its route.
@@ -30,9 +34,18 @@ pub(crate) fn job_from_row(row: &JobRow, steps: Vec<StepRow>) -> Job {
     Job {
         id: row.id,
         status: row.status(),
-        upload_id: row.upload_id,
+        upload_id: row.upload_id.unwrap_or_default(),
+        upload_ids: None,
+        tool: row.tool_id.clone(),
+        params: row.params.as_ref().map(|p| p.0.clone()),
         from: row.source_format.clone(),
-        to: row.target_format.clone(),
+        to: row.target_format.clone().unwrap_or_else(|| {
+            row.tool_id
+                .as_deref()
+                .and_then(ariad_core::tools::find)
+                .map_or("json", |s| s.output_format)
+                .to_owned()
+        }),
         profile: Profile::parse(&row.profile).unwrap_or_default(),
         pack: row.pack(),
         route: steps
@@ -69,7 +82,7 @@ pub(crate) async fn visible_job(
         .ok_or_else(|| ApiError::not_found("job"))
 }
 
-/// Create a conversion job.
+/// Create a conversion or document-tool job.
 ///
 /// Plans the route for the upload's format, checks the plan's quotas, and
 /// queues the job for the worker pack that runs the route.
@@ -82,6 +95,7 @@ pub(crate) async fn visible_job(
         (status = 202, description = "Job queued", body = Job,
          headers(("location" = String, description = "URL of the job"))),
         (status = 401, description = "Credentials rejected", body = ErrorBody),
+        (status = 403, description = "Tool tier or per-run quota not allowed", body = ErrorBody),
         (status = 404, description = "No such upload", body = ErrorBody),
         (status = 409, description = "The upload is not complete or no longer available", body = ErrorBody),
         (status = 413, description = "Input exceeds the conversion limit", body = ErrorBody),
@@ -98,10 +112,34 @@ pub async fn create_job(
     caller: Caller,
     ApiJson(request): ApiJson<CreateJobRequest>,
 ) -> ApiResult<Response> {
-    let target = routing::resolve_format(&request.to).ok_or_else(|| {
-        ApiError::invalid(format!("unknown target format '{}'", request.to.trim()))
-    })?;
-    let upload = db::get_upload(&state.db, request.upload_id)
+    if let Some(tool) = &request.tool {
+        if request.to.is_some() {
+            return Err(ApiError::invalid("to is only accepted for conversions"));
+        }
+        let ids = crate::tool_jobs::input_ids(request.upload_id, request.upload_ids)?;
+        let row = crate::tool_jobs::create_tool(
+            &state,
+            &caller,
+            tool,
+            ids,
+            request.params.unwrap_or_else(|| json!({})),
+            request.profile,
+        )
+        .await?;
+        return accepted(&state, &row).await;
+    }
+    if request.upload_ids.is_some() || request.params.is_some() {
+        return Err(ApiError::invalid("upload_ids and params require a tool"));
+    }
+    let to = request
+        .to
+        .ok_or_else(|| ApiError::invalid("conversions require to"))?;
+    let upload_id = request
+        .upload_id
+        .ok_or_else(|| ApiError::invalid("conversions require upload_id"))?;
+    let target = routing::resolve_format(&to)
+        .ok_or_else(|| ApiError::invalid(format!("unknown target format '{}'", to.trim())))?;
+    let upload = db::get_upload(&state.db, upload_id)
         .await?
         .filter(|row| row.workspace_id == caller.principal.workspace_id)
         .ok_or_else(|| ApiError::not_found("upload"))?;
@@ -200,9 +238,12 @@ pub async fn create_job(
             id,
             workspace_id: caller.principal.workspace_id,
             subject: &subject,
-            upload_id: upload.id,
+            upload_id: Some(upload.id),
+            tool_id: None,
+            params: None,
+            tool_plan: caller.entitlement.tool_plan(),
             source_format: source.id(),
-            target_format: target.id(),
+            target_format: Some(target.id()),
             profile: request.profile.as_str(),
             pack,
             limits,
@@ -239,7 +280,12 @@ pub async fn create_job(
     tx.commit().await?;
     tracing::info!(job_id = %id, upload_id = %upload.id, from = source.id(), to = target.id(), %pack, "job queued");
 
-    let body = job_dto(&state, &row).await?;
+    accepted(&state, &row).await
+}
+
+async fn accepted(state: &AppState, row: &JobRow) -> ApiResult<Response> {
+    let id = row.id;
+    let body = job_dto(state, row).await?;
     let mut response = (StatusCode::ACCEPTED, Json(body)).into_response();
     if let Ok(location) = HeaderValue::from_str(&format!("/v1/jobs/{id}")) {
         response.headers_mut().insert(header::LOCATION, location);
@@ -335,15 +381,18 @@ pub async fn purge_job(
     let Some(job) = db::get_job(pool, job_id).await? else {
         return Ok(());
     };
-    if purge == Purge::OnRequest
-        && let Some(upload) = db::get_upload(pool, job.upload_id).await?
-    {
-        storage
-            .delete(&upload.storage_key)
-            .await
-            .map_err(|err| ApiError::internal(&err))?;
-        let mut conn = pool.acquire().await?;
-        db::retire_upload(&mut conn, upload.id, UploadStatus::Deleted).await?;
+    if purge == Purge::OnRequest {
+        for input_id in db::job_input_ids(pool, &job).await? {
+            let Some(upload) = db::get_upload(pool, input_id).await? else {
+                continue;
+            };
+            storage
+                .delete(&upload.storage_key)
+                .await
+                .map_err(|err| ApiError::internal(&err))?;
+            let mut conn = pool.acquire().await?;
+            db::retire_upload(&mut conn, upload.id, UploadStatus::Deleted).await?;
+        }
     }
     for artifact in db::live_artifacts(pool, job_id).await? {
         storage

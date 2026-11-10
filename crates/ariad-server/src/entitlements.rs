@@ -20,6 +20,19 @@ pub struct Entitlement {
     pub retention: Duration,
 }
 
+impl Entitlement {
+    /// Maps a cloud subscription to the shared document-tool policy.
+    #[must_use]
+    pub fn tool_plan(&self) -> ariad_core::tools::Plan {
+        self.plan.parse().unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn tool_access(&self) -> ariad_core::tools::ToolAccess {
+        self.tool_plan().into()
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum EntitlementError {
     #[error(transparent)]
@@ -263,6 +276,24 @@ mod tests {
             concurrent_jobs: Some(1),
             requests_per_minute: Some(10),
             retention: Duration::from_secs(3600),
+        }
+    }
+
+    #[test]
+    fn subscription_names_map_to_shared_tool_access() {
+        use ariad_core::tools::Plan;
+        for (name, plan) in [
+            ("pro", Plan::Pro),
+            ("team", Plan::Team),
+            ("enterprise", Plan::Enterprise),
+            ("free", Plan::Free),
+            ("anonymous", Plan::Free),
+            ("unknown", Plan::Free),
+        ] {
+            let mut entitlement = entitlement();
+            entitlement.plan = name.to_owned();
+            assert_eq!(entitlement.tool_plan(), plan);
+            assert_eq!(entitlement.tool_access().plan, plan);
         }
     }
 
