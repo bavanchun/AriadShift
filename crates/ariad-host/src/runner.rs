@@ -1238,9 +1238,6 @@ impl EngineProcess {
                     command.env(name, value);
                 }
             }
-            if let Some(home) = std::env::var_os("HOME") {
-                command.env("HOME", home);
-            }
             #[cfg(debug_assertions)]
             for variable in ["ARIAD_TEST_ENGINE", "ARIAD_TEST_SANDBOX_SUPPORT"] {
                 if let Some(value) = std::env::var_os(variable) {
