@@ -47,6 +47,8 @@ def test_fidelity_v2_python_rust_vectors_agree(vector):
 
 @pytest.mark.parametrize("vector", VECTORS["ir_vectors"], ids=lambda v: v["name"])
 def test_fidelity_v2_style_tolerances_and_explicit_resets(vector):
+    if "reference_observations" in vector:
+        assert_subset(observe_ir(vector["reference"]), vector["reference_observations"])
     assert_subset(compare(vector["reference"], vector["hypothesis"]), vector["expected"])
 
 
@@ -107,3 +109,16 @@ def test_benchmark_parsers_accept_isolated_fidelity_evidence_paths():
     parser = argparse.ArgumentParser()
     heavy.build_parser(parser)
     assert parser.parse_args(["--fidelity-out", "/tmp/heavy.json"]).fidelity_out == Path("/tmp/heavy.json")
+
+
+def test_committed_base_evidence_keeps_failures_as_versioned_unavailable_reports():
+    evidence = json.loads((Path(__file__).parents[1] / "results/fidelity-v2/base.json").read_text())
+    assert evidence["metric_version"] == METRIC_VERSION
+    assert evidence["samples"]
+    for sample in evidence["samples"]:
+        report = sample["fidelity"]
+        assert report["metric_version"] == METRIC_VERSION
+        assert report["status"] in ("measured", "unavailable")
+        if report["status"] == "unavailable":
+            assert report["score"] is None
+            assert report["unavailable_reasons"]

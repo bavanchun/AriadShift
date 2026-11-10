@@ -2877,7 +2877,7 @@ for line in sys.stdin:
         out_dir = req["output"]["dir"]
         ir_path = os.path.join(out_dir, "document.ir.json")
         with open(ir_path, "w") as f:
-            f.write('{"meta":{"authors":[]},"body":[]}')
+            f.write('{"version":"ariad-ir/2","meta":{"authors":[]},"body":[]}')
         print(json.dumps({"type":"warning","code":"ir_image_not_embedded","message":"confidential asset at /home/user/secret.png was not found"}), flush=True)
         print(json.dumps({"type":"artifact","format":"ariad-ir+json","path":ir_path}), flush=True)
         print(json.dumps({"type":"result","ok":True}), flush=True)

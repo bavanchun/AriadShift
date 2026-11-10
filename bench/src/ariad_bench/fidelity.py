@@ -197,7 +197,7 @@ def observe_ir(document: dict) -> dict:
     pieces: list[str] = []
     heading_levels: list[int] = []
 
-    def paragraph(named, direct):
+    def paragraph(named, direct, baseline=None):
         result = {}
         def apply(style, seen):
             if len(seen) >= 64:
@@ -208,6 +208,8 @@ def observe_ir(document: dict) -> dict:
                 apply(sheet["paragraph"][parent], seen + [parent])
             result.update({k: v for k, v in style.items() if v is not None})
         apply(defaults.get("paragraph", {}), [])
+        if baseline:
+            apply(baseline, [])
         if named:
             apply(sheet["paragraph"][named], [named])
         for layer in direct if isinstance(direct, list) else [direct]:
@@ -265,7 +267,7 @@ def observe_ir(document: dict) -> dict:
             return [b for item in block.get("items", []) for b in item.get("blocks", [])]
         return block.get("blocks", [])
 
-    def walk(blocks, parent, path):
+    def walk(blocks, parent, path, baseline=None):
         for i, block in enumerate(blocks):
             kind = block["type"]
             if kind == "table":
@@ -274,7 +276,7 @@ def observe_ir(document: dict) -> dict:
                 para = paragraph(None, [table_defaults.get("paragraph", {}), table.get("paragraph", {}), block.get("direct", {})])
                 style = char_style(char_style(parent, direct=table_defaults.get("character", {})), direct=table.get("character", {}))
             else:
-                para = paragraph(block.get("style"), block.get("direct", {}))
+                para = paragraph(block.get("style"), block.get("direct", {}), baseline)
                 style = char_style(parent)
             style.update({k: para[k] for k in ("font", "size_pt", "color") if k in para})
             text = block_text(block)
@@ -309,14 +311,14 @@ def observe_ir(document: dict) -> dict:
             out["runs"][start:] = _coalesced(out["runs"][start:])
             if kind == "list":
                 for item_index, item in enumerate(block.get("items", [])):
-                    walk(item.get("blocks", []), style, f"{path}/{i}/items/{item_index}/blocks")
+                    walk(item.get("blocks", []), style, f"{path}/{i}/items/{item_index}/blocks", baseline)
             elif kind == "table":
                 for part in ("head", "body"):
                     for row_index, row in enumerate(block.get(part, [])):
                         for cell_index, cell in enumerate(row):
-                            walk(cell.get("blocks", []), style, f"{path}/{i}/{part}/{row_index}/cells/{cell_index}/blocks")
+                            walk(cell.get("blocks", []), style, f"{path}/{i}/{part}/{row_index}/cells/{cell_index}/blocks", para)
             else:
-                walk(children(block), style, f"{path}/{i}/blocks")
+                walk(children(block), style, f"{path}/{i}/blocks", baseline)
             if kind == "table" and block.get("footnotes"):
                 start = len(out["runs"])
                 text = clean(inlines(block["footnotes"], style, True))

@@ -22,6 +22,18 @@ from ariad_fixture_gen.heavy_office import generate as generate_office
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_heavy_main_reports_missing_binary_without_a_traceback(tmp_path, capsys):
+    from ariad_bench.heavy import main
+
+    missing = tmp_path / "missing-ashift"
+    with pytest.raises(SystemExit) as error:
+        main(["--ashift", str(missing)])
+    assert error.value.code == 1
+    message = capsys.readouterr().err
+    assert str(missing) in message
+    assert "Traceback" not in message
+
+
 def test_heavy_fixture_generation_is_reproducible_and_manifested():
     first = generate(ROOT) | generate_office(ROOT)
     second = generate(ROOT) | generate_office(ROOT)

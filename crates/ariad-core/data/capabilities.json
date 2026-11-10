@@ -1,10 +1,10 @@
 {
   "version": "ariad-capabilities/0",
-  "generated_at": "2026-11-09T20:58:52Z",
+  "generated_at": "2026-11-10T06:31:36Z",
   "bench": {
-    "fixture_count": 69,
+    "fixture_count": 91,
     "pandoc_version": "3.12",
-    "ashift_version": "0.3.0"
+    "ashift_version": "0.4.0"
   },
   "edges": [
     {
@@ -17,11 +17,11 @@
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
-        "fidelity": 0.992,
-        "editability": 0.974,
-        "p50_ms": 200.0,
-        "peak_mem_mb": 236.0,
-        "samples": 34
+        "fidelity": 0.962,
+        "editability": 0.975,
+        "p50_ms": 250.0,
+        "peak_mem_mb": 239.0,
+        "samples": 35
       }
     },
     {
@@ -34,10 +34,10 @@
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
-        "fidelity": 0.851,
+        "fidelity": 0.795,
         "editability": 0.786,
-        "p50_ms": 150.0,
-        "peak_mem_mb": 262.0,
+        "p50_ms": 200.0,
+        "peak_mem_mb": 265.0,
         "samples": 28
       }
     },
@@ -51,10 +51,10 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 1.0,
+        "fidelity": 0.96,
         "editability": 1.0,
         "p50_ms": 10.0,
-        "peak_mem_mb": 18.0,
+        "peak_mem_mb": 20.0,
         "samples": 30
       }
     },
@@ -68,10 +68,10 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.994,
+        "fidelity": 0.97,
         "editability": 0.989,
         "p50_ms": 10.0,
-        "peak_mem_mb": 18.0,
+        "peak_mem_mb": 20.0,
         "samples": 23
       }
     },
@@ -85,10 +85,10 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.995,
+        "fidelity": 0.958,
         "editability": 1.0,
         "p50_ms": 10.0,
-        "peak_mem_mb": 17.0,
+        "peak_mem_mb": 19.0,
         "samples": 12
       }
     },
@@ -102,11 +102,11 @@
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
-        "fidelity": 1.0,
+        "fidelity": 0.979,
         "editability": 1.0,
-        "p50_ms": 300.0,
-        "peak_mem_mb": 164.0,
-        "samples": 7
+        "p50_ms": 310.0,
+        "peak_mem_mb": 167.0,
+        "samples": 8
       }
     },
     {
@@ -118,9 +118,9 @@
       ],
       "license": "MIT",
       "metrics": {
-        "fidelity": 0.667,
+        "fidelity": 0.75,
         "editability": 1.0,
-        "p50_ms": 5600.0,
+        "p50_ms": 5050.0,
         "peak_mem_mb": 697.0,
         "samples": 2
       }
@@ -137,8 +137,8 @@
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 120.0,
-        "peak_mem_mb": 63.0,
+        "p50_ms": 110.0,
+        "peak_mem_mb": 64.0,
         "samples": 4
       }
     },
@@ -155,7 +155,7 @@
         "fidelity": 1.0,
         "editability": 1.0,
         "p50_ms": 10.0,
-        "peak_mem_mb": 17.0,
+        "peak_mem_mb": 19.0,
         "samples": 4
       }
     },
@@ -179,10 +179,10 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 1.0,
+        "fidelity": 0.934,
         "editability": 1.0,
         "p50_ms": 10.0,
-        "peak_mem_mb": 17.0,
+        "peak_mem_mb": 20.0,
         "samples": 30
       }
     },
@@ -195,10 +195,10 @@
       ],
       "license": "MIT",
       "metrics": {
-        "fidelity": 0.665,
+        "fidelity": 0.492,
         "editability": 0.562,
-        "p50_ms": 20090.0,
-        "peak_mem_mb": 2323.0,
+        "p50_ms": 14740.0,
+        "peak_mem_mb": 2343.0,
         "samples": 4
       }
     },
@@ -211,10 +211,10 @@
       ],
       "license": "MIT",
       "metrics": {
-        "fidelity": 0.69,
+        "fidelity": 0.499,
         "editability": 0.75,
-        "p50_ms": 18940.0,
-        "peak_mem_mb": 2323.0,
+        "p50_ms": 16670.0,
+        "peak_mem_mb": 2301.0,
         "samples": 2
       }
     },
@@ -229,8 +229,8 @@
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 7470.0,
-        "peak_mem_mb": 413.0,
+        "p50_ms": 5080.0,
+        "peak_mem_mb": 697.0,
         "samples": 2
       }
     },
@@ -265,7 +265,7 @@
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 6220.0,
+        "p50_ms": 5060.0,
         "peak_mem_mb": 697.0,
         "samples": 2
       }
@@ -280,10 +280,10 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.394,
+        "fidelity": 0.582,
         "editability": 0.25,
         "p50_ms": 20.0,
-        "peak_mem_mb": 31.0,
+        "peak_mem_mb": 33.0,
         "samples": 2
       }
     },
@@ -297,11 +297,11 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.443,
-        "editability": 0.205,
+        "fidelity": 0.413,
+        "editability": 0.198,
         "p50_ms": 10.0,
-        "peak_mem_mb": 17.0,
-        "samples": 69
+        "peak_mem_mb": 19.0,
+        "samples": 91
       }
     },
     {
@@ -314,11 +314,11 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.368,
+        "fidelity": 0.343,
         "editability": 0.205,
         "p50_ms": 10.0,
-        "peak_mem_mb": 18.0,
-        "samples": 69
+        "peak_mem_mb": 20.0,
+        "samples": 91
       }
     },
     {
@@ -330,10 +330,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.889,
+        "fidelity": 0.75,
         "editability": 1.0,
-        "p50_ms": 1520.0,
-        "peak_mem_mb": 255.0,
+        "p50_ms": 1030.0,
+        "peak_mem_mb": 254.0,
         "samples": 2
       }
     },
@@ -346,10 +346,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.667,
+        "fidelity": 0.75,
         "editability": 0.75,
-        "p50_ms": 1260.0,
-        "peak_mem_mb": 257.0,
+        "p50_ms": 1060.0,
+        "peak_mem_mb": 256.0,
         "samples": 2
       }
     },
@@ -362,10 +362,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.533,
+        "fidelity": 0.688,
         "editability": 0.75,
-        "p50_ms": 2390.0,
-        "peak_mem_mb": 474.0,
+        "p50_ms": 2860.0,
+        "peak_mem_mb": 472.0,
         "samples": 2
       }
     },
@@ -380,8 +380,8 @@
       "metrics": {
         "fidelity": 0.5,
         "editability": 0.0,
-        "p50_ms": 1270.0,
-        "peak_mem_mb": 242.0,
+        "p50_ms": 1160.0,
+        "peak_mem_mb": 281.0,
         "samples": 2
       }
     },
@@ -404,10 +404,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.621,
+        "fidelity": 0.432,
         "editability": 0.0,
-        "p50_ms": 2270.0,
-        "peak_mem_mb": 304.0,
+        "p50_ms": 2150.0,
+        "peak_mem_mb": 303.0,
         "samples": 2
       }
     },
@@ -430,10 +430,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.889,
+        "fidelity": 0.75,
         "editability": 1.0,
-        "p50_ms": 1320.0,
-        "peak_mem_mb": 410.0,
+        "p50_ms": 1190.0,
+        "peak_mem_mb": 409.0,
         "samples": 2
       }
     },
@@ -446,10 +446,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.667,
+        "fidelity": 0.75,
         "editability": 0.75,
-        "p50_ms": 1230.0,
-        "peak_mem_mb": 410.0,
+        "p50_ms": 1160.0,
+        "peak_mem_mb": 409.0,
         "samples": 2
       }
     },
@@ -463,10 +463,10 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.458,
+        "fidelity": 0.527,
         "editability": 0.25,
         "p50_ms": 10.0,
-        "peak_mem_mb": 17.0,
+        "peak_mem_mb": 18.0,
         "samples": 2
       }
     },
@@ -479,10 +479,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.34,
+        "fidelity": 0.485,
         "editability": 0.0,
-        "p50_ms": 1640.0,
-        "peak_mem_mb": 219.0,
+        "p50_ms": 970.0,
+        "peak_mem_mb": 210.0,
         "samples": 2
       }
     },
@@ -497,8 +497,8 @@
       "metrics": {
         "fidelity": 0.5,
         "editability": 0.0,
-        "p50_ms": 930.0,
-        "peak_mem_mb": 208.0,
+        "p50_ms": 920.0,
+        "peak_mem_mb": 207.0,
         "samples": 2
       }
     },
@@ -521,10 +521,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.667,
+        "fidelity": 0.75,
         "editability": 0.5,
-        "p50_ms": 1450.0,
-        "peak_mem_mb": 341.0,
+        "p50_ms": 1820.0,
+        "peak_mem_mb": 283.0,
         "samples": 2
       }
     },
@@ -537,10 +537,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.889,
+        "fidelity": 0.75,
         "editability": 1.0,
-        "p50_ms": 2270.0,
-        "peak_mem_mb": 409.0,
+        "p50_ms": 2090.0,
+        "peak_mem_mb": 408.0,
         "samples": 2
       }
     },
@@ -553,10 +553,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.667,
+        "fidelity": 0.75,
         "editability": 0.75,
-        "p50_ms": 2100.0,
-        "peak_mem_mb": 303.0,
+        "p50_ms": 2030.0,
+        "peak_mem_mb": 302.0,
         "samples": 2
       }
     },
@@ -569,10 +569,10 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.288,
+        "fidelity": 0.432,
         "editability": 0.0,
-        "p50_ms": 2160.0,
-        "peak_mem_mb": 265.0,
+        "p50_ms": 1970.0,
+        "peak_mem_mb": 263.0,
         "samples": 2
       }
     },
@@ -595,9 +595,9 @@
       ],
       "license": "MPL-2.0",
       "metrics": {
-        "fidelity": 0.632,
+        "fidelity": 0.449,
         "editability": 0.0,
-        "p50_ms": 2400.0,
+        "p50_ms": 2140.0,
         "peak_mem_mb": 304.0,
         "samples": 2
       }
@@ -728,11 +728,11 @@
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
-        "fidelity": 0.949,
-        "editability": 1.0,
-        "p50_ms": 200.0,
-        "peak_mem_mb": 255.0,
-        "samples": 69
+        "fidelity": 0.781,
+        "editability": 0.995,
+        "p50_ms": 220.0,
+        "peak_mem_mb": 257.0,
+        "samples": 91
       }
     },
     {
@@ -745,11 +745,11 @@
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
-        "fidelity": 0.891,
-        "editability": 1.0,
-        "p50_ms": 130.0,
-        "peak_mem_mb": 151.0,
-        "samples": 69
+        "fidelity": 0.679,
+        "editability": 0.991,
+        "p50_ms": 110.0,
+        "peak_mem_mb": 156.0,
+        "samples": 91
       }
     },
     {
@@ -762,11 +762,11 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.432,
-        "editability": 0.072,
+        "fidelity": 0.373,
+        "editability": 0.055,
         "p50_ms": 10.0,
-        "peak_mem_mb": 18.0,
-        "samples": 69
+        "peak_mem_mb": 20.0,
+        "samples": 91
       }
     }
   ]

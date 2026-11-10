@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Text insertion preserves Unicode and validates parameters.
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};
 use serde_json::json;

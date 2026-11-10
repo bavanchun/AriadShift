@@ -860,7 +860,12 @@ fn normalize_convert_json_stdout(output: &Output) -> String {
         if line.contains("\"output\":") {
             lines.push("  \"output\": \"[OUTPUT_PATH]\",".to_string());
         } else if line.contains("\"elapsed_ms\":") {
-            lines.push("  \"elapsed_ms\": 0".to_string());
+            let comma = if line.trim_end().ends_with(',') {
+                ","
+            } else {
+                ""
+            };
+            lines.push(format!("  \"elapsed_ms\": 0{comma}"));
         } else {
             lines.push(line.to_string());
         }

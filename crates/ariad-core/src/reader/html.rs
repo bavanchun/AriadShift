@@ -1196,6 +1196,35 @@ pub(crate) fn ir_blocks_depth(blocks: &[Block]) -> u16 {
     blocks.iter().map(block_depth).max().unwrap_or(0)
 }
 
+fn figure_text(inlines: &[Inline]) -> Option<String> {
+    let mut text = String::new();
+    let mut pending: Vec<_> = inlines.iter().rev().collect();
+    while let Some(inline) = pending.pop() {
+        match inline {
+            Inline::Text { text: value } => text.push_str(value),
+            Inline::Styled { content, .. } => pending.extend(content.iter().rev()),
+            _ => return None,
+        }
+    }
+    Some(text)
+}
+
+fn figure_image(mut inlines: &[Inline]) -> Option<&Inline> {
+    loop {
+        match inlines {
+            [image @ Inline::Image { .. }] => return Some(image),
+            [
+                Inline::Styled {
+                    style: None,
+                    direct,
+                    content,
+                },
+            ] if direct.highlight.is_none() => inlines = content,
+            _ => return None,
+        }
+    }
+}
+
 fn map_figure(
     mapper: &mut TreeMapper<'_>,
     mut children: Vec<ConvertedNode>,
@@ -1207,15 +1236,13 @@ fn map_figure(
     }
     let mut image_index = None;
     for (index, child) in children.iter().enumerate() {
-        if let ConvertedNode::Inlines(inlines) = child {
-            for inline in inlines {
-                if matches!(inline, Inline::Image { .. }) {
-                    if image_index.is_some() {
-                        return blocks(mapper, children);
-                    }
-                    image_index = Some(index);
-                }
+        if let ConvertedNode::Inlines(inlines) = child
+            && figure_image(inlines).is_some()
+        {
+            if image_index.is_some() {
+                return blocks(mapper, children);
             }
+            image_index = Some(index);
         }
     }
     let Some(image_index) = image_index else {
@@ -1224,15 +1251,14 @@ fn map_figure(
     let ConvertedNode::Inlines(image_content) = &children[image_index] else {
         unreachable!("image index refers to inline content");
     };
-    let [Inline::Image { target, alt, title }] = image_content.as_slice() else {
-        // Surrounding inline content must stay on its original side of the image.
-        return blocks(mapper, children);
+    let Some(Inline::Image { target, alt, title }) = figure_image(image_content) else {
+        unreachable!("image index refers to one transparent image");
     };
     let is_whitespace = |child: &ConvertedNode| match child {
         ConvertedNode::Skip => true,
-        ConvertedNode::Inlines(inlines) => inlines
-            .iter()
-            .all(|inline| matches!(inline, Inline::Text { text } if text.trim().is_empty())),
+        ConvertedNode::Inlines(inlines) => {
+            figure_text(inlines).is_some_and(|text| text.trim().is_empty())
+        }
         _ => false,
     };
     let caption_index = children
@@ -1248,7 +1274,7 @@ fn map_figure(
     // Keep the original image whenever that representation would change metadata.
     let caption_preserves_alt = match caption_index.map(|index| &children[index]) {
         Some(ConvertedNode::FigCaption(caption)) => {
-            matches!(caption.as_slice(), [Inline::Text { text }] if text == alt)
+            figure_text(caption).as_deref() == Some(alt.as_str())
         }
         None => alt.is_empty(),
         _ => false,

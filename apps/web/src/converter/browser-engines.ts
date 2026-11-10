@@ -44,14 +44,36 @@ export function browserEngines(core: Core): Core {
       const warnings = [];
       if (from !== "ariad-ir+json") {
         const output = await pandoc.convert(bytes, from, "json");
-        const result = wasm.readPandoc(output.bytes, output.media, from);
+        const result = wasm.readPandoc(
+          output.bytes,
+          output.media,
+          from,
+          from === "docx" ? bytes : undefined,
+        );
         result.warnings.push(...output.warnings);
         if (to === "ariad-ir+json") return result;
         bytes = result.bytes;
         warnings.push(...result.warnings);
       }
-      const mapped = wasm.writePandoc(bytes, options.title);
-      const output = await pandoc.convert(mapped.bytes, "json", to === "epub" ? "epub3" : to);
+      const mapped = wasm.writePandoc(bytes, options.title, to);
+      let reference: Uint8Array | undefined;
+      if (to === "docx") {
+        const template = await pandoc.convert(
+          new TextEncoder().encode(
+            JSON.stringify({ "pandoc-api-version": [1, 23], meta: {}, blocks: [] }),
+          ),
+          "json",
+          "docx",
+        );
+        reference = wasm.referenceDocx(bytes, template.bytes);
+      }
+      const output = await pandoc.convert(
+        mapped.bytes,
+        "json",
+        to === "epub" ? "epub3" : to,
+        reference,
+      );
+      if (to === "docx") output.bytes = wasm.finishDocx(bytes, output.bytes);
       const stamped =
         to === "rtf"
           ? output.bytes
@@ -64,8 +86,7 @@ export function browserEngines(core: Core): Core {
       if (to === "epub") {
         media_type = "application/epub+zip";
       } else if (to === "docx") {
-        media_type =
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
       } else if (to === "odt") {
         media_type = "application/vnd.oasis.opendocument.text";
       } else if (to === "rtf") {

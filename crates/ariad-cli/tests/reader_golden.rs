@@ -7,7 +7,11 @@ use ariad_host::{convert::read_archive_to_ir, pandoc_bin, workspace::Workspace};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-fn convert_to_ir(fixture_path: &Path, format: &str) -> (Value, Workspace) {
+fn convert_to_ir(
+    fixture_path: &Path,
+    format: &str,
+    legacy_validator: &jsonschema::Validator,
+) -> (Value, Workspace) {
     let mut workspace = Workspace::new().expect("create workspace for golden test");
     let limits = Limits::local();
     let engine_program = Path::new(env!("CARGO_BIN_EXE_ashift"));
@@ -26,8 +30,10 @@ fn convert_to_ir(fixture_path: &Path, format: &str) -> (Value, Workspace) {
         )
     });
 
-    let ir_value = serde_json::to_value(output.document.to_v1().unwrap())
-        .expect("serialize Document to json Value");
+    let legacy = serde_json::to_value(output.document.to_v1().unwrap()).unwrap();
+    let errors: Vec<_> = legacy_validator.iter_errors(&legacy).collect();
+    assert!(errors.is_empty(), "legacy wire contract: {errors:?}");
+    let ir_value = serde_json::to_value(output.document).expect("serialize Document to json Value");
     (ir_value, workspace)
 }
 
@@ -81,9 +87,12 @@ fn every_phase_1a_docx_and_epub_fixture_has_a_reviewable_ir_golden() {
         .expect("canonicalize repository root");
 
     let schema_text =
-        fs::read_to_string(root.join("schemas/ir.v1.json")).expect("read schemas/ir.v1.json");
+        fs::read_to_string(root.join("schemas/ir.v2.json")).expect("read schemas/ir.v2.json");
     let schema: Value = serde_json::from_str(&schema_text).expect("parse schema");
     let validator = jsonschema::validator_for(&schema).expect("compile IR schema validator");
+    let legacy_schema: Value =
+        serde_json::from_str(include_str!("../../../schemas/ir.v1.json")).unwrap();
+    let legacy_validator = jsonschema::validator_for(&legacy_schema).unwrap();
 
     let docx_fixtures =
         support::fixtures::fixtures_for("docx->md", "1a").expect("load DOCX 1a fixtures");
@@ -103,7 +112,7 @@ fn every_phase_1a_docx_and_epub_fixture_has_a_reviewable_ir_golden() {
 
     for fixture in &docx_fixtures {
         let fixture_path = root.join(&fixture.path);
-        let (mut ir_value, mut workspace) = convert_to_ir(&fixture_path, "docx");
+        let (mut ir_value, mut workspace) = convert_to_ir(&fixture_path, "docx", &legacy_validator);
 
         let errors = validator
             .iter_errors(&ir_value)
@@ -124,7 +133,7 @@ fn every_phase_1a_docx_and_epub_fixture_has_a_reviewable_ir_golden() {
 
         let snapshot_name = format!("{}.ir", fixture.id);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -137,7 +146,7 @@ fn every_phase_1a_docx_and_epub_fixture_has_a_reviewable_ir_golden() {
 
     for fixture in &epub_fixtures {
         let fixture_path = root.join(&fixture.path);
-        let (mut ir_value, mut workspace) = convert_to_ir(&fixture_path, "epub");
+        let (mut ir_value, mut workspace) = convert_to_ir(&fixture_path, "epub", &legacy_validator);
 
         let errors = validator
             .iter_errors(&ir_value)
@@ -158,7 +167,7 @@ fn every_phase_1a_docx_and_epub_fixture_has_a_reviewable_ir_golden() {
 
         let snapshot_name = format!("{}.ir", fixture.id);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -171,7 +180,7 @@ fn every_phase_1a_docx_and_epub_fixture_has_a_reviewable_ir_golden() {
 }
 
 #[test]
-fn underline_in_docx_fixture_surfaces_as_warning_to_caller() {
+fn underline_in_docx_is_recovered_as_a_typed_style() {
     use std::io::{Read, Write};
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -226,13 +235,14 @@ fn underline_in_docx_fixture_surfaces_as_warning_to_caller() {
     )
     .expect("read_archive_to_ir must succeed");
 
+    let observed = ariad_core::fidelity::observe(&output.document).unwrap();
     assert!(
-        output
-            .warnings
+        observed
+            .runs
             .iter()
-            .any(|w| w.message.to_lowercase().contains("underline")),
-        "warnings must contain underline notice: {:?}",
-        output.warnings
+            .any(|run| run.text.starts_with("Khu v") && run.style["underline"] == true),
+        "underline must survive as an effective character property: {:?}",
+        observed.runs
     );
 
     workspace.close().expect("remove temporary workspace");

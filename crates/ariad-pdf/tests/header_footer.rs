@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Header and footer preserve the original Unicode filename.
 use ariad_pdf::{InputDoc, PdfError, ToolClock, ToolCtx, run_tool};
 use serde_json::json;

@@ -675,13 +675,14 @@ pub fn observe(document: &Document) -> Result<Observations, String> {
     }
     fn walk(
         blocks: Vec<&Block>,
-        parent: &CharacterStyle,
+        inherited: (&CharacterStyle, Option<&crate::ir::ParagraphStyle>),
         doc: &Document,
         out: &mut Observations,
         pieces: &mut Vec<String>,
         headings: &mut Vec<u8>,
         depth: usize,
     ) -> Result<(), String> {
+        let (parent, baseline) = inherited;
         if depth > 64
             || out
                 .structures
@@ -704,11 +705,20 @@ pub fn observe(document: &Document) -> Result<Observations, String> {
                 (table.paragraph, style)
             } else {
                 (
-                    doc.styles
-                        .resolve_paragraph(block.style().as_ref(), block.direct(), 64)?,
+                    doc.styles.resolve_paragraph_with_baseline(
+                        block.style().as_ref(),
+                        block.direct(),
+                        baseline,
+                        64,
+                    )?,
                     doc.styles
                         .resolve_character(None, &CharacterStyle::default(), Some(parent))?,
                 )
+            };
+            let child_baseline = if matches!(block, Block::Table { .. }) {
+                Some(para.clone())
+            } else {
+                baseline.cloned()
             };
             if para.font.is_some() {
                 style.font = para.font;
@@ -796,8 +806,9 @@ pub fn observe(document: &Document) -> Result<Observations, String> {
                 });
             }
             if let Some(nodes) = content(block) {
-                if !text.is_empty() {
-                    pieces.push(text);
+                let inline_value = clean(&inline_text(nodes));
+                if !inline_value.is_empty() {
+                    pieces.push(inline_value);
                 }
                 let mut block_runs = Vec::new();
                 runs(nodes, &style, doc, &mut block_runs)?;
@@ -814,7 +825,7 @@ pub fn observe(document: &Document) -> Result<Observations, String> {
             }
             walk(
                 children(block),
-                &style,
+                (&style, child_baseline.as_ref()),
                 doc,
                 out,
                 pieces,
@@ -844,7 +855,7 @@ pub fn observe(document: &Document) -> Result<Observations, String> {
     let mut pieces = Vec::new();
     walk(
         document.body.iter().collect(),
-        &CharacterStyle::default(),
+        (&CharacterStyle::default(), None),
         document,
         &mut out,
         &mut pieces,

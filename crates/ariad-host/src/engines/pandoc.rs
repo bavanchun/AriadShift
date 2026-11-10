@@ -13,7 +13,7 @@ use std::{
 
 use ariad_core::{
     limits::Limits,
-    pandoc::{ast::Pandoc, from_ir, to_ir},
+    pandoc::{ast::Pandoc, from_ir, to_ir::to_ir_with_media},
     protocol::{
         EngineError, ErrorCode, Event, Input, Output, PROTOCOL, Request, RouteCapability,
         ToolAvailability, ToolStatus,
@@ -285,7 +285,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     writer_config.reference_doc = Some(&reference_path);
                 }
                 run_pandoc(&writer_config, &pandoc_json)?;
-                if target_format == "docx" && !mapped.docx_styles.is_empty() {
+                if target_format == "docx" {
                     let bytes = fs::read(&output_path).map_err(|_| EngineFailure::io())?;
                     let bytes = mapped
                         .docx_styles
@@ -366,7 +366,16 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     &input.format,
                 )?;
 
-                let mut mapped = to_ir(&pandoc_ast, &limits).map_err(|err| match err {
+                let original = if input.format == "docx" {
+                    Some(fs::read(input_path).map_err(|_| EngineFailure::io())?)
+                } else {
+                    None
+                };
+                let mapped =
+                    to_ir_with_media(&pandoc_ast, original.as_deref(), &limits, |document| {
+                        media::ingest_media(document, Path::new(&work_dir), &limits)
+                    });
+                let mut mapped = mapped.map_err(|err| match err {
                     ariad_core::pandoc::to_ir::MapError::UnsupportedApiVersion { .. } => {
                         EngineFailure::new(
                             ErrorCode::ToolVersion,
@@ -377,7 +386,8 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     | ariad_core::pandoc::to_ir::MapError::TooManyBlocks { .. } => {
                         EngineFailure::limit_exceeded()
                     }
-                    ariad_core::pandoc::to_ir::MapError::InvalidLimits(_) => {
+                    ariad_core::pandoc::to_ir::MapError::InvalidStyles { .. }
+                    | ariad_core::pandoc::to_ir::MapError::InvalidLimits(_) => {
                         EngineFailure::invalid_request()
                     }
                 })?;
@@ -401,22 +411,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     .map_err(|_| EngineFailure::io())?;
                 }
 
-                let mut document = mapped.document;
-                let media_warnings =
-                    media::ingest_media(&mut document, Path::new(&work_dir), &limits);
-
-                for warning in media_warnings {
-                    let code = serde_json::to_string(&warning.code)
-                        .map_err(|_| EngineFailure::failure())?;
-                    emit(
-                        output,
-                        Event::Warning {
-                            code: format!("ir_{}", code.trim_matches('"')),
-                            message: warning.message,
-                        },
-                    )
-                    .map_err(|_| EngineFailure::io())?;
-                }
+                let document = mapped.document;
 
                 for warning in pandoc_log_warnings(&log_path)? {
                     emit(output, warning).map_err(|_| EngineFailure::io())?;
@@ -1333,7 +1328,7 @@ mod tests {
                 text: "Paragraph in test EPUB.".to_owned(),
             }],
         });
-        let doc_json = serde_json::to_vec(&doc).unwrap();
+        let doc_json = serde_json::to_vec(&doc.finalize_import()).unwrap();
         fs::write(&input_path, &doc_json).unwrap();
 
         let mut options = std::collections::BTreeMap::new();

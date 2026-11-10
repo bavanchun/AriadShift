@@ -12,10 +12,7 @@ own the production boundaries. Page mode edits source PDF objects separately.
 The corpus starts at `4b51bdf9b786be2d06553eee49f4d72891dbbfab`.
 The frozen `/1` schema SHA-256 is
 `92d3ef590f3f8dde533c938e14d5c7695b877978bc9cb246fc547aed976d96b5`.
-T1 runs independently; no accepted `/2` schema SHA exists on this baseline.
-Authored `/2` documents use the approved field contract in the coordination
-brief. Integration must validate them against T1's actual published schema;
-passing baseline tests is not evidence of `/2` support.
+The integrated `/2` schema is published at [schemas/ir.v2.json](../schemas/ir.v2.json), with SHA-256 `366d4141ccff677c58c6837733483b498449dc8de71e99b1df490b575ecfdd89`. Corpus tests use the real `/2` types and validate the published schema unconditionally.
 
 The table was recorded before generation. Every row names a distinct primary
 document under `fixtures/editor/`; truth and image companions do not count.
@@ -124,7 +121,8 @@ uv run --package ariad-bench pytest fixtures/gen/tests/test_editor_roundtrip.py
 cargo build -p ariad-cli
 cargo test -p ariad-core --test editor_roundtrip
 cargo test -p ariad-cli --test fixture_manifest
-# After the style readers and writers are integrated:
+uv run --directory bench pytest tests/test_editor_roundtrip_corpus.py -v
+uv run --directory bench python -m ariad_bench.editor_roundtrip --check
 ARIAD_EDITOR_REQUIRE_STYLES=1 cargo test -p ariad-core --test editor_roundtrip
 ```
 
@@ -138,31 +136,26 @@ The Python tests prove primary-document count, exact case coverage, independentl
 authored style/layout values, real file structures, scoped determinism and negative
 read-only drift detection. The Rust suite exercises real JSON read/write, adjacent
 text edits, block moves, table/note preservation, HTML/Markdown losses, and shared
-CLI PDF/DOCX conversions. It never starts a build from a test subprocess. Set
+CLI PDF/DOCX conversions. The styled DOCX-to-PDF contract selects the Pandoc reader and shared IR/Typst writer, using the bundled fonts; competitive measurements keep the default planner route, including any system LibreOffice font substitution. It never starts a build from a test subprocess. Set
 `ARIAD_EDITOR_TEST_ASHIFT` to an already built binary if it is outside the assigned
 Cargo target; missing binaries or engines fail the integration test.
 
-On `/1`, tests explicitly verify rejection of the authored `/2` wire document,
-then use a labelled test-only legacy projection for the fields `/1` can carry.
-On `/2`, they deserialize the full authored documents through the real core and
-assert IDs, styles, sections, font policy metadata and source maps survive. The
-projection is not an editor or a production downgrade adapter.
+The tests deserialize complete authored `/2` documents and assert stable IDs, styles, sections, furniture, font metadata and source maps after adjacent edits and block moves. No legacy projection or optional style gate remains. The shared style cascade applies paragraph defaults, the containing table paragraph baseline, inherited/named paragraph styles and direct overrides; inner character spans retain explicit false resets.
 
 The baseline native PDF reader reconstructs paragraphs, headings and lists, but
 does not assemble table blocks. Paired tests explicitly record zero recovered
 tables after a PDF read against the one authored table; DOCX import must recover
 that table. This is a known structural loss, not table acceptance or an invented
-runtime warning. The `/2` integration gate requires the authored table count.
+runtime warning. The integrated native-PDF gate retains this explicit zero-table expectation; authored table truth remains unchanged, while DOCX-only paths require the authored table count.
 
 The paired truth companions also include canonical benchmark data and a fully
 authored `/2` `ir` reference. Original IR cases carry their authored `/2` source
 alongside separate explicit expectations. Neither reference is a reader result.
 
-After T1/T4 integration, validate all authored documents against the actual `/2`
-schema and rerun real PDF/DOCX exports with style read-back. The styled pair has
+The integrated suite validates all authored documents against the `/2` schema and exercises real PDF/DOCX exports with style read-back. The styled pair has
 the same source text/styles but different containers; it supports both competitor
 directions without treating either format's read-back as truth. Numeric style
-gates use size tolerance 0.5 pt, exact weight and maximum RGB-channel error 2/255.
+gates use size tolerance 0.5 pt, exact weight and maximum RGB-channel error 2/255. The corpus font-identity assertions accept the display and space-free PostScript family spellings evidenced by the paired containers; the shared fidelity scorer retains exact family-name comparison and reports any resulting loss.
 Do not infer those style gates passed from a successful conversion alone.
 
 Future gates remain explicit: native IR → Tiptap → IR and IR → TextKit → IR,

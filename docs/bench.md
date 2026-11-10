@@ -109,9 +109,10 @@ For synthetic and generated fixtures (DOCX, HTML, EPUB), `fixtures/gen` generate
 For native Markdown fixtures, reference canonical documents are parsed using Pandoc's GFM reader (`pandoc -f gfm -t json`). This provides an independent reference standard from AriadShift's `comrak`-based native Markdown reader.
 
 ### 3.3 Unscored Fixtures
-Fixtures are marked unscored in two situations:
+Fixtures are marked unscored in the following situations:
 - **Structural constructs exceeding canonical form:** Fixtures containing structures beyond canonical representation (e.g. `edge-case-merged-table.docx`, which features a nested table inside a merged cell) are marked unscored with an explicit `unscored_reason`.
 - **Public documents without authored ground truth:** External public documents lacking independent authored ground truth (such as government circulars like `vn-tt-28-2012-conformity.docx`) are excluded from reader-edge fidelity scoring and recorded as unscored.
+- **Partial preservation assertions:** The editor Markdown/HTML companions assert selected semantics and styles without complete canonical or IR scoring truth. Their benchmark components remain explicitly unavailable; the strict editor suite still verifies their preservation assertions. Their authored truth is never expanded from the reader's own output.
 
 ---
 
@@ -236,3 +237,9 @@ PDF writer quality uses Rust PDF read-back, so its heading/table limitations als
 `just bench-report` generates [the public report](bench-report.md) from capabilities plus persisted heavy-route measurements. `just bench-report --check` detects stale output. The scheduled, manual or `bench`-labelled [benchmark workflow](../.github/workflows/bench.yml) installs LibreOffice and Tesseract, prepares cached Docling models, runs real-engine conformance and publishes the capabilities, route evidence and generated report as workflow artifacts. Ordinary three-platform CI runs the benchmark tests and verifies the committed report without downloading models.
 
 The benchmark license gate uses the approved SPDX set from the [Docling pack license gate](../engines/docling/pack/licenses.py), including NumPy's `0BSD` and `Zlib` terms. Pack-specific MPL exceptions are not inherited. The pack's reviewed PDFium normalization applies only to `pypdfium2`'s exact composite license descriptor; explicit expressions retain their existing checks. The [upstream licensing documentation](https://pypdfium2.readthedocs.io/en/stable/readme.html#licensing) distinguishes the Apache-2.0/BSD-3-Clause code from documentation and examples. PDFium is a development dependency here; its binaries and upstream examples are not added to the CLI or benchmark artifacts.
+
+## Local Stirling comparison
+
+`uv run --directory bench python -m ariad_bench.competitors --repeat 3` runs the pinned local Stirling 3.3.0 harness in both directions on the authored PDF/DOCX pair. Add `--preflight-only` to verify prerequisites. `ARIAD_RUN_STIRLING_BENCH=1 uv run --directory bench pytest tests/test_competitors.py -v` includes the real Docker integration. The thin adapter `ariad_bench.competitors:score` calls `ariad_bench.fidelity:compare` on authored IR truth and actual IR read-back, then exposes the table component and unchanged coverage counts to the competitive renderer. The lower-level `fidelity:score` expects observations. Results live in `bench/results/competitors/stirling-v3.3.0.json`; `just bench-report` includes them. The harness records every paired attempt and verifies cleanup of its labeled containers and networks. [Harness policy](../bench/competitors/README.md) owns image provenance and isolation details.
+
+The unchanged competitive gates are CER(A) ≤ CER(S), table F1(A) ≥ table F1(S), style(A) ≥ 1.10 × style(S), and layout IoU(A) ≥ layout IoU(S). Reports print the relative style result and percentage-point delta. A failed or impossible gate requires an owner decision; it is never silently relaxed. A single authored pair limits generalization beyond that corpus.

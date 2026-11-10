@@ -33,6 +33,12 @@ fn fidelity_python_rust_vectors_agree() {
     for vector in vectors["ir_vectors"].as_array().unwrap() {
         let reference: Document = serde_json::from_value(vector["reference"].clone()).unwrap();
         let hypothesis: Document = serde_json::from_value(vector["hypothesis"].clone()).unwrap();
+        if let Some(expected) = vector.get("reference_observations") {
+            assert_subset(
+                &serde_json::to_value(fidelity::observe(&reference).unwrap()).unwrap(),
+                expected,
+            );
+        }
         let report =
             fidelity::compare(&reference, &hypothesis, FidelityBasis::IndependentReference);
         assert_subset(&serde_json::to_value(report).unwrap(), &vector["expected"]);

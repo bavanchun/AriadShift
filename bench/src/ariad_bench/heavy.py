@@ -20,9 +20,9 @@ from pathlib import Path
 
 from ariad_bench.canonical import CanonicalDoc, normalize
 from ariad_bench.metrics import aggregate_edge_metrics, measure_execution, score_fixture_v2 as score_fixture
-from ariad_bench.references import INDEPENDENT_READBACK_FORMATS, read_writer_output
+from ariad_bench.references import INDEPENDENT_READBACK_FORMATS, editor_assertions_only, read_writer_output
 from ariad_bench.fidelity import METRIC_VERSION, unavailable
-from ariad_bench.run import find_binary
+from ariad_bench.run import find_binary, public_paths
 from ariad_bench.visual import pdf_ssim
 
 IR = "ariad-ir+json"
@@ -445,9 +445,9 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
         except (RuntimeError, ValueError, OSError) as error:
             detailed_path = fidelity_out or root / "bench/results/fidelity-v2/heavy.json"
             detailed_path.parent.mkdir(parents=True, exist_ok=True)
-            detailed_path.write_text(json.dumps(dict(metric_version=METRIC_VERSION,
+            detailed_path.write_text(json.dumps(public_paths(dict(metric_version=METRIC_VERSION,
                 attempted=bench.attempted, samples=bench.samples,
-                failure=unavailable(str(error))), indent=2) + "\n", encoding="utf-8")
+                failure=unavailable(str(error))), root, ashift), indent=2) + "\n", encoding="utf-8")
             raise
 
         for edge in data["edges"]:
@@ -466,9 +466,10 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
                 if c["path"].endswith(".truth.json")
             ]
             if companions:
-                if not json.loads(
+                truth = json.loads(
                     (root / companions[0]["path"]).read_text(encoding="utf-8")
-                ).get("unscored", False):
+                )
+                if not truth.get("unscored", False) and not editor_assertions_only(truth):
                     scored_ids.add(fixture["id"])
             elif fixture["format"] in ("md", "markdown"):
                 scored_ids.add(fixture["id"])
@@ -533,10 +534,10 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
             "samples": bench.samples,
         }
         evidence.parent.mkdir(parents=True, exist_ok=True)
-        evidence.write_text(json.dumps(measured, indent=2) + "\n", encoding="utf-8")
+        evidence.write_text(json.dumps(public_paths(measured, root, ashift), indent=2) + "\n", encoding="utf-8")
         detailed_path = fidelity_out or root / "bench/results/fidelity-v2/heavy.json"
         detailed_path.parent.mkdir(parents=True, exist_ok=True)
-        detailed_path.write_text(json.dumps(measured, indent=2) + "\n", encoding="utf-8")
+        detailed_path.write_text(json.dumps(public_paths(measured, root, ashift), indent=2) + "\n", encoding="utf-8")
         out.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         return data
 
@@ -545,12 +546,12 @@ def build_parser(parser: argparse.ArgumentParser):
     parser.add_argument("--ashift", type=Path)
     parser.add_argument("--pandoc", type=Path)
     parser.add_argument("--repeat", type=int, default=3)
-    parser.add_argument("--fidelity-out", type=Path, default=Path("bench/results/fidelity-v2/heavy.json"))
+    parser.add_argument("--fidelity-out", type=Path, default=Path(__file__).resolve().parents[3] / "bench/results/fidelity-v2/heavy.json")
     parser.add_argument(
-        "--out", type=Path, default=Path("crates/ariad-core/data/capabilities.json")
+        "--out", type=Path, default=Path(__file__).resolve().parents[3] / "crates/ariad-core/data/capabilities.json"
     )
     parser.add_argument(
-        "--evidence", type=Path, default=Path("bench/results/heavy-routes.json")
+        "--evidence", type=Path, default=Path(__file__).resolve().parents[3] / "bench/results/heavy-routes.json"
     )
 
 
@@ -559,14 +560,19 @@ def main(argv: list[str]) -> int:
     build_parser(parser)
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[3]
-    ashift = find_binary(
-        "ashift",
-        args.ashift,
-        [root / "target" / "release" / "ashift", root / "target" / "debug" / "ashift"],
-    )
-    pandoc = find_binary("pandoc", args.pandoc, [root / ".tools/pandoc/bin/pandoc"])
     try:
+        ashift = find_binary(
+            "ashift",
+            args.ashift,
+            [root / "target" / "release" / "ashift", root / "target" / "debug" / "ashift"],
+        )
+        pandoc = find_binary("pandoc", args.pandoc, [root / ".tools/pandoc/bin/pandoc"])
         run(root, ashift, pandoc, args.repeat, args.out, args.evidence, args.fidelity_out)
-    except (RuntimeError, ValueError) as error:
+    except (RuntimeError, ValueError, OSError) as error:
         parser.exit(1, f"{error}\n")
     return 0
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(main(sys.argv[1:]))

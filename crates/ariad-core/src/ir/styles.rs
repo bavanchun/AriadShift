@@ -356,6 +356,16 @@ impl StyleSheet {
         direct: &ParagraphStyle,
         max_depth: u16,
     ) -> Result<ParagraphStyle, String> {
+        self.resolve_paragraph_with_baseline(named, direct, None, max_depth)
+    }
+    /// Resolves defaults, a table paragraph baseline, named inheritance and direct overrides.
+    pub fn resolve_paragraph_with_baseline(
+        &self,
+        named: Option<&StyleId>,
+        direct: &ParagraphStyle,
+        baseline: Option<&ParagraphStyle>,
+        max_depth: u16,
+    ) -> Result<ParagraphStyle, String> {
         let mut result = ParagraphStyle::default();
         self.apply_paragraph(
             &mut result,
@@ -363,6 +373,10 @@ impl StyleSheet {
             max_depth,
         )?;
         result.overlay(&self.defaults.paragraph);
+        if let Some(baseline) = baseline {
+            self.apply_paragraph(&mut result, baseline.based_on.as_ref(), max_depth)?;
+            result.overlay(baseline);
+        }
         self.apply_paragraph(&mut result, named, max_depth)?;
         self.apply_paragraph(&mut result, direct.based_on.as_ref(), max_depth)?;
         result.overlay(direct);

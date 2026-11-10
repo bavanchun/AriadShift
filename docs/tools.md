@@ -1003,3 +1003,5 @@ When `run_doc_tool` or `list_doc_tools` fails, the MCP server returns a tool res
 | Destination exists and overwrite is not active | `destination_exists` | `6` | `409` |
 | Path outside allowed roots or self-overwrite | `usage` | `2` | `400` |
 | Corrupt input or runtime engine failure | `engine_failure` | `1` | `500` |
+
+Document exports consume the shared `ariad-ir/2` style cascade (defaults, containing table paragraph baseline, named inheritance, direct overrides) and ID-keyed geometry. The production Document-mode export caller remains in the edit-engine stage; the reusable fidelity attachment helper is implemented and tested now. See [the IR contract](../ARCHITECTURE.md#62-document-ir) and [editor preservation](editor-roundtrip.md).

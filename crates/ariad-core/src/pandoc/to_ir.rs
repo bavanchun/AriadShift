@@ -3,6 +3,8 @@ use std::collections::BTreeSet;
 #[path = "docx_style_reader.rs"]
 mod docx_style_reader;
 pub use docx_style_reader::read_docx_styles;
+#[path = "docx_document_styles.rs"]
+mod docx_document_styles;
 
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
@@ -46,10 +48,57 @@ pub fn to_ir(pandoc: &Pandoc, limits: &Limits) -> Result<ToIrOutput, MapError> {
     to_ir_with_styles(pandoc, StyleSheet::default(), limits)
 }
 
+/// Maps DOCX with both named styles and document-local paragraph/run/table formatting.
+pub fn to_ir_docx(pandoc: &Pandoc, bytes: &[u8], limits: &Limits) -> Result<ToIrOutput, MapError> {
+    to_ir_with_media(pandoc, Some(bytes), limits, |_| Vec::new())
+}
+
+/// Resolves extracted resources before assigning stable import identities.
+/// The callback receives a fresh, bounded import, never a serialized v2 document.
+pub fn to_ir_with_media(
+    pandoc: &Pandoc,
+    docx: Option<&[u8]>,
+    limits: &Limits,
+    resolve: impl FnOnce(&mut Document) -> Vec<Warning>,
+) -> Result<ToIrOutput, MapError> {
+    let (styles, warnings) = match docx {
+        Some(bytes) => {
+            read_docx_styles(bytes, limits).map_err(|reason| MapError::InvalidStyles { reason })?
+        }
+        None => (StyleSheet::default(), Vec::new()),
+    };
+    let mut output = map_with_styles(pandoc, styles, limits)?;
+    output.warnings.extend(warnings);
+    if let Some(bytes) = docx {
+        output.warnings.extend(
+            docx_document_styles::apply(&mut output.document, bytes, limits)
+                .map_err(|reason| MapError::InvalidStyles { reason })?,
+        );
+    }
+    output.warnings.extend(resolve(&mut output.document));
+    output.document = output.document.finalize_import();
+    crate::pipeline::validate_ir_document(&output.document, limits).map_err(|error| {
+        MapError::InvalidStyles {
+            reason: error.to_string(),
+        }
+    })?;
+    Ok(output)
+}
+
 /// Maps Pandoc AST using definitions recovered by [`read_docx_styles`].
 /// Paragraph run properties use domain-separated `pRun` character identities;
 /// only companions present in the supplied sheet wrap a paragraph's text.
 pub fn to_ir_with_styles(
+    pandoc: &Pandoc,
+    styles: StyleSheet,
+    limits: &Limits,
+) -> Result<ToIrOutput, MapError> {
+    let mut output = map_with_styles(pandoc, styles, limits)?;
+    output.document = output.document.finalize_import();
+    Ok(output)
+}
+
+fn map_with_styles(
     pandoc: &Pandoc,
     styles: StyleSheet,
     limits: &Limits,
@@ -81,13 +130,12 @@ pub fn to_ir_with_styles(
     let meta = map_metadata(&pandoc.meta, limits.max_nesting_depth);
 
     Ok(ToIrOutput {
-        document: (Document {
+        document: Document {
             meta,
             body,
             styles: mapper.styles,
             ..Document::default()
-        })
-        .finalize_import(),
+        },
         warnings: mapper.warnings,
     })
 }

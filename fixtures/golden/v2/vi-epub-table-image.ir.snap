@@ -1,0 +1,268 @@
+---
+source: crates/ariad-cli/tests/reader_golden.rs
+---
+{
+  "assets": {
+    "6bca795730900c41e97ac33d04db2b054019dcd598e0e57f98dbc958e94291fb": {
+      "bytes": "<redacted: 3568 base64 chars>",
+      "media_type": "image/png"
+    }
+  },
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Hành trình ven sông và sơ đồ",
+          "type": "text"
+        }
+      ],
+      "id": "ba3a5a4d1a9753d71aa0b1bd261e468666f4d26898bc9d35a2fe1609972b684c0",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
+          "type": "text"
+        }
+      ],
+      "id": "b3f679e43d3aed20f7d36a744c4e16a0fd9c811e79b07cab2e9fa225d01f99bcb",
+      "type": "paragraph"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bến sông",
+                    "type": "text"
+                  }
+                ],
+                "id": "bfc4eeabe6629356b1ca2573b02f1c0bee4b33c618cb544089f2f234bc3169503",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "8",
+                    "type": "text"
+                  }
+                ],
+                "id": "bdc08934c2376314679d895ee88a79f77aff6388570b99c36723d3e9b9898087d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bóng mát",
+                    "type": "text"
+                  }
+                ],
+                "id": "be10950478710c395747089830d14415fc57e3d7067bdc4c03238a3ef7256b844",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Vườn đọc",
+                    "type": "text"
+                  }
+                ],
+                "id": "be71a0908a4dbc59f931fdcfe3cd127fca7c0231871fa6561f9b1f0416c8bfb98",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "14",
+                    "type": "text"
+                  }
+                ],
+                "id": "bf8a6205a87e623221b11f0b624ff8f8b65de01d5bb39b915d9926811f45d4542",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Có ghế dài",
+                    "type": "text"
+                  }
+                ],
+                "id": "b8ada13c0008fc6118adf000431f6cb33d7f9c20870ed182116f6906a371d1457",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Lịch khảo sát cập nhật mỗi tháng.",
+                    "type": "text"
+                  }
+                ],
+                "id": "b35e65924858d30149cd2622dd82a60ec7a3388f5d3948d328fc28add27fd67a6",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 3,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": [
+        {
+          "text": "Bảng hành trình ven sông",
+          "type": "text"
+        }
+      ],
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Điểm dừng",
+                    "type": "text"
+                  }
+                ],
+                "id": "b5eae0afd1fc5b20124197497d536775e055ab8b170de6885a24928fe54d0bfca",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Phút đi bộ",
+                    "type": "text"
+                  }
+                ],
+                "id": "b9ecd12881ec8700a1d2d108213578475ffeabf60a62ac5e2a12eff634fa9a83e",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Ghi chú",
+                    "type": "text"
+                  }
+                ],
+                "id": "b76abd741e6e29989f3a3e6df71a519aefd161df5115c90c96fbce9f3dcaa69e2",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "b023453431124bef1e1f672bf329d2d9ac587b04f3fb421e9b29c0290cf12c7f2",
+      "type": "table"
+    },
+    {
+      "asset": {
+        "id": "6bca795730900c41e97ac33d04db2b054019dcd598e0e57f98dbc958e94291fb",
+        "type": "asset"
+      },
+      "caption": [
+        {
+          "text": "Sơ đồ tuyến đường ven sông",
+          "type": "text"
+        }
+      ],
+      "id": "b8f2ccaa0f867aae889fe5b8aed03c0bccbdc2c940433a061c3e61c76aa752664",
+      "type": "figure"
+    },
+    {
+      "content": [
+        {
+          "text": "Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn.",
+          "type": "text"
+        }
+      ],
+      "id": "b43fe106b819702b6caf1f168fcacc7133d7ff3ad9a45e3ebffd7d748bb836a7c",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "vi",
+    "source_format": "epub",
+    "subject": null,
+    "title": "Bảng và hình ảnh hành trình ven sông"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

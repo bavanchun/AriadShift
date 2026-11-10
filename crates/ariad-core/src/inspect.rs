@@ -93,31 +93,39 @@ fn count_blocks(blocks: &[Block], counts: &mut DocumentCounts) {
 }
 
 fn count_inlines(inlines: &[Inline], counts: &mut DocumentCounts) {
-    for inline in inlines {
+    let mut pending: Vec<_> = inlines.iter().rev().collect();
+    let mut in_word = false;
+    while let Some(inline) = pending.pop() {
         match inline {
             Inline::Text { text } | Inline::Code { text } => {
-                counts.words += text.split_whitespace().count();
+                for ch in text.chars() {
+                    if ch.is_whitespace() {
+                        in_word = false;
+                    } else {
+                        counts.words += usize::from(!in_word);
+                        in_word = true;
+                    }
+                }
             }
             Inline::Styled { content, .. }
             | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
-            | Inline::Subscript { content } => {
-                count_inlines(content, counts);
-            }
+            | Inline::Subscript { content } => pending.extend(content.iter().rev()),
             Inline::Link { content, .. } => {
                 counts.links += 1;
-                count_inlines(content, counts);
+                pending.extend(content.iter().rev());
             }
             Inline::Image { .. } => {
                 counts.images += 1;
+                in_word = false;
             }
             Inline::FootnoteRef { .. } => {}
             Inline::SoftBreak {}
             | Inline::LineBreak {}
             | Inline::Math { .. }
-            | Inline::Raw { .. } => {}
+            | Inline::Raw { .. } => in_word = false,
         }
     }
 }
@@ -230,6 +238,30 @@ mod tests {
 
     fn browser_caps() -> Capabilities {
         embedded().restricted_to(Runtime::Wasm)
+    }
+
+    #[test]
+    fn character_style_boundaries_do_not_create_words() {
+        let inlines = vec![
+            Inline::Text { text: "pre".into() },
+            Inline::Styled {
+                style: None,
+                direct: Default::default(),
+                content: vec![Inline::Text {
+                    text: "sent".into(),
+                }],
+            },
+            Inline::Text {
+                text: " day".into(),
+            },
+            Inline::LineBreak {},
+            Inline::Text {
+                text: "third".into(),
+            },
+        ];
+        let mut counts = DocumentCounts::default();
+        count_inlines(&inlines, &mut counts);
+        assert_eq!(counts.words, 3);
     }
 
     #[test]

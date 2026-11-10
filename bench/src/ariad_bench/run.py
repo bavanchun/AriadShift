@@ -25,6 +25,7 @@ from ariad_bench.metrics import (
 )
 from ariad_bench.references import (
     INDEPENDENT_READBACK_FORMATS,
+    editor_assertions_only,
     get_reference_for_fixture,
     read_writer_output,
 )
@@ -35,6 +36,18 @@ OUTPUT_EXTENSIONS = {
 }
 from ariad_bench.fidelity import METRIC_VERSION, unavailable
 
+
+
+def public_paths(value, root: Path, binary: Path):
+    """Redact machine/user path metadata without altering measurements or hashes."""
+    if isinstance(value, dict):
+        return {key: public_paths(item, root, binary) for key, item in value.items()}
+    if isinstance(value, list):
+        return [public_paths(item, root, binary) for item in value]
+    if isinstance(value, str):
+        for original, placeholder in ((str(binary), "${ASHIFT_BIN}"), (str(root), "${WORKTREE}"), (str(Path.home()), "${HOME}")):
+            value = value.replace(original, placeholder)
+    return value
 
 
 def find_binary(name: str, explicit_path: Path | str | None, candidates: list[Path]) -> Path:
@@ -134,6 +147,9 @@ def run_benchmark(
     samples: list[dict] = []
     attempted: list[dict] = []
     def record(fixture, edge_key, score):
+        # Failed read-backs are recorded below with their actual unavailable reason.
+        if score.fidelity_report is None:
+            return
         samples.append(dict(fixture=fixture["id"], path=fixture["path"], sha256=fixture.get("sha256"),
                             references=[c for c in fixture.get("companions", []) if c.get("path", "").endswith(".truth.json")],
                             edge=edge_key, fidelity=score.fidelity_report,
@@ -182,12 +198,16 @@ def run_benchmark(
                                 p = root / comp.get("path", "")
                                 if p.is_file():
                                     data = json.loads(p.read_text(encoding="utf-8"))
+                                    if editor_assertions_only(data):
+                                        has_unscored_companion = True
+                                        unscored_reason = "editor preservation assertions lack complete canonical or IR scoring truth"
+                                        break
                                     if data.get("unscored") is True:
                                         has_unscored_companion = True
                                         unscored_reason = data.get("unscored_reason", "unscored: true")
                                         break
                         if has_unscored_companion:
-                            unscored_fixtures.append((fid, f"Truth companion marked unscored ({unscored_reason})"))
+                            unscored_fixtures.append((fid, f"Authored scoring reference unavailable ({unscored_reason})"))
                         else:
                             unscored_fixtures.append((fid, "External fixture without authored truth companion"))
                         continue
@@ -427,6 +447,7 @@ def run_benchmark(
                         edge_scores.append(score)
                         scored_fixture_ids.add(fid)
                         total_tables_skipped += score.tables_skipped
+                        record(f, edge_key, score)
                         continue
 
                     # Existing round-tripping formats use the ashift IR reader.
@@ -545,7 +566,7 @@ def run_benchmark(
     }
     detailed_path = fidelity_out or root / "bench/results/fidelity-v2/base.json"
     detailed_path.parent.mkdir(parents=True, exist_ok=True)
-    detailed_path.write_text(json.dumps(dict(
+    detailed_path.write_text(json.dumps(public_paths(dict(
         metric_version=METRIC_VERSION, basis="independent_reference", repeat=repeat_count,
         generated_at=capabilities_data["generated_at"],
         ashift_sha256=hashlib.sha256(ashift_bin.read_bytes()).hexdigest() if ashift_bin.is_file() else None,
@@ -553,7 +574,7 @@ def run_benchmark(
         schema_sha256=hashlib.sha256((root / "schemas/ir.v2.json").read_bytes()).hexdigest() if (root / "schemas/ir.v2.json").is_file() else None,
         attempted=attempted, samples=samples,
         unmeasured_edges=[f"{e['from']}->{e['to']}" for e in capabilities_data["edges"] if e["metrics"] is None],
-    ), indent=2) + "\n", encoding="utf-8")
+    ), root, ashift_bin), indent=2) + "\n", encoding="utf-8")
 
     if out_file:
         out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -577,11 +598,11 @@ def build_parser(parser: argparse.ArgumentParser | None = None) -> argparse.Argu
     parser.add_argument("--edges", type=str, nargs="*", default=None, help="Edges to benchmark, e.g. html->ariad-ir+json")
     parser.add_argument("--fixtures", type=str, nargs="*", default=None, help="Fixture IDs to benchmark")
     parser.add_argument("--repeat", type=int, default=3, help="Repeat count for latency measurements")
-    parser.add_argument("--fidelity-out", type=Path, default=Path("bench/results/fidelity-v2/base.json"), help="Detailed versioned per-file fidelity evidence")
+    parser.add_argument("--fidelity-out", type=Path, default=Path(__file__).resolve().parents[3] / "bench/results/fidelity-v2/base.json", help="Detailed versioned per-file fidelity evidence")
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("crates/ariad-core/data/capabilities.json"),
+        default=Path(__file__).resolve().parents[3] / "crates/ariad-core/data/capabilities.json",
         help="Path to write capabilities output JSON",
     )
     return parser

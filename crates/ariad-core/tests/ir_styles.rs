@@ -653,3 +653,97 @@ fn source_maps_work_without_layout_and_legacy_boxes_may_cross_page_edges() {
     doc.layout = None;
     assert_eq!(read(&doc).unwrap(), doc);
 }
+
+#[test]
+fn table_paragraph_baseline_precedes_named_inheritance_and_direct_overrides() {
+    let mut sheet = StyleSheet::default();
+    sheet.defaults.paragraph.size_pt = Some(10.0);
+    sheet.defaults.paragraph.space_after_pt = Some(1.0);
+    sheet.paragraph.insert(
+        StyleId::new("Base").unwrap(),
+        ParagraphStyle {
+            size_pt: Some(14.0),
+            align: Some(ParagraphAlignment::Center),
+            ..Default::default()
+        },
+    );
+    sheet.paragraph.insert(
+        StyleId::new("Body").unwrap(),
+        ParagraphStyle {
+            based_on: Some(StyleId::new("Base").unwrap()),
+            space_after_pt: Some(3.0),
+            ..Default::default()
+        },
+    );
+    let baseline = ParagraphStyle {
+        size_pt: Some(12.0),
+        space_before_pt: Some(2.0),
+        ..Default::default()
+    };
+    let resolved = sheet
+        .resolve_paragraph_with_baseline(
+            Some(&StyleId::new("Body").unwrap()),
+            &ParagraphStyle {
+                size_pt: Some(16.0),
+                ..Default::default()
+            },
+            Some(&baseline),
+            100,
+        )
+        .unwrap();
+    assert_eq!(resolved.size_pt, Some(16.0));
+    assert_eq!(resolved.align, Some(ParagraphAlignment::Center));
+    assert_eq!(resolved.space_before_pt, Some(2.0));
+    assert_eq!(resolved.space_after_pt, Some(3.0));
+    let resolved = sheet
+        .resolve_paragraph_with_baseline(None, &ParagraphStyle::default(), Some(&baseline), 100)
+        .unwrap();
+    assert_eq!(resolved.size_pt, Some(12.0));
+    assert_eq!(resolved.space_after_pt, Some(1.0));
+    let invalid = ParagraphStyle {
+        based_on: Some(StyleId::new("Missing").unwrap()),
+        ..Default::default()
+    };
+    assert!(
+        sheet
+            .resolve_paragraph_with_baseline(None, &ParagraphStyle::default(), Some(&invalid), 100)
+            .is_err()
+    );
+}
+
+#[test]
+fn import_finalization_handles_the_maximum_supported_block_depth() {
+    let limits = Limits {
+        max_nesting_depth: 99,
+        ..Limits::local()
+    };
+    let mut block = paragraph(vec![text("deep import")]);
+    for _ in 1..limits.max_nesting_depth {
+        block = Block::Quote {
+            id: BlockId::default(),
+            style: None,
+            direct: Default::default(),
+            blocks: vec![block],
+        };
+    }
+    let document = Document {
+        body: vec![block],
+        ..Default::default()
+    }
+    .finalize_import();
+    assert_eq!(blocks_with_paths(&document).len(), 99);
+    pipeline::validate_ir_document(&document, &limits).unwrap();
+    let ids: Vec<_> = blocks_with_paths(&document)
+        .into_iter()
+        .map(|(_, block)| block.id().clone())
+        .collect();
+    let mut document = document;
+    document.assign_block_ids();
+    assert_eq!(
+        ids,
+        blocks_with_paths(&document)
+            .into_iter()
+            .map(|(_, block)| block.id().clone())
+            .collect::<Vec<_>>()
+    );
+}

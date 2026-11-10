@@ -2,11 +2,7 @@
 
 use std::{fs, path::PathBuf};
 
-use ariad_core::{
-    ir::{Block, Inline},
-    limits::Limits,
-    reader,
-};
+use ariad_core::{limits::Limits, reader};
 use ariad_pdf::{InputDoc, PdfError, PdfInfo, ToolCtx, ToolOutput, document::open, info, run_tool};
 use lopdf::Document;
 use serde_json::json;
@@ -33,18 +29,9 @@ fn inspect_bytes(bytes: &[u8]) -> PdfInfo {
 
 fn extract_text_from_bytes(bytes: &[u8]) -> String {
     let ir = reader::pdf::read(bytes, &Limits::local()).expect("read output pdf text");
-    let mut out = String::new();
-    for block in &ir.document.body {
-        if let Block::Paragraph { content, .. } | Block::Heading { content, .. } = block {
-            for inline in content {
-                if let Inline::Text { text } = inline {
-                    out.push_str(text);
-                }
-            }
-            out.push('\n');
-        }
-    }
-    out
+    ariad_core::fidelity::observe(&ir.document)
+        .expect("observe output PDF text through transparent inline styles")
+        .text
 }
 
 fn assert_json_snapshot(snap_name: &str, value: &impl serde::Serialize) {

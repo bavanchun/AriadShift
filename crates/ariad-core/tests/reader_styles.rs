@@ -298,6 +298,43 @@ fn styled_readers_preserve_spans_footnotes_captions_and_furniture() {
 }
 
 #[test]
+fn styled_figure_captions_preserve_structure_and_independent_alt_text() {
+    for alt in ["caption", "independent alt"] {
+        let source = format!(
+            "<figure style=\"font-size:12pt\">\n<img src=\"chart.png\" alt=\"{alt}\">\n<figcaption><span style=\"color:red\">caption</span></figcaption>\n</figure>"
+        );
+        let out = html::read(source.as_bytes(), &Limits::local()).unwrap();
+        if alt == "caption" {
+            let [Block::Figure { caption, .. }] = out.document.body.as_slice() else {
+                panic!(
+                    "styled caption changed figure structure: {:?}",
+                    out.document.body
+                );
+            };
+            assert_eq!(
+                styled(caption).0.color.as_ref().unwrap().as_str(),
+                "#ff0000"
+            );
+        } else {
+            assert_eq!(out.document.body.len(), 2);
+            let (direct, content) = styled(paragraph(&out.document.body[0]));
+            assert_eq!(direct.size_pt, Some(12.0));
+            assert!(matches!(content, [Inline::Image { alt: actual, .. }] if actual == alt));
+        }
+        let expected = if alt == "caption" {
+            "caption".to_owned()
+        } else {
+            format!("{alt}\ncaption")
+        };
+        assert_eq!(
+            ariad_core::fidelity::observe(&out.document).unwrap().text,
+            expected
+        );
+        validate_ir_document(&out.document, &Limits::local()).unwrap();
+    }
+}
+
+#[test]
 fn docx_missing_styles_and_unsupported_properties_warn_without_fabricated_metrics() {
     let (sheet, warnings) = read_docx_styles(
         &docx(&[("word/document.xml", "<document/>")]),
@@ -634,4 +671,53 @@ fn generated_style_wrappers_share_the_block_and_inline_nesting_budget() {
         html::read(source.as_bytes(), &Limits::local()),
         Err(html::ReadError::NestingTooDeep { limit: 64 })
     ));
+}
+
+#[test]
+fn docx_document_properties_recover_direct_runs_and_reject_hostile_xml() {
+    use ariad_core::pandoc::to_ir::to_ir_docx;
+    let styles = format!(
+        r#"<w:styles xmlns:w="{WORD_NS}"><w:style w:type="paragraph" w:styleId="body"><w:name w:val="Body"/><w:rPr><w:sz w:val="22"/></w:rPr></w:style></w:styles>"#
+    );
+    let xml = format!(
+        r#"<w:document xmlns:w="{WORD_NS}"><w:body><w:p/><w:p><w:pPr><w:pStyle w:val="body"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="32"/><w:b w:val="0"/><w:color w:val="123456"/><w:rPrChange><w:rPr><w:sz w:val="64"/><w:b/></w:rPr></w:rPrChange></w:rPr><w:t>A &amp; B</w:t></w:r></w:p></w:body></w:document>"#
+    );
+    let ast: ast::Pandoc = serde_json::from_value(json!({"pandoc-api-version":[1,23], "meta":{}, "blocks":[{"t":"Para","c":[{"t":"Str","c":"A"},{"t":"Space"},{"t":"Str","c":"&"},{"t":"Space"},{"t":"Str","c":"B"}]}]})).unwrap();
+    let bytes = docx(&[("word/styles.xml", &styles), ("word/document.xml", &xml)]);
+    let mapped = to_ir_docx(&ast, &bytes, &Limits::local()).unwrap();
+    assert_eq!(
+        mapped.document.body[0].style().as_ref().unwrap().as_str(),
+        "Body"
+    );
+    assert_eq!(
+        mapped.document.body[0].direct().align,
+        Some(ParagraphAlignment::Center)
+    );
+    let observations = ariad_core::fidelity::observe(&mapped.document).unwrap();
+    assert!(
+        observations
+            .runs
+            .iter()
+            .any(|run| run.style.get("size_pt") == Some(&json!(16.0))
+                && run.style.get("weight") == Some(&json!(400)))
+    );
+    for hostile in [
+        format!(
+            r#"<!DOCTYPE document [<!ENTITY x SYSTEM "file:///etc/passwd">]><w:document xmlns:w="{WORD_NS}"><w:body/></w:document>"#
+        ),
+        format!(
+            r#"<w:document xmlns:w="{WORD_NS}"><w:body><w:p><w:r><w:r/></w:r></w:p></w:body></w:document>"#
+        ),
+        format!(r#"<w:document xmlns:w="{WORD_NS}"><w:body><w:p/><w:p/></w:body></w:document>"#),
+    ] {
+        let bytes = docx(&[
+            ("word/styles.xml", &styles),
+            ("word/document.xml", &hostile),
+        ]);
+        let limits = Limits {
+            max_blocks: 1,
+            ..Limits::local()
+        };
+        assert!(to_ir_docx(&ast, &bytes, &limits).is_err());
+    }
 }

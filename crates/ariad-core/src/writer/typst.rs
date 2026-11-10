@@ -588,6 +588,7 @@ struct Writer<'a> {
     document: &'a Document,
     character: CharacterStyle,
     table_character: Option<CharacterStyle>,
+    table_paragraph: Option<ParagraphStyle>,
     warned_fonts: BTreeSet<String>,
     assets: &'a AssetStore,
     rejected_assets: &'a BTreeSet<String>,
@@ -617,6 +618,7 @@ impl<'a> Writer<'a> {
             document,
             character: document.styles.defaults.character.clone(),
             table_character: None,
+            table_paragraph: None,
             warned_fonts: BTreeSet::new(),
             assets: &document.assets,
             rejected_assets: &options.rejected_assets,
@@ -908,18 +910,25 @@ impl<'a> Writer<'a> {
     fn block(&mut self, block: &'a Block, out: &mut String) {
         let parent = self.character.clone();
         let parent_table = self.table_character.clone();
+        let parent_paragraph = self.table_paragraph.clone();
         let resolved = if matches!(block, Block::Table { .. }) {
             self.document
                 .styles
                 .resolve_table(block.style().as_ref(), block.direct(), 100)
                 .map(|table| {
                     self.table_character = Some(table.character.clone());
+                    self.table_paragraph = Some(table.paragraph.clone());
                     (table.paragraph, table.background)
                 })
         } else {
             self.document
                 .styles
-                .resolve_paragraph(block.style().as_ref(), block.direct(), 100)
+                .resolve_paragraph_with_baseline(
+                    block.style().as_ref(),
+                    block.direct(),
+                    self.table_paragraph.as_ref(),
+                    100,
+                )
                 .map(|p| (p, None))
         };
         let (paragraph, background) = match resolved {
@@ -990,6 +999,7 @@ impl<'a> Writer<'a> {
         }
         self.character = parent;
         self.table_character = parent_table;
+        self.table_paragraph = parent_paragraph;
     }
 
     fn block_content(&mut self, block: &'a Block, out: &mut String) {

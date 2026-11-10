@@ -133,7 +133,7 @@ def compare(data, route):
     delta = (style_a - style_s) * 100 if style_a is not None and style_s is not None else None
     relative = (style_a / style_s - 1) * 100 if delta is not None and style_s else None
     gates = {}
-    for name in ("text_cer", "table_f1", "style_accuracy"):
+    for name in COMPONENTS:
         av, sv = a[name]["mean"], s[name]["mean"]
         gates[name] = None if av is None or sv is None else (
             av <= sv if name == "text_cer" else
@@ -181,10 +181,10 @@ def render(data):
         relative = result["style_relative_percent"]
         lines += ["", f"{route}: style delta {f'{pp:+.2f} percentage points' if pp is not None else 'N/A'}; "
                   f"relative gain {f'{relative:+.2f}%' if relative is not None else 'N/A (missing or zero competitor baseline)'}. "
-                  f"Component gates: CER={result['gates']['text_cer']}, table={result['gates']['table_f1']}, style={result['gates']['style_accuracy']}.", ""]
+                  f"Component gates: CER={result['gates']['text_cer']}, table={result['gates']['table_f1']}, style={result['gates']['style_accuracy']}, layout={result['gates']['layout_iou']}.", ""]
     lines += [
         "The PDF->DOCX gate requires CER(A) <= CER(S), table F1(A) >= table F1(S), and "
-        "style(A) >= 1.10 * style(S). For a zero competitor style baseline, the last inequality "
+        "style(A) >= 1.10 * style(S), plus layout IoU(A) >= layout IoU(S). For a zero competitor style baseline, the last inequality "
         "still applies (A >= 0); relative gain is undefined, including a zero/zero tie. "
         "No infinite improvement is claimed. Impossible or failed gates require the owner's recorded decision.", "",
         "### Attempt outcomes and component coverage", "",

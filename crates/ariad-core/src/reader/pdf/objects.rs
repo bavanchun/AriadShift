@@ -150,13 +150,27 @@ impl Budget {
     /// Returns `Ok(None)` for a stream that cannot be decoded (an unsupported or corrupt
     /// filter), which callers treat as empty.
     pub(super) fn decode(&mut self, stream: &Stream) -> Result<Option<Vec<u8>>, ReadError> {
+        self.decode_capped(stream, usize::MAX / 4)
+    }
+
+    /// A bounded metadata stream may remain unknown when it exceeds its local cap.
+    pub(super) fn decode_capped(
+        &mut self,
+        stream: &Stream,
+        cap: usize,
+    ) -> Result<Option<Vec<u8>>, ReadError> {
         let remaining = self.remaining().min((usize::MAX / 4) as u64) as usize;
-        match stream.decompressed_content_with_limit(remaining) {
+        match stream.decompressed_content_with_limit(remaining.min(cap)) {
             Ok(data) => {
                 self.charge(data.len())?;
                 Ok(Some(data))
             }
             Err(lopdf::Error::Decompress(DecompressError::MemoryLimitExceeded { .. })) => {
+                if cap < remaining {
+                    // Even rejected metadata consumed decoding work up to its cap.
+                    self.charge(cap)?;
+                    return Ok(None);
+                }
                 let limit = if self.decoded_limit.saturating_sub(self.decoded)
                     <= self.work_limit.saturating_sub(self.work)
                 {
@@ -177,6 +191,19 @@ mod tests {
 
     use super::Budget;
     use crate::reader::pdf::ReadError;
+
+    #[test]
+    fn oversized_metadata_is_unknown_but_consumes_the_shared_decode_budget() {
+        let stream = Stream::new(Dictionary::new(), vec![b'x'; 5]);
+        let mut budget = Budget::new(10, 100);
+        assert_eq!(budget.decode_capped(&stream, 4), Ok(None));
+        assert_eq!(budget.decode_capped(&stream, 4), Ok(None));
+        assert_eq!(budget.decoded, 8);
+        assert_eq!(
+            budget.decode_capped(&stream, 4),
+            Err(ReadError::DecompressedTooLarge { limit: 10 })
+        );
+    }
 
     #[test]
     fn budget_counts_every_decoded_byte() {

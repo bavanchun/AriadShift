@@ -521,11 +521,15 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--scorer", help="Accepted fidelity-v2 adapter as ariad_bench.module:function")
+    parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--result-name", default="results.json", choices=("results.json", "stirling-v3.3.0.json"))
     args = parser.parse_args(argv)
+    if args.repeat != 3:
+        parser.error("The paired acceptance benchmark requires three repetitions")
     evidence = {"schema": SCHEMA, "kind": "preflight" if args.preflight_only else "corpus",
                 "generated_at": datetime.now(timezone.utc).isoformat(), "status": "blocked", "gaps": [], "samples": []}
     args.out.mkdir(parents=True, exist_ok=True)
-    destination = args.out / ("preflight.json" if args.preflight_only else "results.json")
+    destination = args.out / ("preflight.json" if args.preflight_only else args.result_name)
     try:
         config = load_config(args.config)
         binary = args.ashift.resolve()

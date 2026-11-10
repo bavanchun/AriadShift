@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Tests for `pdf.sign_visual`.
 
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};

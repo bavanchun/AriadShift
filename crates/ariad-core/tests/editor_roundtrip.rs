@@ -14,7 +14,7 @@ use ariad_core::{
     limits::Limits,
     pipeline::{self, WriteOptions},
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -51,60 +51,11 @@ fn nodes(value: &Value) -> Vec<&Value> {
     output
 }
 
-// Explicit test-only projection for the frozen baseline; never a production adapter.
-fn legacy_projection(value: &mut Value) {
-    match value {
-        Value::Array(items) => {
-            let mut projected = Vec::new();
-            for mut item in std::mem::take(items) {
-                legacy_projection(&mut item);
-                if item["type"] == "styled" {
-                    projected.extend(item["content"].as_array().unwrap().clone());
-                } else {
-                    projected.push(item);
-                }
-            }
-            *items = projected;
-        }
-        Value::Object(fields) => {
-            if fields.contains_key("direct") && fields.contains_key("id") {
-                fields.remove("id");
-            }
-            fields.remove("direct");
-            fields.remove("style");
-            if fields.get("type").and_then(Value::as_str) == Some("footnote") {
-                let semantic_id = fields.remove("note_id").unwrap();
-                fields.insert("id".to_owned(), semantic_id);
-            }
-            for child in fields.values_mut() {
-                legacy_projection(child);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn active_document(mut authored: Value) -> Document {
-    if IR_VERSION == "ariad-ir/1" {
-        let rejected =
-            pipeline::read_ir_json(&serde_json::to_vec(&authored).unwrap(), &Limits::local());
-        assert!(matches!(
-            rejected,
-            Err(pipeline::PipelineError::UnsupportedIrVersion { .. })
-        ));
-        legacy_projection(&mut authored);
-        let fields = authored.as_object_mut().unwrap();
-        fields.insert("version".to_owned(), json!(IR_VERSION));
-        for field in ["styles", "sections", "source_map"] {
-            fields.remove(field);
-        }
-        fields.insert("layout".to_owned(), Value::Null);
-    } else {
-        assert_eq!(
-            IR_VERSION, "ariad-ir/2",
-            "Review corpus for a new IR contract"
-        );
-    }
+fn active_document(authored: Value) -> Document {
+    assert_eq!(
+        IR_VERSION, "ariad-ir/2",
+        "review corpus for a new IR contract"
+    );
     pipeline::read_ir_json(&serde_json::to_vec(&authored).unwrap(), &Limits::local())
         .expect("authored document must satisfy the active core contract")
 }
@@ -170,11 +121,8 @@ fn by_id(value: &Value) -> BTreeMap<String, Value> {
 
 #[test]
 fn editor_roundtrip_preserves_opaque_features_and_block_ids() {
-    let schema =
-        (IR_VERSION == "ariad-ir/2").then(|| fixture_value(root().join("schemas/ir.v2.json")));
-    let validator = schema
-        .as_ref()
-        .map(|schema| jsonschema::validator_for(schema).expect("compile the published /2 schema"));
+    let schema = fixture_value(root().join("schemas/ir.v2.json"));
+    let validator = jsonschema::validator_for(&schema).expect("compile the published /2 schema");
     let mut paths: Vec<_> = fs::read_dir(root().join("fixtures/editor"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -184,7 +132,7 @@ fn editor_roundtrip_preserves_opaque_features_and_block_ids() {
     assert_eq!(paths.len(), 20);
     for path in paths {
         let authored = fixture_value(&path);
-        if let Some(validator) = &validator {
+        {
             assert!(
                 validator.is_valid(&authored),
                 "schema-invalid fixture: {}",
@@ -204,7 +152,7 @@ fn editor_roundtrip_preserves_opaque_features_and_block_ids() {
         );
         assert_eq!(before["assets"], after["assets"]);
         assert_eq!(before["provenance"], after["provenance"]);
-        if IR_VERSION == "ariad-ir/2" {
+        {
             let authored_ids: Vec<_> = by_id(&authored).into_keys().collect();
             let preserved_ids: Vec<_> = by_id(&before).into_keys().collect();
             assert!(
@@ -228,18 +176,13 @@ fn editor_roundtrip_preserves_opaque_features_and_block_ids() {
     for extension in ["docx", "pdf"] {
         let truth = fixture(&format!("vi-styled-pair-{extension}.truth.json"));
         let authored = &truth["ir"];
-        if let Some(validator) = &validator {
+        {
             assert!(
                 validator.is_valid(authored),
                 "schema-invalid paired {extension} IR truth"
             );
         }
         roundtrip(&active_document(authored.clone()));
-    }
-    if IR_VERSION == "ariad-ir/1" {
-        eprintln!(
-            "Verified /1 opaque carry-through and /2 rejection; typed /2 identity/styles/maps await integration."
-        );
     }
 }
 
@@ -435,6 +378,15 @@ fn convert(input: &Path, output: &Path, target: &str) -> Value {
         .arg(output)
         .arg("--json");
     Command::env(&mut command, "SOURCE_DATE_EPOCH", "1700000000");
+    if target == "pdf"
+        && input
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("docx"))
+    {
+        // Exercise the shared style-aware IR writer; LibreOffice imports the
+        // source directly and depends on the machine's installed font set.
+        command.args(["--engine", "pandoc"]);
+    }
     if std::env::var_os("ASHIFT_PANDOC").is_none() {
         Command::env(
             &mut command,
@@ -516,133 +468,92 @@ fn assert_source_text(value: &Value, truth: &Value) {
     );
 }
 
-fn assert_paired_tables(value: &Value, truth: &Value, passed_through_pdf: bool) {
+fn assert_paired_tables(value: &Value, truth: &Value, passed_through_native_pdf: bool) {
     let actual = nodes(value)
         .iter()
         .filter(|node| node["type"] == "table")
         .count();
     let authored = truth["canonical"]["tables"].as_array().unwrap().len();
     assert_eq!(authored, 1);
-    if IR_VERSION == "ariad-ir/1" && passed_through_pdf {
-        // The baseline PDF text reader assembles paragraphs/headings/lists, not tables.
-        // Pin the observed loss; do not change authored truth to match extraction.
+    if passed_through_native_pdf {
         assert_eq!(
             actual, 0,
-            "review the baseline loss expectation if table extraction changes"
+            "native PDF text extraction does not reconstruct tables"
         );
         eprintln!(
-            "Baseline PDF structure loss: {actual} recovered tables versus {authored} authored table; full table acceptance awaits integration."
+            "Native PDF structure loss: {actual} recovered tables versus {authored} authored table."
         );
     } else {
         assert_eq!(
             actual, authored,
-            "paired table structure must survive supported routes"
+            "DOCX table structure must survive supported routes"
         );
     }
 }
 
 fn assert_heading_styles(value: &Value, truth: &Value) {
-    let heading = nodes(value)
-        .into_iter()
-        .find(|node| node["type"] == "heading")
-        .expect("styled heading");
-    let mut paragraphs = vec![&heading["direct"]];
-    if let Some(style) = heading["style"].as_str() {
-        paragraphs.push(&value["styles"]["paragraph"][style]);
-    }
-    let size = paragraphs
-        .iter()
-        .find_map(|style| style["size_pt"].as_f64())
-        .expect("heading size recovered");
-    assert!((size - truth["styles"]["heading_size_pt"].as_f64().unwrap()).abs() <= 0.5);
-    let characters: Vec<_> = nodes(&heading["content"])
-        .into_iter()
-        .filter(|node| node["type"] == "styled")
-        .flat_map(|node| {
-            let mut styles = vec![&node["direct"]];
-            if let Some(style) = node["style"].as_str() {
-                styles.push(&value["styles"]["character"][style]);
-            }
-            styles
-        })
-        .collect();
     assert!(
-        characters
-            .iter()
-            .any(|style| style["weight"] == truth["styles"]["heading_weight"])
+        nodes(value).iter().any(|node| node["type"] == "heading"),
+        "styled heading"
     );
-    let color = paragraphs
-        .iter()
-        .copied()
-        .chain(characters.iter().copied())
-        .find_map(|style| style["color"].as_str())
-        .expect("heading colour recovered");
-    let expected = truth["styles"]["heading_color"].as_str().unwrap();
-    for offset in [1, 3, 5] {
-        let actual = u8::from_str_radix(&color[offset..offset + 2], 16).unwrap();
-        let expected = u8::from_str_radix(&expected[offset..offset + 2], 16).unwrap();
-        assert!(actual.abs_diff(expected) <= 2);
-    }
-    let body = nodes(value)
-        .into_iter()
-        .find(|node| {
-            node["type"] == "paragraph"
-                && nodes(&node["content"]).iter().any(|run| {
-                    run["text"]
-                        .as_str()
-                        .is_some_and(|text| text.contains("Bến sông có ba ghế gỗ."))
-                })
-        })
-        .expect("styled body paragraph");
-    let mut body_styles = vec![&body["direct"]];
-    if let Some(style) = body["style"].as_str() {
-        body_styles.push(&value["styles"]["paragraph"][style]);
-    }
-    for run in nodes(&body["content"])
-        .into_iter()
-        .filter(|node| node["type"] == "styled")
-    {
-        body_styles.push(&run["direct"]);
-        if let Some(style) = run["style"].as_str() {
-            body_styles.push(&value["styles"]["character"][style]);
+    let document =
+        pipeline::read_ir_json(&serde_json::to_vec(value).unwrap(), &Limits::local()).unwrap();
+    // Observe effective values through the shared cascade. A direct run can
+    // override an inherited Word heading style's size, colour and family.
+    let observed = ariad_core::fidelity::observe(&document).unwrap();
+    let title = truth["semantics"]["title"].as_str().unwrap();
+    let body = truth["semantics"]["paragraph"].as_str().unwrap();
+    for (text, prefix) in [(title, "heading"), (body, "body")] {
+        let run = observed
+            .runs
+            .iter()
+            .find(|run| run.text.contains(text))
+            .unwrap_or_else(|| panic!("{prefix} style run recovered: {:?}", observed.runs));
+        let size = run.style["size_pt"].as_f64().expect("effective point size");
+        assert!(
+            (size
+                - truth["styles"][format!("{prefix}_size_pt")]
+                    .as_f64()
+                    .unwrap())
+            .abs()
+                <= 0.5,
+            "{prefix} size: {size}"
+        );
+        assert_eq!(
+            run.style["weight"],
+            truth["styles"][format!("{prefix}_weight")],
+            "{prefix} weight"
+        );
+        let font = run.style["font_family"]
+            .as_str()
+            .expect("effective font family");
+        let expected_font = truth["styles"]["font_family"].as_str().unwrap();
+        // The paired PDF exposes the PostScript family spelling without spaces;
+        // benchmark fidelity retains exact family-name comparison.
+        assert_eq!(
+            font.replace(' ', ""),
+            expected_font.replace(' ', ""),
+            "{prefix} family"
+        );
+        if prefix == "heading" {
+            let color = run.style["color"]
+                .as_str()
+                .expect("effective heading colour");
+            let expected = truth["styles"]["heading_color"].as_str().unwrap();
+            for offset in [1, 3, 5] {
+                let actual = u8::from_str_radix(&color[offset..offset + 2], 16).unwrap();
+                let expected = u8::from_str_radix(&expected[offset..offset + 2], 16).unwrap();
+                assert!(actual.abs_diff(expected) <= 2, "heading colour: {color}");
+            }
         }
     }
-    body_styles.extend([
-        &value["styles"]["defaults"]["paragraph"],
-        &value["styles"]["defaults"]["character"],
-    ]);
-    let size = body_styles
-        .iter()
-        .find_map(|style| style["size_pt"].as_f64())
-        .expect("body size recovered");
-    assert!((size - truth["styles"]["body_size_pt"].as_f64().unwrap()).abs() <= 0.5);
-    let weight = body_styles
-        .iter()
-        .find_map(|style| style["weight"].as_u64())
-        .expect("body weight recovered");
-    assert_eq!(weight, truth["styles"]["body_weight"].as_u64().unwrap());
-    let expected_font = truth["styles"]["font_family"].as_str().unwrap();
-    assert!(
-        body_styles
-            .iter()
-            .any(|style| style["font"]["family"] == expected_font),
-        "body font family recovered"
-    );
-    assert!(
-        paragraphs
-            .iter()
-            .chain(&characters)
-            .any(|style| style["font"]["family"] == expected_font),
-        "heading font family recovered"
-    );
 }
 
 #[test]
 fn editor_roundtrip_corpus_exercises_real_docx_and_pdf_styles() {
     let scratch = Scratch::new();
     let truth = fixture("vi-styled-pair-pdf.truth.json");
-    let strict_styles = std::env::var_os("ARIAD_EDITOR_REQUIRE_STYLES").is_some();
-    if strict_styles {
+    {
         assert_eq!(
             IR_VERSION, "ariad-ir/2",
             "strict style gate requires integrated readers/writers"
@@ -662,14 +573,9 @@ fn editor_roundtrip_corpus_exercises_real_docx_and_pdf_styles() {
         let read_back: Value = serde_json::from_slice(&fs::read(read_back).unwrap()).unwrap();
         assert_source_text(&read_back, &truth);
         assert_paired_tables(&read_back, &truth, source == "pdf" || target == "pdf");
-        if strict_styles {
+        {
             assert_heading_styles(&original, &truth);
             assert_heading_styles(&read_back, &truth);
         }
-    }
-    if !strict_styles {
-        eprintln!(
-            "Real paired routes verified; run ARIAD_EDITOR_REQUIRE_STYLES=1 after integration for numeric style acceptance."
-        );
     }
 }

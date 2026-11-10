@@ -323,7 +323,7 @@ fn every_pdf_to_text_family_row_is_plannable_and_converts() {
                 "RTF output must be a full document starting with {{\\rtf1"
             );
             assert!(
-                rtf_bytes.ends_with(b"}\n") || rtf_bytes.ends_with(b"}"),
+                rtf_bytes.trim_ascii_end().ends_with(b"}"),
                 "RTF output must be a closed document ending with }}"
             );
         }

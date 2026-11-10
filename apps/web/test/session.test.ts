@@ -163,7 +163,7 @@ describe("routes", () => {
     const calls: string[] = [];
     const docx = {
       convert: (bytes: Uint8Array, from: string, to: string) => {
-        calls.push(`${from}>${to}:${decoder.decode(bytes).includes("ariad-ir/1")}`);
+        calls.push(`${from}>${to}:${JSON.parse(decoder.decode(bytes)).version === "ariad-ir/2"}`);
         return {
           bytes: new Uint8Array([80, 75]),
           format: to,

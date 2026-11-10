@@ -107,10 +107,10 @@ records the actual execution worktree. Retained JUnit receipts omit hostnames.
 ### Scorer integration
 
 The scorer is late-bound through `--scorer ariad_bench.module:function` or the
-`scorer` config value. The initial value `ariad_bench.fidelity:score` is an
-integration entry point, not a claim that the unmerged scorer already exposes
-that API. Once the metric owner publishes its frozen API, set this entry to
-the accepted callable or a thin API adapter owned by that metric module.
+`scorer` config value. The integrated configuration uses
+`ariad_bench.competitors:score`, a thin adapter over the accepted
+`ariad_bench.fidelity.compare` implementation. It exposes table F1 from the
+table structure component and aliases coverage fields without changing values.
 
 The callable accepts `(authored_truth_json, output_ir_json)` and returns a JSON
 mapping or dataclass containing:
@@ -140,7 +140,7 @@ uv run --package ariad-bench python -m ariad_bench report \
 ```
 
 Without an explicit argument, the report consumes
-`bench/results/competitors/results.json` when present. If absent, existing
+`bench/results/competitors/stirling-v3.3.0.json` when present. If absent, existing
 base/heavy report bytes are unchanged. An explicitly missing or invalid evidence
 path fails rather than silently dropping the comparison. The existing
 base/heavy `generated_at` consistency check remains mandatory. The public
@@ -148,7 +148,8 @@ report is regenerated only after the final metric, corpus and heavy/base
 measurements are integrated; do not append competitive prose by hand.
 
 The PDF->DOCX gate is CER(A) <= CER(S), table F1(A) >= table F1(S), and
-style(A) >= 1.10 * style(S). Both routes show relative style gain and
+style(A) >= 1.10 * style(S), plus layout IoU(A) >= layout IoU(S).
+Both routes show relative style gain and
 percentage-point difference. For S=0, the inequality remains A>=0 and relative
 gain is undefined; a zero/zero tie is never labelled infinite improvement.
 Missing components or attempts in either route prevent acceptance. Cleanup
@@ -176,3 +177,5 @@ and attempts four real conversions, validating actual PDF/OOXML artifacts.
 No fake HTTP server or stubbed process success is used. A skipped integration
 in the ordinary unit suite is reported as skipped and never satisfies that
 required gate. A passing round-trip probe does not satisfy corpus acceptance.
+
+The integrated command is `uv run --directory bench python -m ariad_bench.competitors --repeat 3`; it supplies the pinned configuration, release binary and `stirling-v3.3.0.json` output name to this same harness. The thin `ariad_bench.competitors:score` adapter calls the accepted `fidelity.compare` API and exposes table F1 plus unchanged component coverage. Layout IoU is also a required non-regression gate. `ARIAD_RUN_STIRLING_BENCH=1` enables the real local integration alongside the original opt-in variable.

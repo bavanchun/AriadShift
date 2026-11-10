@@ -222,7 +222,7 @@ fn vietnamese_typst_pdf_keeps_title_paragraphs_and_table_cells() {
     assert_eq!(
         output.warnings,
         vec![Warning::new(
-            WarningCode::UnsupportedNode,
+            WarningCode::StylesDropped,
             "Unsupported PDF colour spaces or invalid colour operands were left unknown",
         )]
     );

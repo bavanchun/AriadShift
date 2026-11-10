@@ -265,7 +265,7 @@ fn pdf_styles_reject_invalid_numbers_and_bound_unsupported_spaces() {
         output
             .warnings
             .iter()
-            .filter(|warning| warning.code == WarningCode::UnsupportedNode)
+            .filter(|warning| warning.code == WarningCode::StylesDropped)
             .count(),
         1
     );
@@ -341,4 +341,15 @@ fn pdf_styles_keep_unsupported_resource_and_default_spaces_unknown() {
         "#00ff00"
     );
     assert_eq!(output.warnings.len(), 1);
+}
+
+#[test]
+fn pdf_styles_recover_authored_srgb_profile_colour_without_inventing_other_profiles() {
+    let bytes = include_bytes!("../../../fixtures/editor/vi-styled-pair.pdf");
+    let output = pdf::read(bytes, &Limits::local()).unwrap();
+    let values = runs(&output.document);
+    let heading = style_for(&values, "Sổ khảo sát ven sông");
+    assert_eq!(heading.color.as_ref().unwrap().as_str(), "#185c4c");
+    assert_eq!(heading.size_pt, Some(18.0));
+    assert_eq!(heading.weight, Some(700));
 }

@@ -779,6 +779,250 @@
           }
         }
       }
+    },
+    {
+      "name": "table-paragraph-baseline",
+      "reference": {
+        "version": "ariad-ir/2",
+        "body": [
+          {
+            "type": "table",
+            "id": "table",
+            "style": "Grid",
+            "columns": [
+              {
+                "align": "default"
+              },
+              {
+                "align": "default"
+              },
+              {
+                "align": "default"
+              }
+            ],
+            "head": [],
+            "body": [
+              [
+                {
+                  "rowspan": 1,
+                  "colspan": 1,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "p-base",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "base"
+                        }
+                      ],
+                      "direct": {}
+                    }
+                  ]
+                },
+                {
+                  "rowspan": 1,
+                  "colspan": 1,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "p-named",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "named"
+                        }
+                      ],
+                      "direct": {},
+                      "style": "Cell"
+                    }
+                  ]
+                },
+                {
+                  "rowspan": 1,
+                  "colspan": 1,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "p-direct",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "direct"
+                        }
+                      ],
+                      "direct": {
+                        "size_pt": 16.0
+                      },
+                      "style": "Cell"
+                    }
+                  ]
+                }
+              ]
+            ],
+            "footnotes": []
+          }
+        ],
+        "styles": {
+          "defaults": {
+            "paragraph": {
+              "size_pt": 10.0
+            }
+          },
+          "paragraph": {
+            "Cell": {
+              "size_pt": 14.0
+            }
+          },
+          "table": {
+            "Grid": {
+              "paragraph": {
+                "size_pt": 12.0
+              }
+            }
+          }
+        }
+      },
+      "hypothesis": {
+        "version": "ariad-ir/2",
+        "body": [
+          {
+            "type": "table",
+            "id": "table",
+            "style": "Grid",
+            "columns": [
+              {
+                "align": "default"
+              },
+              {
+                "align": "default"
+              },
+              {
+                "align": "default"
+              }
+            ],
+            "head": [],
+            "body": [
+              [
+                {
+                  "rowspan": 1,
+                  "colspan": 1,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "p-base",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "base"
+                        }
+                      ],
+                      "direct": {
+                        "size_pt": 10.0
+                      }
+                    }
+                  ]
+                },
+                {
+                  "rowspan": 1,
+                  "colspan": 1,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "p-named",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "named"
+                        }
+                      ],
+                      "direct": {
+                        "size_pt": 10.0
+                      },
+                      "style": "Cell"
+                    }
+                  ]
+                },
+                {
+                  "rowspan": 1,
+                  "colspan": 1,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "id": "p-direct",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "direct"
+                        }
+                      ],
+                      "direct": {
+                        "size_pt": 10.0
+                      },
+                      "style": "Cell"
+                    }
+                  ]
+                }
+              ]
+            ],
+            "footnotes": []
+          }
+        ],
+        "styles": {
+          "defaults": {
+            "paragraph": {
+              "size_pt": 10.0
+            }
+          },
+          "paragraph": {
+            "Cell": {
+              "size_pt": 14.0
+            }
+          },
+          "table": {
+            "Grid": {
+              "paragraph": {
+                "size_pt": 12.0
+              }
+            }
+          }
+        }
+      },
+      "reference_observations": {
+        "text": "base\nnamed\ndirect",
+        "runs": [
+          {
+            "text": "base",
+            "style": {
+              "size_pt": 12.0
+            }
+          },
+          {
+            "text": "named",
+            "style": {
+              "size_pt": 14.0
+            }
+          },
+          {
+            "text": "direct",
+            "style": {
+              "size_pt": 16.0
+            }
+          }
+        ]
+      },
+      "expected": {
+        "text_cer": 0.0,
+        "structure_f1": 1.0,
+        "style_accuracy": 0.0,
+        "score": 0.6666666666666666,
+        "coverage": {
+          "text": {
+            "reference": 17,
+            "hypothesis": 17
+          }
+        }
+      }
     }
   ]
 }

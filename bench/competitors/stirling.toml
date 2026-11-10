@@ -9,9 +9,8 @@ profile = "editable"
 total_timeout_s = 570
 request_timeout_s = 90
 startup_timeout_s = 150
-# Integration replaces this entry with the frozen scorer callable or a thin API adapter.
-# No metric implementation or legacy metric fallback is permitted here.
-scorer = "ariad_bench.fidelity:score"
+# Compare authored IR truth and actual IR read-back through the accepted observation API.
+scorer = "ariad_bench.competitors:score"
 
 [verification]
 date = "2026-11-10"

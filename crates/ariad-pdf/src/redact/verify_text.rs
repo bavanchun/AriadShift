@@ -203,6 +203,67 @@ mod tests {
     use ariad_core::tools::params::redact::RedactionScope;
 
     #[test]
+    fn cosmetic_colour_loss_keeps_text_verification_effective() {
+        use lopdf::{Object, Stream, dictionary};
+        let mut pdf = lopdf::Document::with_version("1.7");
+        let pages = pdf.new_object_id();
+        let font = pdf.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+            "Encoding" => "WinAnsiEncoding",
+        });
+        let content = pdf.add_object(Stream::new(
+            dictionary! {},
+            b"BT /F1 12 Tf /CS1 cs 50 0 0 scn 40 100 Td (visible marker) Tj ET".to_vec(),
+        ));
+        let page = pdf.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Resources" => dictionary! {
+                "Font" => dictionary! { "F1" => font },
+                "ColorSpace" => dictionary! { "CS1" => vec![
+                    Object::Name(b"Lab".to_vec()),
+                    Object::Dictionary(dictionary! { "WhitePoint" => vec![0.9642.into(), 1.into(), 0.8249.into()] }),
+                ] },
+            },
+            "Contents" => content,
+        });
+        pdf.objects.insert(
+            pages,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1,
+            }),
+        );
+        let root = pdf.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        pdf.trailer.set("Root", root);
+        let mut bytes = Vec::new();
+        pdf.save_to(&mut bytes).unwrap();
+        let limits = Limits::local();
+        let read = ariad_core::reader::pdf::read(&bytes, &limits).unwrap();
+        assert!(
+            read.warnings
+                .iter()
+                .any(|warning| warning.code == WarningCode::StylesDropped)
+        );
+        assert!(!read.warnings.iter().any(|warning| matches!(
+            warning.code,
+            WarningCode::TextUnmapped | WarningCode::UnsupportedNode
+        )));
+        for (target, expected) in [
+            ("absent", RedactionCheckStatus::Pass),
+            ("marker", RedactionCheckStatus::Fail),
+        ] {
+            let params = serde_json::from_value(serde_json::json!({
+                "targets": [{ "kind": "exact", "text": target }],
+            }))
+            .unwrap();
+            assert_eq!(
+                core_text(&bytes, &params, &limits, &ToolCtx::new()).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn geometry_only_targets_report_unavailable_when_text_scope_excluded() {
         let request = RedactParams {
             targets: vec![RedactionTarget::Page { page: 1 }],

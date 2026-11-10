@@ -18,8 +18,19 @@ source: crates/ariad-core/tests/ir_snapshots.rs
     {
       "content": [
         {
-          "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
-          "type": "text"
+          "content": [
+            {
+              "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
+              "type": "text"
+            }
+          ],
+          "direct": {
+            "italic": false,
+            "strike": false,
+            "underline": false,
+            "weight": 400
+          },
+          "type": "styled"
         }
       ],
       "id": "b3f679e43d3aed20f7d36a744c4e16a0fd9c811e79b07cab2e9fa225d01f99bcb",
@@ -167,8 +178,19 @@ source: crates/ariad-core/tests/ir_snapshots.rs
                   {
                     "content": [
                       {
-                        "text": "Điểm dừng",
-                        "type": "text"
+                        "content": [
+                          {
+                            "text": "Điểm dừng",
+                            "type": "text"
+                          }
+                        ],
+                        "direct": {
+                          "italic": false,
+                          "strike": false,
+                          "underline": false,
+                          "weight": 700
+                        },
+                        "type": "styled"
                       }
                     ],
                     "type": "strong"
@@ -188,8 +210,19 @@ source: crates/ariad-core/tests/ir_snapshots.rs
                   {
                     "content": [
                       {
-                        "text": "Phút đi bộ",
-                        "type": "text"
+                        "content": [
+                          {
+                            "text": "Phút đi bộ",
+                            "type": "text"
+                          }
+                        ],
+                        "direct": {
+                          "italic": false,
+                          "strike": false,
+                          "underline": false,
+                          "weight": 700
+                        },
+                        "type": "styled"
                       }
                     ],
                     "type": "strong"
@@ -209,8 +242,19 @@ source: crates/ariad-core/tests/ir_snapshots.rs
                   {
                     "content": [
                       {
-                        "text": "Ghi chú",
-                        "type": "text"
+                        "content": [
+                          {
+                            "text": "Ghi chú",
+                            "type": "text"
+                          }
+                        ],
+                        "direct": {
+                          "italic": false,
+                          "strike": false,
+                          "underline": false,
+                          "weight": 700
+                        },
+                        "type": "styled"
                       }
                     ],
                     "type": "strong"
@@ -231,8 +275,19 @@ source: crates/ariad-core/tests/ir_snapshots.rs
     {
       "content": [
         {
-          "text": "Các khoảng thời gian là ước lượng đi bộ.",
-          "type": "text"
+          "content": [
+            {
+              "text": "Các khoảng thời gian là ước lượng đi bộ.",
+              "type": "text"
+            }
+          ],
+          "direct": {
+            "italic": false,
+            "strike": false,
+            "underline": false,
+            "weight": 400
+          },
+          "type": "styled"
         }
       ],
       "id": "b46c957d03f78ea13e4be281ad85025dc6657c8e159d98db9f73d986327059683",

@@ -236,7 +236,7 @@ fn every_markdown_fixture_has_a_reviewable_html_golden() {
         let raw_html = fs::read_to_string(&output).expect("read generated HTML");
         let snapshot = normalize_text(&raw_html);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -285,7 +285,7 @@ fn every_markdown_fixture_has_a_reviewable_epub_golden() {
         let package = read_package(&output);
         let snapshot = epub_package_snapshot(&package);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -360,7 +360,7 @@ fn every_docx_fixture_has_a_reviewable_md_golden() {
         let raw_md = fs::read_to_string(&output).expect("read generated Markdown");
         let snapshot = normalize_text(&raw_md);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -403,7 +403,7 @@ fn every_html_fixture_has_a_reviewable_md_golden() {
         let raw_md = fs::read_to_string(&output).expect("read generated Markdown");
         let snapshot = normalize_text(&raw_md);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -452,7 +452,7 @@ fn every_epub_fixture_has_a_reviewable_md_golden() {
         let raw_md = fs::read_to_string(&output).expect("read generated Markdown");
         let snapshot = normalize_text(&raw_md);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -496,7 +496,7 @@ fn cross_route_sample_docx_to_html_and_html_to_docx() {
         let raw_html = fs::read_to_string(&output).expect("read generated HTML");
         let snapshot = normalize_text(&raw_html);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -531,7 +531,7 @@ fn cross_route_sample_docx_to_html_and_html_to_docx() {
         let package = read_package(&output);
         let snapshot = docx_package_snapshot(&package);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -630,7 +630,9 @@ fn pdf_exports_have_reviewable_goldens() {
             }
             _ => normalize_text(&fs::read_to_string(&output).unwrap()),
         };
-        insta::assert_snapshot!(format!("pdf_to_{target}"), content);
+        insta::with_settings!({ snapshot_path => "../../../fixtures/golden/v2" }, {
+            insta::assert_snapshot!(format!("pdf_to_{target}"), content);
+        });
     }
 }
 

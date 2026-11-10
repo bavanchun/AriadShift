@@ -58,6 +58,7 @@ fn map_document(document: &Document, docx: bool) -> MapOutput {
         docx_styles: DocxStyles::new(document),
         character: document.styles.defaults.character.clone(),
         table_character: None,
+        table_paragraph: None,
         character_base: None,
         footnotes,
         used_footnotes: BTreeSet::new(),
@@ -106,6 +107,7 @@ struct Mapper<'a> {
     docx_styles: DocxStyles,
     character: CharacterStyle,
     table_character: Option<CharacterStyle>,
+    table_paragraph: Option<ParagraphStyle>,
     character_base: Option<crate::ir::StyleId>,
     footnotes: BTreeMap<String, &'a [IrBlock]>,
     used_footnotes: BTreeSet<String>,
@@ -125,6 +127,7 @@ impl Mapper<'_> {
     fn map_block(&mut self, block: &IrBlock) -> Vec<Block> {
         let parent = self.character.clone();
         let parent_table = self.table_character.clone();
+        let parent_paragraph = self.table_paragraph.clone();
         let is_table = matches!(block, IrBlock::Table { .. });
         let resolved = if is_table {
             self.document
@@ -132,13 +135,19 @@ impl Mapper<'_> {
                 .resolve_table(block.style().as_ref(), block.direct(), 100)
                 .map(|table| {
                     self.table_character = Some(table.character.clone());
+                    self.table_paragraph = Some(table.paragraph.clone());
                     let name = self.docx_styles.table(&table, block.style().as_ref());
                     (table.paragraph, name)
                 })
         } else {
             self.document
                 .styles
-                .resolve_paragraph(block.style().as_ref(), block.direct(), 100)
+                .resolve_paragraph_with_baseline(
+                    block.style().as_ref(),
+                    block.direct(),
+                    self.table_paragraph.as_ref(),
+                    100,
+                )
                 .map(|p| {
                     let name =
                         self.docx_styles
@@ -190,6 +199,7 @@ impl Mapper<'_> {
         }
         self.character = parent;
         self.table_character = parent_table;
+        self.table_paragraph = parent_paragraph;
         if let Some(name) = name {
             if is_table {
                 if let Some(Block::Table(table)) = blocks.first_mut() {

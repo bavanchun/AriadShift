@@ -110,7 +110,7 @@ def test_competitor_report_obeys_cer_direction_and_style_gate():
             sample["score"].update(text_cer=1.2, style_accuracy=0.87)
     report.validate_evidence(evidence)  # Raw CER above one is valid.
     result = report.compare(evidence, "pdf->docx")
-    assert result["gates"] == {"text_cer": False, "table_f1": True, "style_accuracy": False}
+    assert result["gates"] == {"text_cer": False, "table_f1": True, "style_accuracy": False, "layout_iou": True}
     assert result["status"] == "fail"
     for sample in evidence["samples"]:
         sample["score"]["style_accuracy"] = 0
@@ -266,7 +266,7 @@ def test_competitor_public_evidence_redacts_paths_without_changing_measurements(
     assert original["worktree"] == str(ROOT)
 
 
-@pytest.mark.skipif(os.environ.get("ARIAD_BENCH_REAL_COMPETITORS") != "1", reason="Real Docker integration is a separate required gate; run with ARIAD_BENCH_REAL_COMPETITORS=1")
+@pytest.mark.skipif(os.environ.get("ARIAD_BENCH_REAL_COMPETITORS") != "1" and os.environ.get("ARIAD_RUN_STIRLING_BENCH") != "1", reason="Real Docker integration is a separate required gate; run with ARIAD_BENCH_REAL_COMPETITORS=1")
 def test_stirling_real_local_pdf_docx_roundtrips(tmp_path):
     config = run.load_config(ROOT / "bench/competitors/stirling.toml")
     binary = Path(os.environ.get("ASHIFT_BIN", str(Path.home() / ".cache/ariadshift-target/debug/ashift")))
@@ -287,3 +287,26 @@ def test_stirling_real_local_pdf_docx_roundtrips(tmp_path):
     assert ["docker", "stop"] in commands
     assert ["docker", "rm"] in commands
     assert any(entry["command"][:3] == ["docker", "network", "rm"] for entry in runner.commands)
+
+
+def test_layout_regression_fails_the_competitive_gate():
+    evidence = original_evidence()
+    for sample in evidence["samples"]:
+        if sample["product"] == "ariadshift":
+            sample["score"]["layout_iou"] = 0.4
+    assert report.compare(evidence, "pdf->docx")["gates"]["layout_iou"] is False
+    assert report.overall_status(evidence) == "fail"
+
+
+def test_integrated_fidelity_adapter_preserves_metric_values_and_denominators():
+    from ariad_bench.competitors import score
+    from ariad_bench.fidelity import compare
+    reference = json.loads((ROOT / "fixtures/editor/vi-styled-pair-pdf.truth.json").read_text())
+    hypothesis = reference["ir"]
+    accepted = compare(reference, hypothesis)
+    adapted = score(reference, hypothesis)
+    report.validate_score(adapted)
+    for name in ("text_cer", "style_accuracy", "layout_iou", "score"):
+        assert adapted[name] == accepted[name]
+    assert adapted["table_f1"] == accepted["structure_by_kind"]["table"]["f1"]
+    assert adapted["coverage"]["style_accuracy"] == accepted["coverage"]["style"]

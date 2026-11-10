@@ -21,6 +21,7 @@ mod assemble;
 mod cmap;
 mod encoding;
 mod font;
+mod icc;
 mod interpreter;
 mod layout;
 mod lexer;
@@ -223,7 +224,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut warnings = Vec::new();
     if unknown_color {
         warnings.push(Warning::new(
-            WarningCode::UnsupportedNode,
+            WarningCode::StylesDropped,
             "Unsupported PDF colour spaces or invalid colour operands were left unknown",
         ));
     }

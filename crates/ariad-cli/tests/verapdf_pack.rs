@@ -447,27 +447,58 @@ fn pdfua_validation() {
     );
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn sandbox_network_denial() {
     // Run socket connect attempt to public IP under ashift __sandbox --required --deny-net
+    let python = std::env::var_os("PATH")
+        .and_then(|paths| {
+            std::env::split_paths(&paths)
+                .filter_map(|dir| fs::canonicalize(dir.join("python3")).ok())
+                .find(|canon| {
+                    canon.is_file()
+                        && canon
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| n.to_ascii_lowercase().starts_with("python"))
+                })
+        })
+        .unwrap_or_else(|| PathBuf::from("/usr/bin/python3"));
+
+    let mut args = vec![
+        "__sandbox".to_owned(),
+        "--required".to_owned(),
+        "--deny-net".to_owned(),
+    ];
+    for dir in [
+        "/usr",
+        "/lib",
+        "/lib64",
+        "/bin",
+        "/Library/Frameworks",
+        "/Library/Developer/CommandLineTools",
+    ] {
+        if Path::new(dir).exists() {
+            args.push("--exec".to_owned());
+            args.push(dir.to_owned());
+        }
+    }
+    if let Some(prefix) = python.parent().and_then(Path::parent)
+        && prefix != Path::new("/")
+    {
+        args.push("--exec".to_owned());
+        args.push(prefix.display().to_string());
+    }
+    args.extend([
+        "--".to_owned(),
+        python.display().to_string(),
+        "-I".to_owned(),
+        "-c".to_owned(),
+        "import socket; s = socket.socket(); s.connect(('8.8.8.8', 53))".to_owned(),
+    ]);
+
     let output = Command::new(ashift_bin())
-        .args([
-            "__sandbox",
-            "--required",
-            "--deny-net",
-            "--exec",
-            "/usr",
-            "--exec",
-            "/lib",
-            "--exec",
-            "/lib64",
-            "--exec",
-            "/bin",
-            "--",
-            "python3",
-            "-c",
-            "import socket; s = socket.socket(); s.connect(('8.8.8.8', 53))",
-        ])
+        .args(&args)
         .output()
         .expect("execute under sandbox");
 

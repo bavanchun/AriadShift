@@ -173,10 +173,21 @@ impl DocxStyles {
                 return Err("reference document exceeds byte budget".into());
             }
             total += bytes.len() as u64;
-            if reference && name == "word/styles.xml" {
+            if name == "word/styles.xml" {
                 let mut xml = String::from_utf8(bytes).map_err(|e| e.to_string())?;
                 let end = xml.rfind("</w:styles>").ok_or("missing styles root")?;
-                let definitions = self.definitions();
+                let mut definitions = if reference {
+                    self.definitions()
+                } else {
+                    String::new()
+                };
+                // Pandoc's default Table style refers to this built-in base but
+                // can omit its declaration, including when no custom styles exist.
+                // Declare the empty inherited baseline in generated packages;
+                // imported packages still undergo strict reference validation.
+                if !xml.contains("w:styleId=\"TableNormal\"") {
+                    definitions.push_str("<w:style w:type=\"table\" w:styleId=\"TableNormal\"><w:name w:val=\"Normal Table\"/></w:style>");
+                }
                 if total.saturating_add(definitions.len() as u64) > limits.max_decompressed_bytes {
                     return Err("generated styles exceed byte budget".into());
                 }

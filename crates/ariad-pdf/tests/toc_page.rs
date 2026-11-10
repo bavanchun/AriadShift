@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Generated contents pages have live links into the original document.
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};
 use serde_json::json;

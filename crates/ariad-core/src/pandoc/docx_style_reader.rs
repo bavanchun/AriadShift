@@ -131,14 +131,14 @@ struct Definition {
 }
 
 #[derive(Default)]
-struct Notices(BTreeSet<String>);
+pub(super) struct Notices(BTreeSet<String>);
 impl Notices {
     fn ignored(&mut self, property: &str) {
         self.0.insert(format!(
             "DOCX style property `{property}` was not represented"
         ));
     }
-    fn warnings(self) -> Vec<Warning> {
+    pub(super) fn warnings(self) -> Vec<Warning> {
         self.0
             .into_iter()
             .map(|msg| Warning::new(WarningCode::UnsupportedNode, msg))
@@ -146,11 +146,11 @@ impl Notices {
     }
 }
 
-fn is_word(ns: &ResolveResult<'_>) -> bool {
+pub(super) fn is_word(ns: &ResolveResult<'_>) -> bool {
     matches!(ns, ResolveResult::Bound(ns) if ns.as_ref() == WORD_NS || ns.as_ref() == STRICT_WORD_NS)
 }
 
-fn attributes(
+pub(super) fn attributes(
     reader: &NsReader<&[u8]>,
     start: &BytesStart<'_>,
 ) -> Result<BTreeMap<String, String>, String> {
@@ -463,7 +463,7 @@ fn resolve_definitions(
     Ok(())
 }
 
-fn paragraph_font(character: &CharacterStyle) -> ParagraphStyle {
+pub(super) fn paragraph_font(character: &CharacterStyle) -> ParagraphStyle {
     ParagraphStyle {
         font: character.font.clone(),
         size_pt: character.size_pt,
@@ -528,7 +528,7 @@ fn font(attrs: &BTreeMap<String, String>, notices: &mut Notices) -> Option<FontR
     })
 }
 
-fn paragraph_property(
+pub(super) fn paragraph_property(
     name: &str,
     attrs: &BTreeMap<String, String>,
     style: &mut ParagraphStyle,
@@ -584,7 +584,7 @@ fn paragraph_property(
     style.validate()
 }
 
-fn character_property(
+pub(super) fn character_property(
     name: &str,
     attrs: &BTreeMap<String, String>,
     style: &mut CharacterStyle,

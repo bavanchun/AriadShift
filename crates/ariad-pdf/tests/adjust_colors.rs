@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Integration coverage for selective image and vector adjustment.
 
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};

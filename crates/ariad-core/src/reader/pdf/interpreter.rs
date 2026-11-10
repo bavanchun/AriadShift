@@ -164,6 +164,7 @@ pub(super) struct DocState<'d> {
     encodings: Encodings,
     cmaps: CMapCache,
     font_keys: HashMap<FontKey, u32>,
+    icc_spaces: HashMap<FontKey, ColorSpace>,
     fonts: Vec<Rc<Font>>,
     pub(super) styles: Vec<FontStyle>,
     /// Streams decoded once; the second use caches them.
@@ -179,6 +180,7 @@ impl<'d> DocState<'d> {
             encodings: Encodings::default(),
             cmaps: CMapCache::new(),
             font_keys: HashMap::new(),
+            icc_spaces: HashMap::new(),
             fonts: Vec::new(),
             styles: Vec::new(),
             seen_streams: HashSet::new(),
@@ -418,7 +420,7 @@ pub(super) fn interpret_page<'d>(
         operators: 0,
         scratch: String::new(),
     };
-    let default = Paint::new(interpreter.color_space(b"DeviceGray"));
+    let default = Paint::new(interpreter.color_space(b"DeviceGray")?);
     interpreter.gstate.fill = default;
     interpreter.gstate.stroke = default;
     interpreter.out.unknown_color = default.color.is_none();
@@ -526,7 +528,7 @@ impl Interpreter<'_, '_> {
                     b"rg" | b"RG" => b"DeviceRGB",
                     _ => b"DeviceCMYK",
                 };
-                let space = self.color_space(name);
+                let space = self.color_space(name)?;
                 let mut paint = Paint::new(space);
                 paint.set(&self.operands);
                 self.out.unknown_color |= paint.color.is_none();
@@ -537,9 +539,13 @@ impl Interpreter<'_, '_> {
                 }
             }
             b"cs" | b"CS" => {
-                let space = match self.operands.as_slice() {
-                    [Operand::Name(name)] => self.color_space(name),
-                    _ => ColorSpace::Unknown,
+                let name = match self.operands.as_slice() {
+                    [Operand::Name(name)] => Some(name.clone()),
+                    _ => None,
+                };
+                let space = match name {
+                    Some(name) => self.color_space(&name)?,
+                    None => ColorSpace::Unknown,
                 };
                 let paint = Paint::new(space);
                 self.out.unknown_color |= paint.color.is_none();
@@ -699,14 +705,15 @@ impl Interpreter<'_, '_> {
         }
     }
 
-    /// Resolve only device spaces and one resource alias. ICC, calibrated, indexed,
-    /// separation and pattern spaces need colour management and remain unknown.
-    fn color_space(&self, name: &[u8]) -> ColorSpace {
+    /// Resolve device spaces, one resource alias and evidenced matrix/TRC sRGB ICC.
+    /// Other profiles, calibrated, indexed, separation and pattern spaces stay unknown.
+    fn color_space(&mut self, name: &[u8]) -> Result<ColorSpace, ReadError> {
+        let doc = self.state.doc;
         let resources = self
             .frames
             .last()
             .and_then(|frame| frame.resources)
-            .and_then(|r| get_dict(self.state.doc, r, b"ColorSpace"));
+            .and_then(|r| get_dict(doc, r, b"ColorSpace"));
         let device = |name: &[u8]| match name {
             b"DeviceGray" => Some((ColorSpace::Gray, b"DefaultGray".as_slice())),
             b"DeviceRGB" => Some((ColorSpace::Rgb, b"DefaultRGB".as_slice())),
@@ -714,18 +721,60 @@ impl Interpreter<'_, '_> {
             _ => None,
         };
         let resolved = if device(name).is_some() {
-            Some(name)
+            None
         } else {
-            resources.and_then(|r| get_name(self.state.doc, r, name))
+            resources.and_then(|r| get(doc, r, name))
         };
-        let Some((space, default)) = resolved.and_then(device) else {
-            return ColorSpace::Unknown;
+        let named = match resolved {
+            Some(Object::Name(alias)) => alias.as_slice(),
+            _ => name,
         };
-        match resources.and_then(|r| get(self.state.doc, r, default)) {
-            None => space,
-            Some(Object::Name(name)) => device(name).map_or(ColorSpace::Unknown, |v| v.0),
-            _ => ColorSpace::Unknown,
+        let Some((space, default)) = device(named) else {
+            return self.icc_space(resolved);
+        };
+        match resources.and_then(|r| get(doc, r, default)) {
+            None => Ok(space),
+            Some(Object::Name(name)) => Ok(device(name).map_or(ColorSpace::Unknown, |v| v.0)),
+            object => self.icc_space(object),
         }
+    }
+
+    fn icc_space(&mut self, object: Option<&Object>) -> Result<ColorSpace, ReadError> {
+        let Some(Object::Array(values)) = object else {
+            return Ok(ColorSpace::Unknown);
+        };
+        let [Object::Name(kind), profile] = values.as_slice() else {
+            return Ok(ColorSpace::Unknown);
+        };
+        if kind != b"ICCBased" {
+            return Ok(ColorSpace::Unknown);
+        }
+        let Some(Object::Stream(stream)) = resolve(self.state.doc, profile) else {
+            return Ok(ColorSpace::Unknown);
+        };
+        if get(self.state.doc, &stream.dict, b"N").and_then(number) != Some(3.0) {
+            return Ok(ColorSpace::Unknown);
+        }
+        let key = profile
+            .as_reference()
+            .map(FontKey::Reference)
+            .unwrap_or_else(|_| FontKey::Direct(std::ptr::from_ref(stream) as usize));
+        if let Some(space) = self.state.icc_spaces.get(&key) {
+            return Ok(*space);
+        }
+        self.state.budget.charge_work(64)?;
+        let recognized = self
+            .state
+            .budget
+            .decode_capped(stream, super::icc::MAX_PROFILE_BYTES)?
+            .is_some_and(|data| super::icc::is_srgb(&data));
+        let space = if recognized {
+            ColorSpace::Rgb
+        } else {
+            ColorSpace::Unknown
+        };
+        self.state.icc_spaces.insert(key, space);
+        Ok(space)
     }
 
     fn restore(&mut self) {

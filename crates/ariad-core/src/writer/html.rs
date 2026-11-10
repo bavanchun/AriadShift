@@ -156,6 +156,7 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
         styles: &document.styles,
         character: document.styles.defaults.character.clone(),
         table_character: None,
+        table_paragraph: None,
         assets: &document.assets,
         embedded_assets: BTreeSet::new(),
         repeated_assets_warned: BTreeSet::new(),
@@ -202,6 +203,7 @@ struct HtmlContext<'a> {
     styles: &'a StyleSheet,
     character: CharacterStyle,
     table_character: Option<CharacterStyle>,
+    table_paragraph: Option<ParagraphStyle>,
     assets: &'a AssetStore,
     embedded_assets: BTreeSet<String>,
     repeated_assets_warned: BTreeSet<String>,
@@ -212,11 +214,13 @@ struct HtmlContext<'a> {
 fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
     let parent = ctx.character.clone();
     let parent_table = ctx.table_character.clone();
+    let parent_paragraph = ctx.table_paragraph.clone();
     let resolved = if matches!(block, Block::Table { .. }) {
         ctx.styles
             .resolve_table(block.style().as_ref(), block.direct(), 100)
             .map(|table| {
                 ctx.table_character = Some(table.character.clone());
+                ctx.table_paragraph = Some(table.paragraph.clone());
                 let mut css = String::new();
                 if let Some(background) = &table.background {
                     css.push_str(&format!("background-color:{};", background.as_str()));
@@ -225,7 +229,12 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             })
     } else {
         ctx.styles
-            .resolve_paragraph(block.style().as_ref(), block.direct(), 100)
+            .resolve_paragraph_with_baseline(
+                block.style().as_ref(),
+                block.direct(),
+                ctx.table_paragraph.as_ref(),
+                100,
+            )
             .map(|p| (p, String::new()))
     };
     let mut css = String::new();
@@ -276,6 +285,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
     }
     ctx.character = parent;
     ctx.table_character = parent_table;
+    ctx.table_paragraph = parent_paragraph;
 }
 
 fn write_block_content(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {

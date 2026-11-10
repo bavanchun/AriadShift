@@ -305,12 +305,18 @@ pub fn convert(
 
 /// Maps Pandoc JSON and extracted media using the shared core mapper.
 #[wasm_bindgen(js_name = readPandoc, unchecked_return_type = "ConvertResult")]
-pub fn read_pandoc(bytes: &[u8], media: &[u8], source: &str) -> Result<JsValue, JsValue> {
+pub fn read_pandoc(
+    bytes: &[u8],
+    media: &[u8],
+    source: &str,
+    docx: Option<Vec<u8>>,
+) -> Result<JsValue, JsValue> {
     let format = api::parse_format(source).map_err(|e| to_js_error(&e))?;
-    let read = ariad_core::pandoc::package::read(
+    let read = ariad_core::pandoc::package::read_with_docx(
         bytes,
         media,
         format,
+        docx.as_deref(),
         &ariad_core::limits::Limits::local(),
     )
     .map_err(|e| to_js_error(&api::ApiError::from(e)))?;
@@ -327,10 +333,20 @@ pub fn read_pandoc(bytes: &[u8], media: &[u8], source: &str) -> Result<JsValue, 
 
 /// Maps IR to Pandoc JSON with the same writer as native surfaces.
 #[wasm_bindgen(js_name = writePandoc, unchecked_return_type = "ConvertResult")]
-pub fn write_pandoc(bytes: &[u8], title: Option<String>) -> Result<JsValue, JsValue> {
-    let written = ariad_core::pandoc::package::write(
+pub fn write_pandoc(
+    bytes: &[u8],
+    title: Option<String>,
+    target: Option<String>,
+) -> Result<JsValue, JsValue> {
+    let target = target
+        .as_deref()
+        .map(api::parse_format)
+        .transpose()
+        .map_err(|e| to_js_error(&e))?;
+    let written = ariad_core::pandoc::package::write_for_target(
         bytes,
         title.as_deref(),
+        target,
         &ariad_core::limits::Limits::local(),
     )
     .map_err(|e| to_js_error(&api::ApiError::from(e)))?;
@@ -341,6 +357,20 @@ pub fn write_pandoc(bytes: &[u8], title: Option<String>) -> Result<JsValue, JsVa
         "json",
         &written.warnings,
     )
+}
+
+/// Prepares DOCX style definitions using the shared memory-only package implementation.
+#[wasm_bindgen(js_name = referenceDocx)]
+pub fn reference_docx(ir: &[u8], template: &[u8]) -> Result<Vec<u8>, JsValue> {
+    ariad_core::pandoc::package::reference_docx(ir, template, &ariad_core::limits::Limits::local())
+        .map_err(|e| to_js_error(&api::ApiError::from(e)))
+}
+
+/// Materializes effective DOCX run styles after the separate reactor writes the document.
+#[wasm_bindgen(js_name = finishDocx)]
+pub fn finish_docx(ir: &[u8], docx: &[u8]) -> Result<Vec<u8>, JsValue> {
+    ariad_core::pandoc::package::finish_docx(ir, docx, &ariad_core::limits::Limits::local())
+        .map_err(|e| to_js_error(&api::ApiError::from(e)))
 }
 
 /// Stamps only package dates; Pandoc stays a separate aggregated module.

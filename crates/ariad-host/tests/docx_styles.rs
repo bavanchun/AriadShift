@@ -610,3 +610,239 @@ fn docx_custom_heading_style_keeps_its_outline_level() {
     assert!(styles.contains("w:sz w:val=\"48\""));
     assert!(member(&bytes, "word/document.xml").contains("w:pStyle w:val=\"AriadPDirect"));
 }
+
+fn host_roundtrip_document(input: &std::path::Path, output: &std::path::Path, target: &str) {
+    let binary = std::env::var_os("ARIAD_EDITOR_TEST_ASHIFT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join(if cfg!(windows) {
+                    "ashift.exe"
+                } else {
+                    "ashift"
+                })
+        });
+    assert!(
+        binary.is_file(),
+        "build ashift before the host round-trip gate"
+    );
+    let request = ariad_host::convert::ConvertRequest::new(input, output, target, binary);
+    ariad_host::convert::convert(&request, tokio_util::sync::CancellationToken::new(), |_| {})
+        .unwrap();
+}
+
+fn assert_recovered_styles(document: &Document) {
+    let paragraph = document
+        .body
+        .iter()
+        .find(|block| matches!(block, Block::Paragraph { .. }))
+        .unwrap();
+    let resolved = document
+        .styles
+        .resolve_paragraph(paragraph.style().as_ref(), paragraph.direct(), 100)
+        .unwrap();
+    assert_eq!(resolved.size_pt, Some(18.0));
+    assert_eq!(resolved.color.as_ref().unwrap().as_str(), "#123456");
+    assert_eq!(resolved.font.as_ref().unwrap().family, "Libertinus Serif");
+    let table = document
+        .body
+        .iter()
+        .find(|block| matches!(block, Block::Table { .. }))
+        .unwrap();
+    let resolved = document
+        .styles
+        .resolve_table(table.style().as_ref(), table.direct(), 100)
+        .unwrap();
+    assert_eq!(resolved.background.as_ref().unwrap().as_str(), "#ddeeff");
+    assert!(
+        document
+            .styles
+            .paragraph
+            .keys()
+            .any(|id| id.as_str().contains("Body"))
+    );
+    assert!(
+        document
+            .styles
+            .character
+            .keys()
+            .any(|id| id.as_str().contains("Accent"))
+    );
+    let observed = ariad_core::fidelity::observe(document).unwrap();
+    let value = serde_json::to_value(observed).unwrap();
+    let runs = value["runs"].as_array().unwrap();
+    assert!(runs.iter().any(|run| {
+        run["text"]
+            .as_str()
+            .is_some_and(|s| s.contains("Tiếng Việt"))
+            && run["style"]["weight"] == 700
+    }));
+    assert!(runs.iter().any(
+        |run| run["text"].as_str().is_some_and(|s| s.contains("reset"))
+            && run["style"]["weight"] == 400
+            && run["style"]["italic"] == false
+    ));
+}
+
+#[test]
+fn docx_styles_survive_full_host_and_memory_package_roundtrips() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("input.ir.json");
+    fs::write(&input, serde_json::to_vec(&document()).unwrap()).unwrap();
+    let docx = temp.path().join("first.docx");
+    host_roundtrip_document(&input, &docx, "docx");
+    let output = Command::new(pandoc_bin::locate().unwrap().path)
+        .args(["-f", "docx+styles", "-t", "json"])
+        .arg(&docx)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let ast = serde_json::from_slice(&output.stdout).unwrap();
+    let xml = parse_xml(&member(&fs::read(&docx).unwrap(), "word/styles.xml"));
+    let styles = &xml.children;
+    let ids: std::collections::BTreeSet<_> = styles
+        .iter()
+        .filter(|n| n.name == "style")
+        .map(|n| n.attr("w:styleId"))
+        .collect();
+    for style in styles.iter().filter(|n| n.name == "style") {
+        for parent in style.children.iter().filter(|n| n.name == "basedOn") {
+            assert!(
+                ids.contains(parent.attr("w:val")),
+                "dangling style {} -> {}",
+                style.attr("w:styleId"),
+                parent.attr("w:val")
+            );
+        }
+    }
+    ariad_core::pandoc::to_ir::to_ir_docx(&ast, &fs::read(&docx).unwrap(), &Limits::local())
+        .unwrap();
+    let ir = temp.path().join("first.ir.json");
+    host_roundtrip_document(&docx, &ir, "json");
+    let recovered =
+        ariad_core::pipeline::read_ir_json(&fs::read(&ir).unwrap(), &Limits::local()).unwrap();
+    assert_recovered_styles(&recovered);
+    let next = temp.path().join("second.docx");
+    host_roundtrip_document(&ir, &next, "docx");
+    let next_ir = temp.path().join("second.ir.json");
+    host_roundtrip_document(&next, &next_ir, "json");
+    assert_recovered_styles(
+        &ariad_core::pipeline::read_ir_json(&fs::read(next_ir).unwrap(), &Limits::local()).unwrap(),
+    );
+
+    let output = Command::new(pandoc_bin::locate().unwrap().path)
+        .args(["-f", "docx+styles", "-t", "json"])
+        .arg(&docx)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let bytes = fs::read(&docx).unwrap();
+    let mapped = ariad_core::pandoc::package::read_with_docx(
+        &output.stdout,
+        &[],
+        ariad_core::format::Format::Docx,
+        Some(&bytes),
+        &Limits::local(),
+    )
+    .unwrap();
+    assert_recovered_styles(&mapped.document);
+}
+
+#[test]
+fn repeated_docx_image_imports_have_identical_block_ids() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = root.join("fixtures/docx/vn-tt-28-2012-conformity.docx");
+    let temp = tempfile::tempdir().unwrap();
+    let mut documents = Vec::new();
+    for name in ["first", "second"] {
+        let output = temp.path().join(format!("{name}.ir.json"));
+        host_roundtrip_document(&source, &output, "json");
+        let document =
+            ariad_core::pipeline::read_ir_json(&fs::read(output).unwrap(), &Limits::local())
+                .unwrap();
+        assert!(!document.assets.is_empty());
+        documents.push(document);
+    }
+    assert_eq!(documents[0], documents[1]);
+}
+
+#[test]
+fn docx_text_box_stories_keep_surrounding_text_and_styles() {
+    use std::io::Write;
+
+    let (_workspace, bytes) = convert(&document());
+    let mut input = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    for index in 0..input.len() {
+        let mut entry = input.by_index(index).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        if entry.is_dir() {
+            output.add_directory(&name, options).unwrap();
+            continue;
+        }
+        let mut data = Vec::new();
+        entry.read_to_end(&mut data).unwrap();
+        if name == "word/document.xml" {
+            let mut xml = String::from_utf8(data).unwrap();
+            let end = xml.rfind("<w:sectPr").unwrap();
+            xml.insert_str(end, r#"<w:p><w:r><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="TextBox" style="width:120pt;height:24pt"><v:textbox><w:txbxContent><w:p><w:r><w:t>Text box marker</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p><w:p><w:r><w:t>Following marker</w:t></w:r></w:p>"#);
+            data = xml.into_bytes();
+        }
+        output.start_file(&name, options).unwrap();
+        output.write_all(&data).unwrap();
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("text-box.docx");
+    fs::write(&source, output.finish().unwrap().into_inner()).unwrap();
+    let ir = temp.path().join("text-box.ir.json");
+    host_roundtrip_document(&source, &ir, "json");
+    let recovered =
+        ariad_core::pipeline::read_ir_json(&fs::read(ir).unwrap(), &Limits::local()).unwrap();
+    let observed = ariad_core::fidelity::observe(&recovered).unwrap();
+    assert_eq!(observed.text.matches("Following marker").count(), 1);
+    assert_recovered_styles(&recovered);
+
+    let output = Command::new(pandoc_bin::locate().unwrap().path)
+        .args(["-f", "docx+styles", "-t", "json"])
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let bytes = fs::read(&source).unwrap();
+    let mapped = ariad_core::pandoc::package::read_with_docx(
+        &output.stdout,
+        &[],
+        ariad_core::format::Format::Docx,
+        Some(&bytes),
+        &Limits::local(),
+    )
+    .unwrap();
+    assert!(mapped.warnings.iter().any(|warning| {
+        warning.code == "unsupported_node"
+            && warning.message.contains("text box content and formatting")
+    }));
+}
+
+#[test]
+fn unstyled_docx_declares_its_builtin_table_style_parent() {
+    let document = ariad_core::reader::markdown::read("An ordinary paragraph.", &Limits::local())
+        .unwrap()
+        .document;
+    assert!(document.styles.is_empty());
+    let (_workspace, bytes) = convert(&document);
+    let (styles, _) =
+        ariad_core::pandoc::to_ir::read_docx_styles(&bytes, &Limits::local()).unwrap();
+    assert!(
+        styles
+            .table
+            .values()
+            .any(|style| style.background.is_none())
+    );
+    assert!(member(&bytes, "word/styles.xml").contains("w:styleId=\"TableNormal\""));
+}
