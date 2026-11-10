@@ -31,8 +31,13 @@ export async function warmCachedEngines(): Promise<void> {
   }
 }
 
-/** Register route engines without loading their modules until a conversion needs them. */
-export function browserEngines(core: Core): Core {
+export interface BrowserEngines extends Core {
+  listTools: NonNullable<Core["listTools"]>;
+  runTool: NonNullable<Core["runTool"]>;
+}
+
+/** Register lazy route engines alongside the in-process browser document tools. */
+export function browserEngines(core: Core): BrowserEngines {
   let pandoc: import("./pandoc").Pandoc | undefined;
   let typst: typeof import("@ariadshift/ariad-typst") | undefined;
   let typstMemory: WebAssembly.Memory | undefined;
@@ -118,6 +123,15 @@ export function browserEngines(core: Core): Core {
   });
   return {
     ...core,
+    listTools: () => core.listTools?.() ?? [],
+    runTool: (...args) => {
+      if (!core.runTool)
+        throw {
+          code: "engine_unavailable",
+          message: "The browser tool engine is unavailable.",
+        };
+      return core.runTool(...args);
+    },
     engines,
     memoryBytes: () =>
       core.memoryBytes() + (pandoc?.memoryBytes ?? 0) + (typstMemory?.buffer.byteLength ?? 0),
