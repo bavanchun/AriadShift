@@ -27,7 +27,12 @@ export interface BatchOptions {
   entitled?: boolean;
 }
 
-export type BatchClient = Pick<ConverterClient, "ingestMany" | "runTool" | "reset" | "cancel">;
+/** The largest single input a batch item may read, unless the options say otherwise. */
+export const DEFAULT_BATCH_FILE_BUDGET_BYTES = 64 * 1024 * 1024;
+
+export type BatchClient = Pick<ConverterClient, "ingestMany" | "runTool" | "reset" | "cancel"> & {
+  terminate?: () => void;
+};
 
 function batchError(code: string, message: string): ConverterError {
   return { code, message };
@@ -50,7 +55,7 @@ export class BatchRunner {
     private readonly client: BatchClient = new ConverterClient(),
     private readonly options: BatchOptions = {},
   ) {
-    this.#perFileBudget = options.perFileBudgetBytes ?? 64 * 1024 * 1024;
+    this.#perFileBudget = options.perFileBudgetBytes ?? DEFAULT_BATCH_FILE_BUDGET_BYTES;
     this.#outputBudget = options.batchOutputBudgetBytes ?? 256 * 1024 * 1024;
     for (const value of [this.#perFileBudget, this.#outputBudget])
       if (!Number.isSafeInteger(value) || value <= 0)
@@ -97,6 +102,12 @@ export class BatchRunner {
       status: "queued",
     }));
     return this.#execute();
+  }
+
+  /** Stops the batch and releases the worker this runner owns. */
+  dispose(): void {
+    this.cancelBatch();
+    this.client.terminate?.();
   }
 
   cancelBatch(): void {

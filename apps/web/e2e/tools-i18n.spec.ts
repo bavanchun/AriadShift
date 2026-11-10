@@ -49,7 +49,7 @@ test("Arabic lays the app out right to left", async ({ page }) => {
   await expect(html).toHaveAttribute("dir", "rtl");
   // The tab list starts at the right edge: the first tab sits right of the last.
   const tabs = page.getByRole("tablist").first().getByRole("tab");
-  await expect(tabs).toHaveCount(3);
+  await expect(tabs).toHaveCount(4);
   const first = await tabs.first().boundingBox();
   const last = await tabs.last().boundingBox();
   expect(first && last && first.x > last.x).toBe(true);

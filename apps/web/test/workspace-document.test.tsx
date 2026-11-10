@@ -95,7 +95,7 @@ describe("<DocumentWorkspace />", () => {
     await drop(input, pdfFile("a.pdf", 2048));
     await screen.findByText("What is in this PDF");
     pickTool("pdf.delete_pages");
-    fireEvent.change(screen.getByLabelText("pages"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Page range"), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: "Run tool on this device" }));
 
     const card = await waitFor(() => {
@@ -140,7 +140,7 @@ describe("<DocumentWorkspace />", () => {
     await drop(input, pdfFile("a.pdf"));
     await screen.findByText("What is in this PDF");
     pickTool("pdf.rotate");
-    fireEvent.change(screen.getByLabelText("angle"), { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "90° CW" }));
     fireEvent.click(screen.getByRole("button", { name: "Run tool on this device" }));
     const card = await resultCard();
     await act(async () => {
@@ -198,7 +198,7 @@ describe("<DocumentWorkspace />", () => {
     await drop(input, pdfFile("a.pdf"));
     await screen.findByText("What is in this PDF");
     pickTool("pdf.rotate");
-    fireEvent.change(screen.getByLabelText("angle"), { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "90° CW" }));
     fireEvent.click(screen.getByRole("button", { name: "Run tool on this device" }));
     await screen.findByRole("button", { name: "Cancel" });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -217,7 +217,7 @@ describe("<DocumentWorkspace />", () => {
     await drop(input, pdfFile("a.pdf"));
     await screen.findByText("What is in this PDF");
     pickTool("pdf.rotate");
-    fireEvent.change(screen.getByLabelText("angle"), { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "90° CW" }));
     fireEvent.click(screen.getByRole("button", { name: "Run tool on this device" }));
     expect(
       (await screen.findByText(/The tool stopped: angle must be 90/)).getAttribute("role"),
@@ -274,7 +274,7 @@ describe("<DocumentWorkspace />", () => {
     await drop(input, pdfFile("a.pdf"));
     await screen.findByText("What is in this PDF");
     pickTool("pdf.rotate");
-    fireEvent.change(screen.getByLabelText("angle"), { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "90° CW" }));
     fireEvent.click(screen.getByRole("button", { name: "Run tool on this device" }));
     const card = await resultCard();
     fireEvent.click(within(card).getByRole("button", { name: "Save as recipe" }));
@@ -283,5 +283,37 @@ describe("<DocumentWorkspace />", () => {
     ]);
     fireEvent.click(within(card).getByRole("button", { name: "Open in editor" }));
     expect(onOpenInEditor).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers the batch queue for a single-input tool and runs it on every file", async () => {
+    const client = fakeClient();
+    const { input } = await open(client);
+    await drop(input, pdfFile("a.pdf"), pdfFile("b.pdf"));
+    await screen.findAllByText("What is in this PDF");
+    pickTool("pdf.rotate");
+    // Two files open the queue on their own; the toggle can close it again.
+    const toggle = (await screen.findByLabelText("Run on every file (batch)")) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    expect(document.querySelector('[data-slot="batch-queue"]')).toBeTruthy();
+    expect(screen.getAllByText("Queued")).toHaveLength(2);
+    fireEvent.click(toggle);
+    expect(document.querySelector('[data-slot="batch-queue"]')).toBeNull();
+    fireEvent.click(toggle);
+    expect(document.querySelector('[data-slot="batch-queue"]')).toBeTruthy();
+  });
+
+  it("keeps the queue out of the way for one file until the user asks, and for multi-input tools", async () => {
+    const { input } = await open();
+    await drop(input, pdfFile("a.pdf"));
+    await screen.findByText("What is in this PDF");
+    pickTool("pdf.rotate");
+    const toggle = (await screen.findByLabelText("Run on every file (batch)")) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    expect(document.querySelector('[data-slot="batch-queue"]')).toBeNull();
+    fireEvent.click(toggle);
+    expect(document.querySelector('[data-slot="batch-queue"]')).toBeTruthy();
+    pickTool("pdf.merge");
+    expect(screen.queryByLabelText("Run on every file (batch)")).toBeNull();
+    expect(document.querySelector('[data-slot="batch-queue"]')).toBeNull();
   });
 });

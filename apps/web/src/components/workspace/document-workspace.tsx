@@ -4,11 +4,13 @@ import { Button } from "@ariadshift/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ariadshift/ui/components/tabs";
 import { ToastProvider, ToastViewport } from "@ariadshift/ui/components/toast";
 import { Undo2Icon } from "lucide-react";
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import type { ParamsValidation } from "@/components/tools/params-form";
 import type { StorageKind, ToolExecutionArtifact } from "@/converter/protocol";
 import { resolveWasmUrl } from "@/viewer/engine";
 import { loadEmbedPdfBackend, PdfViewer, useViewerBackend } from "@/viewer/pdf-viewer";
 import type { PdfViewerSource, ViewerBackendLoader, ViewerLabels } from "@/viewer/types";
+import { BatchSection } from "./batch-section";
 import { useWorkspaceCopy, type WorkspaceCopyOverrides, WorkspaceCopyProvider } from "./copy";
 import { FileTray } from "./file-tray";
 import { GoldenThreadBar } from "./golden-thread";
@@ -77,6 +79,20 @@ function WorkspaceBody({
   useEffect(() => {
     if (requestedId) openTool(requestedId);
   }, [requestedId, requestedNonce, openTool]);
+  // The parameters the inspector holds, so the batch queue can run them on every file.
+  const [inspectorParams, setInspectorParams] = useState<{
+    params: Record<string, unknown>;
+    valid: boolean;
+  }>({ params: {}, valid: true });
+  const onParamsChange = useCallback(
+    (params: Record<string, unknown>, validation: ParamsValidation) =>
+      setInspectorParams({ params, valid: validation.isValid }),
+    [],
+  );
+  // `null` follows the file count: two or more files open the batch queue on their own.
+  const [batchChoice, setBatchChoice] = useState<boolean | null>(null);
+  const singleInput = tool?.inputs.arity === "one";
+  const batchOn = Boolean(tool && singleInput && (batchChoice ?? workspace.files.length >= 2));
   const insightsState = active ? workspace.insights[active.id] : undefined;
   const source: PdfViewerSource | null = useMemo(
     () =>
@@ -173,10 +189,32 @@ function WorkspaceBody({
           busy={workspace.busy === "run"}
           progress={workspace.progress}
           error={workspace.error}
-          onRun={(params) => (tool ? workspace.runTool(tool, params) : undefined)}
+          onRun={(params, options) => (tool ? workspace.runTool(tool, params, options) : undefined)}
           onRunCloud={onRunCloud && tool ? (params) => onRunCloud(tool.id, params) : undefined}
+          onParamsChange={onParamsChange}
           onCancel={workspace.cancel}
         />
+        {tool && singleInput && workspace.files.length > 0 && (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={batchOn}
+              disabled={workspace.busy !== null}
+              onChange={(event) => setBatchChoice(event.target.checked)}
+            />
+            {copy.batch.toggle}
+          </label>
+        )}
+        {batchOn && tool && (
+          <BatchSection
+            tool={tool}
+            params={inspectorParams.params}
+            paramsValid={inspectorParams.valid}
+            files={workspace.files}
+            locale={locale}
+            onRemoveFile={workspace.removeFile}
+          />
+        )}
         {run && (
           <ToolResultCard
             run={run}

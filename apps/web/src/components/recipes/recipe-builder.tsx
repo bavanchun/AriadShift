@@ -121,6 +121,8 @@ export interface RecipeBuilderProps {
   copy?: Partial<RecipeBuilderCopy>;
   confirmCopy?: Partial<RecipeConfirmCopy>;
   onChange?: (recipe: AriadRecipe) => void;
+  /** Called once the confirmation gate is decided, by loading the recipe or by cancelling. */
+  onPendingResolved?: () => void;
   /** Runs the recipe. Offered only when the host can run it; disabled while a recipe awaits confirmation. */
   onRun?: (recipe: AriadRecipe) => void;
   /** Saves the exported JSON; defaults to a browser download named `recipe.json`. */
@@ -157,6 +159,7 @@ export function RecipeBuilder({
   copy: copyOverrides,
   confirmCopy,
   onChange,
+  onPendingResolved,
   onRun,
   onExportJson = downloadText,
   className,
@@ -620,11 +623,16 @@ export function RecipeBuilder({
       <RecipeConfirmDialog
         recipe={pending?.recipe ?? null}
         origin="untrusted"
+        tools={tools}
         copy={confirmCopy}
-        onCancel={() => setPending(null)}
+        onCancel={() => {
+          setPending(null);
+          onPendingResolved?.();
+        }}
         onConfirm={() => {
           if (pending) load(pending.recipe);
           setPending(null);
+          onPendingResolved?.();
         }}
       />
     </section>

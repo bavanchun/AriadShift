@@ -16,6 +16,7 @@ import type { ToolExecutionArtifact } from "@/converter/protocol";
 import { formatBytes } from "@/lib/format-bytes";
 import { useWorkspaceCopy } from "./copy";
 import { countPdfPages } from "./page-count";
+import { ToolReportCards } from "./report-cards";
 import { useToolLabel } from "./tool-label";
 import type { WorkspaceRun } from "./types";
 
@@ -162,6 +163,7 @@ export function ToolResultCard({
             </AlertDescription>
           </Alert>
         )}
+        <ToolReportCards toolId={run.tool.id} result={result} locale={locale} />
         {details && (
           <details className="text-sm">
             <summary className="cursor-pointer font-medium">{copy.details}</summary>

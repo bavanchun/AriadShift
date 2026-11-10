@@ -4,6 +4,7 @@
 // components knowing about the message catalogue.
 import { createContext, createElement, type ReactNode, useContext, useMemo } from "react";
 import { toolTitle } from "../../lib/tools";
+import { DEFAULT_BATCH_COPY } from "../batch/batch-queue-panel";
 
 const plural = (count: number, one: string, other: string) =>
   `${count} ${count === 1 ? one : other}`;
@@ -150,6 +151,12 @@ export const DEFAULT_WORKSPACE_COPY = {
   tools: {
     /** The display name of a tool; the locale page supplies the translated titles. */
     title: (id: string) => toolTitle({ id }),
+  },
+  batch: {
+    ...DEFAULT_BATCH_COPY,
+    toggle: "Run on every file (batch)",
+    invalid: "Fix the highlighted options before running the batch.",
+    failed: (message: string) => `The batch stopped: ${message}`,
   },
   workspace: {
     title: "Workspace",

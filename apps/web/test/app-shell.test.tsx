@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { loadMessages, scopeMessages } from "@/i18n/messages";
 
@@ -20,6 +20,7 @@ vi.mock("@/components/app/tools-host", () => {
       onSelectTool: (id: string) => void;
       defaultPaletteOpen?: boolean;
       onOpenPalette?: () => void;
+      onRunRecipe?: (steps: Array<{ toolId: string; params: Record<string, unknown> }>) => void;
     }) => (
       <div data-testid="tools-stub" data-palette={String(props.defaultPaletteOpen)}>
         <button type="button" onClick={() => props.onSelectTool("pdf.rotate")}>
@@ -28,15 +29,54 @@ vi.mock("@/components/app/tools-host", () => {
         <button type="button" onClick={() => props.onSelectTool("pdf.merge")}>
           choose merge
         </button>
+        <button
+          type="button"
+          onClick={() => props.onRunRecipe?.([{ toolId: "pdf.rotate", params: { angle: 90 } }])}
+        >
+          run palette recipe
+        </button>
       </div>
     ),
   };
 });
 vi.mock("@/components/app/workspace-host", () => {
   return {
-    default: (props: { requestedTool: { id: string; nonce: number } | null }) => (
+    default: (props: {
+      requestedTool: { id: string; nonce: number } | null;
+      onSaveRecipe?: (steps: Array<{ toolId: string; params: Record<string, unknown> }>) => void;
+    }) => (
       <div data-testid="workspace-stub">
         {props.requestedTool ? `${props.requestedTool.id}#${props.requestedTool.nonce}` : "none"}
+        <button
+          type="button"
+          onClick={() =>
+            props.onSaveRecipe?.([
+              { toolId: "pdf.rotate", params: { angle: 90 } },
+              { toolId: "pdf.compress", params: {} },
+            ])
+          }
+        >
+          save recipe
+        </button>
+      </div>
+    ),
+  };
+});
+vi.mock("@/components/app/recipes-host", () => {
+  return {
+    default: (props: {
+      draft: { steps: unknown[]; nonce: number } | null;
+      fragment: string | null;
+      onResolved: () => void;
+    }) => (
+      <div
+        data-testid="recipes-stub"
+        data-fragment={props.fragment ?? ""}
+        data-steps={props.draft ? props.draft.steps.length : 0}
+      >
+        <button type="button" onClick={props.onResolved}>
+          resolve link
+        </button>
       </div>
     ),
   };
@@ -44,9 +84,9 @@ vi.mock("@/components/app/workspace-host", () => {
 
 import { AppShell } from "@/components/app/app-shell";
 
-function renderShell(search = "") {
+function renderShell(search = "", hash = "") {
   mocks.search = search;
-  window.history.replaceState(null, "", `/en/app${search}`);
+  window.history.replaceState(null, "", `/en/app${search}${hash}`);
   const messages = scopeMessages(loadMessages("en"), ["common", "web.app"]);
   return render(
     <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
@@ -125,5 +165,39 @@ describe("AppShell", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
     });
     expect(screen.getByTestId("tools-stub").getAttribute("data-palette")).toBe("false");
+  });
+
+  it("opens the recipe builder on its tab and keeps it in the address bar", async () => {
+    renderShell();
+    expect(screen.queryByTestId("recipes-stub")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Recipes" }));
+    expect(await screen.findByTestId("recipes-stub")).toBeTruthy();
+    expect(new URL(window.location.href).searchParams.get("view")).toBe("recipes");
+    expect(screen.getByTestId("recipes-stub").getAttribute("data-steps")).toBe("0");
+  });
+
+  it("hands a recipe from a #recipe= link to the confirmation gate and clears the hash after", async () => {
+    renderShell("", "#recipe=eyJ2IjoxfQ");
+    const stub = await screen.findByTestId("recipes-stub");
+    expect(stub.getAttribute("data-fragment")).toBe("#recipe=eyJ2IjoxfQ");
+    expect(screen.getByRole("tab", { name: "Recipes" }).getAttribute("aria-selected")).toBe("true");
+    expect(window.location.hash).toBe("#recipe=eyJ2IjoxfQ");
+    fireEvent.click(screen.getByRole("button", { name: "resolve link" }));
+    await waitFor(() => expect(window.location.hash).toBe(""));
+    expect(screen.getByTestId("recipes-stub").getAttribute("data-fragment")).toBe("");
+  });
+
+  it("opens the builder with the steps of the workspace's Save as recipe action", async () => {
+    renderShell("?view=workspace");
+    fireEvent.click(await screen.findByRole("button", { name: "save recipe" }));
+    const stub = await screen.findByTestId("recipes-stub");
+    expect(stub.getAttribute("data-steps")).toBe("2");
+    expect(new URL(window.location.href).searchParams.get("view")).toBe("recipes");
+  });
+
+  it("opens the builder with the steps of a command palette recipe", async () => {
+    renderShell("?view=tools");
+    fireEvent.click(await screen.findByRole("button", { name: "run palette recipe" }));
+    expect((await screen.findByTestId("recipes-stub")).getAttribute("data-steps")).toBe("1");
   });
 });
