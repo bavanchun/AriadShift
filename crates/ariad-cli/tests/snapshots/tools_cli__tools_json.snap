@@ -9537,5 +9537,467 @@ expression: tools_json
     "summary": "Fetch a web page securely and convert it offline to PDF.",
     "tier": "free",
     "version": "1"
+  },
+  {
+    "engine": "ariad-core",
+    "group": "edit",
+    "id": "edit.open_document",
+    "input_formats": [
+      "pdf",
+      "docx",
+      "html",
+      "md"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$defs": {
+        "EditExportFormat": {
+          "description": "Document export or fidelity-preview target.",
+          "enum": [
+            "pdf",
+            "docx",
+            "html",
+            "md"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Open a document into IR, optionally selecting PDF pages and a preview target.",
+      "properties": {
+        "pages": {
+          "description": "Optional 1-based PDF page selector; omitted means all pages.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EditExportFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Omitted means preview all four export targets."
+        }
+      },
+      "title": "EditOpenDocumentParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Open a PDF, DOCX, HTML, or Markdown document into ariad-ir/2 with layout, block source map, and export fidelity preview.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-core",
+    "group": "edit",
+    "id": "edit.export_document",
+    "input_formats": [
+      "json",
+      "pdf",
+      "docx",
+      "html",
+      "md"
+    ],
+    "inputs": {
+      "arity": "many",
+      "max": 2,
+      "min": 1
+    },
+    "output_format": "pdf",
+    "output_formats": [
+      "pdf",
+      "docx",
+      "html",
+      "md"
+    ],
+    "params_schema": {
+      "$defs": {
+        "EditExportFormat": {
+          "description": "Document export or fidelity-preview target.",
+          "enum": [
+            "pdf",
+            "docx",
+            "html",
+            "md"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Export the complete edited IR document.",
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/EditExportFormat",
+          "default": "pdf"
+        }
+      },
+      "title": "EditExportDocumentParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Export an edited ariad-ir/2 document to PDF, DOCX, HTML, or Markdown with measured fidelity score and block change list.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "edit",
+    "id": "edit.page_objects",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Inspect objects on selected PDF pages.",
+      "properties": {
+        "pages": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "EditPageObjectsParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Inspect per-page PDF text runs, images, and vector paths with stable object IDs, bounding boxes, fonts, and colors for in-place editing.",
+    "tier": "pro",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "edit",
+    "id": "edit.apply",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "EditSaveMode": {
+          "description": "PDF save strategy after applying the complete ordered operation list.",
+          "enum": [
+            "full",
+            "incremental"
+          ],
+          "type": "string"
+        },
+        "PageEditOp": {
+          "description": "Ordered edits in unrotated PDF page coordinates (points, origin at bottom left).",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "object_id": {
+                  "pattern": "^p[1-9][0-9]*_obj[0-9]+$",
+                  "type": "string"
+                },
+                "op": {
+                  "const": "replace_text",
+                  "type": "string"
+                },
+                "page": {
+                  "format": "uint32",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "text": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "op",
+                "page",
+                "object_id",
+                "text"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "color": {
+                  "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "font_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "font_size": {
+                  "exclusiveMinimum": 0.0,
+                  "format": "double",
+                  "maximum": 1000.0,
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "object_id": {
+                  "pattern": "^p[1-9][0-9]*_obj[0-9]+$",
+                  "type": "string"
+                },
+                "op": {
+                  "const": "set_text_style",
+                  "type": "string"
+                },
+                "page": {
+                  "format": "uint32",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "op",
+                "page",
+                "object_id"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "dx_pt": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "dy_pt": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "object_id": {
+                  "pattern": "^p[1-9][0-9]*_obj[0-9]+$",
+                  "type": "string"
+                },
+                "op": {
+                  "const": "move_object",
+                  "type": "string"
+                },
+                "page": {
+                  "format": "uint32",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "op",
+                "page",
+                "object_id",
+                "dx_pt",
+                "dy_pt"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "object_id": {
+                  "pattern": "^p[1-9][0-9]*_obj[0-9]+$",
+                  "type": "string"
+                },
+                "op": {
+                  "const": "delete_object",
+                  "type": "string"
+                },
+                "page": {
+                  "format": "uint32",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "op",
+                "page",
+                "object_id"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "color": {
+                  "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "font_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "font_size": {
+                  "exclusiveMinimum": 0.0,
+                  "format": "double",
+                  "maximum": 1000.0,
+                  "type": "number"
+                },
+                "op": {
+                  "const": "add_text",
+                  "type": "string"
+                },
+                "page": {
+                  "format": "uint32",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "text": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "x_pt": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "y_pt": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "op",
+                "page",
+                "text",
+                "x_pt",
+                "y_pt",
+                "font_size"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "bbox": {
+                  "description": "Left, bottom, right, top, in PDF points.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 4,
+                  "minItems": 4,
+                  "type": "array"
+                },
+                "image_base64": {
+                  "type": "string"
+                },
+                "op": {
+                  "const": "add_image",
+                  "type": "string"
+                },
+                "page": {
+                  "format": "uint32",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "op",
+                "page",
+                "bbox",
+                "image_base64"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "image_base64": {
+                  "type": "string"
+                },
+                "object_id": {
+                  "pattern": "^p[1-9][0-9]*_obj[0-9]+$",
+                  "type": "string"
+                },
+                "op": {
+                  "const": "replace_image",
+                  "type": "string"
+                },
+                "page": {
+                  "format": "uint32",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "op",
+                "page",
+                "object_id",
+                "image_base64"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "One stateless edit request. Object IDs refer to the supplied input document.",
+      "properties": {
+        "ops": {
+          "items": {
+            "$ref": "#/$defs/PageEditOp"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "save": {
+          "$ref": "#/$defs/EditSaveMode",
+          "default": "full"
+        }
+      },
+      "required": [
+        "ops"
+      ],
+      "title": "EditApplyParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Apply an ordered sequence of stateless in-place page edits (replace_text, set_text_style, move_object, delete_object, add_text, add_image, replace_image) with font fallback and optional incremental save.",
+    "tier": "pro",
+    "version": "1"
   }
 ]

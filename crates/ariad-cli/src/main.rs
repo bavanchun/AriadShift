@@ -7,6 +7,7 @@ use std::{
     io::{self, BufRead, IsTerminal, Read, Write},
     path::PathBuf,
     process::ExitCode,
+    str::FromStr,
 };
 
 #[cfg(debug_assertions)]
@@ -1154,7 +1155,20 @@ fn parse_tool_params_and_secrets(
     Ok((params_value, secrets))
 }
 
+fn local_tool_plan() -> Result<ariad_core::tools::Plan, ToolError> {
+    match std::env::var("ASHIFT_PLAN") {
+        Ok(value) => ariad_core::tools::Plan::from_str(value.trim())
+            .map_err(|error| ToolError::InvalidParams(error.to_string())),
+        Err(std::env::VarError::NotPresent) => Ok(ariad_core::tools::Plan::Free),
+        Err(error) => Err(ToolError::InvalidParams(error.to_string())),
+    }
+}
+
 fn run_tool_cmd(args: ToolArgs) -> ExitCode {
+    let plan = match local_tool_plan() {
+        Ok(plan) => plan,
+        Err(error) => return report_error("tool", &error),
+    };
     let (params, secrets) = match parse_tool_params_and_secrets(
         &args.tool,
         args.params_json.as_deref(),
@@ -1179,6 +1193,7 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
     };
 
     let request = ToolRequest::new(args.tool, inputs, output)
+        .with_plan(plan)
         .with_params(params)
         .with_secrets(secrets)
         .with_secret_source(ariad_core::tools::SecretSource::Argv)
@@ -1251,6 +1266,10 @@ fn prompt_imported_recipe_confirmation() -> bool {
 }
 
 fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
+    let plan = match local_tool_plan() {
+        Ok(plan) => plan,
+        Err(error) => return report_error("recipe", &error),
+    };
     let raw = match std::fs::read_to_string(&args.recipe) {
         Ok(text) => text,
         Err(err) => return report_error("recipe", &ToolError::InputIo(err.to_string())),
@@ -1355,6 +1374,7 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
     let inputs: Vec<InputRef> = args.inputs.into_iter().map(InputRef::new).collect();
 
     let request = RecipeRequest::new(recipe, inputs, args.output)
+        .with_plan(plan)
         .with_origin(ariad_core::tools::RecipeOrigin::Imported, confirmed)
         .with_secrets(secrets)
         .with_overwrite(args.overwrite)

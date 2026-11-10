@@ -1328,6 +1328,39 @@ mod tests {
     }
 
     #[test]
+    fn edit_tools_are_listed_with_document_and_page_tiers() {
+        let tools = list_tools();
+        for (id, tier) in [
+            ("edit.open_document", Tier::Free),
+            ("edit.export_document", Tier::Free),
+            ("edit.page_objects", Tier::Pro),
+            ("edit.apply", Tier::Pro),
+        ] {
+            let descriptor = tools.iter().find(|tool| tool.id.as_str() == id).unwrap();
+            assert_eq!(descriptor.tier, tier, "{id}");
+        }
+    }
+
+    #[test]
+    fn page_edit_tools_require_entitlement_before_engine_dispatch() {
+        let bytes =
+            std::fs::read(pdf_fixtures_dir().join("vi-diacritics-subset-font.pdf")).unwrap();
+        for id in ["edit.page_objects", "edit.apply"] {
+            let error = run_tool(
+                [bytes.as_slice()],
+                ["subset.pdf"],
+                id,
+                "{}",
+                64 * 1024 * 1024,
+                false,
+            )
+            .unwrap_err();
+            assert_eq!(error.code(), "not_allowed", "{id}");
+            assert_eq!(error.detail("exit_code"), Some(&serde_json::json!(11)));
+        }
+    }
+
+    #[test]
     fn watermark_removal_returns_pdf_and_structured_report() {
         let bytes = std::fs::read(pdf_fixtures_dir().join("watermark-layer.pdf")).unwrap();
         let inputs = [bytes];
@@ -1930,7 +1963,7 @@ mod tests {
                 spec.id,
                 "{}",
                 budget,
-                false,
+                spec.tier == Tier::Pro,
             )
             .expect_err("pdfium tool must not run in wasm");
             assert_eq!(err.code(), "engine_unavailable", "{}", spec.id);

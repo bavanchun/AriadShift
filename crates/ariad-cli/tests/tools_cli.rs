@@ -9,6 +9,7 @@ use tempfile::TempDir;
 
 fn ashift_cmd() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_ashift"));
+    cmd.env_remove("ASHIFT_PLAN");
     cmd.env("ASHIFT_PANDOC", pandoc_path());
     cmd
 }
@@ -414,7 +415,28 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 92);
+    assert_eq!(all_tools.len(), 96);
+    let edit_out = ashift_cmd()
+        .args(["tools", "--group", "edit", "--json"])
+        .output()
+        .expect("list edit tools");
+    assert!(edit_out.status.success());
+    let edit_tools: Value = serde_json::from_slice(&edit_out.stdout).unwrap();
+    let edit_ids: Vec<_> = edit_tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        edit_ids,
+        [
+            "edit.open_document",
+            "edit.export_document",
+            "edit.page_objects",
+            "edit.apply"
+        ]
+    );
     assert!(
         all_tools
             .iter()
