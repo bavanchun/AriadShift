@@ -11,7 +11,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Write},
     path::PathBuf,
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, Command, Stdio},
 };
 
 use ariad_host::confine::path_to_file_uri;
@@ -71,8 +71,10 @@ enum RootsFailure {
 /// Helper client for testing `ashift mcp` over stdio.
 struct McpTestClient {
     child: Option<Child>,
-    stdin: Option<ChildStdin>,
+    stdin: Option<std::sync::mpsc::Sender<String>>,
+    written: std::sync::mpsc::Receiver<std::io::Result<()>>,
     reader: std::sync::mpsc::Receiver<std::io::Result<String>>,
+    io_threads: Vec<std::thread::JoinHandle<()>>,
     pending_roots: Vec<Value>,
     read_timeout: std::time::Duration,
     recorded_stdout: Vec<String>,
@@ -87,6 +89,9 @@ impl Drop for McpTestClient {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
+        }
+        for thread in self.io_threads.drain(..) {
+            let _ = thread.join();
         }
     }
 }
@@ -113,13 +118,27 @@ impl McpTestClient {
         }
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::inherit());
 
         let mut child = cmd.spawn().expect("failed to spawn ashift mcp");
-        let stdin = child.stdin.take().expect("stdin pipe");
+        let mut stdin = child.stdin.take().expect("stdin pipe");
+        let (writer, lines) = std::sync::mpsc::channel::<String>();
+        let (completed, written) = std::sync::mpsc::channel();
+        let writer_thread = std::thread::spawn(move || {
+            for line in lines {
+                let result = stdin
+                    .write_all(line.as_bytes())
+                    .and_then(|()| stdin.write_all(b"\n"))
+                    .and_then(|()| stdin.flush());
+                let failed = result.is_err();
+                if completed.send(result).is_err() || failed {
+                    break;
+                }
+            }
+        });
         let stdout = child.stdout.take().expect("stdout pipe");
         let (sender, reader) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        let reader_thread = std::thread::spawn(move || {
             let mut stdout = BufReader::new(stdout);
             loop {
                 let mut line = String::new();
@@ -140,10 +159,14 @@ impl McpTestClient {
 
         Self {
             child: Some(child),
-            stdin: Some(stdin),
+            stdin: Some(writer),
+            written,
             reader,
+            io_threads: vec![writer_thread, reader_thread],
             pending_roots: Vec::new(),
-            read_timeout: std::time::Duration::from_secs(60),
+            // Windows CI has taken nearly two minutes to scan a large invalid UTF-8 file.
+            // Each write/response still has one deadline, unaffected by notifications.
+            read_timeout: std::time::Duration::from_secs(if cfg!(windows) { 180 } else { 60 }),
             recorded_stdout: Vec::new(),
             advertised_roots,
             roots_queries_count: 0,
@@ -166,10 +189,15 @@ impl McpTestClient {
     }
 
     fn write_line(&mut self, line: &str) {
-        let stdin = self.stdin.as_mut().expect("stdin exists");
-        stdin.write_all(line.as_bytes()).expect("write to stdin");
-        stdin.write_all(b"\n").expect("write newline to stdin");
-        stdin.flush().expect("flush stdin");
+        self.stdin
+            .as_ref()
+            .expect("stdin exists")
+            .send(line.to_owned())
+            .expect("queue write to stdin");
+        self.written
+            .recv_timeout(self.read_timeout)
+            .expect("bounded write to server stdin")
+            .expect("write to stdin");
     }
 
     fn send_request(&mut self, id: u64, method: &str, params: Value) {
@@ -420,6 +448,32 @@ impl McpTestClient {
             );
         }
     }
+}
+
+#[test]
+fn large_requests_and_responses_do_not_block_stdio() {
+    let mut client = McpTestClient::spawn(&[], vec![]);
+    client.initialize();
+    // Queue a schema response while sending a request much larger than a Windows pipe.
+    client.send_request(2, "tools/list", json!({}));
+    client.send_request(3, "ping", json!({"padding": "x".repeat(2 * 1024 * 1024)}));
+    let deadline = std::time::Instant::now() + client.read_timeout;
+    let (mut schema_received, mut pong_received) = (false, false);
+    while !schema_received || !pong_received {
+        let response = client.read_message_until(deadline);
+        match response["id"].as_u64() {
+            Some(2) => {
+                assert!(response["result"]["tools"].is_array(), "{response}");
+                schema_received = true;
+            }
+            Some(3) => {
+                assert_eq!(response["result"], json!({}), "{response}");
+                pong_received = true;
+            }
+            _ => {}
+        }
+    }
+    client.close_and_assert_purity();
 }
 
 #[test]
@@ -1824,6 +1878,7 @@ mod limits_and_roots {
         file.seek(SeekFrom::Start(ariad_host::convert::ANALYSIS_MAX_BYTES))
             .unwrap();
         file.write_all(&[0xff]).unwrap();
+        drop(file);
         let mut client =
             McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
         client.initialize();

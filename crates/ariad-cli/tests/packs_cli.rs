@@ -46,7 +46,7 @@ impl Fixture {
         fixture
     }
 
-    /// Builds the pack with `ashift __pack manifest --base`, then signs it.
+    /// Build fixtures in-process; exercise the manifest CLI separately below.
     fn build_pack(&self) {
         let dir = self.source.path();
         let program = probe_file_name();
@@ -73,30 +73,20 @@ env = {{ HF_HUB_OFFLINE = "1" }}
             ),
         )
         .unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
-            .args([
-                "__pack",
-                "manifest",
-                "--name",
-                "probe",
-                "--version",
-                "1.0.0",
-            ])
-            .args(["--target", &triple])
-            .arg("--base")
-            .arg(&template)
-            .args(["--dest", &format!("{program}=bin")])
-            .arg("-o")
-            .arg(dir.join("pack.toml"))
-            .arg(format!("{program}={}", dir.join(&program).display()))
-            .arg(format!("LICENSE.txt={}", dir.join("LICENSE.txt").display()))
-            .output()
-            .expect("run __pack manifest");
-        assert!(
-            output.status.success(),
-            "__pack manifest failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let manifest = ariad_host::packs::generate_manifest(&ariad_host::packs::ManifestRequest {
+            name: "probe".to_owned(),
+            version: "1.0.0".to_owned(),
+            target: triple,
+            base: Some(template.clone()),
+            dests: vec![(program.clone(), "bin".to_owned())],
+            components: vec![
+                (Some(program.clone()), dir.join(&program)),
+                (Some("LICENSE.txt".to_owned()), dir.join("LICENSE.txt")),
+            ],
+            ..Default::default()
+        })
+        .expect("generate fixture manifest");
+        fs::write(dir.join("pack.toml"), toml::to_string(&manifest).unwrap()).unwrap();
         fs::remove_file(&template).unwrap();
         self.sign("pack:probe version:1.0.0");
     }
@@ -153,6 +143,41 @@ fn json(output: &Output) -> Value {
 
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn pack_manifest_through_the_cli_preserves_base_fields() {
+    let fixture = Fixture::new();
+    let dir = fixture.source.path();
+    let program = probe_file_name();
+    let manifest_path = dir.join("generated.toml");
+    let output = fixture
+        .ashift()
+        .args([
+            "__pack",
+            "manifest",
+            "--name",
+            "probe",
+            "--version",
+            "1.0.0",
+        ])
+        .args(["--target", &ariad_host::packs::host_targets()[0]])
+        .arg("--base")
+        .arg(dir.join("pack.toml"))
+        .args(["--dest", &format!("{program}=bin")])
+        .arg("-o")
+        .arg(&manifest_path)
+        .arg(format!("{program}={}", dir.join(&program).display()))
+        .arg(format!("LICENSE.txt={}", dir.join("LICENSE.txt").display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let actual =
+        ariad_host::packs::Manifest::parse(&fs::read_to_string(manifest_path).unwrap()).unwrap();
+    let expected =
+        ariad_host::packs::Manifest::parse(&fs::read_to_string(dir.join("pack.toml")).unwrap())
+            .unwrap();
+    assert_eq!(actual, expected);
 }
 
 #[test]
