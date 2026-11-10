@@ -184,7 +184,7 @@ impl DocxStyles {
                 // Pandoc's default Table style refers to this built-in base but
                 // can omit its declaration, including when no custom styles exist.
                 // Declare the empty inherited baseline in generated packages;
-                // imported packages still undergo strict reference validation.
+                // the reader also accepts its omission for imported table styles.
                 if !xml.contains("w:styleId=\"TableNormal\"") {
                     definitions.push_str("<w:style w:type=\"table\" w:styleId=\"TableNormal\"><w:name w:val=\"Normal Table\"/></w:style>");
                 }

@@ -382,9 +382,13 @@ fn resolve_definitions(
             if !seen.insert(raw) {
                 return Err("DOCX style inheritance cycle".into());
             }
-            let parent = definitions
-                .get(raw)
-                .ok_or("dangling DOCX basedOn reference")?;
+            let Some(parent) = definitions.get(raw) else {
+                // Pandoc may omit the empty built-in table baseline.
+                if def.kind == Kind::Table && raw == "TableNormal" {
+                    break;
+                }
+                return Err("dangling DOCX basedOn reference".into());
+            };
             if parent.kind != def.kind {
                 return Err("DOCX basedOn has a different style type".into());
             }

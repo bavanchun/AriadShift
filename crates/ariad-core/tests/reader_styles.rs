@@ -140,6 +140,40 @@ fn paragraph_content(block: &Block) -> &[Inline] {
 }
 
 #[test]
+fn docx_styles_xml_accepts_implicit_table_normal_base() {
+    let bytes = styles_package(
+        r#"<w:style w:default="1" w:styleId="Table" w:type="table"><w:name w:val="Table"/><w:basedOn w:val="TableNormal"/></w:style>"#,
+    );
+    let (sheet, warnings) = read_docx_styles(&bytes, &Limits::local()).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(sheet.table.len(), 1);
+    assert_eq!(sheet.table[&id("Table")], Default::default());
+    assert_eq!(sheet.defaults.table, Default::default());
+}
+
+#[test]
+fn docx_styles_xml_rejects_table_normal_base_for_non_table_styles() {
+    for kind in ["paragraph", "character"] {
+        for (base, error) in [
+            ("", "dangling DOCX basedOn reference"),
+            (
+                r#"<w:style w:type="table" w:styleId="TableNormal"><w:name w:val="Normal Table"/></w:style>"#,
+                "DOCX basedOn has a different style type",
+            ),
+        ] {
+            let bytes = styles_package(&format!(
+                r#"{base}<w:style w:type="{kind}" w:styleId="A"><w:basedOn w:val="TableNormal"/></w:style>"#
+            ));
+            assert_eq!(
+                read_docx_styles(&bytes, &Limits::local()).unwrap_err(),
+                error,
+                "{kind} style with base {base:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn docx_styles_xml_rejects_cycles_duplicate_ids_and_expansion_limits() {
     for styles in [
         r#"<w:style w:type="paragraph" w:styleId="A"><w:basedOn w:val="B"/></w:style><w:style w:type="paragraph" w:styleId="B"><w:basedOn w:val="A"/></w:style>"#,
@@ -148,6 +182,7 @@ fn docx_styles_xml_rejects_cycles_duplicate_ids_and_expansion_limits() {
         r#"<w:style w:type="paragraph" w:styleId="A"/><w:style w:type="paragraph" w:styleId="A"/>"#,
         r#"<w:style w:type="paragraph" w:styleId="A"><w:name w:val="Same"/></w:style><w:style w:type="paragraph" w:styleId="B"><w:name w:val="Same"/></w:style>"#,
         r#"<w:style w:type="paragraph" w:styleId="A"><w:basedOn w:val="Missing"/></w:style>"#,
+        r#"<w:style w:type="table" w:styleId="A"><w:basedOn w:val="Missing"/></w:style>"#,
         r#"<w:style w:type="paragraph" w:styleId="A"><w:rPr><w:sz w:val="NaN"/></w:rPr></w:style>"#,
     ] {
         assert!(
