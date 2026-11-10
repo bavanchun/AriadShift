@@ -252,11 +252,39 @@ impl Drop for Cleanup {
 fn remove_path(path: &Path) {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => {
-            let _ = fs::remove_dir_all(path);
+            let _ = retry_removal(|| fs::remove_dir_all(path));
         }
         Ok(_) => fetch::remove_file_quietly(path),
         Err(_) => {}
     }
+}
+
+/// Windows scanners and recently exited engines can briefly retain non-delete-shared handles.
+#[cfg(windows)]
+fn retry_removal(mut operation: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    let started = std::time::Instant::now();
+    let mut backoff = Duration::from_millis(25);
+    loop {
+        match operation() {
+            Err(error)
+                if (matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::DirectoryNotEmpty
+                ) || error.raw_os_error() == Some(32))
+                    && started.elapsed() < Duration::from_secs(5) =>
+            {
+                let remaining = Duration::from_secs(5).saturating_sub(started.elapsed());
+                std::thread::sleep(backoff.min(remaining));
+                backoff = (backoff * 2).min(Duration::from_millis(500));
+            }
+            result => return result,
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn retry_removal(mut operation: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    operation()
 }
 
 /// Holds the per-pack lock; released when dropped.
@@ -1559,8 +1587,9 @@ pub fn remove(
     for version in &targets {
         let dir = layout.version_dir(name, version);
         let trash = layout.staging().join(format!("{name}.{}.old", new_id()));
-        fs::rename(&dir, &trash).map_err(|error| PackError::io("could not remove", &dir, error))?;
-        let _ = fs::remove_dir_all(&trash);
+        retry_removal(|| fs::rename(&dir, &trash))
+            .map_err(|error| PackError::io("could not remove", &dir, error))?;
+        let _ = retry_removal(|| fs::remove_dir_all(&trash));
         fetch::remove_file_quietly(&layout.manifest_record(name, version));
     }
     let remaining: BTreeSet<&String> = installed.iter().filter(|v| !targets.contains(v)).collect();
@@ -1580,6 +1609,69 @@ pub fn remove(
         removed: targets,
         active,
     })
+}
+
+#[cfg(all(test, windows))]
+mod removal_tests {
+    use super::*;
+    use std::os::windows::fs::OpenOptionsExt;
+
+    fn without_delete_sharing(path: &Path) -> File {
+        OpenOptions::new()
+            .read(true)
+            .share_mode(3) // FILE_SHARE_READ | FILE_SHARE_WRITE
+            .custom_flags(0x0200_0000) // FILE_FLAG_BACKUP_SEMANTICS, also permits directories
+            .open(path)
+            .unwrap()
+    }
+
+    #[test]
+    fn rename_waits_for_a_directory_handle_to_close() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("version");
+        let trash = temp.path().join("trash");
+        fs::create_dir(&source).unwrap();
+        let handle = without_delete_sharing(&source);
+        assert!(fs::rename(&source, &trash).is_err());
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            drop(handle);
+        });
+        retry_removal(|| fs::rename(&source, &trash)).unwrap();
+        release.join().unwrap();
+        assert!(!source.exists());
+        assert!(trash.is_dir());
+    }
+
+    #[test]
+    fn deletion_waits_for_a_file_handle_to_close() {
+        let temp = tempfile::tempdir().unwrap();
+        let trash = temp.path().join("trash");
+        fs::create_dir(&trash).unwrap();
+        let path = trash.join("engine.exe");
+        fs::write(&path, b"held open").unwrap();
+        let handle = without_delete_sharing(&path);
+        assert!(fs::remove_dir_all(&trash).is_err());
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            drop(handle);
+        });
+        retry_removal(|| fs::remove_dir_all(&trash)).unwrap();
+        release.join().unwrap();
+        assert!(!trash.exists());
+    }
+
+    #[test]
+    fn persistent_sharing_violation_returns_an_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("version");
+        fs::create_dir(&source).unwrap();
+        let _handle = without_delete_sharing(&source);
+        let error = retry_removal(|| fs::rename(&source, temp.path().join("trash")))
+            .expect_err("a persistent lock must not be hidden");
+        assert!(matches!(error.raw_os_error(), Some(5 | 32)));
+        assert!(source.is_dir());
+    }
 }
 
 #[cfg(test)]
