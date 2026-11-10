@@ -43,13 +43,26 @@ To prevent excessive latency during large test runs, TEDS is capped at tables wi
 - **Furniture Exclusion Policy:** DOCX header and footer furniture elements (such as running headers, page numbers, and copyright notices) are excluded from scoring on both sides (omitted from authored truth companions and ignored in `from_ir`). Scoring focuses strictly on body content.
 - **List Nesting Depth:** List structures capture ordered/unordered type and item text sequences in document order. Multi-level nested list hierarchy depth is a documented limitation in 1a and is flattened sequentially in canonical form.
 
-#### Overall Fidelity (`fidelity`)
-Combines text accuracy, heading hierarchy preservation, and table structure:
+#### Legacy Fidelity
+The retained `score_fixture` diagnostic combines text accuracy, heading hierarchy preservation, and table structure. Existing committed measurements use this formula until the full corpus is rerun:
 - **Documents without tables:**
   $$\text{fidelity} = \frac{(1.0 - \text{text\_cer}) + (1.0 - \text{heading\_ted})}{2.0}$$
 - **Documents with tables:**
   $$\text{fidelity} = \frac{(1.0 - \text{text\_cer}) + (1.0 - \text{heading\_ted}) + \text{teds}}{3.0}$$
 Each term is clamped to $[0.0, 1.0]$. The edge score is the arithmetic mean across all scored fixtures, rounded to 3 decimal places.
+
+#### Measured Fidelity (`fidelity/2`)
+New runs use `score_fixture_v2`. Capability fidelity is the mean of applicable text accuracy `max(0, 1 - CER)`, structure F1, style accuracy and layout IoU. Raw CER can exceed one; an empty reference has CER zero against empty text and one against nonempty text. Scores from different metric versions require a full rerun before comparison. Legacy CER and diagnostic formulas remain available.
+
+Python `ariad_bench.fidelity.{observe,score,compare}` and Rust `ariad_core::fidelity::{observe,score,compare}` independently consume the [original shared vectors](../bench/results/fidelity-v2/conformance.json). Tests never invoke Cargo from Python. Observations cover the semantic body, excluding furniture. Authored truth containing both `canonical` and `ir` uses the authored IR for v2 observations.
+
+Alignment consumes exact NFC/whitespace-normalized semantic keys once, in traversal order. IDs locate geometry within an import. Heading keys include level ancestry and text; lists include ordered state and item text; tables include rows, cell spans, header flags and text. Per-kind F1 is `2 * matched / (reference + hypothesis)`. Structure F1 is the macro mean of kinds present on either side. Missing and duplicate structures reduce recall and precision; empty kinds are null. Conservative exact-text alignment for style runs and boxes can lose credit when text changes even if appearance remains similar.
+
+Styles use the bounded cascade: defaults, paragraph inheritance, named styles, direct overrides and nested character styles. Adjacent identical styles within a block coalesce. Size tolerance is 0.5 pt inclusive, numeric weight must match exactly and RGB colours may differ by at most 2 per channel. Family, italic, underline and strike are measured only when observed in the reference; explicit false remains evidence. Each reference-supported attribute is one denominator item. Missing hypothesis evidence is an error. No observed family means no family accuracy claim.
+
+Layout measures actual intersection/union in points with top-left origin. Alignment prefers equal text on the same page, then consumes remaining equal-text boxes; wrong-page matches score zero. The mean includes all reference boxes; missing and degenerate boxes contribute zero. Nonempty source-map fragments take precedence over single layout boxes. Missing reference style/layout is null with a reason. Reports retain reference/hypothesis/matched/observed counts. Scoring caps each observation kind at 4,096, text at 100,000 Unicode characters and CER work at four million cells after trimming equal prefixes/suffixes. Observation extraction also bounds the block/cell/inline walk before copying text; exceeding a budget is explicitly unavailable.
+
+Per-file evidence records `metric_version`, `basis`, components and coverage. Benchmark basis is `independent_reference`. Runtime `runtime_readback` measures preservation after input extraction and does not establish reader accuracy. Detailed fields never enter the planner metrics schema. Failed conversion and unavailable scoring contribute zero scalar fidelity and explicit reasons rather than disappearing from sample denominators.
 
 #### Editability (`editability`)
 Measures the proportion of structural blocks in the reference document that survive in the converted document as the same structure kind, using text-matched overlap:
@@ -96,9 +109,10 @@ For synthetic and generated fixtures (DOCX, HTML, EPUB), `fixtures/gen` generate
 For native Markdown fixtures, reference canonical documents are parsed using Pandoc's GFM reader (`pandoc -f gfm -t json`). This provides an independent reference standard from AriadShift's `comrak`-based native Markdown reader.
 
 ### 3.3 Unscored Fixtures
-Fixtures are marked unscored in two situations:
+Fixtures are marked unscored in the following situations:
 - **Structural constructs exceeding canonical form:** Fixtures containing structures beyond canonical representation (e.g. `edge-case-merged-table.docx`, which features a nested table inside a merged cell) are marked unscored with an explicit `unscored_reason`.
 - **Public documents without authored ground truth:** External public documents lacking independent authored ground truth (such as government circulars like `vn-tt-28-2012-conformity.docx`) are excluded from reader-edge fidelity scoring and recorded as unscored.
+- **Partial preservation assertions:** The editor Markdown/HTML companions assert selected semantics and styles without complete canonical or IR scoring truth. Their benchmark components remain explicitly unavailable; the strict editor suite still verifies their preservation assertions. Their authored truth is never expanded from the reader's own output.
 
 ---
 
@@ -164,8 +178,10 @@ just pandoc
   ```
 - **Run benchmark on specific edges or fixtures:**
   ```bash
-  uv run --package ariad-bench python -m ariad_bench run --edges "html->ariad-ir+json" --repeat 1 --out target/scratch/cap.json
+  uv run --package ariad-bench python -m ariad_bench run --edges "html->ariad-ir+json" --repeat 1 --out target/scratch/cap.json --fidelity-out target/scratch/fidelity.json
   ```
+
+`run --fidelity-out PATH` defaults to `bench/results/fidelity-v2/base.json`; `heavy` defaults to `bench/results/fidelity-v2/heavy.json`. For a scratch heavy run, first copy capabilities to scratch `--out`, because heavy updates that seed. A scratch `--fidelity-out` also redirects the default legacy heavy evidence path; an explicit non-default `--evidence` remains honored. Failures preserve attempts and completed samples. Full corpus regeneration requires integrated readers, writers and accepted truth; synthetic vectors do not establish corpus acceptance.
 
 ---
 
@@ -221,3 +237,9 @@ PDF writer quality uses Rust PDF read-back, so its heading/table limitations als
 `just bench-report` generates [the public report](bench-report.md) from capabilities plus persisted heavy-route measurements. `just bench-report --check` detects stale output. The scheduled, manual or `bench`-labelled [benchmark workflow](../.github/workflows/bench.yml) installs LibreOffice and Tesseract, prepares cached Docling models, runs real-engine conformance and publishes the capabilities, route evidence and generated report as workflow artifacts. Ordinary three-platform CI runs the benchmark tests and verifies the committed report without downloading models.
 
 The benchmark license gate uses the approved SPDX set from the [Docling pack license gate](../engines/docling/pack/licenses.py), including NumPy's `0BSD` and `Zlib` terms. Pack-specific MPL exceptions are not inherited. The pack's reviewed PDFium normalization applies only to `pypdfium2`'s exact composite license descriptor; explicit expressions retain their existing checks. The [upstream licensing documentation](https://pypdfium2.readthedocs.io/en/stable/readme.html#licensing) distinguishes the Apache-2.0/BSD-3-Clause code from documentation and examples. PDFium is a development dependency here; its binaries and upstream examples are not added to the CLI or benchmark artifacts.
+
+## Local Stirling comparison
+
+`uv run --directory bench python -m ariad_bench.competitors --repeat 3` runs the pinned local Stirling 3.3.0 harness in both directions on the authored PDF/DOCX pair. Add `--preflight-only` to verify prerequisites. `ARIAD_RUN_STIRLING_BENCH=1 uv run --directory bench pytest tests/test_competitors.py -v` includes the real Docker integration. The thin adapter `ariad_bench.competitors:score` calls `ariad_bench.fidelity:compare` on authored IR truth and actual IR read-back, then exposes the table component and unchanged coverage counts to the competitive renderer. The lower-level `fidelity:score` expects observations. Results live in `bench/results/competitors/stirling-v3.3.0.json`; `just bench-report` includes them. The harness records every paired attempt and verifies cleanup of its labeled containers and networks. [Harness policy](../bench/competitors/README.md) owns image provenance and isolation details.
+
+The unchanged competitive gates are CER(A) ≤ CER(S), table F1(A) ≥ table F1(S), style(A) ≥ 1.10 × style(S), and layout IoU(A) ≥ layout IoU(S). Reports print the relative style result and percentage-point delta. A failed or impossible gate requires an owner decision; it is never silently relaxed. A single authored pair limits generalization beyond that corpus.

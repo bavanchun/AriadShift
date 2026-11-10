@@ -16,7 +16,7 @@ use super::{
     encoding::Encodings,
     font::{CMapCache, Font, normalize_into},
     lexer::{Token, next_token, skip_array, skip_dict, skip_inline_image},
-    objects::{Budget, get_array, get_dict, get_name, number, resolve},
+    objects::{Budget, get, get_array, get_dict, get_name, number, resolve},
 };
 
 /// Most content-stream operators interpreted for one page, including its form XObjects.
@@ -117,14 +117,18 @@ pub(super) struct Glyph {
     pub(super) text_end: u32,
     /// Index into [`DocState::styles`].
     pub(super) font: u32,
+    pub(super) color: Option<[u8; 3]>,
     pub(super) flags: u8,
 }
 
 /// Bold and italic flags of a loaded font.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct FontStyle {
     pub(super) bold: bool,
     pub(super) italic: bool,
+    pub(super) family: Option<Rc<str>>,
+    pub(super) weight: Option<u16>,
+    pub(super) italic_evidence: Option<bool>,
 }
 
 /// What one page paints.
@@ -135,6 +139,7 @@ pub(super) struct PageContent {
     pub(super) images: u32,
     pub(super) unmapped: u64,
     pub(super) truncated: bool,
+    pub(super) unknown_color: bool,
 }
 
 impl PageContent {
@@ -159,6 +164,7 @@ pub(super) struct DocState<'d> {
     encodings: Encodings,
     cmaps: CMapCache,
     font_keys: HashMap<FontKey, u32>,
+    icc_spaces: HashMap<FontKey, ColorSpace>,
     fonts: Vec<Rc<Font>>,
     pub(super) styles: Vec<FontStyle>,
     /// Streams decoded once; the second use caches them.
@@ -174,6 +180,7 @@ impl<'d> DocState<'d> {
             encodings: Encodings::default(),
             cmaps: CMapCache::new(),
             font_keys: HashMap::new(),
+            icc_spaces: HashMap::new(),
             fonts: Vec::new(),
             styles: Vec::new(),
             seen_streams: HashSet::new(),
@@ -231,10 +238,76 @@ impl<'d> DocState<'d> {
         self.styles.push(FontStyle {
             bold: font.bold,
             italic: font.italic,
+            family: font.family_name.clone(),
+            weight: font.weight,
+            italic_evidence: font.italic_evidence,
         });
         self.fonts.push(Rc::new(font));
         self.font_keys.insert(key, index);
         Ok(index)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ColorSpace {
+    Gray,
+    Rgb,
+    Cmyk,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Paint {
+    space: ColorSpace,
+    color: Option<[u8; 3]>,
+}
+
+impl Paint {
+    const fn new(space: ColorSpace) -> Self {
+        Self {
+            space,
+            color: match space {
+                ColorSpace::Unknown => None,
+                _ => Some([0, 0, 0]),
+            },
+        }
+    }
+
+    fn set(&mut self, values: &[Operand]) {
+        let mut components = [0.0; 4];
+        let count = match self.space {
+            ColorSpace::Gray => 1,
+            ColorSpace::Rgb => 3,
+            ColorSpace::Cmyk => 4,
+            ColorSpace::Unknown => {
+                self.color = None;
+                return;
+            }
+        };
+        if values.len() != count {
+            self.color = None;
+            return;
+        }
+        for (slot, value) in components.iter_mut().zip(values) {
+            let Some(value) = value.number().filter(|v| v.is_finite()) else {
+                self.color = None;
+                return;
+            };
+            *slot = value.clamp(0.0, 1.0);
+        }
+        let [a, b, c, k] = components;
+        // DeviceCMYK has no profile; use the deterministic subtractive device conversion.
+        let rgb = match self.space {
+            ColorSpace::Gray => [a; 3],
+            ColorSpace::Rgb => [a, b, c],
+            ColorSpace::Cmyk => [
+                (1.0 - a) * (1.0 - k),
+                (1.0 - b) * (1.0 - k),
+                (1.0 - c) * (1.0 - k),
+            ],
+            ColorSpace::Unknown => unreachable!(),
+        };
+        self.color = Some(rgb.map(|v| (v * 255.0).round() as u8));
     }
 }
 
@@ -249,6 +322,8 @@ struct GState {
     leading: f64,
     rise: f64,
     render_mode: i64,
+    fill: Paint,
+    stroke: Paint,
 }
 
 impl GState {
@@ -263,6 +338,8 @@ impl GState {
             leading: 0.0,
             rise: 0.0,
             render_mode: 0,
+            fill: Paint::new(ColorSpace::Gray),
+            stroke: Paint::new(ColorSpace::Gray),
         }
     }
 }
@@ -343,6 +420,10 @@ pub(super) fn interpret_page<'d>(
         operators: 0,
         scratch: String::new(),
     };
+    let default = Paint::new(interpreter.color_space(b"DeviceGray")?);
+    interpreter.gstate.fill = default;
+    interpreter.gstate.stroke = default;
+    interpreter.out.unknown_color = default.color.is_none();
     interpreter.run()?;
     Ok(interpreter.out)
 }
@@ -432,7 +513,7 @@ impl Interpreter<'_, '_> {
         let start = self.operands.len().checked_sub(N)?;
         let mut values = [0.0; N];
         for (slot, operand) in values.iter_mut().zip(&self.operands[start..]) {
-            *slot = operand.number()?;
+            *slot = operand.number().filter(|v| v.is_finite())?;
         }
         Some(values)
     }
@@ -441,6 +522,63 @@ impl Interpreter<'_, '_> {
         match operator {
             b"q" => self.save(),
             b"Q" => self.restore(),
+            b"g" | b"rg" | b"k" | b"G" | b"RG" | b"K" => {
+                let name: &[u8] = match operator {
+                    b"g" | b"G" => b"DeviceGray",
+                    b"rg" | b"RG" => b"DeviceRGB",
+                    _ => b"DeviceCMYK",
+                };
+                let space = self.color_space(name)?;
+                let mut paint = Paint::new(space);
+                paint.set(&self.operands);
+                self.out.unknown_color |= paint.color.is_none();
+                if operator[0].is_ascii_uppercase() {
+                    self.gstate.stroke = paint;
+                } else {
+                    self.gstate.fill = paint;
+                }
+            }
+            b"cs" | b"CS" => {
+                let name = match self.operands.as_slice() {
+                    [Operand::Name(name)] => Some(name.clone()),
+                    _ => None,
+                };
+                let space = match name {
+                    Some(name) => self.color_space(&name)?,
+                    None => ColorSpace::Unknown,
+                };
+                let paint = Paint::new(space);
+                self.out.unknown_color |= paint.color.is_none();
+                if operator == b"CS" {
+                    self.gstate.stroke = paint;
+                } else {
+                    self.gstate.fill = paint;
+                }
+            }
+            b"sc" | b"scn" | b"SC" | b"SCN" => {
+                let paint = if operator[0].is_ascii_uppercase() {
+                    &mut self.gstate.stroke
+                } else {
+                    &mut self.gstate.fill
+                };
+                paint.set(&self.operands);
+                self.out.unknown_color |= paint.color.is_none();
+            }
+            b"gs" => {
+                if let [Operand::Name(name)] = self.operands.as_slice()
+                    && let Some(dict) = self
+                        .frames
+                        .last()
+                        .and_then(|frame| frame.resources)
+                        .and_then(|r| get_dict(self.state.doc, r, b"ExtGState"))
+                        .and_then(|r| get_dict(self.state.doc, r, name))
+                    && let Some([font, size]) = get_array(self.state.doc, dict, b"Font")
+                    && let Some(size) = resolve(self.state.doc, size).and_then(number)
+                {
+                    self.gstate.font = Some(self.state.font_index(font)?);
+                    self.gstate.font_size = size;
+                }
+            }
             b"cm" => {
                 if let Some(values) = self.numbers::<6>() {
                     self.gstate.ctm = Matrix::from_operands(values).then(&self.gstate.ctm);
@@ -565,6 +703,78 @@ impl Interpreter<'_, '_> {
         } else if let Some(frame) = self.frames.last_mut() {
             frame.overflow += 1;
         }
+    }
+
+    /// Resolve device spaces, one resource alias and evidenced matrix/TRC sRGB ICC.
+    /// Other profiles, calibrated, indexed, separation and pattern spaces stay unknown.
+    fn color_space(&mut self, name: &[u8]) -> Result<ColorSpace, ReadError> {
+        let doc = self.state.doc;
+        let resources = self
+            .frames
+            .last()
+            .and_then(|frame| frame.resources)
+            .and_then(|r| get_dict(doc, r, b"ColorSpace"));
+        let device = |name: &[u8]| match name {
+            b"DeviceGray" => Some((ColorSpace::Gray, b"DefaultGray".as_slice())),
+            b"DeviceRGB" => Some((ColorSpace::Rgb, b"DefaultRGB".as_slice())),
+            b"DeviceCMYK" => Some((ColorSpace::Cmyk, b"DefaultCMYK".as_slice())),
+            _ => None,
+        };
+        let resolved = if device(name).is_some() {
+            None
+        } else {
+            resources.and_then(|r| get(doc, r, name))
+        };
+        let named = match resolved {
+            Some(Object::Name(alias)) => alias.as_slice(),
+            _ => name,
+        };
+        let Some((space, default)) = device(named) else {
+            return self.icc_space(resolved);
+        };
+        match resources.and_then(|r| get(doc, r, default)) {
+            None => Ok(space),
+            Some(Object::Name(name)) => Ok(device(name).map_or(ColorSpace::Unknown, |v| v.0)),
+            object => self.icc_space(object),
+        }
+    }
+
+    fn icc_space(&mut self, object: Option<&Object>) -> Result<ColorSpace, ReadError> {
+        let Some(Object::Array(values)) = object else {
+            return Ok(ColorSpace::Unknown);
+        };
+        let [Object::Name(kind), profile] = values.as_slice() else {
+            return Ok(ColorSpace::Unknown);
+        };
+        if kind != b"ICCBased" {
+            return Ok(ColorSpace::Unknown);
+        }
+        let Some(Object::Stream(stream)) = resolve(self.state.doc, profile) else {
+            return Ok(ColorSpace::Unknown);
+        };
+        if get(self.state.doc, &stream.dict, b"N").and_then(number) != Some(3.0) {
+            return Ok(ColorSpace::Unknown);
+        }
+        let key = profile
+            .as_reference()
+            .map(FontKey::Reference)
+            .unwrap_or_else(|_| FontKey::Direct(std::ptr::from_ref(stream) as usize));
+        if let Some(space) = self.state.icc_spaces.get(&key) {
+            return Ok(*space);
+        }
+        self.state.budget.charge_work(64)?;
+        let recognized = self
+            .state
+            .budget
+            .decode_capped(stream, super::icc::MAX_PROFILE_BYTES)?
+            .is_some_and(|data| super::icc::is_srgb(&data));
+        let space = if recognized {
+            ColorSpace::Rgb
+        } else {
+            ColorSpace::Unknown
+        };
+        self.state.icc_spaces.insert(key, space);
+        Ok(space)
     }
 
     fn restore(&mut self) {
@@ -759,6 +969,15 @@ impl Interpreter<'_, '_> {
         }
         let end = self.out.text.len();
         self.state.budget.charge_glyph(end - start)?;
+        // Cover the extra glyph/span metadata and worst-case family copy in the IR.
+        self.state
+            .budget
+            .charge_work(96 + font.family_name.as_ref().map_or(0, |name| name.len()))?;
+        let color = match self.gstate.render_mode {
+            0 | 2 | 4 | 6 => self.gstate.fill.color,
+            1 | 5 => self.gstate.stroke.color,
+            _ => None,
+        };
         self.out.glyphs.push(Glyph {
             x,
             y,
@@ -769,6 +988,7 @@ impl Interpreter<'_, '_> {
             text_start: u32::try_from(start).unwrap_or(u32::MAX),
             text_end: u32::try_from(end).unwrap_or(u32::MAX),
             font: index,
+            color,
             flags,
         });
         Ok(())

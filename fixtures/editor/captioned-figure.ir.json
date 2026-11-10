@@ -1,0 +1,182 @@
+{
+  "assets": {
+    "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266": {
+      "bytes": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAMCAIAAADkharWAAAAKUlEQVR4nGN89vk9AymAiSTVdNHAAmcZZcbiUXdu+mJ6OYlkDYzDIB4A1DoIqeyqtdgAAAAASUVORK5CYII=",
+      "media_type": "image/png"
+    }
+  },
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Editable neighbour before captioned-figure.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b2ea8c2439fc452f63279e01bc6a70d970cbc684b08340789688c28e6215bbca8",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Editor case: captioned-figure",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "bfbbcd5977c399125639ee84ae458f2ebb0c244aeb6956fee54aaa4fa8d37fb2b",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "asset": {
+        "id": "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266",
+        "type": "asset"
+      },
+      "caption": [
+        {
+          "text": "Original bench diagram",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": " at dawn",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "direct": {},
+      "id": "ba71edb2d8b4ee0bd46b1a14602260897b1552fc021dc944ed507cd720cbb5a57",
+      "type": "figure"
+    },
+    {
+      "content": [
+        {
+          "text": "Editable neighbour after captioned-figure.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b80e01290e6014d7606923f400144fc13cbb56d5809024825eabc1c151014486a",
+      "type": "paragraph"
+    }
+  ],
+  "layout": {
+    "blocks": {
+      "b2ea8c2439fc452f63279e01bc6a70d970cbc684b08340789688c28e6215bbca8": {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      },
+      "b80e01290e6014d7606923f400144fc13cbb56d5809024825eabc1c151014486a": {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      },
+      "ba71edb2d8b4ee0bd46b1a14602260897b1552fc021dc944ed507cd720cbb5a57": {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      },
+      "bfbbcd5977c399125639ee84ae458f2ebb0c244aeb6956fee54aaa4fa8d37fb2b": {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    },
+    "pages": [
+      {
+        "height": 842.0,
+        "page_no": 1,
+        "width": 595.0
+      }
+    ]
+  },
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "ariad-ir+json",
+    "subject": "Original editor preservation corpus",
+    "title": "Editor preservation: captioned-figure"
+  },
+  "provenance": {
+    "org.ariadshift.editor-corpus": {
+      "case": "captioned-figure",
+      "font_permission_evidence": {
+        "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+      },
+      "source": "original-authoring"
+    }
+  },
+  "source_map": {
+    "b2ea8c2439fc452f63279e01bc6a70d970cbc684b08340789688c28e6215bbca8": [
+      {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b80e01290e6014d7606923f400144fc13cbb56d5809024825eabc1c151014486a": [
+      {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      }
+    ],
+    "ba71edb2d8b4ee0bd46b1a14602260897b1552fc021dc944ed507cd720cbb5a57": [
+      {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bfbbcd5977c399125639ee84ae458f2ebb0c244aeb6956fee54aaa4fa8d37fb2b": [
+      {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    ]
+  },
+  "version": "ariad-ir/2"
+}

@@ -26,7 +26,64 @@ expression: normalize_stdout(&output)
     "footnotes": 0,
     "words": 160
   },
-  "warnings": [],
+  "warnings": [
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    }
+  ],
   "reachable": [
     "ariad-ir+json",
     "epub",

@@ -30,6 +30,16 @@ class ReferenceResolutionError(RuntimeError):
 INDEPENDENT_READBACK_FORMATS = {"txt", "csv", "xlsx", "odt", "rtf", "pptx"}
 
 
+def editor_assertions_only(data: dict[str, Any]) -> bool:
+    """Preservation assertions do not describe a complete scoring reference."""
+    return (
+        data.get("schema") == "ariad-editor-truth/1"
+        and isinstance(data.get("semantics"), dict)
+        and not isinstance(data.get("canonical"), dict)
+        and not isinstance(data.get("ir"), dict)
+    )
+
+
 def _xlsx_for_pandoc(path: Path, directory: Path) -> Path:
     """Express inline strings as shared strings for Pandoc's XLSX reader.
 
@@ -146,7 +156,7 @@ def get_reference_for_fixture(
         comp_path = root / comp.get("path", "")
         if comp_path.name.endswith(".truth.json") and comp_path.is_file():
             data = json.loads(comp_path.read_text(encoding="utf-8"))
-            if data.get("unscored") is True:
+            if data.get("unscored") is True or editor_assertions_only(data):
                 return None
             return normalize(data)
 
@@ -155,7 +165,7 @@ def get_reference_for_fixture(
     direct_companion = fixture_path.parent / f"{fixture_id}.truth.json"
     if direct_companion.is_file():
         data = json.loads(direct_companion.read_text(encoding="utf-8"))
-        if data.get("unscored") is True:
+        if data.get("unscored") is True or editor_assertions_only(data):
             return None
         return normalize(data)
 

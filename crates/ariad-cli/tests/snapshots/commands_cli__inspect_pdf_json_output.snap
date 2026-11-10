@@ -37,6 +37,11 @@ expression: normalize_stdout(&output)
     "needs_ocr": false,
     "encrypted": false
   },
-  "warnings": [],
+  "warnings": [
+    {
+      "code": "styles_dropped",
+      "message": "The document could not be converted without a warning."
+    }
+  ],
   "reachable": []
 }

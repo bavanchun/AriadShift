@@ -1,0 +1,214 @@
+{
+  "case": "inline-math",
+  "features": [
+    "inline-math"
+  ],
+  "future_gates": [
+    "tiptap-native-roundtrip",
+    "textkit-native-roundtrip",
+    "edit-export-fidelity"
+  ],
+  "ir": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "text": "Editable neighbour before inline-math.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "ba585ad0118c4698bc1e1a01d3e15fbc20066ff7329fddc426131cf02d89e732d",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Editor case: inline-math",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b55cf1b31e18b5bb6a584a273a3305453a70bfce72c204165c022010c9466f61b",
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Inline formula ",
+            "type": "text"
+          },
+          {
+            "display": false,
+            "tex": "x^2 + \\alpha  = 5",
+            "type": "math"
+          },
+          {
+            "text": " ends here.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "bf82d5d17f53b8c0d4967541009b40c1ab284c02e2e9008a2aec60b56ebbf4de4",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Editable neighbour after inline-math.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "bb0fab0a435ed1622da4db22f432d9bffc02df16c5a301a1f09608937f7dec3bf",
+        "type": "paragraph"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "b55cf1b31e18b5bb6a584a273a3305453a70bfce72c204165c022010c9466f61b": {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        },
+        "ba585ad0118c4698bc1e1a01d3e15fbc20066ff7329fddc426131cf02d89e732d": {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        },
+        "bb0fab0a435ed1622da4db22f432d9bffc02df16c5a301a1f09608937f7dec3bf": {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        },
+        "bf82d5d17f53b8c0d4967541009b40c1ab284c02e2e9008a2aec60b56ebbf4de4": {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 842.0,
+          "page_no": 1,
+          "width": 595.0
+        }
+      ]
+    },
+    "meta": {
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "language": "en",
+      "source_format": "ariad-ir+json",
+      "subject": "Original editor preservation corpus",
+      "title": "Editor preservation: inline-math"
+    },
+    "provenance": {
+      "org.ariadshift.editor-corpus": {
+        "case": "inline-math",
+        "font_permission_evidence": {
+          "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+        },
+        "source": "original-authoring"
+      }
+    },
+    "source_map": {
+      "b55cf1b31e18b5bb6a584a273a3305453a70bfce72c204165c022010c9466f61b": [
+        {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        }
+      ],
+      "ba585ad0118c4698bc1e1a01d3e15fbc20066ff7329fddc426131cf02d89e732d": [
+        {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        }
+      ],
+      "bb0fab0a435ed1622da4db22f432d9bffc02df16c5a301a1f09608937f7dec3bf": [
+        {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        }
+      ],
+      "bf82d5d17f53b8c0d4967541009b40c1ab284c02e2e9008a2aec60b56ebbf4de4": [
+        {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        }
+      ]
+    },
+    "version": "ariad-ir/2"
+  },
+  "layout": {
+    "first_bbox": {
+      "bottom": 76.0,
+      "left": 54.0,
+      "right": 540.0,
+      "top": 60.0
+    },
+    "first_block_source_fragments": 1,
+    "page_height_pt": 842.0,
+    "page_width_pt": 595.0,
+    "reference_kind": "authored-ir-geometry",
+    "section_count": 0
+  },
+  "origin": "independent-original-specification",
+  "preservation": [
+    "adjacent-text-edit",
+    "stable-id-reorder",
+    "opaque-byte-equality",
+    "explicit-delete-removes-payload",
+    "ambiguous-orphan-is-reported"
+  ],
+  "schema": "ariad-editor-truth/1",
+  "semantics": {
+    "editable_after": "Editable neighbour after inline-math.",
+    "editable_before": "Editable neighbour before inline-math.",
+    "inline_math": "x^2 + \\alpha  = 5"
+  },
+  "styles": {
+    "applicable": false
+  }
+}

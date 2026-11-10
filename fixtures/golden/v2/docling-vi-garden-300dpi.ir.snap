@@ -1,0 +1,69 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách",
+          "type": "text"
+        }
+      ],
+      "id": "bb66259cc658d3045be8f005df0decb55134c83e7db5b207beed96fbf88b82b17",
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.",
+          "type": "text"
+        }
+      ],
+      "id": "bff011a60a820a887d9588574d8ee594a6a49065ef3314b0712954d1fa08b70f7",
+      "type": "paragraph"
+    }
+  ],
+  "layout": {
+    "blocks": {
+      "bb66259cc658d3045be8f005df0decb55134c83e7db5b207beed96fbf88b82b17": {
+        "bbox": {
+          "bottom": 77.0,
+          "left": 224.333,
+          "right": 369.333,
+          "top": 61.333
+        },
+        "page_no": 1
+      },
+      "bff011a60a820a887d9588574d8ee594a6a49065ef3314b0712954d1fa08b70f7": {
+        "bbox": {
+          "bottom": 133.333,
+          "left": 61.667,
+          "right": 532.0,
+          "top": 107.0
+        },
+        "page_no": 1
+      }
+    },
+    "pages": [
+      {
+        "height": 841.922,
+        "page_no": 1,
+        "width": 595.201
+      }
+    ]
+  },
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "png",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

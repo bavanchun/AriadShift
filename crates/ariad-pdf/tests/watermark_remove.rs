@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Candidate-driven watermark removal preserves the original document text.
 
 use ariad_core::limits::Limits;

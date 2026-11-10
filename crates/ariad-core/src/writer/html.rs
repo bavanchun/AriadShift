@@ -7,7 +7,8 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::{
     ir::{
-        Alignment, AssetRef, AssetStore, Block, Document, Inline, ListItem, RawFormat, TableCell,
+        Alignment, AssetRef, AssetStore, Block, CharacterStyle, Document, FontRef, Inline,
+        ListItem, ParagraphAlignment, ParagraphStyle, RawFormat, StyleSheet, TableCell,
     },
     limits::Limits,
     warning::{Warning, WarningCode},
@@ -68,6 +69,10 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
     if super::markdown::check_output_size(document, title_fallback).is_none() {
         return super::markdown::output_ceiling_exceeded();
     }
+    let prohibited_fonts = document
+        .assets
+        .values()
+        .any(|asset| !asset.can_export_bytes());
     let normalized_doc = super::normalize_document(document);
     let document = &normalized_doc;
     let normalized_title_fallback = title_fallback.map(super::normalize_singleline);
@@ -75,6 +80,10 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
 
     let mut out = String::new();
     let mut warnings = Vec::new();
+    if prohibited_fonts {
+        warnings.push(Warning::new(WarningCode::FontEmbeddingRestricted,
+            "Restricted or unknown embedded font bytes were omitted; use a permitted family fallback."));
+    }
 
     let lang = document.meta.language.as_deref().unwrap_or("und");
 
@@ -131,7 +140,12 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
     let mut footnotes = Vec::new();
 
     for block in &document.body {
-        if let Block::Footnote { id, blocks } = block {
+        if let Block::Footnote {
+            note_id: id,
+            blocks,
+            ..
+        } = block
+        {
             footnotes.push((id.clone(), blocks.clone()));
         } else {
             main_blocks.push(block);
@@ -139,6 +153,10 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
     }
 
     let mut ctx = HtmlContext {
+        styles: &document.styles,
+        character: document.styles.defaults.character.clone(),
+        table_character: None,
+        table_paragraph: None,
         assets: &document.assets,
         embedded_assets: BTreeSet::new(),
         repeated_assets_warned: BTreeSet::new(),
@@ -182,6 +200,10 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
 }
 
 struct HtmlContext<'a> {
+    styles: &'a StyleSheet,
+    character: CharacterStyle,
+    table_character: Option<CharacterStyle>,
+    table_paragraph: Option<ParagraphStyle>,
     assets: &'a AssetStore,
     embedded_assets: BTreeSet<String>,
     repeated_assets_warned: BTreeSet<String>,
@@ -190,19 +212,96 @@ struct HtmlContext<'a> {
 }
 
 fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
+    let parent = ctx.character.clone();
+    let parent_table = ctx.table_character.clone();
+    let parent_paragraph = ctx.table_paragraph.clone();
+    let resolved = if matches!(block, Block::Table { .. }) {
+        ctx.styles
+            .resolve_table(block.style().as_ref(), block.direct(), 100)
+            .map(|table| {
+                ctx.table_character = Some(table.character.clone());
+                ctx.table_paragraph = Some(table.paragraph.clone());
+                let mut css = String::new();
+                if let Some(background) = &table.background {
+                    css.push_str(&format!("background-color:{};", background.as_str()));
+                }
+                (table.paragraph, css)
+            })
+    } else {
+        ctx.styles
+            .resolve_paragraph_with_baseline(
+                block.style().as_ref(),
+                block.direct(),
+                ctx.table_paragraph.as_ref(),
+                100,
+            )
+            .map(|p| (p, String::new()))
+    };
+    let mut css = String::new();
+    match resolved {
+        Ok((paragraph, extra)) => {
+            ctx.character.overlay(&CharacterStyle {
+                font: paragraph.font.clone(),
+                size_pt: paragraph.size_pt,
+                color: paragraph.color.clone(),
+                ..Default::default()
+            });
+            if let Some(table) = &ctx.table_character {
+                ctx.character.overlay(table);
+                let direct = if block.direct().based_on.is_some() {
+                    &paragraph
+                } else {
+                    block.direct()
+                };
+                ctx.character.overlay(&CharacterStyle {
+                    font: direct.font.clone(),
+                    size_pt: direct.size_pt,
+                    color: direct.color.clone(),
+                    ..Default::default()
+                });
+            }
+            css.push_str(&paragraph_css(&paragraph));
+            css.push_str(&extra);
+        }
+        Err(error) => ctx
+            .warnings
+            .push(Warning::new(WarningCode::UnsupportedNode, error)),
+    }
+    // Apply to the element itself, retaining the native structure for read-back.
+    let start = out.len();
+    write_block_content(block, ctx, out);
+    if let Some(end) = out[start..].find('>') {
+        let mut attrs = String::new();
+        if let Some(style) = block.style() {
+            attrs.push_str(&format!(
+                " data-ariad-style=\"{}\"",
+                escape_attr(style.as_str())
+            ));
+        }
+        if !css.is_empty() {
+            attrs.push_str(&format!(" style=\"{}\"", escape_attr(&css)));
+        }
+        out.insert_str(start + end, &attrs);
+    }
+    ctx.character = parent;
+    ctx.table_character = parent_table;
+    ctx.table_paragraph = parent_paragraph;
+}
+
+fn write_block_content(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
     match block {
-        Block::Heading { level, content } => {
+        Block::Heading { level, content, .. } => {
             let clamped = (*level).clamp(1, 6);
             out.push_str(&format!("<h{clamped}>"));
             out.push_str(&render_inlines(content, ctx));
             out.push_str(&format!("</h{clamped}>\n"));
         }
-        Block::Paragraph { content } => {
+        Block::Paragraph { content, .. } => {
             out.push_str("<p>");
             out.push_str(&render_inlines(content, ctx));
             out.push_str("</p>\n");
         }
-        Block::Code { lang, text } => {
+        Block::Code { lang, text, .. } => {
             out.push_str("<pre>");
             if let Some(l) = lang {
                 out.push_str(&format!("<code class=\"language-{}\">", escape_attr(l)));
@@ -212,21 +311,21 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             out.push_str(&escape_html(text));
             out.push_str("</code></pre>\n");
         }
-        Block::Math { tex, display: _ } => {
+        Block::Math { tex, .. } => {
             out.push_str(&format!(
                 "<math display=\"block\"><semantics><mtext>{}</mtext><annotation encoding=\"application/x-tex\">{}</annotation></semantics></math>\n",
                 escape_html(tex),
                 escape_html(tex)
             ));
         }
-        Block::Quote { blocks } => {
+        Block::Quote { blocks, .. } => {
             out.push_str("<blockquote>\n");
             for inner in blocks {
                 write_block(inner, ctx, out);
             }
             out.push_str("</blockquote>\n");
         }
-        Block::PageBreak {} => {
+        Block::PageBreak { .. } => {
             out.push_str("<hr>\n");
         }
         Block::List {
@@ -234,6 +333,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             start,
             tight: _,
             items,
+            ..
         } => {
             if *ordered {
                 if let Some(s) = start {
@@ -261,6 +361,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             head,
             body,
             footnotes,
+            ..
         } => {
             write_table(caption.as_deref(), columns, head, body, ctx, out);
             if !footnotes.is_empty() {
@@ -269,7 +370,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
                 out.push_str("</p>\n");
             }
         }
-        Block::Figure { asset, caption } => {
+        Block::Figure { asset, caption, .. } => {
             out.push_str("<figure>\n");
             let alt = plain_text(caption);
             let img = render_image(asset, &alt, None, ctx);
@@ -282,7 +383,11 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             }
             out.push_str("</figure>\n");
         }
-        Block::Footnote { id, blocks } => {
+        Block::Footnote {
+            note_id: id,
+            blocks,
+            ..
+        } => {
             out.push_str(&format!(
                 "<div role=\"doc-footnote\" id=\"{}\">\n",
                 escape_attr(id)
@@ -292,7 +397,7 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             }
             out.push_str("</div>\n");
         }
-        Block::Raw { format, text } => match format {
+        Block::Raw { format, text, .. } => match format {
             RawFormat::Html => {
                 if !ctx.raw_dropped_warned {
                     ctx.warnings.push(Warning::new(
@@ -327,7 +432,10 @@ fn write_list_item(item: &ListItem, ctx: &mut HtmlContext<'_>, out: &mut String)
     }
 
     if item.blocks.len() == 1
-        && let Block::Paragraph { content } = &item.blocks[0]
+        && item.blocks[0].style().is_none()
+        && item.blocks[0].direct().is_empty()
+        && ctx.styles.defaults.is_empty()
+        && let Block::Paragraph { content, .. } = &item.blocks[0]
     {
         out.push_str(&render_inlines(content, ctx));
     } else {
@@ -409,7 +517,10 @@ fn write_table_cell(
     out.push('>');
 
     if cell.blocks.len() == 1
-        && let Block::Paragraph { content } = &cell.blocks[0]
+        && cell.blocks[0].style().is_none()
+        && cell.blocks[0].direct().is_empty()
+        && ctx.styles.defaults.is_empty()
+        && let Block::Paragraph { content, .. } = &cell.blocks[0]
     {
         out.push_str(&render_inlines(content, ctx));
     } else {
@@ -421,13 +532,103 @@ fn write_table_cell(
 }
 
 fn render_single_inline(inline: &Inline, ctx: &mut HtmlContext<'_>) -> String {
+    let content = render_single_inline_content(inline, ctx);
+    if !ctx.character.is_empty()
+        && !matches!(
+            inline,
+            Inline::Styled { .. }
+                | Inline::Emph { .. }
+                | Inline::Strong { .. }
+                | Inline::Strikeout { .. }
+                | Inline::Superscript { .. }
+                | Inline::Subscript { .. }
+                | Inline::Link { .. }
+        )
+    {
+        format!(
+            "<span style=\"{}\">{content}</span>",
+            escape_attr(&character_css(&ctx.character))
+        )
+    } else {
+        content
+    }
+}
+fn render_semantic_character(
+    content: &[Inline],
+    direct: CharacterStyle,
+    ctx: &mut HtmlContext<'_>,
+) -> String {
+    let parent = ctx.character.clone();
+    ctx.character.overlay(&direct);
+    let result = render_inlines(content, ctx);
+    ctx.character = parent;
+    result
+}
+fn render_single_inline_content(inline: &Inline, ctx: &mut HtmlContext<'_>) -> String {
     match inline {
         Inline::Text { text } => escape_prose(text),
+        Inline::Styled {
+            style,
+            direct,
+            content,
+        } => {
+            let parent = ctx.character.clone();
+            let resolved = ctx
+                .styles
+                .resolve_character(style.as_ref(), direct, Some(&parent));
+            let result = match resolved {
+                Ok(character) => {
+                    ctx.character = character;
+                    let attrs = style
+                        .as_ref()
+                        .map(|id| format!(" data-ariad-style=\"{}\"", escape_attr(id.as_str())))
+                        .unwrap_or_default();
+                    format!("<span{attrs}>{}</span>", render_inlines(content, ctx))
+                }
+                Err(error) => {
+                    ctx.warnings
+                        .push(Warning::new(WarningCode::UnsupportedNode, error));
+                    render_inlines(content, ctx)
+                }
+            };
+            ctx.character = parent;
+            result
+        }
+        Inline::Emph { content } if !ctx.character.is_empty() || contains_styled(content) => {
+            render_semantic_character(
+                content,
+                CharacterStyle {
+                    italic: Some(true),
+                    ..Default::default()
+                },
+                ctx,
+            )
+        }
         Inline::Emph { content } => {
             format!("<em>{}</em>", render_inlines(content, ctx))
         }
+        Inline::Strong { content } if !ctx.character.is_empty() || contains_styled(content) => {
+            render_semantic_character(
+                content,
+                CharacterStyle {
+                    weight: Some(700),
+                    ..Default::default()
+                },
+                ctx,
+            )
+        }
         Inline::Strong { content } => {
             format!("<strong>{}</strong>", render_inlines(content, ctx))
+        }
+        Inline::Strikeout { content } if !ctx.character.is_empty() || contains_styled(content) => {
+            render_semantic_character(
+                content,
+                CharacterStyle {
+                    strike: Some(true),
+                    ..Default::default()
+                },
+                ctx,
+            )
         }
         Inline::Strikeout { content } => {
             format!("<del>{}</del>", render_inlines(content, ctx))
@@ -637,6 +838,7 @@ fn plain_text(inlines: &[Inline]) -> String {
             Inline::Text { text: val } | Inline::Code { text: val } => text.push_str(val),
             Inline::Math { tex, .. } => text.push_str(tex),
             Inline::Link { content, .. }
+            | Inline::Styled { content, .. }
             | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
@@ -648,4 +850,157 @@ fn plain_text(inlines: &[Inline]) -> String {
         }
     }
     text.nfc().collect()
+}
+
+// Escape every non-word character inside a CSS string. Attribute escaping is a
+// separate final step, so neither quotes nor resource syntax can escape the value.
+fn css_string(value: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        if ch.is_alphanumeric() || ch == ' ' || ch == '-' {
+            out.push(ch);
+        } else {
+            let _ = write!(out, "\\{:x} ", u32::from(ch));
+        }
+    }
+    out.push('"');
+    out
+}
+fn font_css(font: &FontRef) -> String {
+    let names: Vec<_> = std::iter::once(&font.family)
+        .chain(&font.fallback)
+        .map(|v| css_string(v))
+        .collect();
+    format!("font-family:{};", names.join(","))
+}
+fn paragraph_css(style: &ParagraphStyle) -> String {
+    let mut out = String::new();
+    if let Some(font) = &style.font {
+        out.push_str(&font_css(font));
+    }
+    for (name, value) in [
+        ("font-size", style.size_pt),
+        ("margin-top", style.space_before_pt),
+        ("margin-bottom", style.space_after_pt),
+        ("text-indent", style.indent_first_pt),
+        ("margin-left", style.indent_left_pt),
+        ("margin-right", style.indent_right_pt),
+    ] {
+        if let Some(value) = value {
+            out.push_str(&format!("{name}:{value}pt;"));
+        }
+    }
+    if let Some(value) = style.line_height {
+        out.push_str(&format!("line-height:{value};"));
+    }
+    if let Some(value) = style.align {
+        out.push_str(match value {
+            ParagraphAlignment::Left => "text-align:left;",
+            ParagraphAlignment::Center => "text-align:center;",
+            ParagraphAlignment::Right => "text-align:right;",
+            ParagraphAlignment::Justify => "text-align:justify;",
+        });
+    }
+    if let Some(value) = style.keep_with_next {
+        out.push_str(if value {
+            "break-after:avoid;"
+        } else {
+            "break-after:auto;"
+        });
+    }
+    if let Some(value) = style.page_break_before {
+        out.push_str(if value {
+            "break-before:page;"
+        } else {
+            "break-before:auto;"
+        });
+    }
+    if let Some(value) = &style.color {
+        out.push_str(&format!("color:{};", value.as_str()));
+    }
+    if let Some(value) = &style.background {
+        out.push_str(&format!("background-color:{};", value.as_str()));
+    }
+    out
+}
+fn character_css(style: &CharacterStyle) -> String {
+    let mut out = String::new();
+    if let Some(font) = &style.font {
+        out.push_str(&font_css(font));
+    }
+    for (name, value) in [
+        ("font-size", style.size_pt),
+        ("letter-spacing", style.letter_spacing),
+    ] {
+        if let Some(value) = value {
+            out.push_str(&format!("{name}:{value}pt;"));
+        }
+    }
+    if let Some(value) = style.weight {
+        out.push_str(&format!("font-weight:{value};"));
+    }
+    if let Some(value) = style.italic {
+        out.push_str(if value {
+            "font-style:italic;"
+        } else {
+            "font-style:normal;"
+        });
+    }
+    if style.underline.is_some() || style.strike.is_some() {
+        let mut decorations = Vec::new();
+        if style.underline == Some(true) {
+            decorations.push("underline");
+        }
+        if style.strike == Some(true) {
+            decorations.push("line-through");
+        }
+        if decorations.is_empty() {
+            decorations.push("none");
+        }
+        out.push_str(&format!("text-decoration-line:{};", decorations.join(" ")));
+    }
+    if let Some(value) = style.small_caps {
+        out.push_str(if value {
+            "font-variant-caps:small-caps;"
+        } else {
+            "font-variant-caps:normal;"
+        });
+    }
+    if let Some(value) = style.baseline_shift {
+        out.push_str(&format!("vertical-align:{value}pt;"));
+    }
+    if let Some(value) = &style.color {
+        out.push_str(&format!("color:{};", value.as_str()));
+    }
+    if let Some(value) = &style.highlight {
+        out.push_str(&format!("background-color:{};", value.as_str()));
+    }
+    out
+}
+
+fn contains_styled(inlines: &[Inline]) -> bool {
+    let mut pending: Vec<_> = inlines.iter().collect();
+    while let Some(inline) = pending.pop() {
+        match inline {
+            Inline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                if style.is_some() || !direct.is_empty() {
+                    return true;
+                }
+                pending.extend(content);
+            }
+            Inline::Emph { content }
+            | Inline::Strong { content }
+            | Inline::Strikeout { content }
+            | Inline::Superscript { content }
+            | Inline::Subscript { content }
+            | Inline::Link { content, .. } => pending.extend(content),
+            _ => {}
+        }
+    }
+    false
 }

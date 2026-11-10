@@ -1,0 +1,51 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "A Place to Repair",
+          "type": "text"
+        }
+      ],
+      "id": "b1c3656680014db51aaab9538a009e0236f53a0f1f9cafc4b431c8704cae87418",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The repair café opens one Saturday each month in the old tram depot. Neighbors bring lamps, clocks, radios, and small appliances that have stopped working. Volunteers set out screwdrivers and labeled trays so every loose part has a safe place.",
+          "type": "text"
+        }
+      ],
+      "id": "b73c467bc749f8a364ffc357dc51e036ced15878a8900482a203b69dbc0093edc",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Tools return to their shelves before closing.",
+          "type": "text"
+        }
+      ],
+      "id": "bd7c7445c51f9e52ee4881fa05322cb068031ace1e2e604235e63f3b2b6fbf2d0",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

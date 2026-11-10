@@ -1,0 +1,305 @@
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Editable neighbour before styled-nesting.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b1b1e79680d035415eb24ef0bf73415266ca3b8705d0e3dc4c60c8c7f26f908a3",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Editor case: styled-nesting",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "bfc211cdb8b91ed13d01b4bbd937e245bc4a6c4fbe32963a19424a9dc850a25ae",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "blocks": [
+        {
+          "direct": {},
+          "id": "bda5624cdc0bea044ff2696fa15cc5c10bfef6f5dfb8be78984e7b9ab91a0b797",
+          "items": [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "content": [
+                        {
+                          "text": "Giữ nguyên tiếng Việt: Nguyễn, đường, ươm.",
+                          "type": "text"
+                        },
+                        {
+                          "content": [
+                            {
+                              "text": " Nhấn mạnh bên trong.",
+                              "type": "text"
+                            }
+                          ],
+                          "direct": {
+                            "size_pt": 13.0,
+                            "underline": true
+                          },
+                          "type": "styled"
+                        }
+                      ],
+                      "direct": {
+                        "italic": false,
+                        "weight": 650
+                      },
+                      "style": "accent",
+                      "type": "styled"
+                    }
+                  ],
+                  "direct": {
+                    "align": "justify",
+                    "size_pt": 12.0
+                  },
+                  "id": "b0b5a6ac253d8fcc709b554d82747371739d86dc3e658c09df7ac9eb20d24091f",
+                  "style": "body",
+                  "type": "paragraph"
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "ordered": false,
+          "start": null,
+          "tight": false,
+          "type": "list"
+        }
+      ],
+      "direct": {
+        "indent_left_pt": 14.0
+      },
+      "id": "b12434752523e5651ec22fdcfac158ed4d17e6b29ccec0a99fa1f02da7e11a727",
+      "style": "lead",
+      "type": "quote"
+    },
+    {
+      "content": [
+        {
+          "text": "Editable neighbour after styled-nesting.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "bbda300a71a723233c7e1377fdf0bff43fc840f335f9436e88bd114c3fa5e3e2b",
+      "type": "paragraph"
+    }
+  ],
+  "layout": {
+    "blocks": {
+      "b0b5a6ac253d8fcc709b554d82747371739d86dc3e658c09df7ac9eb20d24091f": {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      },
+      "b12434752523e5651ec22fdcfac158ed4d17e6b29ccec0a99fa1f02da7e11a727": {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      },
+      "b1b1e79680d035415eb24ef0bf73415266ca3b8705d0e3dc4c60c8c7f26f908a3": {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      },
+      "bbda300a71a723233c7e1377fdf0bff43fc840f335f9436e88bd114c3fa5e3e2b": {
+        "bbox": {
+          "bottom": 96.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 80.0
+        },
+        "page_no": 1
+      },
+      "bda5624cdc0bea044ff2696fa15cc5c10bfef6f5dfb8be78984e7b9ab91a0b797": {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      },
+      "bfc211cdb8b91ed13d01b4bbd937e245bc4a6c4fbe32963a19424a9dc850a25ae": {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    },
+    "pages": [
+      {
+        "height": 842.0,
+        "page_no": 1,
+        "width": 595.0
+      }
+    ]
+  },
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "vi",
+    "source_format": "ariad-ir+json",
+    "subject": "Original editor preservation corpus",
+    "title": "Editor preservation: styled-nesting"
+  },
+  "provenance": {
+    "org.ariadshift.editor-corpus": {
+      "case": "styled-nesting",
+      "font_permission_evidence": {
+        "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+      },
+      "source": "original-authoring"
+    }
+  },
+  "source_map": {
+    "b0b5a6ac253d8fcc709b554d82747371739d86dc3e658c09df7ac9eb20d24091f": [
+      {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b12434752523e5651ec22fdcfac158ed4d17e6b29ccec0a99fa1f02da7e11a727": [
+      {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b1b1e79680d035415eb24ef0bf73415266ca3b8705d0e3dc4c60c8c7f26f908a3": [
+      {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bbda300a71a723233c7e1377fdf0bff43fc840f335f9436e88bd114c3fa5e3e2b": [
+      {
+        "bbox": {
+          "bottom": 96.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 80.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bda5624cdc0bea044ff2696fa15cc5c10bfef6f5dfb8be78984e7b9ab91a0b797": [
+      {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bfc211cdb8b91ed13d01b4bbd937e245bc4a6c4fbe32963a19424a9dc850a25ae": [
+      {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    ]
+  },
+  "styles": {
+    "character": {
+      "accent": {
+        "color": "#185c4c",
+        "italic": true,
+        "weight": 700
+      }
+    },
+    "defaults": {
+      "character": {
+        "weight": 400
+      },
+      "paragraph": {
+        "size_pt": 11.0
+      },
+      "table": {
+        "character": {},
+        "paragraph": {}
+      }
+    },
+    "paragraph": {
+      "body": {
+        "font": {
+          "fallback": [
+            "Noto Serif"
+          ],
+          "family": "Libertinus Serif"
+        },
+        "line_height": 1.25,
+        "size_pt": 11.0
+      },
+      "lead": {
+        "based_on": "body",
+        "color": "#185c4c",
+        "space_after_pt": 6.0
+      }
+    },
+    "table": {
+      "survey": {
+        "background": "#e6f3ef",
+        "character": {
+          "weight": 400
+        },
+        "paragraph": {
+          "size_pt": 10.0
+        }
+      }
+    }
+  },
+  "version": "ariad-ir/2"
+}

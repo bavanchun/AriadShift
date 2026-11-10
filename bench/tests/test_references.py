@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+from contextlib import closing
 import os
 from pathlib import Path
 import tempfile
@@ -10,8 +12,10 @@ import tomllib
 import unittest
 from unittest.mock import patch
 
-from ariad_bench.canonical import CanonicalDoc
-from ariad_bench.references import get_reference_for_fixture
+import pypdfium2 as pdfium
+
+from ariad_bench.canonical import CanonicalDoc, normalize
+from ariad_bench.references import editor_assertions_only, get_reference_for_fixture
 from ariad_bench.run import find_binary
 
 
@@ -44,6 +48,45 @@ class TestReferences(unittest.TestCase):
         self.assertIn("Lịch chăm vườn đọc", ref.text)
         self.assertEqual(len(ref.headings), 1)
         self.assertEqual(ref.headings[0].text, "Lịch chăm vườn đọc")
+
+    def test_paired_boxes_bound_glyphs_in_the_unchanged_authored_pdf(self) -> None:
+        source = self.root / "fixtures/editor/vi-styled-pair.pdf"
+        for extension in ("docx", "pdf"):
+            truth = json.loads((self.root / f"fixtures/editor/vi-styled-pair-{extension}.truth.json").read_bytes())
+            self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), truth["layout"]["source_pdf_sha256"])
+            document = truth["ir"]
+            table = document["body"][2]
+            cells = [block for row in table["body"] for cell in row for block in cell["blocks"]]
+            leaves = [*document["body"][:2], *cells, *document["furniture"]]
+            positions = document["layout"]["blocks"]
+            self.assertEqual(len(positions), len(leaves) + 1)
+
+            def inline_text(content):
+                return "".join(inline_text(node["content"]) if "content" in node else node["text"] for node in content)
+
+            with closing(pdfium.PdfDocument(source)) as pdf, closing(pdf[0]) as page, closing(page.get_textpage()) as text:
+                raw = text.get_text_range(0, text.count_chars())
+                self.assertEqual(len(raw), text.count_chars())
+                for group in (document["body"][:2] + cells, document["furniture"]):
+                    cursor = 0
+                    for block in group:
+                        value = inline_text(block["content"])
+                        start = raw.index(value, cursor)
+                        cursor = start + len(value)
+                        glyphs = [text.get_charbox(i) for i in range(start, cursor) if not raw[i].isspace()]
+                        box = positions[block["id"]]
+                        self.assertEqual(box["page_no"], 1)
+                        bounds = box["bbox"]
+                        # Poppler's font-metric word boxes must contain the independent
+                        # PDFium ink bounds, including Vietnamese accents and descenders.
+                        self.assertLessEqual(bounds["left"], min(g[0] for g in glyphs) + 0.002)
+                        self.assertLessEqual(bounds["top"], page.get_height() - max(g[3] for g in glyphs) + 0.002)
+                        self.assertGreaterEqual(bounds["right"], max(g[2] for g in glyphs) - 0.002)
+                        self.assertGreaterEqual(bounds["bottom"], page.get_height() - min(g[1] for g in glyphs) - 0.002)
+            cell_boxes = [positions[block["id"]]["bbox"] for block in cells]
+            self.assertEqual(positions[table["id"]]["bbox"], {
+                "left": min(box["left"] for box in cell_boxes), "top": min(box["top"] for box in cell_boxes),
+                "right": max(box["right"] for box in cell_boxes), "bottom": max(box["bottom"] for box in cell_boxes)})
 
     def test_resolve_markdown_source_via_pandoc(self) -> None:
         fixture = {
@@ -111,6 +154,20 @@ class TestReferences(unittest.TestCase):
 
         for tf in truth_files:
             data = json.loads(tf.read_text(encoding="utf-8"))
+            if data.get("schema") == "ariad-editor-truth/1":
+                self.assertEqual(data["origin"], "independent-original-specification")
+                self.assertTrue(data["case"])
+                if editor_assertions_only(data):
+                    unscored_count += 1
+                    fixture = next(f for f in manifest["fixture"] if any(
+                        c.get("path") == tf.relative_to(self.root).as_posix()
+                        for c in f.get("companions", [])
+                    ))
+                    self.assertIsNone(get_reference_for_fixture(fixture, self.root))
+                else:
+                    scored_count += 1
+                    self.assertTrue(normalize(data).text, f"{tf} empty authored IR reference")
+                continue
             self.assertEqual(data.get("version"), "ariad-truth/0", f"{tf} invalid version")
             self.assertTrue("id" in data, f"{tf} missing id")
 

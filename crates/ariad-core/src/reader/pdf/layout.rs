@@ -11,6 +11,7 @@
 
 use std::collections::HashSet;
 
+use crate::ir::{ParagraphAlignment, ParagraphStyle};
 use unicode_normalization::char::is_combining_mark;
 
 use super::{
@@ -45,6 +46,20 @@ pub(super) struct Span {
     pub(super) bold: bool,
     pub(super) italic: bool,
     pub(super) script: Script,
+    pub(super) font: FontStyle,
+    pub(super) size: f64,
+    pub(super) color: Option<[u8; 3]>,
+}
+
+impl Span {
+    pub(super) fn same_style(&self, other: &Self) -> bool {
+        self.bold == other.bold
+            && self.italic == other.italic
+            && self.script == other.script
+            && self.font == other.font
+            && self.size == other.size
+            && self.color == other.color
+    }
 }
 
 /// A text block on a page, in reading order.
@@ -60,6 +75,7 @@ pub(super) struct Block {
     pub(super) chars: usize,
     /// Whether the text runs left to right on the displayed page.
     pub(super) upright: bool,
+    pub(super) direct: ParagraphStyle,
 }
 
 /// Lays out one page whose display box is `width` by `height` points.
@@ -70,7 +86,7 @@ pub(super) fn layout_page(
     height: f64,
 ) -> Vec<Block> {
     let mut groups: [Vec<CGlyph>; 4] = Default::default();
-    let mut seen: HashSet<(&str, i64, i64, u8)> = HashSet::new();
+    let mut seen = HashSet::new();
     for (index, glyph) in content.glyphs.iter().enumerate() {
         let margin = glyph.size;
         if glyph.x < -margin
@@ -89,6 +105,9 @@ pub(super) fn layout_page(
                 (glyph.x * 2.0).round() as i64,
                 (glyph.y * 2.0).round() as i64,
                 orientation,
+                glyph.font,
+                glyph.size.to_bits(),
+                glyph.color,
             ))
         {
             // The same text painted again at the same spot, as producers do to fake bold.
@@ -479,7 +498,7 @@ fn assemble_segment(
         }
         let style = styles
             .get(source.font as usize)
-            .copied()
+            .cloned()
             .unwrap_or_default();
         let bold = style.bold || glyph.flags & STROKED != 0;
         let script = script_of(glyph, base, size);
@@ -488,18 +507,18 @@ fn assemble_segment(
         if bold {
             segment.bold_chars += count;
         }
+        let span = Span {
+            text: text.to_owned(),
+            bold,
+            italic: style.italic,
+            script,
+            font: style,
+            size: source.size,
+            color: source.color,
+        };
         match segment.spans.last_mut() {
-            Some(span)
-                if span.bold == bold && span.italic == style.italic && span.script == script =>
-            {
-                span.text.push_str(text);
-            }
-            _ => segment.spans.push(Span {
-                text: text.to_owned(),
-                bold,
-                italic: style.italic,
-                script,
-            }),
+            Some(last) if last.same_style(&span) => last.text.push_str(text),
+            _ => segment.spans.push(span),
         }
         if let Some(mark) = pending_accent.take()
             && let Some(span) = segment.spans.last_mut()
@@ -521,11 +540,7 @@ fn assemble_segment(
             span.script = Script::Normal;
         }
         match spans.last_mut() {
-            Some(last)
-                if last.bold == span.bold
-                    && last.italic == span.italic
-                    && last.script == span.script =>
-            {
+            Some(last) if last.same_style(&span) => {
                 last.text.push_str(&span.text);
             }
             _ => spans.push(span),
@@ -867,6 +882,7 @@ fn group_blocks(
     blocks: &mut Vec<Block>,
 ) {
     let margins = margins(segments, flow);
+    let start = blocks.len();
     let mut current: Option<Builder> = None;
     for row in flow {
         if let [index] = row.as_slice() {
@@ -899,6 +915,28 @@ fn group_blocks(
     if let Some(builder) = current.take() {
         blocks.push(finish(segments, &builder.segments, orientation));
     }
+    // Space after owns the excess inter-paragraph baseline gap, so writers do not
+    // apply the same gap as both space-before and space-after. Never cross flows,
+    // columns, orientation groups or rows with multiple table-like fragments.
+    for index in start..blocks.len().saturating_sub(1) {
+        let (before, after) = blocks.split_at_mut(index + 1);
+        let previous = &mut before[index];
+        let next = &after[0];
+        if !previous.upright
+            || !next.upright
+            || previous.direct.line_height.is_none()
+            || next.direct.align.is_none()
+        {
+            continue;
+        }
+        let size = previous.size.max(next.size);
+        let baseline_gap =
+            next.bbox[1] + ASCENT * next.size - (previous.bbox[3] - DESCENT * previous.size);
+        let extra = baseline_gap - pitch * size;
+        if extra > (0.15 * size).max(1.0) && extra <= 8.0 * size {
+            previous.direct.space_after_pt = Some(extra);
+        }
+    }
 }
 
 /// Whether `segment` continues the block being built.
@@ -927,8 +965,10 @@ fn continues(
     if segment.all_bold() != builder.bold && (builder.segments.len() == 1 || builder.bold) {
         return false;
     }
-    let centred = ((segment.x0 + segment.x1) - (previous.x0 + previous.x1)).abs() / 2.0 < size
-        && (segment.x0 - previous.x0).abs() > size;
+    let tolerance = (0.15 * size).max(1.0);
+    let centred = ((segment.x0 + segment.x1) - (previous.x0 + previous.x1)).abs() / 2.0
+        <= tolerance
+        && (segment.x0 - previous.x0).abs() > tolerance;
     // The previous line ended early although the next line's first word would have fit: within
     // the block's own width, or within the flow's width when both lines share a first-line
     // indent (paragraphs of one line each).
@@ -1027,7 +1067,71 @@ fn finish(segments: &[Segment], members: &[usize], orientation: u8) -> Block {
         bold: chars > 0 && bold_chars as f64 >= BOLD_SHARE * chars as f64,
         chars,
         upright: orientation == 0,
+        direct: if orientation == 0 {
+            paragraph_style(segments, members, size)
+        } else {
+            ParagraphStyle::default()
+        },
     }
+}
+
+/// Infer only from multiple lines within one flow. Alignment anchors must agree
+/// within max(1 pt, 0.15 em); a first-line indent is at most 4 em. Pitch must agree
+/// within max(0.5 pt, 0.05 em), with no more than 15% size variation. Sparse lines,
+/// list markers, table fragments and rotated text retain unknown properties.
+fn paragraph_style(segments: &[Segment], members: &[usize], size: f64) -> ParagraphStyle {
+    let mut direct = ParagraphStyle::default();
+    if members.len() < 2
+        || members
+            .iter()
+            .any(|&i| segments[i].marker != lists::MarkerStrength::None)
+    {
+        return direct;
+    }
+    let lines: Vec<_> = members.iter().map(|&i| &segments[i]).collect();
+    let first = lines[0];
+    let second = lines[1];
+    let tolerance = (0.15 * size).max(1.0);
+    let agree = |anchor: fn(&Segment) -> f64| {
+        lines
+            .iter()
+            .all(|line| (anchor(line) - anchor(first)).abs() <= tolerance)
+    };
+    let varied_left = lines
+        .iter()
+        .any(|line| (line.x0 - first.x0).abs() > tolerance);
+    let varied_right = lines
+        .iter()
+        .any(|line| (line.x1 - first.x1).abs() > tolerance);
+    if varied_left && varied_right && agree(|s| (s.x0 + s.x1) / 2.0) {
+        direct.align = Some(ParagraphAlignment::Center);
+    } else if varied_left && agree(|s| s.x1) {
+        direct.align = Some(ParagraphAlignment::Right);
+    } else if lines[1..]
+        .iter()
+        .all(|line| (line.x0 - second.x0).abs() <= tolerance)
+        && (first.x0 - second.x0).abs() <= 4.0 * size
+    {
+        direct.align = Some(ParagraphAlignment::Left);
+        let indent = first.x0 - second.x0;
+        if indent.abs() > tolerance {
+            direct.indent_first_pt = Some(indent);
+        }
+    }
+    let pitches: Vec<_> = lines
+        .windows(2)
+        .map(|p| (p[1].base - p[0].base) / size)
+        .collect();
+    if let Some(pitch) = median(&pitches)
+        && (0.5..=3.0).contains(&pitch)
+        && pitches
+            .iter()
+            .all(|p| (p - pitch).abs() <= 0.05_f64.max(0.5 / size))
+        && lines.iter().all(|s| (s.size - size).abs() <= 0.15 * size)
+    {
+        direct.line_height = Some(pitch);
+    }
+    direct
 }
 
 #[cfg(test)]
@@ -1056,6 +1160,7 @@ mod tests {
                 text_start: start,
                 text_end: page.text.len() as u32,
                 font,
+                color: None,
                 flags,
             });
         }
@@ -1075,6 +1180,7 @@ mod tests {
             FontStyle {
                 bold: true,
                 italic: false,
+                ..FontStyle::default()
             },
         ]
     }
@@ -1188,6 +1294,7 @@ mod tests {
                 text_start: start,
                 text_end: page.text.len() as u32,
                 font: 0,
+                color: None,
                 flags: 0,
             });
         }

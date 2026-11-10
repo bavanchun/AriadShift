@@ -1,3 +1,7 @@
+mod support;
+
+use support::assert_semantic_blocks_eq;
+
 use std::time::{Duration, Instant};
 
 use ariad_core::{
@@ -229,13 +233,16 @@ fn utf8_bom_is_stripped_cleanly() {
         output.warnings.is_empty(),
         "BOM stripping should not produce warnings"
     );
-    assert_eq!(
-        output.document.body,
-        vec![ariad_core::ir::Block::Paragraph {
+    assert_semantic_blocks_eq(
+        &output.document.body,
+        &[ariad_core::ir::Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![ariad_core::ir::Inline::Text {
                 text: "Hello BOM".to_owned(),
             }],
-        }]
+        }],
     );
 }
 
@@ -248,13 +255,16 @@ fn windows_1258_legacy_vietnamese_is_decoded() {
     let output =
         read(input, &Limits::default()).expect("windows-1258 document should parse cleanly");
     assert!(output.warnings.is_empty());
-    assert_eq!(
-        output.document.body,
-        vec![ariad_core::ir::Block::Paragraph {
+    assert_semantic_blocks_eq(
+        &output.document.body,
+        &[ariad_core::ir::Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![ariad_core::ir::Inline::Text {
                 text: "Tiếng Việt".to_owned(),
             }],
-        }]
+        }],
     );
 }
 
@@ -273,7 +283,7 @@ fn meta_charset_after_1024_bytes_is_ignored() {
         output.warnings[0].code,
         ariad_core::warning::WarningCode::UnsupportedNode
     );
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         if let ariad_core::ir::Inline::Text { text } = &content[0] {
             assert!(text.contains('\u{FFFD}'));
         } else {
@@ -294,13 +304,16 @@ fn invalid_utf8_emits_replacement_warning_and_ufffd() {
         output.warnings[0].code,
         ariad_core::warning::WarningCode::UnsupportedNode
     );
-    assert_eq!(
-        output.document.body,
-        vec![ariad_core::ir::Block::Paragraph {
+    assert_semantic_blocks_eq(
+        &output.document.body,
+        &[ariad_core::ir::Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![ariad_core::ir::Inline::Text {
                 text: "Bad \u{FFFD} byte".to_owned(),
             }],
-        }]
+        }],
     );
 }
 
@@ -310,7 +323,7 @@ fn headings_h1_to_h6_map_correctly() {
     let output = read(html.as_bytes(), &Limits::default()).expect("headings should parse");
     assert_eq!(output.document.body.len(), 6);
     for (i, block) in output.document.body.iter().enumerate() {
-        if let ariad_core::ir::Block::Heading { level, content } = block {
+        if let ariad_core::ir::Block::Heading { level, content, .. } = block {
             assert_eq!(*level, (i + 1) as u8);
             assert_eq!(
                 content,
@@ -328,13 +341,16 @@ fn headings_h1_to_h6_map_correctly() {
 fn paragraphs_and_whitespace_collapse() {
     let html = "<p>   Hello \t\n  world  !   </p>";
     let output = read(html.as_bytes(), &Limits::default()).expect("whitespace should collapse");
-    assert_eq!(
-        output.document.body,
-        vec![ariad_core::ir::Block::Paragraph {
+    assert_semantic_blocks_eq(
+        &output.document.body,
+        &[ariad_core::ir::Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![ariad_core::ir::Inline::Text {
                 text: "Hello world !".to_owned(),
             }],
-        }]
+        }],
     );
 }
 
@@ -451,15 +467,21 @@ fn tables_caption_header_alignment_spans() {
 fn blockquote_mapping() {
     let html = "<blockquote><p>Wise words</p></blockquote>";
     let output = read(html.as_bytes(), &Limits::default()).expect("quote should parse");
-    assert_eq!(
-        output.document.body,
-        vec![ariad_core::ir::Block::Quote {
+    assert_semantic_blocks_eq(
+        &output.document.body,
+        &[ariad_core::ir::Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![ariad_core::ir::Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![ariad_core::ir::Inline::Text {
                     text: "Wise words".to_owned(),
                 }],
             }],
-        }]
+        }],
     );
 }
 
@@ -468,12 +490,15 @@ fn pre_code_and_language() {
     let html =
         "<pre><code class=\"language-rust\">fn main() {\n    println!(\"hello\");\n}</code></pre>";
     let output = read(html.as_bytes(), &Limits::default()).expect("pre code should parse");
-    assert_eq!(
-        output.document.body,
-        vec![ariad_core::ir::Block::Code {
+    assert_semantic_blocks_eq(
+        &output.document.body,
+        &[ariad_core::ir::Block::Code {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             lang: Some("rust".to_owned()),
             text: "fn main() {\n    println!(\"hello\");\n}".to_owned(),
-        }]
+        }],
     );
 }
 
@@ -491,33 +516,42 @@ fn figure_and_figcaption_and_bare_image() {
     let output =
         read(html.as_bytes(), &Limits::default()).expect("figures and images should parse");
     // Image paragraphs retain independent alt/title fields that Figure lacks.
-    assert_eq!(
-        output.document.body,
-        vec![
+    assert_semantic_blocks_eq(
+        &output.document.body,
+        &[
             Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Image {
                     target: AssetRef::Url {
-                        href: "chart.png".to_owned()
+                        href: "chart.png".to_owned(),
                     },
                     alt: "Revenue chart".to_owned(),
                     title: None,
-                }]
+                }],
             },
             Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
-                    text: "Figure 1: Revenue".to_owned()
-                }]
+                    text: "Figure 1: Revenue".to_owned(),
+                }],
             },
             Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Image {
                     target: AssetRef::Url {
-                        href: "https://example.com/logo.png".to_owned()
+                        href: "https://example.com/logo.png".to_owned(),
                     },
                     alt: "Site logo".to_owned(),
                     title: Some("Logo".to_owned()),
-                }]
+                }],
             },
-        ]
+        ],
     );
 }
 
@@ -531,7 +565,7 @@ fn data_uri_image_decoding_and_asset_store() {
     assert_eq!(asset.media_type, "image/png");
     assert!(!asset.bytes.is_empty());
 
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(
             content,
             &vec![ariad_core::ir::Inline::Image {
@@ -557,7 +591,7 @@ fn link_allow_list_accepts_safe_and_drops_dangerous() {
         ariad_core::warning::WarningCode::LinkDropped
     );
 
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(content.len(), 3);
         assert_eq!(
             content[0],
@@ -591,7 +625,7 @@ fn link_allow_list_accepts_safe_and_drops_dangerous() {
 fn inlines_all_variants() {
     let html = "<p><em>emph</em><strong>strong</strong><s>strike</s><sup>sup</sup><sub>sub</sub><code>code</code><br>line</p>";
     let output = read(html.as_bytes(), &Limits::default()).expect("inlines should parse");
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(content.len(), 8);
         assert!(matches!(content[0], ariad_core::ir::Inline::Emph { .. }));
         assert!(matches!(content[1], ariad_core::ir::Inline::Strong { .. }));
@@ -651,7 +685,7 @@ fn math_annotation_tex_and_fallback() {
     );
 
     // First math has tex annotation
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(
             content[0],
             ariad_core::ir::Inline::Math {
@@ -675,7 +709,7 @@ fn footnotes_role_doc_noteref_and_doc_footnote() {
     assert_eq!(output.document.body.len(), 3);
 
     // FootnoteRef
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(
             content[1],
             ariad_core::ir::Inline::FootnoteRef {
@@ -687,27 +721,39 @@ fn footnotes_role_doc_noteref_and_doc_footnote() {
     }
 
     // Footnote blocks
-    assert_eq!(
-        output.document.body[1],
-        ariad_core::ir::Block::Footnote {
-            id: "fn1".to_owned(),
+    assert_semantic_blocks_eq(
+        &output.document.body[1..2],
+        &[ariad_core::ir::Block::Footnote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "fn1".to_owned(),
             blocks: vec![ariad_core::ir::Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![ariad_core::ir::Inline::Text {
                     text: "Footnote body text".to_owned(),
                 }],
             }],
-        }
+        }],
     );
-    assert_eq!(
-        output.document.body[2],
-        ariad_core::ir::Block::Footnote {
-            id: "fn2".to_owned(),
+    assert_semantic_blocks_eq(
+        &output.document.body[2..3],
+        &[ariad_core::ir::Block::Footnote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "fn2".to_owned(),
             blocks: vec![ariad_core::ir::Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![ariad_core::ir::Inline::Text {
                     text: "EPUB footnote text".to_owned(),
                 }],
             }],
-        }
+        }],
     );
 }
 
@@ -853,7 +899,7 @@ fn code_and_math_preserve_unnormalized_sequences() {
     } else {
         panic!("expected code block");
     }
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[1] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[1] {
         if let ariad_core::ir::Inline::Code { text } = &content[0] {
             assert!(
                 text.contains(decomposed),
@@ -865,7 +911,7 @@ fn code_and_math_preserve_unnormalized_sequences() {
     } else {
         panic!("expected paragraph");
     }
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[2] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[2] {
         if let ariad_core::ir::Inline::Math { tex, .. } = &content[0] {
             assert!(
                 tex.contains(decomposed),
@@ -890,7 +936,7 @@ fn http_equiv_content_type_with_quotes_and_comments() {
 
     let output =
         read(&html, &Limits::default()).expect("should decode windows-1258 via http-equiv");
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         if let ariad_core::ir::Inline::Text { text } = &content[0] {
             assert_eq!(text, "Tiếng Việt");
         } else {
@@ -928,7 +974,7 @@ fn epub_noteref_and_task_checkbox_warning_suppression() {
         "warnings should be empty but found: {:?}",
         output.warnings
     );
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert!(
             matches!(content.last().unwrap(), ariad_core::ir::Inline::FootnoteRef { id } if id == "fn1")
         );
@@ -1016,7 +1062,7 @@ fn table_row_headers_not_hoisted() {
         );
 
         // Verify body row 0 starts with row header 'a'
-        if let ariad_core::ir::Block::Paragraph { content } = &body[0][0].blocks[0]
+        if let ariad_core::ir::Block::Paragraph { content, .. } = &body[0][0].blocks[0]
             && let ariad_core::ir::Inline::Text { text } = &content[0]
         {
             assert_eq!(text, "a");
@@ -1024,7 +1070,7 @@ fn table_row_headers_not_hoisted() {
         assert_eq!(body[0][0].header, Some(true));
 
         // Verify body row 1 starts with row header 'b'
-        if let ariad_core::ir::Block::Paragraph { content } = &body[1][0].blocks[0]
+        if let ariad_core::ir::Block::Paragraph { content, .. } = &body[1][0].blocks[0]
             && let ariad_core::ir::Inline::Text { text } = &content[0]
         {
             assert_eq!(text, "b");
@@ -1040,7 +1086,7 @@ fn charset_sniff_meta_only_and_utf16_override() {
     // 1. Prose in title containing "charset=koi8-r" must NOT trigger charset sniff
     let prose_html = "<title>Why charset=koi8-r matters</title><p>Tiếng Việt</p>";
     let output = read(prose_html.as_bytes(), &Limits::default()).expect("should parse");
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0]
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0]
         && let ariad_core::ir::Inline::Text { text } = &content[0]
     {
         assert_eq!(text, "Tiếng Việt");
@@ -1049,7 +1095,7 @@ fn charset_sniff_meta_only_and_utf16_override() {
     // 2. <meta charset=utf-16> on UTF-8 page must be overridden to UTF-8 per WHATWG Encoding §4.2
     let utf16_meta_html = r#"<meta charset="utf-16"><p>Tiếng Việt</p>"#;
     let output2 = read(utf16_meta_html.as_bytes(), &Limits::default()).expect("should parse");
-    if let ariad_core::ir::Block::Paragraph { content } = &output2.document.body[0]
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output2.document.body[0]
         && let ariad_core::ir::Inline::Text { text } = &content[0]
     {
         assert_eq!(text, "Tiếng Việt");
@@ -1072,7 +1118,7 @@ fn data_uri_oversized_and_invalid_image_fall_back_with_warning() {
         output.warnings[0].code,
         ariad_core::warning::WarningCode::ImageNotEmbedded
     );
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0]
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0]
         && let ariad_core::ir::Inline::Image { target, alt, .. } = &content[0]
     {
         assert!(matches!(target, ariad_core::ir::AssetRef::Url { .. }));
@@ -1125,7 +1171,7 @@ fn figure_without_image_preserves_content() {
         &output.document.body[0],
         ariad_core::ir::Block::Quote { .. }
     ));
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[1]
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[1]
         && let ariad_core::ir::Inline::Text { text } = &content[0]
     {
         assert_eq!(text, "Author name");
@@ -1147,7 +1193,7 @@ fn katex_mathjax_no_duplicate_stray_text() {
         </p>
     "#;
     let output = read(html.as_bytes(), &Limits::default()).expect("katex should parse");
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(
             content.len(),
             1,
@@ -1205,7 +1251,7 @@ fn inline_nesting_worst_case_serializes_safely() {
 fn whitespace_collapsed_across_inline_tags() {
     let html = "<p><b>a </b> b</p>";
     let output = read(html.as_bytes(), &Limits::default()).expect("should parse");
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(content.len(), 2);
         assert_eq!(
             content[0],
@@ -1290,14 +1336,17 @@ fn aria_hidden_app_root_preserves_content() {
         output.warnings.is_empty(),
         "aria-hidden container must not emit dropped element warning"
     );
-    assert_eq!(
-        output.document.body[0],
-        ariad_core::ir::Block::Heading {
+    assert_semantic_blocks_eq(
+        &output.document.body[0..1],
+        &[ariad_core::ir::Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 1,
             content: vec![ariad_core::ir::Inline::Text {
-                text: "Title".to_owned()
+                text: "Title".to_owned(),
             }],
-        }
+        }],
     );
 }
 
@@ -1310,7 +1359,7 @@ fn phrasing_elements_inside_div_produce_single_paragraph() {
         1,
         "known phrasing elements (mark, u) must not split paragraphs"
     );
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         let text: String = content
             .iter()
             .filter_map(|i| match i {
@@ -1334,7 +1383,7 @@ fn legacy_phrasing_elements_tt_big_acronym_nobr_do_not_split_paragraphs() {
         1,
         "legacy phrasing elements must not split paragraphs"
     );
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         let text: String = content
             .iter()
             .filter_map(|i| match i {
@@ -1358,7 +1407,7 @@ fn standalone_katex_html_preserves_text_and_warns() {
         1,
         "standalone katex-html must preserve content as text"
     );
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         assert_eq!(
             content,
             &vec![ariad_core::ir::Inline::Text {
@@ -1478,7 +1527,7 @@ fn orphan_li_section_nesting_depth_enforced() {
 fn image_title_nfc_normalized() {
     let html = "<img title=\"e\u{301}\" alt=\"e\u{301}\" src=\"a.png\">";
     let output = read(html.as_bytes(), &Limits::default()).expect("html should parse");
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &output.document.body[0] {
         if let ariad_core::ir::Inline::Image { title, alt, .. } = &content[0] {
             assert_eq!(title.as_deref(), Some("é"));
             assert_eq!(alt.as_str(), "é");

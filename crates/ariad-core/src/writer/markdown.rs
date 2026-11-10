@@ -73,14 +73,14 @@ pub(super) fn check_output_size(
         let mut image = None;
         match node {
             WriterNode::Block(block) => match block {
-                Block::Heading { content, .. } | Block::Paragraph { content } => {
+                Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                     stack.extend(
                         content
                             .iter()
                             .map(|inline| (WriterNode::Inline(inline), depth, prefix)),
                     );
                 }
-                Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+                Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
                     let nested_prefix = prefix
                         + if matches!(block, Block::Quote { .. }) {
                             2
@@ -126,7 +126,7 @@ pub(super) fn check_output_size(
                             .map(|inline| (WriterNode::Inline(inline), depth + 1, prefix)),
                     );
                 }
-                Block::Figure { asset, caption } => {
+                Block::Figure { asset, caption, .. } => {
                     image = Some(asset);
                     stack.extend(
                         caption
@@ -137,7 +137,8 @@ pub(super) fn check_output_size(
                 _ => {}
             },
             WriterNode::Inline(inline) => match inline {
-                Inline::Emph { content }
+                Inline::Styled { content, .. }
+                | Inline::Emph { content }
                 | Inline::Strong { content }
                 | Inline::Strikeout { content }
                 | Inline::Superscript { content }
@@ -182,7 +183,13 @@ pub(super) fn check_output_size(
     };
     serde_json::to_writer(
         &mut counter,
-        &(&document.meta, &document.body, &document.furniture),
+        &(
+            &document.meta,
+            &document.body,
+            &document.furniture,
+            &document.styles,
+            &document.sections,
+        ),
     )
     .ok()?;
     Some(references)
@@ -205,11 +212,22 @@ pub fn write(document: &Document) -> WriteOutput {
     let Some(references) = check_output_size(document, None) else {
         return output_ceiling_exceeded();
     };
+    let prohibited_fonts = document
+        .assets
+        .values()
+        .any(|asset| !asset.can_export_bytes());
+    let style_loss = has_style_loss(document);
     let normalized_doc = super::normalize_document(document);
     let document = &normalized_doc;
 
     let mut out = String::new();
     let mut warnings = Vec::new();
+    if style_loss {
+        warnings.push(Warning::new(WarningCode::StylesDropped, "Markdown cannot retain document styles or page setup; semantic text and structure were preserved."));
+    }
+    if prohibited_fonts {
+        warnings.push(Warning::new(WarningCode::FontEmbeddingRestricted, "Restricted or unknown embedded font bytes were omitted; use a permitted family fallback."));
+    }
 
     // 1. YAML front matter
     write_front_matter(&document.meta, &mut out);
@@ -338,7 +356,7 @@ fn format_yaml_string(val: &str) -> String {
 
 fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
     match block {
-        Block::Heading { level, content } => {
+        Block::Heading { level, content, .. } => {
             let clamped = (*level).clamp(1, 6) as usize;
             out.push_str(&"#".repeat(clamped));
             out.push(' ');
@@ -360,14 +378,14 @@ fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
             out.push_str(&heading_text);
             out.push_str("\n\n");
         }
-        Block::Paragraph { content } => {
+        Block::Paragraph { content, .. } => {
             out.push_str(&render_inlines(content, false, false, ctx));
             out.push_str("\n\n");
         }
-        Block::Code { lang, text } => {
+        Block::Code { lang, text, .. } => {
             out.push_str(&format_fenced_block(lang.as_deref(), text));
         }
-        Block::Math { tex, display } => {
+        Block::Math { tex, display, .. } => {
             let trimmed = tex.trim_matches(|c| c == '\r' || c == '\n');
             let has_internal_newline = trimmed.contains('\n') || trimmed.contains('\r');
             if *display {
@@ -396,7 +414,7 @@ fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
                 out.push_str(&format_fenced_block(Some("math"), tex));
             }
         }
-        Block::Quote { blocks } => {
+        Block::Quote { blocks, .. } => {
             let mut quote_out = String::new();
             for inner in blocks {
                 write_block(inner, ctx, &mut quote_out);
@@ -413,7 +431,7 @@ fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
             }
             out.push('\n');
         }
-        Block::PageBreak {} => {
+        Block::PageBreak { .. } => {
             out.push_str("***\n\n");
         }
         Block::List {
@@ -421,6 +439,7 @@ fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
             start,
             tight,
             items,
+            ..
         } => {
             write_list(
                 &ListContext {
@@ -442,16 +461,20 @@ fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
         } => {
             write_table(columns, head, body, ctx, out);
         }
-        Block::Figure { asset, caption } => {
+        Block::Figure { asset, caption, .. } => {
             let alt = plain_text(caption);
             let img = render_image(asset, &alt, None, false, ctx);
             out.push_str(&img);
             out.push_str("\n\n");
         }
-        Block::Footnote { id, blocks } => {
+        Block::Footnote {
+            note_id: id,
+            blocks,
+            ..
+        } => {
             write_footnote(id, blocks, ctx, out);
         }
-        Block::Raw { format, text } => match format {
+        Block::Raw { format, text, .. } => match format {
             RawFormat::Html => {
                 if !ctx.raw_dropped_warned {
                     ctx.warnings.push(Warning::new(
@@ -460,7 +483,7 @@ fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
                     ));
                     ctx.raw_dropped_warned = true;
                 }
-                let stripped = super::strip_html_tags(text);
+                let stripped = super::normalize_multiline(&super::strip_html_tags(text));
                 let escaped = escape_markdown_text(&stripped, EscapeOptions::default());
                 if !escaped.trim().is_empty() {
                     out.push_str(&escaped);
@@ -542,7 +565,7 @@ fn write_list(list: &ListContext<'_>, ctx: &mut MarkdownContext, out: &mut Strin
             }
 
             match inner {
-                Block::Paragraph { content } => {
+                Block::Paragraph { content, .. } => {
                     let text = render_inlines(content, false, false, ctx);
                     let mut lines = text.lines();
                     if first {
@@ -568,6 +591,7 @@ fn write_list(list: &ListContext<'_>, ctx: &mut MarkdownContext, out: &mut Strin
                     start: inner_start,
                     tight: inner_tight,
                     items: inner_items,
+                    ..
                 } => {
                     if first {
                         out.push_str(&item_prefix);
@@ -729,7 +753,7 @@ fn render_cell_content(cell: &TableCell, ctx: &mut MarkdownContext) -> String {
     let mut inlines = Vec::new();
     for block in &cell.blocks {
         match block {
-            Block::Paragraph { content } | Block::Heading { content, .. } => {
+            Block::Paragraph { content, .. } | Block::Heading { content, .. } => {
                 inlines.extend(content.clone());
             }
             _ => {}
@@ -763,7 +787,7 @@ fn write_footnote(id: &str, blocks: &[Block], ctx: &mut MarkdownContext, out: &m
     }
 
     if blocks.len() == 1
-        && let Block::Paragraph { content } = &blocks[0]
+        && let Block::Paragraph { content, .. } = &blocks[0]
     {
         out.push_str(&render_inlines(content, false, false, ctx));
         out.push_str("\n\n");
@@ -857,7 +881,10 @@ pub fn format_delimiter_and_content(text: &str, is_fence: bool) -> (String, Stri
 #[doc(hidden)]
 #[must_use]
 pub fn format_fenced_block(lang: Option<&str>, text: &str) -> String {
-    let (fence, content) = format_delimiter_and_content(text, true);
+    // Normalize line separators before container prefixes are applied so a CR
+    // cannot create an unprefixed line outside a quote or list.
+    let text = super::normalize_multiline(text);
+    let (fence, content) = format_delimiter_and_content(&text, true);
     let mut out = String::new();
     out.push_str(&fence);
     if let Some(l) = lang {
@@ -883,7 +910,7 @@ pub fn format_fenced_block(lang: Option<&str>, text: &str) -> String {
 #[doc(hidden)]
 #[must_use]
 pub fn format_code_span(text: &str, in_table: bool) -> String {
-    let mut normalized = text.replace("\r\n", " ").replace(['\r', '\n'], " ");
+    let mut normalized = super::normalize_singleline(text);
     if in_table && normalized.contains('|') {
         normalized = normalized.replace('|', "\\|");
     }
@@ -1102,6 +1129,9 @@ fn render_inlines(
             Inline::Text { text } => {
                 out.push_str(&escape_markdown_text(text, escape_opts));
             }
+            Inline::Styled { content, .. } => {
+                out.push_str(&render_inlines(content, in_table, in_heading, ctx));
+            }
             Inline::Emph { content } => {
                 let inner = render_inlines(content, in_table, in_heading, ctx);
                 render_delimited(&inner, "*", inlines, i, in_table, &mut out);
@@ -1213,7 +1243,7 @@ fn render_inlines(
                     ));
                     ctx.raw_dropped_warned = true;
                 }
-                let stripped = super::strip_html_tags(text);
+                let stripped = super::normalize_multiline(&super::strip_html_tags(text));
                 out.push_str(&escape_markdown_text(&stripped, escape_opts));
             }
             Inline::Link {
@@ -1592,6 +1622,7 @@ fn plain_text(inlines: &[Inline]) -> String {
             Inline::Text { text: val } | Inline::Code { text: val } => text.push_str(val),
             Inline::Math { tex, .. } => text.push_str(tex),
             Inline::Link { content, .. }
+            | Inline::Styled { content, .. }
             | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
@@ -1603,4 +1634,68 @@ fn plain_text(inlines: &[Inline]) -> String {
         }
     }
     text.nfc().collect()
+}
+
+/// Inspect used styles, rather than unused definitions in the style sheet.
+fn has_style_loss(document: &Document) -> bool {
+    if !document.sections.is_empty() {
+        return true;
+    }
+    let mut inlines = Vec::new();
+    for (_, block) in crate::ir::blocks_with_paths(document) {
+        let styled = if matches!(block, Block::Table { .. }) {
+            document
+                .styles
+                .resolve_table(block.style().as_ref(), block.direct(), 100)
+                .map(|s| !s.is_empty())
+        } else {
+            document
+                .styles
+                .resolve_paragraph(block.style().as_ref(), block.direct(), 100)
+                .map(|s| !s.is_empty())
+        };
+        if styled.unwrap_or(true) {
+            return true;
+        }
+        match block {
+            Block::Paragraph { content, .. } | Block::Heading { content, .. } => {
+                inlines.extend(content)
+            }
+            Block::Table {
+                caption, footnotes, ..
+            } => inlines.extend(caption.iter().flatten().chain(footnotes)),
+            Block::Figure { caption, .. } => inlines.extend(caption),
+            _ => {}
+        }
+    }
+    if !inlines.is_empty() && !document.styles.defaults.character.is_empty() {
+        return true;
+    }
+    while let Some(inline) = inlines.pop() {
+        match inline {
+            Inline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                if document
+                    .styles
+                    .resolve_character(style.as_ref(), direct, None)
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(true)
+                {
+                    return true;
+                }
+                inlines.extend(content);
+            }
+            Inline::Emph { content }
+            | Inline::Strong { content }
+            | Inline::Strikeout { content }
+            | Inline::Superscript { content }
+            | Inline::Subscript { content }
+            | Inline::Link { content, .. } => inlines.extend(content),
+            _ => {}
+        }
+    }
+    false
 }

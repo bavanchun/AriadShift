@@ -1,0 +1,493 @@
+{
+  "canonical": {
+    "headings": [
+      {
+        "children": [],
+        "level": 1,
+        "text": "Sổ khảo sát ven sông"
+      }
+    ],
+    "image_count": 0,
+    "link_count": 0,
+    "lists": [],
+    "tables": [
+      {
+        "caption": "",
+        "rows": [
+          [
+            {
+              "colspan": 1,
+              "is_header": false,
+              "rowspan": 1,
+              "text": "Điểm"
+            },
+            {
+              "colspan": 1,
+              "is_header": false,
+              "rowspan": 1,
+              "text": "Số ghế"
+            }
+          ],
+          [
+            {
+              "colspan": 1,
+              "is_header": false,
+              "rowspan": 1,
+              "text": "Bến sông"
+            },
+            {
+              "colspan": 1,
+              "is_header": false,
+              "rowspan": 1,
+              "text": "3"
+            }
+          ],
+          [
+            {
+              "colspan": 1,
+              "is_header": false,
+              "rowspan": 1,
+              "text": "Vườn đọc"
+            },
+            {
+              "colspan": 1,
+              "is_header": false,
+              "rowspan": 1,
+              "text": "5"
+            }
+          ]
+        ]
+      }
+    ],
+    "text": "Sổ khảo sát ven sông\nBến sông có ba ghế gỗ. Nhóm đọc sách gặp nhau vào sáng thứ bảy.\nĐiểm\nSố ghế\nBến sông\n3\nVườn đọc\n5"
+  },
+  "case": "vi-styled-pair",
+  "ir": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "content": [
+              {
+                "text": "Sổ khảo sát ven sông",
+                "type": "text"
+              }
+            ],
+            "direct": {
+              "color": "#185c4c",
+              "font": {
+                "fallback": [
+                  "Noto Serif"
+                ],
+                "family": "Libertinus Serif"
+              },
+              "size_pt": 18.0,
+              "weight": 700
+            },
+            "type": "styled"
+          }
+        ],
+        "direct": {
+          "color": "#185c4c",
+          "font": {
+            "fallback": [
+              "Noto Serif"
+            ],
+            "family": "Libertinus Serif"
+          },
+          "size_pt": 18.0
+        },
+        "id": "b38aadedf8d789a546ac83f3c31d0a20c00be0ff063d761e95ba988a849167a02",
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Bến sông có ba ghế gỗ. Nhóm đọc sách gặp nhau vào sáng thứ bảy.",
+            "type": "text"
+          }
+        ],
+        "direct": {
+          "font": {
+            "fallback": [
+              "Noto Serif"
+            ],
+            "family": "Libertinus Serif"
+          },
+          "size_pt": 11.0
+        },
+        "id": "bc16b853254056734cbef16c88bb90eab974bcbee36701e1eb6b4ca274633a330",
+        "type": "paragraph"
+      },
+      {
+        "body": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Điểm",
+                      "type": "text"
+                    }
+                  ],
+                  "direct": {},
+                  "id": "bb2faa6218cdaaaa982f1d4f80f272e8c35ec5f8f4790148c56469ed12d8b57a7",
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "header": false,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Số ghế",
+                      "type": "text"
+                    }
+                  ],
+                  "direct": {},
+                  "id": "b28f7f03492053232e2a55e41feb82ee02c7197ed85787ab94cefa90c83ee7901",
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "header": false,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Bến sông",
+                      "type": "text"
+                    }
+                  ],
+                  "direct": {},
+                  "id": "bf5a585e81e83c28e0ee30877d53a29e1e05d39db9e1769f33b4489148433d302",
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "header": false,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "3",
+                      "type": "text"
+                    }
+                  ],
+                  "direct": {},
+                  "id": "bdb03a10416d62ff3bc0a125d93a043174eb8cc296aabdc971f0b46cbcec13f0c",
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "header": false,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Vườn đọc",
+                      "type": "text"
+                    }
+                  ],
+                  "direct": {},
+                  "id": "b52c5ccb2e89fb4813e4087634bd8d0f3c260ae1f5d047d8d17043e7965830771",
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "header": false,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "5",
+                      "type": "text"
+                    }
+                  ],
+                  "direct": {},
+                  "id": "b45449317fc29581b11cacb4f8b9156c53d73a11b9bf4a55bbbd8f8dc0a930174",
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "header": false,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "caption": null,
+        "columns": [
+          {
+            "align": "left"
+          },
+          {
+            "align": "left"
+          }
+        ],
+        "direct": {},
+        "head": [],
+        "id": "b8d782979161b235050899a76d7bcfadb7364b0163b6033c62f9be80aea76d401",
+        "type": "table"
+      }
+    ],
+    "furniture": [
+      {
+        "content": [
+          {
+            "text": "Ghi chép cộng đồng",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Lưu bản gốc để đối chiếu",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313",
+        "type": "paragraph"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e": {
+          "bbox": {
+            "bottom": 40.506,
+            "left": 54.0,
+            "right": 144.222,
+            "top": 27.966
+          },
+          "page_no": 1
+        },
+        "b28f7f03492053232e2a55e41feb82ee02c7197ed85787ab94cefa90c83ee7901": {
+          "bbox": {
+            "bottom": 109.242,
+            "left": 302.5,
+            "right": 332.464,
+            "top": 96.702
+          },
+          "page_no": 1
+        },
+        "b38aadedf8d789a546ac83f3c31d0a20c00be0ff063d761e95ba988a849167a02": {
+          "bbox": {
+            "bottom": 70.038,
+            "left": 54.0,
+            "right": 222.768,
+            "top": 49.518
+          },
+          "page_no": 1
+        },
+        "b45449317fc29581b11cacb4f8b9156c53d73a11b9bf4a55bbbd8f8dc0a930174": {
+          "bbox": {
+            "bottom": 143.718,
+            "left": 302.5,
+            "right": 307.615,
+            "top": 131.178
+          },
+          "page_no": 1
+        },
+        "b52c5ccb2e89fb4813e4087634bd8d0f3c260ae1f5d047d8d17043e7965830771": {
+          "bbox": {
+            "bottom": 143.718,
+            "left": 59.0,
+            "right": 102.054,
+            "top": 131.178
+          },
+          "page_no": 1
+        },
+        "b8d782979161b235050899a76d7bcfadb7364b0163b6033c62f9be80aea76d401": {
+          "bbox": {
+            "bottom": 143.718,
+            "left": 59.0,
+            "right": 332.464,
+            "top": 96.702
+          },
+          "page_no": 1
+        },
+        "bb2faa6218cdaaaa982f1d4f80f272e8c35ec5f8f4790148c56469ed12d8b57a7": {
+          "bbox": {
+            "bottom": 109.242,
+            "left": 59.0,
+            "right": 83.299,
+            "top": 96.702
+          },
+          "page_no": 1
+        },
+        "bc16b853254056734cbef16c88bb90eab974bcbee36701e1eb6b4ca274633a330": {
+          "bbox": {
+            "bottom": 83.804,
+            "left": 54.0,
+            "right": 354.278,
+            "top": 71.264
+          },
+          "page_no": 1
+        },
+        "bdb03a10416d62ff3bc0a125d93a043174eb8cc296aabdc971f0b46cbcec13f0c": {
+          "bbox": {
+            "bottom": 126.48,
+            "left": 302.5,
+            "right": 307.615,
+            "top": 113.94
+          },
+          "page_no": 1
+        },
+        "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313": {
+          "bbox": {
+            "bottom": 814.144,
+            "left": 54.0,
+            "right": 166.343,
+            "top": 801.604
+          },
+          "page_no": 1
+        },
+        "bf5a585e81e83c28e0ee30877d53a29e1e05d39db9e1769f33b4489148433d302": {
+          "bbox": {
+            "bottom": 126.48,
+            "left": 59.0,
+            "right": 100.393,
+            "top": 113.94
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 842.0,
+          "page_no": 1,
+          "width": 595.0
+        }
+      ]
+    },
+    "meta": {
+      "language": "vi",
+      "title": "Sổ khảo sát ven sông"
+    },
+    "provenance": {
+      "org.ariadshift.editor-corpus": {
+        "case": "vi-styled-pair",
+        "source": "original-authoring"
+      }
+    },
+    "sections": [
+      {
+        "columns": 1,
+        "footer": "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313",
+        "header": "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e",
+        "margins": {
+          "bottom_pt": 54.0,
+          "left_pt": 54.0,
+          "right_pt": 54.0,
+          "top_pt": 54.0
+        },
+        "page_size": {
+          "height_pt": 842.0,
+          "width_pt": 595.0
+        }
+      }
+    ],
+    "styles": {
+      "character": {},
+      "defaults": {
+        "character": {
+          "weight": 400
+        },
+        "paragraph": {
+          "font": {
+            "fallback": [
+              "Noto Serif"
+            ],
+            "family": "Libertinus Serif"
+          },
+          "size_pt": 11.0
+        },
+        "table": {
+          "character": {},
+          "paragraph": {}
+        }
+      },
+      "paragraph": {},
+      "table": {}
+    },
+    "version": "ariad-ir/2"
+  },
+  "layout": {
+    "columns": 1,
+    "margins_pt": 54.0,
+    "measurement": "pdftotext 26.10.0 -bbox-layout; top-left points; table is cell-text union",
+    "page_height_pt": 842.0,
+    "page_width_pt": 595.0,
+    "reference_kind": "authored-pdf-word-bounds",
+    "source_pdf_sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc"
+  },
+  "origin": "independent-original-specification",
+  "routes": [
+    "pdf->docx",
+    "docx->pdf"
+  ],
+  "schema": "ariad-editor-truth/1",
+  "semantics": {
+    "footer": "Lưu bản gốc để đối chiếu",
+    "header": "Ghi chép cộng đồng",
+    "headings": [
+      "Sổ khảo sát ven sông"
+    ],
+    "paragraph": "Bến sông có ba ghế gỗ. Nhóm đọc sách gặp nhau vào sáng thứ bảy.",
+    "table": [
+      [
+        "Điểm",
+        "Số ghế"
+      ],
+      [
+        "Bến sông",
+        "3"
+      ],
+      [
+        "Vườn đọc",
+        "5"
+      ]
+    ],
+    "title": "Sổ khảo sát ven sông"
+  },
+  "styles": {
+    "body_size_pt": 11.0,
+    "body_weight": 400,
+    "font_family": "Libertinus Serif",
+    "heading_color": "#185c4c",
+    "heading_size_pt": 18.0,
+    "heading_weight": 700
+  },
+  "tolerances": {
+    "rgb_channel": 2,
+    "size_pt": 0.5,
+    "weight": 0
+  }
+}

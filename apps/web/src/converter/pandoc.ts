@@ -68,7 +68,7 @@ export class Pandoc {
     return instance;
   }
 
-  async convert(bytes: Uint8Array, from: string, to: string) {
+  async convert(bytes: Uint8Array, from: string, to: string, reference?: Uint8Array) {
     const instance = await this.#ready();
     const reading = from !== "json";
     const output = new File([]);
@@ -83,10 +83,12 @@ export class Pandoc {
     this.#files.set("stderr", stderr);
     this.#files.set("warnings", warnings);
     if (reading) this.#files.set("media.zip", media);
+    if (reference) this.#files.set("reference.docx", new File(reference, { readonly: true }));
     const options = new TextEncoder().encode(
       JSON.stringify({
-        from,
+        from: from === "docx" ? "docx+styles" : from,
         to,
+        ...(reference ? { "reference-doc": "reference.docx" } : {}),
         "input-files": ["input"],
         "output-file": "output",
         ...(reading ? { "extract-media": "media.zip" } : {}),

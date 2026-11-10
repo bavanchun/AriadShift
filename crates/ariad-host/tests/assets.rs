@@ -150,6 +150,9 @@ fn resolves_images_nested_in_quotes_tables_figures_and_inline_wrappers() {
         title: None,
     };
     let figure = Block::Figure {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         asset: AssetRef::Url {
             href: "nested.png".to_owned(),
         },
@@ -163,13 +166,22 @@ fn resolves_images_nested_in_quotes_tables_figures_and_inline_wrappers() {
     };
     let mut document = Document {
         body: vec![Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![Block::List {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 ordered: false,
                 start: None,
                 tight: true,
                 items: vec![ListItem {
                     checked: None,
                     blocks: vec![Block::Table {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         caption: Some(vec![image()]),
                         columns: Vec::new(),
                         head: vec![vec![TableCell {
@@ -185,13 +197,14 @@ fn resolves_images_nested_in_quotes_tables_figures_and_inline_wrappers() {
             }],
         }],
         ..Document::default()
-    };
+    }
+    .finalize_import();
 
     let warnings = assets::resolve(&mut document, base.path(), &Limits::local()).unwrap();
 
     assert!(warnings.is_empty());
     assert_eq!(document.assets.len(), 1);
-    let Block::Quote { blocks } = &document.body[0] else {
+    let Block::Quote { blocks, .. } = &document.body[0] else {
         panic!("expected quote");
     };
     let Block::List { items, .. } = &blocks[0] else {
@@ -204,7 +217,7 @@ fn resolves_images_nested_in_quotes_tables_figures_and_inline_wrappers() {
         image_target_in_inline(&caption.as_ref().unwrap()[0]),
         AssetRef::Asset { .. }
     ));
-    let Block::Figure { asset, caption } = &head[0][0].blocks[0] else {
+    let Block::Figure { asset, caption, .. } = &head[0][0].blocks[0] else {
         panic!("expected figure");
     };
     assert!(matches!(asset, AssetRef::Asset { .. }));
@@ -463,6 +476,9 @@ fn document_with_images<'a>(hrefs: impl IntoIterator<Item = &'a str>) -> Documen
         body: hrefs
             .into_iter()
             .map(|href| Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Image {
                     target: AssetRef::Url {
                         href: href.to_owned(),
@@ -474,10 +490,11 @@ fn document_with_images<'a>(hrefs: impl IntoIterator<Item = &'a str>) -> Documen
             .collect(),
         ..Document::default()
     }
+    .finalize_import()
 }
 
 fn image_target(document: &Document, index: usize) -> &AssetRef {
-    let Block::Paragraph { content } = &document.body[index] else {
+    let Block::Paragraph { content, .. } = &document.body[index] else {
         panic!("expected image paragraph");
     };
     let Inline::Image { target, .. } = &content[0] else {
@@ -548,4 +565,79 @@ fn fifo_failure_cleanup_is_bounded_without_a_reader() {
         }
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+#[test]
+fn styled_content_resolves_assets_without_changing_block_ids() {
+    use ariad_core::ir::{CharacterStyle, ParagraphStyle};
+    let base = tempdir().unwrap();
+    fs::write(base.path().join("styled.png"), PNG).unwrap();
+    let mut doc = Document {
+        body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: ParagraphStyle::default(),
+            content: vec![Inline::Styled {
+                style: None,
+                direct: CharacterStyle::default(),
+                content: vec![Inline::Image {
+                    target: AssetRef::Url {
+                        href: "styled.png".into(),
+                    },
+                    alt: "image".into(),
+                    title: None,
+                }],
+            }],
+        }],
+        ..Default::default()
+    }
+    .finalize_import();
+    let id = doc.body[0].id().clone();
+    let Block::Paragraph { content, .. } = &doc.body[0] else {
+        unreachable!()
+    };
+    let footnotes = content.clone();
+    let mut furniture = doc.body[0].clone();
+    *furniture.id_mut() = Default::default();
+    doc.furniture.push(furniture);
+    doc.body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        caption: None,
+        columns: vec![],
+        head: vec![],
+        body: vec![],
+        footnotes,
+    });
+    doc.assign_block_ids();
+    assert!(
+        assets::resolve(&mut doc, base.path(), &Limits::local())
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(doc.body[0].id(), &id);
+    assert_eq!(doc.assets.len(), 1);
+    for inlines in doc
+        .body
+        .iter()
+        .chain(&doc.furniture)
+        .map(|block| match block {
+            Block::Paragraph { content, .. } => content,
+            Block::Table { footnotes, .. } => footnotes,
+            _ => unreachable!(),
+        })
+    {
+        let Inline::Styled { content, .. } = &inlines[0] else {
+            panic!("style wrapper must survive asset resolution")
+        };
+        assert!(matches!(
+            content[0],
+            Inline::Image {
+                target: AssetRef::Asset { .. },
+                ..
+            }
+        ));
+    }
+    ariad_core::pipeline::validate_ir_document(&doc, &Limits::local()).unwrap();
 }

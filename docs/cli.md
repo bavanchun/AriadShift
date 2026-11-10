@@ -79,6 +79,14 @@ Converts the formats below through the shared planner. Native readers cover Mark
 ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 ```
 
+IR JSON defaults to `ariad-ir/2` with stable block IDs, ID-keyed layout/source maps, named and direct styles, and page sections. The shared cascade is paragraph defaults, the containing table paragraph baseline, named paragraph inheritance, then direct overrides. Character spans inherit outer values and retain explicit false resets. DOCX reads named and direct OOXML formatting through `docx+styles`; HTML reads a safe inline CSS subset, PDF retains evidenced font/size/weight/colour (including verified matrix/TRC sRGB ICC profiles; other ICC colour spaces remain unknown), and Docling retains its formatting flags. Typst, HTML and DOCX write supported styles; Markdown reports style loss. See [the IR contract](../ARCHITECTURE.md#62-document-ir).
+
+DOCX table styles may inherit from the built-in `TableNormal` baseline without an explicit definition, as in Pandoc's default output. Other missing style parents and inheritance across different style types are rejected.
+
+DOCX text-box stories remain under the semantic reader's control. Their content and formatting may be omitted, with an explicit `unsupported_node` warning; they do not cause the entire DOCX to be rejected as malformed.
+
+Unsupported PDF colour values remain unknown and emit `styles_dropped`; missing Unicode mappings and truncated content retain their separate content-loss warnings.
+
 #### Arguments and Options
 
 - `<INPUT>...`: One or more input document paths, processed in order.
@@ -86,6 +94,7 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
 - `--pdf-standard <STANDARD>`: Request `a-2b`, `a-2u`, `a-3b`, or `ua-1` on a PDF route whose final writer is Typst. The host requires the `verapdf` pack and system Java >=11, validates the candidate against the requested flavour, and publishes only after compliance passes. Missing pack/Java exits 5; failed validation exits 1 without changing the destination. PDF/UA requires meaningful figure alternative text; missing descriptions are reported, never invented.
+- `--ir-version <1|2>`: Select the IR JSON wire version for single or batch JSON conversion. The default is `ariad-ir/2`; explicit `1` writes through the frozen legacy representation and reports `ir_version_loss` because identities, styles, sections, source maps and font metadata are omitted. Unsupported values and use with non-JSON output fail before destination creation.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -109,6 +118,7 @@ ashift convert notes.md --to pdf --pdf-standard a-2b
 ashift convert legacy.doc --to md
 ashift convert slides.pptx --to pdf
 ashift convert notes.md --to json
+ashift convert notes.md --to json --ir-version 1 -o legacy.ir.json
 
 # Convert with JSON output for scripts or pipelines
 ashift convert draft.md --to docx --json
@@ -123,7 +133,7 @@ PDF, Typst and LibreOffice advertise `supports_session: false`; batches and MCP 
 
 When LibreOffice is found, namespace setup failure is fatal in both `best-effort` and `required` modes (`error[sandbox_unavailable]` on stderr, exit 5). `doctor` reports the failed `engine_libreoffice` check with the cause, and `engines` lists the engine as `cannot start`. Conversion keeps this error when LibreOffice was the planner's first choice; it does not silently fall back to a different-fidelity route. On Ubuntu, run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, or install an [AppArmor profile allowing `userns` for the `ashift` binary](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/#apparmor-unprivileged-user-namespace-restrictions). The sysctl changes the host-wide policy; a binary-specific profile limits that grant. Default Docker and Kubernetes container seccomp profiles also block the namespace setup. See [worker runtime requirements](server.md#worker) for cloud deployments. `ASHIFT_SANDBOX=off` explicitly bypasses this requirement by disabling engine isolation; use it only when accepting that trade-off.
 
-LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, PDF → PPTX, and supported Office/ODF formats → PDF (including ODG/WPD/WPS/PUB/VSD). Chained routes include DOC → DOCX → IR → MD. LibreOffice only processes the input file itself; the planner never runs it on another engine's output. Markdown, HTML, EPUB and IR JSON therefore write PDF through Typst in every profile and never need LibreOffice or its namespaces. Without LibreOffice, discovery needs no private `/tmp` or namespace setup; DOCX → PDF falls back to Pandoc and Typst, and LibreOffice-only routes report the missing optional engine. Each job uses a fresh profile with macros disabled and Writer/Calc link updates set to never.
+LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, PDF → PPTX, and supported Office/ODF formats → PDF (including ODG/WPD/WPS/PUB/VSD). Chained routes include DOC → DOCX → IR → MD. LibreOffice only processes the input file itself; the planner never runs it on another engine's output. Markdown, HTML, EPUB and IR JSON therefore write PDF through Typst in every profile and never need LibreOffice or its namespaces. Without LibreOffice, discovery needs no private `/tmp` or namespace setup; DOCX → PDF falls back to Pandoc and Typst, and LibreOffice-only routes report the missing optional engine. Each job uses a fresh profile with macros disabled and Writer/Calc link updates set to never. Builds with Typst stage the same permitted Libertinus and Source Code Pro fonts in that profile's `user/fonts` directory, preventing substitution when those families are absent from the system. No fonts are installed globally. Native PDF import restores the display family names for these known PostScript aliases; unrelated font names remain unchanged.
 
 `--to json` writes IR JSON; `--json` instead selects the conversion report on stdout.
 
@@ -221,7 +231,7 @@ decode these names as UTF-8. Preserving name bytes and flags exactly is a v1.x i
 
 #### JSON Output Shape
 
-For one input, `--json` preserves the existing report shape:
+For one input, `--json` keeps `output`, `route`, `warnings` and `elapsed_ms`, and adds `fidelity`. This example shows unavailable read-back evidence:
 
 ```json
 {
@@ -244,11 +254,28 @@ For one input, `--json` preserves the existing report shape:
       "message": "The input file extension does not match the detected format."
     }
   ],
-  "elapsed_ms": 42
+  "elapsed_ms": 42,
+  "fidelity": {
+    "metric_version": "fidelity/2",
+    "status": "unavailable",
+    "basis": "runtime_readback",
+    "score": null,
+    "text_cer": null,
+    "structure_f1": null,
+    "structure_by_kind": {},
+    "style_accuracy": null,
+    "layout_iou": null,
+    "coverage": {},
+    "unavailable_reasons": {"report": "readback_limit_exceeded"}
+  }
 }
 ```
 
-For several inputs, `--json` emits one document with results in input order:
+Measured reports compare observations captured from the first input IR with one output read-back through existing readers. They measure preservation after extraction, independently of planner estimates. See [fidelity definitions](bench.md#measured-fidelity-fidelity2) for the aggregate, tolerances and coverage. `structure_by_kind` contains heading/list/table precision, recall, F1 and counts. `coverage` contains reference/hypothesis/matched/observed counts for text, style and layout; missing components are null with reasons. Batch successes and MCP conversion results carry the same report.
+
+Read-back adds at most one engine invocation, capped at five seconds, 512 MiB engine memory, 2 MiB input, 8 MiB IR, 16 MiB decompressed content, 2,048 archive entries, 4,096 blocks and 100 pages; stricter caller limits prevail. Native readers and the shared scorer enforce their bounds. Unsupported read-back, missing input IR, limits or engine failures return `unavailable` without failing a completed conversion. Scoring retains the caller's isolation policy and never recursively converts or launches Python.
+
+For several inputs, `--json` emits one document with results in input order. The successful entry below abbreviates the route and omits `fidelity` for readability:
 
 ```json
 {
@@ -789,6 +816,8 @@ ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--param
 - `--overwrite`: Replace existing destination file(s).
 - `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
 
+`ASHIFT_PLAN` supplies the local plan context for `tool`, `recipe run`, and MCP `run_doc_tool`. Unset defaults to `free`; set values are trimmed and must be `free`, `pro`, `team`, or `enterprise`. Empty, invalid or non-UTF-8 values return `invalid_params` (exit 9). Pro page editing uses `ASHIFT_PLAN=pro`; recipes pass this plan through to every step and quota check. For MCP, set it when launching the server (`ASHIFT_PLAN=pro ashift mcp --allow-dir "$PWD"`). This local context does not authenticate a subscription; see [tool access control](tools.md#local-plan-context-ashift_plan).
+
 #### Examples
 
 ```bash
@@ -890,7 +919,29 @@ ashift tool pdf.sign document.pdf --secret certificate=@cert.p12 --secret passwo
 
 # Verify all digital signatures and timestamps in a PDF
 ashift tool pdf.sign_verify signed.pdf --json
+
+# List all four document/page edit tools and their schemas
+ashift tools --group edit --json
+
+# Open a document as ariad-ir/2; --json reports export previews and source-map counts
+ashift tool edit.open_document report.pdf --param target_format=docx -o opened.ir.json --json
+
+# Edit the IR, retaining existing block IDs, then export with original-document changes
+ashift tool edit.export_document edited.ir.json report.pdf --param format=docx -o edited.docx --json
+
+# The original is optional; format defaults to pdf (also accepts html and md)
+ashift tool edit.export_document edited.ir.json -o edited.pdf --json
+
+# Inspect stable object IDs before preparing an ordered page-edit operation list
+ASHIFT_PLAN=pro ashift tool edit.page_objects report.pdf --param pages=1 -o objects.json --json
+
+# edits.json contains {"ops":[...],"save":"incremental"}; retain it for crash recovery
+ASHIFT_PLAN=pro ashift tool edit.apply report.pdf --params-json edits.json -o edited-in-place.pdf --json
 ```
+
+Document-mode opening accepts PDF, DOCX, HTML and Markdown; it writes `ariad-ir/2` with source maps and available layout geometry. Opening reports `metrics.fidelity_preview`; export reports measured `metrics.fidelity` and `metrics.change_list` (`added`, `removed`, `modified` block IDs). With an original second input, changes describe the edit; without it, changes describe the exported read-back relative to the edited IR. PDF export uses the bundled Typst compiler and DOCX requires Pandoc. See [the edit tool contract](tools.md#document-and-page-editing-edit-group) for parameters and operation fields.
+
+Page mode requires Pro access and the PDFium engine pack. `edit.apply` takes 1–1000 operations and defaults to a full rewrite; `save=incremental` appends a revision while preserving the original bytes and earlier signature byte ranges. Store the input bytes and operation list together to replay after a crash. Font substitution emits `font_substituted`; unsupported characters fail with a `glyph_unavailable` diagnostic (`engine_failure`, exit 1) before publication.
 
 ---
 

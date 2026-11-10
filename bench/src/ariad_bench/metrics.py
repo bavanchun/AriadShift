@@ -201,6 +201,7 @@ class SingleFixtureScore:
     wall_ms: float
     peak_rss_bytes: int | None
     tables_skipped: int = 0
+    fidelity_report: dict[str, Any] | None = None
 
 
 def score_fixture(
@@ -234,6 +235,20 @@ def score_fixture(
         peak_rss_bytes=peak_rss_bytes,
         tables_skipped=skipped_tables,
     )
+
+
+def score_fixture_v2(
+    ref_doc: CanonicalDoc,
+    hyp_doc: CanonicalDoc,
+    wall_ms: float = 0.0,
+    peak_rss_bytes: int | None = None,
+) -> SingleFixtureScore:
+    """Keep legacy diagnostics while deriving the capability scalar from v2 evidence."""
+    from ariad_bench.fidelity import compare
+    result = score_fixture(ref_doc, hyp_doc, wall_ms, peak_rss_bytes)
+    result.fidelity_report = compare(ref_doc, hyp_doc)
+    result.fidelity = result.fidelity_report["score"] or 0.0
+    return result
 
 
 def _read_linux_vm_hwm(pid: int) -> int | None:

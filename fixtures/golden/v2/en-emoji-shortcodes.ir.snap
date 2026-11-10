@@ -1,0 +1,57 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "A Small Opening Day",
+          "type": "text"
+        }
+      ],
+      "id": "b6077f0b535744e1ce8baef15e24a652792ba11330a5c03381232a1e1ce20b2f5",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The doors are open ",
+          "type": "text"
+        },
+        {
+          "text": "😄",
+          "type": "text"
+        },
+        {
+          "text": " and the first repaired lamp is ready ",
+          "type": "text"
+        },
+        {
+          "text": "🎉",
+          "type": "text"
+        },
+        {
+          "text": ".",
+          "type": "text"
+        }
+      ],
+      "id": "b250931056ab1bb2f059c8d031687d29c51b5f6f689138d39376f30061d75a2ae",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

@@ -1,0 +1,71 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Measuring a Shared Path",
+          "type": "text"
+        }
+      ],
+      "id": "b5fb3f3cfc9e27bded2530e3c97a83f9d611e202526d2cf1eb9669e902a67c4f9",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The walking estimate is ",
+          "type": "text"
+        },
+        {
+          "display": false,
+          "tex": "d = vt",
+          "type": "math"
+        },
+        {
+          "text": ". Với từng đoạn đường, ta có thể tính tổng như sau:",
+          "type": "text"
+        }
+      ],
+      "id": "b48178e0d3f2aadb93bc04bd8e89d5bbd5f77d73d83e5ae4b87c82b24fcaa6d97",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "display": true,
+          "tex": "\nD = \\sum_{i=1}^{n} d_i\n",
+          "type": "math"
+        }
+      ],
+      "id": "b0c3cbf5a8c3b452896b71291eaa97e6eb6585cd5c2d5d53ea2011489e7d0195a",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "A slower pace changes the total time, not the map scale.",
+          "type": "text"
+        }
+      ],
+      "id": "ba196bac99eac3627b834a3bc45cb92989352554039217d8b565c1489b6c0aa27",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

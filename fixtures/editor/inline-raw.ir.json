@@ -1,0 +1,182 @@
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Editable neighbour before inline-raw.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b3f011335e6d55dd3f7eda931bf690c6e7ef375580f5ceab21409a0eaf4dcef99",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Editor case: inline-raw",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b531e9609fd6d93e64a85e1ae791ac08ef47a12b73b9702c71fc5d0b05e8b9d62",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Before ",
+          "type": "text"
+        },
+        {
+          "format": "html",
+          "text": "<span data-note=\"x\"> Á </span>",
+          "type": "raw"
+        },
+        {
+          "text": " between ",
+          "type": "text"
+        },
+        {
+          "format": "tex",
+          "text": "\\kern  2pt % exact",
+          "type": "raw"
+        },
+        {
+          "text": " after.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "bb2aa8b6b43ac63abec41246a36790d490407b45ce68903b62190b566318341f2",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Editable neighbour after inline-raw.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b4be5f669cbd191535f38539078a2683cee6fefb7e6be009a007b40e3c3080c3a",
+      "type": "paragraph"
+    }
+  ],
+  "layout": {
+    "blocks": {
+      "b3f011335e6d55dd3f7eda931bf690c6e7ef375580f5ceab21409a0eaf4dcef99": {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      },
+      "b4be5f669cbd191535f38539078a2683cee6fefb7e6be009a007b40e3c3080c3a": {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      },
+      "b531e9609fd6d93e64a85e1ae791ac08ef47a12b73b9702c71fc5d0b05e8b9d62": {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      },
+      "bb2aa8b6b43ac63abec41246a36790d490407b45ce68903b62190b566318341f2": {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    },
+    "pages": [
+      {
+        "height": 842.0,
+        "page_no": 1,
+        "width": 595.0
+      }
+    ]
+  },
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "ariad-ir+json",
+    "subject": "Original editor preservation corpus",
+    "title": "Editor preservation: inline-raw"
+  },
+  "provenance": {
+    "org.ariadshift.editor-corpus": {
+      "case": "inline-raw",
+      "font_permission_evidence": {
+        "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+      },
+      "source": "original-authoring"
+    }
+  },
+  "source_map": {
+    "b3f011335e6d55dd3f7eda931bf690c6e7ef375580f5ceab21409a0eaf4dcef99": [
+      {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b4be5f669cbd191535f38539078a2683cee6fefb7e6be009a007b40e3c3080c3a": [
+      {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b531e9609fd6d93e64a85e1ae791ac08ef47a12b73b9702c71fc5d0b05e8b9d62": [
+      {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bb2aa8b6b43ac63abec41246a36790d490407b45ce68903b62190b566318341f2": [
+      {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    ]
+  },
+  "version": "ariad-ir/2"
+}

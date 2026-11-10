@@ -1,0 +1,201 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Bảng hành trình",
+          "type": "text"
+        }
+      ],
+      "id": "b9f2a01d18cdc6143a34c87109b54f1bc91e745e8bd00bd05d9e76ae0d22aab14",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bến sông",
+                    "type": "text"
+                  }
+                ],
+                "id": "bb9671736975ee99076e8a4c61f6aa85cc37c9a040c42a563b944b5c2c8e08551",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "8",
+                    "type": "text"
+                  }
+                ],
+                "id": "b570b9e7c5fa03dcd309586cfbac3969e33e75739556a8a5a4beeab3bda46549f",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bóng mát",
+                    "type": "text"
+                  }
+                ],
+                "id": "bb7d2ccded4a0726e77d78a5a1f04caa7035c6f6c74e9295f8f8a4451fed3ab6f",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Vườn sách",
+                    "type": "text"
+                  }
+                ],
+                "id": "b950eef5985a8e2272e6300e8d644e5792f2089dde790fd508468a90260b89a69",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "14",
+                    "type": "text"
+                  }
+                ],
+                "id": "b57681e52c9f2f18170e33a8edaff9b4767f36482a5bbe48683aaf4d00585840d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Có ghế dài",
+                    "type": "text"
+                  }
+                ],
+                "id": "b76c50bf2644cae0350f0cda8f0ca19aa4bf19b83bc0ff34a85489d3c3b3d8cd0",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "left"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Điểm dừng",
+                    "type": "text"
+                  }
+                ],
+                "id": "bb9ef94635f44ee44c36a2da18860b452930c8ef705f93bbfe916960195488ace",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Phút đi bộ",
+                    "type": "text"
+                  }
+                ],
+                "id": "b54b52de0bf077679d1521e93567e989a456ebe290b75e79f653b01b0ac96cdff",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Ghi chú",
+                    "type": "text"
+                  }
+                ],
+                "id": "b64f4fe2d1a4e49e80a0a244514c597fecf9f68eabd796ddb289afb05158b0b4d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "b89d32d5c82775ef66f73937051eab4e3c295c8d9ca9d50cbe5aa5f3d6589936a",
+      "type": "table"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

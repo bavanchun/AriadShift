@@ -6,14 +6,13 @@ use ariad_host::ir_io::{ReadError, read, read_versioned};
 
 #[test]
 fn supported_versions_normalize_without_changing_document_content() {
-    for version in ["ariad-ir/0", IR_VERSION] {
+    for version in ["ariad-ir/0", "ariad-ir/1", IR_VERSION] {
         let bytes = format!(
-            r#"{{"version":"{version}","body":[{{"type":"paragraph","content":[{{"type":"text","text":"Legacy content"}}]}}],"furniture":[{{"type":"page_break"}}]}}"#
+            r#"{{"version":"{version}","body":[{{"type":"paragraph","id":"body-id","content":[{{"type":"text","text":"Legacy content"}}]}}],"furniture":[{{"type":"page_break","id":"furniture-id"}}]}}"#
         );
         assert!(is_supported_version(Some(version)));
-        let mut plain = read(bytes.as_bytes(), &Limits::local()).unwrap();
-        assert_eq!(plain.version, version);
-        plain.version = IR_VERSION.to_owned();
+        let plain = read(bytes.as_bytes(), &Limits::local()).unwrap();
+        assert_eq!(plain.version, IR_VERSION);
         assert_eq!(
             read_versioned(bytes.as_bytes(), &Limits::local()).unwrap(),
             plain
@@ -65,4 +64,21 @@ fn normalized_reader_preserves_byte_depth_and_block_limits() {
         read_versioned(deep.as_bytes(), &limits),
         Err(ReadError::DepthExceeded(_))
     ));
+}
+
+#[test]
+fn native_ir_byte_cap_remains_independent_of_the_source_input_cap() {
+    let bytes = br#"{"version":"ariad-ir/1","body":[{"type":"paragraph","content":[]}]}"#;
+    let limits = Limits {
+        max_input_bytes: Some(1),
+        max_ir_json_bytes: bytes.len() as u64,
+        ..Limits::local()
+    };
+    let streamed = read(bytes.as_slice(), &limits).unwrap();
+    let versioned = read_versioned(bytes, &limits).unwrap();
+    assert_eq!(streamed, versioned);
+    assert_eq!(versioned.block_count(), 1);
+    assert!(
+        matches!(ariad_core::pipeline::read_ir_json(bytes,&limits), Err(ariad_core::pipeline::PipelineError::LimitExceeded { limit }) if limit == "max_input_bytes")
+    );
 }

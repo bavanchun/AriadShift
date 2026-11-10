@@ -69,6 +69,10 @@ pub(super) struct Font {
     pub(super) size_scale: f64,
     pub(super) bold: bool,
     pub(super) italic: bool,
+    /// Metadata only: never retain or export embedded font programs as style assets.
+    pub(super) family_name: Option<Rc<str>>,
+    pub(super) weight: Option<u16>,
+    pub(super) italic_evidence: Option<bool>,
 }
 
 impl Font {
@@ -89,6 +93,9 @@ impl Font {
             size_scale: 1.0,
             bold: false,
             italic: false,
+            family_name: None,
+            weight: None,
+            italic_evidence: None,
         }
     }
 
@@ -100,6 +107,7 @@ impl Font {
             Widths::Cid(ranges) => ranges.capacity() * std::mem::size_of::<(u32, u32, f64)>(),
         };
         16 * 1024
+            + self.family_name.as_ref().map_or(0, |name| name.len())
             + widths
             + self.simple.capacity() * std::mem::size_of::<Option<Box<str>>>()
             + self
@@ -235,17 +243,48 @@ impl Font {
             font.load_simple(doc, dict, subtype, descriptor, base_name, budget, encodings)?;
         }
 
-        if let Some(name) = base_name {
-            let (bold, italic) = style_from_name(name);
-            font.bold |= bold;
-            font.italic |= italic;
+        let metadata_name = descriptor
+            .and_then(|d| get_name(doc, d, b"FontName").map(strip_subset_tag))
+            .filter(|name| clean_name(name).is_some())
+            .or(base_name.filter(|name| clean_name(name).is_some()));
+        font.family_name = descriptor
+            .and_then(|d| get(doc, d, b"FontFamily"))
+            .and_then(metadata_text)
+            .or_else(|| metadata_name.and_then(family_name));
+        if let Some(name) = metadata_name {
+            font.weight = weight_from_name(name);
+            let italic = name_italic(name);
+            if italic {
+                font.italic_evidence = Some(true);
+            } else if standard_family(name) != Family::Unknown || font.weight == Some(400) {
+                font.italic_evidence = Some(false);
+            }
         }
-        if let Some(descriptor) = descriptor {
-            let flags = get_number(doc, descriptor, b"Flags").unwrap_or(0.0) as i64;
-            font.italic |= flags & (1 << 6) != 0;
-            font.bold |= flags & (1 << 18) != 0;
-            font.bold |= get_number(doc, descriptor, b"FontWeight").is_some_and(|w| w >= 600.0);
+        if let Some(d) = descriptor {
+            if let Some(weight) = get_number(doc, d, b"FontWeight")
+                .filter(|v| (1.0..=1000.0).contains(v) && v.fract() == 0.0)
+            {
+                font.weight = Some(weight as u16);
+            }
+            let flags = get_number(doc, d, b"Flags")
+                .filter(|v| *v >= 0.0 && *v <= f64::from(u32::MAX) && v.fract() == 0.0)
+                .map(|v| v as u32);
+            let angle = get_number(doc, d, b"ItalicAngle");
+            if flags.is_some() || angle.is_some() {
+                font.italic_evidence = Some(
+                    font.italic_evidence == Some(true)
+                        || flags.is_some_and(|v| v & (1 << 6) != 0)
+                        || angle.is_some_and(|v| v != 0.0),
+                );
+            }
+            if get_number(doc, d, b"FontWeight").is_none()
+                && flags.is_some_and(|v| v & (1 << 18) != 0)
+            {
+                font.weight = Some(700);
+            }
         }
+        font.bold = font.weight.is_some_and(|w| w >= 600);
+        font.italic = font.italic_evidence == Some(true);
         Ok(font)
     }
 
@@ -431,22 +470,130 @@ fn strip_subset_tag(name: &[u8]) -> &[u8] {
     }
 }
 
-fn style_from_name(name: &[u8]) -> (bool, bool) {
-    let lower = name.to_ascii_lowercase();
+/// Bound metadata copied into every styled run; reject opaque or control-bearing names.
+fn metadata_text(object: &Object) -> Option<Rc<str>> {
+    let bytes = match object {
+        Object::String(bytes, _) | Object::Name(bytes) => bytes.as_slice(),
+        _ => return None,
+    };
+    if bytes.len() > 1024 {
+        return None;
+    }
+    match object {
+        Object::String(_, _) => {
+            let text = super::decode_text_string(object)?;
+            clean_name(text.as_bytes()).map(Rc::from)
+        }
+        _ => clean_name(bytes).map(Rc::from),
+    }
+}
+
+fn clean_name(bytes: &[u8]) -> Option<&str> {
+    if bytes.len() > 1024 {
+        return None;
+    }
+    let name = std::str::from_utf8(bytes).ok()?.trim();
+    (!name.is_empty() && !name.chars().any(char::is_control)).then_some(name)
+}
+
+/// Only remove a recognized style suffix; internal family punctuation is meaningful.
+fn family_name(bytes: &[u8]) -> Option<Rc<str>> {
+    let name = clean_name(bytes)?;
+    let family = name
+        .rsplit_once(['-', ','])
+        .and_then(|(family, suffix)| {
+            let suffix = suffix.to_ascii_lowercase();
+            let suffix = suffix.strip_suffix("mt").unwrap_or(&suffix);
+            let known = [
+                "regular",
+                "roman",
+                "book",
+                "medium",
+                "bold",
+                "italic",
+                "oblique",
+                "bolditalic",
+                "boldoblique",
+                "semibold",
+                "semibolditalic",
+                "demibold",
+                "demi",
+                "light",
+                "lightitalic",
+                "black",
+                "heavy",
+                "medi",
+                "mediital",
+                "regu",
+                "reguital",
+            ];
+            known.contains(&suffix).then_some(family)
+        })
+        .unwrap_or(name);
+    // These PostScript names are supplied by our bundled fonts. PDF subsetters often
+    // discard their human-readable family metadata; retain the original family spelling
+    // so re-export can select the same font instead of substituting it.
+    let family = match family {
+        "LibertinusSerif" => "Libertinus Serif",
+        "LibertinusMath" => "Libertinus Math",
+        "SourceCodePro" => "Source Code Pro",
+        other => other,
+    };
+    (!family.is_empty()).then(|| Rc::from(family))
+}
+
+fn weight_from_name(name: &[u8]) -> Option<u16> {
+    let suffix = name.rsplit(|byte| *byte == b'-' || *byte == b',').next()?;
+    if suffix.len() == name.len()
+        && standard_family(name) == Family::Unknown
+        && !name.starts_with(b"CMBX")
+    {
+        return None;
+    }
+    let lower = suffix.to_ascii_lowercase();
     let has = |needle: &[u8]| contains(&lower, needle);
-    let bold = has(b"bold")
-        || has(b"black")
-        || has(b"heavy")
-        || has(b"semibold")
-        || has(b"demi")
-        || (has(b"-medi") && !has(b"medium"))
-        || lower.starts_with(b"cmbx");
-    let italic = has(b"italic")
-        || has(b"oblique")
-        || lower.ends_with(b"ital")
-        || lower.starts_with(b"cmti")
-        || lower.starts_with(b"cmsl");
-    (bold, italic)
+    if has(b"thin") {
+        Some(100)
+    } else if has(b"extralight") || has(b"ultralight") {
+        Some(200)
+    } else if has(b"light") {
+        Some(300)
+    } else if has(b"semibold") || has(b"demi") {
+        Some(600)
+    } else if has(b"extrabold") || has(b"ultrabold") {
+        Some(800)
+    } else if has(b"black") || has(b"heavy") {
+        Some(900)
+    } else if has(b"bold") || lower == b"medi" || lower == b"mediital" || name.starts_with(b"CMBX")
+    {
+        Some(700)
+    } else if has(b"medium") {
+        Some(500)
+    } else if has(b"regular")
+        || has(b"roman")
+        || has(b"book")
+        || lower.starts_with(b"regu")
+        || standard_family(name) != Family::Unknown
+    {
+        Some(400)
+    } else {
+        None
+    }
+}
+
+fn name_italic(name: &[u8]) -> bool {
+    let suffix = name
+        .rsplit(|byte| *byte == b'-' || *byte == b',')
+        .next()
+        .unwrap_or_default();
+    let lower = suffix.to_ascii_lowercase();
+    // A style suffix must be separate from the family, except named TeX faces.
+    (suffix.len() < name.len()
+        && (contains(&lower, b"italic")
+            || contains(&lower, b"oblique")
+            || lower.ends_with(b"ital")))
+        || name.starts_with(b"CMTI")
+        || name.starts_with(b"CMSL")
 }
 
 fn standard_family(name: &[u8]) -> Family {
@@ -651,7 +798,8 @@ mod tests {
     use lopdf::{Dictionary, Document, Object, Stream, dictionary};
 
     use super::{
-        CMapCache, Font, normalize_into, strip_subset_tag, style_from_name, type1_builtin_encoding,
+        CMapCache, Font, family_name, name_italic, normalize_into, strip_subset_tag,
+        type1_builtin_encoding, weight_from_name,
     };
     use crate::reader::pdf::{encoding::Encodings, objects::Budget};
 
@@ -755,10 +903,37 @@ mod tests {
     fn names_and_text_cleanup() {
         assert_eq!(strip_subset_tag(b"ABCDEF+Arial-BoldMT"), b"Arial-BoldMT");
         assert_eq!(strip_subset_tag(b"Arial"), b"Arial");
-        assert_eq!(style_from_name(b"NimbusRomNo9L-MediItal"), (true, true));
-        assert_eq!(style_from_name(b"CMR10"), (false, false));
+        assert_eq!(weight_from_name(b"NimbusRomNo9L-MediItal"), Some(700));
+        assert!(name_italic(b"NimbusRomNo9L-MediItal"));
+        assert_eq!(weight_from_name(b"CMR10"), None);
+        assert!(!name_italic(b"CMR10"));
         let mut out = String::new();
         normalize_into("\u{FB01}x\u{0}\u{F0B7}\u{FFFD}\t", &mut out);
         assert_eq!(out, "fix• ");
+    }
+
+    #[test]
+    fn bundled_postscript_names_recover_their_authored_families() {
+        for (name, expected) in [
+            ("LibertinusSerif-Regular", "Libertinus Serif"),
+            ("LibertinusSerif-BoldItalic", "Libertinus Serif"),
+            ("LibertinusMath-Regular", "Libertinus Math"),
+            ("SourceCodePro-Bold", "Source Code Pro"),
+            ("ExampleSerif-Regular", "ExampleSerif"),
+            ("Example-Serif-Regular", "Example-Serif"),
+        ] {
+            assert_eq!(family_name(name.as_bytes()).as_deref(), Some(expected));
+        }
+        let font = load(
+            &Document::new(),
+            &dictionary! {
+                "Subtype" => "Type1", "BaseFont" => "ABCDEF+LibertinusSerif-Regular",
+                "FontDescriptor" => dictionary! {
+                    "FontName" => "ABCDEF+LibertinusSerif-Regular",
+                    "FontFamily" => Object::string_literal("Explicit Family"),
+                },
+            },
+        );
+        assert_eq!(font.family_name.as_deref(), Some("Explicit Family"));
     }
 }

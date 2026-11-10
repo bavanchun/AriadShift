@@ -6069,3 +6069,435 @@ source = "Original synthetic CBZ archive seed authored for AriadShift."
 license = "Apache-2.0"
 license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
 attribution = "AriadShift contributors"
+
+[[fixture]]
+id = "editor-linked-footnote"
+path = "fixtures/editor/linked-footnote.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: linked-footnote"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "31765a3f6e3c676f52d089c1367ecf4f557495b04b31d4ebe5618d95e942cbbf"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/linked-footnote.truth.json", sha256 = "16a3be2fe254d48f400f5f0c45ca0ccb6091d484f869b4936a390725cea0d567" }]
+
+[[fixture]]
+id = "editor-reused-footnote"
+path = "fixtures/editor/reused-footnote.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: reused-footnote"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "d914076e35fdd1c1812e9d77f06ecd4cec7aed7b60ca887da837aac0f4f41fcf"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/reused-footnote.truth.json", sha256 = "a0c293b7eb75c14eaf5dc291ad2775652b29828fc09b21c2cd322a1dfc9b54ec" }]
+
+[[fixture]]
+id = "editor-nested-footnote"
+path = "fixtures/editor/nested-footnote.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: nested-footnote"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "43b68910fb49ef71356f21c800083672ed2438cbe78e8f66b7568b1280e0b4e0"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/nested-footnote.truth.json", sha256 = "cd5317b7beab81196830e23bb3e5863086d91aca20d0ffaa34c5cc7a8e8d7419" }]
+
+[[fixture]]
+id = "editor-raw-html-block"
+path = "fixtures/editor/raw-html-block.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: raw-html-block"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "9c3ef2e26f83a5ced0f14226449747e9de9abbd6c31ff1d8fe12dc0b4a84e7fc"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/raw-html-block.truth.json", sha256 = "7a694bd1c0b0591d3ac2cee67fa0e2dea577342ed311754b38ec97d5444550c1" }]
+
+[[fixture]]
+id = "editor-raw-tex-block"
+path = "fixtures/editor/raw-tex-block.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: raw-tex-block"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "9b62cd25bd42f1d4d93f58d425585f52a76a9c6a31c1f6000c12f9a5ec1adbd5"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/raw-tex-block.truth.json", sha256 = "e13e42d330c8f733e6793c4e71cf19527e101865f344f6009598f9ade6f105f9" }]
+
+[[fixture]]
+id = "editor-inline-raw"
+path = "fixtures/editor/inline-raw.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: inline-raw"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "88499ca1080be3a3825fb15edbf3c011e631dfee04a446243c3f48524624ea69"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/inline-raw.truth.json", sha256 = "fe8b521523319fcfc8b4ecb9c1f48b10ba6b0fe38197251e32677f9044139749" }]
+
+[[fixture]]
+id = "editor-captioned-figure"
+path = "fixtures/editor/captioned-figure.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: captioned-figure"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "9a62992f6a9d278f3a32fd35fec0e0f7c382908e8dd85e580c1109947a06d3d4"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/captioned-figure.truth.json", sha256 = "0289834d38cb1509b64a6529dce22b247888b8a73e6ae90a3fbe303e2482e71e" }, { path = "fixtures/editor/bench-diagram.png", sha256 = "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266" }]
+
+[[fixture]]
+id = "editor-contained-figure"
+path = "fixtures/editor/contained-figure.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: contained-figure"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "1ce560445be0c9c209ccc74660424e26c38eefdc3ad1ca7bb9458099bef6e70e"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/contained-figure.truth.json", sha256 = "76ebd83e70fb4342c2eb3e51fc4a36817e89419c6e39801fbaf40f66503ca151" }]
+
+[[fixture]]
+id = "editor-table-colspan"
+path = "fixtures/editor/table-colspan.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: table-colspan"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "11986053e20f7f718aeb4ff2759e1644af2d2ea3c9e3f137334371caa152d0ca"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/table-colspan.truth.json", sha256 = "f308910f4f3271f80f81240cd75750755866fda5f33ea0ca74fff03caab4dff4" }]
+
+[[fixture]]
+id = "editor-table-rowspan"
+path = "fixtures/editor/table-rowspan.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: table-rowspan"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "210d8ddca7e386ae4c05d5d8d4d1d682cf2c21dccb3f958dc4e7952e73ed67b8"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/table-rowspan.truth.json", sha256 = "3cdd2b466fe3197ce7c3d378d469e002691af0ba26c602e03d32ceba507d8989" }]
+
+[[fixture]]
+id = "editor-table-combined-spans"
+path = "fixtures/editor/table-combined-spans.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: table-combined-spans"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "6c518b0c5fe801189957e4f391da8c42857de2a6a21b91cbafef501fde2231ae"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/table-combined-spans.truth.json", sha256 = "1c8ba2d402f471a3b6a6b88e6fe5aa2a82080806933dc890683d82ff79dcac7e" }]
+
+[[fixture]]
+id = "editor-table-caption"
+path = "fixtures/editor/table-caption.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: table-caption"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "ad67f38e3cd828c98e5cae81e2651e3df9cdce90eeaca5c10a359fddc2daba67"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/table-caption.truth.json", sha256 = "8bfed2b68bdd42549ad8c52fd1e7ebfbbb1b4af64322963cd6bab54fe2b0f1ab" }]
+
+[[fixture]]
+id = "editor-table-footnotes"
+path = "fixtures/editor/table-footnotes.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: table-footnotes"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "d97a4945f213db17b75afd8ccebcbbb65501b2e0966d50db76b7af0599686f8d"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/table-footnotes.truth.json", sha256 = "f374517fc8a88419bc663d5e7afdb7c3e944f7ebe9bfd5f04d7ddf3d9587905e" }]
+
+[[fixture]]
+id = "editor-nested-cell-blocks"
+path = "fixtures/editor/nested-cell-blocks.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: nested-cell-blocks"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "ea06824e7d680880fbdb8360da8d2f3c0c89243b8a7b6bd5c78700fafd040b68"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/nested-cell-blocks.truth.json", sha256 = "b7833736bf6aaf3a3cd60a1b816a8d1b605617ad92ef6769bf15976dd80b33c9" }]
+
+[[fixture]]
+id = "editor-running-header"
+path = "fixtures/editor/running-header.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: running-header"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "9cf0c62da6c57a054f1e6ef21c93fca1d1ea7956b0b97aaa0d373b9cc468a895"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/running-header.truth.json", sha256 = "6c2f9bea5c797c3add88bf885904835e71725ec958ce4273fae0167683378bc1" }]
+
+[[fixture]]
+id = "editor-running-footer"
+path = "fixtures/editor/running-footer.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: running-footer"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "a93c5a40cfb65429d6e4c562a5eee92c26ee776d2f158d5ac624bd4003dfd8b3"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/running-footer.truth.json", sha256 = "ae6586ab11b7a86c133d8655538b27fd5ba44bb68d428bc0ada7b1434ca8c4b1" }]
+
+[[fixture]]
+id = "editor-inline-math"
+path = "fixtures/editor/inline-math.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: inline-math"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "60857ff5e56445691463828ff83df0162e01323caf3f439088f838b99e7cd303"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/inline-math.truth.json", sha256 = "c9cf89dd4b5fd93f7e07d711d1abdd449cfd06d149e821b223dc7bdcd3e0f077" }]
+
+[[fixture]]
+id = "editor-display-math"
+path = "fixtures/editor/display-math.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Original editor preservation: display-math"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "7873b18d3efede28843043b43cfa4351cdc5805c2ef75372aebcb19d37805c96"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/display-math.truth.json", sha256 = "83f4760b9bfcc06f434cb83fadd172c5197b090ccdeac7fb8bddaf14cae58111" }]
+
+[[fixture]]
+id = "editor-styled-nesting"
+path = "fixtures/editor/styled-nesting.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["vi"]
+title = "Original editor preservation: styled-nesting"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "44dcc8914f3ca452bff40121edec63741cf98a18345669b897b16e74ca8d76fd"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/styled-nesting.truth.json", sha256 = "ce6d5226b7fdc198ec2ad29c4a646739876936cd48c0d6deff861d88c7d54846" }]
+
+[[fixture]]
+id = "editor-mixed-document"
+path = "fixtures/editor/mixed-document.ir.json"
+format = "ariad-ir+json"
+media_type = "application/json"
+languages = ["vi"]
+title = "Original editor preservation: mixed-document"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "7c349134460234c60517646ad77216adf30a1d0aac8d3ded1467213c1e55b487"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/mixed-document.truth.json", sha256 = "7fb732cfbf7b44401d7ab0f0cfd279db5e1cde6cf7e61235951a9640a72b70e2" }]
+
+[[fixture]]
+id = "editor-vi-field-notes-md"
+path = "fixtures/editor/vi-field-notes.md"
+format = "md"
+media_type = "text/markdown"
+languages = ["vi"]
+title = "Original editor preservation: vi-field-notes-md"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "94ebaefdf5ce89416a1b14e1e39f42dcaaaf2a0d26116a4f47e368071c22cadb"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/vi-field-notes-md.truth.json", sha256 = "de562ab93773b0471b046eb042532133cfb9b8f624a6bf5cf806c2662b740c34" }]
+
+[[fixture]]
+id = "editor-vi-field-notes-html"
+path = "fixtures/editor/vi-field-notes.html"
+format = "html"
+media_type = "text/html"
+languages = ["vi"]
+title = "Original editor preservation: vi-field-notes-html"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "1e346f40dd7b9f87d8500fcaab5a71f9e20d28375d99f0aa72034d5476b39b80"
+tags = []
+phase = "11"
+routes = []
+companions = [{ path = "fixtures/editor/vi-field-notes-html.truth.json", sha256 = "b53d9eea3e5200693f6116bc158c4d2d5871516b6b39e3733b648df65bce01ef" }]
+
+[[fixture]]
+id = "editor-vi-styled-pair-docx"
+path = "fixtures/editor/vi-styled-pair.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["vi"]
+title = "Original editor preservation: vi-styled-pair-docx"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27"
+tags = []
+phase = "11"
+routes = ["docx->pdf"]
+companions = [{ path = "fixtures/editor/vi-styled-pair-docx.truth.json", sha256 = "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6" }]
+
+[[fixture]]
+id = "editor-vi-styled-pair-pdf"
+path = "fixtures/editor/vi-styled-pair.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Original editor preservation: vi-styled-pair-pdf"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/editor_roundtrip.py"
+license = "Apache-2.0"
+license_basis = "Original text, data and diagram authored for AriadShift; companions share this source, licence and attribution."
+attribution = "AriadShift contributors"
+sha256 = "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc"
+tags = []
+phase = "11"
+routes = ["pdf->docx"]
+companions = [{ path = "fixtures/editor/vi-styled-pair-pdf.truth.json", sha256 = "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6" }, { path = "fixtures/editor/vi-styled-pair.typ", sha256 = "414d022165210fa6f7627627f981202b7f8084ffe5f97829c09837f7b0c4cdec" }]

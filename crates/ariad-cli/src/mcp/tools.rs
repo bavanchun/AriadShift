@@ -618,6 +618,7 @@ impl McpServer {
                         .map_err(|e| input_error(&e))?,
                 );
                 let request = ConvertRequest {
+                    ir_version: None,
                     input,
                     output: validated_output.destination,
                     target_format: args.to,
@@ -775,6 +776,10 @@ impl McpServer {
         Parameters(args): Parameters<RunDocToolArgs>,
         ct: CancellationToken,
     ) -> Result<CallToolResult, ErrorData> {
+        let plan = match crate::local_tool_plan() {
+            Ok(plan) => plan,
+            Err(error) => return Ok(tool_run_error(&error)),
+        };
         let params = match validate_mcp_tool_params(&args.tool, args.params.as_ref()) {
             Ok(p) => p,
             Err(err) => return Ok(tool_run_error(&err)),
@@ -852,6 +857,7 @@ impl McpServer {
         let spec = mcp_spec(&args.tool).expect("tool checked above");
         let scrubber = secrets.scrubber();
         let request = ToolRequest::new(args.tool, input_refs, output_target)
+            .with_plan(plan)
             .with_params(params)
             .with_secrets(secrets)
             .with_secret_source(SecretSource::Mcp)

@@ -91,7 +91,8 @@ fn extract_plain_texts(pdf_bytes: &[u8]) -> Vec<String> {
                 }
                 Inline::Math { tex, .. } => out.push_str(tex),
                 Inline::SoftBreak {} | Inline::LineBreak {} => out.push(' '),
-                Inline::Emph { content }
+                Inline::Styled { content, .. }
+                | Inline::Emph { content }
                 | Inline::Strong { content }
                 | Inline::Strikeout { content }
                 | Inline::Superscript { content }
@@ -110,7 +111,7 @@ fn extract_plain_texts(pdf_bytes: &[u8]) -> Vec<String> {
         .iter()
         .map(|block| {
             let mut s = String::new();
-            if let Block::Heading { content, .. } | Block::Paragraph { content } = block {
+            if let Block::Heading { content, .. } | Block::Paragraph { content, .. } = block {
                 inline_text(content, &mut s);
             }
             s

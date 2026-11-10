@@ -1,0 +1,108 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "The Map Room",
+          "type": "text"
+        }
+      ],
+      "id": "b96b37d3dcdb2c5bfcbcc960465b2cf066ad3622b9109945decc08f2db9c13274",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.",
+          "type": "text"
+        }
+      ],
+      "id": "b99fd3b7d3ed058b0e92d1d47f7dc30d022546dd03fa349a81a893d81b3af611c",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.",
+          "type": "text"
+        }
+      ],
+      "id": "be6626b8d810bc1e42100297874d98114d64b807fec2dbe1cf8c527f093b4ae18",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Visitors often arrive looking for one address and leave with a longer story. They discover a footbridge that no longer exists, a lane named after a vanished orchard, or a public stair hidden behind a market. The archive cannot answer every question, but it can show where to ask next.",
+          "type": "text"
+        }
+      ],
+      "id": "b1688eac97c47a39825a647ed3fe817f7af0a5cbf6c1c51f73cbdac7399e2b55f",
+      "type": "paragraph"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "Keep a note of what the map cannot show.",
+              "type": "text"
+            }
+          ],
+          "id": "bfedb0f66b6cd605e1ee74c3349e57b679c163226656149b74ab4c450de547db4",
+          "type": "paragraph"
+        }
+      ],
+      "id": "b6c52bda18214e82938368ee4f98e80a6b0d04bf72ecc66da4d11aa591a093a8e",
+      "type": "quote"
+    },
+    {
+      "id": "b0c7d09674e288b50db378add8d39e22656d92548591bade4deca20b5ae3332af",
+      "lang": "text",
+      "text": "copy → compare → annotate\n",
+      "type": "code"
+    },
+    {
+      "content": [
+        {
+          "text": "A route index lives at ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "https://example.org/index",
+              "type": "text"
+            }
+          ],
+          "title": null,
+          "type": "link",
+          "url": "https://example.org/index"
+        },
+        {
+          "text": ".",
+          "type": "text"
+        }
+      ],
+      "id": "b2bbe0122c0e17d5fc16b1f5ec5723ae6238c8d2ac6b03691969c2d147213ee05",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

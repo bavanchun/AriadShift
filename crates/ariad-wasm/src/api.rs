@@ -87,6 +87,8 @@ impl From<PipelineError> for ApiError {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ConvertOptions {
+    /// IR JSON wire version (1 or 2); defaults to 2.
+    pub ir_version: Option<u8>,
     /// Routing profile; defaults to `editable`.
     pub profile: Option<String>,
     /// Title for writers that need one when the document has none, such as HTML.
@@ -277,6 +279,7 @@ pub fn convert(
 ) -> Result<Conversion, ApiError> {
     let from = parse_format(from)?;
     let to = parse_format(to)?;
+    pipeline::validate_ir_version(to, options.ir_version)?;
     let profile = parse_profile(options.profile.as_deref())?;
     let limits = options.limits.unwrap_or_else(Limits::local);
     limits.validate().map_err(PipelineError::from)?;
@@ -316,6 +319,7 @@ pub fn convert(
             .collect::<Vec<_>>(),
         &limits,
         WriteOptions {
+            ir_version: options.ir_version,
             title_fallback: options.title.as_deref(),
         },
     )?;
@@ -1082,7 +1086,7 @@ mod tests {
         assert!(markdown.contains("## Title"), "{markdown}");
 
         let ir = convert_text("# Hi\n", "markdown", "ariad-ir+json");
-        assert!(ir.contains("\"version\": \"ariad-ir/1\""), "{ir}");
+        assert!(ir.contains("\"version\": \"ariad-ir/2\""), "{ir}");
         let back = convert_text(&ir, "ariad-ir+json", "markdown");
         assert_eq!(back.trim_end(), "# Hi");
     }
@@ -1321,6 +1325,39 @@ mod tests {
         assert_eq!(pdf_info.tier, Tier::Free);
         assert_eq!(pdf_info.output_format, "json");
         assert_eq!(pdf_info.engine, "ariad-pdf");
+    }
+
+    #[test]
+    fn edit_tools_are_listed_with_document_and_page_tiers() {
+        let tools = list_tools();
+        for (id, tier) in [
+            ("edit.open_document", Tier::Free),
+            ("edit.export_document", Tier::Free),
+            ("edit.page_objects", Tier::Pro),
+            ("edit.apply", Tier::Pro),
+        ] {
+            let descriptor = tools.iter().find(|tool| tool.id.as_str() == id).unwrap();
+            assert_eq!(descriptor.tier, tier, "{id}");
+        }
+    }
+
+    #[test]
+    fn page_edit_tools_require_entitlement_before_engine_dispatch() {
+        let bytes =
+            std::fs::read(pdf_fixtures_dir().join("vi-diacritics-subset-font.pdf")).unwrap();
+        for id in ["edit.page_objects", "edit.apply"] {
+            let error = run_tool(
+                [bytes.as_slice()],
+                ["subset.pdf"],
+                id,
+                "{}",
+                64 * 1024 * 1024,
+                false,
+            )
+            .unwrap_err();
+            assert_eq!(error.code(), "not_allowed", "{id}");
+            assert_eq!(error.detail("exit_code"), Some(&serde_json::json!(11)));
+        }
     }
 
     #[test]
@@ -1926,7 +1963,7 @@ mod tests {
                 spec.id,
                 "{}",
                 budget,
-                false,
+                spec.tier == Tier::Pro,
             )
             .expect_err("pdfium tool must not run in wasm");
             assert_eq!(err.code(), "engine_unavailable", "{}", spec.id);

@@ -2,12 +2,24 @@
 
 import argparse
 from collections import defaultdict
+import importlib.util
 import json
 from pathlib import Path
 import statistics
 
+DEFAULT_COMPETITORS = Path(__file__).resolve().parents[3] / "bench/results/competitors/stirling-v3.3.0.json"
+DISCOVER_COMPETITORS = object()
 
-def render(capabilities: dict, evidence: dict) -> str:
+def competitor_renderer():
+    """Keep local competitor tooling outside the installed benchmark package."""
+    path = Path(__file__).resolve().parents[2] / "competitors/report.py"
+    spec = importlib.util.spec_from_file_location("ariad_competitor_report", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def render(capabilities: dict, evidence: dict, competitors=DISCOVER_COMPETITORS) -> str:
     if capabilities["generated_at"] != evidence["generated_at"]:
         raise ValueError(
             "Capabilities and heavy-route evidence are from different runs; rerun just bench-heavy"
@@ -19,7 +31,8 @@ def render(capabilities: dict, evidence: dict) -> str:
         "and [route measurements](../bench/results/heavy-routes.json). "
         "See [the methodology](bench.md) for definitions, formulas and limitations.",
         "",
-        f"Measured: {capabilities['generated_at']}. Cold repetitions per fixture: {evidence['repeat']}.",
+        f"Measured: {capabilities['generated_at']}. Cold repetitions per fixture: {evidence['repeat']}."
+        + (f" Fidelity metric: `{evidence['metric_version']}`." if evidence.get("metric_version") else ""),
         "",
         "## Measured engine edges",
         "",
@@ -146,19 +159,29 @@ def render(capabilities: dict, evidence: dict) -> str:
         ]
     for name, version in sorted(evidence.get("tools", {}).items()):
         lines.append(f"- {name}: `{version}`.")
-    return "\n".join(lines) + "\n"
+    report = "\n".join(lines) + "\n"
+    if competitors is DISCOVER_COMPETITORS:
+        path = Path(__file__).resolve().parents[2] / "results/competitors/stirling-v3.3.0.json"
+        competitors = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    if competitors is not None:
+        report += "\n" + competitor_renderer().render(competitors)
+    return report
 
 
 def build_parser(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--capabilities",
         type=Path,
-        default=Path("crates/ariad-core/data/capabilities.json"),
+        default=Path(__file__).resolve().parents[3] / "crates/ariad-core/data/capabilities.json",
     )
     parser.add_argument(
-        "--evidence", type=Path, default=Path("bench/results/heavy-routes.json")
+        "--evidence", type=Path, default=Path(__file__).resolve().parents[3] / "bench/results/heavy-routes.json"
     )
-    parser.add_argument("--out", type=Path, default=Path("docs/bench-report.md"))
+    parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[3] / "docs/bench-report.md")
+    parser.add_argument(
+        "--competitors", type=Path, default=DEFAULT_COMPETITORS,
+        help="Paired corpus results (default: bench/results/competitors/stirling-v3.3.0.json when present)",
+    )
     parser.add_argument("--check", action="store_true")
 
 
@@ -166,9 +189,15 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     build_parser(parser)
     args = parser.parse_args(argv)
+    competitor_path = args.competitors
+    competitors = None
+    explicit_competitors = any(arg == "--competitors" or arg.startswith("--competitors=") for arg in argv)
+    if competitor_path.exists() or explicit_competitors:
+        competitors = json.loads(competitor_path.read_text(encoding="utf-8"))
     report = render(
         json.loads(args.capabilities.read_text(encoding="utf-8")),
         json.loads(args.evidence.read_text(encoding="utf-8")),
+        competitors,
     )
     if args.check:
         if args.out.read_text(encoding="utf-8") != report:

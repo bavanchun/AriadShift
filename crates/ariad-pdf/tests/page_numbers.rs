@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Page numbers respect selection, labels and pagination markers.
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};
 use serde_json::json;

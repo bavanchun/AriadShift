@@ -24,6 +24,70 @@ fn cli() -> Command {
     command
 }
 
+#[test]
+fn convert_json_exposes_fidelity_without_changing_existing_fields() {
+    let directory = tempdir().unwrap();
+    let input = directory.path().join("source.md");
+    fs::write(&input, "# Title\n\nA **bold** paragraph.\n").unwrap();
+    let html = directory.path().join("out.html");
+    let result = cli()
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "html", "--json", "-o"])
+        .arg(&html)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["output"], html.to_string_lossy().as_ref());
+    assert!(value["route"].is_array());
+    assert!(value["warnings"].is_array());
+    assert!(value["elapsed_ms"].is_u64());
+    assert_eq!(value["fidelity"]["metric_version"], "fidelity/2");
+    assert_eq!(value["fidelity"]["status"], "measured");
+    assert_eq!(value["fidelity"]["basis"], "runtime_readback");
+    assert_eq!(value["fidelity"]["score"], 1.0);
+
+    let pdf = directory.path().join("source.pdf");
+    let generated = cli()
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "pdf", "-o"])
+        .arg(&pdf)
+        .output()
+        .unwrap();
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let docx = directory.path().join("out.docx");
+    let result = cli()
+        .arg("convert")
+        .arg(&pdf)
+        .args(["--to", "docx", "--json", "-o"])
+        .arg(&docx)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["fidelity"]["status"], "measured", "{value}");
+    assert!(
+        value["fidelity"]["score"]
+            .as_f64()
+            .is_some_and(|s| (0.0..=1.0).contains(&s))
+    );
+    assert!(has_docx_document(&docx));
+}
+
 fn pandoc_path() -> PathBuf {
     if let Some(path) = std::env::var_os("ASHIFT_PANDOC") {
         return PathBuf::from(path);
@@ -735,7 +799,7 @@ fn hidden_hooks_ir_and_write_end_to_end() {
     assert!(ir_file.is_file());
 
     let ir_content = fs::read_to_string(&ir_file).expect("read doc.ir.json");
-    assert!(ir_content.contains("\"version\": \"ariad-ir/1\""));
+    assert!(ir_content.contains("\"version\": \"ariad-ir/2\""));
     assert!(ir_content.contains("\"body\""));
 
     // 2. Overwrite check without --overwrite returns exit code 6
@@ -1556,7 +1620,7 @@ fn converts_svg_with_hostile_inputs() {
                     .expect("read output PDF text");
             let mut extracted = String::new();
             for block in &ir.document.body {
-                if let ariad_core::ir::Block::Paragraph { content }
+                if let ariad_core::ir::Block::Paragraph { content, .. }
                 | ariad_core::ir::Block::Heading { content, .. } = block
                 {
                     for inline in content {
@@ -1571,5 +1635,162 @@ fn converts_svg_with_hostile_inputs() {
                 "output PDF decompressed text must not leak contents from external file href"
             );
         }
+    }
+}
+
+#[test]
+fn convert_ir_version_one_is_explicit_and_default_is_two() {
+    let directory = tempdir().unwrap();
+    let a = directory.path().join("first.md");
+    let b = directory.path().join("second.md");
+    fs::write(&a, "first").unwrap();
+    fs::write(&b, "second").unwrap();
+    for version in [None, Some("1"), Some("2")] {
+        let path = directory
+            .path()
+            .join(format!("single-{}.json", version.unwrap_or("default")));
+        let mut command = cli();
+        command
+            .arg("convert")
+            .arg(&a)
+            .args(["--to", "json", "-o"])
+            .arg(&path);
+        if let Some(version) = version {
+            command.args(["--ir-version", version]);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            value["version"],
+            format!("ariad-ir/{}", version.unwrap_or("2"))
+        );
+        assert_eq!(value["body"][0].get("id").is_some(), version != Some("1"));
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).contains("ir_version_loss"),
+            version == Some("1")
+        );
+    }
+    for version in [None, Some("1")] {
+        let out = directory
+            .path()
+            .join(format!("batch-{}", version.unwrap_or("default")));
+        fs::create_dir(&out).unwrap();
+        let mut command = cli();
+        command
+            .arg("convert")
+            .arg(&a)
+            .arg(&b)
+            .args(["--to", "json", "-o"])
+            .arg(&out);
+        if let Some(version) = version {
+            command.args(["--ir-version", version]);
+        }
+        let result = command.output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        for name in ["first.json", "second.json"] {
+            let value: serde_json::Value =
+                serde_json::from_slice(&fs::read(out.join(name)).unwrap()).unwrap();
+            assert_eq!(
+                value["version"],
+                format!("ariad-ir/{}", version.unwrap_or("2"))
+            );
+        }
+    }
+    for (target, version) in [
+        ("json", "0"),
+        ("json", "3"),
+        ("json", "future"),
+        ("html", "1"),
+    ] {
+        for batch in [false, true] {
+            let destination = directory
+                .path()
+                .join(format!("invalid-{target}-{version}-{batch}"));
+            if batch {
+                fs::create_dir(&destination).unwrap();
+            }
+            let mut command = cli();
+            command.arg("convert").arg(&a);
+            if batch {
+                command.arg(&b);
+            }
+            let result = command
+                .args(["--to", target, "--ir-version", version, "-o"])
+                .arg(&destination)
+                .output()
+                .unwrap();
+            assert!(!result.status.success());
+            if batch {
+                assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+            } else {
+                assert!(!destination.exists());
+            }
+        }
+    }
+}
+
+#[test]
+fn native_conversion_reports_fonts_without_embedding_permission() {
+    use ariad_core::ir::{Asset, FontAsset, FontEmbedding};
+    use sha2::{Digest, Sha256};
+
+    let directory = tempdir().unwrap();
+    for embedding in [
+        None,
+        Some(FontEmbedding::Restricted),
+        Some(FontEmbedding::Unknown),
+        Some(FontEmbedding::Allowed),
+    ] {
+        let mut document = ariad_core::reader::markdown::read(
+            "Font fallback",
+            &ariad_core::limits::Limits::local(),
+        )
+        .unwrap()
+        .document;
+        let bytes = b"original synthetic font bytes".to_vec();
+        document.assets.insert(
+            hex::encode(Sha256::digest(&bytes)),
+            Asset {
+                media_type: "font/ttf".into(),
+                bytes,
+                font: embedding.map(|embedding| FontAsset {
+                    family: "Example".into(),
+                    embedding,
+                }),
+            },
+        );
+        let input = directory.path().join("font.ir.json");
+        let output = directory.path().join("font.html");
+        fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
+        let result = cli()
+            .arg("convert")
+            .arg(&input)
+            .args(["--to", "html", "--overwrite", "-o"])
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&result.stderr).contains("font_embedding_restricted"),
+            embedding != Some(FontEmbedding::Allowed)
+        );
+        assert!(
+            fs::read_to_string(&output)
+                .unwrap()
+                .contains("Font fallback")
+        );
     }
 }

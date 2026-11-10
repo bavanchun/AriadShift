@@ -91,6 +91,7 @@ pub(crate) fn run(args: ConvertArgs) -> ExitCode {
         .iter()
         .zip(outputs)
         .map(|(input, output)| ConvertRequest {
+            ir_version: args.ir_version,
             input: input.clone(),
             output,
             target_format: target_format.clone(),

@@ -1,0 +1,285 @@
+{
+  "case": "running-footer",
+  "features": [
+    "running-footer"
+  ],
+  "future_gates": [
+    "tiptap-native-roundtrip",
+    "textkit-native-roundtrip",
+    "edit-export-fidelity"
+  ],
+  "ir": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "text": "Editable neighbour before running-footer.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b30c0121d706898b47d638d54c2431515bffe1fc34e1b529b95317229b8a758bb",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Editor case: running-footer",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b82cd0f05190767c8139e7cedca1c239cdfc477355b93b67d162f7ce0737265d5",
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Furniture remains separate from this body paragraph.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "ba703ced0a0d50c132a2e201818ba29d20b05f198d9526a0c078874f0d8072a70",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Editable neighbour after running-footer.",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b4da2ec0cb94054023df12968266db5cb8dfd0009c14e3b5e853b7b7f242231d4",
+        "type": "paragraph"
+      }
+    ],
+    "furniture": [
+      {
+        "content": [
+          {
+            "text": "Ghi chép cộng đồng",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e",
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Lưu bản gốc để đối chiếu",
+            "type": "text"
+          }
+        ],
+        "direct": {},
+        "id": "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313",
+        "type": "paragraph"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e": {
+          "bbox": {
+            "bottom": 92.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 76.0
+          },
+          "page_no": 1
+        },
+        "b30c0121d706898b47d638d54c2431515bffe1fc34e1b529b95317229b8a758bb": {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        },
+        "b4da2ec0cb94054023df12968266db5cb8dfd0009c14e3b5e853b7b7f242231d4": {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        },
+        "b82cd0f05190767c8139e7cedca1c239cdfc477355b93b67d162f7ce0737265d5": {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        },
+        "ba703ced0a0d50c132a2e201818ba29d20b05f198d9526a0c078874f0d8072a70": {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        },
+        "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313": {
+          "bbox": {
+            "bottom": 96.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 80.0
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 842.0,
+          "page_no": 1,
+          "width": 595.0
+        }
+      ]
+    },
+    "meta": {
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "language": "en",
+      "source_format": "ariad-ir+json",
+      "subject": "Original editor preservation corpus",
+      "title": "Editor preservation: running-footer"
+    },
+    "provenance": {
+      "org.ariadshift.editor-corpus": {
+        "case": "running-footer",
+        "font_permission_evidence": {
+          "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+        },
+        "source": "original-authoring"
+      }
+    },
+    "sections": [
+      {
+        "columns": 1,
+        "footer": "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313",
+        "margins": {
+          "bottom_pt": 54.0,
+          "left_pt": 54.0,
+          "right_pt": 54.0,
+          "top_pt": 54.0
+        },
+        "page_size": {
+          "height_pt": 842.0,
+          "width_pt": 595.0
+        }
+      }
+    ],
+    "source_map": {
+      "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e": [
+        {
+          "bbox": {
+            "bottom": 92.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 76.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b30c0121d706898b47d638d54c2431515bffe1fc34e1b529b95317229b8a758bb": [
+        {
+          "bbox": {
+            "bottom": 76.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 60.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b4da2ec0cb94054023df12968266db5cb8dfd0009c14e3b5e853b7b7f242231d4": [
+        {
+          "bbox": {
+            "bottom": 88.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 72.0
+          },
+          "page_no": 1
+        }
+      ],
+      "b82cd0f05190767c8139e7cedca1c239cdfc477355b93b67d162f7ce0737265d5": [
+        {
+          "bbox": {
+            "bottom": 80.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 64.0
+          },
+          "page_no": 1
+        }
+      ],
+      "ba703ced0a0d50c132a2e201818ba29d20b05f198d9526a0c078874f0d8072a70": [
+        {
+          "bbox": {
+            "bottom": 84.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 68.0
+          },
+          "page_no": 1
+        }
+      ],
+      "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313": [
+        {
+          "bbox": {
+            "bottom": 96.0,
+            "left": 54.0,
+            "right": 540.0,
+            "top": 80.0
+          },
+          "page_no": 1
+        }
+      ]
+    },
+    "version": "ariad-ir/2"
+  },
+  "layout": {
+    "first_bbox": {
+      "bottom": 76.0,
+      "left": 54.0,
+      "right": 540.0,
+      "top": 60.0
+    },
+    "first_block_source_fragments": 1,
+    "page_height_pt": 842.0,
+    "page_width_pt": 595.0,
+    "reference_kind": "authored-ir-geometry",
+    "section_count": 1
+  },
+  "origin": "independent-original-specification",
+  "preservation": [
+    "adjacent-text-edit",
+    "stable-id-reorder",
+    "opaque-byte-equality",
+    "explicit-delete-removes-payload",
+    "ambiguous-orphan-is-reported"
+  ],
+  "schema": "ariad-editor-truth/1",
+  "semantics": {
+    "editable_after": "Editable neighbour after running-footer.",
+    "editable_before": "Editable neighbour before running-footer.",
+    "footer": "Lưu bản gốc để đối chiếu"
+  },
+  "styles": {
+    "applicable": false
+  }
+}

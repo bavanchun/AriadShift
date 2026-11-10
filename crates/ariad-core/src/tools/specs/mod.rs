@@ -5,6 +5,7 @@ pub mod compare;
 pub mod compliance;
 pub mod convert_cbz;
 pub mod convert_tables;
+pub mod edit;
 pub mod ocr_scan;
 pub mod optimize;
 pub mod organize_document;
@@ -51,5 +52,6 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(compare::specs());
     list.extend(compliance::specs());
     list.extend(web::specs());
+    list.extend(edit::specs());
     list
 }

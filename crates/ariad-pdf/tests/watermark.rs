@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Added watermarks are marked for safe removal.
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};
 use serde_json::json;

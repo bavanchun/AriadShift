@@ -1,0 +1,30 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do",
+          "type": "text"
+        }
+      ],
+      "id": "b881ca777408339f8025a910be79196a5e2ae15b5c4b081f945eed24b1f76b58a",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

@@ -1,0 +1,85 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Before the Repair Café Opens",
+          "type": "text"
+        }
+      ],
+      "id": "bcce2d024bc176f9f3465eacc6f3222cb3dbbdd2d252de6c1b626eb82bd6420f6",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "id": "b256078d5fafaf6d17483da548797b35c9c16877da7111f19a6e76fa5b340f1b5",
+      "items": [
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Set out the work mats",
+                  "type": "text"
+                }
+              ],
+              "id": "bce182651e6498c9764b6867f5317a42c23bd9c649c88d4223be0fd94f437f3ce",
+              "type": "paragraph"
+            }
+          ],
+          "checked": true
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Test the lamps",
+                  "type": "text"
+                }
+              ],
+              "id": "b484e63bf3299a7b80835effbb218185fca74802a023c4c3387b2e31be20f5b7f",
+              "type": "paragraph"
+            }
+          ],
+          "checked": false
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Leave a clear path to the door",
+                  "type": "text"
+                }
+              ],
+              "id": "b89455820bee6cf038148fcc5af0e5ffff5d1782ddb10961c657e78754e65c625",
+              "type": "paragraph"
+            }
+          ],
+          "checked": false
+        }
+      ],
+      "ordered": false,
+      "start": null,
+      "tight": true,
+      "type": "list"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

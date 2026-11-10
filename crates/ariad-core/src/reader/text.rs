@@ -67,7 +67,12 @@ pub fn read(text: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
         }
 
         if !inlines.is_empty() {
-            blocks.push(Block::Paragraph { content: inlines });
+            blocks.push(Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content: inlines,
+            });
         }
     }
 
@@ -81,7 +86,7 @@ pub fn read(text: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
     };
 
     Ok(ReadOutput {
-        document,
+        document: document.finalize_import(),
         warnings: Vec::<Warning>::new(),
     })
 }
@@ -114,7 +119,7 @@ mod tests {
         assert_eq!(out.document.body.len(), 2);
         assert_eq!(out.document.meta.source_format, Some(Format::Txt));
 
-        if let Block::Paragraph { content } = &out.document.body[0] {
+        if let Block::Paragraph { content, .. } = &out.document.body[0] {
             assert_eq!(content.len(), 3);
             assert_eq!(
                 content[0],
@@ -139,7 +144,7 @@ mod tests {
         // e + combining acute accent -> é
         let decomposed = "cafe\u{0301}";
         let out = read(decomposed, &Limits::local()).unwrap();
-        let Block::Paragraph { content } = &out.document.body[0] else {
+        let Block::Paragraph { content, .. } = &out.document.body[0] else {
             panic!("expected paragraph");
         };
         assert_eq!(
@@ -155,7 +160,7 @@ mod tests {
         let input = "\u{feff}First paragraph.\r\n\r\nSecond paragraph line 1\r\nline 2.\r\n\r\nThird paragraph.";
         let out = read(input, &Limits::local()).unwrap();
         assert_eq!(out.document.body.len(), 3);
-        let Block::Paragraph { content } = &out.document.body[0] else {
+        let Block::Paragraph { content, .. } = &out.document.body[0] else {
             panic!("expected paragraph 1");
         };
         assert_eq!(
@@ -165,7 +170,7 @@ mod tests {
             }
         );
 
-        let Block::Paragraph { content } = &out.document.body[1] else {
+        let Block::Paragraph { content, .. } = &out.document.body[1] else {
             panic!("expected paragraph 2");
         };
         assert_eq!(
@@ -182,7 +187,7 @@ mod tests {
             }
         );
 
-        let Block::Paragraph { content } = &out.document.body[2] else {
+        let Block::Paragraph { content, .. } = &out.document.body[2] else {
             panic!("expected paragraph 3");
         };
         assert_eq!(

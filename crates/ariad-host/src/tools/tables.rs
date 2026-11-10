@@ -220,6 +220,9 @@ mod tests {
             colspan: 1,
             header: None,
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: text.to_owned(),
                 }],
@@ -232,12 +235,16 @@ mod tests {
         let ws = Workspace::new().unwrap();
         let doc = Document {
             body: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "Just text".into(),
                 }],
             }],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let err = tables_to_csv_artifacts(&doc, &ws).expect_err("should fail with no tables");
         match err {
             ToolError::EngineFailure(msg) => {
@@ -251,6 +258,9 @@ mod tests {
     fn tables_to_csv_exports_tables_with_formula_guarding() {
         let ws = Workspace::new().unwrap();
         let table_block = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![
                 ColumnSpec {
@@ -267,7 +277,8 @@ mod tests {
         let doc = Document {
             body: vec![table_block],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let (artifacts, warnings) =
             tables_to_csv_artifacts(&doc, &ws).expect("should succeed with tables");
         assert_eq!(artifacts.len(), 1);
@@ -281,6 +292,9 @@ mod tests {
     fn tables_to_csv_finds_nested_tables_inside_quotes() {
         let ws = Workspace::new().unwrap();
         let table_block = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![ColumnSpec {
                 align: Alignment::Default,
@@ -291,10 +305,14 @@ mod tests {
         };
         let doc = Document {
             body: vec![Block::Quote {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 blocks: vec![table_block],
             }],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let (artifacts, _warnings) =
             tables_to_csv_artifacts(&doc, &ws).expect("should find nested table in quote");
         assert_eq!(artifacts.len(), 1);
@@ -307,6 +325,9 @@ mod tests {
         let ws = Workspace::new().unwrap();
         let tables: Vec<Block> = (0..260)
             .map(|i| Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -319,7 +340,8 @@ mod tests {
         let doc = Document {
             body: tables,
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let (artifacts, warnings) =
             tables_to_csv_artifacts(&doc, &ws).expect("should succeed and cap at 255");
         assert_eq!(artifacts.len(), 255);
@@ -337,6 +359,9 @@ mod tests {
         let rows: Vec<Vec<TableCell>> = (0..1800).map(|_| vec![make_cell(&chunk)]).collect();
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -346,7 +371,8 @@ mod tests {
                 footnotes: Vec::new(),
             }],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let res = tables_to_csv_artifacts(&doc, &ws);
         assert!(matches!(res, Err(ToolError::LimitExceeded)));
     }

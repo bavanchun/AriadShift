@@ -8,17 +8,24 @@ use ariad_host::ir_io;
 #[test]
 fn reads_sixty_four_nested_ir_blocks() {
     let mut nested = Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: Vec::new(),
     };
     for _ in 0..64 {
         nested = Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![nested],
         };
     }
     let document = Document {
         body: vec![nested],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let json = serde_json::to_vec(&document).unwrap();
 
     let read = ir_io::read(json.as_slice(), &Limits::local()).unwrap();
@@ -30,10 +37,14 @@ fn reads_sixty_four_nested_ir_blocks() {
 fn rejects_byte_limit_exceeded() {
     let document = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: Vec::new(),
         }],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let json = serde_json::to_vec(&document).unwrap();
 
     let mut limits = Limits::local();
@@ -75,13 +86,17 @@ fn rejects_block_limit_exceeded() {
     let mut blocks = Vec::new();
     for _ in 0..10 {
         blocks.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: Vec::new(),
         });
     }
     let document = Document {
         body: blocks,
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let json = serde_json::to_vec(&document).unwrap();
 
     let mut limits = Limits::local();
@@ -101,10 +116,14 @@ fn rejects_block_limit_exceeded() {
 fn exact_byte_limit_accepted_and_one_byte_over_rejected() {
     let document = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: Vec::new(),
         }],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let json = serde_json::to_vec(&document).unwrap();
     let exact_len = json.len() as u64;
 
@@ -139,10 +158,16 @@ fn reads_sixty_four_deep_nested_list() {
     use ariad_core::ir::ListItem;
 
     let mut inner = Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: Vec::new(),
     };
     for _ in 0..64 {
         inner = Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: true,
@@ -155,7 +180,8 @@ fn reads_sixty_four_deep_nested_list() {
     let document = Document {
         body: vec![inner],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let json = serde_json::to_vec(&document).unwrap();
 
     let read = ir_io::read(json.as_slice(), &Limits::local()).unwrap();
@@ -167,10 +193,16 @@ fn reads_sixty_four_deep_nested_table_in_cell() {
     use ariad_core::ir::{Alignment, ColumnSpec, TableCell};
 
     let mut inner = Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: Vec::new(),
     };
     for _ in 0..64 {
         inner = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![ColumnSpec {
                 align: Alignment::Default,
@@ -188,7 +220,8 @@ fn reads_sixty_four_deep_nested_table_in_cell() {
     let document = Document {
         body: vec![inner],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let json = serde_json::to_vec(&document).unwrap();
 
     let read = ir_io::read(json.as_slice(), &Limits::local()).unwrap();
@@ -241,10 +274,14 @@ impl<R: std::io::Read> std::io::Read for InterruptedOnceReader<R> {
 fn retries_and_succeeds_on_interrupted_read() {
     let document = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: Vec::new(),
         }],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let json = serde_json::to_vec(&document).unwrap();
     let reader = InterruptedOnceReader {
         inner: json.as_slice(),

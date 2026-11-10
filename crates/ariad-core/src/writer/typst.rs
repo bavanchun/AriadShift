@@ -15,8 +15,9 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     ir::{
-        Alignment, AssetRef, AssetStore, Block, ColumnSpec, Document, Inline, ListItem, Metadata,
-        RawFormat, TableCell,
+        Alignment, AssetRef, AssetStore, Block, CharacterStyle, ColumnSpec, Document, FontRef,
+        Inline, ListItem, Metadata, ParagraphAlignment, ParagraphStyle, RawFormat, Section,
+        TableCell,
     },
     links,
     warning::{Warning, WarningCode},
@@ -106,12 +107,19 @@ pub fn image_extension(media_type: &str) -> Option<&'static str> {
 /// Writes a document as Typst markup.
 #[must_use]
 pub fn write(document: &Document, options: &TypstOptions) -> TypstOutput {
+    let prohibited_fonts = document.assets.values().any(|a| !a.can_export_bytes());
     let document = super::normalize_document(document);
     let mut writer = Writer::new(&document, options);
+    if prohibited_fonts {
+        writer.warn(WarningCode::FontEmbeddingRestricted, "Restricted or unknown embedded font bytes were omitted; using permitted bundled fonts.");
+    }
 
     let mut markup = preamble(&document.meta, options);
     markup.push('\n');
     let mut body = String::new();
+    if let Some(section) = document.sections.first().filter(|s| s.start.is_none()) {
+        writer.section(section, &mut body);
+    }
     writer.blocks(&document.body, &mut body);
     markup.push_str(body.trim_end());
     markup.push('\n');
@@ -326,7 +334,8 @@ fn plain_text(inlines: &[Inline]) -> String {
         match inline {
             Inline::Text { text: value } | Inline::Code { text: value } => text.push_str(value),
             Inline::Math { tex, .. } => text.push_str(tex),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -354,12 +363,12 @@ fn plain_paragraphs(blocks: &[Block]) -> Vec<String> {
     let mut stack: Vec<&Block> = blocks.iter().rev().collect();
     while let Some(block) = stack.pop() {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 paragraphs.push(plain_text(content));
             }
             Block::Code { text, .. } => paragraphs.push(text.clone()),
             Block::Math { tex, .. } => paragraphs.push(tex.clone()),
-            Block::Quote { blocks } => stack.extend(blocks.iter().rev()),
+            Block::Quote { blocks, .. } => stack.extend(blocks.iter().rev()),
             Block::List { items, .. } => {
                 stack.extend(items.iter().rev().flat_map(|item| item.blocks.iter().rev()));
             }
@@ -383,8 +392,9 @@ fn plain_paragraphs(blocks: &[Block]) -> Vec<String> {
             Block::Raw {
                 format: RawFormat::Html,
                 text,
+                ..
             } => paragraphs.push(strip_html_tags(text)),
-            Block::PageBreak {}
+            Block::PageBreak { .. }
             | Block::Footnote { .. }
             | Block::Raw {
                 format: RawFormat::Tex,
@@ -401,11 +411,15 @@ fn collect_footnotes(blocks: &[Block]) -> BTreeMap<&str, &[Block]> {
     let mut stack: Vec<&Block> = blocks.iter().rev().collect();
     while let Some(block) = stack.pop() {
         match block {
-            Block::Footnote { id, blocks } => {
+            Block::Footnote {
+                note_id: id,
+                blocks,
+                ..
+            } => {
                 footnotes.entry(id.as_str()).or_insert(blocks.as_slice());
                 stack.extend(blocks.iter().rev());
             }
-            Block::Quote { blocks } => stack.extend(blocks.iter().rev()),
+            Block::Quote { blocks, .. } => stack.extend(blocks.iter().rev()),
             Block::List { items, .. } => {
                 stack.extend(items.iter().rev().flat_map(|item| item.blocks.iter().rev()));
             }
@@ -571,6 +585,11 @@ fn clamp_rowspan(rowspan: u32, remaining_rows: usize) -> usize {
 }
 
 struct Writer<'a> {
+    document: &'a Document,
+    character: CharacterStyle,
+    table_character: Option<CharacterStyle>,
+    table_paragraph: Option<ParagraphStyle>,
+    warned_fonts: BTreeSet<String>,
     assets: &'a AssetStore,
     rejected_assets: &'a BTreeSet<String>,
     footnotes: BTreeMap<&'a str, &'a [Block]>,
@@ -596,6 +615,11 @@ struct Writer<'a> {
 impl<'a> Writer<'a> {
     fn new(document: &'a Document, options: &'a TypstOptions) -> Self {
         Self {
+            document,
+            character: document.styles.defaults.character.clone(),
+            table_character: None,
+            table_paragraph: None,
+            warned_fonts: BTreeSet::new(),
             assets: &document.assets,
             rejected_assets: &options.rejected_assets,
             footnotes: collect_footnotes(&document.body),
@@ -685,6 +709,14 @@ impl<'a> Writer<'a> {
 
     fn blocks(&mut self, blocks: &'a [Block], out: &mut String) {
         for block in blocks {
+            if let Some(section) = self
+                .document
+                .sections
+                .iter()
+                .find(|s| s.start.as_ref() == Some(block.id()))
+            {
+                self.section(section, out);
+            }
             self.block(block, out);
         }
     }
@@ -715,21 +747,276 @@ impl<'a> Writer<'a> {
         out
     }
 
+    fn section(&mut self, section: &'a Section, out: &mut String) {
+        let _ = write!(
+            out,
+            "#set page(width: {}pt, height: {}pt, margin: (top: {}pt, right: {}pt, bottom: {}pt, left: {}pt), columns: {}",
+            section.page_size.width_pt,
+            section.page_size.height_pt,
+            section.margins.top_pt,
+            section.margins.right_pt,
+            section.margins.bottom_pt,
+            section.margins.left_pt,
+            section.columns
+        );
+        for (name, reference) in [("header", &section.header), ("footer", &section.footer)] {
+            let _ = write!(out, ", {name}: ");
+            if let Some(block) = reference.as_ref().and_then(|id| {
+                crate::ir::blocks_with_paths(self.document)
+                    .into_iter()
+                    .find(|(path, block)| path.starts_with("furniture/") && block.id() == id)
+                    .map(|(_, block)| block)
+            }) {
+                let content = self.content(std::slice::from_ref(block));
+                out.push('[');
+                out.push_str(&content);
+                out.push(']');
+            } else {
+                out.push_str("none");
+            }
+        }
+        out.push_str(")\n");
+    }
+
+    fn font(&mut self, font: &FontRef, out: &mut String) {
+        let permitted = ["Libertinus Serif", "Source Code Pro", "Libertinus Math"];
+        let family = std::iter::once(&font.family)
+            .chain(&font.fallback)
+            .find_map(|candidate| {
+                permitted
+                    .iter()
+                    .find(|p| p.eq_ignore_ascii_case(candidate))
+                    .copied()
+            })
+            .unwrap_or("Libertinus Serif");
+        if !family.eq_ignore_ascii_case(&font.family)
+            && self.warned_fonts.insert(font.family.clone())
+        {
+            self.warn(
+                WarningCode::UnsupportedNode,
+                format!(
+                    "Font family `{}` was substituted with permitted bundled font `{family}`.",
+                    font.family
+                ),
+            );
+        }
+        push_literal(out, family);
+    }
+
+    fn paragraph_rules(&mut self, p: &ParagraphStyle, out: &mut String) {
+        if let Some(value) = p.align {
+            let alignment = match value {
+                ParagraphAlignment::Center => "center",
+                ParagraphAlignment::Right => "right",
+                _ => "left",
+            };
+            let _ = writeln!(
+                out,
+                "#set align({alignment})\n#set par(justify: {})",
+                value == ParagraphAlignment::Justify
+            );
+        }
+        if let Some(value) = p.indent_first_pt {
+            let _ = writeln!(
+                out,
+                "#set par(first-line-indent: (amount: {value}pt, all: true))"
+            );
+        }
+        if let Some(value) = p.line_height {
+            let leading = (value - 1.0) * self.character.size_pt.unwrap_or(11.0);
+            let _ = writeln!(out, "#set par(leading: {leading}pt)");
+        }
+        if let Some(value) = p.space_after_pt {
+            let _ = writeln!(out, "#set par(spacing: {value}pt)");
+        }
+    }
+
+    fn flush_styled(&mut self, buffer: &mut String, out: &mut String) {
+        if buffer.is_empty() {
+            return;
+        }
+        let mut content = String::new();
+        flush_text(buffer, &mut content);
+        self.character_content(&content, out);
+    }
+
+    fn character_content(&mut self, content: &str, out: &mut String) {
+        if self.character.is_empty() {
+            out.push_str(content);
+            return;
+        }
+        let c = self.character.clone();
+        out.push_str("#[");
+        // Explicit normal values override surrounding semantic emphasis too.
+        if c.weight.is_some() {
+            out.push_str("#show strong: it => it.body\n");
+        }
+        if c.italic.is_some() {
+            out.push_str("#show emph: it => it.body\n");
+        }
+        out.push_str("#set text(");
+        if let Some(font) = &c.font {
+            out.push_str("font: ");
+            self.font(font, out);
+            out.push_str(", ");
+        }
+        if let Some(value) = c.size_pt {
+            let _ = write!(out, "size: {value}pt, ");
+        }
+        if let Some(value) = c.weight {
+            let _ = write!(out, "weight: {value}, ");
+        }
+        if let Some(value) = c.italic {
+            out.push_str(if value {
+                "style: \"italic\", "
+            } else {
+                "style: \"normal\", "
+            });
+        }
+        if let Some(value) = &c.color {
+            let _ = write!(out, "fill: rgb(\"{}\"), ", value.as_str());
+        }
+        if let Some(value) = c.letter_spacing {
+            let _ = write!(out, "tracking: {value}pt, ");
+        }
+        if let Some(value) = c.baseline_shift {
+            let _ = write!(out, "baseline: {}pt, ", -value);
+        }
+        out.push_str(")\n");
+        let mut wrappers = 0;
+        if let Some(value) = &c.highlight {
+            let _ = write!(out, "#highlight(fill: rgb(\"{}\"))[", value.as_str());
+            wrappers += 1;
+        }
+        if c.underline == Some(true) {
+            out.push_str("#underline[");
+            wrappers += 1;
+        }
+        if c.strike == Some(true) {
+            out.push_str("#strike[");
+            wrappers += 1;
+        }
+        if c.small_caps == Some(true) {
+            out.push_str("#smallcaps[");
+            wrappers += 1;
+        }
+        out.push_str(content);
+        for _ in 0..wrappers {
+            out.push(']');
+        }
+        out.push(']');
+    }
+
     fn block(&mut self, block: &'a Block, out: &mut String) {
+        let parent = self.character.clone();
+        let parent_table = self.table_character.clone();
+        let parent_paragraph = self.table_paragraph.clone();
+        let resolved = if matches!(block, Block::Table { .. }) {
+            self.document
+                .styles
+                .resolve_table(block.style().as_ref(), block.direct(), 100)
+                .map(|table| {
+                    self.table_character = Some(table.character.clone());
+                    self.table_paragraph = Some(table.paragraph.clone());
+                    (table.paragraph, table.background)
+                })
+        } else {
+            self.document
+                .styles
+                .resolve_paragraph_with_baseline(
+                    block.style().as_ref(),
+                    block.direct(),
+                    self.table_paragraph.as_ref(),
+                    100,
+                )
+                .map(|p| (p, None))
+        };
+        let (paragraph, background) = match resolved {
+            Ok(value) => value,
+            Err(error) => {
+                self.warn(WarningCode::UnsupportedNode, error);
+                (ParagraphStyle::default(), None)
+            }
+        };
+        self.character.overlay(&CharacterStyle {
+            font: paragraph.font.clone(),
+            size_pt: paragraph.size_pt,
+            color: paragraph.color.clone(),
+            ..Default::default()
+        });
+        if let Some(table) = &self.table_character {
+            self.character.overlay(table);
+            let direct = if block.direct().based_on.is_some() {
+                &paragraph
+            } else {
+                block.direct()
+            };
+            self.character.overlay(&CharacterStyle {
+                font: direct.font.clone(),
+                size_pt: direct.size_pt,
+                color: direct.color.clone(),
+                ..Default::default()
+            });
+        }
+        if paragraph.page_break_before == Some(true) && self.nesting_cost == 0 {
+            out.push_str("#pagebreak(weak: true)\n");
+        }
+        let scoped = !matches!(block, Block::PageBreak { .. } | Block::Footnote { .. })
+            && (!paragraph.is_empty() || background.is_some());
+        let entered = scoped && self.enter(1);
+        if entered {
+            out.push_str("#block(breakable: true");
+            if let Some(value) = paragraph.space_before_pt {
+                let _ = write!(out, ", above: {value}pt");
+            }
+            if let Some(value) = paragraph.space_after_pt {
+                let _ = write!(out, ", below: {value}pt");
+            }
+            if let Some(value) = paragraph.keep_with_next {
+                let _ = write!(out, ", sticky: {value}");
+            }
+            if paragraph.indent_left_pt.is_some() || paragraph.indent_right_pt.is_some() {
+                let _ = write!(
+                    out,
+                    ", inset: (left: {}pt, right: {}pt)",
+                    paragraph.indent_left_pt.unwrap_or(0.0),
+                    paragraph.indent_right_pt.unwrap_or(0.0)
+                );
+            }
+            if let Some(value) = &paragraph.background {
+                let _ = write!(out, ", fill: rgb(\"{}\")", value.as_str());
+            }
+            out.push_str(")[\n");
+            if let Some(background) = background {
+                let _ = writeln!(out, "#set table(fill: rgb(\"{}\"))", background.as_str());
+            }
+            self.paragraph_rules(&paragraph, out);
+        }
+        self.block_content(block, out);
+        if entered {
+            out.push_str("]\n\n");
+            self.leave(1);
+        }
+        self.character = parent;
+        self.table_character = parent_table;
+        self.table_paragraph = parent_paragraph;
+    }
+
+    fn block_content(&mut self, block: &'a Block, out: &mut String) {
         match block {
-            Block::Heading { level, content } => {
+            Block::Heading { level, content, .. } => {
                 let _ = write!(out, "#heading(level: {})[", (*level).clamp(1, 6));
                 self.inlines(content, out);
                 out.push_str("]\n\n");
             }
-            Block::Paragraph { content } => {
+            Block::Paragraph { content, .. } => {
                 let start = out.len();
                 self.inlines(content, out);
                 if out.len() > start {
                     out.push_str("\n\n");
                 }
             }
-            Block::Code { lang, text } => {
+            Block::Code { lang, text, .. } => {
                 out.push_str("#raw(block: true, ");
                 if let Some(lang) = lang.as_deref().map(sanitize_lang)
                     && !lang.is_empty()
@@ -747,7 +1034,7 @@ impl<'a> Writer<'a> {
                 push_literal(out, &clean_code(tex));
                 out.push_str("))\n\n");
             }
-            Block::Quote { blocks } => {
+            Block::Quote { blocks, .. } => {
                 if self.enter(QUOTE_COST) {
                     let inner = self.content(blocks);
                     self.leave(QUOTE_COST);
@@ -758,7 +1045,7 @@ impl<'a> Writer<'a> {
                     Self::flatten(blocks, out);
                 }
             }
-            Block::PageBreak {} => {
+            Block::PageBreak { .. } => {
                 // Typst rejects page breaks inside containers, where they carry no meaning anyway.
                 if self.nesting_cost == 0 {
                     out.push_str("#pagebreak(weak: true)\n\n");
@@ -769,6 +1056,7 @@ impl<'a> Writer<'a> {
                 start,
                 tight,
                 items,
+                ..
             } => {
                 if items.is_empty() {
                     return;
@@ -786,6 +1074,7 @@ impl<'a> Writer<'a> {
                 head,
                 body,
                 footnotes,
+                ..
             } => {
                 if self.enter(TABLE_COST) {
                     self.table(caption.as_deref(), columns, head, body, footnotes, out);
@@ -794,10 +1083,10 @@ impl<'a> Writer<'a> {
                     Self::flatten(std::slice::from_ref(block), out);
                 }
             }
-            Block::Figure { asset, caption } => self.figure(asset, caption, out),
+            Block::Figure { asset, caption, .. } => self.figure(asset, caption, out),
             // Footnote bodies are written where they are referenced.
             Block::Footnote { .. } => {}
-            Block::Raw { format, text } => match format {
+            Block::Raw { format, text, .. } => match format {
                 RawFormat::Html => {
                     self.warn_raw_html();
                     let mut buffer = String::new();
@@ -854,7 +1143,7 @@ impl<'a> Writer<'a> {
         );
         out.push_str(")#\" \"");
         let rest = match item.blocks.split_first() {
-            Some((Block::Paragraph { content }, rest)) => {
+            Some((Block::Paragraph { content, .. }, rest)) => {
                 self.inlines(content, &mut out);
                 rest
             }
@@ -1069,12 +1358,12 @@ impl<'a> Writer<'a> {
                 Inline::Text { text } => push_prose(&mut buffer, text),
                 Inline::SoftBreak {} => buffer.push(' '),
                 other => {
-                    flush_text(&mut buffer, out);
+                    self.flush_styled(&mut buffer, out);
                     self.inline(other, out);
                 }
             }
         }
-        flush_text(&mut buffer, out);
+        self.flush_styled(&mut buffer, out);
     }
 
     /// Writes `#function[…]` around inline children, or only their text past the budget.
@@ -1091,13 +1380,88 @@ impl<'a> Writer<'a> {
         }
     }
 
+    fn semantic_character(
+        &mut self,
+        content: &'a [Inline],
+        direct: CharacterStyle,
+        out: &mut String,
+    ) {
+        let parent = self.character.clone();
+        self.character.overlay(&direct);
+        if self.enter(INLINE_COST) {
+            self.inlines(content, out);
+            self.leave(INLINE_COST);
+        } else {
+            let mut text = plain_text(content);
+            self.flush_styled(&mut text, out);
+        }
+        self.character = parent;
+    }
     fn inline(&mut self, inline: &'a Inline, out: &mut String) {
+        let start = out.len();
         match inline {
             Inline::Text { text } => push_prose_run(out, text),
             Inline::SoftBreak {} => out.push_str("#\" \""),
             Inline::LineBreak {} => out.push_str("#linebreak()"),
+            Inline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                let parent = self.character.clone();
+                match self
+                    .document
+                    .styles
+                    .resolve_character(style.as_ref(), direct, Some(&parent))
+                {
+                    Ok(resolved) => self.character = resolved,
+                    Err(error) => self.warn(WarningCode::UnsupportedNode, error),
+                }
+                if self.enter(INLINE_COST) {
+                    self.inlines(content, out);
+                    self.leave(INLINE_COST);
+                } else {
+                    let mut text = plain_text(content);
+                    self.flush_styled(&mut text, out);
+                }
+                self.character = parent;
+            }
+            Inline::Emph { content } if !self.character.is_empty() || contains_styled(content) => {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        italic: Some(true),
+                        ..Default::default()
+                    },
+                    out,
+                );
+            }
             Inline::Emph { content } => self.styled("emph", content, out),
+            Inline::Strong { content }
+                if !self.character.is_empty() || contains_styled(content) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        weight: Some(700),
+                        ..Default::default()
+                    },
+                    out,
+                );
+            }
             Inline::Strong { content } => self.styled("strong", content, out),
+            Inline::Strikeout { content }
+                if !self.character.is_empty() || contains_styled(content) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        strike: Some(true),
+                        ..Default::default()
+                    },
+                    out,
+                );
+            }
             Inline::Strikeout { content } => self.styled("strike", content, out),
             Inline::Superscript { content } => self.styled("super", content, out),
             Inline::Subscript { content } => self.styled("sub", content, out),
@@ -1143,6 +1507,18 @@ impl<'a> Writer<'a> {
                 }
                 RawFormat::Tex => self.warn_raw_tex(),
             },
+        }
+        if matches!(
+            inline,
+            Inline::Text { .. }
+                | Inline::Code { .. }
+                | Inline::Math { .. }
+                | Inline::Image { .. }
+                | Inline::Raw { .. }
+        ) && !self.character.is_empty()
+        {
+            let content = out.split_off(start);
+            self.character_content(&content, out);
         }
     }
 
@@ -1234,6 +1610,32 @@ fn push_alt(out: &mut String, alt: &str) {
         out.push_str(", alt: ");
         push_literal(out, alt);
     }
+}
+
+fn contains_styled(inlines: &[Inline]) -> bool {
+    let mut pending: Vec<_> = inlines.iter().collect();
+    while let Some(inline) = pending.pop() {
+        match inline {
+            Inline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                if style.is_some() || !direct.is_empty() {
+                    return true;
+                }
+                pending.extend(content);
+            }
+            Inline::Emph { content }
+            | Inline::Strong { content }
+            | Inline::Strikeout { content }
+            | Inline::Superscript { content }
+            | Inline::Subscript { content }
+            | Inline::Link { content, .. } => pending.extend(content),
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]

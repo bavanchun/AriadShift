@@ -7,6 +7,7 @@ use std::{
     io::{self, BufRead, IsTerminal, Read, Write},
     path::PathBuf,
     process::ExitCode,
+    str::FromStr,
 };
 
 #[cfg(debug_assertions)]
@@ -113,6 +114,9 @@ impl From<Profile> for CliProfile {
 /// Arguments for converting a document between supported formats.
 #[derive(Args)]
 struct ConvertArgs {
+    /// IR JSON wire version (default: 2); requires JSON output.
+    #[arg(long, value_parser = clap::value_parser!(u8).range(1..=2))]
+    ir_version: Option<u8>,
     /// Input document file paths.
     #[arg(value_name = "INPUT", required = true, num_args = 1..)]
     inputs: Vec<PathBuf>,
@@ -417,6 +421,8 @@ struct RecipeRunArgs {
     json: bool,
 }
 
+const CLI_STACK_SIZE: usize = 8 * 1024 * 1024;
+
 fn main() -> ExitCode {
     // The sandbox launcher runs before anything else so it restricts and `exec`s the engine
     // without parsing the engine's own arguments.
@@ -426,6 +432,25 @@ fn main() -> ExitCode {
     {
         return ariad_host::sandbox::launch(std::env::args_os().skip(2));
     }
+    // Windows starts executables with a 1 MiB main stack. Give every command,
+    // including engine subprocesses, the same headroom as native Unix builds.
+    match std::thread::Builder::new()
+        .name("ashift".into())
+        .stack_size(CLI_STACK_SIZE)
+        .spawn(run_cli)
+    {
+        Ok(thread) => thread.join().unwrap_or_else(|_| {
+            let _ = writeln!(io::stderr(), "ashift: command failed");
+            ExitCode::from(1)
+        }),
+        Err(_) => {
+            let _ = writeln!(io::stderr(), "ashift: could not start command thread");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_cli() -> ExitCode {
     match Cli::try_parse() {
         Ok(cli) => match cli.command {
             Some(Command::Convert(args)) => run_convert(args),
@@ -457,6 +482,7 @@ fn main() -> ExitCode {
 
 fn run_mcp_entry(args: mcp::McpArgs) -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_current_thread()
+        .thread_stack_size(CLI_STACK_SIZE)
         .enable_all()
         .build()
     {
@@ -566,6 +592,7 @@ where
     let cancel = CancellationToken::new();
     let task_cancel = cancel.clone();
     let runtime = match tokio::runtime::Builder::new_current_thread()
+        .thread_stack_size(CLI_STACK_SIZE)
         .enable_all()
         .build()
     {
@@ -664,6 +691,7 @@ fn run_convert(mut args: ConvertArgs) -> ExitCode {
     };
     let stderr_is_terminal = io::stderr().is_terminal();
     let request = ariad_host::convert::ConvertRequest {
+        ir_version: args.ir_version,
         input,
         output,
         target_format,
@@ -1150,7 +1178,20 @@ fn parse_tool_params_and_secrets(
     Ok((params_value, secrets))
 }
 
+fn local_tool_plan() -> Result<ariad_core::tools::Plan, ToolError> {
+    match std::env::var("ASHIFT_PLAN") {
+        Ok(value) => ariad_core::tools::Plan::from_str(value.trim())
+            .map_err(|error| ToolError::InvalidParams(error.to_string())),
+        Err(std::env::VarError::NotPresent) => Ok(ariad_core::tools::Plan::Free),
+        Err(error) => Err(ToolError::InvalidParams(error.to_string())),
+    }
+}
+
 fn run_tool_cmd(args: ToolArgs) -> ExitCode {
+    let plan = match local_tool_plan() {
+        Ok(plan) => plan,
+        Err(error) => return report_error("tool", &error),
+    };
     let (params, secrets) = match parse_tool_params_and_secrets(
         &args.tool,
         args.params_json.as_deref(),
@@ -1175,6 +1216,7 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
     };
 
     let request = ToolRequest::new(args.tool, inputs, output)
+        .with_plan(plan)
         .with_params(params)
         .with_secrets(secrets)
         .with_secret_source(ariad_core::tools::SecretSource::Argv)
@@ -1247,6 +1289,10 @@ fn prompt_imported_recipe_confirmation() -> bool {
 }
 
 fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
+    let plan = match local_tool_plan() {
+        Ok(plan) => plan,
+        Err(error) => return report_error("recipe", &error),
+    };
     let raw = match std::fs::read_to_string(&args.recipe) {
         Ok(text) => text,
         Err(err) => return report_error("recipe", &ToolError::InputIo(err.to_string())),
@@ -1351,6 +1397,7 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
     let inputs: Vec<InputRef> = args.inputs.into_iter().map(InputRef::new).collect();
 
     let request = RecipeRequest::new(recipe, inputs, args.output)
+        .with_plan(plan)
         .with_origin(ariad_core::tools::RecipeOrigin::Imported, confirmed)
         .with_secrets(secrets)
         .with_overwrite(args.overwrite)

@@ -1,0 +1,15 @@
+{
+  "case": "vi-field-notes-md",
+  "layout": {
+    "reference_kind": "reflow-no-box-reference"
+  },
+  "origin": "independent-original-specification",
+  "schema": "ariad-editor-truth/1",
+  "semantics": {
+    "paragraph": "Buổi sáng có gió nhẹ.",
+    "title": "Ghi chép bên sông"
+  },
+  "styles": {
+    "applicable": false
+  }
+}

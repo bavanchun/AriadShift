@@ -21,6 +21,7 @@ import docx
 import lxml.html
 from lxml import etree
 
+from ariad_bench.references import editor_assertions_only
 from ariad_fixture_gen import docx as gen_docx, epub as gen_epub, html as gen_html
 from ariad_fixture_gen.truth import (
     Cell,
@@ -44,8 +45,40 @@ def _extract_flat_headings(heading_nodes: list[dict]) -> list[tuple[int, str]]:
     return flat
 
 
+def _docx_heading_level(paragraph) -> int | None:
+    level = paragraph._p.xpath("./w:pPr/w:outlineLvl/@w:val")
+    style = paragraph.style
+    seen = set()
+    while not level and style is not None and style.style_id not in seen:
+        seen.add(style.style_id)
+        level = style.element.xpath("./w:pPr/w:outlineLvl/@w:val")
+        style = style.base_style
+    return int(level[0]) + 1 if level and int(level[0]) < 9 else None
+
+
+def _authored_paragraphs(truth: dict) -> list[str]:
+    if "blocks" in truth:
+        return [" ".join(b["text"].split()) for b in truth["blocks"]
+                if b.get("type") == "paragraph" and b.get("text")]
+
+    def text(nodes):
+        return "".join(node.get("text", "") + text(node.get("content", [])) for node in nodes)
+
+    return [" ".join(text(block.get("content", [])).split())
+            for block in truth.get("ir", {}).get("body", []) if block["type"] == "paragraph"]
+
+
 def verify_html_matches_truth(html_bytes: bytes, truth: dict) -> None:
     tree = lxml.html.fromstring(html_bytes)
+    if editor_assertions_only(truth):
+        semantics = truth["semantics"]
+        assert tree.xpath("//h1/text()") == [semantics["title"]]
+        assert tree.xpath("//body/p/text()") == [semantics["paragraph"]]
+        heading = tree.xpath("//h1")[0]
+        css = dict(pair.strip().split(":", 1) for pair in heading.get("style", "").split(";") if ":" in pair)
+        assert css["color"].strip() == truth["styles"]["heading_color"]
+        assert float(css["font-size"].removesuffix("pt")) == truth["styles"]["heading_size_pt"]
+        return
 
     # 1. Title
     titles = tree.xpath("//title/text()")
@@ -69,7 +102,7 @@ def verify_html_matches_truth(html_bytes: bytes, truth: dict) -> None:
             "//main/p | //article/p | //main/blockquote/p | //article/blockquote/p | //main/a | //article/a"
         )
     ]
-    p_truth = [" ".join(b["text"].split()) for b in truth.get("blocks", []) if b.get("type") == "paragraph" and b.get("text")]
+    p_truth = _authored_paragraphs(truth)
     assert p_rendered == p_truth, f"HTML paragraph mismatch: {p_rendered} != {p_truth}"
 
     # 4. Tables
@@ -123,10 +156,8 @@ def verify_docx_matches_truth(docx_bytes: bytes, truth: dict) -> None:
     # 2. Headings
     h_rendered = []
     for p in doc.paragraphs:
-        if "Heading" in p.style.name:
-            level_str = p.style.name.replace("Heading", "").strip()
-            if level_str.isdigit():
-                h_rendered.append((int(level_str), " ".join(p.text.split())))
+        if (level := _docx_heading_level(p)) is not None:
+            h_rendered.append((level, " ".join(p.text.split())))
 
     h_truth = _extract_flat_headings(truth["canonical"].get("headings", []))
     assert h_rendered == h_truth, f"DOCX heading mismatch: {h_rendered} != {h_truth}"
@@ -135,9 +166,9 @@ def verify_docx_matches_truth(docx_bytes: bytes, truth: dict) -> None:
     p_rendered = [
         " ".join(p.text.split())
         for p in doc.paragraphs
-        if "Heading" not in p.style.name and not p.style.name.startswith("List") and p.text.strip()
+        if _docx_heading_level(p) is None and not p.style.name.startswith("List") and p.text.strip()
     ]
-    p_truth = [" ".join(b["text"].split()) for b in truth.get("blocks", []) if b.get("type") == "paragraph" and b.get("text")]
+    p_truth = _authored_paragraphs(truth)
     assert p_rendered == p_truth, f"DOCX paragraph mismatch: {p_rendered} != {p_truth}"
 
     # 4. Lists
@@ -253,7 +284,7 @@ def verify_epub_matches_truth(epub_bytes: bytes, truth: dict) -> None:
         assert h_rendered == h_truth, f"EPUB heading mismatch: {h_rendered} != {h_truth}"
 
         # 4. Compare paragraphs
-        p_truth = [" ".join(b["text"].split()) for b in truth.get("blocks", []) if b.get("type") == "paragraph" and b.get("text")]
+        p_truth = _authored_paragraphs(truth)
         assert p_rendered == p_truth, f"EPUB paragraph mismatch: {p_rendered} != {p_truth}"
 
         # 5. Compare footnotes

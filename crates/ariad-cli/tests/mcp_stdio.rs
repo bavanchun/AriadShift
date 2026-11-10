@@ -4,11 +4,14 @@
 //! tool schema & invocation matching CLI outputs, path confinement,
 //! capability-based promotion, and session-scoped resources.
 
+#[path = "support/edit.rs"]
+mod edit_support;
+
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
     path::PathBuf,
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, Command, Stdio},
 };
 
 use ariad_host::confine::path_to_file_uri;
@@ -68,8 +71,10 @@ enum RootsFailure {
 /// Helper client for testing `ashift mcp` over stdio.
 struct McpTestClient {
     child: Option<Child>,
-    stdin: Option<ChildStdin>,
+    stdin: Option<std::sync::mpsc::Sender<String>>,
+    written: std::sync::mpsc::Receiver<std::io::Result<()>>,
     reader: std::sync::mpsc::Receiver<std::io::Result<String>>,
+    io_threads: Vec<std::thread::JoinHandle<()>>,
     pending_roots: Vec<Value>,
     read_timeout: std::time::Duration,
     recorded_stdout: Vec<String>,
@@ -84,6 +89,9 @@ impl Drop for McpTestClient {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
+        }
+        for thread in self.io_threads.drain(..) {
+            let _ = thread.join();
         }
     }
 }
@@ -101,6 +109,7 @@ impl McpTestClient {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_ashift"));
         cmd.arg("mcp")
             .args(args)
+            .env_remove("ASHIFT_PLAN")
             .env("ASHIFT_PANDOC", pandoc_path())
             .env("SOURCE_DATE_EPOCH", "1700000000")
             .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path());
@@ -109,13 +118,27 @@ impl McpTestClient {
         }
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::inherit());
 
         let mut child = cmd.spawn().expect("failed to spawn ashift mcp");
-        let stdin = child.stdin.take().expect("stdin pipe");
+        let mut stdin = child.stdin.take().expect("stdin pipe");
+        let (writer, lines) = std::sync::mpsc::channel::<String>();
+        let (completed, written) = std::sync::mpsc::channel();
+        let writer_thread = std::thread::spawn(move || {
+            for line in lines {
+                let result = stdin
+                    .write_all(line.as_bytes())
+                    .and_then(|()| stdin.write_all(b"\n"))
+                    .and_then(|()| stdin.flush());
+                let failed = result.is_err();
+                if completed.send(result).is_err() || failed {
+                    break;
+                }
+            }
+        });
         let stdout = child.stdout.take().expect("stdout pipe");
         let (sender, reader) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        let reader_thread = std::thread::spawn(move || {
             let mut stdout = BufReader::new(stdout);
             loop {
                 let mut line = String::new();
@@ -136,10 +159,14 @@ impl McpTestClient {
 
         Self {
             child: Some(child),
-            stdin: Some(stdin),
+            stdin: Some(writer),
+            written,
             reader,
+            io_threads: vec![writer_thread, reader_thread],
             pending_roots: Vec::new(),
-            read_timeout: std::time::Duration::from_secs(60),
+            // Windows CI has taken nearly two minutes to scan a large invalid UTF-8 file.
+            // Each write/response still has one deadline, unaffected by notifications.
+            read_timeout: std::time::Duration::from_secs(if cfg!(windows) { 180 } else { 60 }),
             recorded_stdout: Vec::new(),
             advertised_roots,
             roots_queries_count: 0,
@@ -162,10 +189,15 @@ impl McpTestClient {
     }
 
     fn write_line(&mut self, line: &str) {
-        let stdin = self.stdin.as_mut().expect("stdin exists");
-        stdin.write_all(line.as_bytes()).expect("write to stdin");
-        stdin.write_all(b"\n").expect("write newline to stdin");
-        stdin.flush().expect("flush stdin");
+        self.stdin
+            .as_ref()
+            .expect("stdin exists")
+            .send(line.to_owned())
+            .expect("queue write to stdin");
+        self.written
+            .recv_timeout(self.read_timeout)
+            .expect("bounded write to server stdin")
+            .expect("write to stdin");
     }
 
     fn send_request(&mut self, id: u64, method: &str, params: Value) {
@@ -416,6 +448,32 @@ impl McpTestClient {
             );
         }
     }
+}
+
+#[test]
+fn large_requests_and_responses_do_not_block_stdio() {
+    let mut client = McpTestClient::spawn(&[], vec![]);
+    client.initialize();
+    // Queue a schema response while sending a request much larger than a Windows pipe.
+    client.send_request(2, "tools/list", json!({}));
+    client.send_request(3, "ping", json!({"padding": "x".repeat(2 * 1024 * 1024)}));
+    let deadline = std::time::Instant::now() + client.read_timeout;
+    let (mut schema_received, mut pong_received) = (false, false);
+    while !schema_received || !pong_received {
+        let response = client.read_message_until(deadline);
+        match response["id"].as_u64() {
+            Some(2) => {
+                assert!(response["result"]["tools"].is_array(), "{response}");
+                schema_received = true;
+            }
+            Some(3) => {
+                assert_eq!(response["result"], json!({}), "{response}");
+                pong_received = true;
+            }
+            _ => {}
+        }
+    }
+    client.close_and_assert_purity();
 }
 
 #[test]
@@ -1820,6 +1878,7 @@ mod limits_and_roots {
         file.seek(SeekFrom::Start(ariad_host::convert::ANALYSIS_MAX_BYTES))
             .unwrap();
         file.write_all(&[0xff]).unwrap();
+        drop(file);
         let mut client =
             McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
         client.initialize();
@@ -2612,7 +2671,7 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let listed = list_resp["result"]["structuredContent"]
         .as_array()
         .expect("list_doc_tools array");
-    assert_eq!(listed.len(), 92);
+    assert_eq!(listed.len(), 96);
     assert_eq!(listed[0]["id"], "pdf.info");
     assert_eq!(listed[0]["group"], "organize");
     assert_eq!(listed[0]["engine"], "ariad-pdf");
@@ -2744,6 +2803,186 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     assert!(read_resp.get("result").is_some(), "{read_resp}");
 
     client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_document_edit_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("original.md");
+    fs::write(&input, "Original paragraph\n\nKeep this paragraph\n").unwrap();
+    let mut client =
+        McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], Vec::new());
+    client.initialize();
+    client.send_request(
+        1100,
+        "tools/call",
+        json!({"name":"list_doc_tools", "arguments":{"group":"edit"}}),
+    );
+    let response = client.read_response(1100);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let listed = response["result"]["structuredContent"].as_array().unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|t| t["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "edit.open_document",
+            "edit.export_document",
+            "edit.page_objects",
+            "edit.apply"
+        ]
+    );
+    let opened = dir.path().join("opened.json");
+    client.send_request(1101, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.open_document", "inputs":[input], "output":opened}}));
+    let response = client.read_response(1101);
+    converted_resource_uri(&response, &opened);
+    let metrics = &response["result"]["structuredContent"]["metrics"];
+    assert_eq!(metrics["fidelity_preview"].as_array().unwrap().len(), 4);
+    let mut document: ariad_core::ir::Document =
+        serde_json::from_slice(&fs::read(&opened).unwrap()).unwrap();
+    assert_eq!(document.version, "ariad-ir/2");
+    assert!(!document.source_map.is_empty());
+    let changed_id = document.body[0].id().to_string();
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &mut document.body[0] {
+        *content = vec![ariad_core::ir::Inline::Text {
+            text: "MCP Tiếng Việt".into(),
+        }];
+    } else {
+        panic!("expected a paragraph");
+    }
+    let edited = dir.path().join("edited.json");
+    fs::write(&edited, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+    let exported = dir.path().join("exported.html");
+    client.send_request(1102, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.export_document", "inputs":[edited, input], "output":exported, "params":{"format":"html"}}}));
+    let response = client.read_response(1102);
+    let uri = converted_resource_uri(&response, &exported);
+    let metrics = &response["result"]["structuredContent"]["metrics"];
+    assert_eq!(metrics["fidelity"]["status"], "measured");
+    assert!(
+        metrics["change_list"]["modified"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(changed_id))
+    );
+    assert!(
+        fs::read_to_string(&exported)
+            .unwrap()
+            .contains("MCP Tiếng Việt")
+    );
+    client.send_request(1103, "resources/read", json!({"uri":uri}));
+    let response = client.read_response(1103);
+    assert!(response.get("result").is_some(), "{response}");
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_page_edit_round_trip_with_real_pdfium() {
+    let Some(pack) = edit_support::PdfiumPack::new() else {
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("subset.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-tools/vi-diacritics-subset-font.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client = McpTestClient::spawn_with_env(
+        &["--allow-dir", dir.path().to_str().unwrap()],
+        Vec::new(),
+        &[
+            ("ASHIFT_PACK_PDFIUM", pack.path().as_os_str()),
+            ("ASHIFT_PLAN", std::ffi::OsStr::new("pro")),
+        ],
+    );
+    client.initialize();
+    let objects = dir.path().join("objects.json");
+    client.send_request(1110, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.page_objects", "inputs":[input], "output":objects, "params":{"pages":"1"}}}));
+    let response = client.read_response(1110);
+    converted_resource_uri(&response, &objects);
+    let listed: Value = serde_json::from_slice(&fs::read(&objects).unwrap()).unwrap();
+    let target = listed["pages"][0]["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["kind"] == "text")
+        .unwrap();
+    let output = dir.path().join("edited.pdf");
+    client.send_request(1111, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.apply", "inputs":[input], "output":output, "params":{"save":"incremental", "ops":[{"op":"replace_text", "page":1, "object_id":target["id"], "text":"MCP Tiếng Việt"}]}}}));
+    let response = client.read_response(1111);
+    let uri = converted_resource_uri(&response, &output);
+    assert!(
+        response["result"]["structuredContent"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "font_substituted")
+    );
+    let original = fs::read(&input).unwrap();
+    let edited = fs::read(&output).unwrap();
+    assert!(edited.starts_with(&original));
+    assert!(
+        lopdf::Document::load_mem(&edited)
+            .unwrap()
+            .extract_text(&[1])
+            .unwrap()
+            .contains("MCP Tiếng Việt")
+    );
+    client.send_request(1112, "resources/read", json!({"uri":uri}));
+    let response = client.read_response(1112);
+    assert!(response.get("result").is_some(), "{response}");
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_page_tools_reject_default_free_access() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("subset.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-tools/vi-diacritics-subset-font.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client =
+        McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], Vec::new());
+    client.initialize();
+    for (index, tool) in ["edit.page_objects", "edit.apply"].into_iter().enumerate() {
+        let id = 1120 + index as u64;
+        let output = dir.path().join(format!("refused-{index}"));
+        client.send_request(id, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":tool, "inputs":[input], "output":output}}));
+        let response = client.read_response(id);
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        let error = &response["result"]["structuredContent"]["error"];
+        assert_eq!(error["code"], "tier_not_allowed");
+        assert_eq!(error["exit_code"], 11);
+        assert!(!output.exists());
+    }
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_invalid_local_plan_fails_closed() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("input.md");
+    fs::write(&input, "Original paragraph").unwrap();
+    for plan in edit_support::invalid_local_plans() {
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", dir.path().to_str().unwrap()],
+            Vec::new(),
+            &[("ASHIFT_PLAN", plan.as_os_str())],
+        );
+        client.initialize();
+        let output = dir.path().join("refused.json");
+        client.send_request(1130, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.open_document", "inputs":[input], "output":output}}));
+        let response = client.read_response(1130);
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        let error = &response["result"]["structuredContent"]["error"];
+        assert_eq!(error["code"], "invalid_params");
+        assert_eq!(error["exit_code"], 9);
+        assert!(!output.exists());
+        client.close_and_assert_purity();
+    }
 }
 
 #[test]

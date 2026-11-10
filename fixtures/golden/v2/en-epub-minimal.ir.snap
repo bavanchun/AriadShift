@@ -1,0 +1,43 @@
+---
+source: crates/ariad-cli/tests/reader_golden.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Minimal Document",
+          "type": "text"
+        }
+      ],
+      "id": "b5633eb1e2ced331fe6d1dbe1b12cdb92c2a67849b651b282bbf5d67dfe035f0d",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "This is a minimal valid EPUB 3 document for boundary testing.",
+          "type": "text"
+        }
+      ],
+      "id": "b386667f1590e3e49b158aca3dcad1e1e713cbf2e75fdb1266acaccaf8c13297e",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "epub",
+    "subject": null,
+    "title": "Minimal EPUB 3 document"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

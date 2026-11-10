@@ -611,3 +611,16 @@ class TestCanonical(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_styled_content_preserves_text_links_images_and_structure():
+    from ariad_bench.canonical import from_ir
+
+    inline = {"type": "styled", "direct": {"weight": 700}, "content": [
+        {"type": "text", "text": "Visible words"},
+        {"type": "link", "url": "https://example.test", "content": [{"type": "text", "text": " link"}]},
+        {"type": "image", "alt": " image"},
+    ]}
+    styled = from_ir({"version": "ariad-ir/2", "body": [{"type": "heading", "id": "heading", "level": 2, "content": [inline]}]})
+    plain = from_ir({"version": "ariad-ir/1", "body": [{"type": "heading", "level": 2, "content": inline["content"]}]})
+    assert styled == plain

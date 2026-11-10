@@ -98,12 +98,19 @@ fn blocks_and_inlines_share_one_depth_budget() {
     for inline_depth in [2, 3] {
         let document = Document {
             body: vec![Block::Quote {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![emphasized(inline_depth)],
                 }],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         if inline_depth == 2 {
             read_document(&document, &limits).unwrap();
         } else {
@@ -121,15 +128,24 @@ fn inline_depth_in_furniture_figures_and_table_annotations_is_checked() {
     let inline = emphasized(3);
     let cases = [
         Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![inline.clone()],
         },
         Block::Figure {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             asset: ariad_core::ir::AssetRef::Url {
                 href: "https://example.test/image.png".into(),
             },
             caption: vec![inline.clone()],
         },
         Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: Some(vec![inline.clone()]),
             columns: vec![],
             head: vec![],
@@ -137,6 +153,9 @@ fn inline_depth_in_furniture_figures_and_table_annotations_is_checked() {
             footnotes: vec![],
         },
         Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![],
             head: vec![],
@@ -148,7 +167,8 @@ fn inline_depth_in_furniture_figures_and_table_annotations_is_checked() {
         let document = Document {
             furniture: vec![block],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         rejected_document_limit(&document, &limits, "max_nesting_depth");
     }
 }
@@ -174,25 +194,43 @@ fn empty_containers_and_inline_wrappers_use_the_depth_budget() {
     for inline in wrappers {
         let document = Document {
             body: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![inline],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         rejected_document_limit(&document, &limits, "max_nesting_depth");
     }
     let blocks = [
-        Block::Quote { blocks: vec![] },
+        Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            blocks: vec![],
+        },
         Block::Footnote {
-            id: "note".into(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "note".into(),
             blocks: vec![],
         },
         Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: false,
             items: vec![],
         },
         Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![],
             head: vec![],
@@ -204,7 +242,8 @@ fn empty_containers_and_inline_wrappers_use_the_depth_budget() {
         let document = Document {
             body: vec![block],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         rejected_document_limit(&document, &limits, "max_nesting_depth");
     }
 }
@@ -212,6 +251,9 @@ fn empty_containers_and_inline_wrappers_use_the_depth_budget() {
 #[test]
 fn list_items_and_table_cells_carry_the_parent_depth() {
     let paragraph = Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![emphasized(2)],
     };
     let cell = TableCell {
@@ -222,6 +264,9 @@ fn list_items_and_table_cells_carry_the_parent_depth() {
     };
     let blocks = [
         Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: false,
@@ -231,6 +276,9 @@ fn list_items_and_table_cells_carry_the_parent_depth() {
             }],
         },
         Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![ColumnSpec {
                 align: Alignment::Default,
@@ -248,7 +296,8 @@ fn list_items_and_table_cells_carry_the_parent_depth() {
         let document = Document {
             body: vec![block],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         rejected_document_limit(&document, &limits, "max_nesting_depth");
     }
 }
@@ -261,6 +310,7 @@ fn asset_bytes_are_bounded_even_when_unreferenced() {
     document.assets.insert(
         id,
         Asset {
+            font: None,
             media_type: "image/png".into(),
             bytes,
         },
@@ -284,6 +334,7 @@ fn asset_ids_must_be_lowercase_sha256_of_their_bytes() {
         document.assets.insert(
             id,
             Asset {
+                font: None,
                 media_type: "image/png".into(),
                 bytes: b"data".to_vec(),
             },
@@ -297,24 +348,35 @@ fn invalid_heading_levels_and_duplicate_nested_footnotes_are_refused() {
     for level in [0, 7, 255] {
         let document = Document {
             body: vec![Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 level,
                 content: vec![],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         rejected_invalid_ir(&document);
     }
     let footnote = Block::Footnote {
-        id: "same".into(),
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        note_id: "same".into(),
         blocks: vec![],
     };
     let document = Document {
         body: vec![footnote.clone()],
         furniture: vec![Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![footnote],
         }],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     rejected_invalid_ir(&document);
 }
 
@@ -323,6 +385,9 @@ fn table_colspans_cannot_exceed_the_declared_columns() {
     for spans in [vec![2, 1], vec![u32::MAX, 1]] {
         let document = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![
                     ColumnSpec {
@@ -345,7 +410,8 @@ fn table_colspans_cannot_exceed_the_declared_columns() {
                 footnotes: vec![],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         rejected_invalid_ir(&document);
     }
 }
@@ -355,18 +421,30 @@ fn valid_invariants_and_per_asset_boundaries_are_preserved() {
     let mut document = Document {
         body: vec![
             Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 level: 1,
                 content: vec![],
             },
             Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 level: 6,
                 content: vec![],
             },
             Block::Footnote {
-                id: "one".into(),
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                note_id: "one".into(),
                 blocks: vec![],
             },
             Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![
                     ColumnSpec {
@@ -385,15 +463,20 @@ fn valid_invariants_and_per_asset_boundaries_are_preserved() {
             },
         ],
         furniture: vec![Block::Footnote {
-            id: "two".into(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "two".into(),
             blocks: vec![],
         }],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     for bytes in [vec![1, 2, 3], vec![4, 5, 6]] {
         document.assets.insert(
             hex::encode(Sha256::digest(&bytes)),
             Asset {
+                font: None,
                 media_type: "image/png".into(),
                 bytes,
             },
@@ -450,12 +533,16 @@ fn amplification_is_refused_before_the_internal_output_budget() {
     assert_eq!(Limits::MAX_TEXT_OUTPUT_BYTES, 512 * 1024 * 1024);
     let document = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "\"".repeat(45 * 1024 * 1024),
             }],
         }],
         ..Document::default()
-    };
+    }
+    .finalize_import();
     for format in [Format::Markdown, Format::Html] {
         let output = pipeline::write(format, &document, WriteOptions::default()).unwrap();
         assert!(output.bytes.is_empty());
