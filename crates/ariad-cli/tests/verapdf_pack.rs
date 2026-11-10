@@ -453,11 +453,16 @@ fn sandbox_network_denial() {
     let python = std::env::var_os("PATH")
         .and_then(|paths| {
             std::env::split_paths(&paths)
-                .map(|dir| dir.join("python3"))
-                .find(|candidate| candidate.is_file())
+                .filter_map(|dir| fs::canonicalize(dir.join("python3")).ok())
+                .find(|canon| {
+                    canon.is_file()
+                        && canon
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| n.to_ascii_lowercase().starts_with("python"))
+                })
         })
         .unwrap_or_else(|| PathBuf::from("/usr/bin/python3"));
-    let python = fs::canonicalize(&python).unwrap_or(python);
 
     let mut args = vec![
         "__sandbox".to_owned(),
