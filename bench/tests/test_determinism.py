@@ -60,8 +60,8 @@ class TestDeterminism(unittest.TestCase):
                 fidelity_out=tmp / "fidelity2.json",
             )
 
-            evidence1 = json.loads((tmp / "fidelity1.json").read_text())
-            evidence2 = json.loads((tmp / "fidelity2.json").read_text())
+            evidence1 = json.loads((tmp / "fidelity1.json").read_text(encoding="utf-8"))
+            evidence2 = json.loads((tmp / "fidelity2.json").read_text(encoding="utf-8"))
             self.assertEqual(evidence1["metric_version"], "fidelity/2")
             self.assertEqual(evidence1["basis"], "independent_reference")
             self.assertTrue(evidence1["samples"])

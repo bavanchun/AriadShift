@@ -22,7 +22,7 @@ def test_editor_corpus_check_rejects_drift_without_mutation(tmp_path, drift):
     if drift == "missing":
         target.unlink()
     elif drift == "schema":
-        target.write_text(target.read_text().replace('"ariad-ir/2"', '"ariad-ir/99"'))
+        target.write_text(target.read_text(encoding="utf-8").replace('"ariad-ir/2"', '"ariad-ir/99"'), encoding="utf-8")
     else:
         target.write_bytes(target.read_bytes() + b"\n")
     before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
