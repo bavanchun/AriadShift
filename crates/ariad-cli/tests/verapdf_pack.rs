@@ -447,6 +447,7 @@ fn pdfua_validation() {
     );
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn sandbox_network_denial() {
     // Run socket connect attempt to public IP under ashift __sandbox --required --deny-net
