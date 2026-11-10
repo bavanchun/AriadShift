@@ -623,7 +623,9 @@ async fn changing_output_directory_regenerates_outputs_in_the_new_destination() 
     assert!(
         second.artifacts[0]
             .path
-            .starts_with(&request.recipe.output_dir)
+            .canonicalize()
+            .unwrap()
+            .starts_with(request.recipe.output_dir.canonicalize().unwrap())
     );
     assert!(first.artifacts[0].path.is_file());
 }
