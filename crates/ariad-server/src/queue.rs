@@ -153,8 +153,18 @@ impl PgmqQueue {
     /// historical jobs or an unbounded scan of queue messages. Existing indexes
     /// cover the active set, each job's first queued event and queue primary key.
     async fn references(conn: &mut PgConnection) -> Result<Vec<FairRow>, sqlx::Error> {
+        let active: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT pack FROM jobs WHERE status IN ('queued', 'running')",
+        )
+        .fetch_all(&mut *conn)
+        .await?;
         let mut rows = Vec::new();
-        for pack in [Pack::Core, Pack::Office, Pack::Docling] {
+        for pack in Pack::ALL {
+            // Enqueue shares the scheduler lock. Empty packs cannot acquire a
+            // runnable message during this pass; avoid preparing idle queries.
+            if !active.iter().any(|name| name == pack.as_str()) {
+                continue;
+            }
             let sql = format!(
                 "WITH active AS MATERIALIZED (SELECT id, subject FROM jobs \
                     WHERE status IN ('queued','running') AND pack=$1) \

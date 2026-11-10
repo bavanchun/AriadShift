@@ -289,7 +289,7 @@ pub async fn delete_upload(
     match status.parse().unwrap_or(UploadStatus::Deleted) {
         UploadStatus::Pending | UploadStatus::Completed => {
             let used: bool =
-                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM jobs WHERE upload_id = $1)")
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM jobs WHERE upload_id = $1) OR EXISTS (SELECT 1 FROM job_inputs WHERE upload_id = $1)")
                     .bind(id)
                     .fetch_one(&mut *tx)
                     .await?;

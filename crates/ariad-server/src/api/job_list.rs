@@ -170,13 +170,21 @@ pub async fn list_jobs(
     for step in db::steps_of_jobs(&state.db, &ids).await? {
         routes.entry(step.job_id).or_default().push(step.step);
     }
-    let jobs = rows
-        .into_iter()
-        .map(|row| JobListItem {
-            job: job_from_row(&row.job, routes.remove(&row.job.id).unwrap_or_default()),
+    let mut inputs: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for (job_id, upload_id) in db::inputs_of_jobs(&state.db, &ids).await? {
+        inputs.entry(job_id).or_default().push(upload_id);
+    }
+    let mut jobs = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut job = job_from_row(&row.job, routes.remove(&row.job.id).unwrap_or_default());
+        if row.job.tool_id.is_some() {
+            job.upload_ids = Some(inputs.remove(&row.job.id).unwrap_or_default());
+        }
+        jobs.push(JobListItem {
+            job,
             filename: row.filename,
-        })
-        .collect();
+        });
+    }
     Ok(Json(JobList { jobs, next_cursor }))
 }
 
@@ -233,6 +241,9 @@ mod tests {
                 id: Uuid::nil(),
                 status: JobStatus::Expired,
                 upload_id: Uuid::nil(),
+                upload_ids: None,
+                tool: None,
+                params: None,
                 from: "markdown".to_owned(),
                 to: "html".to_owned(),
                 profile: crate::api::dto::Profile::Editable,

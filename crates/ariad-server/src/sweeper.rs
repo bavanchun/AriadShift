@@ -215,7 +215,8 @@ async fn prune_metadata(pool: &PgPool, batch: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         "DELETE FROM uploads WHERE id IN (SELECT id FROM uploads u \
          WHERE status IN ('deleted', 'expired') AND expires_at < now() - interval '30 days' \
-         AND NOT EXISTS (SELECT 1 FROM jobs WHERE upload_id = u.id) ORDER BY expires_at LIMIT $1)",
+         AND NOT EXISTS (SELECT 1 FROM jobs WHERE upload_id = u.id) \
+         AND NOT EXISTS (SELECT 1 FROM job_inputs WHERE upload_id = u.id) ORDER BY expires_at LIMIT $1)",
     )
     .bind(batch)
     .execute(&mut *tx)

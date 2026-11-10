@@ -199,15 +199,21 @@ pub struct PlanResponse {
     pub alternatives: Vec<PlanAlternative>,
 }
 
-/// Creates a conversion job.
+/// Creates a conversion or document-tool job.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateJobRequest {
     /// A completed upload.
-    pub upload_id: Uuid,
+    pub upload_id: Option<Uuid>,
+    /// Ordered completed uploads for a document tool; mutually exclusive with `upload_id`.
+    pub upload_ids: Option<Vec<Uuid>>,
+    /// Registered document tool identifier. Omit for conversions.
+    pub tool: Option<String>,
+    /// Tool parameters; literal secrets are rejected.
+    pub params: Option<serde_json::Value>,
     /// Target format id or extension.
     #[schema(example = "docx")]
-    pub to: String,
+    pub to: Option<String>,
     #[serde(default)]
     pub profile: Profile,
 }
@@ -225,7 +231,14 @@ pub struct JobWarning {
 pub struct Job {
     pub id: Uuid,
     pub status: JobStatus,
+    /// First input upload; the nil UUID for tools requiring no inputs.
     pub upload_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_ids: Option<Vec<Uuid>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
     pub from: String,
     pub to: String,
     pub profile: Profile,

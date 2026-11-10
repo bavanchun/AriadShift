@@ -73,6 +73,19 @@ export interface CreateJobOptions {
   signal?: AbortSignal;
 }
 
+export interface CreateToolJobOptions {
+  /** Registry identifier, for example `pdf.merge`. */
+  tool: string;
+  /** One completed input; use uploadIds for multiple inputs. */
+  uploadId?: string;
+  /** Ordered completed inputs, mutually exclusive with uploadId. */
+  uploadIds?: string[];
+  /** Parameters matching the tool schema; literal secrets are rejected. */
+  params?: CreateJobRequest["params"];
+  profile?: CreateJobRequest["profile"];
+  signal?: AbortSignal;
+}
+
 export interface ListJobsOptions {
   /** Jobs per page, from 1 to 100. The server defaults to 50. */
   limit?: number;
@@ -192,7 +205,7 @@ export interface AriadClient {
   deleteUpload(uploadId: string, signal?: AbortSignal): Promise<void>;
   /** The caller's plan limits, quotas and retention, for showing before an upload. */
   limits(signal?: AbortSignal): Promise<PlanLimits>;
-  createJob(options: CreateJobOptions): Promise<Job>;
+  createJob(options: CreateJobOptions | CreateToolJobOptions): Promise<Job>;
   /**
    * Lists the account's jobs, newest first, one page at a time. Follow
    * `next_cursor` until it is `null`. Needs a bearer token or an API key:
@@ -454,8 +467,17 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
       return unwrap<PlanLimits>(getLimitsOperation({ client: raw, signal }));
     },
 
-    createJob({ uploadId, to, profile, signal }) {
-      const body: CreateJobRequest = { upload_id: uploadId, to };
+    createJob(options) {
+      const { profile, signal } = options;
+      const body: CreateJobRequest =
+        "tool" in options
+          ? {
+              tool: options.tool,
+              upload_id: options.uploadId,
+              upload_ids: options.uploadIds,
+              params: options.params,
+            }
+          : { upload_id: options.uploadId, to: options.to };
       if (profile !== undefined) {
         body.profile = profile;
       }
