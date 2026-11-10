@@ -31,15 +31,43 @@ use typst_pdf::{PdfOptions, Timestamp};
 const MAIN_PATH: &str = "main.typ";
 
 /// The fonts the PDF writer embeds; see `fonts/SOURCES.txt` for their origin and licence.
-const FONT_FILES: [&[u8]; 7] = [
-    include_bytes!("../fonts/LibertinusSerif-Regular.otf"),
-    include_bytes!("../fonts/LibertinusSerif-Bold.otf"),
-    include_bytes!("../fonts/LibertinusSerif-Italic.otf"),
-    include_bytes!("../fonts/LibertinusSerif-BoldItalic.otf"),
-    include_bytes!("../fonts/LibertinusMath-Regular.otf"),
-    include_bytes!("../fonts/SourceCodePro-Regular.otf"),
-    include_bytes!("../fonts/SourceCodePro-Bold.otf"),
+const FONT_FILES: [(&str, &[u8]); 7] = [
+    (
+        "LibertinusSerif-Regular.otf",
+        include_bytes!("../fonts/LibertinusSerif-Regular.otf"),
+    ),
+    (
+        "LibertinusSerif-Bold.otf",
+        include_bytes!("../fonts/LibertinusSerif-Bold.otf"),
+    ),
+    (
+        "LibertinusSerif-Italic.otf",
+        include_bytes!("../fonts/LibertinusSerif-Italic.otf"),
+    ),
+    (
+        "LibertinusSerif-BoldItalic.otf",
+        include_bytes!("../fonts/LibertinusSerif-BoldItalic.otf"),
+    ),
+    (
+        "LibertinusMath-Regular.otf",
+        include_bytes!("../fonts/LibertinusMath-Regular.otf"),
+    ),
+    (
+        "SourceCodePro-Regular.otf",
+        include_bytes!("../fonts/SourceCodePro-Regular.otf"),
+    ),
+    (
+        "SourceCodePro-Bold.otf",
+        include_bytes!("../fonts/SourceCodePro-Bold.otf"),
+    ),
 ];
+
+/// Permissively licensed fonts shared with out-of-process Office conversion.
+///
+/// Callers may stage these bytes in a private job profile; no system installation is needed.
+pub fn bundled_fonts() -> impl Iterator<Item = (&'static str, &'static [u8])> {
+    FONT_FILES.iter().copied()
+}
 
 /// A compiled PDF with the warnings collected on the way.
 #[derive(Clone, Debug)]
@@ -358,7 +386,7 @@ fn fonts() -> &'static FontSet {
     FONTS.get_or_init(|| {
         let fonts: Vec<Font> = FONT_FILES
             .iter()
-            .flat_map(|data| Font::iter(Bytes::new(*data)))
+            .flat_map(|(_, data)| Font::iter(Bytes::new(*data)))
             .collect();
         FontSet {
             book: LazyHash::new(FontBook::from_fonts(&fonts)),
@@ -481,6 +509,20 @@ mod tests {
         assert_eq!(set.fonts.len(), FONT_FILES.len());
         for family in ["Libertinus Serif", "Libertinus Math", "Source Code Pro"] {
             assert!(set.book.contains_family(&family.to_lowercase()), "{family}");
+        }
+    }
+
+    #[test]
+    fn bundled_postscript_aliases_match_font_metadata() {
+        for (name, bytes) in super::bundled_fonts() {
+            let font = typst::text::Font::new(typst::foundations::Bytes::new(bytes), 0).unwrap();
+            let family = match name.split('-').next().unwrap() {
+                "LibertinusSerif" => "Libertinus Serif",
+                "LibertinusMath" => "Libertinus Math",
+                "SourceCodePro" => "Source Code Pro",
+                other => panic!("unregistered bundled family: {other}"),
+            };
+            assert_eq!(font.info().family, family);
         }
     }
 
