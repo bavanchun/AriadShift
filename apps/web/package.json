@@ -27,6 +27,7 @@
     "better-auth": "catalog:",
     "lucide-react": "catalog:",
     "next": "catalog:",
+    "next-intl": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "@ariadshift/ariad-typst": "workspace:*"

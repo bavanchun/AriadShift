@@ -27,7 +27,7 @@ const defaultRootDir = process.env.ARIADSHIFT_ROOT_DIR
   ? path.resolve(process.env.ARIADSHIFT_ROOT_DIR)
   : repoRootDir;
 const defaultOutDir = path.join(defaultRootDir, "apps/web/public/notices");
-const defaultPagePath = path.join(defaultRootDir, "apps/web/src/app/licenses/page.tsx");
+const defaultPagePath = path.join(defaultRootDir, "apps/web/src/app/[locale]/licenses/page.tsx");
 
 // Monorepo subpackages whose published tarballs omit the root LICENSE file
 // that accompanies the main package in the same dependency graph.
@@ -35,6 +35,14 @@ const COMPANION_LICENSES = new Map([
   ["@better-auth/utils", ["better-auth", "LICENSE.md"]],
   ["@next/env", ["next", "license.md"]],
   ["client-only", ["react", "LICENSE"]],
+  // next-intl's message tooling pulls in @swc/core; its helper ships without a licence file.
+  ["@swc/counter", ["@swc/core", "LICENSE"]],
+]);
+
+// Packages whose pinned release ships no licence file, mapped to the licence text of a later
+// release of the same package (same repository and licence identifier).
+const PUBLISHED_LICENSE_TEXTS = new Map([
+  ["@schummar/icu-type-parser", "license-texts/schummar-icu-type-parser.txt"],
 ]);
 
 // Optional peer dependencies of next and better-auth that belong only to
@@ -117,6 +125,10 @@ function readLicenseTexts(directory, metadata) {
         return [readFileSync(target, "utf8")];
       }
     }
+  }
+  const published = PUBLISHED_LICENSE_TEXTS.get(metadata.name);
+  if (published) {
+    return [readFileSync(path.join(import.meta.dirname, published), "utf8")];
   }
   throw new Error(`Missing license text: ${metadata.name}`);
 }
@@ -669,13 +681,16 @@ export function verifyLicensesPage(
     "notices/THIRD_PARTY_LICENSES.txt",
     "notices/THIRD_PARTY_JS_LICENSES.txt",
   ]) {
-    if (!page.includes(`href="${requiredHref}"`)) {
-      throw new Error(`src/app/licenses/page.tsx is missing relative link ${requiredHref}`);
+    // The page lives at /<locale>/licenses, so its links climb one level to the site root.
+    if (!page.includes(`href="../${requiredHref}"`)) {
+      throw new Error(
+        `src/app/[locale]/licenses/page.tsx is missing relative link ${requiredHref}`,
+      );
     }
   }
   if (/href="\/(?:notices|wasm\/pandoc)\//.test(page)) {
     throw new Error(
-      "src/app/licenses/page.tsx must use document-relative notice/wasm links so path-prefix hosting works",
+      "src/app/[locale]/licenses/page.tsx must use document-relative notice/wasm links so path-prefix hosting works",
     );
   }
   if (
@@ -683,7 +698,7 @@ export function verifyLicensesPage(
     /\/(?:blob|tree)\/(?:main|master|dev|HEAD)\b/.test(page)
   ) {
     throw new Error(
-      "src/app/licenses/page.tsx must not link to a moving branch (main/master/dev/HEAD)",
+      "src/app/[locale]/licenses/page.tsx must not link to a moving branch (main/master/dev/HEAD)",
     );
   }
   for (const requiredRef of [
@@ -700,7 +715,7 @@ export function verifyLicensesPage(
   ]) {
     if (!page.includes(requiredRef)) {
       throw new Error(
-        `src/app/licenses/page.tsx is missing required Pandoc source disclosure reference: ${requiredRef}`,
+        `src/app/[locale]/licenses/page.tsx is missing required Pandoc source disclosure reference: ${requiredRef}`,
       );
     }
   }
@@ -711,12 +726,12 @@ export function verifyLicensesPage(
   const dtoaShortVer = /name = "dtoa-short"\nversion = "(\d+\.\d+\.\d+)"/m.exec(cargoLock)?.[1];
   if (!cssparserVer || !page.includes(`https://crates.io/crates/cssparser/${cssparserVer}`)) {
     throw new Error(
-      `src/app/licenses/page.tsx cssparser version does not match Cargo.lock (${cssparserVer ?? "missing"})`,
+      `src/app/[locale]/licenses/page.tsx cssparser version does not match Cargo.lock (${cssparserVer ?? "missing"})`,
     );
   }
   if (!dtoaShortVer || !page.includes(`https://crates.io/crates/dtoa-short/${dtoaShortVer}`)) {
     throw new Error(
-      `src/app/licenses/page.tsx dtoa-short version does not match Cargo.lock (${dtoaShortVer ?? "missing"})`,
+      `src/app/[locale]/licenses/page.tsx dtoa-short version does not match Cargo.lock (${dtoaShortVer ?? "missing"})`,
     );
   }
 
@@ -735,18 +750,18 @@ export function verifyLicensesPage(
     !page.includes(`https://github.com/bjorn3/browser_wasi_shim/tree/v${shimMeta.version}`)
   ) {
     throw new Error(
-      `src/app/licenses/page.tsx WASI shim version or tag URL does not match ${shimMeta.version}`,
+      `src/app/[locale]/licenses/page.tsx WASI shim version or tag URL does not match ${shimMeta.version}`,
     );
   }
   if (/Copyright \(c\) bjorn3/i.test(page)) {
     throw new Error(
-      "src/app/licenses/page.tsx must not present a constructed Copyright (c) bjorn3 header line as upstream LICENSE-MIT text",
+      "src/app/[locale]/licenses/page.tsx must not present a constructed Copyright (c) bjorn3 header line as upstream LICENSE-MIT text",
     );
   }
   const upstreamShimMit = readFileSync(path.join(shimDir, "LICENSE-MIT"), "utf8").trim();
   if (!page.includes(upstreamShimMit)) {
     throw new Error(
-      "src/app/licenses/page.tsx does not include the verbatim upstream @bjorn3/browser_wasi_shim LICENSE-MIT text",
+      "src/app/[locale]/licenses/page.tsx does not include the verbatim upstream @bjorn3/browser_wasi_shim LICENSE-MIT text",
     );
   }
 }
@@ -772,7 +787,7 @@ export function validateNoticesAndLockfiles({
 export function syncNotices({
   rootDir = defaultRootDir,
   outDir = defaultOutDir,
-  pagePath = path.join(rootDir, "apps/web/src/app/licenses/page.tsx"),
+  pagePath = path.join(rootDir, "apps/web/src/app/[locale]/licenses/page.tsx"),
 } = {}) {
   const notices = validateNoticesAndLockfiles({ rootDir, pagePath });
   mkdirSync(outDir, { recursive: true });
@@ -790,7 +805,7 @@ export function syncNotices({
 export function checkNotices({
   rootDir = defaultRootDir,
   outDir = defaultOutDir,
-  pagePath = path.join(rootDir, "apps/web/src/app/licenses/page.tsx"),
+  pagePath = path.join(rootDir, "apps/web/src/app/[locale]/licenses/page.tsx"),
   checkFiles = true,
 } = {}) {
   const isDefaultNoticesDir =
@@ -876,7 +891,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     outDirIndex !== -1 && args[outDirIndex + 1]
       ? path.resolve(args[outDirIndex + 1])
       : path.join(rootDir, "apps/web/public/notices");
-  const pagePath = path.join(rootDir, "apps/web/src/app/licenses/page.tsx");
+  const pagePath = path.join(rootDir, "apps/web/src/app/[locale]/licenses/page.tsx");
   const isCheck = args.includes("--check");
   const isCheckGraph = args.includes("--check-graph");
   try {

@@ -4,7 +4,14 @@ import { Button } from "@ariadshift/ui/components/button";
 import { useCallback, useEffect, useId, useState } from "react";
 import { useAccount } from "./account-context";
 import { AccountDialog } from "./account-dialog";
-import { errorMessage, formatDate, OutcomeMessage, Section, useOutcome } from "./account-ui";
+import {
+  errorMessage,
+  formatDate,
+  OutcomeMessage,
+  Section,
+  useAccountText,
+  useOutcome,
+} from "./account-ui";
 import type { OAuthClientInfo, OAuthConsentInfo } from "./auth-api";
 
 type RevokeTarget =
@@ -13,6 +20,7 @@ type RevokeTarget =
 
 export function ConnectedAppsSection() {
   const { auth } = useAccount();
+  const { t, locale } = useAccountText();
   const headingId = useId();
   const [consents, setConsents] = useState<OAuthConsentInfo[] | null>(null);
   const [clients, setClients] = useState<OAuthClientInfo[] | null>(null);
@@ -32,9 +40,9 @@ export function ConnectedAppsSection() {
       setClients(nextClients);
       setLoadError(null);
     } catch (error) {
-      setLoadError(errorMessage(error, "Could not load your connected apps."));
+      setLoadError(errorMessage(t, error, "connected_apps.load_failed"));
     }
-  }, [auth]);
+  }, [auth, t]);
 
   useEffect(() => {
     void load();
@@ -55,9 +63,9 @@ export function ConnectedAppsSection() {
       await load();
       const label = revoking.label;
       setRevoking(null);
-      succeed(`${label} revoked.`);
+      succeed(t("connected_apps.revoked", { name: label }));
     } catch (error) {
-      setDialogError(errorMessage(error, "Could not revoke access."));
+      setDialogError(errorMessage(t, error, "connected_apps.revoke_failed"));
     } finally {
       setBusy(false);
     }
@@ -68,23 +76,24 @@ export function ConnectedAppsSection() {
 
   return (
     <Section
-      title="Connected apps"
+      title={t("connected_apps.title")}
       headingId={headingId}
-      description="Apps and MCP clients you have authorized to use your account, and OAuth clients you have registered."
+      description={t("connected_apps.description")}
     >
       {loadError ? (
         <OutcomeMessage outcome={{ kind: "error", message: loadError }} />
       ) : loading ? (
-        <p className="text-sm text-muted-foreground">Loading connected apps…</p>
+        <p className="text-sm text-muted-foreground">{t("connected_apps.loading")}</p>
       ) : empty ? (
-        <p className="text-sm text-muted-foreground">
-          No connected apps or registered OAuth clients yet.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("connected_apps.empty")}</p>
       ) : (
         <ul className="flex flex-col divide-y divide-border" aria-labelledby={headingId}>
           {consents.map((consent) => {
             const label = consent.clientName ?? consent.clientId;
-            const scopes = consent.scopes.length > 0 ? consent.scopes.join(", ") : "none";
+            const scopes =
+              consent.scopes.length > 0
+                ? consent.scopes.join(", ")
+                : t("connected_apps.scopes_none");
             return (
               <li
                 key={`consent-${consent.id}`}
@@ -93,20 +102,22 @@ export function ConnectedAppsSection() {
                 <span className="flex flex-col">
                   <span className="font-medium">{label}</span>
                   <span className="text-xs text-muted-foreground">
-                    Authorized app · Scopes: {scopes} · Authorized{" "}
-                    {formatDate(consent.updatedAt || consent.createdAt)}
+                    {t("connected_apps.consent_details", {
+                      scopes,
+                      date: formatDate(consent.updatedAt || consent.createdAt, t, locale),
+                    })}
                   </span>
                 </span>
                 <Button
                   variant="destructive"
                   size="sm"
-                  aria-label={`Revoke ${label}`}
+                  aria-label={t("connected_apps.revoke_label", { name: label })}
                   onClick={() => {
                     setDialogError(null);
                     setRevoking({ kind: "consent", item: consent, label });
                   }}
                 >
-                  Revoke
+                  {t("actions.revoke")}
                 </Button>
               </li>
             );
@@ -121,20 +132,24 @@ export function ConnectedAppsSection() {
                 <span className="flex flex-col">
                   <span className="font-medium">{label}</span>
                   <span className="text-xs text-muted-foreground">
-                    Registered OAuth client ({client.clientId})
-                    {client.createdAt ? ` · Registered ${formatDate(client.createdAt)}` : ""}
+                    {client.createdAt
+                      ? t("connected_apps.client_details_dated", {
+                          client_id: client.clientId,
+                          date: formatDate(client.createdAt, t, locale),
+                        })
+                      : t("connected_apps.client_details", { client_id: client.clientId })}
                   </span>
                 </span>
                 <Button
                   variant="destructive"
                   size="sm"
-                  aria-label={`Revoke ${label}`}
+                  aria-label={t("connected_apps.revoke_label", { name: label })}
                   onClick={() => {
                     setDialogError(null);
                     setRevoking({ kind: "client", item: client, label });
                   }}
                 >
-                  Revoke
+                  {t("actions.revoke")}
                 </Button>
               </li>
             );
@@ -146,12 +161,12 @@ export function ConnectedAppsSection() {
       {revoking ? (
         <AccountDialog
           role="alertdialog"
-          title={`Revoke ${revoking.label}?`}
-          description={
+          title={t("connected_apps.revoke_title", { name: revoking.label })}
+          description={t(
             revoking.kind === "consent"
-              ? "Revoking stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire."
-              : "Deleting this registered OAuth client revokes its credentials and consents and stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire."
-          }
+              ? "connected_apps.revoke_consent_description"
+              : "connected_apps.revoke_client_description",
+          )}
           onClose={() => setRevoking(null)}
           returnFocus={() => document.getElementById(headingId)}
         >
@@ -160,10 +175,10 @@ export function ConnectedAppsSection() {
           ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" data-autofocus onClick={() => setRevoking(null)}>
-              Cancel
+              {t("actions.cancel")}
             </Button>
             <Button variant="destructive" disabled={busy} onClick={() => void onRevoke()}>
-              Revoke
+              {t("actions.revoke")}
             </Button>
           </div>
         </AccountDialog>

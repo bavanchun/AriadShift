@@ -61,6 +61,10 @@ extend-exclude = [
     # Engine output with JSON-escaped non-ASCII text, which the checker splits into fragments.
     "fixtures/docling/*.docling.json",
     "fuzz/seeds/**",
+    # Translations of the English catalogue; only locales/en.json is English prose.
+    "locales/[!e]*.json",
+    "locales/e[!n]*.json",
+    "locales/en-*.json",
 ]
 
 # Original wheel RECORD receipts contain URL-safe SHA-256 digests.

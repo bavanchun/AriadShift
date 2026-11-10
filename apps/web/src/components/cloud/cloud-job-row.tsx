@@ -10,6 +10,7 @@ import {
   RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react";
+import { useLocale } from "next-intl";
 import { type ReactNode, type RefObject, useId, useState } from "react";
 import type { CloudAction } from "@/lib/cloud/errors";
 import {
@@ -59,6 +60,7 @@ function percent(state: CloudJobState): number {
 
 /** One file's cloud status: progress, result, expiry, deletion and errors. */
 export function CloudJobRow(props: CloudJobRowProps) {
+  const locale = useLocale();
   const { state, fileName, host, now } = props;
   const [deleteAfter, setDeleteAfter] = useState(false);
   const deleteAfterHint = useId();
@@ -127,7 +129,7 @@ export function CloudJobRow(props: CloudJobRowProps) {
         {state.phase === "uploading" && (
           <progress
             aria-label={`Uploading ${fileName}`}
-            aria-valuetext={`${percent(state)} percent, ${formatBytes(state.sent)} of ${formatBytes(state.total)}`}
+            aria-valuetext={`${percent(state)} percent, ${formatBytes(state.sent, locale)} of ${formatBytes(state.total, locale)}`}
             max={100}
             value={percent(state)}
             className={BAR}
@@ -227,7 +229,7 @@ export function CloudJobRow(props: CloudJobRowProps) {
               <li key={output.id} className="flex flex-wrap items-center gap-3">
                 <span className="text-sm">
                   <span data-testid="cloud-output-name">{output.filename}</span> ·{" "}
-                  {formatBytes(output.size)}
+                  {formatBytes(output.size, locale)}
                 </span>
                 <Button size="lg" onClick={() => props.onDownload(output, deleteAfter)}>
                   <DownloadIcon aria-hidden="true" />

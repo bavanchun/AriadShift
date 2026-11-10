@@ -8,30 +8,39 @@ import { buttonVariants } from "@ariadshift/ui/components/button";
 import { CloudOffIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { splitLocalePath } from "@/i18n/paths";
+import { useLocalePath } from "@/i18n/use-locale-path";
 import { type AccountCloudConfig, cloudConfig, displayHost } from "@/lib/cloud/config";
 import { AccountProvider, useAccount } from "./account-context";
+import { useAccountText } from "./account-ui";
 import type { AuthApi } from "./auth-api";
-import { signInHref } from "./session-gate";
+import { useSignInHref } from "./session-gate";
 
 const SECTIONS = [
-  { href: "/account", label: "Account" },
-  { href: "/api-keys", label: "API keys" },
-  { href: "/jobs", label: "Jobs" },
+  { path: "/account", label: "account" },
+  { path: "/api-keys", label: "api_keys" },
+  { path: "/jobs", label: "jobs" },
 ] as const;
 
 export function CloudNotConfigured() {
+  const { t } = useAccountText();
+  const toLocale = useLocalePath();
   return (
     <Alert>
       <CloudOffIcon aria-hidden="true" />
-      <AlertTitle>Cloud is not configured</AlertTitle>
+      <AlertTitle>{t("shell.not_configured_title")}</AlertTitle>
       <AlertDescription>
         <p>
-          This copy of AriadShift runs on your device only. Accounts, API keys and cloud jobs need a
-          server; its operator sets <code>NEXT_PUBLIC_ARIAD_API_URL</code> and{" "}
-          <code>NEXT_PUBLIC_ARIAD_AUTH_URL</code> when building the site.
+          {t.rich("shell.not_configured_body", {
+            code: (chunks) => <code>{chunks}</code>,
+            api_variable: "NEXT_PUBLIC_ARIAD_API_URL",
+            auth_variable: "NEXT_PUBLIC_ARIAD_AUTH_URL",
+          })}
         </p>
         <p>
-          You can still <a href="/app">convert files in your browser</a>.
+          {t.rich("shell.not_configured_convert", {
+            link: (chunks) => <a href={toLocale("/app")}>{chunks}</a>,
+          })}
         </p>
       </AlertDescription>
     </Alert>
@@ -40,20 +49,25 @@ export function CloudNotConfigured() {
 
 function SessionLink() {
   const { session } = useAccount();
+  const { t } = useAccountText();
+  const toSignIn = useSignInHref();
   const pathname = usePathname();
   if (session.status !== "signed-in") {
     return (
       <a
-        href={signInHref(pathname ?? "/account")}
+        href={toSignIn(pathname ? splitLocalePath(pathname).path : "/account")}
         className="text-sm text-primary underline-offset-4 hover:underline"
       >
-        Sign in
+        {t("actions.sign_in")}
       </a>
     );
   }
   return (
     <span className="text-sm text-muted-foreground">
-      Signed in as <span className="font-medium text-foreground">{session.user.email}</span>
+      {t.rich("shell.signed_in_user", {
+        email: session.user.email,
+        user: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
+      })}
     </span>
   );
 }
@@ -61,20 +75,23 @@ function SessionLink() {
 function AccountNavigation() {
   const pathname = usePathname();
   const { config } = useAccount();
+  const { t } = useAccountText();
+  const toLocale = useLocalePath();
+  const currentPath = pathname ? splitLocalePath(pathname).path : null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-      <nav aria-label="Account">
+      <nav aria-label={t("shell.nav_label")}>
         <ul className="flex flex-wrap gap-1">
           {SECTIONS.map((section) => {
-            const current = pathname === section.href;
+            const current = currentPath === section.path;
             return (
-              <li key={section.href}>
+              <li key={section.path}>
                 <a
-                  href={section.href}
+                  href={toLocale(section.path)}
                   aria-current={current ? "page" : undefined}
                   className={buttonVariants({ variant: current ? "secondary" : "ghost" })}
                 >
-                  {section.label}
+                  {t(`shell.nav.${section.label}`)}
                 </a>
               </li>
             );
@@ -83,7 +100,9 @@ function AccountNavigation() {
       </nav>
       <div className="flex flex-col items-end gap-0.5">
         <SessionLink />
-        <span className="text-xs text-muted-foreground">Server: {displayHost(config.apiUrl)}</span>
+        <span className="text-xs text-muted-foreground">
+          {t("shell.server", { host: displayHost(config.apiUrl) })}
+        </span>
       </div>
     </div>
   );

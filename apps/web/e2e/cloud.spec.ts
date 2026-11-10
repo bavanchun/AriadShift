@@ -305,7 +305,7 @@ for (const signedIn of [false, true]) {
     // Exercise React's panel cleanup, rather than relying on a full-page unload.
     await page.getByRole("radio", { name: /On this device/ }).check();
     await expect(page.getByTestId("cloud-panel")).toHaveCount(0);
-    await page.goto("/jobs");
+    await page.goto("/en/jobs");
     await expect(page).toHaveURL(/\/jobs/);
     await expect(page.getByRole("heading", { name: "report.md" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Download report.docx" })).toBeVisible();
@@ -319,7 +319,7 @@ for (const signedIn of [false, true]) {
 }
 
 async function stage(page: Page) {
-  await page.goto("/app?to=docx");
+  await page.goto("/en/app?to=docx");
   await page.locator("input[type=file]").setInputFiles({
     name: "report.md",
     mimeType: "text/markdown",
@@ -490,7 +490,7 @@ test("says so when offline instead of uploading", async ({ page, context }) => {
 
 test("offers Process in Cloud for a format the browser cannot convert", async ({ page }) => {
   await mockCloud(page);
-  await page.goto("/app?to=markdown");
+  await page.goto("/en/app?to=markdown");
   await page.locator("input[type=file]").setInputFiles({
     name: "page.rtf",
     mimeType: "application/rtf",

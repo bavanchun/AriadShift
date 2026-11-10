@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Dapat diedit",
+        "description": "Judul, daftar, dan tabel asli yang bisa terus Anda edit."
+      },
+      "faithful": {
+        "label": "Setia",
+        "description": "Tetap sedekat mungkin dengan tata letak asli."
+      },
+      "fast": {
+        "label": "Cepat",
+        "description": "Pilih rute tercepat."
+      },
+      "private": {
+        "label": "Privat",
+        "description": "Hanya engine yang tidak pernah meninggalkan perangkat Anda."
+      }
+    },
+    "engine": {
+      "ariad_core": "Inti AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Pembaca teks PDF"
+    },
+    "runtime": {
+      "wasm": "Peramban",
+      "local": "CLI dan desktop",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "belum diukur"
+    },
+    "duration": {
+      "under_1_ms": "kurang dari 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "dokumen Markdown",
+        "description": "CommonMark dengan GitHub Flavored Markdown: judul, daftar, tabel, daftar tugas, catatan kaki, dan matematika. Format yang paling baik dibaca sebagian besar alat AI."
+      },
+      "html": {
+        "noun": "halaman HTML",
+        "description": "Halaman HTML5 mandiri. Markup mentah pada input dibersihkan; skrip dan atribut yang tidak aman tidak pernah sampai ke output."
+      },
+      "ir_json": {
+        "noun": "dokumen AriadShift IR",
+        "description": "Model dokumen terstruktur yang dilalui setiap rute AriadShift: judul, blok, tabel, aset, dan metadata dalam bentuk JSON berversi."
+      },
+      "docx": {
+        "noun": "dokumen Word",
+        "description": "Dokumen Office Open XML dari Microsoft Word, LibreOffice, dan Google Docs, dibaca dan ditulis melalui Pandoc."
+      },
+      "epub": {
+        "noun": "e-book EPUB",
+        "description": "E-book EPUB 3, dibaca dan ditulis melalui Pandoc dengan metadata yang dapat direproduksi."
+      },
+      "pdf": {
+        "noun": "dokumen PDF",
+        "description": "Teks PDF digital dibaca di perangkat ini. Output PDF menggunakan Typst dan font tersemat. Halaman hasil pindai memerlukan OCR di aplikasi desktop."
+      },
+      "odt": {
+        "noun": "dokumen teks OpenDocument",
+        "description": "File teks OpenDocument menggunakan LibreOffice di aplikasi desktop."
+      },
+      "rtf": {
+        "noun": "dokumen Rich Text",
+        "description": "Dokumen Rich Text menggunakan LibreOffice di aplikasi desktop."
+      },
+      "pptx": {
+        "noun": "presentasi PowerPoint",
+        "description": "Presentasi PowerPoint menggunakan Docling atau LibreOffice di aplikasi desktop."
+      },
+      "xlsx": {
+        "noun": "buku kerja Excel",
+        "description": "Buku kerja Excel menggunakan Docling atau LibreOffice di aplikasi desktop."
+      },
+      "doc": {
+        "noun": "dokumen Word lama",
+        "description": "Dokumen Word lama menggunakan LibreOffice di aplikasi desktop."
+      },
+      "xls": {
+        "noun": "buku kerja Excel lama",
+        "description": "Buku kerja Excel lama menggunakan LibreOffice di aplikasi desktop."
+      },
+      "ppt": {
+        "noun": "presentasi PowerPoint lama",
+        "description": "Presentasi PowerPoint lama menggunakan LibreOffice di aplikasi desktop."
+      },
+      "ods": {
+        "noun": "spreadsheet OpenDocument",
+        "description": "Spreadsheet OpenDocument menggunakan LibreOffice di aplikasi desktop."
+      },
+      "odp": {
+        "noun": "presentasi OpenDocument",
+        "description": "Presentasi OpenDocument menggunakan LibreOffice di aplikasi desktop."
+      },
+      "png": {
+        "noun": "gambar PNG",
+        "description": "Ekstraksi teks dari gambar memerlukan paket engine Docling di aplikasi desktop."
+      },
+      "jpeg": {
+        "noun": "gambar JPEG",
+        "description": "Ekstraksi teks dari gambar memerlukan paket engine Docling di aplikasi desktop."
+      },
+      "webp": {
+        "noun": "gambar WebP",
+        "description": "Ekstraksi teks dari gambar memerlukan paket engine Docling di aplikasi desktop."
+      },
+      "tiff": {
+        "noun": "gambar TIFF",
+        "description": "Ekstraksi teks dari gambar memerlukan paket engine Docling di aplikasi desktop."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: konversi dokumen secara privat di peramban Anda",
+      "site_description": "Konversi Markdown, HTML, dan JSON terstruktur di perangkat Anda sendiri. Privat secara default, dengan kualitas terukur di setiap rute dan siap untuk agen AI.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Langsung ke konten",
+      "home_link": "Beranda {site}",
+      "nav_label": "Utama",
+      "nav": {
+        "converter": "Konverter",
+        "formats": "Format",
+        "quality": "Kualitas",
+        "download": "Unduh",
+        "privacy": "Privasi"
+      },
+      "footer": {
+        "license": "AriadShift bersumber terbuka di bawah lisensi Apache-2.0.",
+        "privacy": "Privasi",
+        "licenses": "Lisensi",
+        "quality": "Kualitas",
+        "source": "Kode sumber"
+      },
+      "language": {
+        "label": "Bahasa",
+        "button": "Bahasa: {name}",
+        "list_label": "Pilih bahasa",
+        "community_badge": "Terjemahan komunitas",
+        "community_note": "Terjemahan komunitas adalah draf mesin yang masih bisa dikoreksi oleh siapa saja."
+      }
+    },
+    "not_found": {
+      "title": "Halaman tidak ditemukan",
+      "body": "Halaman ini tidak ada.",
+      "home_link": "Ke beranda"
+    },
+    "home": {
+      "meta_title": "Konversi dokumen di perangkat Anda sendiri",
+      "title": "Konversi dokumen di perangkat Anda sendiri",
+      "lede": "AriadShift mengonversi Markdown, HTML, Word, EPUB, dan JSON terstruktur langsung di peramban Anda. Baca teks PDF digital dan buat PDF di perangkat Anda. Satu perencana terukur, tanpa unggahan.",
+      "open_converter": "Buka konverter",
+      "install_cli": "Pasang CLI",
+      "why_heading": "Mengapa AriadShift",
+      "why": {
+        "private": {
+          "title": "Privat secara default",
+          "body": "Konverter berjalan di dalam peramban Anda dengan WebAssembly. Dokumen Anda disimpan di sistem file privat peramban dan tidak pernah diunggah."
+        },
+        "quality": {
+          "title": "Kualitas terukur",
+          "body": "Setiap rute memiliki skor kesetiaan dan kemudahan edit dari tolok ukur publik. Perencana memilih yang terbaik dan memberi tahu Anda alasannya."
+        },
+        "agents": {
+          "title": "Siap untuk agen AI",
+          "body": "Ubah dokumen menjadi Markdown bersih atau JSON terstruktur sebagai konteks LLM. CLI menyertakan server MCP, sehingga agen dapat mengonversi file sendiri."
+        }
+      },
+      "how_heading": "Cara kerjanya",
+      "how": {
+        "step_label": "Langkah {number}",
+        "step_1": "Anda memilih file. Peramban menyalinnya ke sistem file privatnya.",
+        "step_2": "Worker latar belakang memuat engine AriadShift yang dikompilasi ke WebAssembly.",
+        "step_3": "Perencana memilih rute dengan skor terukur terbaik untuk tujuan Anda.",
+        "step_4": "Anda mengunduh hasilnya. Memulai ulang akan menghapus semua file yang tersimpan."
+      },
+      "pairs_heading": "Konversi di peramban Anda",
+      "pair_link": "{from} ke {to}",
+      "see_more": "Lihat setiap <formats>format yang didukung</formats> dan <quality>kualitas terukur</quality> dari tiap rute."
+    },
+    "formats": {
+      "meta_title": "Format yang didukung",
+      "meta_description": "Format dokumen apa saja yang dibaca dan ditulis AriadShift, dan konversi mana yang berjalan di peramban Anda.",
+      "title": "Format yang didukung",
+      "lede": "Setiap konversi melewati model dokumen AriadShift. Format yang bertanda “peramban” dikonversi sepenuhnya di perangkat ini; format lainnya untuk saat ini memerlukan alat baris perintah.",
+      "badge_browser": "Peramban dan CLI",
+      "badge_cli": "CLI",
+      "extensions": "Ekstensi: {list}",
+      "engines": "Dibaca oleh {readers}; ditulis oleh {writers}.",
+      "no_engine": "belum ada engine",
+      "convert_to": "Konversi ke: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Kualitas terukur",
+      "meta_description": "Kesetiaan, kemudahan edit, dan kecepatan setiap langkah konversi AriadShift, dihasilkan dari tolok ukur publik.",
+      "title": "Kualitas terukur",
+      "lede": "Skor ini tidak ditulis manual. Tolok ukur mengonversi {count, plural, other {# dokumen uji publik}} melalui setiap langkah dan membandingkan hasilnya dengan kebenaran yang diketahui. Perencana membaca angka yang sama saat memilih rute.",
+      "generated": "{pandoc, select, none {Dibuat pada {date}.} other {Dibuat pada {date} dengan Pandoc {pandoc}.}}",
+      "methodology": "<link>Baca metodologinya</link>.",
+      "caption": "Skor tolok ukur per langkah konversi",
+      "column": {
+        "step": "Langkah",
+        "engine": "Engine",
+        "runs_in": "Berjalan di",
+        "fidelity": "Kesetiaan",
+        "editability": "Kemudahan edit",
+        "median_time": "Waktu median",
+        "samples": "Sampel"
+      }
+    },
+    "route": {
+      "label": "Rute konversi",
+      "then": "lalu",
+      "fidelity": "Kesetiaan",
+      "editability": "Kemudahan edit",
+      "estimated_time": "Perkiraan waktu",
+      "unmeasured": "Sebagian rute ini belum diuji dengan tolok ukur, jadi perencana menilainya dengan hati-hati."
+    },
+    "download": {
+      "meta_title": "Unduh",
+      "meta_description": "Pasang alat baris perintah dan server MCP AriadShift di macOS, Linux, dan Windows.",
+      "title": "Unduh AriadShift",
+      "lede": "Perintah <code>ashift</code> mengonversi Markdown, HTML, DOCX, dan EPUB di komputer Anda serta menjalankan server MCP untuk agen AI. Rute DOCX dan EPUB menggunakan <pandoc>Pandoc 3.12 atau lebih baru</pandoc> sebagai program terpisah.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS dan Linux)",
+          "note": "Tersedia setelah formula dipublikasikan. Ikut memasang Pandoc, yang dibutuhkan rute DOCX dan EPUB."
+        },
+        "shell": {
+          "title": "Penginstal shell (macOS dan Linux)"
+        },
+        "powershell": {
+          "title": "Penginstal PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Tersedia setelah pengajuan paket diterima."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Tersedia setelah crate dipublikasikan ke crates.io."
+        }
+      },
+      "then_heading": "Selanjutnya",
+      "releases": "Arsip untuk semua platform ada di <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Aplikasi desktop",
+        "body": "Aplikasi desktop untuk macOS, Windows, dan Linux dengan konversi massal dan pemantauan folder sedang disiapkan. Aplikasi ini akan dicantumkan di sini saat rilis pertama tersedia."
+      }
+    },
+    "pair": {
+      "meta_title": "Konversi {from} ke {to}",
+      "meta_description_browser": "Konversi {noun} ke {to} di peramban Anda, secara privat, dengan AriadShift. Kesetiaan terukur, tanpa unggahan.",
+      "meta_description_cli": "Konversi {noun} ke {to} di komputer Anda sendiri dengan AriadShift. Kesetiaan terukur, tanpa unggahan.",
+      "badge_browser": "Berjalan di peramban Anda",
+      "badge_cli": "Berjalan dengan CLI AriadShift",
+      "title": "Konversi {from} ke {to}",
+      "lede_browser": "Ubah {noun} menjadi {to} tanpa mengunggahnya. AriadShift membaca file di peramban Anda, memetakannya ke model dokumennya, dan menulis {to} di perangkat Anda.",
+      "lede_cli": "Ubah {noun} menjadi {to} di komputer Anda sendiri dengan alat baris perintah AriadShift yang gratis. Versi peramban belum menjalankan rute ini.",
+      "convert_now": "Konversi {from} ke {to} sekarang",
+      "install_cli": "Pasang CLI",
+      "route_heading": "Rute yang dipilih AriadShift",
+      "from_heading": "Dari {format}",
+      "to_heading": "Ke {format}",
+      "cli_heading": "Dari baris perintah",
+      "related_heading": "Konversi terkait",
+      "related_link": "{from} ke {to}"
+    },
+    "converter_page": {
+      "meta_title": "Konverter",
+      "meta_description": "Konversi Markdown, HTML, DOCX, EPUB, PDF digital, dan AriadShift IR JSON di peramban Anda. File tetap berada di perangkat Anda.",
+      "title": "Konversi dokumen",
+      "lede": "Pilih file, pilih target, lalu unduh hasilnya. Semuanya terjadi di tab ini{cloud, select, yes {, kecuali Anda memilih untuk mengonversi file ini di cloud.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Lisensi",
+      "meta_description": "Lisensi dan kode sumber AriadShift serta engine peramban-nya."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Mode cloud berhenti secara tak terduga",
+        "stopped_body": "Mode cloud mengalami kesalahan setelah pengunggahan dimulai. Salinan di server dihapus otomatis saat masa penyimpanannya berakhir, atau Anda dapat mengonversi di perangkat ini.",
+        "load_title": "Mode cloud tidak dapat dimuat",
+        "load_body": "Konverter cloud tidak dapat dimuat (misalnya karena Anda sedang offline). Anda tetap dapat mengonversi di perangkat ini.",
+        "use_device": "Konversi di perangkat ini"
+      },
+      "status": {
+        "deleted_from_server": "{name} telah dihapus dari server.",
+        "reading": "Membaca {name} di perangkat ini.",
+        "detected": "{name} adalah {format}.",
+        "read_failed": "File tidak dapat dibaca.",
+        "converting": "Mengonversi ke {format} di perangkat ini.",
+        "ready": "{name} siap diunduh.",
+        "convert_failed": "Konversi gagal.",
+        "saved": "{name} disimpan.",
+        "reset": "{outcome, select, deleted {File dihapus dari perangkat ini dan dari server.} kept {File dihapus dari perangkat ini. {name} masih ada di server.} other {File dihapus dari perangkat ini.}}",
+        "cloud_selected": "Konversi cloud dipilih untuk {name}. Belum ada yang diunggah.",
+        "cloud_selected_unnamed": "Konversi cloud dipilih untuk file ini. Belum ada yang diunggah."
+      },
+      "device": {
+        "cloud": "<strong>Konversi cloud dipilih.</strong> File ini hanya meninggalkan peramban Anda saat Anda memilih Unggah dan konversi.",
+        "local": "<strong>Diproses di perangkat ini.</strong> File tidak pernah meninggalkan peramban Anda dan tidak diunggah."
+      },
+      "storage_badge": "{storage, select, opfs {Penyimpanan privat peramban} other {Di memori}}",
+      "memory": {
+        "title": "Penyimpanan file di perangkat tidak tersedia di peramban ini",
+        "body": "File disimpan di memori sebagai gantinya, sehingga input hingga {limit} didukung. Tidak ada yang diunggah dalam kedua kasus."
+      },
+      "error": {
+        "title": "{code, select, no_route {Tidak tersedia di sini} engine_integrity {Pemeriksaan integritas engine gagal} other {Terjadi kesalahan}}"
+      },
+      "handoff": {
+        "title": "Lanjutkan di aplikasi desktop",
+        "reason": "{reason, select, ocr {Beberapa halaman memerlukan OCR untuk mengekstrak seluruh teksnya.} other {Dokumen ini memerlukan engine atau memori lebih besar daripada yang disediakan peramban.}}",
+        "picker": "Aplikasi desktop membuka pemilih file. Pilih dokumen ini lagi; peramban Anda tidak mengirim file tersebut.",
+        "open": "Buka di Desktop",
+        "cloud_alternative": "Atau konversi di {host}, setelah Anda mengonfirmasi pengunggahan.",
+        "cloud_button": "Proses di Cloud"
+      },
+      "drop": {
+        "button": "Pilih file",
+        "button_busy": "Membaca…",
+        "label": "Dokumen yang akan dikonversi",
+        "title": "Letakkan dokumen di sini",
+        "hint": "Markdown, HTML, DOCX, EPUB, PDF digital, atau IR JSON hingga {limit}. File tetap berada di perangkat ini."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Judul",
+        "paragraphs": "Paragraf",
+        "tables": "Tabel",
+        "images": "Gambar",
+        "links": "Tautan",
+        "footnotes": "Catatan kaki",
+        "words": "Kata"
+      },
+      "unreachable": {
+        "cli": "{format} belum dapat dikonversi di peramban. <link>CLI AriadShift</link> mengonversinya di komputer Anda.",
+        "none": "AriadShift belum dapat mengonversi {format}."
+      },
+      "cloud": {
+        "loading": "Memuat mode cloud…"
+      },
+      "convert": {
+        "title": "Konversi",
+        "hint": "Perencana memilih rute dengan skor terukur terbaik.",
+        "target_label": "Konversi ke",
+        "profile_label": "Profil",
+        "route_heading": "Mengapa rute ini",
+        "elsewhere": "{formats} untuk saat ini {count, plural, other {memerlukan}} <link>CLI AriadShift</link>.",
+        "button": "Konversi",
+        "button_busy": "Mengonversi…",
+        "cancel": "Batal"
+      },
+      "result": {
+        "title": "Siap",
+        "summary": "<output>{name}</output> · {size} · dikonversi dalam {duration} di perangkat ini",
+        "download": "Unduh {name}"
+      },
+      "start_over": "Mulai ulang dan hapus file"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Akun",
+        "description": "Akun cloud AriadShift Anda: profil, kata sandi, passkey, dan masuk dua langkah."
+      },
+      "sign_in": {
+        "title": "Masuk",
+        "description": "Masuk ke akun cloud AriadShift Anda atau buat akun baru."
+      },
+      "jobs": {
+        "title": "Tugas",
+        "description": "Status, unduhan, dan penghapusan konversi cloud AriadShift Anda."
+      },
+      "api_keys": {
+        "title": "Kunci API",
+        "description": "Buat dan cabut kunci API untuk API cloud AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Akun"
+      },
+      "shell": {
+        "not_configured_title": "Cloud belum dikonfigurasi",
+        "not_configured_body": "Salinan AriadShift ini hanya berjalan di perangkat Anda. Akun, kunci API, dan tugas cloud memerlukan server; operatornya menetapkan <code>{api_variable}</code> dan <code>{auth_variable}</code> saat membangun situs.",
+        "not_configured_convert": "Anda tetap dapat <link>mengonversi file di peramban Anda</link>.",
+        "nav_label": "Akun",
+        "nav": {
+          "account": "Akun",
+          "api_keys": "Kunci API",
+          "jobs": "Tugas"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Masuk sebagai <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Memeriksa sesi Anda…",
+        "error_title": "Tidak dapat memeriksa sesi Anda",
+        "signed_out": "Anda belum masuk."
+      },
+      "actions": {
+        "sign_in": "Masuk",
+        "try_again": "Coba lagi",
+        "cancel": "Batal",
+        "done": "Selesai",
+        "continue": "Lanjutkan",
+        "revoke": "Cabut",
+        "copied": "Tersalin"
+      },
+      "fields": {
+        "name": "Nama",
+        "email": "Email",
+        "password": "Kata sandi",
+        "authentication_code": "Kode autentikasi",
+        "password_hint": "Minimal {min} karakter."
+      },
+      "dates": {
+        "unknown": "tanggal tidak diketahui"
+      },
+      "errors": {
+        "auth_refused": "Layanan autentikasi menolak permintaan.",
+        "service_unreachable": "Layanan masuk tidak dapat dijangkau. Periksa koneksi Anda dan coba lagi.",
+        "session_ended": "Sesi Anda telah berakhir. Silakan masuk lagi.",
+        "rate_limited": "Terlalu banyak permintaan. Coba lagi sebentar lagi.",
+        "rate_limited_after": "Terlalu banyak permintaan. Coba lagi dalam {seconds} dtk.",
+        "sign_in_unverifiable": "Server tidak dapat memverifikasi login Anda saat ini. Coba lagi sebentar lagi.",
+        "token_invalid": "Layanan masuk mengembalikan token API yang tidak valid.",
+        "reauth_required": "Masuk lagi sebelum menghapus akun Anda.",
+        "delete_not_allowed": "Server ini tidak mengizinkan penghapusan akun dari aplikasi web. Minta operatornya untuk menghapusnya.",
+        "job_gone": "Tugas ini tidak lagi ada di server.",
+        "file_deleted": "File ini sudah dihapus.",
+        "job_conflict": "Tugas belum siap, atau file yang diunggah tidak lagi ada di server.",
+        "quota_exceeded": "Konversi cloud pada paket Anda sudah terpakai untuk saat ini. Konversi di perangkat ini, atau coba lagi nanti.",
+        "request_failed": "Server tidak dapat menyelesaikan permintaan. Coba lagi sebentar lagi.",
+        "network_unreachable": "Server tidak dapat dijangkau. Periksa koneksi Anda dan coba lagi.",
+        "transfer_incomplete": "Transfer tidak selesai. Coba lagi."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Simpan nama",
+        "saved": "Nama disimpan.",
+        "save_failed": "Nama tidak dapat disimpan."
+      },
+      "password": {
+        "title": "Kata sandi",
+        "current": "Kata sandi saat ini",
+        "new": "Kata sandi baru",
+        "confirm": "Konfirmasi kata sandi baru",
+        "revoke_others": "Keluar dari sesi lain",
+        "submit": "Ubah kata sandi",
+        "mismatch": "Kata sandi baru tidak cocok.",
+        "changed": "Kata sandi diubah.",
+        "changed_revoked": "Kata sandi diubah. Sesi lain telah dikeluarkan.",
+        "failed": "Kata sandi tidak dapat diubah."
+      },
+      "passkeys": {
+        "title": "Passkey",
+        "description": "Masuk dengan kunci layar perangkat Anda atau kunci keamanan, bukan dengan kata sandi.",
+        "load_failed": "Passkey Anda tidak dapat dimuat.",
+        "loading": "Memuat passkey…",
+        "empty": "Belum ada passkey.",
+        "unnamed": "Passkey tanpa nama",
+        "default_name": "Passkey",
+        "added_on": "Ditambahkan {date}",
+        "remove_label": "Hapus passkey {name}",
+        "remove_button": "Hapus<hidden> passkey {name}</hidden>",
+        "add_button": "Tambahkan passkey",
+        "add_title": "Tambahkan passkey",
+        "add_description": "Beri nama sesuai perangkat atau kuncinya, lalu ikuti petunjuk dari peramban Anda.",
+        "name_label": "Nama passkey",
+        "name_placeholder": "Contoh: Laptop kantor",
+        "added": "Passkey ditambahkan.",
+        "add_failed": "Passkey tidak ditambahkan.",
+        "remove_title": "Hapus {name}?",
+        "remove_title_unnamed": "Hapus passkey ini?",
+        "remove_description": "Anda tidak dapat lagi masuk dengannya. Metode masuk Anda yang lain tetap berfungsi.",
+        "remove_confirm": "Hapus passkey",
+        "removed": "{name} dihapus.",
+        "remove_failed": "Passkey tidak dapat dihapus."
+      },
+      "two_factor": {
+        "title": "Autentikasi dua faktor",
+        "description": "Minta kode dari aplikasi autentikator setelah kata sandi Anda.",
+        "status_on": "Status: <badge>Aktif</badge>",
+        "status_off": "Status: <badge>Nonaktif</badge>",
+        "enable": "Aktifkan autentikasi dua faktor",
+        "disable": "Nonaktifkan autentikasi dua faktor",
+        "regenerate": "Buat kode cadangan baru",
+        "confirm_password": "Konfirmasi kata sandi Anda untuk melanjutkan.",
+        "enable_failed": "Penyiapan autentikasi dua faktor tidak dapat dimulai. Periksa kata sandi Anda.",
+        "disable_failed": "Autentikasi dua faktor tidak dapat dinonaktifkan. Periksa kata sandi Anda.",
+        "regenerate_failed": "Kode cadangan baru tidak dapat dibuat. Periksa kata sandi Anda.",
+        "verify_failed": "Kode itu tidak diterima. Periksa waktu di perangkat Anda dan coba lagi.",
+        "disabled": "Autentikasi dua faktor nonaktif.",
+        "enabled": "Autentikasi dua faktor aktif.",
+        "regenerated": "Kode cadangan baru dibuat. Kode yang lama tidak berlaku lagi.",
+        "setup_title": "Siapkan autentikator Anda",
+        "setup_description": "Tambahkan AriadShift ke aplikasi autentikator Anda, lalu masukkan kode yang ditampilkannya.",
+        "setup_key_intro": "Masukkan kunci penyiapan ini di aplikasi:",
+        "setup_key_unavailable": "Tidak tersedia",
+        "open_in_app": "Buka di aplikasi autentikator di perangkat ini",
+        "turn_on": "Aktifkan",
+        "codes_title": "Kode cadangan baru",
+        "backup_intro": "Simpan kode cadangan ini di tempat yang aman. Setiap kode dapat dipakai masuk satu kali jika Anda kehilangan autentikator. Kode ini tidak akan ditampilkan lagi.",
+        "copy_codes": "Salin kode cadangan",
+        "copy_failed": "Penyalinan gagal; pilih kodenya secara manual"
+      },
+      "account_actions": {
+        "title": "Sesi dan akun",
+        "sign_out": "Keluar",
+        "delete": "Hapus akun",
+        "signed_out": "Anda telah keluar.",
+        "sign_out_failed": "Tidak dapat keluar. Coba lagi.",
+        "deleted": "Akun Anda telah dihapus.",
+        "delete_failed_password": "Akun tidak dapat dihapus. Periksa kata sandi Anda.",
+        "delete_failed_session": "Akun tidak dapat dihapus. Masuk lagi dan coba kembali.",
+        "delete_note": "Menghapus akun Anda akan otomatis mencabut <keys>kunci API</keys> Anda. Sebelum menghapusnya, hapus <jobs>tugas cloud</jobs> yang masih Anda miliki. File dari tugas yang Anda biarkan akan dihapus saat masa penyimpanannya berakhir.",
+        "dialog_title": "Hapus akun Anda?",
+        "dialog_description_password": "Tindakan ini tidak dapat dibatalkan. Konfirmasi kata sandi Anda untuk menghapus akun.",
+        "dialog_description_session": "Tindakan ini tidak dapat dibatalkan. Konfirmasi di bawah untuk menghapus akun menggunakan sesi masuk Anda saat ini.",
+        "sign_in_again": "Masuk lagi"
+      },
+      "connected_apps": {
+        "title": "Aplikasi terhubung",
+        "description": "Aplikasi dan klien MCP yang telah Anda beri izin untuk menggunakan akun Anda, serta klien OAuth yang telah Anda daftarkan.",
+        "load_failed": "Aplikasi terhubung Anda tidak dapat dimuat.",
+        "loading": "Memuat aplikasi terhubung…",
+        "empty": "Belum ada aplikasi terhubung atau klien OAuth terdaftar.",
+        "scopes_none": "tidak ada",
+        "consent_details": "Aplikasi yang diizinkan · Scope: {scopes} · Diizinkan {date}",
+        "client_details": "Klien OAuth terdaftar ({client_id})",
+        "client_details_dated": "Klien OAuth terdaftar ({client_id}) · Terdaftar {date}",
+        "revoke_label": "Cabut {name}",
+        "revoked": "{name} dicabut.",
+        "revoke_failed": "Akses tidak dapat dicabut.",
+        "revoke_title": "Cabut {name}?",
+        "revoke_consent_description": "Pencabutan langsung menghentikan token baru dan pembaruan token. Token akses bertanda tangan yang sudah diterbitkan (masa berlaku 15 menit) tetap berfungsi hingga kedaluwarsa.",
+        "revoke_client_description": "Menghapus klien OAuth terdaftar ini akan mencabut kredensial dan persetujuannya, serta langsung menghentikan token baru dan pembaruan token. Token akses bertanda tangan yang sudah diterbitkan (masa berlaku 15 menit) tetap berfungsi hingga kedaluwarsa."
+      },
+      "api_keys": {
+        "page_title": "Kunci API",
+        "section_title": "Kunci Anda",
+        "section_description": "Skrip dan integrasi mengirim kunci dalam header <code>x-api-key</code> ke {host}. Kunci bertindak dengan akun Anda dan paketnya.",
+        "load_failed": "Kunci API Anda tidak dapat dimuat.",
+        "loading": "Memuat kunci API…",
+        "empty": "Belum ada kunci API.",
+        "unnamed": "Kunci tanpa nama",
+        "disabled": "Dinonaktifkan",
+        "key_details": "Dibuat {date} · {expiry}",
+        "never_expires": "Tidak pernah kedaluwarsa",
+        "expired_on": "Kedaluwarsa {date}",
+        "expires_on": "Kedaluwarsa {date}",
+        "revoke_label": "Cabut kunci API {name}",
+        "revoke_button": "Cabut<hidden> kunci API {name}</hidden>",
+        "create_button": "Buat kunci API",
+        "create_title": "Buat kunci API",
+        "create_description": "Beri nama kunci sesuai skrip atau layanan yang akan menggunakannya.",
+        "name_placeholder": "Contoh: CI",
+        "expires_after": "Kedaluwarsa setelah",
+        "lifetime_days": "{days, plural, other {# hari}}",
+        "lifetime_year": "1 tahun",
+        "lifetime_never": "Tanpa kedaluwarsa",
+        "create_submit": "Buat kunci",
+        "create_failed": "Kunci tidak dapat dibuat.",
+        "created": "Kunci API {name} dibuat.",
+        "secret_title": "Kunci API baru Anda",
+        "secret_label": "Kunci API",
+        "secret_notice": "Salin kunci sekarang. Kunci hanya disimpan sebagai hash dan tidak akan ditampilkan lagi.",
+        "copy_key": "Salin kunci",
+        "copy_failed": "Penyalinan gagal. Pilih kunci lalu salin.",
+        "revoke_title": "Cabut {name}?",
+        "revoke_description": "Permintaan yang menggunakan kunci ini langsung ditolak. Tindakan ini tidak dapat dibatalkan.",
+        "revoke_confirm": "Cabut kunci",
+        "revoked": "Kunci API {name} dicabut. Permintaan yang menggunakannya ditolak mulai sekarang.",
+        "revoke_failed": "Kunci tidak dapat dicabut."
+      },
+      "jobs": {
+        "title": "Tugas",
+        "intro_server": "Konversi cloud dari akun Anda di {host}, dari perangkat mana pun. File tetap berada di {host} sampai dihapus otomatis, atau sampai Anda menghapusnya di sini.",
+        "intro_account_browser": "Konversi cloud yang dimulai di peramban ini dengan akun Anda. Daftar ini hanya disimpan di perangkat ini. File tetap berada di {host} sampai dihapus otomatis, atau sampai Anda menghapusnya di sini.",
+        "intro_anonymous_browser": "Konversi cloud yang dimulai di peramban ini tanpa akun. Daftar ini hanya disimpan di perangkat ini. File tetap berada di {host} sampai dihapus otomatis, atau sampai Anda menghapusnya di sini.",
+        "signed_out_notice": "Menampilkan tugas tanpa akun. <link>Masuk</link> untuk melihat tugas akun Anda.",
+        "loading": "Memuat tugas Anda…",
+        "list_unsupported": "{host} belum dapat mendaftar tugas akun Anda, jadi halaman ini menampilkan tugas yang dimulai di peramban ini.",
+        "list_error_title": "Tidak dapat memuat tugas Anda dari {host}",
+        "list_error_body": "{reason} Sementara itu, halaman ini menampilkan tugas yang dimulai di peramban ini.",
+        "count": "{count, plural, other {# tugas}}",
+        "empty": "Belum ada tugas cloud. Mulai satu dari <link>konverter</link>.",
+        "show_more": "Tampilkan lebih banyak tugas",
+        "loading_more": "Memuat lebih banyak tugas…",
+        "unnamed": "Tugas {id}",
+        "forgotten": "{filename} dihapus dari daftar ini. File-nya di server tidak berubah.",
+        "forgotten_unnamed": "Tugas dihapus dari daftar ini. File-nya di server tidak berubah.",
+        "status": {
+          "queued": "Dalam antrean",
+          "converting": "Mengonversi",
+          "converting_stage": "Mengonversi: {stage}",
+          "retrying": "Mencoba lagi (percobaan {attempt})",
+          "reconnecting": "{step} · Menghubungkan ulang…",
+          "ready": "Siap",
+          "failed": "Gagal",
+          "canceled": "Dibatalkan",
+          "deleted": "Dihapus",
+          "deleted_expired": "Dihapus (kedaluwarsa)"
+        },
+        "until": {
+          "less_than_minute": "dalam kurang dari semenit",
+          "minutes": "dalam {minutes} mnt",
+          "hours": "dalam {hours} j",
+          "hours_minutes": "dalam {hours} j {minutes} mnt"
+        },
+        "expiry": {
+          "deleted_at": "Dihapus otomatis pada {clock}.",
+          "deleted_from_server": "Dihapus dari server. File input dan output telah hilang.",
+          "being_deleted": "Sedang dihapus.",
+          "deletes_at": "Dihapus otomatis pada {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Dokumen ini memerlukan lebih dari yang diizinkan paket Anda. Coba file yang lebih kecil, atau konversi di perangkat ini.",
+          "unsupported_route": "Server ini tidak dapat mengonversi antar format tersebut. Pilih target lain di konverter.",
+          "input_io": "File yang diunggah tidak dapat dibaca atau tidak lagi ada di server. Unggah lagi.",
+          "storage": "Server tidak dapat menyimpan hasilnya. Coba lagi sebentar lagi.",
+          "tool_missing": "Server ini tidak memiliki engine yang dibutuhkan rute tersebut. Tanyakan kepada operatornya, atau pilih target lain.",
+          "other": "Konversi gagal. Coba lagi, atau konversi file di perangkat ini."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Memuat status…",
+          "try_again": "Coba lagi<hidden> untuk memuat {filename}</hidden>",
+          "technical_details": "Detail teknis",
+          "warnings": "{count, plural, other {# peringatan}}",
+          "download": "Unduh {filename}",
+          "retry_label": "Coba lagi {filename}",
+          "retry_button": "Coba lagi<hidden> {filename}</hidden>",
+          "delete_label": "Hapus {filename} dari server sekarang",
+          "delete_button": "Hapus sekarang<hidden> {filename} dari server</hidden>",
+          "remove_label": "Hapus dari daftar ini ({filename})",
+          "remove_button": "Hapus dari daftar ini<hidden> ({filename})</hidden>",
+          "deleted_note": "Dihapus dari {host}. File input dan output telah hilang.",
+          "deleted_announce": "{filename} dihapus dari {host}. File input dan output telah hilang.",
+          "ready_announce": "{filename} telah dikonversi dan siap diunduh.",
+          "failed_announce": "Konversi {filename} gagal. {reason}",
+          "canceled_announce": "Konversi {filename} dibatalkan.",
+          "downloading": "Mengunduh {filename}.",
+          "retrying": "Mencoba lagi {filename}.",
+          "retry_conflict": "File yang diunggah tidak lagi ada di server. Unggah lagi dari konverter."
+        }
+      },
+      "sign_in": {
+        "title": "Masuk",
+        "create_title": "Buat akun",
+        "two_factor_title": "Pemeriksaan dua langkah",
+        "signed_in": "Berhasil masuk.",
+        "go_to_account": "Buka akun Anda",
+        "passkey": "Masuk dengan passkey",
+        "no_account": "Belum punya akun? <switch>Buat akun</switch>",
+        "have_account": "Sudah punya akun? <switch>Masuk</switch>",
+        "sign_in_failed": "Tidak dapat masuk. Periksa email dan kata sandi Anda.",
+        "passkey_failed": "Tidak dapat masuk dengan passkey.",
+        "code_rejected": "Kode itu tidak diterima. Coba lagi.",
+        "create_failed": "Akun tidak dapat dibuat.",
+        "passwords_mismatch": "Kata sandi tidak cocok.",
+        "bot_check": "Selesaikan pemeriksaan bot pendaftaran, lalu coba lagi.",
+        "confirm_password": "Konfirmasi kata sandi",
+        "create_account": "Buat akun",
+        "totp_help": "Masukkan kode 6 digit dari aplikasi autentikator Anda.",
+        "backup_help": "Masukkan salah satu kode cadangan yang Anda simpan saat mengaktifkan autentikasi dua faktor. Setiap kode hanya berlaku satu kali.",
+        "backup_code": "Kode cadangan",
+        "trust_device": "Percayai peramban ini selama 30 hari",
+        "verify": "Verifikasi",
+        "use_backup": "Gunakan kode cadangan",
+        "use_authenticator": "Gunakan kode autentikator",
+        "signed_in_user": "Anda masuk sebagai <user>{email}</user>."
+      }
+    }
+  }
+}

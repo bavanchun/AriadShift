@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Düzenlenebilir",
+        "description": "Düzenlemeye devam edebileceğiniz gerçek başlıklar, listeler ve tablolar."
+      },
+      "faithful": {
+        "label": "Sadık",
+        "description": "Düzene mümkün olduğunca yakın kalır."
+      },
+      "fast": {
+        "label": "Hızlı",
+        "description": "En hızlı yolu tercih eder."
+      },
+      "private": {
+        "label": "Gizli",
+        "description": "Yalnızca cihazınızdan hiç çıkmayan motorlar."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift çekirdeği",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF metin okuyucu"
+    },
+    "runtime": {
+      "wasm": "Tarayıcı",
+      "local": "CLI ve masaüstü",
+      "cloud": "Bulut"
+    },
+    "score": {
+      "not_measured": "ölçülmedi"
+    },
+    "duration": {
+      "under_1_ms": "1 ms’den kısa"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown belgesi",
+        "description": "GitHub Flavored Markdown destekli CommonMark: başlıklar, listeler, tablolar, görev listeleri, dipnotlar ve matematik. Yapay zekâ araçlarının en iyi okuduğu biçim."
+      },
+      "html": {
+        "noun": "HTML sayfası",
+        "description": "Bağımsız bir HTML5 sayfası. Girdideki ham işaretleme temizlenir; betikler ve güvensiz öznitelikler çıktıya asla ulaşmaz."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR belgesi",
+        "description": "Her AriadShift yolunun içinden geçtiği yapılandırılmış belge modeli: başlıklar, bloklar, tablolar, varlıklar ve üst veriler, sürümlü JSON olarak."
+      },
+      "docx": {
+        "noun": "Word belgesi",
+        "description": "Microsoft Word, LibreOffice ve Google Docs’tan gelen Office Open XML belgeleri, Pandoc üzerinden okunur ve yazılır."
+      },
+      "epub": {
+        "noun": "EPUB e-kitabı",
+        "description": "EPUB 3 e-kitapları, yeniden üretilebilir üst verilerle Pandoc üzerinden okunur ve yazılır."
+      },
+      "pdf": {
+        "noun": "PDF belgesi",
+        "description": "Dijital PDF metni bu cihazda okunur. PDF çıktısı Typst ve gömülü yazı tiplerini kullanır. Taranmış sayfalar için masaüstü uygulamasında OCR gerekir."
+      },
+      "odt": {
+        "noun": "OpenDocument metin belgesi",
+        "description": "OpenDocument metin dosyaları masaüstü uygulamasında LibreOffice kullanır."
+      },
+      "rtf": {
+        "noun": "Zengin Metin belgesi",
+        "description": "Zengin Metin belgeleri masaüstü uygulamasında LibreOffice kullanır."
+      },
+      "pptx": {
+        "noun": "PowerPoint sunumu",
+        "description": "PowerPoint sunumları masaüstü uygulamasında Docling veya LibreOffice kullanır."
+      },
+      "xlsx": {
+        "noun": "Excel çalışma kitabı",
+        "description": "Excel çalışma kitapları masaüstü uygulamasında Docling veya LibreOffice kullanır."
+      },
+      "doc": {
+        "noun": "eski Word belgesi",
+        "description": "Eski Word belgeleri masaüstü uygulamasında LibreOffice kullanır."
+      },
+      "xls": {
+        "noun": "eski Excel çalışma kitabı",
+        "description": "Eski Excel çalışma kitapları masaüstü uygulamasında LibreOffice kullanır."
+      },
+      "ppt": {
+        "noun": "eski PowerPoint sunumu",
+        "description": "Eski PowerPoint sunumları masaüstü uygulamasında LibreOffice kullanır."
+      },
+      "ods": {
+        "noun": "OpenDocument hesap tablosu",
+        "description": "OpenDocument hesap tabloları masaüstü uygulamasında LibreOffice kullanır."
+      },
+      "odp": {
+        "noun": "OpenDocument sunumu",
+        "description": "OpenDocument sunumları masaüstü uygulamasında LibreOffice kullanır."
+      },
+      "png": {
+        "noun": "PNG görseli",
+        "description": "Görsellerden metin çıkarmak için masaüstü uygulamasında Docling motor paketi gerekir."
+      },
+      "jpeg": {
+        "noun": "JPEG görseli",
+        "description": "Görsellerden metin çıkarmak için masaüstü uygulamasında Docling motor paketi gerekir."
+      },
+      "webp": {
+        "noun": "WebP görseli",
+        "description": "Görsellerden metin çıkarmak için masaüstü uygulamasında Docling motor paketi gerekir."
+      },
+      "tiff": {
+        "noun": "TIFF görseli",
+        "description": "Görsellerden metin çıkarmak için masaüstü uygulamasında Docling motor paketi gerekir."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: tarayıcınızda gizli belge dönüştürme",
+      "site_description": "Markdown, HTML ve yapılandırılmış JSON dosyalarını kendi cihazınızda dönüştürün. Varsayılan olarak gizli, her yolda ölçülmüş kalite ve yapay zekâ ajanlarına hazır.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "İçeriğe geç",
+      "home_link": "{site} ana sayfası",
+      "nav_label": "Ana menü",
+      "nav": {
+        "converter": "Dönüştürücü",
+        "formats": "Biçimler",
+        "quality": "Kalite",
+        "download": "İndir",
+        "privacy": "Gizlilik"
+      },
+      "footer": {
+        "license": "AriadShift, Apache-2.0 lisansı altında açık kaynaklıdır.",
+        "privacy": "Gizlilik",
+        "licenses": "Lisanslar",
+        "quality": "Kalite",
+        "source": "Kaynak kodu"
+      },
+      "language": {
+        "label": "Dil",
+        "button": "Dil: {name}",
+        "list_label": "Bir dil seçin",
+        "community_badge": "Topluluk çevirisi",
+        "community_note": "Topluluk çevirileri makine taslaklarıdır ve kişiler tarafından düzeltilmeye devam edebilir."
+      }
+    },
+    "not_found": {
+      "title": "Sayfa bulunamadı",
+      "body": "Bu sayfa mevcut değil.",
+      "home_link": "Ana sayfaya git"
+    },
+    "home": {
+      "meta_title": "Belgeleri kendi cihazınızda dönüştürün",
+      "title": "Belgeleri kendi cihazınızda dönüştürün",
+      "lede": "AriadShift, Markdown, HTML, Word, EPUB ve yapılandırılmış JSON dosyalarını doğrudan tarayıcınızda dönüştürür. Dijital PDF metnini okuyun ve PDF’leri cihazınızda oluşturun. Ölçüm yapan tek bir planlayıcı, yükleme yok.",
+      "open_converter": "Dönüştürücüyü aç",
+      "install_cli": "CLI’yı kur",
+      "why_heading": "Neden AriadShift",
+      "why": {
+        "private": {
+          "title": "Varsayılan olarak gizli",
+          "body": "Dönüştürücü, WebAssembly ile tarayıcınızın içinde çalışır. Belgeniz tarayıcının özel dosya sisteminde saklanır ve asla yüklenmez."
+        },
+        "quality": {
+          "title": "Ölçülmüş kalite",
+          "body": "Her yol, herkese açık bir kıyaslamadan gelen doğruluk ve düzenlenebilirlik puanları taşır. Planlayıcı en iyisini seçer ve nedenini söyler."
+        },
+        "agents": {
+          "title": "Yapay zekâ ajanlarına hazır",
+          "body": "Belgeleri LLM bağlamı için temiz Markdown’a veya yapılandırılmış JSON’a dönüştürün. CLI bir MCP sunucusu içerir, böylece ajanlar dosyaları kendileri dönüştürebilir."
+        }
+      },
+      "how_heading": "Nasıl çalışır",
+      "how": {
+        "step_label": "Adım {number}",
+        "step_1": "Bir dosya seçersiniz. Tarayıcı onu kendi özel dosya sistemine kopyalar.",
+        "step_2": "Bir arka plan çalışanı, WebAssembly’ye derlenmiş AriadShift motorunu yükler.",
+        "step_3": "Planlayıcı, hedefiniz için en iyi ölçülmüş puana sahip yolu seçer.",
+        "step_4": "Sonucu indirirsiniz. Baştan başlamak, saklanan tüm dosyaları siler."
+      },
+      "pairs_heading": "Tarayıcınızda dönüştürün",
+      "pair_link": "{from} → {to}",
+      "see_more": "Her <formats>desteklenen biçimi</formats> ve her yolun <quality>ölçülmüş kalitesini</quality> görün."
+    },
+    "formats": {
+      "meta_title": "Desteklenen biçimler",
+      "meta_description": "AriadShift’in hangi belge biçimlerini okuyup yazdığı ve hangi dönüştürmelerin tarayıcınızda çalıştığı.",
+      "title": "Desteklenen biçimler",
+      "lede": "Her dönüştürme AriadShift’in belge modelinden geçer. “Tarayıcı” işaretli biçimler tamamen bu cihazda dönüştürülür; diğerleri şimdilik komut satırı aracını gerektirir.",
+      "badge_browser": "Tarayıcı ve CLI",
+      "badge_cli": "CLI",
+      "extensions": "Uzantılar: {list}",
+      "engines": "Okuyan: {readers}; yazan: {writers}.",
+      "no_engine": "henüz motor yok",
+      "convert_to": "Dönüştürülebilir biçimler: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Ölçülmüş kalite",
+      "meta_description": "Her AriadShift dönüştürme adımının doğruluğu, düzenlenebilirliği ve hızı; herkese açık bir kıyaslamadan üretilir.",
+      "title": "Ölçülmüş kalite",
+      "lede": "Bu puanlar elle yazılmaz. Kıyaslama, {count, plural, one {# herkese açık örnek belgeyi} other {# herkese açık örnek belgeyi}} her adımdan geçirerek dönüştürür ve sonucu bilinen doğruyla karşılaştırır. Planlayıcı bir yol seçerken aynı sayıları okur.",
+      "generated": "{pandoc, select, none {{date} tarihinde oluşturuldu.} other {{date} tarihinde Pandoc {pandoc} ile oluşturuldu.}}",
+      "methodology": "<link>Yöntemi okuyun</link>.",
+      "caption": "Dönüştürme adımı başına kıyaslama puanları",
+      "column": {
+        "step": "Adım",
+        "engine": "Motor",
+        "runs_in": "Çalıştığı yer",
+        "fidelity": "Doğruluk",
+        "editability": "Düzenlenebilirlik",
+        "median_time": "Ortanca süre",
+        "samples": "Örnekler"
+      }
+    },
+    "route": {
+      "label": "Dönüştürme yolu",
+      "then": "sonra",
+      "fidelity": "Doğruluk",
+      "editability": "Düzenlenebilirlik",
+      "estimated_time": "Tahmini süre",
+      "unmeasured": "Bu yolun bir kısmı henüz kıyaslanmadı, bu yüzden planlayıcı onu temkinli puanlar."
+    },
+    "download": {
+      "meta_title": "İndir",
+      "meta_description": "AriadShift komut satırı aracını ve MCP sunucusunu macOS, Linux ve Windows’a kurun.",
+      "title": "AriadShift’i indirin",
+      "lede": "<code>ashift</code> komutu Markdown, HTML, DOCX ve EPUB dosyalarını bilgisayarınızda dönüştürür ve yapay zekâ ajanları için bir MCP sunucusu çalıştırır. DOCX ve EPUB yolları, ayrı bir program olarak <pandoc>Pandoc 3.12 veya daha yenisini</pandoc> kullanır.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS ve Linux)",
+          "note": "Formül yayımlandığında kullanılabilir. DOCX ve EPUB yollarının gerektirdiği Pandoc’u da kurar."
+        },
+        "shell": {
+          "title": "Kabuk yükleyicisi (macOS ve Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell yükleyicisi (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Paket başvurusu kabul edildiğinde kullanılabilir."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Crate’ler crates.io’da yayımlandığında kullanılabilir."
+        }
+      },
+      "then_heading": "Sonra",
+      "releases": "Her platform için arşivler <link>GitHub Releases</link> sayfasında.",
+      "desktop": {
+        "title": "Masaüstü uygulaması",
+        "body": "Toplu dönüştürme ve klasör izleme özellikli bir macOS, Windows ve Linux masaüstü uygulaması yolda. İlk sürüm çıktığında burada listelenecek."
+      }
+    },
+    "pair": {
+      "meta_title": "{from} biçiminden {to} biçimine dönüştür",
+      "meta_description_browser": "AriadShift ile tarayıcınızda, gizli olarak dönüştürün: {noun} → {to}. Ölçülmüş doğruluk, yükleme yok.",
+      "meta_description_cli": "AriadShift ile kendi bilgisayarınızda dönüştürün: {noun} → {to}. Ölçülmüş doğruluk, yükleme yok.",
+      "badge_browser": "Tarayıcınızda çalışır",
+      "badge_cli": "AriadShift CLI ile çalışır",
+      "title": "{from} biçiminden {to} biçimine dönüştür",
+      "lede_browser": "Yükleme yapmadan şu dönüşümü gerçekleştirin: {noun} → {to}. AriadShift dosyayı tarayıcınızda okur, belge modeline eşler ve {to} çıktısını cihazınızda yazar.",
+      "lede_cli": "Ücretsiz AriadShift komut satırı aracıyla kendi bilgisayarınızda şu dönüşümü gerçekleştirin: {noun} → {to}. Tarayıcı sürümü bu yolu henüz çalıştırmıyor.",
+      "convert_now": "{from} biçiminden {to} biçimine şimdi dönüştür",
+      "install_cli": "CLI’yı kur",
+      "route_heading": "AriadShift’in izlediği yol",
+      "from_heading": "Kaynak: {format}",
+      "to_heading": "Hedef: {format}",
+      "cli_heading": "Komut satırından",
+      "related_heading": "İlgili dönüştürmeler",
+      "related_link": "{from} → {to}"
+    },
+    "converter_page": {
+      "meta_title": "Dönüştürücü",
+      "meta_description": "Markdown, HTML, DOCX, EPUB, dijital PDF ve AriadShift IR JSON dosyalarını tarayıcınızda dönüştürün. Dosyalar cihazınızda kalır.",
+      "title": "Bir belge dönüştürün",
+      "lede": "Bir dosya seçin, bir hedef belirleyin ve sonucu indirin. Her şey bu sekmede gerçekleşir{cloud, select, yes {, bu dosyayı bulutta dönüştürmeyi seçmediğiniz sürece.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Lisanslar",
+      "meta_description": "AriadShift ve tarayıcı motorlarının lisansları ve kaynakları."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Bulut modu beklenmedik şekilde durdu",
+        "stopped_body": "Bulut modu, yükleme başladıktan sonra bir hatayla karşılaştı. Sunucudaki kopya, saklama süresi dolduğunda otomatik olarak silinir veya bu cihazda dönüştürebilirsiniz.",
+        "load_title": "Bulut modu yüklenemedi",
+        "load_body": "Bulut dönüştürücü yüklenemedi (örneğin çevrimdışı olduğunuz için). Yine de bu cihazda dönüştürebilirsiniz.",
+        "use_device": "Bu cihazda dönüştür"
+      },
+      "status": {
+        "deleted_from_server": "{name} sunucudan silindi.",
+        "reading": "{name} bu cihazda okunuyor.",
+        "detected": "{name} dosyasının biçimi: {format}.",
+        "read_failed": "Dosya okunamadı.",
+        "converting": "Bu cihazda {format} biçimine dönüştürülüyor.",
+        "ready": "{name} indirmeye hazır.",
+        "convert_failed": "Dönüştürme başarısız oldu.",
+        "saved": "{name} kaydedildi.",
+        "reset": "{outcome, select, deleted {Dosyalar bu cihazdan ve sunucudan kaldırıldı.} kept {Dosyalar bu cihazdan kaldırıldı. {name} hâlâ sunucuda.} other {Dosyalar bu cihazdan kaldırıldı.}}",
+        "cloud_selected": "{name} için bulut dönüştürme seçildi. Henüz hiçbir şey yüklenmedi.",
+        "cloud_selected_unnamed": "Bu dosya için bulut dönüştürme seçildi. Henüz hiçbir şey yüklenmedi."
+      },
+      "device": {
+        "cloud": "<strong>Bulut dönüştürme seçildi.</strong> Bu dosya tarayıcınızdan yalnızca Yükle ve dönüştür’ü seçtiğinizde çıkar.",
+        "local": "<strong>Bu cihazda işlendi.</strong> Dosyalar tarayıcınızdan asla çıkmaz ve yüklenmez."
+      },
+      "storage_badge": "{storage, select, opfs {Özel tarayıcı depolaması} other {Bellekte}}",
+      "memory": {
+        "title": "Bu tarayıcıda cihaz içi dosya depolaması kullanılamıyor",
+        "body": "Dosyalar bunun yerine bellekte tutulur, bu yüzden {limit} boyutuna kadar girdiler desteklenir. Her iki durumda da hiçbir şey yüklenmez."
+      },
+      "error": {
+        "title": "{code, select, no_route {Burada kullanılamıyor} engine_integrity {Motor bütünlük denetimi başarısız oldu} other {Bir şeyler ters gitti}}"
+      },
+      "handoff": {
+        "title": "Masaüstü uygulamasında devam edin",
+        "reason": "{reason, select, ocr {Bazı sayfaların tüm metnini çıkarmak için OCR gerekir.} other {Bu belge, tarayıcının sağladığından fazla bir motor veya bellek gerektiriyor.}}",
+        "picker": "Masaüstü uygulaması bir dosya seçici açar. Bu belgeyi yeniden seçin; tarayıcınız dosyayı göndermez.",
+        "open": "Masaüstünde aç",
+        "cloud_alternative": "Veya yüklemeyi onayladıktan sonra {host} üzerinde dönüştürün.",
+        "cloud_button": "Bulutta işle"
+      },
+      "drop": {
+        "button": "Bir dosya seçin",
+        "button_busy": "Okunuyor…",
+        "label": "Dönüştürülecek belge",
+        "title": "Bir belgeyi buraya bırakın",
+        "hint": "{limit} boyutuna kadar Markdown, HTML, DOCX, EPUB, dijital PDF veya IR JSON. Bu cihazda kalır."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Başlıklar",
+        "paragraphs": "Paragraflar",
+        "tables": "Tablolar",
+        "images": "Görseller",
+        "links": "Bağlantılar",
+        "footnotes": "Dipnotlar",
+        "words": "Kelimeler"
+      },
+      "unreachable": {
+        "cli": "{format} henüz tarayıcıda dönüştürülemiyor. <link>AriadShift CLI</link> bunu bilgisayarınızda dönüştürür.",
+        "none": "AriadShift {format} biçimini henüz dönüştüremiyor."
+      },
+      "cloud": {
+        "loading": "Bulut modu yükleniyor…"
+      },
+      "convert": {
+        "title": "Dönüştür",
+        "hint": "Planlayıcı, en iyi ölçülmüş puana sahip yolu seçer.",
+        "target_label": "Şuna dönüştür",
+        "profile_label": "Profil",
+        "route_heading": "Bu yol neden",
+        "elsewhere": "{formats} için şimdilik <link>AriadShift CLI</link> {count, plural, one {gerekiyor} other {gerekiyor}}.",
+        "button": "Dönüştür",
+        "button_busy": "Dönüştürülüyor…",
+        "cancel": "İptal"
+      },
+      "result": {
+        "title": "Hazır",
+        "summary": "<output>{name}</output> · {size} · bu cihazda {duration} içinde dönüştürüldü",
+        "download": "{name} dosyasını indir"
+      },
+      "start_over": "Baştan başla ve dosyaları sil"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Hesap",
+        "description": "AriadShift bulut hesabınız: profil, parola, geçiş anahtarları ve iki adımlı oturum açma."
+      },
+      "sign_in": {
+        "title": "Oturum aç",
+        "description": "AriadShift bulut hesabınızda oturum açın veya yeni bir hesap oluşturun."
+      },
+      "jobs": {
+        "title": "İşler",
+        "description": "AriadShift bulut dönüştürmelerinizin durumu, indirmeleri ve silinmesi."
+      },
+      "api_keys": {
+        "title": "API anahtarları",
+        "description": "AriadShift bulut API’si için API anahtarları oluşturun ve iptal edin."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Hesap"
+      },
+      "shell": {
+        "not_configured_title": "Bulut yapılandırılmadı",
+        "not_configured_body": "AriadShift’in bu kopyası yalnızca cihazınızda çalışır. Hesaplar, API anahtarları ve bulut işleri bir sunucu gerektirir; sunucunun işletmecisi siteyi derlerken <code>{api_variable}</code> ve <code>{auth_variable}</code> değişkenlerini ayarlar.",
+        "not_configured_convert": "Yine de <link>dosyaları tarayıcınızda dönüştürebilirsiniz</link>.",
+        "nav_label": "Hesap",
+        "nav": {
+          "account": "Hesap",
+          "api_keys": "API anahtarları",
+          "jobs": "İşler"
+        },
+        "server": "Sunucu: {host}",
+        "signed_in_user": "Oturum açan: <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Oturumunuz denetleniyor…",
+        "error_title": "Oturumunuz denetlenemiyor",
+        "signed_out": "Oturum açmadınız."
+      },
+      "actions": {
+        "sign_in": "Oturum aç",
+        "try_again": "Yeniden dene",
+        "cancel": "İptal",
+        "done": "Bitti",
+        "continue": "Devam",
+        "revoke": "İptal et",
+        "copied": "Kopyalandı"
+      },
+      "fields": {
+        "name": "Ad",
+        "email": "E-posta",
+        "password": "Parola",
+        "authentication_code": "Doğrulama kodu",
+        "password_hint": "En az {min} karakter."
+      },
+      "dates": {
+        "unknown": "bilinmeyen bir tarih"
+      },
+      "errors": {
+        "auth_refused": "Kimlik doğrulama hizmeti isteği reddetti.",
+        "service_unreachable": "Oturum açma hizmetine ulaşılamıyor. Bağlantınızı denetleyip yeniden deneyin.",
+        "session_ended": "Oturumunuz sona erdi. Yeniden oturum açın.",
+        "rate_limited": "Çok fazla istek. Kısa süre sonra yeniden deneyin.",
+        "rate_limited_after": "Çok fazla istek. {seconds} sn sonra yeniden deneyin.",
+        "sign_in_unverifiable": "Sunucu şu anda oturum açmanızı doğrulayamıyor. Kısa süre sonra yeniden deneyin.",
+        "token_invalid": "Oturum açma hizmeti geçersiz bir API belirteci döndürdü.",
+        "reauth_required": "Hesabınızı silmeden önce yeniden oturum açın.",
+        "delete_not_allowed": "Bu sunucu, hesapların web uygulamasından silinmesine izin vermiyor. İşletmecisinden silmesini isteyin.",
+        "job_gone": "Bu iş artık sunucuda değil.",
+        "file_deleted": "Bu dosya zaten silinmiş.",
+        "job_conflict": "İş hazır değil veya yüklenen dosyası artık sunucuda değil.",
+        "quota_exceeded": "Planınızın bulut dönüştürme hakkını şimdilik kullandınız. Bu cihazda dönüştürün veya daha sonra yeniden deneyin.",
+        "request_failed": "Sunucu isteği tamamlayamadı. Kısa süre sonra yeniden deneyin.",
+        "network_unreachable": "Sunucuya ulaşılamıyor. Bağlantınızı denetleyip yeniden deneyin.",
+        "transfer_incomplete": "Aktarım tamamlanmadı. Yeniden deneyin."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Adı kaydet",
+        "saved": "Ad kaydedildi.",
+        "save_failed": "Ad kaydedilemedi."
+      },
+      "password": {
+        "title": "Parola",
+        "current": "Geçerli parola",
+        "new": "Yeni parola",
+        "confirm": "Yeni parolayı onaylayın",
+        "revoke_others": "Diğer oturumlardan çıkış yap",
+        "submit": "Parolayı değiştir",
+        "mismatch": "Yeni parolalar eşleşmiyor.",
+        "changed": "Parola değiştirildi.",
+        "changed_revoked": "Parola değiştirildi. Diğer oturumlardan çıkış yapıldı.",
+        "failed": "Parola değiştirilemedi."
+      },
+      "passkeys": {
+        "title": "Geçiş anahtarları",
+        "description": "Parola yerine cihazınızın ekran kilidiyle veya bir güvenlik anahtarıyla oturum açın.",
+        "load_failed": "Geçiş anahtarlarınız yüklenemedi.",
+        "loading": "Geçiş anahtarları yükleniyor…",
+        "empty": "Henüz geçiş anahtarı yok.",
+        "unnamed": "Adsız geçiş anahtarı",
+        "default_name": "Geçiş anahtarı",
+        "added_on": "Eklenme: {date}",
+        "remove_label": "{name} geçiş anahtarını kaldır",
+        "remove_button": "Kaldır<hidden> {name} geçiş anahtarını</hidden>",
+        "add_button": "Geçiş anahtarı ekle",
+        "add_title": "Geçiş anahtarı ekle",
+        "add_description": "Ona cihazın veya anahtarın adını verin, sonra tarayıcınızın istemini izleyin.",
+        "name_label": "Geçiş anahtarı adı",
+        "name_placeholder": "Örneğin: İş dizüstü bilgisayarı",
+        "added": "Geçiş anahtarı eklendi.",
+        "add_failed": "Geçiş anahtarı eklenmedi.",
+        "remove_title": "{name} kaldırılsın mı?",
+        "remove_title_unnamed": "Bu geçiş anahtarı kaldırılsın mı?",
+        "remove_description": "Artık bununla oturum açamazsınız. Diğer oturum açma yöntemleriniz çalışmaya devam eder.",
+        "remove_confirm": "Geçiş anahtarını kaldır",
+        "removed": "{name} kaldırıldı.",
+        "remove_failed": "Geçiş anahtarı kaldırılamadı."
+      },
+      "two_factor": {
+        "title": "İki adımlı doğrulama",
+        "description": "Parolanızdan sonra bir kimlik doğrulayıcı uygulamasından kod isteyin.",
+        "status_on": "Durum: <badge>Açık</badge>",
+        "status_off": "Durum: <badge>Kapalı</badge>",
+        "enable": "İki adımlı doğrulamayı aç",
+        "disable": "İki adımlı doğrulamayı kapat",
+        "regenerate": "Yeni yedek kodlar oluştur",
+        "confirm_password": "Devam etmek için parolanızı onaylayın.",
+        "enable_failed": "İki adımlı doğrulama kurulumu başlatılamadı. Parolanızı denetleyin.",
+        "disable_failed": "İki adımlı doğrulama kapatılamadı. Parolanızı denetleyin.",
+        "regenerate_failed": "Yeni yedek kodlar oluşturulamadı. Parolanızı denetleyin.",
+        "verify_failed": "Bu kod kabul edilmedi. Cihazınızın saatini denetleyip yeniden deneyin.",
+        "disabled": "İki adımlı doğrulama kapalı.",
+        "enabled": "İki adımlı doğrulama açık.",
+        "regenerated": "Yeni yedek kodlar oluşturuldu. Eskileri artık çalışmaz.",
+        "setup_title": "Kimlik doğrulayıcınızı kurun",
+        "setup_description": "AriadShift’i kimlik doğrulayıcı uygulamanıza ekleyin, ardından gösterdiği kodu girin.",
+        "setup_key_intro": "Bu kurulum anahtarını uygulamaya girin:",
+        "setup_key_unavailable": "Kullanılamıyor",
+        "open_in_app": "Bu cihazdaki bir kimlik doğrulayıcı uygulamasında aç",
+        "turn_on": "Aç",
+        "codes_title": "Yeni yedek kodlar",
+        "backup_intro": "Bu yedek kodları güvenli bir yere kaydedin. Kimlik doğrulayıcınızı kaybederseniz her biri oturumunuzu bir kez açar. Bir daha gösterilmezler.",
+        "copy_codes": "Yedek kodları kopyala",
+        "copy_failed": "Kopyalanamadı; bunun yerine kodları seçin"
+      },
+      "account_actions": {
+        "title": "Oturum ve hesap",
+        "sign_out": "Oturumu kapat",
+        "delete": "Hesabı sil",
+        "signed_out": "Oturum kapatıldı.",
+        "sign_out_failed": "Oturum kapatılamadı. Yeniden deneyin.",
+        "deleted": "Hesabınız silindi.",
+        "delete_failed_password": "Hesap silinemedi. Parolanızı denetleyin.",
+        "delete_failed_session": "Hesap silinemedi. Yeniden oturum açıp tekrar deneyin.",
+        "delete_note": "Hesabınızı silmek <keys>API anahtarlarınızı</keys> otomatik olarak iptal eder. Silmeden önce, hâlâ sahip olduğunuz <jobs>bulut işlerini</jobs> silin. Bıraktığınız işlerin dosyaları saklama süresi dolduğunda kaldırılır.",
+        "dialog_title": "Hesabınız silinsin mi?",
+        "dialog_description_password": "Bu işlem geri alınamaz. Hesabı silmek için parolanızı onaylayın.",
+        "dialog_description_session": "Bu işlem geri alınamaz. Geçerli oturumunuzu kullanarak hesabı silmek için aşağıdan onaylayın.",
+        "sign_in_again": "Yeniden oturum aç"
+      },
+      "connected_apps": {
+        "title": "Bağlı uygulamalar",
+        "description": "Hesabınızı kullanması için yetkilendirdiğiniz uygulamalar ve MCP istemcileri ile kaydettiğiniz OAuth istemcileri.",
+        "load_failed": "Bağlı uygulamalarınız yüklenemedi.",
+        "loading": "Bağlı uygulamalar yükleniyor…",
+        "empty": "Henüz bağlı uygulama veya kayıtlı OAuth istemcisi yok.",
+        "scopes_none": "yok",
+        "consent_details": "Yetkilendirilmiş uygulama · Kapsamlar: {scopes} · Yetkilendirme: {date}",
+        "client_details": "Kayıtlı OAuth istemcisi ({client_id})",
+        "client_details_dated": "Kayıtlı OAuth istemcisi ({client_id}) · Kayıt: {date}",
+        "revoke_label": "{name} erişimini iptal et",
+        "revoked": "{name} iptal edildi.",
+        "revoke_failed": "Erişim iptal edilemedi.",
+        "revoke_title": "{name} iptal edilsin mi?",
+        "revoke_consent_description": "İptal etmek, yeni belirteçleri ve belirteç yenilemeyi hemen durdurur. Halihazırda verilmiş imzalı erişim belirteçleri (15 dakika ömürlü) süreleri dolana kadar çalışmaya devam eder.",
+        "revoke_client_description": "Bu kayıtlı OAuth istemcisini silmek, kimlik bilgilerini ve izinlerini iptal eder; yeni belirteçleri ve belirteç yenilemeyi hemen durdurur. Halihazırda verilmiş imzalı erişim belirteçleri (15 dakika ömürlü) süreleri dolana kadar çalışmaya devam eder."
+      },
+      "api_keys": {
+        "page_title": "API anahtarları",
+        "section_title": "Anahtarlarınız",
+        "section_description": "Betikler ve entegrasyonlar, {host} adresine <code>x-api-key</code> başlığında bir anahtar gönderir. Bir anahtar, hesabınız ve planınızla işlem yapar.",
+        "load_failed": "API anahtarlarınız yüklenemedi.",
+        "loading": "API anahtarları yükleniyor…",
+        "empty": "Henüz API anahtarı yok.",
+        "unnamed": "Adsız anahtar",
+        "disabled": "Devre dışı",
+        "key_details": "Oluşturulma: {date} · {expiry}",
+        "never_expires": "Süresi dolmaz",
+        "expired_on": "Süresi doldu: {date}",
+        "expires_on": "Sona erme: {date}",
+        "revoke_label": "{name} API anahtarını iptal et",
+        "revoke_button": "İptal et<hidden> {name} API anahtarını</hidden>",
+        "create_button": "API anahtarı oluştur",
+        "create_title": "API anahtarı oluştur",
+        "create_description": "Anahtara, onu kullanacak betiğin veya hizmetin adını verin.",
+        "name_placeholder": "Örneğin: CI",
+        "expires_after": "Sona erme süresi",
+        "lifetime_days": "{days, plural, one {# gün} other {# gün}}",
+        "lifetime_year": "1 yıl",
+        "lifetime_never": "Süresiz",
+        "create_submit": "Anahtar oluştur",
+        "create_failed": "Anahtar oluşturulamadı.",
+        "created": "{name} API anahtarı oluşturuldu.",
+        "secret_title": "Yeni API anahtarınız",
+        "secret_label": "API anahtarı",
+        "secret_notice": "Anahtarı şimdi kopyalayın. Yalnızca bir karma olarak saklanır ve bir daha gösterilmez.",
+        "copy_key": "Anahtarı kopyala",
+        "copy_failed": "Kopyalanamadı. Anahtarı seçip kopyalayın.",
+        "revoke_title": "{name} iptal edilsin mi?",
+        "revoke_description": "Bu anahtarı kullanan istekler hemen reddedilir. Bu işlem geri alınamaz.",
+        "revoke_confirm": "Anahtarı iptal et",
+        "revoked": "{name} API anahtarı iptal edildi. Onu kullanan istekler bundan sonra reddedilir.",
+        "revoke_failed": "Anahtar iptal edilemedi."
+      },
+      "jobs": {
+        "title": "İşler",
+        "intro_server": "Hesabınızın {host} üzerindeki bulut dönüştürmeleri, her cihazdan. Dosyalar otomatik olarak silinene veya burada siz silene kadar {host} üzerinde kalır.",
+        "intro_account_browser": "Bu tarayıcıda hesabınızla başlatılan bulut dönüştürmeleri. Bu liste yalnızca bu cihazda tutulur. Dosyalar otomatik olarak silinene veya burada siz silene kadar {host} üzerinde kalır.",
+        "intro_anonymous_browser": "Bu tarayıcıda hesapsız başlatılan bulut dönüştürmeleri. Bu liste yalnızca bu cihazda tutulur. Dosyalar otomatik olarak silinene veya burada siz silene kadar {host} üzerinde kalır.",
+        "signed_out_notice": "İşler hesapsız gösteriliyor. Hesabınızın işlerini görmek için <link>oturum açın</link>.",
+        "loading": "İşleriniz yükleniyor…",
+        "list_unsupported": "{host} henüz hesabınızın işlerini listeleyemiyor, bu yüzden bu sayfa bu tarayıcıda başlatılan işleri gösteriyor.",
+        "list_error_title": "İşleriniz {host} üzerinden yüklenemiyor",
+        "list_error_body": "{reason} Bu arada bu sayfa, bu tarayıcıda başlatılan işleri gösteriyor.",
+        "count": "{count, plural, one {# iş} other {# iş}}",
+        "empty": "Henüz bulut işi yok. <link>Dönüştürücüden</link> bir tane başlatın.",
+        "show_more": "Daha fazla iş göster",
+        "loading_more": "Daha fazla iş yükleniyor…",
+        "unnamed": "İş {id}",
+        "forgotten": "{filename} bu listeden kaldırıldı. Sunucudaki dosyaları değişmedi.",
+        "forgotten_unnamed": "İş bu listeden kaldırıldı. Sunucudaki dosyaları değişmedi.",
+        "status": {
+          "queued": "Sırada",
+          "converting": "Dönüştürülüyor",
+          "converting_stage": "Dönüştürülüyor: {stage}",
+          "retrying": "Yeniden deneniyor (deneme {attempt})",
+          "reconnecting": "{step} · Yeniden bağlanılıyor…",
+          "ready": "Hazır",
+          "failed": "Başarısız",
+          "canceled": "İptal edildi",
+          "deleted": "Silindi",
+          "deleted_expired": "Silindi (süresi doldu)"
+        },
+        "until": {
+          "less_than_minute": "bir dakikadan kısa sürede",
+          "minutes": "{minutes} dk içinde",
+          "hours": "{hours} sa içinde",
+          "hours_minutes": "{hours} sa {minutes} dk içinde"
+        },
+        "expiry": {
+          "deleted_at": "{clock} saatinde otomatik olarak silindi.",
+          "deleted_from_server": "Sunucudan silindi. Girdi ve çıktı dosyaları kalmadı.",
+          "being_deleted": "Şu anda siliniyor.",
+          "deletes_at": "{clock} saatinde otomatik olarak silinecek ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Bu belge, planınızın izin verdiğinden fazlasını gerektiriyor. Daha küçük bir dosya deneyin veya bu cihazda dönüştürün.",
+          "unsupported_route": "Bu sunucu bu biçimler arasında dönüştürme yapamıyor. Dönüştürücüde başka bir hedef seçin.",
+          "input_io": "Yüklenen dosya okunamadı veya artık sunucuda değil. Yeniden yükleyin.",
+          "storage": "Sunucu sonucu saklayamadı. Birazdan yeniden deneyin.",
+          "tool_missing": "Bu sunucuda yolun gerektirdiği motor yok. İşletmecisine sorun veya başka bir hedef seçin.",
+          "other": "Dönüştürme başarısız oldu. Yeniden deneyin veya dosyayı bu cihazda dönüştürün."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Durum yükleniyor…",
+          "try_again": "Yeniden dene<hidden> ({filename} yüklenmesi için)</hidden>",
+          "technical_details": "Teknik ayrıntılar",
+          "warnings": "{count, plural, one {# uyarı} other {# uyarı}}",
+          "download": "{filename} dosyasını indir",
+          "retry_label": "{filename} dosyasını yeniden dene",
+          "retry_button": "Yeniden dene<hidden> {filename}</hidden>",
+          "delete_label": "{filename} dosyasını sunucudan şimdi sil",
+          "delete_button": "Şimdi sil<hidden> {filename} dosyasını sunucudan</hidden>",
+          "remove_label": "Bu listeden kaldır ({filename})",
+          "remove_button": "Bu listeden kaldır<hidden> ({filename})</hidden>",
+          "deleted_note": "{host} üzerinden silindi. Girdi ve çıktı dosyaları kalmadı.",
+          "deleted_announce": "{filename} dosyası {host} üzerinden silindi. Girdi ve çıktı dosyaları kalmadı.",
+          "ready_announce": "{filename} dönüştürüldü ve indirmeye hazır.",
+          "failed_announce": "{filename} dosyasının dönüştürülmesi başarısız oldu. {reason}",
+          "canceled_announce": "{filename} dosyasının dönüştürülmesi iptal edildi.",
+          "downloading": "{filename} indiriliyor.",
+          "retrying": "{filename} yeniden deneniyor.",
+          "retry_conflict": "Yüklenen dosya artık sunucuda değil. Dönüştürücüden yeniden yükleyin."
+        }
+      },
+      "sign_in": {
+        "title": "Oturum aç",
+        "create_title": "Hesap oluştur",
+        "two_factor_title": "İki adımlı doğrulama",
+        "signed_in": "Oturum açıldı.",
+        "go_to_account": "Hesabınıza gidin",
+        "passkey": "Geçiş anahtarıyla oturum aç",
+        "no_account": "Henüz hesabınız yok mu? <switch>Hesap oluşturun</switch>",
+        "have_account": "Zaten hesabınız var mı? <switch>Oturum açın</switch>",
+        "sign_in_failed": "Oturum açılamadı. E-postanızı ve parolanızı denetleyin.",
+        "passkey_failed": "Geçiş anahtarıyla oturum açılamadı.",
+        "code_rejected": "Bu kod kabul edilmedi. Yeniden deneyin.",
+        "create_failed": "Hesap oluşturulamadı.",
+        "passwords_mismatch": "Parolalar eşleşmiyor.",
+        "bot_check": "Kayıt sırasındaki bot denetimini tamamlayıp yeniden deneyin.",
+        "confirm_password": "Parolayı onaylayın",
+        "create_account": "Hesap oluştur",
+        "totp_help": "Kimlik doğrulayıcı uygulamanızdaki 6 haneli kodu girin.",
+        "backup_help": "İki adımlı doğrulamayı açtığınızda kaydettiğiniz yedek kodlardan birini girin. Her kod yalnızca bir kez çalışır.",
+        "backup_code": "Yedek kod",
+        "trust_device": "Bu tarayıcıya 30 gün güven",
+        "verify": "Doğrula",
+        "use_backup": "Bunun yerine yedek kod kullan",
+        "use_authenticator": "Bunun yerine kimlik doğrulayıcı kodu kullan",
+        "signed_in_user": "<user>{email}</user> olarak oturum açtınız."
+      }
+    }
+  }
+}

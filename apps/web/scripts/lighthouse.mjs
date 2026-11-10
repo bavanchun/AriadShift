@@ -1,4 +1,4 @@
-// Runs the pinned Lighthouse against the production build: / and /app, mobile and
+// Runs the pinned Lighthouse against the production build: /en and /en/app, mobile and
 // desktop. Starts `next start` on port 3100 itself and stops it afterwards. Exits non-zero
 // when any category scores below 90. Run `just web-build` first.
 import { spawn, spawnSync } from "node:child_process";
@@ -10,7 +10,7 @@ import desktopConfig from "lighthouse/core/config/desktop-config.js";
 
 const PORT = 3100;
 const BASE = `http://localhost:${PORT}`;
-const PAGES = ["/", "/app"];
+const PAGES = ["/en", "/en/app"];
 const CATEGORIES = ["performance", "accessibility", "best-practices", "seo"];
 const THRESHOLD = 0.9;
 const web = path.join(import.meta.dirname, "..");

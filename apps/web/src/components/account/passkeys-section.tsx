@@ -11,12 +11,14 @@ import {
   OutcomeMessage,
   Section,
   TextField,
+  useAccountText,
   useOutcome,
 } from "./account-ui";
 import type { PasskeyInfo } from "./auth-api";
 
 export function PasskeysSection() {
   const { auth } = useAccount();
+  const { t, locale } = useAccountText();
   const headingId = useId();
   const [passkeys, setPasskeys] = useState<PasskeyInfo[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -32,9 +34,9 @@ export function PasskeysSection() {
       setPasskeys(await auth.listPasskeys());
       setLoadError(null);
     } catch (error) {
-      setLoadError(errorMessage(error, "Could not load your passkeys."));
+      setLoadError(errorMessage(t, error, "passkeys.load_failed"));
     }
-  }, [auth]);
+  }, [auth, t]);
 
   useEffect(() => {
     void load();
@@ -49,10 +51,10 @@ export function PasskeysSection() {
       await load();
       setAdding(false);
       setName("");
-      succeed("Passkey added.");
+      succeed(t("passkeys.added"));
     } catch (error) {
       // A canceled browser prompt lands here too; the dialog stays open to try again.
-      setDialogError(errorMessage(error, "The passkey was not added."));
+      setDialogError(errorMessage(t, error, "passkeys.add_failed"));
     } finally {
       setBusy(false);
     }
@@ -67,11 +69,11 @@ export function PasskeysSection() {
     try {
       await auth.deletePasskey(removing.id);
       await load();
-      const label = removing.name ?? "Passkey";
+      const label = removing.name ?? t("passkeys.default_name");
       setRemoving(null);
-      succeed(`${label} removed.`);
+      succeed(t("passkeys.removed", { name: label }));
     } catch (error) {
-      setDialogError(errorMessage(error, "Could not remove the passkey."));
+      setDialogError(errorMessage(t, error, "passkeys.remove_failed"));
     } finally {
       setBusy(false);
     }
@@ -79,38 +81,41 @@ export function PasskeysSection() {
 
   return (
     <Section
-      title="Passkeys"
+      title={t("passkeys.title")}
       headingId={headingId}
-      description="Sign in with your device's screen lock or a security key instead of a password."
+      description={t("passkeys.description")}
     >
       {loadError ? (
         <OutcomeMessage outcome={{ kind: "error", message: loadError }} />
       ) : passkeys === null ? (
-        <p className="text-sm text-muted-foreground">Loading passkeys…</p>
+        <p className="text-sm text-muted-foreground">{t("passkeys.loading")}</p>
       ) : passkeys.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No passkeys yet.</p>
+        <p className="text-sm text-muted-foreground">{t("passkeys.empty")}</p>
       ) : (
         <ul className="flex flex-col divide-y divide-border" aria-labelledby={headingId}>
           {passkeys.map((passkey) => {
-            const label = passkey.name ?? "Unnamed passkey";
+            const label = passkey.name ?? t("passkeys.unnamed");
             return (
               <li key={passkey.id} className="flex items-center justify-between gap-3 py-2">
                 <span className="flex flex-col">
                   <span className="font-medium">{label}</span>
                   <span className="text-xs text-muted-foreground">
-                    Added {formatDate(passkey.createdAt)}
+                    {t("passkeys.added_on", { date: formatDate(passkey.createdAt, t, locale) })}
                   </span>
                 </span>
                 <Button
                   variant="destructive"
                   size="sm"
-                  aria-label={`Remove passkey ${label}`}
+                  aria-label={t("passkeys.remove_label", { name: label })}
                   onClick={() => {
                     setDialogError(null);
                     setRemoving(passkey);
                   }}
                 >
-                  Remove<span className="sr-only"> passkey {label}</span>
+                  {t.rich("passkeys.remove_button", {
+                    name: label,
+                    hidden: (chunks) => <span className="sr-only">{chunks}</span>,
+                  })}
                 </Button>
               </li>
             );
@@ -127,32 +132,32 @@ export function PasskeysSection() {
         }}
       >
         <KeyRoundIcon aria-hidden="true" />
-        Add a passkey
+        {t("passkeys.add_button")}
       </Button>
 
       {adding ? (
         <AccountDialog
-          title="Add a passkey"
-          description="Name it after the device or key, then follow your browser's prompt."
+          title={t("passkeys.add_title")}
+          description={t("passkeys.add_description")}
           onClose={() => setAdding(false)}
         >
           <form onSubmit={onAdd} className="flex flex-col gap-4">
             <TextField
-              label="Passkey name"
+              label={t("passkeys.name_label")}
               data-autofocus
               required
               maxLength={64}
-              placeholder="For example: Work laptop"
+              placeholder={t("passkeys.name_placeholder")}
               value={name}
               onValueChange={setName}
               error={dialogError}
             />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
-                Cancel
+                {t("actions.cancel")}
               </Button>
               <Button type="submit" disabled={busy}>
-                Continue
+                {t("actions.continue")}
               </Button>
             </div>
           </form>
@@ -162,8 +167,12 @@ export function PasskeysSection() {
       {removing ? (
         <AccountDialog
           role="alertdialog"
-          title={`Remove ${removing.name ?? "this passkey"}?`}
-          description="You can no longer sign in with it. Your other sign-in methods keep working."
+          title={
+            removing.name
+              ? t("passkeys.remove_title", { name: removing.name })
+              : t("passkeys.remove_title_unnamed")
+          }
+          description={t("passkeys.remove_description")}
           onClose={() => setRemoving(null)}
           returnFocus={() => document.getElementById(headingId)}
         >
@@ -172,10 +181,10 @@ export function PasskeysSection() {
           ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" data-autofocus onClick={() => setRemoving(null)}>
-              Cancel
+              {t("actions.cancel")}
             </Button>
             <Button variant="destructive" disabled={busy} onClick={() => void onRemove()}>
-              Remove passkey
+              {t("passkeys.remove_confirm")}
             </Button>
           </div>
         </AccountDialog>

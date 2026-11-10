@@ -9,8 +9,10 @@ import type { Job } from "@ariadshift/sdk";
 import { Alert, AlertDescription, AlertTitle } from "@ariadshift/ui/components/alert";
 import { Button } from "@ariadshift/ui/components/button";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useLocalePath } from "@/i18n/use-locale-path";
 import { displayHost } from "@/lib/cloud/config";
 import { useAccount } from "./account-context";
+import { type Translate, useAccountText } from "./account-ui";
 import {
   forgetJob,
   JOB_HISTORY_EVENT,
@@ -22,7 +24,7 @@ import {
 import { JobRow } from "./job-row";
 import { apiErrorCopy } from "./job-status";
 import { createJobsApi, type JobsApi, type ListedJob } from "./jobs-api";
-import { signInHref } from "./session-gate";
+import { useSignInHref } from "./session-gate";
 
 export interface JobsPanelProps {
   /** Replaces the SDK client; receives whether the requests carry the user's token. */
@@ -73,7 +75,7 @@ function useJobHistory(owner: string | null | undefined): JobHistoryEntry[] {
 }
 
 /** Reads the account's jobs from the API when signed in, one page at a time. */
-function useAccountJobs(api: JobsApi, signedIn: boolean) {
+function useAccountJobs(api: JobsApi, signedIn: boolean, t: Translate) {
   const [list, setList] = useState<AccountList>({ kind: "idle" });
   const [attempt, setAttempt] = useState(0);
 
@@ -105,11 +107,11 @@ function useAccountJobs(api: JobsApi, signedIn: boolean) {
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
-          setList({ kind: "error", message: apiErrorCopy(error) });
+          setList({ kind: "error", message: apiErrorCopy(error, t) });
         }
       });
     return () => controller.abort();
-  }, [api, signedIn, attempt]);
+  }, [api, signedIn, attempt, t]);
 
   const reload = useCallback(() => setAttempt((count) => count + 1), []);
 
@@ -139,11 +141,11 @@ function useAccountJobs(api: JobsApi, signedIn: boolean) {
     } catch (error) {
       setList((current) =>
         current.kind === "ready"
-          ? { ...current, more: { kind: "error", message: apiErrorCopy(error) } }
+          ? { ...current, more: { kind: "error", message: apiErrorCopy(error, t) } }
           : current,
       );
     }
-  }, [api, list]);
+  }, [api, list, t]);
 
   /** Shows a job this page just created first, without reading the list again. */
   const prepend = useCallback((job: ListedJob) => {
@@ -159,6 +161,9 @@ function useAccountJobs(api: JobsApi, signedIn: boolean) {
 
 export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
   const { config, auth, session, refreshSession, announce } = useAccount();
+  const { t } = useAccountText();
+  const toLocale = useLocalePath();
+  const toSignIn = useSignInHref();
   const headingId = useId();
   const [focusId, setFocusId] = useState<string | null>(null);
   const host = displayHost(config.apiUrl);
@@ -177,7 +182,7 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
     () => (createApi ?? ((user: boolean) => createJobsApi(config.apiUrl, auth, user)))(signedIn),
     [createApi, config.apiUrl, auth, signedIn],
   );
-  const { list, reload, loadMore, prepend } = useAccountJobs(api, signedIn);
+  const { list, reload, loadMore, prepend } = useAccountJobs(api, signedIn, t);
   const fromServer = list.kind === "ready";
   // Signed in, the browser's list is shown only once the API turns out not to list jobs.
   const listPending = signedIn && (list.kind === "idle" || list.kind === "loading");
@@ -191,7 +196,8 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
       return list.jobs.map((job) => ({
         entry: {
           id: job.id,
-          filename: job.filename ?? names.get(job.id) ?? `Job ${job.id.slice(0, 8)}`,
+          filename:
+            job.filename ?? names.get(job.id) ?? t("jobs.unnamed", { id: job.id.slice(0, 8) }),
           owner,
           createdAt: job.created_at,
           expiresAt: job.expires_at,
@@ -203,7 +209,7 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
       return null;
     }
     return entries.map((entry) => ({ entry }));
-  }, [owner, list, listPending, entries]);
+  }, [owner, list, listPending, entries, t]);
 
   const onRetried = useCallback(
     (entry: JobHistoryEntry, job: Job) => {
@@ -219,42 +225,42 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
       const entry = entries.find((candidate) => candidate.id === id);
       forgetJob(id);
       announce(
-        `${entry?.filename ?? "The job"} was removed from this list. Its files on the server are unchanged.`,
+        entry ? t("jobs.forgotten", { filename: entry.filename }) : t("jobs.forgotten_unnamed"),
       );
       document.getElementById(headingId)?.focus();
     },
-    [entries, announce, headingId],
+    [entries, announce, headingId, t],
   );
 
-  const scope = fromServer
-    ? `Cloud conversions of your account on ${host}, from any device.`
-    : signedIn
-      ? "Cloud conversions started in this browser with your account. This list is kept on this device only."
-      : "Cloud conversions started in this browser without an account. This list is kept on this device only.";
+  const intro = t(
+    fromServer
+      ? "jobs.intro_server"
+      : signedIn
+        ? "jobs.intro_account_browser"
+        : "jobs.intro_anonymous_browser",
+    { host },
+  );
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">Jobs</h1>
-        <p className="text-muted-foreground">
-          {scope} Files stay on {host} until they are deleted automatically, or until you delete
-          them here.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">{t("jobs.title")}</h1>
+        <p className="text-muted-foreground">{intro}</p>
       </div>
 
       {session.status === "loading" ? (
         <p role="status" className="text-sm text-muted-foreground">
-          Checking your session…
+          {t("session.checking")}
         </p>
       ) : null}
 
       {session.status === "error" ? (
         <Alert variant="destructive">
-          <AlertTitle>Cannot check your session</AlertTitle>
+          <AlertTitle>{t("session.error_title")}</AlertTitle>
           <AlertDescription>{session.message}</AlertDescription>
           <div className="pt-2">
             <Button variant="outline" onClick={() => void refreshSession()}>
-              Try again
+              {t("actions.try_again")}
             </Button>
           </div>
         </Alert>
@@ -262,36 +268,36 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
 
       {session.status === "signed-out" ? (
         <p className="text-sm">
-          Showing jobs without an account.{" "}
-          <a href={signInHref("/jobs")} className="text-primary underline-offset-4 hover:underline">
-            Sign in
-          </a>{" "}
-          to see the jobs of your account.
+          {t.rich("jobs.signed_out_notice", {
+            link: (chunks) => (
+              <a
+                href={toSignIn("/jobs")}
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                {chunks}
+              </a>
+            ),
+          })}
         </p>
       ) : null}
 
       {listPending ? (
         <p role="status" className="text-sm text-muted-foreground">
-          Loading your jobs…
+          {t("jobs.loading")}
         </p>
       ) : null}
 
       {signedIn && list.kind === "unsupported" ? (
-        <p className="text-sm text-muted-foreground">
-          {host} cannot list your account's jobs yet, so this page shows the jobs started in this
-          browser.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("jobs.list_unsupported", { host })}</p>
       ) : null}
 
       {signedIn && list.kind === "error" ? (
         <Alert variant="destructive">
-          <AlertTitle>Cannot load your jobs from {host}</AlertTitle>
-          <AlertDescription>
-            {list.message} Meanwhile, this page shows the jobs started in this browser.
-          </AlertDescription>
+          <AlertTitle>{t("jobs.list_error_title", { host })}</AlertTitle>
+          <AlertDescription>{t("jobs.list_error_body", { reason: list.message })}</AlertDescription>
           <div className="pt-2">
             <Button variant="outline" onClick={reload}>
-              Try again
+              {t("actions.try_again")}
             </Button>
           </div>
         </Alert>
@@ -300,15 +306,20 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
       {rows ? (
         <section aria-labelledby={headingId} className="flex flex-col gap-3">
           <h2 id={headingId} tabIndex={-1} className="text-xl font-semibold outline-none">
-            {rows.length === 1 ? "1 job" : `${rows.length} jobs`}
+            {t("jobs.count", { count: rows.length })}
           </h2>
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No cloud jobs yet. Start one from the{" "}
-              <a href="/app" className="text-primary underline-offset-4 hover:underline">
-                converter
-              </a>
-              .
+              {t.rich("jobs.empty", {
+                link: (chunks) => (
+                  <a
+                    href={toLocale("/app")}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    {chunks}
+                  </a>
+                ),
+              })}
             </p>
           ) : (
             <ul className="flex flex-col gap-3">
@@ -335,7 +346,7 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
                 disabled={list.more.kind === "loading"}
                 onClick={() => void loadMore()}
               >
-                {list.more.kind === "loading" ? "Loading more jobs…" : "Show more jobs"}
+                {list.more.kind === "loading" ? t("jobs.loading_more") : t("jobs.show_more")}
               </Button>
               {list.more.kind === "error" ? (
                 <p role="alert" className="text-sm text-destructive">

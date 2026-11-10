@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "可編輯",
+        "description": "真正的標題、清單與表格，可繼續編輯。"
+      },
+      "faithful": {
+        "label": "高擬真",
+        "description": "盡可能貼近原本的版面配置。"
+      },
+      "fast": {
+        "label": "快速",
+        "description": "優先選擇最快的路徑。"
+      },
+      "private": {
+        "label": "隱私",
+        "description": "僅使用不會離開你裝置的引擎。"
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift 核心",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF 文字讀取器"
+    },
+    "runtime": {
+      "wasm": "瀏覽器",
+      "local": "CLI 與桌面版",
+      "cloud": "雲端"
+    },
+    "score": {
+      "not_measured": "未測量"
+    },
+    "duration": {
+      "under_1_ms": "不到 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown 文件",
+        "description": "支援 CommonMark 與 GitHub Flavored Markdown：標題、清單、表格、工作清單、註腳與數學公式。多數 AI 工具讀取效果最好的格式。"
+      },
+      "html": {
+        "noun": "HTML 網頁",
+        "description": "獨立的 HTML5 網頁。輸入中的原始標記會經過淨化，指令碼與不安全的屬性不會出現在輸出中。"
+      },
+      "ir_json": {
+        "noun": "AriadShift IR 文件",
+        "description": "每條 AriadShift 轉換路徑都會經過的結構化文件模型：標題、區塊、表格、資源與中繼資料，以具版本的 JSON 表示。"
+      },
+      "docx": {
+        "noun": "Word 文件",
+        "description": "來自 Microsoft Word、LibreOffice 與 Google 文件的 Office Open XML 文件，透過 Pandoc 讀取與寫入。"
+      },
+      "epub": {
+        "noun": "EPUB 電子書",
+        "description": "EPUB 3 電子書，透過 Pandoc 讀取與寫入，中繼資料可重現。"
+      },
+      "pdf": {
+        "noun": "PDF 文件",
+        "description": "數位 PDF 的文字會在此裝置上讀取。PDF 輸出使用 Typst 與內嵌字型。掃描頁面需要使用桌面版應用程式中的 OCR。"
+      },
+      "odt": {
+        "noun": "OpenDocument 文字文件",
+        "description": "OpenDocument 文字檔案在桌面版應用程式中使用 LibreOffice 處理。"
+      },
+      "rtf": {
+        "noun": "RTF 文件",
+        "description": "RTF 文件在桌面版應用程式中使用 LibreOffice 處理。"
+      },
+      "pptx": {
+        "noun": "PowerPoint 簡報",
+        "description": "PowerPoint 簡報在桌面版應用程式中使用 Docling 或 LibreOffice 處理。"
+      },
+      "xlsx": {
+        "noun": "Excel 活頁簿",
+        "description": "Excel 活頁簿在桌面版應用程式中使用 Docling 或 LibreOffice 處理。"
+      },
+      "doc": {
+        "noun": "舊版 Word 文件",
+        "description": "舊版 Word 文件在桌面版應用程式中使用 LibreOffice 處理。"
+      },
+      "xls": {
+        "noun": "舊版 Excel 活頁簿",
+        "description": "舊版 Excel 活頁簿在桌面版應用程式中使用 LibreOffice 處理。"
+      },
+      "ppt": {
+        "noun": "舊版 PowerPoint 簡報",
+        "description": "舊版 PowerPoint 簡報在桌面版應用程式中使用 LibreOffice 處理。"
+      },
+      "ods": {
+        "noun": "OpenDocument 試算表",
+        "description": "OpenDocument 試算表在桌面版應用程式中使用 LibreOffice 處理。"
+      },
+      "odp": {
+        "noun": "OpenDocument 簡報",
+        "description": "OpenDocument 簡報在桌面版應用程式中使用 LibreOffice 處理。"
+      },
+      "png": {
+        "noun": "PNG 圖片",
+        "description": "從圖片擷取文字需要桌面版應用程式中的 Docling 引擎套件。"
+      },
+      "jpeg": {
+        "noun": "JPEG 圖片",
+        "description": "從圖片擷取文字需要桌面版應用程式中的 Docling 引擎套件。"
+      },
+      "webp": {
+        "noun": "WebP 圖片",
+        "description": "從圖片擷取文字需要桌面版應用程式中的 Docling 引擎套件。"
+      },
+      "tiff": {
+        "noun": "TIFF 圖片",
+        "description": "從圖片擷取文字需要桌面版應用程式中的 Docling 引擎套件。"
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}：在瀏覽器中私密轉換文件",
+      "site_description": "在你自己的裝置上轉換 Markdown、HTML 與結構化 JSON。預設保護隱私，每條路徑都有品質測量，並已為 AI 代理程式做好準備。",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "跳到主要內容",
+      "home_link": "{site} 首頁",
+      "nav_label": "主選單",
+      "nav": {
+        "converter": "轉換器",
+        "formats": "格式",
+        "quality": "品質",
+        "download": "下載",
+        "privacy": "隱私權"
+      },
+      "footer": {
+        "license": "AriadShift 是採用 Apache-2.0 授權的開放原始碼軟體。",
+        "privacy": "隱私權",
+        "licenses": "授權條款",
+        "quality": "品質",
+        "source": "原始碼"
+      },
+      "language": {
+        "label": "語言",
+        "button": "語言：{name}",
+        "list_label": "選擇語言",
+        "community_badge": "社群翻譯",
+        "community_note": "社群翻譯為機器翻譯的草稿，仍可由使用者修正。"
+      }
+    },
+    "not_found": {
+      "title": "找不到頁面",
+      "body": "此頁面不存在。",
+      "home_link": "回到首頁"
+    },
+    "home": {
+      "meta_title": "在你自己的裝置上轉換文件",
+      "title": "在你自己的裝置上轉換文件",
+      "lede": "AriadShift 直接在你的瀏覽器中轉換 Markdown、HTML、Word、EPUB 與結構化 JSON。也能在你的裝置上讀取數位 PDF 文字並建立 PDF。一個根據實測數據運作的規劃器，無需上傳。",
+      "open_converter": "開啟轉換器",
+      "install_cli": "安裝 CLI",
+      "why_heading": "為什麼選擇 AriadShift",
+      "why": {
+        "private": {
+          "title": "預設即為私密",
+          "body": "轉換器透過 WebAssembly 在你的瀏覽器內執行。你的文件儲存在瀏覽器的私有檔案系統中，絕不會被上傳。"
+        },
+        "quality": {
+          "title": "品質可測量",
+          "body": "每條路徑都附有來自公開基準測試的擬真度與可編輯性評分。規劃器會選出最佳路徑，並告訴你原因。"
+        },
+        "agents": {
+          "title": "為 AI 代理程式做好準備",
+          "body": "將文件轉為適合 LLM 脈絡的乾淨 Markdown 或結構化 JSON。CLI 內建 MCP 伺服器，代理程式可以自行轉換檔案。"
+        }
+      },
+      "how_heading": "運作方式",
+      "how": {
+        "step_label": "步驟 {number}",
+        "step_1": "你選擇一個檔案，瀏覽器會將其複製到自己的私有檔案系統中。",
+        "step_2": "背景工作執行緒會載入編譯為 WebAssembly 的 AriadShift 引擎。",
+        "step_3": "規劃器會為你的目標選擇實測分數最高的路徑。",
+        "step_4": "你下載轉換結果。重新開始會刪除所有已儲存的檔案。"
+      },
+      "pairs_heading": "在瀏覽器中轉換",
+      "pair_link": "{from}轉{to}",
+      "see_more": "查看所有<formats>支援的格式</formats>，以及每條路徑的<quality>實測品質</quality>。"
+    },
+    "formats": {
+      "meta_title": "支援的格式",
+      "meta_description": "AriadShift 可讀取與寫入哪些文件格式，以及哪些轉換會在瀏覽器中執行。",
+      "title": "支援的格式",
+      "lede": "每次轉換都會經過 AriadShift 的文件模型。標示為「瀏覽器」的格式完全在此裝置上轉換；其他格式目前需要使用命令列工具。",
+      "badge_browser": "瀏覽器與 CLI",
+      "badge_cli": "CLI",
+      "extensions": "副檔名：{list}",
+      "engines": "讀取引擎：{readers}；寫入引擎：{writers}。",
+      "no_engine": "尚無引擎",
+      "convert_to": "可轉換為：<targets></targets>"
+    },
+    "quality": {
+      "meta_title": "實測品質",
+      "meta_description": "AriadShift 每個轉換步驟的擬真度、可編輯性與速度，皆由公開基準測試產生。",
+      "title": "實測品質",
+      "lede": "這些分數並非人工填寫。基準測試會讓 {count, plural, other {# 份公開測試文件}}經過每個步驟的轉換，並將結果與已知的標準答案比對。規劃器選擇路徑時讀取的也是同樣的數字。",
+      "generated": "{pandoc, select, none {產生於 {date}。} other {產生於 {date}，使用 Pandoc {pandoc}。}}",
+      "methodology": "<link>閱讀評測方法</link>。",
+      "caption": "各轉換步驟的基準測試分數",
+      "column": {
+        "step": "步驟",
+        "engine": "引擎",
+        "runs_in": "執行環境",
+        "fidelity": "擬真度",
+        "editability": "可編輯性",
+        "median_time": "中位數耗時",
+        "samples": "樣本數"
+      }
+    },
+    "route": {
+      "label": "轉換路徑",
+      "then": "接著",
+      "fidelity": "擬真度",
+      "editability": "可編輯性",
+      "estimated_time": "預估耗時",
+      "unmeasured": "此路徑的一部分尚未經過基準測試，因此規劃器會審慎地為其評分。"
+    },
+    "download": {
+      "meta_title": "下載",
+      "meta_description": "在 macOS、Linux 與 Windows 上安裝 AriadShift 命令列工具與 MCP 伺服器。",
+      "title": "下載 AriadShift",
+      "lede": "<code>ashift</code> 指令可在你的電腦上轉換 Markdown、HTML、DOCX 與 EPUB，並為 AI 代理程式執行 MCP 伺服器。DOCX 與 EPUB 路徑會將 <pandoc>Pandoc 3.12 或更新版本</pandoc>作為獨立程式使用。",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew（macOS 與 Linux）",
+          "note": "formula 發布後即可使用。同時會安裝 DOCX 與 EPUB 路徑所需的 Pandoc。"
+        },
+        "shell": {
+          "title": "Shell 安裝程式（macOS 與 Linux）"
+        },
+        "powershell": {
+          "title": "PowerShell 安裝程式（Windows）"
+        },
+        "winget": {
+          "title": "WinGet（Windows）",
+          "note": "套件提交通過審核後即可使用。"
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "crate 發布到 crates.io 後即可使用。"
+        }
+      },
+      "then_heading": "接下來",
+      "releases": "適用於各平台的壓縮檔可在 <link>GitHub Releases</link> 取得。",
+      "desktop": {
+        "title": "桌面版應用程式",
+        "body": "支援批次轉換與資料夾監看的 macOS、Windows 與 Linux 桌面版應用程式正在開發中。首個版本推出後會列在這裡。"
+      }
+    },
+    "pair": {
+      "meta_title": "將 {from} 轉換為 {to}",
+      "meta_description_browser": "使用 AriadShift 在瀏覽器中私密地將{noun}轉換為 {to}。擬真度經過測量，無需上傳。",
+      "meta_description_cli": "使用 AriadShift 在你自己的電腦上將{noun}轉換為 {to}。擬真度經過測量，無需上傳。",
+      "badge_browser": "在瀏覽器中執行",
+      "badge_cli": "透過 AriadShift CLI 執行",
+      "title": "將 {from} 轉換為 {to}",
+      "lede_browser": "不需上傳，即可將{noun}轉換為 {to}。AriadShift 會在瀏覽器中讀取檔案，將其對應到文件模型，並在你的裝置上寫出 {to}。",
+      "lede_cli": "使用免費的 AriadShift 命令列工具，在你自己的電腦上將{noun}轉換為 {to}。瀏覽器版本目前尚未支援這條路徑。",
+      "convert_now": "立即將 {from} 轉換為 {to}",
+      "install_cli": "安裝 CLI",
+      "route_heading": "AriadShift 採用的路徑",
+      "from_heading": "來源格式：{format}",
+      "to_heading": "目標格式：{format}",
+      "cli_heading": "透過命令列",
+      "related_heading": "相關轉換",
+      "related_link": "{from}轉{to}"
+    },
+    "converter_page": {
+      "meta_title": "轉換器",
+      "meta_description": "在瀏覽器中轉換 Markdown、HTML、DOCX、EPUB、數位 PDF 與 AriadShift IR JSON。檔案始終留在你的裝置上。",
+      "title": "轉換文件",
+      "lede": "選擇檔案、選定目標格式，然後下載結果。所有操作都在此分頁內完成{cloud, select, yes {，除非你選擇在雲端轉換此檔案。} other {。}}"
+    },
+    "licenses": {
+      "meta_title": "授權條款",
+      "meta_description": "AriadShift 及其瀏覽器引擎的授權條款與原始碼。"
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "雲端模式意外停止",
+        "stopped_body": "上傳開始後，雲端模式發生錯誤。伺服器上的副本會在保留期限結束時自動刪除，你也可以改在此裝置上轉換。",
+        "load_title": "無法載入雲端模式",
+        "load_body": "無法載入雲端轉換器（例如因為你處於離線狀態）。你仍然可以在此裝置上轉換。",
+        "use_device": "在此裝置上轉換"
+      },
+      "status": {
+        "deleted_from_server": "已從伺服器刪除 {name}。",
+        "reading": "正在此裝置上讀取 {name}。",
+        "detected": "{name} 是 {format}。",
+        "read_failed": "無法讀取該檔案。",
+        "converting": "正在此裝置上轉換為 {format}。",
+        "ready": "{name} 已可下載。",
+        "convert_failed": "轉換失敗。",
+        "saved": "已儲存 {name}。",
+        "reset": "{outcome, select, deleted {已從此裝置與伺服器移除檔案。} kept {已從此裝置移除檔案。{name} 仍保留在伺服器上。} other {已從此裝置移除檔案。}}",
+        "cloud_selected": "已為 {name} 選擇雲端轉換。目前尚未上傳任何內容。",
+        "cloud_selected_unnamed": "已為此檔案選擇雲端轉換。目前尚未上傳任何內容。"
+      },
+      "device": {
+        "cloud": "<strong>已選擇雲端轉換。</strong>只有當你選擇「上傳並轉換」時，此檔案才會離開你的瀏覽器。",
+        "local": "<strong>在此裝置上處理。</strong>檔案不會離開你的瀏覽器，也不會被上傳。"
+      },
+      "storage_badge": "{storage, select, opfs {瀏覽器私有儲存空間} other {記憶體中}}",
+      "memory": {
+        "title": "此瀏覽器不支援裝置端檔案儲存",
+        "body": "檔案將改為保存在記憶體中，因此支援最大 {limit} 的輸入。無論哪種方式，都不會上傳任何內容。"
+      },
+      "error": {
+        "title": "{code, select, no_route {此處無法使用} engine_integrity {引擎完整性檢查失敗} other {發生問題}}"
+      },
+      "handoff": {
+        "title": "在桌面版應用程式中繼續",
+        "reason": "{reason, select, ocr {部分頁面需要 OCR 才能擷取全部文字。} other {此文件需要瀏覽器無法提供的引擎或更多記憶體。}}",
+        "picker": "桌面版應用程式會開啟檔案選擇器。請重新選擇此文件；瀏覽器不會傳送該檔案。",
+        "open": "在桌面版開啟",
+        "cloud_alternative": "或者在你確認上傳後，在 {host} 上轉換。",
+        "cloud_button": "在雲端處理"
+      },
+      "drop": {
+        "button": "選擇檔案",
+        "button_busy": "正在讀取…",
+        "label": "要轉換的文件",
+        "title": "將文件拖放到這裡",
+        "hint": "支援最大 {limit} 的 Markdown、HTML、DOCX、EPUB、數位 PDF 或 IR JSON。檔案會留在此裝置上。"
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · 「{title}」"
+      },
+      "count": {
+        "headings": "標題",
+        "paragraphs": "段落",
+        "tables": "表格",
+        "images": "圖片",
+        "links": "連結",
+        "footnotes": "註腳",
+        "words": "字數"
+      },
+      "unreachable": {
+        "cli": "目前還無法在瀏覽器中轉換 {format}。<link>AriadShift CLI</link> 可在你的電腦上轉換。",
+        "none": "AriadShift 目前還無法轉換 {format}。"
+      },
+      "cloud": {
+        "loading": "正在載入雲端模式…"
+      },
+      "convert": {
+        "title": "轉換",
+        "hint": "規劃器會選擇實測分數最高的路徑。",
+        "target_label": "轉換為",
+        "profile_label": "設定檔",
+        "route_heading": "為什麼選擇這條路徑",
+        "elsewhere": "{formats}{count, plural, other {}}目前需要使用 <link>AriadShift CLI</link>。",
+        "button": "轉換",
+        "button_busy": "正在轉換…",
+        "cancel": "取消"
+      },
+      "result": {
+        "title": "已完成",
+        "summary": "<output>{name}</output> · {size} · 在此裝置上轉換，耗時 {duration}",
+        "download": "下載 {name}"
+      },
+      "start_over": "重新開始並刪除檔案"
+    },
+    "account_meta": {
+      "account": {
+        "title": "帳號",
+        "description": "你的 AriadShift 雲端帳號：個人資料、密碼、密碼金鑰與兩步驟驗證登入。"
+      },
+      "sign_in": {
+        "title": "登入",
+        "description": "登入你的 AriadShift 雲端帳號，或建立新帳號。"
+      },
+      "jobs": {
+        "title": "工作",
+        "description": "查看 AriadShift 雲端轉換的狀態，並下載與刪除結果。"
+      },
+      "api_keys": {
+        "title": "API 金鑰",
+        "description": "建立與撤銷 AriadShift 雲端 API 的 API 金鑰。"
+      }
+    },
+    "account": {
+      "page": {
+        "title": "帳號"
+      },
+      "shell": {
+        "not_configured_title": "尚未設定雲端",
+        "not_configured_body": "此 AriadShift 副本僅在你的裝置上執行。帳號、API 金鑰與雲端工作需要伺服器；其營運者會在建置網站時設定 <code>{api_variable}</code> 與 <code>{auth_variable}</code>。",
+        "not_configured_convert": "你仍然可以<link>在瀏覽器中轉換檔案</link>。",
+        "nav_label": "帳號",
+        "nav": {
+          "account": "帳號",
+          "api_keys": "API 金鑰",
+          "jobs": "工作"
+        },
+        "server": "伺服器：{host}",
+        "signed_in_user": "已登入為 <user>{email}</user>"
+      },
+      "session": {
+        "checking": "正在檢查你的工作階段…",
+        "error_title": "無法檢查你的工作階段",
+        "signed_out": "你尚未登入。"
+      },
+      "actions": {
+        "sign_in": "登入",
+        "try_again": "重試",
+        "cancel": "取消",
+        "done": "完成",
+        "continue": "繼續",
+        "revoke": "撤銷",
+        "copied": "已複製"
+      },
+      "fields": {
+        "name": "名稱",
+        "email": "電子郵件",
+        "password": "密碼",
+        "authentication_code": "驗證碼",
+        "password_hint": "至少 {min} 個字元。"
+      },
+      "dates": {
+        "unknown": "未知日期"
+      },
+      "errors": {
+        "auth_refused": "驗證服務拒絕了該要求。",
+        "service_unreachable": "無法連線到登入服務。請檢查網路連線後再試一次。",
+        "session_ended": "你的工作階段已結束。請重新登入。",
+        "rate_limited": "要求過於頻繁。請稍後再試。",
+        "rate_limited_after": "要求過於頻繁。請在 {seconds} 秒後再試。",
+        "sign_in_unverifiable": "伺服器目前無法驗證你的登入。請稍後再試。",
+        "token_invalid": "登入服務傳回了無效的 API 權杖。",
+        "reauth_required": "刪除帳號前，請重新登入。",
+        "delete_not_allowed": "此伺服器不允許透過網頁應用程式刪除帳號。請聯絡其營運者進行刪除。",
+        "job_gone": "此工作已不在伺服器上。",
+        "file_deleted": "此檔案已被刪除。",
+        "job_conflict": "工作尚未就緒，或其已上傳的檔案已不在伺服器上。",
+        "quota_exceeded": "你已用完目前方案的雲端轉換額度。請在此裝置上轉換，或稍後再試。",
+        "request_failed": "伺服器無法完成該要求。請稍後再試。",
+        "network_unreachable": "無法連線到伺服器。請檢查網路連線後再試一次。",
+        "transfer_incomplete": "傳輸未完成。請再試一次。"
+      },
+      "profile": {
+        "title": "個人資料",
+        "save": "儲存名稱",
+        "saved": "名稱已儲存。",
+        "save_failed": "無法儲存名稱。"
+      },
+      "password": {
+        "title": "密碼",
+        "current": "目前的密碼",
+        "new": "新密碼",
+        "confirm": "確認新密碼",
+        "revoke_others": "登出其他工作階段",
+        "submit": "變更密碼",
+        "mismatch": "兩次輸入的新密碼不一致。",
+        "changed": "密碼已變更。",
+        "changed_revoked": "密碼已變更。其他工作階段已登出。",
+        "failed": "無法變更密碼。"
+      },
+      "passkeys": {
+        "title": "密碼金鑰",
+        "description": "使用裝置的螢幕鎖定或安全金鑰登入，無需密碼。",
+        "load_failed": "無法載入你的密碼金鑰。",
+        "loading": "正在載入密碼金鑰…",
+        "empty": "還沒有密碼金鑰。",
+        "unnamed": "未命名的密碼金鑰",
+        "default_name": "密碼金鑰",
+        "added_on": "新增於 {date}",
+        "remove_label": "移除密碼金鑰 {name}",
+        "remove_button": "移除<hidden>密碼金鑰 {name}</hidden>",
+        "add_button": "新增密碼金鑰",
+        "add_title": "新增密碼金鑰",
+        "add_description": "以裝置或金鑰的名稱為其命名，然後依照瀏覽器的提示操作。",
+        "name_label": "密碼金鑰名稱",
+        "name_placeholder": "例如：公司筆記型電腦",
+        "added": "已新增密碼金鑰。",
+        "add_failed": "未能新增密碼金鑰。",
+        "remove_title": "要移除 {name} 嗎？",
+        "remove_title_unnamed": "要移除此密碼金鑰嗎？",
+        "remove_description": "你將無法再用它登入。你的其他登入方式仍然有效。",
+        "remove_confirm": "移除密碼金鑰",
+        "removed": "已移除 {name}。",
+        "remove_failed": "無法移除密碼金鑰。"
+      },
+      "two_factor": {
+        "title": "兩步驟驗證",
+        "description": "輸入密碼後，要求輸入驗證器應用程式中的驗證碼。",
+        "status_on": "狀態：<badge>已開啟</badge>",
+        "status_off": "狀態：<badge>已關閉</badge>",
+        "enable": "開啟兩步驟驗證",
+        "disable": "關閉兩步驟驗證",
+        "regenerate": "建立新的備用碼",
+        "confirm_password": "請確認你的密碼以繼續。",
+        "enable_failed": "無法開始設定兩步驟驗證。請檢查你的密碼。",
+        "disable_failed": "無法關閉兩步驟驗證。請檢查你的密碼。",
+        "regenerate_failed": "無法建立新的備用碼。請檢查你的密碼。",
+        "verify_failed": "該驗證碼未被接受。請檢查裝置上的時間後再試一次。",
+        "disabled": "兩步驟驗證已關閉。",
+        "enabled": "兩步驟驗證已開啟。",
+        "regenerated": "已建立新的備用碼。舊的備用碼不再有效。",
+        "setup_title": "設定你的驗證器",
+        "setup_description": "將 AriadShift 新增到你的驗證器應用程式，然後輸入它顯示的驗證碼。",
+        "setup_key_intro": "在應用程式中輸入此設定金鑰：",
+        "setup_key_unavailable": "無法使用",
+        "open_in_app": "在此裝置上的驗證器應用程式中開啟",
+        "turn_on": "開啟",
+        "codes_title": "新的備用碼",
+        "backup_intro": "請將這些備用碼保存在安全的地方。如果你遺失了驗證器，每個備用碼可用於登入一次。它們不會再次顯示。",
+        "copy_codes": "複製備用碼",
+        "copy_failed": "複製失敗；請手動選取這些備用碼"
+      },
+      "account_actions": {
+        "title": "工作階段與帳號",
+        "sign_out": "登出",
+        "delete": "刪除帳號",
+        "signed_out": "已登出。",
+        "sign_out_failed": "無法登出。請再試一次。",
+        "deleted": "你的帳號已刪除。",
+        "delete_failed_password": "無法刪除帳號。請檢查你的密碼。",
+        "delete_failed_session": "無法刪除帳號。請重新登入後再試一次。",
+        "delete_note": "刪除帳號會自動撤銷你的 <keys>API 金鑰</keys>。刪除之前，請先刪除你仍保留的<jobs>雲端工作</jobs>。你留下的工作的檔案會在其保留期限結束時被刪除。",
+        "dialog_title": "要刪除你的帳號嗎？",
+        "dialog_description_password": "此操作無法復原。請確認你的密碼以刪除帳號。",
+        "dialog_description_session": "此操作無法復原。請在下方確認，以使用目前的登入工作階段刪除帳號。",
+        "sign_in_again": "重新登入"
+      },
+      "connected_apps": {
+        "title": "已連結的應用程式",
+        "description": "你已授權使用你帳號的應用程式與 MCP 用戶端，以及你註冊的 OAuth 用戶端。",
+        "load_failed": "無法載入你已連結的應用程式。",
+        "loading": "正在載入已連結的應用程式…",
+        "empty": "還沒有已連結的應用程式或已註冊的 OAuth 用戶端。",
+        "scopes_none": "無",
+        "consent_details": "已授權的應用程式 · 權限範圍：{scopes} · 授權於 {date}",
+        "client_details": "已註冊的 OAuth 用戶端（{client_id}）",
+        "client_details_dated": "已註冊的 OAuth 用戶端（{client_id}） · 註冊於 {date}",
+        "revoke_label": "撤銷 {name}",
+        "revoked": "已撤銷 {name}。",
+        "revoke_failed": "無法撤銷存取權。",
+        "revoke_title": "要撤銷 {name} 嗎？",
+        "revoke_consent_description": "撤銷後會立即停止核發新權杖與更新權杖。已核發的已簽署存取權杖（有效期限 15 分鐘）在過期前仍可使用。",
+        "revoke_client_description": "刪除此已註冊的 OAuth 用戶端會撤銷其憑證與授權，並立即停止核發新權杖與更新權杖。已核發的已簽署存取權杖（有效期限 15 分鐘）在過期前仍可使用。"
+      },
+      "api_keys": {
+        "page_title": "API 金鑰",
+        "section_title": "你的金鑰",
+        "section_description": "指令碼與整合服務會在 <code>x-api-key</code> 標頭中帶上金鑰，傳送到 {host}。金鑰會以你的帳號及其方案的權限運作。",
+        "load_failed": "無法載入你的 API 金鑰。",
+        "loading": "正在載入 API 金鑰…",
+        "empty": "還沒有 API 金鑰。",
+        "unnamed": "未命名的金鑰",
+        "disabled": "已停用",
+        "key_details": "建立於 {date} · {expiry}",
+        "never_expires": "永不過期",
+        "expired_on": "已於 {date} 過期",
+        "expires_on": "將於 {date} 過期",
+        "revoke_label": "撤銷 API 金鑰 {name}",
+        "revoke_button": "撤銷<hidden> API 金鑰 {name}</hidden>",
+        "create_button": "建立 API 金鑰",
+        "create_title": "建立 API 金鑰",
+        "create_description": "以將使用該金鑰的指令碼或服務的名稱為其命名。",
+        "name_placeholder": "例如：CI",
+        "expires_after": "有效期限",
+        "lifetime_days": "{days, plural, other {# 天}}",
+        "lifetime_year": "1 年",
+        "lifetime_never": "永不過期",
+        "create_submit": "建立金鑰",
+        "create_failed": "無法建立金鑰。",
+        "created": "已建立 API 金鑰 {name}。",
+        "secret_title": "你的新 API 金鑰",
+        "secret_label": "API 金鑰",
+        "secret_notice": "請立即複製金鑰。它僅以雜湊形式儲存，不會再次顯示。",
+        "copy_key": "複製金鑰",
+        "copy_failed": "複製失敗。請選取金鑰後手動複製。",
+        "revoke_title": "要撤銷 {name} 嗎？",
+        "revoke_description": "使用此金鑰的要求將被立即拒絕。此操作無法復原。",
+        "revoke_confirm": "撤銷金鑰",
+        "revoked": "已撤銷 API 金鑰 {name}。使用它的要求從現在起將被拒絕。",
+        "revoke_failed": "無法撤銷金鑰。"
+      },
+      "jobs": {
+        "title": "工作",
+        "intro_server": "你的帳號在 {host} 上的雲端轉換，可在任何裝置上查看。檔案會保留在 {host} 上，直到被自動刪除，或由你在此處刪除。",
+        "intro_account_browser": "在此瀏覽器中使用你的帳號發起的雲端轉換。此清單僅保存在此裝置上。檔案會保留在 {host} 上，直到被自動刪除，或由你在此處刪除。",
+        "intro_anonymous_browser": "在此瀏覽器中未使用帳號發起的雲端轉換。此清單僅保存在此裝置上。檔案會保留在 {host} 上，直到被自動刪除，或由你在此處刪除。",
+        "signed_out_notice": "正在顯示未使用帳號時的工作。<link>登入</link>後即可查看你帳號的工作。",
+        "loading": "正在載入你的工作…",
+        "list_unsupported": "{host} 目前還無法列出你帳號的工作，因此此頁面顯示的是在此瀏覽器中發起的工作。",
+        "list_error_title": "無法從 {host} 載入你的工作",
+        "list_error_body": "{reason}在此期間，此頁面顯示的是在此瀏覽器中發起的工作。",
+        "count": "{count, plural, other {# 項工作}}",
+        "empty": "還沒有雲端工作。請從<link>轉換器</link>開始。",
+        "show_more": "顯示更多工作",
+        "loading_more": "正在載入更多工作…",
+        "unnamed": "工作 {id}",
+        "forgotten": "已將 {filename} 從此清單中移除。伺服器上的檔案維持不變。",
+        "forgotten_unnamed": "已將該工作從此清單中移除。伺服器上的檔案維持不變。",
+        "status": {
+          "queued": "排隊中",
+          "converting": "轉換中",
+          "converting_stage": "轉換中：{stage}",
+          "retrying": "正在重試（第 {attempt} 次）",
+          "reconnecting": "{step} · 正在重新連線…",
+          "ready": "已就緒",
+          "failed": "失敗",
+          "canceled": "已取消",
+          "deleted": "已刪除",
+          "deleted_expired": "已刪除（已過期）"
+        },
+        "until": {
+          "less_than_minute": "不到 1 分鐘後",
+          "minutes": "{minutes} 分鐘後",
+          "hours": "{hours} 小時後",
+          "hours_minutes": "{hours} 小時 {minutes} 分鐘後"
+        },
+        "expiry": {
+          "deleted_at": "已於 {clock} 自動刪除。",
+          "deleted_from_server": "已從伺服器刪除。輸入檔案與輸出檔案皆已清除。",
+          "being_deleted": "正在刪除。",
+          "deletes_at": "將於 {clock}（{relative}）自動刪除。"
+        },
+        "failure": {
+          "limit_exceeded": "此文件超出了你的方案允許的範圍。請嘗試較小的檔案，或在此裝置上轉換。",
+          "unsupported_route": "此伺服器無法在這些格式之間轉換。請在轉換器中選擇其他目標格式。",
+          "input_io": "無法讀取已上傳的檔案，或該檔案已不在伺服器上。請重新上傳。",
+          "storage": "伺服器無法儲存轉換結果。請稍後再試。",
+          "tool_missing": "此伺服器缺少該路徑所需的引擎。請聯絡其營運者，或選擇其他目標格式。",
+          "other": "轉換失敗。請再試一次，或在此裝置上轉換該檔案。"
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "正在載入狀態…",
+          "try_again": "重試<hidden>以載入 {filename}</hidden>",
+          "technical_details": "技術詳細資料",
+          "warnings": "{count, plural, other {# 則警告}}",
+          "download": "下載 {filename}",
+          "retry_label": "重試 {filename}",
+          "retry_button": "重試<hidden> {filename}</hidden>",
+          "delete_label": "立即從伺服器刪除 {filename}",
+          "delete_button": "立即刪除<hidden>伺服器上的 {filename}</hidden>",
+          "remove_label": "從此清單中移除（{filename}）",
+          "remove_button": "從此清單中移除<hidden>（{filename}）</hidden>",
+          "deleted_note": "已從 {host} 刪除。輸入檔案與輸出檔案皆已清除。",
+          "deleted_announce": "已從 {host} 刪除 {filename}。輸入檔案與輸出檔案皆已清除。",
+          "ready_announce": "{filename} 已轉換完成，可以下載。",
+          "failed_announce": "{filename} 轉換失敗。{reason}",
+          "canceled_announce": "已取消 {filename} 的轉換。",
+          "downloading": "正在下載 {filename}。",
+          "retrying": "正在重試 {filename}。",
+          "retry_conflict": "已上傳的檔案已不在伺服器上。請從轉換器重新上傳。"
+        }
+      },
+      "sign_in": {
+        "title": "登入",
+        "create_title": "建立帳號",
+        "two_factor_title": "兩步驟驗證",
+        "signed_in": "已登入。",
+        "go_to_account": "前往你的帳號",
+        "passkey": "使用密碼金鑰登入",
+        "no_account": "還沒有帳號嗎？<switch>建立帳號</switch>",
+        "have_account": "已經有帳號了嗎？<switch>登入</switch>",
+        "sign_in_failed": "無法登入。請檢查你的電子郵件與密碼。",
+        "passkey_failed": "無法使用密碼金鑰登入。",
+        "code_rejected": "該驗證碼未被接受。請再試一次。",
+        "create_failed": "無法建立帳號。",
+        "passwords_mismatch": "兩次輸入的密碼不一致。",
+        "bot_check": "請完成註冊的機器人驗證後再試一次。",
+        "confirm_password": "確認密碼",
+        "create_account": "建立帳號",
+        "totp_help": "輸入驗證器應用程式中的 6 位數驗證碼。",
+        "backup_help": "輸入你開啟兩步驟驗證時保存的備用碼之一。每個備用碼只能使用一次。",
+        "backup_code": "備用碼",
+        "trust_device": "信任此瀏覽器 30 天",
+        "verify": "驗證",
+        "use_backup": "改用備用碼",
+        "use_authenticator": "改用驗證器驗證碼",
+        "signed_in_user": "你已登入為 <user>{email}</user>。"
+      }
+    }
+  }
+}

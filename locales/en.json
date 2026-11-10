@@ -1,0 +1,730 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Editable",
+        "description": "Real headings, lists and tables you can keep editing."
+      },
+      "faithful": {
+        "label": "Faithful",
+        "description": "Stay as close as possible to the layout."
+      },
+      "fast": {
+        "label": "Fast",
+        "description": "Prefer the quickest route."
+      },
+      "private": {
+        "label": "Private",
+        "description": "Only engines that never leave your device."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift core",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF text reader"
+    },
+    "runtime": {
+      "wasm": "Browser",
+      "local": "CLI and desktop",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "not measured"
+    },
+    "duration": {
+      "under_1_ms": "under 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown document",
+        "description": "CommonMark with GitHub Flavored Markdown: headings, lists, tables, task lists, footnotes and math. The format most AI tools read best."
+      },
+      "html": {
+        "noun": "HTML page",
+        "description": "A standalone HTML5 page. Raw markup in the input is sanitized; scripts and unsafe attributes never reach the output."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR document",
+        "description": "The structured document model every AriadShift route passes through: headings, blocks, tables, assets and metadata as versioned JSON."
+      },
+      "docx": {
+        "noun": "Word document",
+        "description": "Office Open XML documents from Microsoft Word, LibreOffice and Google Docs, read and written through Pandoc."
+      },
+      "epub": {
+        "noun": "EPUB e-book",
+        "description": "EPUB 3 e-books, read and written through Pandoc with reproducible metadata."
+      },
+      "pdf": {
+        "noun": "PDF document",
+        "description": "Digital PDF text is read on this device. PDF output uses Typst and embedded fonts. Scanned pages need OCR in the desktop app."
+      },
+      "odt": {
+        "noun": "OpenDocument text document",
+        "description": "OpenDocument text files use LibreOffice in the desktop app."
+      },
+      "rtf": {
+        "noun": "Rich Text document",
+        "description": "Rich Text documents use LibreOffice in the desktop app."
+      },
+      "pptx": {
+        "noun": "PowerPoint presentation",
+        "description": "PowerPoint presentations use Docling or LibreOffice in the desktop app."
+      },
+      "xlsx": {
+        "noun": "Excel workbook",
+        "description": "Excel workbooks use Docling or LibreOffice in the desktop app."
+      },
+      "doc": {
+        "noun": "legacy Word document",
+        "description": "Legacy Word documents use LibreOffice in the desktop app."
+      },
+      "xls": {
+        "noun": "legacy Excel workbook",
+        "description": "Legacy Excel workbooks use LibreOffice in the desktop app."
+      },
+      "ppt": {
+        "noun": "legacy PowerPoint presentation",
+        "description": "Legacy PowerPoint presentations use LibreOffice in the desktop app."
+      },
+      "ods": {
+        "noun": "OpenDocument spreadsheet",
+        "description": "OpenDocument spreadsheets use LibreOffice in the desktop app."
+      },
+      "odp": {
+        "noun": "OpenDocument presentation",
+        "description": "OpenDocument presentations use LibreOffice in the desktop app."
+      },
+      "png": {
+        "noun": "PNG image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      },
+      "jpeg": {
+        "noun": "JPEG image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      },
+      "webp": {
+        "noun": "WebP image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      },
+      "tiff": {
+        "noun": "TIFF image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: private document conversion in your browser",
+      "site_description": "Convert Markdown, HTML and structured JSON on your own device. Private by default, with measured quality on every route and ready for AI agents.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Skip to content",
+      "home_link": "{site} home",
+      "nav_label": "Main",
+      "nav": {
+        "converter": "Converter",
+        "formats": "Formats",
+        "quality": "Quality",
+        "download": "Download",
+        "privacy": "Privacy"
+      },
+      "footer": {
+        "license": "AriadShift is open source under the Apache-2.0 license.",
+        "privacy": "Privacy",
+        "licenses": "Licences",
+        "quality": "Quality",
+        "source": "Source code"
+      },
+      "language": {
+        "label": "Language",
+        "button": "Language: {name}",
+        "list_label": "Choose a language",
+        "community_badge": "Community translation",
+        "community_note": "Community translations are machine drafts that people can still correct."
+      }
+    },
+    "not_found": {
+      "title": "Page not found",
+      "body": "This page does not exist.",
+      "home_link": "Go to the home page"
+    },
+    "home": {
+      "meta_title": "Convert documents on your own device",
+      "title": "Convert documents on your own device",
+      "lede": "AriadShift converts Markdown, HTML, Word, EPUB and structured JSON right here in your browser. Read digital PDF text and create PDFs on your device. One measured planner, no uploads.",
+      "open_converter": "Open the converter",
+      "install_cli": "Install the CLI",
+      "why_heading": "Why AriadShift",
+      "why": {
+        "private": {
+          "title": "Private by default",
+          "body": "The converter runs inside your browser with WebAssembly. Your document is stored in the browser's private file system and never uploaded."
+        },
+        "quality": {
+          "title": "Measured quality",
+          "body": "Every route carries fidelity and editability scores from a public benchmark. The planner picks the best one and tells you why."
+        },
+        "agents": {
+          "title": "Ready for AI agents",
+          "body": "Turn documents into clean Markdown or structured JSON for LLM context. The CLI ships an MCP server, so agents can convert files themselves."
+        }
+      },
+      "how_heading": "How it works",
+      "how": {
+        "step_label": "Step {number}",
+        "step_1": "You pick a file. The browser copies it into its private file system.",
+        "step_2": "A background worker loads the AriadShift engine compiled to WebAssembly.",
+        "step_3": "The planner chooses the route with the best measured score for your goal.",
+        "step_4": "You download the result. Starting over deletes every stored file."
+      },
+      "pairs_heading": "Convert in your browser",
+      "pair_link": "{from} to {to}",
+      "see_more": "See every <formats>supported format</formats> and the <quality>measured quality</quality> of each route."
+    },
+    "formats": {
+      "meta_title": "Supported formats",
+      "meta_description": "Which document formats AriadShift reads and writes, and which conversions run in your browser.",
+      "title": "Supported formats",
+      "lede": "Every conversion passes through AriadShift's document model. Formats marked “browser” convert entirely on this device; the others need the command-line tool for now.",
+      "badge_browser": "Browser and CLI",
+      "badge_cli": "CLI",
+      "extensions": "Extensions: {list}",
+      "engines": "Read by {readers}; written by {writers}.",
+      "no_engine": "no engine yet",
+      "convert_to": "Convert to: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Measured quality",
+      "meta_description": "Fidelity, editability and speed of every AriadShift conversion step, generated from a public benchmark.",
+      "title": "Measured quality",
+      "lede": "These scores are not hand-written. The benchmark converts {count, plural, one {# public fixture document} other {# public fixture documents}} through every step and compares the result with known truth. The planner reads the same numbers when it picks a route.",
+      "generated": "{pandoc, select, none {Generated on {date}.} other {Generated on {date} with Pandoc {pandoc}.}}",
+      "methodology": "<link>Read the methodology</link>.",
+      "caption": "Benchmark scores per conversion step",
+      "column": {
+        "step": "Step",
+        "engine": "Engine",
+        "runs_in": "Runs in",
+        "fidelity": "Fidelity",
+        "editability": "Editability",
+        "median_time": "Median time",
+        "samples": "Samples"
+      }
+    },
+    "route": {
+      "label": "Conversion route",
+      "then": "then",
+      "fidelity": "Fidelity",
+      "editability": "Editability",
+      "estimated_time": "Estimated time",
+      "unmeasured": "Part of this route has not been benchmarked yet, so the planner scores it cautiously."
+    },
+    "download": {
+      "meta_title": "Download",
+      "meta_description": "Install the AriadShift command-line tool and MCP server on macOS, Linux and Windows.",
+      "title": "Download AriadShift",
+      "lede": "The <code>ashift</code> command converts Markdown, HTML, DOCX and EPUB on your computer and runs an MCP server for AI agents. DOCX and EPUB routes use <pandoc>Pandoc 3.12 or newer</pandoc> as a separate program.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS and Linux)",
+          "note": "Available once the formula is published. Installs Pandoc too, which DOCX and EPUB routes need."
+        },
+        "shell": {
+          "title": "Shell installer (macOS and Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell installer (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Available once the package submission is accepted."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Available once the crates are published to crates.io."
+        }
+      },
+      "then_heading": "Then",
+      "releases": "Archives for every platform are on <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Desktop app",
+        "body": "A desktop app for macOS, Windows and Linux with batch conversion and folder watching is on the way. It will be listed here when the first release is out."
+      }
+    },
+    "pair": {
+      "meta_title": "Convert {from} to {to}",
+      "meta_description_browser": "Convert a {noun} to {to} in your browser, privately, with AriadShift. Measured fidelity, no uploads.",
+      "meta_description_cli": "Convert a {noun} to {to} on your own computer with AriadShift. Measured fidelity, no uploads.",
+      "badge_browser": "Runs in your browser",
+      "badge_cli": "Runs with the AriadShift CLI",
+      "title": "Convert {from} to {to}",
+      "lede_browser": "Turn a {noun} into {to} without uploading it. AriadShift reads the file in your browser, maps it to its document model and writes {to} on your device.",
+      "lede_cli": "Turn a {noun} into {to} on your own computer with the free AriadShift command-line tool. The browser version does not run this route yet.",
+      "convert_now": "Convert {from} to {to} now",
+      "install_cli": "Install the CLI",
+      "route_heading": "The route AriadShift takes",
+      "from_heading": "From {format}",
+      "to_heading": "To {format}",
+      "cli_heading": "From the command line",
+      "related_heading": "Related conversions",
+      "related_link": "{from} to {to}"
+    },
+    "converter_page": {
+      "meta_title": "Converter",
+      "meta_description": "Convert Markdown, HTML, DOCX, EPUB, digital PDF and AriadShift IR JSON in your browser. Files stay on your device.",
+      "title": "Convert a document",
+      "lede": "Choose a file, pick a target and download the result. Everything happens in this tab{cloud, select, yes {, unless you choose to convert this file in the cloud.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licences",
+      "meta_description": "Licences and source for AriadShift and its browser engines."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Cloud mode stopped unexpectedly",
+        "stopped_body": "Cloud mode encountered an error after the upload started. Any server copy is deleted automatically when its retention period ends, or you can convert on this device.",
+        "load_title": "Cloud mode could not load",
+        "load_body": "The cloud converter could not be loaded (for example, because you are offline). You can still convert on this device.",
+        "use_device": "Convert on this device"
+      },
+      "status": {
+        "deleted_from_server": "{name} was deleted from the server.",
+        "deleted_from_server@note": "Live-region announcement. {name} is a file name.",
+        "reading": "Reading {name} on this device.",
+        "detected": "{name} is {format}.",
+        "detected@note": "Live-region announcement after a file is read. {name} is the file name, {format} the detected format name, for example Markdown.",
+        "read_failed": "The file could not be read.",
+        "converting": "Converting to {format} on this device.",
+        "ready": "{name} is ready to download.",
+        "convert_failed": "The conversion failed.",
+        "saved": "Saved {name}.",
+        "reset": "{outcome, select, deleted {Files were removed from this device and from the server.} kept {Files were removed from this device. {name} is still on the server.} other {Files were removed from this device.}}",
+        "reset@note": "Live-region announcement after Start over. {outcome} is the keyword deleted (server copy deleted), kept (server copy could not be deleted, {name} is its file name) or none. Keep the keywords untranslated.",
+        "cloud_selected": "Cloud conversion selected for {name}. Nothing is uploaded yet.",
+        "cloud_selected_unnamed": "Cloud conversion selected for this file. Nothing is uploaded yet."
+      },
+      "device": {
+        "cloud": "<strong>Cloud conversion selected.</strong> This file leaves your browser only when you choose Upload and convert.",
+        "cloud@note": "Upload and convert is the label of a button in the cloud panel.",
+        "local": "<strong>Processed on this device.</strong> Files never leave your browser and are not uploaded."
+      },
+      "storage_badge": "{storage, select, opfs {Private browser storage} other {In memory}}",
+      "storage_badge@note": "Badge showing where on-device files are kept. The keyword opfs means the browser's private origin file system; keep the keywords untranslated.",
+      "memory": {
+        "title": "On-device file storage is not available in this browser",
+        "body": "Files are kept in memory instead, so inputs up to {limit} are supported. Nothing is uploaded either way.",
+        "body@note": "{limit} is a formatted size, for example 16 MB."
+      },
+      "error": {
+        "title": "{code, select, no_route {Not available here} engine_integrity {Engine integrity check failed} other {Something went wrong}}",
+        "title@note": "Title of an error alert. {code} is an error keyword; keep no_route and engine_integrity untranslated."
+      },
+      "handoff": {
+        "title": "Continue in the desktop app",
+        "reason": "{reason, select, ocr {Some pages need OCR to extract all their text.} other {This document needs an engine or more memory than the browser provides.}}",
+        "reason@note": "{reason} is the keyword ocr or engine; keep the keywords untranslated. OCR means optical character recognition.",
+        "picker": "The desktop app opens a file picker. Choose this document again; your browser does not send the file.",
+        "open": "Open in Desktop",
+        "cloud_alternative": "Or convert it on {host}, after you confirm the upload.",
+        "cloud_alternative@note": "{host} is a server host name. A button labelled Process in Cloud follows this sentence.",
+        "cloud_button": "Process in Cloud"
+      },
+      "drop": {
+        "button": "Choose a file",
+        "button_busy": "Reading…",
+        "label": "Document to convert",
+        "title": "Drop a document here",
+        "hint": "Markdown, HTML, DOCX, EPUB, digital PDF or IR JSON up to {limit}. It stays on this device.",
+        "hint@note": "{limit} is a formatted size, for example 16 MB."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary@note": "File size and detected format under the file name. {format} is a format name such as Markdown.",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”",
+        "summary_titled@note": "Same as summary, plus the document title from its metadata in quotation marks."
+      },
+      "count": {
+        "headings": "Headings",
+        "paragraphs": "Paragraphs",
+        "tables": "Tables",
+        "images": "Images",
+        "links": "Links",
+        "footnotes": "Footnotes",
+        "words": "Words"
+      },
+      "unreachable": {
+        "cli": "{format} cannot be converted in the browser yet. <link>The AriadShift CLI</link> converts it on your computer.",
+        "cli@note": "{format} is a format name. The link goes to the download page.",
+        "none": "AriadShift cannot convert {format} yet."
+      },
+      "cloud": {
+        "loading": "Loading cloud mode…"
+      },
+      "convert": {
+        "title": "Convert",
+        "hint": "The planner picks the route with the best measured score.",
+        "target_label": "Convert to",
+        "profile_label": "Profile",
+        "profile_label@note": "Label of the conversion goal selector (Editable, Faithful, Fast, Private).",
+        "route_heading": "Why this route",
+        "elsewhere": "{formats} {count, plural, one {needs} other {need}} the <link>AriadShift CLI</link> for now.",
+        "elsewhere@note": "{formats} is a list of format names; {count} is how many there are. The link goes to the download page.",
+        "button": "Convert",
+        "button_busy": "Converting…",
+        "cancel": "Cancel"
+      },
+      "result": {
+        "title": "Ready",
+        "summary": "<output>{name}</output> · {size} · converted in {duration} on this device",
+        "summary@note": "{name} is the output file name, {size} a formatted size, {duration} a formatted duration such as 12 ms.",
+        "download": "Download {name}"
+      },
+      "start_over": "Start over and delete files"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Account",
+        "description": "Your AriadShift cloud account: profile, password, passkeys and two-factor sign-in."
+      },
+      "sign_in": {
+        "title": "Sign in",
+        "description": "Sign in to your AriadShift cloud account or create one."
+      },
+      "jobs": {
+        "title": "Jobs",
+        "description": "Status, downloads and deletion of your AriadShift cloud conversions."
+      },
+      "api_keys": {
+        "title": "API keys",
+        "description": "Create and revoke API keys for the AriadShift cloud API."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Account"
+      },
+      "shell": {
+        "not_configured_title": "Cloud is not configured",
+        "not_configured_body": "This copy of AriadShift runs on your device only. Accounts, API keys and cloud jobs need a server; its operator sets <code>{api_variable}</code> and <code>{auth_variable}</code> when building the site.",
+        "not_configured_body@note": "{api_variable} and {auth_variable} are environment variable names. Keep them exactly as given.",
+        "not_configured_convert": "You can still <link>convert files in your browser</link>.",
+        "nav_label": "Account",
+        "nav_label@note": "Accessible name of the navigation between the account, API keys and jobs pages.",
+        "nav": {
+          "account": "Account",
+          "api_keys": "API keys",
+          "jobs": "Jobs"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Signed in as <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Checking your session…",
+        "error_title": "Cannot check your session",
+        "signed_out": "You are not signed in."
+      },
+      "actions": {
+        "sign_in": "Sign in",
+        "try_again": "Try again",
+        "cancel": "Cancel",
+        "done": "Done",
+        "continue": "Continue",
+        "revoke": "Revoke",
+        "copied": "Copied"
+      },
+      "fields": {
+        "name": "Name",
+        "email": "Email",
+        "password": "Password",
+        "authentication_code": "Authentication code",
+        "password_hint": "At least {min} characters."
+      },
+      "dates": {
+        "unknown": "an unknown date",
+        "unknown@note": "Inserted in place of a date that cannot be read, for example in \"Added {date}\"."
+      },
+      "errors": {
+        "auth_refused": "The auth service refused the request.",
+        "service_unreachable": "The sign-in service cannot be reached. Check your connection and try again.",
+        "session_ended": "Your session has ended. Sign in again.",
+        "rate_limited": "Too many requests. Try again shortly.",
+        "rate_limited_after": "Too many requests. Try again in {seconds} s.",
+        "rate_limited_after@note": "{seconds} is a whole number of seconds; \"s\" is the unit symbol.",
+        "sign_in_unverifiable": "The server cannot verify your sign-in right now. Try again shortly.",
+        "token_invalid": "The sign-in service returned an invalid API token.",
+        "reauth_required": "Sign in again before deleting your account.",
+        "delete_not_allowed": "This server does not allow deleting accounts from the web app. Ask its operator to delete it.",
+        "job_gone": "This job is no longer on the server.",
+        "file_deleted": "This file was already deleted.",
+        "job_conflict": "The job is not ready, or its uploaded file is no longer on the server.",
+        "quota_exceeded": "You have used your plan's cloud conversions for now. Convert on this device, or try later.",
+        "request_failed": "The server could not complete the request. Try again shortly.",
+        "network_unreachable": "The server cannot be reached. Check your connection and try again.",
+        "transfer_incomplete": "The transfer did not complete. Try again."
+      },
+      "profile": {
+        "title": "Profile",
+        "save": "Save name",
+        "saved": "Name saved.",
+        "save_failed": "Could not save the name."
+      },
+      "password": {
+        "title": "Password",
+        "current": "Current password",
+        "new": "New password",
+        "confirm": "Confirm new password",
+        "revoke_others": "Sign out of other sessions",
+        "submit": "Change password",
+        "mismatch": "The new passwords do not match.",
+        "changed": "Password changed.",
+        "changed_revoked": "Password changed. Other sessions were signed out.",
+        "failed": "Could not change the password."
+      },
+      "passkeys": {
+        "title": "Passkeys",
+        "description": "Sign in with your device's screen lock or a security key instead of a password.",
+        "load_failed": "Could not load your passkeys.",
+        "loading": "Loading passkeys…",
+        "empty": "No passkeys yet.",
+        "unnamed": "Unnamed passkey",
+        "default_name": "Passkey",
+        "added_on": "Added {date}",
+        "remove_label": "Remove passkey {name}",
+        "remove_button": "Remove<hidden> passkey {name}</hidden>",
+        "remove_button@note": "The text inside <hidden> is read only by screen readers.",
+        "add_button": "Add a passkey",
+        "add_title": "Add a passkey",
+        "add_description": "Name it after the device or key, then follow your browser's prompt.",
+        "name_label": "Passkey name",
+        "name_placeholder": "For example: Work laptop",
+        "added": "Passkey added.",
+        "add_failed": "The passkey was not added.",
+        "remove_title": "Remove {name}?",
+        "remove_title_unnamed": "Remove this passkey?",
+        "remove_description": "You can no longer sign in with it. Your other sign-in methods keep working.",
+        "remove_confirm": "Remove passkey",
+        "removed": "{name} removed.",
+        "remove_failed": "Could not remove the passkey."
+      },
+      "two_factor": {
+        "title": "Two-factor authentication",
+        "description": "Ask for a code from an authenticator app after your password.",
+        "status_on": "Status: <badge>On</badge>",
+        "status_off": "Status: <badge>Off</badge>",
+        "enable": "Turn on two-factor authentication",
+        "disable": "Turn off two-factor authentication",
+        "regenerate": "Create new backup codes",
+        "confirm_password": "Confirm your password to continue.",
+        "enable_failed": "Could not start two-factor setup. Check your password.",
+        "disable_failed": "Could not turn off two-factor authentication. Check your password.",
+        "regenerate_failed": "Could not create new backup codes. Check your password.",
+        "verify_failed": "That code was not accepted. Check the time on your device and try again.",
+        "disabled": "Two-factor authentication is off.",
+        "enabled": "Two-factor authentication is on.",
+        "regenerated": "New backup codes created. The old ones no longer work.",
+        "setup_title": "Set up your authenticator",
+        "setup_description": "Add AriadShift to your authenticator app, then enter the code it shows.",
+        "setup_key_intro": "Enter this setup key in the app:",
+        "setup_key_unavailable": "Unavailable",
+        "open_in_app": "Open in an authenticator app on this device",
+        "turn_on": "Turn on",
+        "codes_title": "New backup codes",
+        "backup_intro": "Save these backup codes somewhere safe. Each one signs you in once if you lose your authenticator. They are not shown again.",
+        "copy_codes": "Copy backup codes",
+        "copy_failed": "Copy failed; select the codes instead"
+      },
+      "account_actions": {
+        "title": "Session and account",
+        "sign_out": "Sign out",
+        "delete": "Delete account",
+        "signed_out": "Signed out.",
+        "sign_out_failed": "Could not sign out. Try again.",
+        "deleted": "Your account was deleted.",
+        "delete_failed_password": "Could not delete the account. Check your password.",
+        "delete_failed_session": "Could not delete the account. Sign in again and retry.",
+        "delete_note": "Deleting your account revokes your <keys>API keys</keys> automatically. Before deleting it, delete the <jobs>cloud jobs</jobs> you still have. Files of jobs you leave are removed when their retention period ends.",
+        "dialog_title": "Delete your account?",
+        "dialog_description_password": "This cannot be undone. Confirm your password to delete the account.",
+        "dialog_description_session": "This cannot be undone. Confirm below to delete the account using your current sign-in session.",
+        "sign_in_again": "Sign in again"
+      },
+      "connected_apps": {
+        "title": "Connected apps",
+        "description": "Apps and MCP clients you have authorized to use your account, and OAuth clients you have registered.",
+        "load_failed": "Could not load your connected apps.",
+        "loading": "Loading connected apps…",
+        "empty": "No connected apps or registered OAuth clients yet.",
+        "scopes_none": "none",
+        "consent_details": "Authorized app · Scopes: {scopes} · Authorized {date}",
+        "client_details": "Registered OAuth client ({client_id})",
+        "client_details_dated": "Registered OAuth client ({client_id}) · Registered {date}",
+        "revoke_label": "Revoke {name}",
+        "revoked": "{name} revoked.",
+        "revoke_failed": "Could not revoke access.",
+        "revoke_title": "Revoke {name}?",
+        "revoke_consent_description": "Revoking stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire.",
+        "revoke_client_description": "Deleting this registered OAuth client revokes its credentials and consents and stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire."
+      },
+      "api_keys": {
+        "page_title": "API keys",
+        "section_title": "Your keys",
+        "section_description": "Scripts and integrations send a key in the <code>x-api-key</code> header to {host}. A key acts with your account and its plan.",
+        "section_description@note": "x-api-key is an HTTP header name; keep it exactly as written.",
+        "load_failed": "Could not load your API keys.",
+        "loading": "Loading API keys…",
+        "empty": "No API keys yet.",
+        "unnamed": "Unnamed key",
+        "disabled": "Disabled",
+        "key_details": "Created {date} · {expiry}",
+        "never_expires": "Never expires",
+        "expired_on": "Expired {date}",
+        "expires_on": "Expires {date}",
+        "revoke_label": "Revoke API key {name}",
+        "revoke_button": "Revoke<hidden> API key {name}</hidden>",
+        "revoke_button@note": "The text inside <hidden> is read only by screen readers.",
+        "create_button": "Create API key",
+        "create_title": "Create an API key",
+        "create_description": "Name the key after the script or service that will use it.",
+        "name_placeholder": "For example: CI",
+        "expires_after": "Expires after",
+        "lifetime_days": "{days, plural, one {# day} other {# days}}",
+        "lifetime_year": "1 year",
+        "lifetime_never": "No expiry",
+        "create_submit": "Create key",
+        "create_failed": "Could not create the key.",
+        "created": "API key {name} created.",
+        "secret_title": "Your new API key",
+        "secret_label": "API key",
+        "secret_notice": "Copy the key now. It is stored only as a hash and is never shown again.",
+        "copy_key": "Copy key",
+        "copy_failed": "Copying failed. Select the key and copy it.",
+        "revoke_title": "Revoke {name}?",
+        "revoke_description": "Requests that use this key are refused at once. This cannot be undone.",
+        "revoke_confirm": "Revoke key",
+        "revoked": "API key {name} revoked. Requests that use it are refused from now on.",
+        "revoke_failed": "Could not revoke the key."
+      },
+      "jobs": {
+        "title": "Jobs",
+        "intro_server": "Cloud conversions of your account on {host}, from any device. Files stay on {host} until they are deleted automatically, or until you delete them here.",
+        "intro_account_browser": "Cloud conversions started in this browser with your account. This list is kept on this device only. Files stay on {host} until they are deleted automatically, or until you delete them here.",
+        "intro_anonymous_browser": "Cloud conversions started in this browser without an account. This list is kept on this device only. Files stay on {host} until they are deleted automatically, or until you delete them here.",
+        "signed_out_notice": "Showing jobs without an account. <link>Sign in</link> to see the jobs of your account.",
+        "loading": "Loading your jobs…",
+        "list_unsupported": "{host} cannot list your account's jobs yet, so this page shows the jobs started in this browser.",
+        "list_error_title": "Cannot load your jobs from {host}",
+        "list_error_body": "{reason} Meanwhile, this page shows the jobs started in this browser.",
+        "count": "{count, plural, one {# job} other {# jobs}}",
+        "empty": "No cloud jobs yet. Start one from the <link>converter</link>.",
+        "show_more": "Show more jobs",
+        "loading_more": "Loading more jobs…",
+        "unnamed": "Job {id}",
+        "unnamed@note": "Name shown for a job whose file name is unknown; {id} is the first 8 characters of the job id.",
+        "forgotten": "{filename} was removed from this list. Its files on the server are unchanged.",
+        "forgotten_unnamed": "The job was removed from this list. Its files on the server are unchanged.",
+        "status": {
+          "queued": "Queued",
+          "converting": "Converting",
+          "converting_stage": "Converting: {stage}",
+          "retrying": "Retrying (attempt {attempt})",
+          "reconnecting": "{step} · Reconnecting…",
+          "reconnecting@note": "{step} is the job's current step, for example \"Queued\" or \"Converting\"; the page is polling because the live stream dropped.",
+          "ready": "Ready",
+          "failed": "Failed",
+          "canceled": "Canceled",
+          "deleted": "Deleted",
+          "deleted_expired": "Deleted (expired)"
+        },
+        "until": {
+          "less_than_minute": "in less than a minute",
+          "minutes": "in {minutes} min",
+          "hours": "in {hours} h",
+          "hours_minutes": "in {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Deleted automatically at {clock}.",
+          "deleted_from_server": "Deleted from the server. The input and output files are gone.",
+          "being_deleted": "Being deleted now.",
+          "deletes_at": "Deletes automatically at {clock} ({relative}).",
+          "deletes_at@note": "{clock} is a clock time or a date and time; {relative} is a phrase such as \"in 58 min\"."
+        },
+        "failure": {
+          "limit_exceeded": "This document needs more than your plan allows. Try a smaller file, or convert it on this device.",
+          "unsupported_route": "This server cannot convert between these formats. Pick another target in the converter.",
+          "input_io": "The uploaded file could not be read or is no longer on the server. Upload it again.",
+          "storage": "The server could not store the result. Try again in a moment.",
+          "tool_missing": "This server is missing the engine the route needs. Ask its operator, or pick another target.",
+          "other": "The conversion failed. Try again, or convert the file on this device."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "route@note": "Source and target format of a job; the arrow points from source to target.",
+          "loading_status": "Loading status…",
+          "try_again": "Try again<hidden> to load {filename}</hidden>",
+          "technical_details": "Technical details",
+          "warnings": "{count, plural, one {# warning} other {# warnings}}",
+          "download": "Download {filename}",
+          "retry_label": "Retry {filename}",
+          "retry_button": "Retry<hidden> {filename}</hidden>",
+          "delete_label": "Delete now {filename} from the server",
+          "delete_button": "Delete now<hidden> {filename} from the server</hidden>",
+          "remove_label": "Remove from this list ({filename})",
+          "remove_button": "Remove from this list<hidden> ({filename})</hidden>",
+          "deleted_note": "Deleted from {host}. The input and output files are gone.",
+          "deleted_announce": "Deleted {filename} from {host}. The input and output files are gone.",
+          "ready_announce": "{filename} is converted and ready to download.",
+          "failed_announce": "Conversion of {filename} failed. {reason}",
+          "canceled_announce": "The conversion of {filename} was canceled.",
+          "downloading": "Downloading {filename}.",
+          "retrying": "Retrying {filename}.",
+          "retry_conflict": "The uploaded file is no longer on the server. Upload it again from the converter."
+        }
+      },
+      "sign_in": {
+        "title": "Sign in",
+        "create_title": "Create an account",
+        "two_factor_title": "Two-factor check",
+        "signed_in": "Signed in.",
+        "go_to_account": "Go to your account",
+        "passkey": "Sign in with a passkey",
+        "no_account": "No account yet? <switch>Create one</switch>",
+        "have_account": "Already have an account? <switch>Sign in</switch>",
+        "sign_in_failed": "Could not sign in. Check your email and password.",
+        "passkey_failed": "Could not sign in with a passkey.",
+        "code_rejected": "That code was not accepted. Try again.",
+        "create_failed": "Could not create the account.",
+        "passwords_mismatch": "The passwords do not match.",
+        "bot_check": "Complete the signup bot check and try again.",
+        "confirm_password": "Confirm password",
+        "create_account": "Create account",
+        "totp_help": "Enter the 6-digit code from your authenticator app.",
+        "backup_help": "Enter one of the backup codes you saved when you turned on two-factor authentication. Each code works once.",
+        "backup_code": "Backup code",
+        "trust_device": "Trust this browser for 30 days",
+        "verify": "Verify",
+        "use_backup": "Use a backup code instead",
+        "use_authenticator": "Use an authenticator code instead",
+        "signed_in_user": "You are signed in as <user>{email}</user>."
+      }
+    }
+  },
+  "legal": {
+    "privacy": {
+      "meta_title": "Privacy",
+      "meta_description": "What the AriadShift website does with your documents: nothing leaves your device.",
+      "title": "Privacy",
+      "lede": "The converter on this website runs entirely in your browser. This page explains what that means in practice.",
+      "documents_heading": "Your documents stay on your device",
+      "documents_storage": "When you choose a file, the browser copies it into its origin private file system, a storage area that only this website can read and that is not part of your regular files. The conversion runs in a background worker using WebAssembly. The file is never sent to a server, and the converted file is written to the same private storage, from which you download it. Each open tab keeps its files in its own folder there.",
+      "documents_memory": "If your browser cannot provide that storage, the files are held in the worker's memory instead and disappear when you close the tab.",
+      "deleting_heading": "Deleting your files",
+      "deleting_body": "“Start over and delete files” removes the input and output from the private storage at once. Files of a tab you close without starting over stay in that storage until you next open the converter, which deletes them on start. Clearing this site's data in your browser settings removes them as well.",
+      "tracking_heading": "No tracking",
+      "tracking_body": "The website sets no cookies, loads no analytics or advertising scripts and makes no requests to other sites. A service worker caches the converter so it keeps working offline; it stores only the website's own code. Your theme choice is kept in local storage.",
+      "hosting_heading": "Hosting",
+      "hosting_body": "Like any website, the server that delivers these pages may keep standard access logs (IP address, time, requested URL). Those requests never include your documents."
+    }
+  }
+}

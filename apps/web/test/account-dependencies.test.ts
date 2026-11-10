@@ -10,7 +10,7 @@ const webRoot = path.join(import.meta.dirname, "..");
 const lockfile = path.join(webRoot, "../../pnpm-lock.yaml");
 const accountSources = [
   path.join(webRoot, "src/components/account"),
-  path.join(webRoot, "src/app/(account)"),
+  path.join(webRoot, "src/app/[locale]/(account)"),
 ];
 
 function sourceFiles(directory: string): string[] {

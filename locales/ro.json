@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Editabil",
+        "description": "Titluri, liste și tabele reale pe care le puteți edita în continuare."
+      },
+      "faithful": {
+        "label": "Fidel",
+        "description": "Rămâne cât mai aproape de aspectul original."
+      },
+      "fast": {
+        "label": "Rapid",
+        "description": "Preferă cea mai rapidă rută."
+      },
+      "private": {
+        "label": "Privat",
+        "description": "Doar motoare care nu părăsesc niciodată dispozitivul dvs."
+      }
+    },
+    "engine": {
+      "ariad_core": "Nucleul AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Cititor de text PDF"
+    },
+    "runtime": {
+      "wasm": "Browser",
+      "local": "CLI și desktop",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "nemăsurat"
+    },
+    "duration": {
+      "under_1_ms": "sub 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "document Markdown",
+        "description": "CommonMark cu GitHub Flavored Markdown: titluri, liste, tabele, liste de sarcini, note de subsol și matematică. Formatul pe care îl citesc cel mai bine instrumentele de IA."
+      },
+      "html": {
+        "noun": "pagină HTML",
+        "description": "O pagină HTML5 independentă. Codul brut din intrare este curățat; scripturile și atributele nesigure nu ajung niciodată în ieșire."
+      },
+      "ir_json": {
+        "noun": "document AriadShift IR",
+        "description": "Modelul de document structurat prin care trece fiecare rută AriadShift: titluri, blocuri, tabele, resurse și metadate ca JSON versionat."
+      },
+      "docx": {
+        "noun": "document Word",
+        "description": "Documente Office Open XML din Microsoft Word, LibreOffice și Google Docs, citite și scrise prin Pandoc."
+      },
+      "epub": {
+        "noun": "carte electronică EPUB",
+        "description": "Cărți electronice EPUB 3, citite și scrise prin Pandoc cu metadate reproductibile."
+      },
+      "pdf": {
+        "noun": "document PDF",
+        "description": "Textul PDF-urilor digitale este citit pe acest dispozitiv. Ieșirea PDF folosește Typst și fonturi încorporate. Paginile scanate necesită OCR în aplicația desktop."
+      },
+      "odt": {
+        "noun": "document text OpenDocument",
+        "description": "Fișierele text OpenDocument folosesc LibreOffice în aplicația desktop."
+      },
+      "rtf": {
+        "noun": "document Rich Text",
+        "description": "Documentele Rich Text folosesc LibreOffice în aplicația desktop."
+      },
+      "pptx": {
+        "noun": "prezentare PowerPoint",
+        "description": "Prezentările PowerPoint folosesc Docling sau LibreOffice în aplicația desktop."
+      },
+      "xlsx": {
+        "noun": "registru Excel",
+        "description": "Registrele Excel folosesc Docling sau LibreOffice în aplicația desktop."
+      },
+      "doc": {
+        "noun": "document Word vechi",
+        "description": "Documentele Word vechi folosesc LibreOffice în aplicația desktop."
+      },
+      "xls": {
+        "noun": "registru Excel vechi",
+        "description": "Registrele Excel vechi folosesc LibreOffice în aplicația desktop."
+      },
+      "ppt": {
+        "noun": "prezentare PowerPoint veche",
+        "description": "Prezentările PowerPoint vechi folosesc LibreOffice în aplicația desktop."
+      },
+      "ods": {
+        "noun": "foaie de calcul OpenDocument",
+        "description": "Foile de calcul OpenDocument folosesc LibreOffice în aplicația desktop."
+      },
+      "odp": {
+        "noun": "prezentare OpenDocument",
+        "description": "Prezentările OpenDocument folosesc LibreOffice în aplicația desktop."
+      },
+      "png": {
+        "noun": "imagine PNG",
+        "description": "Extragerea textului din imagini necesită pachetul de motor Docling în aplicația desktop."
+      },
+      "jpeg": {
+        "noun": "imagine JPEG",
+        "description": "Extragerea textului din imagini necesită pachetul de motor Docling în aplicația desktop."
+      },
+      "webp": {
+        "noun": "imagine WebP",
+        "description": "Extragerea textului din imagini necesită pachetul de motor Docling în aplicația desktop."
+      },
+      "tiff": {
+        "noun": "imagine TIFF",
+        "description": "Extragerea textului din imagini necesită pachetul de motor Docling în aplicația desktop."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: conversie privată a documentelor în browser",
+      "site_description": "Convertiți Markdown, HTML și JSON structurat pe propriul dispozitiv. Privat în mod implicit, cu calitate măsurată pe fiecare rută și gata pentru agenții IA.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Salt la conținut",
+      "home_link": "Pagina de start {site}",
+      "nav_label": "Principal",
+      "nav": {
+        "converter": "Convertor",
+        "formats": "Formate",
+        "quality": "Calitate",
+        "download": "Descărcare",
+        "privacy": "Confidențialitate"
+      },
+      "footer": {
+        "license": "AriadShift este open source sub licența Apache-2.0.",
+        "privacy": "Confidențialitate",
+        "licenses": "Licențe",
+        "quality": "Calitate",
+        "source": "Cod sursă"
+      },
+      "language": {
+        "label": "Limbă",
+        "button": "Limbă: {name}",
+        "list_label": "Alegeți o limbă",
+        "community_badge": "Traducere comunitară",
+        "community_note": "Traducerile comunitare sunt ciorne automate pe care oamenii le pot corecta în continuare."
+      }
+    },
+    "not_found": {
+      "title": "Pagina nu a fost găsită",
+      "body": "Această pagină nu există.",
+      "home_link": "Mergeți la pagina de start"
+    },
+    "home": {
+      "meta_title": "Convertiți documente pe propriul dispozitiv",
+      "title": "Convertiți documente pe propriul dispozitiv",
+      "lede": "AriadShift convertește Markdown, HTML, Word, EPUB și JSON structurat chiar aici, în browser. Citiți textul din PDF-uri digitale și creați PDF-uri pe dispozitivul dvs. Un singur planificator măsurat, fără încărcări.",
+      "open_converter": "Deschideți convertorul",
+      "install_cli": "Instalați CLI",
+      "why_heading": "De ce AriadShift",
+      "why": {
+        "private": {
+          "title": "Privat în mod implicit",
+          "body": "Convertorul rulează în browserul dvs. cu WebAssembly. Documentul este stocat în sistemul de fișiere privat al browserului și nu este încărcat niciodată."
+        },
+        "quality": {
+          "title": "Calitate măsurată",
+          "body": "Fiecare rută are scoruri de fidelitate și editabilitate dintr-un benchmark public. Planificatorul o alege pe cea mai bună și vă spune de ce."
+        },
+        "agents": {
+          "title": "Gata pentru agenți IA",
+          "body": "Transformați documentele în Markdown curat sau JSON structurat pentru contextul LLM. CLI include un server MCP, astfel încât agenții să poată converti fișiere singuri."
+        }
+      },
+      "how_heading": "Cum funcționează",
+      "how": {
+        "step_label": "Pasul {number}",
+        "step_1": "Alegeți un fișier. Browserul îl copiază în sistemul său de fișiere privat.",
+        "step_2": "Un worker în fundal încarcă motorul AriadShift compilat în WebAssembly.",
+        "step_3": "Planificatorul alege ruta cu cel mai bun scor măsurat pentru obiectivul dvs.",
+        "step_4": "Descărcați rezultatul. Începerea de la zero șterge toate fișierele stocate."
+      },
+      "pairs_heading": "Convertiți în browser",
+      "pair_link": "{from} în {to}",
+      "see_more": "Vedeți fiecare <formats>format acceptat</formats> și <quality>calitatea măsurată</quality> a fiecărei rute."
+    },
+    "formats": {
+      "meta_title": "Formate acceptate",
+      "meta_description": "Ce formate de documente citește și scrie AriadShift și ce conversii rulează în browser.",
+      "title": "Formate acceptate",
+      "lede": "Fiecare conversie trece prin modelul de document al AriadShift. Formatele marcate „browser” se convertesc integral pe acest dispozitiv; celelalte necesită deocamdată instrumentul în linie de comandă.",
+      "badge_browser": "Browser și CLI",
+      "badge_cli": "CLI",
+      "extensions": "Extensii: {list}",
+      "engines": "Citit de {readers}; scris de {writers}.",
+      "no_engine": "încă nu există motor",
+      "convert_to": "Convertiți în: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Calitate măsurată",
+      "meta_description": "Fidelitatea, editabilitatea și viteza fiecărui pas de conversie AriadShift, generate dintr-un benchmark public.",
+      "title": "Calitate măsurată",
+      "lede": "Aceste scoruri nu sunt scrise de mână. Benchmark-ul convertește {count, plural, one {# document public de test} few {# documente publice de test} other {# de documente publice de test}} prin fiecare pas și compară rezultatul cu adevărul cunoscut. Planificatorul citește aceleași numere când alege o rută.",
+      "generated": "{pandoc, select, none {Generat la {date}.} other {Generat la {date} cu Pandoc {pandoc}.}}",
+      "methodology": "<link>Citiți metodologia</link>.",
+      "caption": "Scoruri benchmark pe pas de conversie",
+      "column": {
+        "step": "Pas",
+        "engine": "Motor",
+        "runs_in": "Rulează în",
+        "fidelity": "Fidelitate",
+        "editability": "Editabilitate",
+        "median_time": "Timp median",
+        "samples": "Eșantioane"
+      }
+    },
+    "route": {
+      "label": "Rută de conversie",
+      "then": "apoi",
+      "fidelity": "Fidelitate",
+      "editability": "Editabilitate",
+      "estimated_time": "Timp estimat",
+      "unmeasured": "O parte din această rută nu a fost încă măsurată, așa că planificatorul o notează prudent."
+    },
+    "download": {
+      "meta_title": "Descărcare",
+      "meta_description": "Instalați instrumentul în linie de comandă AriadShift și serverul MCP pe macOS, Linux și Windows.",
+      "title": "Descărcați AriadShift",
+      "lede": "Comanda <code>ashift</code> convertește Markdown, HTML, DOCX și EPUB pe calculatorul dvs. și rulează un server MCP pentru agenți IA. Rutele DOCX și EPUB folosesc <pandoc>Pandoc 3.12 sau mai nou</pandoc> ca program separat.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS și Linux)",
+          "note": "Disponibil după publicarea formulei. Instalează și Pandoc, necesar rutelor DOCX și EPUB."
+        },
+        "shell": {
+          "title": "Program de instalare shell (macOS și Linux)"
+        },
+        "powershell": {
+          "title": "Program de instalare PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Disponibil după acceptarea trimiterii pachetului."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Disponibil după publicarea crate-urilor pe crates.io."
+        }
+      },
+      "then_heading": "Apoi",
+      "releases": "Arhivele pentru fiecare platformă sunt pe <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Aplicație desktop",
+        "body": "O aplicație desktop pentru macOS, Windows și Linux, cu conversie în lot și monitorizare de dosare, este în pregătire. Va fi listată aici când apare prima versiune."
+      }
+    },
+    "pair": {
+      "meta_title": "Convertiți {from} în {to}",
+      "meta_description_browser": "Convertiți în browser, privat, cu AriadShift: {noun} → {to}. Fidelitate măsurată, fără încărcări.",
+      "meta_description_cli": "Convertiți pe propriul calculator cu AriadShift: {noun} → {to}. Fidelitate măsurată, fără încărcări.",
+      "badge_browser": "Rulează în browserul dvs.",
+      "badge_cli": "Rulează cu AriadShift CLI",
+      "title": "Convertiți {from} în {to}",
+      "lede_browser": "Faceți această conversie fără încărcare: {noun} → {to}. AriadShift citește fișierul în browser, îl mapează pe modelul său de document și scrie ieșirea {to} pe dispozitivul dvs.",
+      "lede_cli": "Faceți această conversie pe propriul calculator cu instrumentul gratuit în linie de comandă AriadShift: {noun} → {to}. Versiunea pentru browser nu rulează încă această rută.",
+      "convert_now": "Convertiți {from} în {to} acum",
+      "install_cli": "Instalați CLI",
+      "route_heading": "Ruta pe care o urmează AriadShift",
+      "from_heading": "Din {format}",
+      "to_heading": "În {format}",
+      "cli_heading": "Din linia de comandă",
+      "related_heading": "Conversii înrudite",
+      "related_link": "{from} în {to}"
+    },
+    "converter_page": {
+      "meta_title": "Convertor",
+      "meta_description": "Convertiți Markdown, HTML, DOCX, EPUB, PDF digital și AriadShift IR JSON în browser. Fișierele rămân pe dispozitivul dvs.",
+      "title": "Convertiți un document",
+      "lede": "Alegeți un fișier, selectați o țintă și descărcați rezultatul. Totul se întâmplă în această filă{cloud, select, yes {, cu excepția cazului în care alegeți să convertiți acest fișier în cloud.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licențe",
+      "meta_description": "Licențe și cod sursă pentru AriadShift și motoarele sale din browser."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Modul cloud s-a oprit neașteptat",
+        "stopped_body": "Modul cloud a întâmpinat o eroare după începerea încărcării. Orice copie de pe server este ștearsă automat când se încheie perioada de retenție, sau puteți converti pe acest dispozitiv.",
+        "load_title": "Modul cloud nu a putut fi încărcat",
+        "load_body": "Convertorul cloud nu a putut fi încărcat (de exemplu, pentru că sunteți offline). Puteți totuși converti pe acest dispozitiv.",
+        "use_device": "Convertiți pe acest dispozitiv"
+      },
+      "status": {
+        "deleted_from_server": "{name} a fost șters de pe server.",
+        "reading": "Se citește {name} pe acest dispozitiv.",
+        "detected": "{name} este {format}.",
+        "read_failed": "Fișierul nu a putut fi citit.",
+        "converting": "Se convertește în {format} pe acest dispozitiv.",
+        "ready": "{name} este gata de descărcare.",
+        "convert_failed": "Conversia a eșuat.",
+        "saved": "{name} a fost salvat.",
+        "reset": "{outcome, select, deleted {Fișierele au fost eliminate de pe acest dispozitiv și de pe server.} kept {Fișierele au fost eliminate de pe acest dispozitiv. {name} este încă pe server.} other {Fișierele au fost eliminate de pe acest dispozitiv.}}",
+        "cloud_selected": "Conversie în cloud selectată pentru {name}. Nimic nu a fost încărcat încă.",
+        "cloud_selected_unnamed": "Conversie în cloud selectată pentru acest fișier. Nimic nu a fost încărcat încă."
+      },
+      "device": {
+        "cloud": "<strong>Conversie în cloud selectată.</strong> Acest fișier părăsește browserul doar când alegeți Încărcați și convertiți.",
+        "local": "<strong>Procesat pe acest dispozitiv.</strong> Fișierele nu părăsesc niciodată browserul și nu sunt încărcate."
+      },
+      "storage_badge": "{storage, select, opfs {Stocare privată în browser} other {În memorie}}",
+      "memory": {
+        "title": "Stocarea fișierelor pe dispozitiv nu este disponibilă în acest browser",
+        "body": "Fișierele sunt păstrate în memorie, așa că sunt acceptate intrări de până la {limit}. Nimic nu este încărcat în niciun caz."
+      },
+      "error": {
+        "title": "{code, select, no_route {Indisponibil aici} engine_integrity {Verificarea integrității motorului a eșuat} other {Ceva nu a funcționat}}"
+      },
+      "handoff": {
+        "title": "Continuați în aplicația desktop",
+        "reason": "{reason, select, ocr {Unele pagini necesită OCR pentru a extrage tot textul.} other {Acest document necesită un motor sau mai multă memorie decât oferă browserul.}}",
+        "picker": "Aplicația desktop deschide un selector de fișiere. Alegeți din nou acest document; browserul nu trimite fișierul.",
+        "open": "Deschideți în Desktop",
+        "cloud_alternative": "Sau convertiți-l pe {host}, după ce confirmați încărcarea.",
+        "cloud_button": "Procesați în cloud"
+      },
+      "drop": {
+        "button": "Alegeți un fișier",
+        "button_busy": "Se citește…",
+        "label": "Document de convertit",
+        "title": "Trageți un document aici",
+        "hint": "Markdown, HTML, DOCX, EPUB, PDF digital sau IR JSON de până la {limit}. Rămâne pe acest dispozitiv."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · „{title}”"
+      },
+      "count": {
+        "headings": "Titluri",
+        "paragraphs": "Paragrafe",
+        "tables": "Tabele",
+        "images": "Imagini",
+        "links": "Linkuri",
+        "footnotes": "Note de subsol",
+        "words": "Cuvinte"
+      },
+      "unreachable": {
+        "cli": "{format} nu poate fi încă convertit în browser. <link>AriadShift CLI</link> îl convertește pe calculatorul dvs.",
+        "none": "AriadShift nu poate încă converti {format}."
+      },
+      "cloud": {
+        "loading": "Se încarcă modul cloud…"
+      },
+      "convert": {
+        "title": "Convertire",
+        "hint": "Planificatorul alege ruta cu cel mai bun scor măsurat.",
+        "target_label": "Convertiți în",
+        "profile_label": "Profil",
+        "route_heading": "De ce această rută",
+        "elsewhere": "{formats} {count, plural, one {necesită} few {necesită} other {necesită}} deocamdată <link>AriadShift CLI</link>.",
+        "button": "Convertiți",
+        "button_busy": "Se convertește…",
+        "cancel": "Anulați"
+      },
+      "result": {
+        "title": "Gata",
+        "summary": "<output>{name}</output> · {size} · convertit în {duration} pe acest dispozitiv",
+        "download": "Descărcați {name}"
+      },
+      "start_over": "Reluați de la zero și ștergeți fișierele"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Cont",
+        "description": "Contul dvs. cloud AriadShift: profil, parolă, chei de acces și autentificare cu doi factori."
+      },
+      "sign_in": {
+        "title": "Autentificare",
+        "description": "Autentificați-vă în contul dvs. cloud AriadShift sau creați unul."
+      },
+      "jobs": {
+        "title": "Sarcini",
+        "description": "Starea, descărcările și ștergerea conversiilor dvs. cloud AriadShift."
+      },
+      "api_keys": {
+        "title": "Chei API",
+        "description": "Creați și revocați chei API pentru API-ul cloud AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Cont"
+      },
+      "shell": {
+        "not_configured_title": "Cloud-ul nu este configurat",
+        "not_configured_body": "Această copie a AriadShift rulează doar pe dispozitivul dvs. Conturile, cheile API și sarcinile cloud necesită un server; operatorul lui setează <code>{api_variable}</code> și <code>{auth_variable}</code> la construirea site-ului.",
+        "not_configured_convert": "Puteți totuși să <link>convertiți fișiere în browser</link>.",
+        "nav_label": "Cont",
+        "nav": {
+          "account": "Cont",
+          "api_keys": "Chei API",
+          "jobs": "Sarcini"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Autentificat ca <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Se verifică sesiunea dvs.…",
+        "error_title": "Sesiunea dvs. nu poate fi verificată",
+        "signed_out": "Nu sunteți autentificat."
+      },
+      "actions": {
+        "sign_in": "Autentificare",
+        "try_again": "Încercați din nou",
+        "cancel": "Anulați",
+        "done": "Gata",
+        "continue": "Continuați",
+        "revoke": "Revocați",
+        "copied": "Copiat"
+      },
+      "fields": {
+        "name": "Nume",
+        "email": "E-mail",
+        "password": "Parolă",
+        "authentication_code": "Cod de autentificare",
+        "password_hint": "Cel puțin {min} caractere."
+      },
+      "dates": {
+        "unknown": "o dată necunoscută"
+      },
+      "errors": {
+        "auth_refused": "Serviciul de autentificare a refuzat cererea.",
+        "service_unreachable": "Serviciul de autentificare nu poate fi contactat. Verificați conexiunea și încercați din nou.",
+        "session_ended": "Sesiunea dvs. s-a încheiat. Autentificați-vă din nou.",
+        "rate_limited": "Prea multe cereri. Încercați din nou în scurt timp.",
+        "rate_limited_after": "Prea multe cereri. Încercați din nou peste {seconds} s.",
+        "sign_in_unverifiable": "Serverul nu vă poate verifica acum autentificarea. Încercați din nou în scurt timp.",
+        "token_invalid": "Serviciul de autentificare a returnat un token API nevalid.",
+        "reauth_required": "Autentificați-vă din nou înainte de a șterge contul.",
+        "delete_not_allowed": "Acest server nu permite ștergerea conturilor din aplicația web. Rugați operatorul lui să îl șteargă.",
+        "job_gone": "Această sarcină nu mai este pe server.",
+        "file_deleted": "Acest fișier a fost deja șters.",
+        "job_conflict": "Sarcina nu este gata sau fișierul încărcat nu mai este pe server.",
+        "quota_exceeded": "Ați folosit deocamdată conversiile cloud din planul dvs. Convertiți pe acest dispozitiv sau încercați mai târziu.",
+        "request_failed": "Serverul nu a putut finaliza cererea. Încercați din nou în scurt timp.",
+        "network_unreachable": "Serverul nu poate fi contactat. Verificați conexiunea și încercați din nou.",
+        "transfer_incomplete": "Transferul nu s-a finalizat. Încercați din nou."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Salvați numele",
+        "saved": "Numele a fost salvat.",
+        "save_failed": "Numele nu a putut fi salvat."
+      },
+      "password": {
+        "title": "Parolă",
+        "current": "Parola curentă",
+        "new": "Parola nouă",
+        "confirm": "Confirmați parola nouă",
+        "revoke_others": "Deconectare din celelalte sesiuni",
+        "submit": "Schimbați parola",
+        "mismatch": "Parolele noi nu se potrivesc.",
+        "changed": "Parola a fost schimbată.",
+        "changed_revoked": "Parola a fost schimbată. Celelalte sesiuni au fost deconectate.",
+        "failed": "Parola nu a putut fi schimbată."
+      },
+      "passkeys": {
+        "title": "Chei de acces",
+        "description": "Autentificați-vă cu blocarea ecranului dispozitivului sau cu o cheie de securitate, în loc de parolă.",
+        "load_failed": "Cheile dvs. de acces nu au putut fi încărcate.",
+        "loading": "Se încarcă cheile de acces…",
+        "empty": "Încă nu există chei de acces.",
+        "unnamed": "Cheie de acces fără nume",
+        "default_name": "Cheie de acces",
+        "added_on": "Adăugată la {date}",
+        "remove_label": "Eliminați cheia de acces {name}",
+        "remove_button": "Eliminați<hidden> cheia de acces {name}</hidden>",
+        "add_button": "Adăugați o cheie de acces",
+        "add_title": "Adăugați o cheie de acces",
+        "add_description": "Denumiți-o după dispozitiv sau cheie, apoi urmați indicațiile browserului.",
+        "name_label": "Numele cheii de acces",
+        "name_placeholder": "De exemplu: Laptop de serviciu",
+        "added": "Cheia de acces a fost adăugată.",
+        "add_failed": "Cheia de acces nu a fost adăugată.",
+        "remove_title": "Eliminați {name}?",
+        "remove_title_unnamed": "Eliminați această cheie de acces?",
+        "remove_description": "Nu vă mai puteți autentifica cu ea. Celelalte metode de autentificare continuă să funcționeze.",
+        "remove_confirm": "Eliminați cheia de acces",
+        "removed": "{name} a fost eliminată.",
+        "remove_failed": "Cheia de acces nu a putut fi eliminată."
+      },
+      "two_factor": {
+        "title": "Autentificare cu doi factori",
+        "description": "Solicitați un cod dintr-o aplicație de autentificare după parolă.",
+        "status_on": "Stare: <badge>Activată</badge>",
+        "status_off": "Stare: <badge>Dezactivată</badge>",
+        "enable": "Activați autentificarea cu doi factori",
+        "disable": "Dezactivați autentificarea cu doi factori",
+        "regenerate": "Creați coduri de rezervă noi",
+        "confirm_password": "Confirmați parola pentru a continua.",
+        "enable_failed": "Configurarea autentificării cu doi factori nu a putut începe. Verificați parola.",
+        "disable_failed": "Autentificarea cu doi factori nu a putut fi dezactivată. Verificați parola.",
+        "regenerate_failed": "Codurile de rezervă noi nu au putut fi create. Verificați parola.",
+        "verify_failed": "Codul nu a fost acceptat. Verificați ora dispozitivului și încercați din nou.",
+        "disabled": "Autentificarea cu doi factori este dezactivată.",
+        "enabled": "Autentificarea cu doi factori este activată.",
+        "regenerated": "Au fost create coduri de rezervă noi. Cele vechi nu mai funcționează.",
+        "setup_title": "Configurați aplicația de autentificare",
+        "setup_description": "Adăugați AriadShift în aplicația de autentificare, apoi introduceți codul afișat.",
+        "setup_key_intro": "Introduceți această cheie de configurare în aplicație:",
+        "setup_key_unavailable": "Indisponibilă",
+        "open_in_app": "Deschideți într-o aplicație de autentificare de pe acest dispozitiv",
+        "turn_on": "Activați",
+        "codes_title": "Coduri de rezervă noi",
+        "backup_intro": "Păstrați aceste coduri de rezervă într-un loc sigur. Fiecare vă autentifică o singură dată dacă pierdeți aplicația de autentificare. Nu sunt afișate din nou.",
+        "copy_codes": "Copiați codurile de rezervă",
+        "copy_failed": "Copierea a eșuat; selectați codurile în schimb"
+      },
+      "account_actions": {
+        "title": "Sesiune și cont",
+        "sign_out": "Deconectare",
+        "delete": "Ștergeți contul",
+        "signed_out": "Ați fost deconectat.",
+        "sign_out_failed": "Deconectarea nu a reușit. Încercați din nou.",
+        "deleted": "Contul dvs. a fost șters.",
+        "delete_failed_password": "Contul nu a putut fi șters. Verificați parola.",
+        "delete_failed_session": "Contul nu a putut fi șters. Autentificați-vă din nou și reîncercați.",
+        "delete_note": "Ștergerea contului dvs. revocă automat <keys>cheile API</keys>. Înainte de a-l șterge, ștergeți <jobs>sarcinile cloud</jobs> pe care le mai aveți. Fișierele sarcinilor pe care le lăsați sunt eliminate la încheierea perioadei de retenție.",
+        "dialog_title": "Ștergeți contul dvs.?",
+        "dialog_description_password": "Această acțiune nu poate fi anulată. Confirmați parola pentru a șterge contul.",
+        "dialog_description_session": "Această acțiune nu poate fi anulată. Confirmați mai jos pentru a șterge contul folosind sesiunea curentă de autentificare.",
+        "sign_in_again": "Autentificați-vă din nou"
+      },
+      "connected_apps": {
+        "title": "Aplicații conectate",
+        "description": "Aplicațiile și clienții MCP pe care i-ați autorizat să folosească contul dvs., și clienții OAuth pe care i-ați înregistrat.",
+        "load_failed": "Aplicațiile dvs. conectate nu au putut fi încărcate.",
+        "loading": "Se încarcă aplicațiile conectate…",
+        "empty": "Încă nu există aplicații conectate sau clienți OAuth înregistrați.",
+        "scopes_none": "niciunul",
+        "consent_details": "Aplicație autorizată · Domenii: {scopes} · Autorizată la {date}",
+        "client_details": "Client OAuth înregistrat ({client_id})",
+        "client_details_dated": "Client OAuth înregistrat ({client_id}) · Înregistrat la {date}",
+        "revoke_label": "Revocați {name}",
+        "revoked": "{name} a fost revocat.",
+        "revoke_failed": "Accesul nu a putut fi revocat.",
+        "revoke_title": "Revocați {name}?",
+        "revoke_consent_description": "Revocarea oprește imediat tokenurile noi și reînnoirea tokenurilor. Tokenurile de acces semnate deja emise (cu durată de 15 minute) continuă să funcționeze până expiră.",
+        "revoke_client_description": "Ștergerea acestui client OAuth înregistrat îi revocă acreditările și consimțămintele și oprește imediat tokenurile noi și reînnoirea tokenurilor. Tokenurile de acces semnate deja emise (cu durată de 15 minute) continuă să funcționeze până expiră."
+      },
+      "api_keys": {
+        "page_title": "Chei API",
+        "section_title": "Cheile dvs.",
+        "section_description": "Scripturile și integrările trimit o cheie în antetul <code>x-api-key</code> către {host}. O cheie acționează cu contul și planul dvs.",
+        "load_failed": "Cheile dvs. API nu au putut fi încărcate.",
+        "loading": "Se încarcă cheile API…",
+        "empty": "Încă nu există chei API.",
+        "unnamed": "Cheie fără nume",
+        "disabled": "Dezactivată",
+        "key_details": "Creată la {date} · {expiry}",
+        "never_expires": "Nu expiră niciodată",
+        "expired_on": "A expirat la {date}",
+        "expires_on": "Expiră la {date}",
+        "revoke_label": "Revocați cheia API {name}",
+        "revoke_button": "Revocați<hidden> cheia API {name}</hidden>",
+        "create_button": "Creați o cheie API",
+        "create_title": "Creați o cheie API",
+        "create_description": "Denumiți cheia după scriptul sau serviciul care o va folosi.",
+        "name_placeholder": "De exemplu: CI",
+        "expires_after": "Expiră după",
+        "lifetime_days": "{days, plural, one {# zi} few {# zile} other {# de zile}}",
+        "lifetime_year": "1 an",
+        "lifetime_never": "Fără expirare",
+        "create_submit": "Creați cheia",
+        "create_failed": "Cheia nu a putut fi creată.",
+        "created": "Cheia API {name} a fost creată.",
+        "secret_title": "Noua dvs. cheie API",
+        "secret_label": "Cheie API",
+        "secret_notice": "Copiați cheia acum. Este stocată doar ca hash și nu mai este afișată niciodată.",
+        "copy_key": "Copiați cheia",
+        "copy_failed": "Copierea a eșuat. Selectați cheia și copiați-o.",
+        "revoke_title": "Revocați {name}?",
+        "revoke_description": "Cererile care folosesc această cheie sunt refuzate imediat. Această acțiune nu poate fi anulată.",
+        "revoke_confirm": "Revocați cheia",
+        "revoked": "Cheia API {name} a fost revocată. Cererile care o folosesc sunt refuzate de acum încolo.",
+        "revoke_failed": "Cheia nu a putut fi revocată."
+      },
+      "jobs": {
+        "title": "Sarcini",
+        "intro_server": "Conversiile cloud ale contului dvs. pe {host}, de pe orice dispozitiv. Fișierele rămân pe {host} până sunt șterse automat sau până le ștergeți aici.",
+        "intro_account_browser": "Conversii cloud începute în acest browser cu contul dvs. Această listă este păstrată doar pe acest dispozitiv. Fișierele rămân pe {host} până sunt șterse automat sau până le ștergeți aici.",
+        "intro_anonymous_browser": "Conversii cloud începute în acest browser fără cont. Această listă este păstrată doar pe acest dispozitiv. Fișierele rămân pe {host} până sunt șterse automat sau până le ștergeți aici.",
+        "signed_out_notice": "Se afișează sarcinile fără cont. <link>Autentificați-vă</link> pentru a vedea sarcinile contului dvs.",
+        "loading": "Se încarcă sarcinile dvs.…",
+        "list_unsupported": "{host} nu poate încă lista sarcinile contului dvs., așa că această pagină afișează sarcinile începute în acest browser.",
+        "list_error_title": "Sarcinile dvs. nu pot fi încărcate de pe {host}",
+        "list_error_body": "{reason} Între timp, această pagină afișează sarcinile începute în acest browser.",
+        "count": "{count, plural, one {# sarcină} few {# sarcini} other {# de sarcini}}",
+        "empty": "Încă nu există sarcini cloud. Începeți una din <link>convertor</link>.",
+        "show_more": "Afișați mai multe sarcini",
+        "loading_more": "Se încarcă mai multe sarcini…",
+        "unnamed": "Sarcina {id}",
+        "forgotten": "{filename} a fost eliminat din această listă. Fișierele sale de pe server au rămas neschimbate.",
+        "forgotten_unnamed": "Sarcina a fost eliminată din această listă. Fișierele sale de pe server au rămas neschimbate.",
+        "status": {
+          "queued": "În coadă",
+          "converting": "Se convertește",
+          "converting_stage": "Se convertește: {stage}",
+          "retrying": "Se reîncearcă (încercarea {attempt})",
+          "reconnecting": "{step} · Se reconectează…",
+          "ready": "Gata",
+          "failed": "Eșuată",
+          "canceled": "Anulată",
+          "deleted": "Ștearsă",
+          "deleted_expired": "Ștearsă (expirată)"
+        },
+        "until": {
+          "less_than_minute": "în mai puțin de un minut",
+          "minutes": "peste {minutes} min",
+          "hours": "peste {hours} h",
+          "hours_minutes": "peste {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Ștearsă automat la {clock}.",
+          "deleted_from_server": "Ștearsă de pe server. Fișierele de intrare și de ieșire nu mai există.",
+          "being_deleted": "Se șterge acum.",
+          "deletes_at": "Va fi ștearsă automat la {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Acest document necesită mai mult decât permite planul dvs. Încercați un fișier mai mic sau convertiți-l pe acest dispozitiv.",
+          "unsupported_route": "Acest server nu poate converti între aceste formate. Alegeți altă țintă în convertor.",
+          "input_io": "Fișierul încărcat nu a putut fi citit sau nu mai este pe server. Încărcați-l din nou.",
+          "storage": "Serverul nu a putut stoca rezultatul. Încercați din nou peste puțin timp.",
+          "tool_missing": "Acestui server îi lipsește motorul necesar rutei. Întrebați operatorul lui sau alegeți altă țintă.",
+          "other": "Conversia a eșuat. Încercați din nou sau convertiți fișierul pe acest dispozitiv."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Se încarcă starea…",
+          "try_again": "Încercați din nou<hidden> să încărcați {filename}</hidden>",
+          "technical_details": "Detalii tehnice",
+          "warnings": "{count, plural, one {# avertisment} few {# avertismente} other {# de avertismente}}",
+          "download": "Descărcați {filename}",
+          "retry_label": "Reîncercați {filename}",
+          "retry_button": "Reîncercați<hidden> {filename}</hidden>",
+          "delete_label": "Ștergeți acum {filename} de pe server",
+          "delete_button": "Ștergeți acum<hidden> {filename} de pe server</hidden>",
+          "remove_label": "Eliminați din această listă ({filename})",
+          "remove_button": "Eliminați din această listă<hidden> ({filename})</hidden>",
+          "deleted_note": "Șters de pe {host}. Fișierele de intrare și de ieșire nu mai există.",
+          "deleted_announce": "{filename} a fost șters de pe {host}. Fișierele de intrare și de ieșire nu mai există.",
+          "ready_announce": "{filename} a fost convertit și este gata de descărcare.",
+          "failed_announce": "Conversia fișierului {filename} a eșuat. {reason}",
+          "canceled_announce": "Conversia fișierului {filename} a fost anulată.",
+          "downloading": "Se descarcă {filename}.",
+          "retrying": "Se reîncearcă {filename}.",
+          "retry_conflict": "Fișierul încărcat nu mai este pe server. Încărcați-l din nou din convertor."
+        }
+      },
+      "sign_in": {
+        "title": "Autentificare",
+        "create_title": "Creați un cont",
+        "two_factor_title": "Verificare cu doi factori",
+        "signed_in": "Autentificat.",
+        "go_to_account": "Mergeți la contul dvs.",
+        "passkey": "Autentificați-vă cu o cheie de acces",
+        "no_account": "Nu aveți încă un cont? <switch>Creați unul</switch>",
+        "have_account": "Aveți deja un cont? <switch>Autentificați-vă</switch>",
+        "sign_in_failed": "Autentificarea nu a reușit. Verificați e-mailul și parola.",
+        "passkey_failed": "Autentificarea cu o cheie de acces nu a reușit.",
+        "code_rejected": "Codul nu a fost acceptat. Încercați din nou.",
+        "create_failed": "Contul nu a putut fi creat.",
+        "passwords_mismatch": "Parolele nu se potrivesc.",
+        "bot_check": "Finalizați verificarea anti-bot de la înregistrare și încercați din nou.",
+        "confirm_password": "Confirmați parola",
+        "create_account": "Creați contul",
+        "totp_help": "Introduceți codul de 6 cifre din aplicația de autentificare.",
+        "backup_help": "Introduceți unul dintre codurile de rezervă salvate când ați activat autentificarea cu doi factori. Fiecare cod funcționează o singură dată.",
+        "backup_code": "Cod de rezervă",
+        "trust_device": "Aveți încredere în acest browser timp de 30 de zile",
+        "verify": "Verificați",
+        "use_backup": "Folosiți în schimb un cod de rezervă",
+        "use_authenticator": "Folosiți în schimb un cod din aplicația de autentificare",
+        "signed_in_user": "Sunteți autentificat ca <user>{email}</user>."
+      }
+    }
+  }
+}

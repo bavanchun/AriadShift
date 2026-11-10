@@ -1,0 +1,30 @@
+{
+  "common": {
+    "format": {
+      "html": {
+        "description": "A standalone HTML5 page. Raw markup in the input is sanitised; scripts and unsafe attributes never reach the output."
+      }
+    }
+  },
+  "web": {
+    "shell": {
+      "footer": {
+        "license": "AriadShift is open source under the Apache-2.0 licence."
+      }
+    },
+    "account": {
+      "connected_apps": {
+        "description": "Apps and MCP clients you have authorised to use your account, and OAuth clients you have registered.",
+        "consent_details": "Authorised app · Scopes: {scopes} · Authorised {date}"
+      },
+      "jobs": {
+        "status": {
+          "canceled": "Cancelled"
+        },
+        "row": {
+          "canceled_announce": "The conversion of {filename} was cancelled."
+        }
+      }
+    }
+  }
+}

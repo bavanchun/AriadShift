@@ -13,7 +13,8 @@ const build = spawnSync("pnpm", ["exec", "next", "build", "--analyze"], {
 if (build.status !== 0) {
   process.exit(build.status ?? 1);
 }
-await import("./write-static-headers.mjs");
+const { writeStaticRouting } = await import("./write-static-headers.mjs");
+writeStaticRouting();
 await import("./write-service-worker.mjs");
 copyFileSync(path.join(web, "public/sw.js"), path.join(web, "out/sw.js"));
 const { checkNotices } = await import("./sync-notices.mjs");

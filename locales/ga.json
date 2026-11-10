@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Inchuir in eagar",
+        "description": "Ceannteidil, liostaí agus táblaí fíora ar féidir leat leanúint de á gcur in eagar."
+      },
+      "faithful": {
+        "label": "Dílis",
+        "description": "Fan chomh gar agus is féidir don leagan amach."
+      },
+      "fast": {
+        "label": "Tapa",
+        "description": "Roghnaigh an bealach is tapa."
+      },
+      "private": {
+        "label": "Príobháideach",
+        "description": "Innill nach bhfágann do ghléas riamh amháin."
+      }
+    },
+    "engine": {
+      "ariad_core": "Croílár AriadShift",
+      "ariad_pdf": "PDF AriadShift",
+      "pdf": "Léitheoir téacs PDF"
+    },
+    "runtime": {
+      "wasm": "Brabhsálaí",
+      "local": "CLI agus aip deisce",
+      "cloud": "Scamall"
+    },
+    "score": {
+      "not_measured": "gan tomhas"
+    },
+    "duration": {
+      "under_1_ms": "níos lú ná 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "cáipéis Markdown",
+        "description": "CommonMark le GitHub Flavored Markdown: ceannteidil, liostaí, táblaí, liostaí tascanna, fo-nótaí agus matamaitic. An fhormáid is fearr a léann an chuid is mó d’uirlisí AI."
+      },
+      "html": {
+        "noun": "leathanach HTML",
+        "description": "Leathanach HTML5 neamhspleách. Glantar an mharcáil amh san ionchur; ní shroicheann scripteanna ná tréithe neamhshábháilte an t-aschur choíche."
+      },
+      "ir_json": {
+        "noun": "cáipéis IR AriadShift",
+        "description": "An tsamhail cháipéise struchtúrtha a théann gach bealach AriadShift tríthi: ceannteidil, bloic, táblaí, sócmhainní agus meiteashonraí mar JSON leaganaithe."
+      },
+      "docx": {
+        "noun": "cáipéis Word",
+        "description": "Cáipéisí Office Open XML ó Microsoft Word, LibreOffice agus Google Docs, léite agus scríofa trí Pandoc."
+      },
+      "epub": {
+        "noun": "leabhar leictreonach EPUB",
+        "description": "Leabhair leictreonacha EPUB 3, léite agus scríofa trí Pandoc le meiteashonraí in-atáirgthe."
+      },
+      "pdf": {
+        "noun": "cáipéis PDF",
+        "description": "Léitear téacs PDF digiteach ar an ngléas seo. Úsáideann aschur PDF Typst agus clónna leabaithe. Teastaíonn OCR san aip deisce le haghaidh leathanach scanta."
+      },
+      "odt": {
+        "noun": "cáipéis téacs OpenDocument",
+        "description": "Úsáideann comhaid téacs OpenDocument LibreOffice san aip deisce."
+      },
+      "rtf": {
+        "noun": "cáipéis Rich Text",
+        "description": "Úsáideann cáipéisí Rich Text LibreOffice san aip deisce."
+      },
+      "pptx": {
+        "noun": "cur i láthair PowerPoint",
+        "description": "Úsáideann cur i láthair PowerPoint Docling nó LibreOffice san aip deisce."
+      },
+      "xlsx": {
+        "noun": "leabhar oibre Excel",
+        "description": "Úsáideann leabhair oibre Excel Docling nó LibreOffice san aip deisce."
+      },
+      "doc": {
+        "noun": "seanchaipéis Word",
+        "description": "Úsáideann seanchaipéisí Word LibreOffice san aip deisce."
+      },
+      "xls": {
+        "noun": "seanleabhar oibre Excel",
+        "description": "Úsáideann seanleabhair oibre Excel LibreOffice san aip deisce."
+      },
+      "ppt": {
+        "noun": "sean-chur i láthair PowerPoint",
+        "description": "Úsáideann sean-chuir i láthair PowerPoint LibreOffice san aip deisce."
+      },
+      "ods": {
+        "noun": "scarbhileog OpenDocument",
+        "description": "Úsáideann scarbhileoga OpenDocument LibreOffice san aip deisce."
+      },
+      "odp": {
+        "noun": "cur i láthair OpenDocument",
+        "description": "Úsáideann cur i láthair OpenDocument LibreOffice san aip deisce."
+      },
+      "png": {
+        "noun": "íomhá PNG",
+        "description": "Teastaíonn pacáiste inneall Docling san aip deisce chun téacs a bhaint as íomhánna."
+      },
+      "jpeg": {
+        "noun": "íomhá JPEG",
+        "description": "Teastaíonn pacáiste inneall Docling san aip deisce chun téacs a bhaint as íomhánna."
+      },
+      "webp": {
+        "noun": "íomhá WebP",
+        "description": "Teastaíonn pacáiste inneall Docling san aip deisce chun téacs a bhaint as íomhánna."
+      },
+      "tiff": {
+        "noun": "íomhá TIFF",
+        "description": "Teastaíonn pacáiste inneall Docling san aip deisce chun téacs a bhaint as íomhánna."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: tiontú príobháideach cáipéisí i do bhrabhsálaí",
+      "site_description": "Tiontaigh Markdown, HTML agus JSON struchtúrtha ar do ghléas féin. Príobháideach de réir réamhshocraithe, le cáilíocht tomhaiste ar gach bealach agus réidh d’ghníomhairí AI.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Léim go dtí an t-ábhar",
+      "home_link": "Leathanach baile {site}",
+      "nav_label": "Príomh",
+      "nav": {
+        "converter": "Tiontaire",
+        "formats": "Formáidí",
+        "quality": "Cáilíocht",
+        "download": "Íoslódáil",
+        "privacy": "Príobháideacht"
+      },
+      "footer": {
+        "license": "Is foinse oscailte é AriadShift faoin gceadúnas Apache-2.0.",
+        "privacy": "Príobháideacht",
+        "licenses": "Ceadúnais",
+        "quality": "Cáilíocht",
+        "source": "Cód foinse"
+      },
+      "language": {
+        "label": "Teanga",
+        "button": "Teanga: {name}",
+        "list_label": "Roghnaigh teanga",
+        "community_badge": "Aistriúchán pobail",
+        "community_note": "Is dréachtaí meaisín iad aistriúcháin phobail agus is féidir le daoine iad a cheartú fós."
+      }
+    },
+    "not_found": {
+      "title": "Níor aimsíodh an leathanach",
+      "body": "Níl an leathanach seo ann.",
+      "home_link": "Téigh go dtí an leathanach baile"
+    },
+    "home": {
+      "meta_title": "Tiontaigh cáipéisí ar do ghléas féin",
+      "title": "Tiontaigh cáipéisí ar do ghléas féin",
+      "lede": "Tiontaíonn AriadShift Markdown, HTML, Word, EPUB agus JSON struchtúrtha anseo i do bhrabhsálaí. Léigh téacs PDF digiteach agus cruthaigh PDFanna ar do ghléas. Pleanálaí tomhaiste amháin, gan uaslódálacha.",
+      "open_converter": "Oscail an tiontaire",
+      "install_cli": "Suiteáil an CLI",
+      "why_heading": "Cén fáth AriadShift",
+      "why": {
+        "private": {
+          "title": "Príobháideach de réir réamhshocraithe",
+          "body": "Ritheann an tiontaire laistigh de do bhrabhsálaí le WebAssembly. Stóráiltear do cháipéis i gcóras comhad príobháideach an bhrabhsálaí agus ní uaslódáiltear í choíche."
+        },
+        "quality": {
+          "title": "Cáilíocht tomhaiste",
+          "body": "Tá scóir dílseachta agus inchuir in eagar ag gach bealach ó thagarmharc poiblí. Roghnaíonn an pleanálaí an ceann is fearr agus insíonn sé duit cén fáth."
+        },
+        "agents": {
+          "title": "Réidh d’ghníomhairí AI",
+          "body": "Iompaigh cáipéisí ina Markdown glan nó ina JSON struchtúrtha le haghaidh comhthéacs LLM. Tá freastalaí MCP sa CLI, ionas gur féidir le gníomhairí comhaid a thiontú iad féin."
+        }
+      },
+      "how_heading": "Conas a oibríonn sé",
+      "how": {
+        "step_label": "Céim {number}",
+        "step_1": "Roghnaíonn tú comhad. Cóipeálann an brabhsálaí isteach ina chóras comhad príobháideach é.",
+        "step_2": "Luchtaíonn oibrí cúlra inneall AriadShift tiomsaithe go WebAssembly.",
+        "step_3": "Roghnaíonn an pleanálaí an bealach leis an scór tomhaiste is fearr do spriocanna.",
+        "step_4": "Íoslódálann tú an toradh. Scriostar gach comhad stóráilte nuair a thosaíonn tú as an nua."
+      },
+      "pairs_heading": "Tiontaigh i do bhrabhsálaí",
+      "pair_link": "{from} go {to}",
+      "see_more": "Féach ar gach <formats>formáid thacaithe</formats> agus ar <quality>cháilíocht tomhaiste</quality> gach bealaigh."
+    },
+    "formats": {
+      "meta_title": "Formáidí tacaithe",
+      "meta_description": "Na formáidí cáipéise a léann agus a scríobhann AriadShift, agus na tiontuithe a ritheann i do bhrabhsálaí.",
+      "title": "Formáidí tacaithe",
+      "lede": "Téann gach tiontú trí shamhail cháipéise AriadShift. Tiontaítear formáidí atá marcáilte “brabhsálaí” go hiomlán ar an ngléas seo; teastaíonn an uirlis líne ordaithe ó na cinn eile go fóill.",
+      "badge_browser": "Brabhsálaí agus CLI",
+      "badge_cli": "CLI",
+      "extensions": "Iarmhíreanna: {list}",
+      "engines": "Léite ag {readers}; scríofa ag {writers}.",
+      "no_engine": "gan inneall go fóill",
+      "convert_to": "Tiontaigh go: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Cáilíocht tomhaiste",
+      "meta_description": "Dílseacht, inchuir in eagar agus luas gach céime tiontaithe in AriadShift, ginte ó thagarmharc poiblí.",
+      "title": "Cáilíocht tomhaiste",
+      "lede": "Níl na scóir seo scríofa de láimh. Tiontaíonn an tagarmharc {count, plural, one {# cháipéis thástála phoiblí} two {# cháipéis thástála phoiblí} few {# cháipéis thástála phoiblí} many {# gcáipéis thástála phoiblí} other {# cáipéis thástála phoiblí}} trí gach céim agus cuireann sé an toradh i gcomparáid leis an bhfírinne aitheanta. Léann an pleanálaí na huimhreacha céanna nuair a roghnaíonn sé bealach.",
+      "generated": "{pandoc, select, none {Ginte ar {date}.} other {Ginte ar {date} le Pandoc {pandoc}.}}",
+      "methodology": "<link>Léigh an mhodheolaíocht</link>.",
+      "caption": "Scóir tagarmhairc in aghaidh na céime tiontaithe",
+      "column": {
+        "step": "Céim",
+        "engine": "Inneall",
+        "runs_in": "Ritheann i",
+        "fidelity": "Dílseacht",
+        "editability": "Inchuir in eagar",
+        "median_time": "Meánaimsir",
+        "samples": "Samplaí"
+      }
+    },
+    "route": {
+      "label": "Bealach tiontaithe",
+      "then": "ansin",
+      "fidelity": "Dílseacht",
+      "editability": "Inchuir in eagar",
+      "estimated_time": "Am measta",
+      "unmeasured": "Níor tomhaiseadh cuid den bhealach seo go fóill, mar sin scórálann an pleanálaí go cúramach é."
+    },
+    "download": {
+      "meta_title": "Íoslódáil",
+      "meta_description": "Suiteáil uirlis líne ordaithe agus freastalaí MCP AriadShift ar macOS, Linux agus Windows.",
+      "title": "Íoslódáil AriadShift",
+      "lede": "Tiontaíonn an t-ordú <code>ashift</code> Markdown, HTML, DOCX agus EPUB ar do ríomhaire agus ritheann sé freastalaí MCP d’ghníomhairí AI. Úsáideann bealaí DOCX agus EPUB <pandoc>Pandoc 3.12 nó níos nuaí</pandoc> mar chlár ar leith.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS agus Linux)",
+          "note": "Ar fáil nuair a fhoilseofar an fhoirmle. Suiteálann sé Pandoc freisin, a theastaíonn ó bhealaí DOCX agus EPUB."
+        },
+        "shell": {
+          "title": "Suiteálaí blaosc (macOS agus Linux)"
+        },
+        "powershell": {
+          "title": "Suiteálaí PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Ar fáil nuair a ghlacfar leis an bpacáiste a chuirtear isteach."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Ar fáil nuair a fhoilseofar na crates ar crates.io."
+        }
+      },
+      "then_heading": "Ansin",
+      "releases": "Tá cartlanna do gach ardán ar <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Aip deisce",
+        "body": "Tá aip deisce do macOS, Windows agus Linux ar na bacáin le tiontú baisc agus faire fillteán. Liostófar anseo í nuair a bheidh an chéad eisiúint amach."
+      }
+    },
+    "pair": {
+      "meta_title": "Tiontaigh {from} go {to}",
+      "meta_description_browser": "Tiontaigh {noun} go {to} i do bhrabhsálaí, go príobháideach, le AriadShift. Dílseacht tomhaiste, gan uaslódálacha.",
+      "meta_description_cli": "Tiontaigh {noun} go {to} ar do ríomhaire féin le AriadShift. Dílseacht tomhaiste, gan uaslódálacha.",
+      "badge_browser": "Ritheann i do bhrabhsálaí",
+      "badge_cli": "Ritheann le CLI AriadShift",
+      "title": "Tiontaigh {from} go {to}",
+      "lede_browser": "Iompaigh {noun} ina {to} gan é a uaslódáil. Léann AriadShift an comhad i do bhrabhsálaí, mapálann sé é ar a shamhail cháipéise agus scríobhann sé {to} ar do ghléas.",
+      "lede_cli": "Iompaigh {noun} ina {to} ar do ríomhaire féin leis an uirlis líne ordaithe saor in aisce AriadShift. Ní ritheann leagan an bhrabhsálaí an bealach seo go fóill.",
+      "convert_now": "Tiontaigh {from} go {to} anois",
+      "install_cli": "Suiteáil an CLI",
+      "route_heading": "An bealach a leanann AriadShift",
+      "from_heading": "Ó {format}",
+      "to_heading": "Go {format}",
+      "cli_heading": "Ón líne ordaithe",
+      "related_heading": "Tiontuithe gaolmhara",
+      "related_link": "{from} go {to}"
+    },
+    "converter_page": {
+      "meta_title": "Tiontaire",
+      "meta_description": "Tiontaigh Markdown, HTML, DOCX, EPUB, PDF digiteach agus JSON IR AriadShift i do bhrabhsálaí. Fanann na comhaid ar do ghléas.",
+      "title": "Tiontaigh cáipéis",
+      "lede": "Roghnaigh comhad, roghnaigh sprioc agus íoslódáil an toradh. Tarlaíonn gach rud sa chluaisín seo{cloud, select, yes {, mura roghnaíonn tú an comhad seo a thiontú sa scamall.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Ceadúnais",
+      "meta_description": "Ceadúnais agus cód foinse AriadShift agus a innill brabhsálaí."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Stop mód an scamaill gan choinne",
+        "stopped_body": "Tháinig earráid ar mhód an scamaill tar éis don uaslódáil tosú. Scriostar aon chóip ar an bhfreastalaí go huathoibríoch nuair a thagann deireadh lena tréimhse choinneála, nó is féidir leat tiontú ar an ngléas seo.",
+        "load_title": "Níorbh fhéidir mód an scamaill a luchtú",
+        "load_body": "Níorbh fhéidir an tiontaire scamaill a luchtú (mar shampla, toisc nach bhfuil tú ar líne). Is féidir leat tiontú ar an ngléas seo fós.",
+        "use_device": "Tiontaigh ar an ngléas seo"
+      },
+      "status": {
+        "deleted_from_server": "Scriosadh {name} ón bhfreastalaí.",
+        "reading": "Ag léamh {name} ar an ngléas seo.",
+        "detected": "Is {format} é {name}.",
+        "read_failed": "Níorbh fhéidir an comhad a léamh.",
+        "converting": "Ag tiontú go {format} ar an ngléas seo.",
+        "ready": "Tá {name} réidh le híoslódáil.",
+        "convert_failed": "Theip ar an tiontú.",
+        "saved": "Sábháladh {name}.",
+        "reset": "{outcome, select, deleted {Baineadh na comhaid den ghléas seo agus den fhreastalaí.} kept {Baineadh na comhaid den ghléas seo. Tá {name} fós ar an bhfreastalaí.} other {Baineadh na comhaid den ghléas seo.}}",
+        "cloud_selected": "Roghnaíodh tiontú scamaill do {name}. Níor uaslódáladh tada go fóill.",
+        "cloud_selected_unnamed": "Roghnaíodh tiontú scamaill don chomhad seo. Níor uaslódáladh tada go fóill."
+      },
+      "device": {
+        "cloud": "<strong>Roghnaíodh tiontú scamaill.</strong> Ní fhágann an comhad seo do bhrabhsálaí ach amháin nuair a roghnaíonn tú Uaslódáil agus tiontaigh.",
+        "local": "<strong>Próiseáilte ar an ngléas seo.</strong> Ní fhágann comhaid do bhrabhsálaí agus ní uaslódáiltear iad."
+      },
+      "storage_badge": "{storage, select, opfs {Stóras príobháideach brabhsálaí} other {I gcuimhne}}",
+      "memory": {
+        "title": "Níl stóras comhad ar an ngléas ar fáil sa bhrabhsálaí seo",
+        "body": "Coinnítear na comhaid i gcuimhne ina ionad, mar sin tacaítear le hionchuir suas le {limit}. Ní uaslódáiltear tada ar aon nós."
+      },
+      "error": {
+        "title": "{code, select, no_route {Níl ar fáil anseo} engine_integrity {Theip ar sheiceáil sláine an innill} other {Chuaigh rud éigin cearr}}"
+      },
+      "handoff": {
+        "title": "Lean ar aghaidh san aip deisce",
+        "reason": "{reason, select, ocr {Teastaíonn OCR ó roinnt leathanach chun a dtéacs go léir a bhaint amach.} other {Teastaíonn inneall nó níos mó cuimhne ón gcáipéis seo ná mar a sholáthraíonn an brabhsálaí.}}",
+        "picker": "Osclaíonn an aip deisce roghnóir comhad. Roghnaigh an cháipéis seo arís; ní sheolann do bhrabhsálaí an comhad.",
+        "open": "Oscail ar an deasc",
+        "cloud_alternative": "Nó tiontaigh ar {host} é, tar éis duit an uaslódáil a dhearbhú.",
+        "cloud_button": "Próiseáil sa scamall"
+      },
+      "drop": {
+        "button": "Roghnaigh comhad",
+        "button_busy": "Ag léamh…",
+        "label": "Cáipéis le tiontú",
+        "title": "Scaoil cáipéis anseo",
+        "hint": "Markdown, HTML, DOCX, EPUB, PDF digiteach nó JSON IR suas le {limit}. Fanann sé ar an ngléas seo."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Ceannteidil",
+        "paragraphs": "Míreanna",
+        "tables": "Táblaí",
+        "images": "Íomhánna",
+        "links": "Naisc",
+        "footnotes": "Fo-nótaí",
+        "words": "Focail"
+      },
+      "unreachable": {
+        "cli": "Ní féidir {format} a thiontú sa bhrabhsálaí go fóill. Tiontaíonn <link>CLI AriadShift</link> ar do ríomhaire é.",
+        "none": "Ní féidir le AriadShift {format} a thiontú go fóill."
+      },
+      "cloud": {
+        "loading": "Ag luchtú mód an scamaill…"
+      },
+      "convert": {
+        "title": "Tiontaigh",
+        "hint": "Roghnaíonn an pleanálaí an bealach leis an scór tomhaiste is fearr.",
+        "target_label": "Tiontaigh go",
+        "profile_label": "Próifíl",
+        "route_heading": "Cén fáth an bealach seo",
+        "elsewhere": "{count, plural, one {Tá} two {Tá} few {Tá} many {Tá} other {Tá}} <link>CLI AriadShift</link> de dhíth ar {formats} faoi láthair.",
+        "button": "Tiontaigh",
+        "button_busy": "Ag tiontú…",
+        "cancel": "Cealaigh"
+      },
+      "result": {
+        "title": "Réidh",
+        "summary": "<output>{name}</output> · {size} · tiontaithe i {duration} ar an ngléas seo",
+        "download": "Íoslódáil {name}"
+      },
+      "start_over": "Tosaigh as an nua agus scrios comhaid"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Cuntas",
+        "description": "Do chuntas scamaill AriadShift: próifíl, focal faire, eochracha pas agus síniú isteach dhá fhachtóir."
+      },
+      "sign_in": {
+        "title": "Sínigh isteach",
+        "description": "Sínigh isteach i do chuntas scamaill AriadShift nó cruthaigh ceann."
+      },
+      "jobs": {
+        "title": "Tascanna",
+        "description": "Stádas, íoslódálacha agus scriosadh do thiontuithe scamaill AriadShift."
+      },
+      "api_keys": {
+        "title": "Eochracha API",
+        "description": "Cruthaigh agus cúlghair eochracha API do API scamaill AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Cuntas"
+      },
+      "shell": {
+        "not_configured_title": "Níl an scamall cumraithe",
+        "not_configured_body": "Ritheann an chóip seo de AriadShift ar do ghléas amháin. Teastaíonn freastalaí le haghaidh cuntas, eochracha API agus tascanna scamaill; socraíonn a oibreoir <code>{api_variable}</code> agus <code>{auth_variable}</code> nuair a thógtar an suíomh.",
+        "not_configured_convert": "Is féidir leat <link>comhaid a thiontú i do bhrabhsálaí</link> fós.",
+        "nav_label": "Cuntas",
+        "nav": {
+          "account": "Cuntas",
+          "api_keys": "Eochracha API",
+          "jobs": "Tascanna"
+        },
+        "server": "Freastalaí: {host}",
+        "signed_in_user": "Sínithe isteach mar <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Ag seiceáil do sheisiúin…",
+        "error_title": "Ní féidir do sheisiún a sheiceáil",
+        "signed_out": "Níl tú sínithe isteach."
+      },
+      "actions": {
+        "sign_in": "Sínigh isteach",
+        "try_again": "Bain triail eile as",
+        "cancel": "Cealaigh",
+        "done": "Déanta",
+        "continue": "Lean ar aghaidh",
+        "revoke": "Cúlghair",
+        "copied": "Cóipeáilte"
+      },
+      "fields": {
+        "name": "Ainm",
+        "email": "Ríomhphost",
+        "password": "Focal faire",
+        "authentication_code": "Cód fíordheimhnithe",
+        "password_hint": "Ar a laghad {min} charachtar."
+      },
+      "dates": {
+        "unknown": "dáta anaithnid"
+      },
+      "errors": {
+        "auth_refused": "Dhiúltaigh an tseirbhís fíordheimhnithe don iarratas.",
+        "service_unreachable": "Ní féidir teacht ar an tseirbhís sínithe isteach. Seiceáil do cheangal agus bain triail eile as.",
+        "session_ended": "Tháinig deireadh le do sheisiún. Sínigh isteach arís.",
+        "rate_limited": "An iomarca iarratas. Bain triail eile as gan mórán moille.",
+        "rate_limited_after": "An iomarca iarratas. Bain triail eile as i gceann {seconds} s.",
+        "sign_in_unverifiable": "Ní féidir leis an bhfreastalaí do shíniú isteach a fhíorú faoi láthair. Bain triail eile as gan mórán moille.",
+        "token_invalid": "Sheol an tseirbhís sínithe isteach comhartha API neamhbhailí ar ais.",
+        "reauth_required": "Sínigh isteach arís sula scriosann tú do chuntas.",
+        "delete_not_allowed": "Ní cheadaíonn an freastalaí seo cuntais a scriosadh ón aip ghréasáin. Iarr ar a oibreoir é a scriosadh.",
+        "job_gone": "Níl an tasc seo ar an bhfreastalaí a thuilleadh.",
+        "file_deleted": "Scriosadh an comhad seo cheana.",
+        "job_conflict": "Níl an tasc réidh, nó níl an comhad uaslódáilte ar an bhfreastalaí a thuilleadh.",
+        "quota_exceeded": "Tá tiontuithe scamaill do phlean úsáidte agat don am i láthair. Tiontaigh ar an ngléas seo, nó bain triail eile as níos déanaí.",
+        "request_failed": "Níorbh fhéidir leis an bhfreastalaí an t-iarratas a chur i gcrích. Bain triail eile as gan mórán moille.",
+        "network_unreachable": "Ní féidir teacht ar an bhfreastalaí. Seiceáil do cheangal agus bain triail eile as.",
+        "transfer_incomplete": "Níor críochnaíodh an aistriú. Bain triail eile as."
+      },
+      "profile": {
+        "title": "Próifíl",
+        "save": "Sábháil an t-ainm",
+        "saved": "Sábháladh an t-ainm.",
+        "save_failed": "Níorbh fhéidir an t-ainm a shábháil."
+      },
+      "password": {
+        "title": "Focal faire",
+        "current": "Focal faire reatha",
+        "new": "Focal faire nua",
+        "confirm": "Deimhnigh an focal faire nua",
+        "revoke_others": "Sínigh amach as seisiúin eile",
+        "submit": "Athraigh an focal faire",
+        "mismatch": "Ní hionann na focail faire nua.",
+        "changed": "Athraíodh an focal faire.",
+        "changed_revoked": "Athraíodh an focal faire. Síníodh amach as seisiúin eile.",
+        "failed": "Níorbh fhéidir an focal faire a athrú."
+      },
+      "passkeys": {
+        "title": "Eochracha pas",
+        "description": "Sínigh isteach le glas scáileáin do ghléis nó le heochair shlándála in ionad focal faire.",
+        "load_failed": "Níorbh fhéidir d’eochracha pas a luchtú.",
+        "loading": "Ag luchtú eochracha pas…",
+        "empty": "Níl aon eochair phas ann go fóill.",
+        "unnamed": "Eochair phas gan ainm",
+        "default_name": "Eochair phas",
+        "added_on": "Curtha leis ar {date}",
+        "remove_label": "Bain an eochair phas {name}",
+        "remove_button": "Bain<hidden> an eochair phas {name}</hidden>",
+        "add_button": "Cuir eochair phas leis",
+        "add_title": "Cuir eochair phas leis",
+        "add_description": "Ainmnigh í i ndiaidh an ghléis nó na heochrach, agus lean leid do bhrabhsálaí.",
+        "name_label": "Ainm na heochrach pas",
+        "name_placeholder": "Mar shampla: ríomhaire glúine oibre",
+        "added": "Cuireadh an eochair phas leis.",
+        "add_failed": "Níor cuireadh an eochair phas leis.",
+        "remove_title": "Bain {name}?",
+        "remove_title_unnamed": "Bain an eochair phas seo?",
+        "remove_description": "Ní bheidh tú in ann síniú isteach léi a thuilleadh. Leanann do mhodhanna eile sínithe isteach ag obair.",
+        "remove_confirm": "Bain an eochair phas",
+        "removed": "Baineadh {name}.",
+        "remove_failed": "Níorbh fhéidir an eochair phas a bhaint."
+      },
+      "two_factor": {
+        "title": "Fíordheimhniú dhá fhachtóir",
+        "description": "Iarr cód ó aip fíordheimhnithe tar éis d’fhocal faire.",
+        "status_on": "Stádas: <badge>Ar siúl</badge>",
+        "status_off": "Stádas: <badge>As</badge>",
+        "enable": "Cas air fíordheimhniú dhá fhachtóir",
+        "disable": "Cas as fíordheimhniú dhá fhachtóir",
+        "regenerate": "Cruthaigh cóid chúltaca nua",
+        "confirm_password": "Deimhnigh d’fhocal faire chun leanúint ar aghaidh.",
+        "enable_failed": "Níorbh fhéidir socrú dhá fhachtóir a thosú. Seiceáil d’fhocal faire.",
+        "disable_failed": "Níorbh fhéidir fíordheimhniú dhá fhachtóir a chur as. Seiceáil d’fhocal faire.",
+        "regenerate_failed": "Níorbh fhéidir cóid chúltaca nua a chruthú. Seiceáil d’fhocal faire.",
+        "verify_failed": "Níor glacadh leis an gcód sin. Seiceáil am do ghléis agus bain triail eile as.",
+        "disabled": "Tá fíordheimhniú dhá fhachtóir múchta.",
+        "enabled": "Tá fíordheimhniú dhá fhachtóir ar siúl.",
+        "regenerated": "Cruthaíodh cóid chúltaca nua. Ní oibríonn na cinn seanda a thuilleadh.",
+        "setup_title": "Socraigh d’aip fíordheimhnithe",
+        "setup_description": "Cuir AriadShift le d’aip fíordheimhnithe, ansin cuir isteach an cód a thaispeánann sí.",
+        "setup_key_intro": "Cuir an eochair socraithe seo isteach san aip:",
+        "setup_key_unavailable": "Níl ar fáil",
+        "open_in_app": "Oscail in aip fíordheimhnithe ar an ngléas seo",
+        "turn_on": "Cas air",
+        "codes_title": "Cóid chúltaca nua",
+        "backup_intro": "Sábháil na cóid chúltaca seo in áit shábháilte. Sínfidh gach ceann acu isteach tú uair amháin má chaillfidh tú d’aip fíordheimhnithe. Ní thaispeántar arís iad.",
+        "copy_codes": "Cóipeáil na cóid chúltaca",
+        "copy_failed": "Theip ar an gcóipeáil; roghnaigh na cóid ina ionad"
+      },
+      "account_actions": {
+        "title": "Seisiún agus cuntas",
+        "sign_out": "Sínigh amach",
+        "delete": "Scrios an cuntas",
+        "signed_out": "Sínithe amach.",
+        "sign_out_failed": "Níorbh fhéidir síniú amach. Bain triail eile as.",
+        "deleted": "Scriosadh do chuntas.",
+        "delete_failed_password": "Níorbh fhéidir an cuntas a scriosadh. Seiceáil d’fhocal faire.",
+        "delete_failed_session": "Níorbh fhéidir an cuntas a scriosadh. Sínigh isteach arís agus bain triail eile as.",
+        "delete_note": "Cúlghairtear do <keys>eochracha API</keys> go huathoibríoch nuair a scriosann tú do chuntas. Sula scriosann tú é, scrios na <jobs>tascanna scamaill</jobs> atá agat fós. Baintear comhaid na dtascanna a fhágann tú nuair a thagann deireadh lena dtréimhse coinneála.",
+        "dialog_title": "Scrios do chuntas?",
+        "dialog_description_password": "Ní féidir é seo a chealú. Deimhnigh d’fhocal faire chun an cuntas a scriosadh.",
+        "dialog_description_session": "Ní féidir é seo a chealú. Deimhnigh thíos chun an cuntas a scriosadh ag úsáid do sheisiúin reatha.",
+        "sign_in_again": "Sínigh isteach arís"
+      },
+      "connected_apps": {
+        "title": "Aipeanna ceangailte",
+        "description": "Aipeanna agus cliaint MCP ar thug tú údarú dóibh do chuntas a úsáid, agus cliaint OAuth a chláraigh tú.",
+        "load_failed": "Níorbh fhéidir d’aipeanna ceangailte a luchtú.",
+        "loading": "Ag luchtú aipeanna ceangailte…",
+        "empty": "Níl aon aip cheangailte ná cliant OAuth cláraithe ann go fóill.",
+        "scopes_none": "aon cheann",
+        "consent_details": "Aip údaraithe · Scóip: {scopes} · Údaraithe ar {date}",
+        "client_details": "Cliant OAuth cláraithe ({client_id})",
+        "client_details_dated": "Cliant OAuth cláraithe ({client_id}) · Cláraithe ar {date}",
+        "revoke_label": "Cúlghair {name}",
+        "revoked": "Cúlghairíodh {name}.",
+        "revoke_failed": "Níorbh fhéidir an rochtain a chúlghairm.",
+        "revoke_title": "Cúlghair {name}?",
+        "revoke_consent_description": "Stopann cúlghairm comharthaí nua agus athnuachan comharthaí láithreach. Leanann comharthaí rochtana sínithe atá eisithe cheana (saolré 15 nóiméad) ag obair go dtí go dtéann siad in éag.",
+        "revoke_client_description": "Cúlghairtear a dhintiúir agus a chomhaontuithe, agus stoptar comharthaí nua agus athnuachan comharthaí láithreach, nuair a scriostar an cliant OAuth cláraithe seo. Leanann comharthaí rochtana sínithe atá eisithe cheana (saolré 15 nóiméad) ag obair go dtí go dtéann siad in éag."
+      },
+      "api_keys": {
+        "page_title": "Eochracha API",
+        "section_title": "Do chuid eochracha",
+        "section_description": "Seolann scripteanna agus comhtháthaithe eochair sa cheannteideal <code>x-api-key</code> chuig {host}. Gníomhaíonn eochair le do chuntas agus lena phlean.",
+        "load_failed": "Níorbh fhéidir d’eochracha API a luchtú.",
+        "loading": "Ag luchtú eochracha API…",
+        "empty": "Níl aon eochair API ann go fóill.",
+        "unnamed": "Eochair gan ainm",
+        "disabled": "Díchumasaithe",
+        "key_details": "Cruthaithe ar {date} · {expiry}",
+        "never_expires": "Ní théann in éag choíche",
+        "expired_on": "Chuaigh in éag ar {date}",
+        "expires_on": "Téann in éag ar {date}",
+        "revoke_label": "Cúlghair eochair API {name}",
+        "revoke_button": "Cúlghair<hidden> eochair API {name}</hidden>",
+        "create_button": "Cruthaigh eochair API",
+        "create_title": "Cruthaigh eochair API",
+        "create_description": "Ainmnigh an eochair i ndiaidh an scripte nó na seirbhíse a úsáidfidh í.",
+        "name_placeholder": "Mar shampla: CI",
+        "expires_after": "Téann in éag tar éis",
+        "lifetime_days": "{days, plural, one {# lá} two {# lá} few {# lá} many {# lá} other {# lá}}",
+        "lifetime_year": "1 bhliain",
+        "lifetime_never": "Gan dul in éag",
+        "create_submit": "Cruthaigh eochair",
+        "create_failed": "Níorbh fhéidir an eochair a chruthú.",
+        "created": "Cruthaíodh eochair API {name}.",
+        "secret_title": "D’eochair API nua",
+        "secret_label": "Eochair API",
+        "secret_notice": "Cóipeáil an eochair anois. Stóráiltear mar haisis amháin í agus ní thaispeántar arís í choíche.",
+        "copy_key": "Cóipeáil an eochair",
+        "copy_failed": "Theip ar an gcóipeáil. Roghnaigh an eochair agus cóipeáil í.",
+        "revoke_title": "Cúlghair {name}?",
+        "revoke_description": "Diúltaítear láithreach d’iarratais a úsáideann an eochair seo. Ní féidir é seo a chealú.",
+        "revoke_confirm": "Cúlghair an eochair",
+        "revoked": "Cúlghairíodh eochair API {name}. Diúltaítear d’iarratais a úsáideann í as seo amach.",
+        "revoke_failed": "Níorbh fhéidir an eochair a chúlghairm."
+      },
+      "jobs": {
+        "title": "Tascanna",
+        "intro_server": "Tiontuithe scamaill de do chuntas ar {host}, ó aon ghléas. Fanann comhaid ar {host} go scriostar go huathoibríoch iad, nó go scriosann tú anseo iad.",
+        "intro_account_browser": "Tiontuithe scamaill a cuireadh tús leo sa bhrabhsálaí seo le do chuntas. Coinnítear an liosta seo ar an ngléas seo amháin. Fanann comhaid ar {host} go scriostar go huathoibríoch iad, nó go scriosann tú anseo iad.",
+        "intro_anonymous_browser": "Tiontuithe scamaill a cuireadh tús leo sa bhrabhsálaí seo gan chuntas. Coinnítear an liosta seo ar an ngléas seo amháin. Fanann comhaid ar {host} go scriostar go huathoibríoch iad, nó go scriosann tú anseo iad.",
+        "signed_out_notice": "Tascanna gan chuntas á dtaispeáint. <link>Sínigh isteach</link> chun tascanna do chuntais a fheiceáil.",
+        "loading": "Ag luchtú do thascanna…",
+        "list_unsupported": "Ní féidir le {host} tascanna do chuntais a liostú go fóill, mar sin taispeánann an leathanach seo na tascanna a cuireadh tús leo sa bhrabhsálaí seo.",
+        "list_error_title": "Ní féidir do thascanna a luchtú ó {host}",
+        "list_error_body": "{reason} Idir an dá linn, taispeánann an leathanach seo na tascanna a cuireadh tús leo sa bhrabhsálaí seo.",
+        "count": "{count, plural, one {# tasc} two {# thasc} few {# thasc} many {# dtasc} other {# tasc}}",
+        "empty": "Níl aon tasc scamaill ann go fóill. Cuir tús le ceann ón <link>tiontaire</link>.",
+        "show_more": "Taispeáin tuilleadh tascanna",
+        "loading_more": "Ag luchtú tuilleadh tascanna…",
+        "unnamed": "Tasc {id}",
+        "forgotten": "Baineadh {filename} den liosta seo. Níor athraigh a chomhaid ar an bhfreastalaí.",
+        "forgotten_unnamed": "Baineadh an tasc den liosta seo. Níor athraigh a chomhaid ar an bhfreastalaí.",
+        "status": {
+          "queued": "I scuaine",
+          "converting": "Á thiontú",
+          "converting_stage": "Á thiontú: {stage}",
+          "retrying": "Á athiarraidh (iarracht {attempt})",
+          "reconnecting": "{step} · Ag athcheangal…",
+          "ready": "Réidh",
+          "failed": "Theip air",
+          "canceled": "Cealaithe",
+          "deleted": "Scriosta",
+          "deleted_expired": "Scriosta (imithe in éag)"
+        },
+        "until": {
+          "less_than_minute": "i gceann níos lú ná nóiméad",
+          "minutes": "i gceann {minutes} nóim",
+          "hours": "i gceann {hours} u",
+          "hours_minutes": "i gceann {hours} u {minutes} nóim"
+        },
+        "expiry": {
+          "deleted_at": "Scriosta go huathoibríoch ag {clock}.",
+          "deleted_from_server": "Scriosta ón bhfreastalaí. Tá na comhaid ionchuir agus aschuir imithe.",
+          "being_deleted": "Á scriosadh anois.",
+          "deletes_at": "Scriostar go huathoibríoch ag {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Teastaíonn níos mó ón gcáipéis seo ná mar a cheadaíonn do phlean. Bain triail as comhad níos lú, nó tiontaigh ar an ngléas seo é.",
+          "unsupported_route": "Ní féidir leis an bhfreastalaí seo tiontú idir na formáidí seo. Roghnaigh sprioc eile sa tiontaire.",
+          "input_io": "Níorbh fhéidir an comhad uaslódáilte a léamh nó níl sé ar an bhfreastalaí a thuilleadh. Uaslódáil arís é.",
+          "storage": "Níorbh fhéidir leis an bhfreastalaí an toradh a stóráil. Bain triail eile as i gceann tamaill.",
+          "tool_missing": "Tá an t-inneall a theastaíonn ón mbealach ar iarraidh ar an bhfreastalaí seo. Fiafraigh dá oibreoir, nó roghnaigh sprioc eile.",
+          "other": "Theip ar an tiontú. Bain triail eile as, nó tiontaigh an comhad ar an ngléas seo."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Ag luchtú an stádais…",
+          "try_again": "Bain triail eile as<hidden> chun {filename} a luchtú</hidden>",
+          "technical_details": "Mionsonraí teicniúla",
+          "warnings": "{count, plural, one {# rabhadh} two {# rabhadh} few {# rabhadh} many {# rabhadh} other {# rabhadh}}",
+          "download": "Íoslódáil {filename}",
+          "retry_label": "Bain triail eile as {filename}",
+          "retry_button": "Bain triail eile as<hidden> {filename}</hidden>",
+          "delete_label": "Scrios {filename} den fhreastalaí anois",
+          "delete_button": "Scrios anois<hidden> {filename} den fhreastalaí</hidden>",
+          "remove_label": "Bain den liosta seo ({filename})",
+          "remove_button": "Bain den liosta seo<hidden> ({filename})</hidden>",
+          "deleted_note": "Scriosta ó {host}. Tá na comhaid ionchuir agus aschuir imithe.",
+          "deleted_announce": "Scriosadh {filename} ó {host}. Tá na comhaid ionchuir agus aschuir imithe.",
+          "ready_announce": "Tá {filename} tiontaithe agus réidh le híoslódáil.",
+          "failed_announce": "Theip ar thiontú {filename}. {reason}",
+          "canceled_announce": "Cealaíodh tiontú {filename}.",
+          "downloading": "Ag íoslódáil {filename}.",
+          "retrying": "Ag baint triail eile as {filename}.",
+          "retry_conflict": "Níl an comhad uaslódáilte ar an bhfreastalaí a thuilleadh. Uaslódáil arís ón tiontaire é."
+        }
+      },
+      "sign_in": {
+        "title": "Sínigh isteach",
+        "create_title": "Cruthaigh cuntas",
+        "two_factor_title": "Seiceáil dhá fhachtóir",
+        "signed_in": "Sínithe isteach.",
+        "go_to_account": "Téigh go dtí do chuntas",
+        "passkey": "Sínigh isteach le heochair phas",
+        "no_account": "Níl cuntas agat go fóill? <switch>Cruthaigh ceann</switch>",
+        "have_account": "An bhfuil cuntas agat cheana? <switch>Sínigh isteach</switch>",
+        "sign_in_failed": "Níorbh fhéidir síniú isteach. Seiceáil do ríomhphost agus d’fhocal faire.",
+        "passkey_failed": "Níorbh fhéidir síniú isteach le heochair phas.",
+        "code_rejected": "Níor glacadh leis an gcód sin. Bain triail eile as.",
+        "create_failed": "Níorbh fhéidir an cuntas a chruthú.",
+        "passwords_mismatch": "Ní hionann na focail faire.",
+        "bot_check": "Críochnaigh seiceáil róbó na clárúcháin agus bain triail eile as.",
+        "confirm_password": "Deimhnigh an focal faire",
+        "create_account": "Cruthaigh cuntas",
+        "totp_help": "Cuir isteach an cód 6 dhigit ó d’aip fíordheimhnithe.",
+        "backup_help": "Cuir isteach ceann de na cóid chúltaca a shábháil tú nuair a chas tú air fíordheimhniú dhá fhachtóir. Oibríonn gach cód uair amháin.",
+        "backup_code": "Cód cúltaca",
+        "trust_device": "Cuir muinín sa bhrabhsálaí seo ar feadh 30 lá",
+        "verify": "Fíoraigh",
+        "use_backup": "Úsáid cód cúltaca ina ionad",
+        "use_authenticator": "Úsáid cód aip fíordheimhnithe ina ionad",
+        "signed_in_user": "Tá tú sínithe isteach mar <user>{email}</user>."
+      }
+    }
+  }
+}

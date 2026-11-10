@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "編集重視",
+        "description": "そのまま編集を続けられる、本物の見出し・リスト・表。"
+      },
+      "faithful": {
+        "label": "忠実",
+        "description": "できるだけレイアウトに近づけます。"
+      },
+      "fast": {
+        "label": "高速",
+        "description": "最も速い経路を優先します。"
+      },
+      "private": {
+        "label": "プライベート",
+        "description": "お使いのデバイスの外に出ないエンジンのみを使います。"
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShiftコア",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDFテキストリーダー"
+    },
+    "runtime": {
+      "wasm": "ブラウザー",
+      "local": "CLIとデスクトップ",
+      "cloud": "クラウド"
+    },
+    "score": {
+      "not_measured": "未計測"
+    },
+    "duration": {
+      "under_1_ms": "1ms未満"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdownドキュメント",
+        "description": "CommonMarkとGitHub Flavored Markdownに対応: 見出し、リスト、表、タスクリスト、脚注、数式。多くのAIツールが最も読みやすい形式です。"
+      },
+      "html": {
+        "noun": "HTMLページ",
+        "description": "単体で動作するHTML5ページ。入力に含まれる生のマークアップはサニタイズされ、スクリプトや安全でない属性が出力に含まれることはありません。"
+      },
+      "ir_json": {
+        "noun": "AriadShift IRドキュメント",
+        "description": "AriadShiftのすべての経路が通る構造化ドキュメントモデル。見出し、ブロック、表、アセット、メタデータをバージョン付きJSONで表します。"
+      },
+      "docx": {
+        "noun": "Wordドキュメント",
+        "description": "Microsoft Word、LibreOffice、GoogleドキュメントのOffice Open XMLドキュメントを、Pandocで読み書きします。"
+      },
+      "epub": {
+        "noun": "EPUB電子書籍",
+        "description": "EPUB 3の電子書籍を、再現可能なメタデータとともにPandocで読み書きします。"
+      },
+      "pdf": {
+        "noun": "PDFドキュメント",
+        "description": "デジタルPDFのテキストはこのデバイス上で読み取ります。PDF出力にはTypstと埋め込みフォントを使います。スキャンしたページには、デスクトップアプリのOCRが必要です。"
+      },
+      "odt": {
+        "noun": "OpenDocumentテキストドキュメント",
+        "description": "OpenDocumentテキストファイルは、デスクトップアプリでLibreOfficeを使って処理します。"
+      },
+      "rtf": {
+        "noun": "リッチテキストドキュメント",
+        "description": "リッチテキストドキュメントは、デスクトップアプリでLibreOfficeを使って処理します。"
+      },
+      "pptx": {
+        "noun": "PowerPointプレゼンテーション",
+        "description": "PowerPointプレゼンテーションは、デスクトップアプリでDoclingまたはLibreOfficeを使って処理します。"
+      },
+      "xlsx": {
+        "noun": "Excelブック",
+        "description": "Excelブックは、デスクトップアプリでDoclingまたはLibreOfficeを使って処理します。"
+      },
+      "doc": {
+        "noun": "旧形式のWordドキュメント",
+        "description": "旧形式のWordドキュメントは、デスクトップアプリでLibreOfficeを使って処理します。"
+      },
+      "xls": {
+        "noun": "旧形式のExcelブック",
+        "description": "旧形式のExcelブックは、デスクトップアプリでLibreOfficeを使って処理します。"
+      },
+      "ppt": {
+        "noun": "旧形式のPowerPointプレゼンテーション",
+        "description": "旧形式のPowerPointプレゼンテーションは、デスクトップアプリでLibreOfficeを使って処理します。"
+      },
+      "ods": {
+        "noun": "OpenDocumentスプレッドシート",
+        "description": "OpenDocumentスプレッドシートは、デスクトップアプリでLibreOfficeを使って処理します。"
+      },
+      "odp": {
+        "noun": "OpenDocumentプレゼンテーション",
+        "description": "OpenDocumentプレゼンテーションは、デスクトップアプリでLibreOfficeを使って処理します。"
+      },
+      "png": {
+        "noun": "PNG画像",
+        "description": "画像からのテキスト抽出には、デスクトップアプリのDoclingエンジンパックが必要です。"
+      },
+      "jpeg": {
+        "noun": "JPEG画像",
+        "description": "画像からのテキスト抽出には、デスクトップアプリのDoclingエンジンパックが必要です。"
+      },
+      "webp": {
+        "noun": "WebP画像",
+        "description": "画像からのテキスト抽出には、デスクトップアプリのDoclingエンジンパックが必要です。"
+      },
+      "tiff": {
+        "noun": "TIFF画像",
+        "description": "画像からのテキスト抽出には、デスクトップアプリのDoclingエンジンパックが必要です。"
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: ブラウザー内でプライベートに文書を変換",
+      "site_description": "Markdown、HTML、構造化JSONをお使いのデバイス上で変換。標準でプライベート、すべての経路で品質を計測し、AIエージェントにも対応しています。",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "本文へスキップ",
+      "home_link": "{site}のホーム",
+      "nav_label": "メイン",
+      "nav": {
+        "converter": "コンバーター",
+        "formats": "対応形式",
+        "quality": "品質",
+        "download": "ダウンロード",
+        "privacy": "プライバシー"
+      },
+      "footer": {
+        "license": "AriadShiftはApache-2.0ライセンスのオープンソースです。",
+        "privacy": "プライバシー",
+        "licenses": "ライセンス",
+        "quality": "品質",
+        "source": "ソースコード"
+      },
+      "language": {
+        "label": "言語",
+        "button": "言語: {name}",
+        "list_label": "言語を選択",
+        "community_badge": "コミュニティ翻訳",
+        "community_note": "コミュニティ翻訳は機械翻訳による下訳で、今後も修正できます。"
+      }
+    },
+    "not_found": {
+      "title": "ページが見つかりません",
+      "body": "このページは存在しません。",
+      "home_link": "ホームページへ移動"
+    },
+    "home": {
+      "meta_title": "お使いのデバイスで文書を変換",
+      "title": "お使いのデバイスで文書を変換",
+      "lede": "AriadShiftは、Markdown、HTML、Word、EPUB、構造化JSONをこのブラウザー内で変換します。デジタルPDFのテキストの読み取りとPDFの作成も、お使いのデバイス上で行えます。計測に基づく1つのプランナーで、アップロードは不要です。",
+      "open_converter": "コンバーターを開く",
+      "install_cli": "CLIをインストール",
+      "why_heading": "AriadShiftが選ばれる理由",
+      "why": {
+        "private": {
+          "title": "標準でプライベート",
+          "body": "コンバーターはWebAssemblyを使ってブラウザー内で動作します。文書はブラウザーのプライベートなファイルシステムに保存され、アップロードされることはありません。"
+        },
+        "quality": {
+          "title": "計測された品質",
+          "body": "すべての経路に、公開ベンチマークによる忠実度と編集しやすさのスコアが付いています。プランナーが最適な経路を選び、その理由もお伝えします。"
+        },
+        "agents": {
+          "title": "AIエージェントに対応",
+          "body": "文書をLLMのコンテキストに適した、整ったMarkdownや構造化JSONに変換します。CLIにはMCPサーバーが含まれており、エージェント自身がファイルを変換できます。"
+        }
+      },
+      "how_heading": "しくみ",
+      "how": {
+        "step_label": "ステップ{number}",
+        "step_1": "ファイルを選ぶと、ブラウザーがそれをプライベートなファイルシステムにコピーします。",
+        "step_2": "バックグラウンドワーカーが、WebAssemblyにコンパイルされたAriadShiftエンジンを読み込みます。",
+        "step_3": "プランナーが、目的に対して計測スコアが最も高い経路を選びます。",
+        "step_4": "結果をダウンロードします。最初からやり直すと、保存されたファイルはすべて削除されます。"
+      },
+      "pairs_heading": "ブラウザーで変換",
+      "pair_link": "{from}から{to}へ",
+      "see_more": "すべての<formats>対応形式</formats>と、各経路の<quality>計測された品質</quality>をご覧ください。"
+    },
+    "formats": {
+      "meta_title": "対応形式",
+      "meta_description": "AriadShiftが読み書きできる文書形式と、ブラウザー内で実行できる変換をご紹介します。",
+      "title": "対応形式",
+      "lede": "すべての変換はAriadShiftのドキュメントモデルを経由します。「ブラウザー」と表示された形式は、このデバイス上だけで変換できます。それ以外は現時点ではコマンドラインツールが必要です。",
+      "badge_browser": "ブラウザーとCLI",
+      "badge_cli": "CLI",
+      "extensions": "拡張子: {list}",
+      "engines": "読み取り: {readers}、書き出し: {writers}。",
+      "no_engine": "対応エンジンなし",
+      "convert_to": "変換先: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "計測された品質",
+      "meta_description": "AriadShiftの各変換ステップの忠実度、編集しやすさ、速度を、公開ベンチマークから生成しています。",
+      "title": "計測された品質",
+      "lede": "これらのスコアは手書きではありません。ベンチマークでは、{count, plural, other {#件の公開フィクスチャドキュメント}}をすべてのステップで変換し、結果を既知の正解と比較します。プランナーも経路を選ぶ際に同じ数値を参照します。",
+      "generated": "{pandoc, select, none {{date}に生成。} other {{date}にPandoc {pandoc}で生成。}}",
+      "methodology": "<link>評価方法を読む</link>。",
+      "caption": "変換ステップごとのベンチマークスコア",
+      "column": {
+        "step": "ステップ",
+        "engine": "エンジン",
+        "runs_in": "実行環境",
+        "fidelity": "忠実度",
+        "editability": "編集しやすさ",
+        "median_time": "中央値の所要時間",
+        "samples": "サンプル数"
+      }
+    },
+    "route": {
+      "label": "変換経路",
+      "then": "次に",
+      "fidelity": "忠実度",
+      "editability": "編集しやすさ",
+      "estimated_time": "推定所要時間",
+      "unmeasured": "この経路の一部はまだベンチマークされていないため、プランナーは慎重にスコアを付けています。"
+    },
+    "download": {
+      "meta_title": "ダウンロード",
+      "meta_description": "macOS、Linux、WindowsにAriadShiftのコマンドラインツールとMCPサーバーをインストールします。",
+      "title": "AriadShiftをダウンロード",
+      "lede": "<code>ashift</code>コマンドは、お使いのコンピューター上でMarkdown、HTML、DOCX、EPUBを変換し、AIエージェント向けのMCPサーバーを実行します。DOCXとEPUBの経路では、別のプログラムとして<pandoc>Pandoc 3.12以降</pandoc>を使います。",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew(macOSとLinux)",
+          "note": "formulaの公開後に利用できます。DOCXとEPUBの経路に必要なPandocも一緒にインストールされます。"
+        },
+        "shell": {
+          "title": "シェルインストーラー(macOSとLinux)"
+        },
+        "powershell": {
+          "title": "PowerShellインストーラー(Windows)"
+        },
+        "winget": {
+          "title": "WinGet(Windows)",
+          "note": "パッケージの申請が承認されると利用できます。"
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "クレートがcrates.ioに公開されると利用できます。"
+        }
+      },
+      "then_heading": "その後",
+      "releases": "各プラットフォーム向けのアーカイブは<link>GitHub Releases</link>にあります。",
+      "desktop": {
+        "title": "デスクトップアプリ",
+        "body": "バッチ変換とフォルダー監視に対応した、macOS、Windows、Linux向けのデスクトップアプリを準備中です。最初のリリースが公開されると、ここに掲載されます。"
+      }
+    },
+    "pair": {
+      "meta_title": "{from}を{to}に変換",
+      "meta_description_browser": "AriadShiftで、{noun}をブラウザー内でプライベートに{to}へ変換します。忠実度は計測済みで、アップロードは不要です。",
+      "meta_description_cli": "AriadShiftで、{noun}をお使いのコンピューター上で{to}へ変換します。忠実度は計測済みで、アップロードは不要です。",
+      "badge_browser": "ブラウザーで実行",
+      "badge_cli": "AriadShift CLIで実行",
+      "title": "{from}を{to}に変換",
+      "lede_browser": "{noun}をアップロードせずに{to}へ変換します。AriadShiftはブラウザー内でファイルを読み取り、ドキュメントモデルに変換して、お使いのデバイス上で{to}を書き出します。",
+      "lede_cli": "無料のAriadShiftコマンドラインツールを使って、{noun}をお使いのコンピューター上で{to}へ変換します。この経路は、ブラウザー版ではまだ実行できません。",
+      "convert_now": "{from}を{to}に今すぐ変換",
+      "install_cli": "CLIをインストール",
+      "route_heading": "AriadShiftが通る経路",
+      "from_heading": "変換元: {format}",
+      "to_heading": "変換先: {format}",
+      "cli_heading": "コマンドラインから",
+      "related_heading": "関連する変換",
+      "related_link": "{from}から{to}へ"
+    },
+    "converter_page": {
+      "meta_title": "コンバーター",
+      "meta_description": "Markdown、HTML、DOCX、EPUB、デジタルPDF、AriadShift IR JSONをブラウザー内で変換します。ファイルはお使いのデバイスから出ません。",
+      "title": "文書を変換",
+      "lede": "ファイルを選び、変換先を指定して、結果をダウンロードします。すべての処理はこのタブ内で行われます{cloud, select, yes {(このファイルをクラウドで変換する場合を除きます)。} other {。}}"
+    },
+    "licenses": {
+      "meta_title": "ライセンス",
+      "meta_description": "AriadShiftとそのブラウザーエンジンのライセンスおよびソース。"
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "クラウドモードが予期せず停止しました",
+        "stopped_body": "アップロードの開始後にクラウドモードでエラーが発生しました。サーバー上のコピーは、保持期間が終わると自動的に削除されます。このデバイスで変換することもできます。",
+        "load_title": "クラウドモードを読み込めませんでした",
+        "load_body": "クラウドコンバーターを読み込めませんでした(オフラインの場合など)。このデバイスでの変換は引き続き行えます。",
+        "use_device": "このデバイスで変換"
+      },
+      "status": {
+        "deleted_from_server": "{name}をサーバーから削除しました。",
+        "reading": "このデバイスで{name}を読み取っています。",
+        "detected": "{name}は{format}です。",
+        "read_failed": "ファイルを読み取れませんでした。",
+        "converting": "このデバイスで{format}に変換しています。",
+        "ready": "{name}をダウンロードできます。",
+        "convert_failed": "変換に失敗しました。",
+        "saved": "{name}を保存しました。",
+        "reset": "{outcome, select, deleted {ファイルをこのデバイスとサーバーから削除しました。} kept {ファイルをこのデバイスから削除しました。{name}はサーバーに残っています。} other {ファイルをこのデバイスから削除しました。}}",
+        "cloud_selected": "{name}にクラウド変換を選択しました。まだ何もアップロードされていません。",
+        "cloud_selected_unnamed": "このファイルにクラウド変換を選択しました。まだ何もアップロードされていません。"
+      },
+      "device": {
+        "cloud": "<strong>クラウド変換を選択中です。</strong>このファイルがブラウザーの外に出るのは、「アップロードして変換」を選んだときだけです。",
+        "local": "<strong>このデバイスで処理しています。</strong>ファイルがブラウザーの外に出ることも、アップロードされることもありません。"
+      },
+      "storage_badge": "{storage, select, opfs {ブラウザーのプライベートストレージ} other {メモリ上}}",
+      "memory": {
+        "title": "このブラウザーではデバイス上のファイル保存を利用できません",
+        "body": "代わりにファイルをメモリ上に保持するため、{limit}までの入力に対応します。どちらの場合も、何もアップロードされません。"
+      },
+      "error": {
+        "title": "{code, select, no_route {ここでは利用できません} engine_integrity {エンジンの整合性チェックに失敗しました} other {問題が発生しました}}"
+      },
+      "handoff": {
+        "title": "デスクトップアプリで続ける",
+        "reason": "{reason, select, ocr {一部のページは、すべてのテキストを抽出するためにOCRが必要です。} other {この文書には、ブラウザーが提供する以上のエンジンまたはメモリが必要です。}}",
+        "picker": "デスクトップアプリでファイル選択ダイアログが開きます。この文書をもう一度選んでください。ブラウザーがファイルを送信することはありません。",
+        "open": "デスクトップで開く",
+        "cloud_alternative": "または、アップロードを確認したうえで{host}で変換します。",
+        "cloud_button": "クラウドで処理"
+      },
+      "drop": {
+        "button": "ファイルを選択",
+        "button_busy": "読み取り中…",
+        "label": "変換する文書",
+        "title": "ここに文書をドロップ",
+        "hint": "Markdown、HTML、DOCX、EPUB、デジタルPDF、IR JSONに対応(最大{limit})。ファイルはこのデバイスから出ません。"
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · 「{title}」"
+      },
+      "count": {
+        "headings": "見出し",
+        "paragraphs": "段落",
+        "tables": "表",
+        "images": "画像",
+        "links": "リンク",
+        "footnotes": "脚注",
+        "words": "単語数"
+      },
+      "unreachable": {
+        "cli": "{format}は、まだブラウザーでは変換できません。<link>AriadShift CLI</link>を使うと、お使いのコンピューター上で変換できます。",
+        "none": "AriadShiftは、まだ{format}を変換できません。"
+      },
+      "cloud": {
+        "loading": "クラウドモードを読み込んでいます…"
+      },
+      "convert": {
+        "title": "変換",
+        "hint": "プランナーが、計測スコアが最も高い経路を選びます。",
+        "target_label": "変換先",
+        "profile_label": "プロファイル",
+        "route_heading": "この経路を選んだ理由",
+        "elsewhere": "{formats}は、現時点では<link>AriadShift CLI</link>が必要です{count, plural, other {}}。",
+        "button": "変換",
+        "button_busy": "変換中…",
+        "cancel": "キャンセル"
+      },
+      "result": {
+        "title": "完了",
+        "summary": "<output>{name}</output> · {size} · このデバイスで{duration}で変換しました",
+        "download": "{name}をダウンロード"
+      },
+      "start_over": "最初からやり直してファイルを削除"
+    },
+    "account_meta": {
+      "account": {
+        "title": "アカウント",
+        "description": "AriadShiftクラウドアカウント: プロフィール、パスワード、パスキー、2要素認証でのサインイン。"
+      },
+      "sign_in": {
+        "title": "サインイン",
+        "description": "AriadShiftクラウドアカウントにサインインするか、新しく作成します。"
+      },
+      "jobs": {
+        "title": "ジョブ",
+        "description": "AriadShiftクラウド変換の状況、ダウンロード、削除。"
+      },
+      "api_keys": {
+        "title": "APIキー",
+        "description": "AriadShiftクラウドAPI用のAPIキーを作成・失効します。"
+      }
+    },
+    "account": {
+      "page": {
+        "title": "アカウント"
+      },
+      "shell": {
+        "not_configured_title": "クラウドが設定されていません",
+        "not_configured_body": "このAriadShiftはお使いのデバイス上だけで動作します。アカウント、APIキー、クラウドジョブにはサーバーが必要で、運営者がサイトのビルド時に<code>{api_variable}</code>と<code>{auth_variable}</code>を設定します。",
+        "not_configured_convert": "<link>ブラウザーでファイルを変換</link>することはできます。",
+        "nav_label": "アカウント",
+        "nav": {
+          "account": "アカウント",
+          "api_keys": "APIキー",
+          "jobs": "ジョブ"
+        },
+        "server": "サーバー: {host}",
+        "signed_in_user": "<user>{email}</user>としてサインイン中"
+      },
+      "session": {
+        "checking": "セッションを確認しています…",
+        "error_title": "セッションを確認できません",
+        "signed_out": "サインインしていません。"
+      },
+      "actions": {
+        "sign_in": "サインイン",
+        "try_again": "再試行",
+        "cancel": "キャンセル",
+        "done": "完了",
+        "continue": "続ける",
+        "revoke": "失効",
+        "copied": "コピーしました"
+      },
+      "fields": {
+        "name": "名前",
+        "email": "メールアドレス",
+        "password": "パスワード",
+        "authentication_code": "認証コード",
+        "password_hint": "{min}文字以上。"
+      },
+      "dates": {
+        "unknown": "不明な日付"
+      },
+      "errors": {
+        "auth_refused": "認証サービスがリクエストを拒否しました。",
+        "service_unreachable": "サインインサービスに接続できません。接続を確認して、もう一度お試しください。",
+        "session_ended": "セッションが終了しました。もう一度サインインしてください。",
+        "rate_limited": "リクエストが多すぎます。しばらくしてからもう一度お試しください。",
+        "rate_limited_after": "リクエストが多すぎます。{seconds}秒後にもう一度お試しください。",
+        "sign_in_unverifiable": "現在、サーバーでサインインを確認できません。しばらくしてからもう一度お試しください。",
+        "token_invalid": "サインインサービスが無効なAPIトークンを返しました。",
+        "reauth_required": "アカウントを削除する前に、もう一度サインインしてください。",
+        "delete_not_allowed": "このサーバーでは、Webアプリからのアカウント削除は許可されていません。運営者に削除を依頼してください。",
+        "job_gone": "このジョブはもうサーバー上にありません。",
+        "file_deleted": "このファイルはすでに削除されています。",
+        "job_conflict": "ジョブの準備ができていないか、アップロードしたファイルがサーバー上にありません。",
+        "quota_exceeded": "ご利用のプランのクラウド変換を、今回の分はすべて使い切りました。このデバイスで変換するか、後でもう一度お試しください。",
+        "request_failed": "サーバーがリクエストを完了できませんでした。しばらくしてからもう一度お試しください。",
+        "network_unreachable": "サーバーに接続できません。接続を確認して、もう一度お試しください。",
+        "transfer_incomplete": "転送が完了しませんでした。もう一度お試しください。"
+      },
+      "profile": {
+        "title": "プロフィール",
+        "save": "名前を保存",
+        "saved": "名前を保存しました。",
+        "save_failed": "名前を保存できませんでした。"
+      },
+      "password": {
+        "title": "パスワード",
+        "current": "現在のパスワード",
+        "new": "新しいパスワード",
+        "confirm": "新しいパスワード(確認)",
+        "revoke_others": "他のセッションからサインアウト",
+        "submit": "パスワードを変更",
+        "mismatch": "新しいパスワードが一致しません。",
+        "changed": "パスワードを変更しました。",
+        "changed_revoked": "パスワードを変更しました。他のセッションはサインアウトされました。",
+        "failed": "パスワードを変更できませんでした。"
+      },
+      "passkeys": {
+        "title": "パスキー",
+        "description": "パスワードの代わりに、デバイスの画面ロックまたはセキュリティキーでサインインします。",
+        "load_failed": "パスキーを読み込めませんでした。",
+        "loading": "パスキーを読み込んでいます…",
+        "empty": "パスキーはまだありません。",
+        "unnamed": "名前のないパスキー",
+        "default_name": "パスキー",
+        "added_on": "{date}に追加",
+        "remove_label": "パスキー{name}を削除",
+        "remove_button": "削除<hidden>(パスキー{name})</hidden>",
+        "add_button": "パスキーを追加",
+        "add_title": "パスキーを追加",
+        "add_description": "デバイスやキーの名前を付けて、ブラウザーの案内に従ってください。",
+        "name_label": "パスキー名",
+        "name_placeholder": "例: 仕事用ノートPC",
+        "added": "パスキーを追加しました。",
+        "add_failed": "パスキーを追加できませんでした。",
+        "remove_title": "{name}を削除しますか?",
+        "remove_title_unnamed": "このパスキーを削除しますか?",
+        "remove_description": "このパスキーではサインインできなくなります。他のサインイン方法は引き続き使えます。",
+        "remove_confirm": "パスキーを削除",
+        "removed": "{name}を削除しました。",
+        "remove_failed": "パスキーを削除できませんでした。"
+      },
+      "two_factor": {
+        "title": "2要素認証",
+        "description": "パスワードの入力後に、認証アプリのコードを求めます。",
+        "status_on": "状態: <badge>オン</badge>",
+        "status_off": "状態: <badge>オフ</badge>",
+        "enable": "2要素認証をオンにする",
+        "disable": "2要素認証をオフにする",
+        "regenerate": "新しいバックアップコードを作成",
+        "confirm_password": "続けるには、パスワードを確認してください。",
+        "enable_failed": "2要素認証の設定を開始できませんでした。パスワードを確認してください。",
+        "disable_failed": "2要素認証をオフにできませんでした。パスワードを確認してください。",
+        "regenerate_failed": "新しいバックアップコードを作成できませんでした。パスワードを確認してください。",
+        "verify_failed": "そのコードは受け付けられませんでした。デバイスの時刻を確認して、もう一度お試しください。",
+        "disabled": "2要素認証はオフです。",
+        "enabled": "2要素認証はオンです。",
+        "regenerated": "新しいバックアップコードを作成しました。古いコードは使えなくなりました。",
+        "setup_title": "認証アプリを設定",
+        "setup_description": "認証アプリにAriadShiftを追加し、表示されたコードを入力してください。",
+        "setup_key_intro": "アプリに次のセットアップキーを入力してください:",
+        "setup_key_unavailable": "利用できません",
+        "open_in_app": "このデバイスの認証アプリで開く",
+        "turn_on": "オンにする",
+        "codes_title": "新しいバックアップコード",
+        "backup_intro": "これらのバックアップコードを安全な場所に保管してください。認証アプリを紛失した場合、各コードで1回ずつサインインできます。再表示はされません。",
+        "copy_codes": "バックアップコードをコピー",
+        "copy_failed": "コピーに失敗しました。代わりにコードを選択してください"
+      },
+      "account_actions": {
+        "title": "セッションとアカウント",
+        "sign_out": "サインアウト",
+        "delete": "アカウントを削除",
+        "signed_out": "サインアウトしました。",
+        "sign_out_failed": "サインアウトできませんでした。もう一度お試しください。",
+        "deleted": "アカウントを削除しました。",
+        "delete_failed_password": "アカウントを削除できませんでした。パスワードを確認してください。",
+        "delete_failed_session": "アカウントを削除できませんでした。もう一度サインインして、やり直してください。",
+        "delete_note": "アカウントを削除すると、<keys>APIキー</keys>は自動的に失効します。削除する前に、残っている<jobs>クラウドジョブ</jobs>を削除してください。残したジョブのファイルは、保持期間が終わると削除されます。",
+        "dialog_title": "アカウントを削除しますか?",
+        "dialog_description_password": "この操作は元に戻せません。アカウントを削除するには、パスワードを確認してください。",
+        "dialog_description_session": "この操作は元に戻せません。現在のサインインセッションでアカウントを削除するには、以下で確認してください。",
+        "sign_in_again": "もう一度サインイン"
+      },
+      "connected_apps": {
+        "title": "連携アプリ",
+        "description": "アカウントの利用を許可したアプリとMCPクライアント、および登録したOAuthクライアント。",
+        "load_failed": "連携アプリを読み込めませんでした。",
+        "loading": "連携アプリを読み込んでいます…",
+        "empty": "連携アプリも登録済みのOAuthクライアントもまだありません。",
+        "scopes_none": "なし",
+        "consent_details": "許可済みアプリ · スコープ: {scopes} · {date}に許可",
+        "client_details": "登録済みのOAuthクライアント({client_id})",
+        "client_details_dated": "登録済みのOAuthクライアント({client_id}) · {date}に登録",
+        "revoke_label": "{name}を失効",
+        "revoked": "{name}を失効しました。",
+        "revoke_failed": "アクセスを失効できませんでした。",
+        "revoke_title": "{name}を失効しますか?",
+        "revoke_consent_description": "失効すると、新しいトークンの発行とトークンの更新がただちに停止します。すでに発行済みの署名付きアクセストークン(有効期間15分)は、期限が切れるまで使えます。",
+        "revoke_client_description": "この登録済みOAuthクライアントを削除すると、その認証情報と同意が失効し、新しいトークンの発行とトークンの更新がただちに停止します。すでに発行済みの署名付きアクセストークン(有効期間15分)は、期限が切れるまで使えます。"
+      },
+      "api_keys": {
+        "page_title": "APIキー",
+        "section_title": "あなたのキー",
+        "section_description": "スクリプトや連携サービスは、<code>x-api-key</code>ヘッダーにキーを入れて{host}に送信します。キーはあなたのアカウントとそのプランの権限で動作します。",
+        "load_failed": "APIキーを読み込めませんでした。",
+        "loading": "APIキーを読み込んでいます…",
+        "empty": "APIキーはまだありません。",
+        "unnamed": "名前のないキー",
+        "disabled": "無効",
+        "key_details": "{date}に作成 · {expiry}",
+        "never_expires": "無期限",
+        "expired_on": "{date}に期限切れ",
+        "expires_on": "{date}に期限切れになります",
+        "revoke_label": "APIキー{name}を失効",
+        "revoke_button": "失効<hidden>(APIキー{name})</hidden>",
+        "create_button": "APIキーを作成",
+        "create_title": "APIキーを作成",
+        "create_description": "キーを使うスクリプトやサービスの名前を付けてください。",
+        "name_placeholder": "例: CI",
+        "expires_after": "有効期間",
+        "lifetime_days": "{days, plural, other {#日}}",
+        "lifetime_year": "1年",
+        "lifetime_never": "無期限",
+        "create_submit": "キーを作成",
+        "create_failed": "キーを作成できませんでした。",
+        "created": "APIキー{name}を作成しました。",
+        "secret_title": "新しいAPIキー",
+        "secret_label": "APIキー",
+        "secret_notice": "今すぐキーをコピーしてください。キーはハッシュとしてのみ保存され、再表示されません。",
+        "copy_key": "キーをコピー",
+        "copy_failed": "コピーに失敗しました。キーを選択してコピーしてください。",
+        "revoke_title": "{name}を失効しますか?",
+        "revoke_description": "このキーを使ったリクエストはただちに拒否されます。この操作は元に戻せません。",
+        "revoke_confirm": "キーを失効",
+        "revoked": "APIキー{name}を失効しました。このキーを使ったリクエストは今後拒否されます。",
+        "revoke_failed": "キーを失効できませんでした。"
+      },
+      "jobs": {
+        "title": "ジョブ",
+        "intro_server": "{host}上の、あなたのアカウントのクラウド変換(どのデバイスからでも)。ファイルは、自動的に削除されるか、ここで削除するまで{host}に残ります。",
+        "intro_account_browser": "このブラウザーでアカウントを使って開始したクラウド変換です。この一覧はこのデバイスにのみ保存されます。ファイルは、自動的に削除されるか、ここで削除するまで{host}に残ります。",
+        "intro_anonymous_browser": "このブラウザーでアカウントなしで開始したクラウド変換です。この一覧はこのデバイスにのみ保存されます。ファイルは、自動的に削除されるか、ここで削除するまで{host}に残ります。",
+        "signed_out_notice": "アカウントなしのジョブを表示しています。アカウントのジョブを見るには<link>サインイン</link>してください。",
+        "loading": "ジョブを読み込んでいます…",
+        "list_unsupported": "{host}ではまだアカウントのジョブを一覧表示できないため、このページにはこのブラウザーで開始したジョブを表示しています。",
+        "list_error_title": "{host}からジョブを読み込めません",
+        "list_error_body": "{reason}それまでの間、このページにはこのブラウザーで開始したジョブを表示します。",
+        "count": "{count, plural, other {#件のジョブ}}",
+        "empty": "クラウドジョブはまだありません。<link>コンバーター</link>から開始してください。",
+        "show_more": "さらにジョブを表示",
+        "loading_more": "さらにジョブを読み込んでいます…",
+        "unnamed": "ジョブ{id}",
+        "forgotten": "{filename}をこの一覧から削除しました。サーバー上のファイルは変更されません。",
+        "forgotten_unnamed": "ジョブをこの一覧から削除しました。サーバー上のファイルは変更されません。",
+        "status": {
+          "queued": "待機中",
+          "converting": "変換中",
+          "converting_stage": "変換中: {stage}",
+          "retrying": "再試行中({attempt}回目)",
+          "reconnecting": "{step} · 再接続中…",
+          "ready": "完了",
+          "failed": "失敗",
+          "canceled": "キャンセル済み",
+          "deleted": "削除済み",
+          "deleted_expired": "削除済み(期限切れ)"
+        },
+        "until": {
+          "less_than_minute": "1分以内",
+          "minutes": "{minutes}分後",
+          "hours": "{hours}時間後",
+          "hours_minutes": "{hours}時間{minutes}分後"
+        },
+        "expiry": {
+          "deleted_at": "{clock}に自動削除されました。",
+          "deleted_from_server": "サーバーから削除しました。入力ファイルと出力ファイルは削除されています。",
+          "being_deleted": "現在削除中です。",
+          "deletes_at": "{clock}({relative})に自動削除されます。"
+        },
+        "failure": {
+          "limit_exceeded": "この文書は、ご利用のプランで許可されている上限を超えています。より小さいファイルを試すか、このデバイスで変換してください。",
+          "unsupported_route": "このサーバーでは、これらの形式間の変換はできません。コンバーターで別の変換先を選んでください。",
+          "input_io": "アップロードしたファイルを読み取れないか、サーバー上にありません。もう一度アップロードしてください。",
+          "storage": "サーバーが結果を保存できませんでした。しばらくしてからもう一度お試しください。",
+          "tool_missing": "このサーバーには、この経路に必要なエンジンがありません。運営者に問い合わせるか、別の変換先を選んでください。",
+          "other": "変換に失敗しました。もう一度お試しいただくか、このデバイスでファイルを変換してください。"
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "状況を読み込んでいます…",
+          "try_again": "再試行<hidden>({filename}を読み込む)</hidden>",
+          "technical_details": "技術的な詳細",
+          "warnings": "{count, plural, other {#件の警告}}",
+          "download": "{filename}をダウンロード",
+          "retry_label": "{filename}を再試行",
+          "retry_button": "再試行<hidden>({filename})</hidden>",
+          "delete_label": "{filename}をサーバーからただちに削除",
+          "delete_button": "今すぐ削除<hidden>({filename}をサーバーから)</hidden>",
+          "remove_label": "この一覧から削除({filename})",
+          "remove_button": "この一覧から削除<hidden>({filename})</hidden>",
+          "deleted_note": "{host}から削除しました。入力ファイルと出力ファイルは削除されています。",
+          "deleted_announce": "{host}から{filename}を削除しました。入力ファイルと出力ファイルは削除されています。",
+          "ready_announce": "{filename}の変換が完了し、ダウンロードできます。",
+          "failed_announce": "{filename}の変換に失敗しました。{reason}",
+          "canceled_announce": "{filename}の変換をキャンセルしました。",
+          "downloading": "{filename}をダウンロードしています。",
+          "retrying": "{filename}を再試行しています。",
+          "retry_conflict": "アップロードしたファイルがサーバー上にありません。コンバーターからもう一度アップロードしてください。"
+        }
+      },
+      "sign_in": {
+        "title": "サインイン",
+        "create_title": "アカウントを作成",
+        "two_factor_title": "2要素認証の確認",
+        "signed_in": "サインインしました。",
+        "go_to_account": "アカウントへ移動",
+        "passkey": "パスキーでサインイン",
+        "no_account": "アカウントをお持ちでないですか? <switch>作成する</switch>",
+        "have_account": "すでにアカウントをお持ちですか? <switch>サインイン</switch>",
+        "sign_in_failed": "サインインできませんでした。メールアドレスとパスワードを確認してください。",
+        "passkey_failed": "パスキーでサインインできませんでした。",
+        "code_rejected": "そのコードは受け付けられませんでした。もう一度お試しください。",
+        "create_failed": "アカウントを作成できませんでした。",
+        "passwords_mismatch": "パスワードが一致しません。",
+        "bot_check": "登録時のボット確認を完了して、もう一度お試しください。",
+        "confirm_password": "パスワード(確認)",
+        "create_account": "アカウントを作成",
+        "totp_help": "認証アプリの6桁のコードを入力してください。",
+        "backup_help": "2要素認証をオンにしたときに保存したバックアップコードを1つ入力してください。各コードは1回だけ使えます。",
+        "backup_code": "バックアップコード",
+        "trust_device": "このブラウザーを30日間信頼する",
+        "verify": "確認",
+        "use_backup": "代わりにバックアップコードを使う",
+        "use_authenticator": "代わりに認証アプリのコードを使う",
+        "signed_in_user": "<user>{email}</user>としてサインイン中です。"
+      }
+    }
+  }
+}
