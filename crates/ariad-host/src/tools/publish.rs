@@ -598,8 +598,36 @@ pub(crate) fn render_naming_template_with_clock(
     clock: ariad_pdf::ToolClock,
     explicit_date: Option<&str>,
 ) -> Result<String, NamingTemplateError> {
+    render_naming_template_with_metadata(template, stem, index_1_based, clock, explicit_date, None)
+}
+
+/// Renders a template with an optional document title, falling back to the input stem.
+pub fn render_naming_template_with_metadata(
+    template: &str,
+    stem: &str,
+    index_1_based: usize,
+    clock: ariad_pdf::ToolClock,
+    explicit_date: Option<&str>,
+    title: Option<&str>,
+) -> Result<String, NamingTemplateError> {
     validate_naming_template(template)?;
     let clean_stem = sanitize_stem(stem);
+    let clean_title = title
+        .map(|title| {
+            title
+                .chars()
+                .filter(|c| {
+                    c.is_ascii_alphanumeric()
+                        || c.is_ascii_whitespace()
+                        || matches!(c, '.' | '_' | '-')
+                })
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|title| !title.is_empty() && !title.starts_with('.') && !title.contains(".."))
+        .unwrap_or_else(|| clean_stem.clone());
     let date_str = ariad_pdf::draw::tokens::resolve_date(
         explicit_date,
         &ariad_pdf::ToolCtx::new().with_clock(clock),
@@ -610,7 +638,8 @@ pub(crate) fn render_naming_template_with_clock(
     let rendered = template
         .replace("{stem}", &clean_stem)
         .replace("{n}", &n_str)
-        .replace("{date}", &date_str);
+        .replace("{date}", &date_str)
+        .replace("{title}", &clean_title);
 
     if rendered.trim().is_empty() {
         return Err(NamingTemplateError::Empty);

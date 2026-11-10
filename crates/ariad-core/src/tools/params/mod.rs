@@ -6,6 +6,7 @@
 pub mod add_image;
 pub mod add_text;
 pub mod adjust_colors;
+pub mod ai;
 pub mod alternate_mix;
 pub mod annotations;
 pub mod attachments;
@@ -89,6 +90,7 @@ use schemars::{JsonSchema, Schema, generate::SchemaSettings};
 pub use add_image::AddImageParams;
 pub use add_text::{AddTextParams, TextAlignment};
 pub use adjust_colors::AdjustColorsParams;
+pub use ai::*;
 pub use alternate_mix::AlternateMixParams;
 pub use attachments::{AttachmentsAction, AttachmentsParams};
 pub use auto_rotate::AutoRotateParams;
@@ -177,7 +179,10 @@ pub use unlock_forms::UnlockFormsParams;
 pub use viewer_prefs::{ViewerPageLayout, ViewerPageMode, ViewerPrefsParams};
 pub use watermark::{AutoSize, WatermarkFontSize, WatermarkKind, WatermarkLayout, WatermarkParams};
 pub use watermark_detect::WatermarkDetectParams;
-pub use watermark_remove::WatermarkRemoveParams;
+pub use watermark_remove::{
+    InpaintMethod, RasterMaskRect, RasterWatermarkMask, WatermarkRemoveParams,
+    WatermarkRemoveRasterParams,
+};
 pub use web_to_pdf::WebToPdfParams;
 
 /// A parameter value that the JSON schema alone cannot reject, reported without any document

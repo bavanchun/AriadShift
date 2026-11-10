@@ -1293,7 +1293,7 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
             ariad_core::tools::Step::Tool { tool, .. } => {
                 let _ = writeln!(io::stderr(), "  {}. tool {}", idx + 1, tool.as_str());
             }
-            ariad_core::tools::Step::Convert { to, profile } => match profile {
+            ariad_core::tools::Step::Convert { to, profile, .. } => match profile {
                 Some(p) => {
                     let _ = writeln!(
                         io::stderr(),
@@ -1331,7 +1331,7 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
     }
     let mut prompt_fields = std::collections::BTreeSet::new();
     for step in &recipe.steps {
-        if let ariad_core::tools::Step::Tool { tool, params } = step
+        if let ariad_core::tools::Step::Tool { tool, params, .. } = step
             && let Some(spec) = ariad_core::tools::registry::find(tool.as_str())
         {
             for &field in spec.secret_params {

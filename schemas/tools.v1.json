@@ -5018,6 +5018,174 @@
       "version": "1"
     },
     {
+      "engine": "inpaint",
+      "group": "overlay",
+      "id": "pdf.watermark_remove_raster",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "WatermarkRemoveRasterParams",
+        "description": "Parameters for `pdf.watermark_remove_raster` (preview is enabled by default).",
+        "type": "object",
+        "properties": {
+          "mask": {
+            "description": "Mask (automatic detection when omitted).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RasterWatermarkMask"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "method": {
+            "description": "Inpainting method (Telea by default).",
+            "$ref": "#/$defs/InpaintMethod",
+            "default": "telea"
+          },
+          "pages": {
+            "description": "Selected PDF pages, or all pages when omitted.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PageRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "preview": {
+            "description": "Return a preview for review before applying the result.",
+            "type": "boolean",
+            "default": true
+          },
+          "radius": {
+            "description": "Inpainting radius (3 pixels when omitted).",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null,
+            "maximum": 25.0,
+            "minimum": 1.0
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "AutoMask": {
+            "description": "Automatic mask selection.",
+            "oneOf": [
+              {
+                "description": "Detect a candidate raster watermark mask.",
+                "type": "string",
+                "const": "auto"
+              }
+            ]
+          },
+          "InpaintMethod": {
+            "description": "Inpainting method used by the isolated raster watermark engine.",
+            "oneOf": [
+              {
+                "description": "Fast marching inpainting.",
+                "type": "string",
+                "const": "telea"
+              },
+              {
+                "description": "Navier-Stokes inpainting.",
+                "type": "string",
+                "const": "ns"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "RasterMaskRect": {
+            "description": "A rectangle in raster coordinates, optionally restricted to one PDF page.",
+            "type": "object",
+            "properties": {
+              "height": {
+                "description": "Positive height.",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0
+              },
+              "page": {
+                "description": "1-based page, or every selected page when omitted.",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "default": null,
+                "minimum": 1
+              },
+              "width": {
+                "description": "Positive width.",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0
+              },
+              "x": {
+                "description": "Left coordinate.",
+                "type": "number",
+                "format": "double",
+                "minimum": 0
+              },
+              "y": {
+                "description": "Top coordinate.",
+                "type": "number",
+                "format": "double",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ]
+          },
+          "RasterWatermarkMask": {
+            "description": "Automatic detection or an explicit nonempty rectangle list.",
+            "anyOf": [
+              {
+                "description": "The string `\"auto\"`.",
+                "$ref": "#/$defs/AutoMask"
+              },
+              {
+                "description": "Explicit raster coordinates.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/RasterMaskRect"
+                },
+                "minItems": 1
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Preview or remove raster watermarks with inpainting.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
       "engine": "pdfium",
       "group": "convert",
       "id": "pdf.render",
@@ -10082,6 +10250,602 @@
       "secret_params": [],
       "summary": "Apply an ordered sequence of stateless in-place page edits (replace_text, set_text_style, move_object, delete_object, add_text, add_image, replace_image) with font fallback and optional incremental save.",
       "tier": "pro",
+      "version": "1"
+    },
+    {
+      "engine": "ai",
+      "group": "ai",
+      "id": "ai.summarize",
+      "input_formats": [
+        "pdf",
+        "docx",
+        "html",
+        "md",
+        "json"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "output_formats": [
+        "json",
+        "md"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AiSummarizeParams",
+        "description": "Parameters for `ai.summarize`.",
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "description": "API credential, supplied only through a secret channel.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "x-ariad-secret": true
+          },
+          "cloud_consent": {
+            "description": "Explicit permission to send document content to a cloud provider.",
+            "type": "boolean",
+            "default": false
+          },
+          "format": {
+            "description": "Summary format (JSON when omitted).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SummaryOutputFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "language": {
+            "description": "Optional output language.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "length": {
+            "description": "Requested detail (standard by default).",
+            "$ref": "#/$defs/SummaryLength",
+            "default": "standard"
+          },
+          "model": {
+            "description": "Optional provider model identifier.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "provider": {
+            "description": "Execution provider (local by default).",
+            "$ref": "#/$defs/AiProvider",
+            "default": "local"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "AiProvider": {
+            "description": "Execution provider; cloud requires explicit caller consent.",
+            "oneOf": [
+              {
+                "description": "`local`.",
+                "type": "string",
+                "const": "local"
+              },
+              {
+                "description": "`cloud`.",
+                "type": "string",
+                "const": "cloud"
+              }
+            ]
+          },
+          "SummaryLength": {
+            "description": "Requested summary detail.",
+            "oneOf": [
+              {
+                "description": "`brief`.",
+                "type": "string",
+                "const": "brief"
+              },
+              {
+                "description": "`standard`.",
+                "type": "string",
+                "const": "standard"
+              },
+              {
+                "description": "`detailed`.",
+                "type": "string",
+                "const": "detailed"
+              }
+            ]
+          },
+          "SummaryOutputFormat": {
+            "description": "Summary artifact format.",
+            "oneOf": [
+              {
+                "description": "`json`.",
+                "type": "string",
+                "const": "json"
+              },
+              {
+                "description": "`md`.",
+                "type": "string",
+                "const": "md"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [
+        "api_key"
+      ],
+      "summary": "Summarize a document in the requested language.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ai",
+      "group": "ai",
+      "id": "ai.ask",
+      "input_formats": [
+        "pdf",
+        "docx",
+        "html",
+        "md",
+        "json"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AiAskParams",
+        "description": "Parameters for `ai.ask`.",
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "description": "API credential, supplied only through a secret channel.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "x-ariad-secret": true
+          },
+          "cloud_consent": {
+            "description": "Explicit permission to send document content to a cloud provider.",
+            "type": "boolean",
+            "default": false
+          },
+          "max_citations": {
+            "description": "Citation limit (5 when omitted).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "default": null,
+            "maximum": 20,
+            "minimum": 1
+          },
+          "model": {
+            "description": "Optional provider model identifier.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "provider": {
+            "description": "Execution provider (local by default).",
+            "$ref": "#/$defs/AiProvider",
+            "default": "local"
+          },
+          "question": {
+            "description": "Nonempty question about the document.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "question"
+        ],
+        "$defs": {
+          "AiProvider": {
+            "description": "Execution provider; cloud requires explicit caller consent.",
+            "oneOf": [
+              {
+                "description": "`local`.",
+                "type": "string",
+                "const": "local"
+              },
+              {
+                "description": "`cloud`.",
+                "type": "string",
+                "const": "cloud"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [
+        "api_key"
+      ],
+      "summary": "Answer a document question with citations.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ai",
+      "group": "ai",
+      "id": "ai.translate",
+      "input_formats": [
+        "pdf",
+        "docx",
+        "html",
+        "md",
+        "json"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "output_formats": [
+        "pdf",
+        "docx",
+        "html",
+        "md",
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AiTranslateParams",
+        "description": "Parameters for `ai.translate`.",
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "description": "API credential, supplied only through a secret channel.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "x-ariad-secret": true
+          },
+          "cloud_consent": {
+            "description": "Explicit permission to send document content to a cloud provider.",
+            "type": "boolean",
+            "default": false
+          },
+          "format": {
+            "description": "Translation format (PDF when omitted).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TranslateOutputFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "model": {
+            "description": "Optional provider model identifier.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "provider": {
+            "description": "Execution provider (local by default).",
+            "$ref": "#/$defs/AiProvider",
+            "default": "local"
+          },
+          "source_lang": {
+            "description": "Optional source language (detected when omitted).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "target_lang": {
+            "description": "Nonempty target language identifier.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target_lang"
+        ],
+        "$defs": {
+          "AiProvider": {
+            "description": "Execution provider; cloud requires explicit caller consent.",
+            "oneOf": [
+              {
+                "description": "`local`.",
+                "type": "string",
+                "const": "local"
+              },
+              {
+                "description": "`cloud`.",
+                "type": "string",
+                "const": "cloud"
+              }
+            ]
+          },
+          "TranslateOutputFormat": {
+            "description": "Translation artifact format.",
+            "oneOf": [
+              {
+                "description": "`pdf`.",
+                "type": "string",
+                "const": "pdf"
+              },
+              {
+                "description": "`docx`.",
+                "type": "string",
+                "const": "docx"
+              },
+              {
+                "description": "`html`.",
+                "type": "string",
+                "const": "html"
+              },
+              {
+                "description": "`md`.",
+                "type": "string",
+                "const": "md"
+              },
+              {
+                "description": "`json`.",
+                "type": "string",
+                "const": "json"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [
+        "api_key"
+      ],
+      "summary": "Translate a document into another language.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ai",
+      "group": "ai",
+      "id": "ai.extract_tables",
+      "input_formats": [
+        "pdf",
+        "docx",
+        "html",
+        "md",
+        "json"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "csv",
+      "output_formats": [
+        "csv",
+        "xlsx",
+        "json"
+      ],
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AiExtractTablesParams",
+        "description": "Parameters for `ai.extract_tables`.",
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "description": "API credential, supplied only through a secret channel.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "x-ariad-secret": true
+          },
+          "cloud_consent": {
+            "description": "Explicit permission to send document content to a cloud provider.",
+            "type": "boolean",
+            "default": false
+          },
+          "format": {
+            "description": "Table format (CSV when omitted).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TableOutputFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "model": {
+            "description": "Optional provider model identifier.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "pages": {
+            "description": "Optional PDF page selector.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PageRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "provider": {
+            "description": "Execution provider (local by default).",
+            "$ref": "#/$defs/AiProvider",
+            "default": "local"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "AiProvider": {
+            "description": "Execution provider; cloud requires explicit caller consent.",
+            "oneOf": [
+              {
+                "description": "`local`.",
+                "type": "string",
+                "const": "local"
+              },
+              {
+                "description": "`cloud`.",
+                "type": "string",
+                "const": "cloud"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "TableOutputFormat": {
+            "description": "Extracted table artifact format.",
+            "oneOf": [
+              {
+                "description": "`csv`.",
+                "type": "string",
+                "const": "csv"
+              },
+              {
+                "description": "`xlsx`.",
+                "type": "string",
+                "const": "xlsx"
+              },
+              {
+                "description": "`json`.",
+                "type": "string",
+                "const": "json"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [
+        "api_key"
+      ],
+      "summary": "Extract document tables into structured data.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ai",
+      "group": "ai",
+      "id": "ai.recipe_from_text",
+      "input_formats": [],
+      "inputs": {
+        "arity": "none"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AiRecipeFromTextParams",
+        "description": "Parameters for `ai.recipe_from_text`.",
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "description": "API credential, supplied only through a secret channel.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "x-ariad-secret": true
+          },
+          "cloud_consent": {
+            "description": "Explicit permission to send document content to a cloud provider.",
+            "type": "boolean",
+            "default": false
+          },
+          "model": {
+            "description": "Optional provider model identifier.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "prompt": {
+            "description": "Nonempty instruction to turn into an imported recipe for review.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "provider": {
+            "description": "Execution provider (local by default).",
+            "$ref": "#/$defs/AiProvider",
+            "default": "local"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "$defs": {
+          "AiProvider": {
+            "description": "Execution provider; cloud requires explicit caller consent.",
+            "oneOf": [
+              {
+                "description": "`local`.",
+                "type": "string",
+                "const": "local"
+              },
+              {
+                "description": "`cloud`.",
+                "type": "string",
+                "const": "cloud"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "local"
+      ],
+      "secret_params": [
+        "api_key"
+      ],
+      "summary": "Draft an imported recipe from a natural-language instruction.",
+      "tier": "free",
       "version": "1"
     }
   ],

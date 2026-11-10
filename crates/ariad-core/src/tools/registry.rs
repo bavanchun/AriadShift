@@ -592,6 +592,20 @@ impl ToolSpec {
     ) -> bool {
         let norm = normalize_tool_format(artifact_format)
             .unwrap_or_else(|| artifact_format.trim().trim_start_matches('.'));
+        if matches!(
+            self.id,
+            "ai.summarize" | "ai.translate" | "ai.extract_tables"
+        ) {
+            let expected = match params.get("format") {
+                None | Some(serde_json::Value::Null) => self.output_format,
+                Some(value) => match value.as_str() {
+                    Some(value) => value,
+                    None => return false,
+                },
+            };
+            return self.accepts_output_format(expected)
+                && norm.eq_ignore_ascii_case(normalize_tool_format(expected).unwrap_or(expected));
+        }
         if self.id == "edit.export_document" {
             let expected = match params.get("format") {
                 None => "pdf",
