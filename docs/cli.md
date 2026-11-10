@@ -943,19 +943,31 @@ Page mode requires Pro access and the PDFium engine pack. `edit.apply` takes 1â€
 
 ---
 
+The registry also includes offline-first `ai.summarize`, `ai.ask`, `ai.translate`, `ai.extract_tables`, `ai.recipe_from_text` and `pdf.watermark_remove_raster`. Install the corresponding opt-in `ai` or `inpaint` pack before local execution. AI accepts `provider=cloud` only with `cloud_consent=true` and a Pro-or-higher plan or a user API key supplied using `--secret api_key=@file`. Set `ASHIFT_AI_CLOUD_URL` to the HTTPS chat endpoint; document content is sent by the host only after consent. Cloud tool-job admission rejects `$secret` references; secret resolution is local and ephemeral. See [AI and inpaint tool contracts](tools.md#offline-ai-and-raster-watermark-removal).
+
 ### `ashift recipe run`
 
 Executes a multi-step `ariad-recipe/1` JSON pipeline (`Step::Tool` and `Step::Convert`) inside an isolated workspace and atomically publishes the final step's outputs into the target directory.
 
 ```bash
 ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--overwrite] [--json]
+ashift recipe run <RECIPE.JSON> --watch <DIR> [--watch-once] [--settle-ms <MS>] [-o <OUT_DIR>] --yes [--json]
 ```
+
+Recipes support per-item `if` predicates (for example `"page_count > 1"`), `on_error: "stop" | "skip" | "continue"`, split fan-out and the `{stem}`, `{n}`, `{date}`, `{title}` naming tokens. See [recipe semantics](tools.md#9-recipes-ariad-recipe1-and-untrusted-recipe-rules).
+
+Watch JSON output contains `ok`, `processed`, `runs_executed`, `skipped_idempotent`, `failed` and `artifacts`. Ctrl-C cancels the shared host watcher.
 
 #### Arguments and Options
 
 - `<RECIPE.JSON>`: Path to a recipe file conforming to `schemas/recipe.v1.json` (`"version": "ariad-recipe/1"`).
 - `<INPUT>...`: Input files fed into step 1 of the recipe. On the Free plan, batch runs are capped at 25 files and 250 MB total (`exit_code: 11`, `error[tier_not_allowed]`).
-- `-o, --output <DIR>`: Destination directory for published outputs.
+- `-o, --output <DIR>`: Destination directory for published outputs. Required for ordinary recipe runs; watch mode defaults to `<watch-dir>/out`.
+- `--watch <DIR>`: Run one recipe per settled batch in the directory; cannot be combined with positional inputs. Content and recipe hash ledger entries prevent duplicate work while outputs exist. Incoming files move through `.processing` to `.done` or `.failed`.
+- `--watch-once`: Process a single settled snapshot and exit; requires `--watch`.
+- `--settle-ms <MS>`: Stability window in milliseconds (default 200); requires `--watch`.
+- `--origin imported`: Explicit imported origin (the default). File imports and AI-generated recipes always require confirmation.
+- `--confirmed`: Alias for `--yes`.
 - `--yes`: Confirm running an imported recipe without an interactive terminal prompt. Recipes loaded from `.json` files are classified as `Imported`, print their step summary to stderr, forbid `watch` and network-fetch tools (`pdf.from_url`, `web.to_pdf`), and require `--yes` in non-interactive scripts (otherwise exiting with code `9`, `error[invalid_params]`).
 - Recipe secret prompt references read one line per distinct secret field from stdin in alphabetical field order, or use hidden terminal prompts. Repeated references to the same field share its value.
 - `--overwrite`: Replace existing destination files in `<DIR>`.

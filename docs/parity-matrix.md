@@ -11,7 +11,7 @@ Sources (all under `plans/reports/`): `researcher-261031-2046-stirling-pdf.md` (
 - **Stirling** cites `S01`-`S52`, the 1-based order of the rows in the Stirling report's §2 feature table (the index at the end lists them). **Bento** lists the tool names exactly as the Bento report's §2 inventory spells them.
 - **Phase** is the plan phase (2-20) that delivers the row. `exists` means the route ships in v0.2.0.
 - **Engine**: `ariad-pdf`, `pdf` (text reader), `pdfium`, `qpdf`, `tesseract`, `libreoffice`, `pandoc`, `typst`, `docling`, `ai-pack`, plus `ariad-host` (composite tools), `ariad-core` (IR readers and writers), `sign-pack` (pyHanko), `verapdf-pack` and `inpaint-pack`.
-- **Runtimes**: `wasm` runs in the browser, `local` runs on the user's machine (CLI, local MCP, macOS app), `cloud` is eligible only after the phase 13 server tool-jobs task. Cloud and any AI hosted by AriadShift are Pro as a runtime (rule a below), not per row.
+- **Runtimes**: `wasm` runs in the browser, `local` runs on the user's machine (CLI, local MCP, macOS app), `cloud` is eligible through server tool jobs. Cloud and any AI hosted by AriadShift are Pro as a runtime (rule a below), not per row.
 - **Surfaces**: `CLI`, `MCP`, `web`, `mac`. `web(h)` means the web app shows the "Run on your computer" hand-off because the tool has no browser runtime.
 - `convert:a→b` is a conversion route (AD-1: routes stay in the planner; tools never enter it). Other ids are tools.
 - `†` marks a task added by the PM at the phase scout: the capability had no task in its initial phase file, and the Phase column names the phase that now owns it. Every `†` row is assigned (see "Gap assignments"); the phase 3 `†` tasks are now assigned to tasks T3–T5 in `phase-03-structural-pdf-tools.md`.
@@ -38,14 +38,14 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 |---|---|---|---|---|---|---|---|---|
 | `pdf.info` | organize | S24 info (fonts, sizes, permissions, metadata); S29 show JavaScript † (info reports `has_javascript` only, never the script text) | View Metadata; Page Dimensions | 2 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.merge` | organize | S01 merge | Merge PDFs | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.split` | organize | S01 split (size, chapters, sections, blank pages) | Split PDFs | 3 (`detect = "pixel"` blank-separator in 4; `detect = "content"` runs in `ariad-pdf` on `wasm, local`; `detect = "pixel"` requires `pdfium` on `local` and fails upfront with a typed missing-engine error when `pdfium` is unavailable) | ariad-pdf, pdfium | wasm, local (`detect = "pixel"`: local only; wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web, mac |
+| `pdf.split` | organize | S01 split (size, chapters, sections, blank pages) | Split PDFs | 3 (`detect = "pixel"` blank-separator in 4; `detect = "content"` runs in `ariad-pdf` on `wasm, local`; `detect = "pixel"` requires `pdfium` on `local` or `cloud` and fails upfront with a typed missing-engine error when `pdfium` is unavailable) | ariad-pdf, pdfium | wasm, local (`detect = "pixel"`: local and cloud; wasm in phase 14) | Free | CLI, MCP, web, mac |
 | `pdf.extract_pages` | organize | S01 extract pages | Extract Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.delete_pages` | organize | S01 remove pages | Delete Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.reorder` | organize | S01 reorder | Organize Pages; Reverse Pages; duplex collate | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.rotate` | organize | S01 rotate | Rotate PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.rotate_content` † (task T3) | organize | — | Rotate by Custom Degrees | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.crop` | organize | S01 crop | Crop PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.crop_whitespace` | organize | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.crop_whitespace` | organize | — | — | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
 | `pdf.scale` | organize | S01 scale | Fix Page Size | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.nup` | organize | S01 multi-page layout | N-Up PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.booklet` | organize | S01 booklet imposition | PDF Booklet | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
@@ -61,32 +61,32 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.portfolio` † (task T5) | organize | S01 portfolio; S40 create portfolio | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.page_labels` | organize | — | Add Page Labels | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.viewer_prefs` | organize | — | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.remove_blank` | organize | S02 remove blank pages | Remove Blank Pages | 4 | pdfium, ariad-pdf | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.detect_scanned` | organize | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.text_layout` | organize | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.remove_blank` | organize | S02 remove blank pages | Remove Blank Pages | 4 | pdfium, ariad-pdf | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
+| `pdf.detect_scanned` | organize | — | — | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
+| `pdf.text_layout` | organize | — | — | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
 | `pdf.layers` † (list, toggle, remove optional content groups; task T5) | organize | — | PDF Layers | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 
 ### convert (tools and routes)
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.render` (aliases `pdf.to_images`; BMP and TIFF output † added to the phase 4 format list; "Rasterize PDF" = recipe `pdf.render` then `image.to_pdf`) | convert | S03 PDF to image | PDF to JPG; PDF to PNG; PDF to WebP; PDF to BMP; PDF to TIFF; Rasterize PDF | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.thumbnails` | convert | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.extract_images` | convert | S03 extract images; extract images from scans | Extract Images | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `image.to_pdf` (JPEG, PNG, WebP, TIFF, BMP in-process via `ariad-pdf`; HEIC deferred — no permissive pure-Rust decoder) | convert | S12 image to PDF | Image to PDF; JPG to PDF; PNG to PDF; WebP to PDF; BMP to PDF; TIFF to PDF; HEIC to PDF | 4 | ariad-pdf | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
+| `pdf.render` (aliases `pdf.to_images`; BMP and TIFF output † added to the phase 4 format list; "Rasterize PDF" = recipe `pdf.render` then `image.to_pdf`) | convert | S03 PDF to image | PDF to JPG; PDF to PNG; PDF to WebP; PDF to BMP; PDF to TIFF; Rasterize PDF | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
+| `pdf.thumbnails` | convert | — | — | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
+| `pdf.extract_images` | convert | S03 extract images; extract images from scans | Extract Images | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
+| `image.to_pdf` (JPEG, PNG, WebP, TIFF, BMP in-process via `ariad-pdf`; HEIC deferred — no permissive pure-Rust decoder) | convert | S12 image to PDF | Image to PDF; JPG to PDF; PNG to PDF; WebP to PDF; BMP to PDF; TIFF to PDF; HEIC to PDF | 4 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.tables_to_csv` | convert | S07 PDF to CSV | PDF to CSV; Extract Tables | 10 | ariad-host, docling, ariad-core | local (D4) | Free | CLI, MCP, web(h), mac |
 | `web.to_pdf` (host fetch, offline render, AD-15) | convert | S12 web URL to PDF | — | 10 | ariad-host, ariad-core, typst | local | Free | CLI, MCP, web(h), mac |
-| `convert:pdf→docx` | convert | S06 PDF to DOCX | PDF to Word | 10 (styles in 11) | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
-| `convert:pdf→odt` | convert | S06 PDF to ODT | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
+| `convert:pdf→docx` | convert | S06 PDF to DOCX | PDF to Word | 10 (styles in 11) | pdf or docling, ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `convert:pdf→odt` | convert | S06 PDF to ODT | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→xlsx` | convert | S06 PDF to XLSX | PDF to Excel | 10 | docling, ariad-core | local (D4; wasm/cloud table detector deferred) | Free | CLI, MCP, web(h), mac |
-| `convert:pdf→pptx` | convert | S06 PDF to PPTX | — | 10 | libreoffice | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `convert:pdf→pptx` | convert | S06 PDF to PPTX | — | 10 | libreoffice | local, cloud | Free | CLI, MCP, web(h), mac |
 | `convert:pdf→html` | convert | S04 PDF to HTML | — | 10 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→md` | convert | — | PDF to Markdown; Prepare PDF for AI | 10 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→epub` | convert | S05 PDF to EPUB | — | 10 | ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `convert:pdf→txt` | convert | — | PDF to Text | 10 | pdf or docling, ariad-core | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
-| `convert:pdf→rtf` | convert | — | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
+| `convert:pdf→txt` | convert | — | PDF to Text | 10 | pdf or docling, ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `convert:pdf→rtf` | convert | — | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→json` (IR JSON, `--to json`) | convert | — | PDF to JSON | exists | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.to_cbz` † | convert | S10 PDF to CBZ | PDF to CBZ | 10 | pdfium, ariad-host | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.to_cbz` † | convert | S10 PDF to CBZ | PDF to CBZ | 10 | pdfium, ariad-host | local, cloud | Free | CLI, MCP, web(h), mac |
 | `convert:docx→pdf` (also doc, odt, rtf, xls, xlsx, ods, ppt, pptx, odp) | convert | S12 Word, Excel, PPT, ODF to PDF | Word to PDF; ODT to PDF; RTF to PDF; Excel to PDF; ODS to PDF; PowerPoint to PDF; ODP to PDF | exists (coverage verified in 10) | libreoffice | local, cloud | Free | CLI, MCP, web(h), mac |
 | `convert:odg→pdf` (also WPD, WPS, PUB, VSD; manual sample gate below; Pages is Not adopted, D2/D14) | convert | S12 ODF/Office family | WPD to PDF; WPS to PDF; PUB to PDF; VSD to PDF; ODG to PDF | 10 | libreoffice | local | Free | CLI, MCP, web(h), mac |
 | `convert:md→pdf` (also html, epub) | convert | S12 HTML, ebook (EPUB) to PDF | Markdown to PDF; EPUB to PDF | exists | ariad-core, typst, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
@@ -106,7 +106,7 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.decompress` † (task T3) | optimize | S16 decompress | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.linearize` | optimize | — | Linearize PDF | 5 | qpdf | local | Free | CLI, MCP, web(h), mac |
 
-Compression runs in-process; PDFium is used only for similarity measurement. Cloud runtimes are planned for phase 13.
+Compression runs in-process; PDFium is used only for similarity measurement. The eligible tools expose Cloud runtimes through server tool jobs.
 
 ### security
 
@@ -164,7 +164,7 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.redact` | redact | S25 redact | Redact Content | 9 | ariad-pdf, pdfium | local (wasm deferred to phase 14/15, cloud deferred to phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.redact` | redact | S25 redact | Redact Content | 9 | ariad-pdf, pdfium | local (wasm deferred to phase 14/15, cloud available) | Free | CLI, MCP, web(h), mac |
 | `pdf.sign_visual` | sign | S17 sign (draw, type, image) | Sign PDF | 9 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
 | `pdf.sign` (software certificate, PAdES B-B to B-LTA; macOS Keychain identities) | sign | S18 sign with certificate | Digital Signature | 9 | sign-pack | local | Free | CLI, MCP, web(h), mac |
 | `pdf.sign_token` † (PKCS#11 and smart-card tokens; split from `pdf.sign` because a tier belongs to a tool spec) | sign | S19 hardware / smart-card signing | — | 9 | sign-pack | local | Pro (b) | CLI, mac |
@@ -176,11 +176,11 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.to_pdfa` (mandatory veraPDF validation, AD-13) | convert | S08 PDF to PDF/A | PDF to PDF/A | 10 | ariad-pdf, ariad-host, verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.to_pdfua` (existing PDFs: accessibility report and failure, no repaired PDF; Typst IR export uses `--pdf-standard ua-1`, D9/D17) | convert | S09 PDF to PDF/UA | — | 10 | ariad-host, ariad-pdf | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.validate_pdfa` / `pdf.validate_pdfua` | compare | S23 validate PDF/A, PDF/UA | — | 10 | verapdf-pack | local (cloud in phase 13) | Free | CLI, MCP, web(h), mac |
-| `pdf.accessibility_report` | compare | S39 accessibility report (Enterprise or proprietary upstream) | — | 10 | ariad-pdf | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
-| `pdf.compare` (`mode`: `text`, `visual`, `both`) | compare | S36 compare two PDFs | Compare PDFs | 10 | ariad-pdf (text), pdfium (visual/both) | wasm (text), local (cloud in phase 13; D11) | Free | CLI, MCP, web, mac |
+| `pdf.to_pdfa` (mandatory veraPDF validation, AD-13) | convert | S08 PDF to PDF/A | PDF to PDF/A | 10 | ariad-pdf, ariad-host, verapdf-pack | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.to_pdfua` (existing PDFs: accessibility report and failure, no repaired PDF; Typst IR export uses `--pdf-standard ua-1`, D9/D17) | convert | S09 PDF to PDF/UA | — | 10 | ariad-host, ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.validate_pdfa` / `pdf.validate_pdfua` | compare | S23 validate PDF/A, PDF/UA | — | 10 | verapdf-pack | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.accessibility_report` | compare | S39 accessibility report (Enterprise or proprietary upstream) | — | 10 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.compare` (`mode`: `text`, `visual`, `both`) | compare | S36 compare two PDFs | Compare PDFs | 10 | ariad-pdf (text), pdfium (visual/both) | wasm (text), local, cloud (D11) | Free | CLI, MCP, web, mac |
 | `edit.page_objects`, `edit.apply` (Page mode, in place) | edit | S33 PDF text editor | Edit PDF Text; PDF Editor (search, shapes, images) | 12 | pdfium | wasm, local | Pro (d) | CLI, MCP, web, mac |
 
 ### ai and automation
@@ -201,10 +201,10 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | Item | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
 | Fidelity score per conversion and edit export (`ashift convert --json`, `edit.export_document`) | convert | PDF to Word complaints with no score (#4338, #4137) | no score | 11 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| Verified redaction report (`pdf.redact_verify`, `verification_report`) | redact | redaction path via jpdfium; no verification report | fake redaction, text still copyable (#762) | 9 | ariad-pdf, pdfium | local (wasm deferred to phase 14/15, cloud deferred to phase 13) | Free | CLI, MCP, web(h), mac |
+| Verified redaction report (`pdf.redact_verify`, `verification_report`) | redact | redaction path via jpdfium; no verification report | fake redaction, text still copyable (#762) | 9 | ariad-pdf, pdfium | local (wasm deferred to phase 14/15, cloud available) | Free | CLI, MCP, web(h), mac |
 | Document mode and Page mode on one viewer (`edit.open_document`, `edit.export_document`; Page mode is `edit.apply`, Pro) | edit | one in-place text editor (S33) | in-place text editor only | 12, 16, 18 | ariad-core, typst, pandoc | wasm, local | Document mode Free; Page mode Pro (d) | CLI, MCP, web, mac |
 | Natural-language recipes (`ai.recipe_from_text`, validated against the registry, never auto-run) | ai | AI agents are metered on Cloud (S45) | workflow builder without natural language | 13 | ai-pack | local | Free (offline); hosted models Pro (a) | CLI, MCP, web(h), mac |
-| Semantic compare (reading-order text diff in phase 10; IR-block level † not in a phase file yet) | compare | S36 compare, method unverified | Compare PDFs (pixel and text) | 10 | ariad-pdf (text), pdfium (visual/both) | wasm (text), local (cloud in phase 13; D11) | Free | CLI, MCP, web, mac |
+| Semantic compare (reading-order text diff in phase 10; IR-block level † not in a phase file yet) | compare | S36 compare, method unverified | Compare PDFs (pixel and text) | 10 | ariad-pdf (text), pdfium (visual/both) | wasm (text), local, cloud (D11) | Free | CLI, MCP, web, mac |
 | Crash-safe autosave with version history (op-list replay, AD-17) | edit | version history per file (report §5.1) | no autosave (#836) | 16, 18 | ariad-core | wasm, local | Free | web, mac |
 | Watermark removal level 1 (`pdf.watermark_detect`, `pdf.watermark_remove`: layers, artifacts, repeated objects; user-selected candidates only) | overlay | — | — | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | Watermark removal level 2 (`pdf.watermark_remove_raster`: Florence-2 detection, OpenCV inpainting; LaMa only after weight-licence review) | overlay | — | — | 13 | inpaint-pack | local | Free | CLI, MCP, web(h), mac |

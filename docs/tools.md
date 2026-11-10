@@ -18,6 +18,7 @@ The native host and browser build enable `ariad-pdf`'s `codecs` feature for font
 - [7. Resource Limits, Sandbox, Network Isolation, and Progress](#7-resource-limits-sandbox-network-isolation-and-progress)
 - [8. Determinism](#8-determinism)
 - [9. Recipes (`ariad-recipe/1`) and Untrusted Recipe Rules](#9-recipes-ariad-recipe1-and-untrusted-recipe-rules)
+- [Offline AI and raster watermark removal](#offline-ai-and-raster-watermark-removal)
 - [10. Tool Tiers and Access Control (`ToolAccess`)](#10-tool-tiers-and-access-control-toolaccess)
 - [Document and Page Editing (`edit` group)](#document-and-page-editing-edit-group)
 - [11. Secrets Contract (`x-ariad-secret`)](#11-secrets-contract-x-ariad-secret)
@@ -630,10 +631,11 @@ Expanded multi-step example:
 2. **Step kinds**:
    - **Tool step**: `{"tool": "<tool_id>", "params": { ... }, "if"?: "<condition>"}` invokes a registered tool from `ariad-core::tools`.
    - **Convert step**: `{"convert": {"to": "<format>", "profile"?: "editable" | "faithful" | "fast" | "private"}}` runs the standard conversion pipeline (`ariad-host::convert`) on each current artifact.
-3. **Fan-out and conditionals (Phase 13)**:
+3. **Fan-out and conditionals**:
    - When a step produces multiple artifacts (for example, `pdf.split` emitting 5 parts) and the next step has `InputArity::One` (for example, `pdf.rotate` or `convert`), the runner fans out and applies step `N + 1` to each artifact in order; if step `N + 1` has `InputArity::Many`, it receives the full artifact list as a single batch.
    - Optional step predicate `"if"` (such as `"page_count > 10"` or `"needs_ocr == true"`) skips the step and passes its inputs through unchanged when false.
-   - Optional error policy `"on_error": "stop" | "skip" | "continue"` defaults to `"stop"` (aborting the entire recipe and publishing nothing).
+   - Optional error policy `"on_error": "stop" | "skip" | "continue"` defaults to `"stop"` (aborting the entire recipe and publishing nothing). `skip` drops only the failed item and emits `recipe_step_skipped`; `continue` retains its pre-step input and emits `recipe_step_continued`.
+   - Both tool and conversion steps accept `if` and `on_error`. Predicates support integer comparisons (`>`, `>=`, `<`, `<=`, `==`, `!=`) on `page_count` and `size_bytes`, boolean checks on `needs_ocr`, `is_encrypted` and `has_signatures`, and quoted string equality/inequality on `format`. Invalid predicates fail validation before execution.
 4. **Atomic publication**: Intermediate step outputs remain inside the temporary workspace and are cleaned up when the recipe finishes. Only the final step's artifacts are atomically published to the output directory.
 
 ### Output Naming Templates
@@ -644,8 +646,15 @@ A recipe may specify an optional `"naming"` template for final published artifac
   - `{stem}`: Sanitized stem of the originating input file.
   - `{n}`: 1-based zero-padded output index (`001`, `002`, ...).
   - `{date}`: UTC date in `YYYY-MM-DD` (honouring `SOURCE_DATE_EPOCH`).
+  - `{title}`: Sanitized source PDF title, falling back to the originating file stem.
 - **Disallowed patterns**: Any path separator (`/`, `\`), `..` segment, leading dot (`.`), control character, shell metacharacter, or unknown `{...}` token is rejected during recipe validation with exit code `9` (`invalid_params`).
 - **Confinement**: Rendered output filenames are always joined as a single normal path component beneath the confined output directory capability (`cap_std::fs::Dir`).
+
+### Watch folders
+
+`ashift recipe run recipe.json --watch incoming --yes` uses the shared cross-platform host watcher. Files must remain stable for `--settle-ms` (default 200). Each settled batch runs the recipe once, subject to the plan's file/byte quotas. The watcher claims files under `.processing`, archives successes under `.done`, and records failures with JSON reports under `.failed`. Output defaults to `incoming/out`; `--watch-once` processes one settled snapshot for scripts. Ctrl-C cancels execution.
+
+The atomic `.ariad-watch-ledger.json` keys successful runs by content SHA-256 and canonical recipe SHA-256. Reintroduced inputs are skipped while their recorded artifacts still exist. Changes to content or recipe trigger execution again. Only one watcher may hold the directory lock. Recipes cannot configure watchers themselves; watch mode is an explicit caller action.
 
 ### Untrusted Recipes and Deep Links (AD-18)
 
@@ -660,6 +669,23 @@ Any recipe loaded from an external `.json` file, shared URL, clipboard import, m
 4. **Deep links are route-only**: `ariadshift://` deep links may only navigate to a named view, conversion pair, or tool ID (for example, `ariadshift://tool/pdf.merge`). Deep links **never** accept filesystem paths, parameter blobs, or inline recipes.
 
 ---
+
+## Offline AI and raster watermark removal
+
+The opt-in `ai` and `inpaint` engine packs run out of process without network access. Local execution is the default. The registry exposes these six tools:
+
+| Tool | Input and output |
+|---|---|
+| `ai.summarize` | One PDF, DOCX, HTML, Markdown or IR JSON document; JSON summary or Markdown (`format: "md"`). |
+| `ai.ask` | One document and a nonempty `question`; JSON answer with one-based page citations and exact source quotes. |
+| `ai.translate` | One document and `target_lang`; PDF, DOCX, HTML, Markdown or IR JSON. IR translation preserves structure and IDs. |
+| `ai.extract_tables` | One document; CSV (default), XLSX or JSON, with one artifact per detected table. |
+| `ai.recipe_from_text` | No document input; a nonempty `prompt` produces a validated recipe for review. Inline output marks `origin: "imported"` and `requires_confirmation: true`; the recipe artifact remains executable only after caller confirmation. |
+| `pdf.watermark_remove_raster` | One PDF; inpainted PDF and descriptive `before_page_NNN.png` / `after_page_NNN.png` previews by default. `preview: false` omits previews; an explicit PDF file destination publishes only the PDF. Supports automatic detection or page-specific rectangles, `telea` / `ns`, and radius 1–25. |
+
+For AI tools, `provider: "cloud"` additionally requires `cloud_consent: true` before the host reads document content. Free users must supply their own nonempty `api_key` through the secret channel; Pro, Team and Enterprise may use a configured endpoint without a user key. Configure `ASHIFT_AI_CLOUD_URL` to an HTTPS [Chat Completions endpoint](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) or an Anthropic-compatible [Messages endpoint](https://platform.claude.com/docs/en/api/messages/create) ending in `/messages`, and select its `model`. The trusted host extracts content, performs a bounded SSRF-safe POST and publishes validated artifacts. The local engine pack receives no network access. API keys are scrubbed from errors, warnings, metrics and cloud artifacts. HTTP loopback is restricted to integration tests explicitly setting `ASHIFT_TEST_ALLOW_LOOPBACK_AI=1`.
+
+Eligible registry tools advertise the `cloud` runtime after server tool-job admission is available. AI and raster inpaint remain local-runtime tools; the consent-gated provider adapter is a local host action. Cloud job admission rejects `$secret` references as well as literal secrets. Secrets remain local and ephemeral and never enter job rows or queues.
 
 ## 10. Tool Tiers and Access Control (`ToolAccess`)
 
@@ -946,7 +972,8 @@ ashift tool <TOOL_ID> <INPUT>... [-o <FILE_OR_DIR>] \
   [--overwrite] [--json]
 
 # Run a pipeline recipe
-ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--watch <DIR>] [--overwrite] [--json]
+ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--overwrite] [--json]
+ashift recipe run <RECIPE.JSON> --watch <DIR> [-o <OUT_DIR>] [--watch-once] --yes [--json]
 ```
 
 - `--param <KEY=VALUE>` parses `<VALUE>` as JSON when valid (`90`, `true`, `["1-3"]`) or falls back to a UTF-8 string (`all`, `per-file`), merging keys into the `params` object.
