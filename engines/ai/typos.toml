@@ -1,9 +1,0 @@
-[default.extend-words]
-# Vietnamese "muc" is the accent-folded compression-level keyword.
-muc = "muc"
-# Preserve the Dutch legal entity's exact name in the upstream Python licence.
-Stichting = "Stichting"
-Mathematisch = "Mathematisch"
-# Glossary words and naming-regex fragments already accepted by the root config.
-Ba = "Ba"
-Nam = "Nam"
