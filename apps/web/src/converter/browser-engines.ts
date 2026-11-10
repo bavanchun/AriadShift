@@ -73,12 +73,13 @@ export function browserEngines(core: Core): Core {
         to === "epub" ? "epub3" : to,
         reference,
       );
-      if (to === "docx") output.bytes = wasm.finishDocx(bytes, output.bytes);
+      const finalBytes: Uint8Array =
+        to === "docx" ? wasm.finishDocx(bytes, output.bytes) : output.bytes;
       const stamped =
         to === "rtf"
-          ? output.bytes
+          ? finalBytes
           : wasm.stampPackage(
-              output.bytes,
+              finalBytes,
               to === "epub" ? "epub" : to,
               new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
             );
