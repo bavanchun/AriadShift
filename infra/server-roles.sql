@@ -18,7 +18,7 @@ GRANT SELECT ON _sqlx_migrations, plan_entitlements TO ariad_api, ariad_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON uploads TO ariad_api;
 REVOKE INSERT, UPDATE, DELETE ON uploads FROM ariad_worker;
 GRANT SELECT ON uploads TO ariad_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON jobs, job_steps, job_events,
+GRANT SELECT, INSERT, UPDATE, DELETE ON jobs, job_inputs, job_steps, job_events,
     artifacts TO ariad_api, ariad_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON workspaces, rate_limit_counters,
     event_stream_leases TO ariad_api;
@@ -35,7 +35,14 @@ GRANT SELECT ON "apikey" TO ariad_api;
 -- existing queues, never extension/schema/queue administration privileges.
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA pgmq FROM PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON pgmq.q_jobs_core, pgmq.a_jobs_core,
-    pgmq.q_jobs_office, pgmq.a_jobs_office, pgmq.q_jobs_docling, pgmq.a_jobs_docling
+    pgmq.q_jobs_office, pgmq.a_jobs_office, pgmq.q_jobs_docling, pgmq.a_jobs_docling,
+    pgmq.q_jobs_pdfium, pgmq.a_jobs_pdfium,
+    pgmq.q_jobs_qpdf, pgmq.a_jobs_qpdf,
+    pgmq.q_jobs_tesseract, pgmq.a_jobs_tesseract,
+    pgmq.q_jobs_sign, pgmq.a_jobs_sign,
+    pgmq.q_jobs_verapdf, pgmq.a_jobs_verapdf,
+    pgmq.q_jobs_ai, pgmq.a_jobs_ai,
+    pgmq.q_jobs_inpaint, pgmq.a_jobs_inpaint
     TO ariad_api, ariad_worker;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pgmq TO ariad_api, ariad_worker;
 GRANT EXECUTE ON FUNCTION pgmq.send(text, jsonb, jsonb),

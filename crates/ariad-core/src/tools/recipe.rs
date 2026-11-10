@@ -23,7 +23,7 @@ pub const RECIPE_VERSION: &str = "ariad-recipe/1";
 pub const RECIPE_SCHEMA_ID: &str = "https://ariadshift.ariadnev.com/schemas/recipe.v1.json";
 
 /// Allowed placeholder tokens inside a recipe output naming template (`docs/tools.md` §9).
-pub const ALLOWED_NAMING_TOKENS: &[&str] = &["stem", "n", "date"];
+pub const ALLOWED_NAMING_TOKENS: &[&str] = &["stem", "n", "date", "title"];
 
 /// Tools that perform remote network fetches via the host and are forbidden in imported recipes.
 pub const NETWORK_FETCH_TOOLS: &[&str] = &["pdf.from_url", "web.to_pdf"];
@@ -72,6 +72,19 @@ pub struct ConvertTarget {
     pub profile: Option<Profile>,
 }
 
+/// Behavior when a recipe step fails for an input item.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StepErrorPolicy {
+    /// Abort the recipe without publishing any artifacts.
+    #[default]
+    Stop,
+    /// Drop failed items and execute subsequent steps on the remainder.
+    Skip,
+    /// Pass failed items unchanged to subsequent steps.
+    Continue,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RawToolStep {
@@ -80,6 +93,10 @@ struct RawToolStep {
     /// Tool parameters object (defaults to `{}`).
     #[serde(default)]
     params: Map<String, Value>,
+    #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
+    r#if: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    on_error: Option<StepErrorPolicy>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -87,6 +104,10 @@ struct RawToolStep {
 struct RawConvertStep {
     /// Standard format conversion step.
     convert: ConvertTarget,
+    #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
+    r#if: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    on_error: Option<StepErrorPolicy>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -106,6 +127,10 @@ pub enum Step {
         tool: ToolId,
         /// Tool parameters JSON object.
         params: Value,
+        /// Optional predicate evaluated against each current input item.
+        r#if: Option<String>,
+        /// Error policy, defaulting to stopping the entire recipe.
+        on_error: Option<StepErrorPolicy>,
     },
     /// Runs the standard conversion pipeline to `to` with optional `profile`.
     Convert {
@@ -113,6 +138,10 @@ pub enum Step {
         to: Format,
         /// Optional conversion profile.
         profile: Option<Profile>,
+        /// Optional predicate evaluated against each current input item.
+        r#if: Option<String>,
+        /// Error policy, defaulting to stopping the entire recipe.
+        on_error: Option<StepErrorPolicy>,
     },
 }
 
@@ -121,13 +150,27 @@ impl TryFrom<RawStep> for Step {
 
     fn try_from(raw: RawStep) -> Result<Self, Self::Error> {
         match raw {
-            RawStep::Tool(RawToolStep { tool, params }) => Ok(Self::Tool {
+            RawStep::Tool(RawToolStep {
+                tool,
+                params,
+                r#if,
+                on_error,
+            }) => Ok(Self::Tool {
                 tool,
                 params: Value::Object(params),
+                r#if,
+                on_error,
             }),
             RawStep::Convert(RawConvertStep {
                 convert: ConvertTarget { to, profile },
-            }) => Ok(Self::Convert { to, profile }),
+                r#if,
+                on_error,
+            }) => Ok(Self::Convert {
+                to,
+                profile,
+                r#if,
+                on_error,
+            }),
         }
     }
 }
@@ -135,15 +178,32 @@ impl TryFrom<RawStep> for Step {
 impl From<Step> for RawStep {
     fn from(step: Step) -> Self {
         match step {
-            Step::Tool { tool, params } => {
+            Step::Tool {
+                tool,
+                params,
+                r#if,
+                on_error,
+            } => {
                 let map = match params {
                     Value::Object(map) => map,
                     _ => Map::new(),
                 };
-                Self::Tool(RawToolStep { tool, params: map })
+                Self::Tool(RawToolStep {
+                    tool,
+                    params: map,
+                    r#if,
+                    on_error,
+                })
             }
-            Step::Convert { to, profile } => Self::Convert(RawConvertStep {
+            Step::Convert {
+                to,
+                profile,
+                r#if,
+                on_error,
+            } => Self::Convert(RawConvertStep {
                 convert: ConvertTarget { to, profile },
+                r#if,
+                on_error,
             }),
         }
     }
@@ -158,7 +218,7 @@ pub struct Recipe {
     /// Ordered pipeline steps executed sequentially.
     #[schemars(length(min = 1))]
     pub steps: Vec<Step>,
-    /// Optional output naming template (`[A-Za-z0-9._ -]` plus `{stem}`, `{n}`, `{date}`).
+    /// Optional output naming template (`[A-Za-z0-9._ -]` plus `{stem}`, `{n}`, `{date}`, `{title}`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub naming: Option<String>,
     /// Optional watch-folder path (forbidden when `origin` is [`RecipeOrigin::Imported`]).
@@ -187,9 +247,9 @@ pub enum NamingTemplateError {
         /// Offending template string.
         template: String,
     },
-    /// Naming template contains a placeholder token outside `{stem}`, `{n}`, `{date}`.
+    /// Naming template contains a placeholder token outside `{stem}`, `{n}`, `{date}`, `{title}`.
     #[error(
-        "naming template {template:?} contains unknown token {{{token}}}; allowed tokens: {{stem}}, {{n}}, {{date}}"
+        "naming template {template:?} contains unknown token {{{token}}}; allowed tokens: {{stem}}, {{n}}, {{date}}, {{title}}"
     )]
     UnknownToken {
         /// Offending template string.
@@ -199,7 +259,7 @@ pub enum NamingTemplateError {
     },
     /// Naming template contains a character outside `[A-Za-z0-9._ -]`.
     #[error(
-        "naming template {template:?} contains disallowed character {character:?}; only [A-Za-z0-9._ -] and {{stem}}, {{n}}, {{date}} are allowed"
+        "naming template {template:?} contains disallowed character {character:?}; only [A-Za-z0-9._ -] and {{stem}}, {{n}}, {{date}}, {{title}} are allowed"
     )]
     InvalidCharacter {
         /// Offending template string.
@@ -210,7 +270,7 @@ pub enum NamingTemplateError {
 }
 
 /// Validates a recipe output naming template against the charset `[A-Za-z0-9._ -]`
-/// and token set `{stem}`, `{n}`, `{date}` (`docs/tools.md` §9).
+/// and token set `{stem}`, `{n}`, `{date}`, `{title}` (`docs/tools.md` §9).
 pub fn validate_naming_template(template: &str) -> Result<(), NamingTemplateError> {
     if template.trim().is_empty() {
         return Err(NamingTemplateError::Empty);
@@ -292,6 +352,16 @@ pub enum RecipeError {
         /// Tool ID.
         tool: ToolId,
     },
+    /// A step predicate uses unsupported syntax or values.
+    #[error("step {step_index} has invalid condition {condition:?}: {reason}")]
+    InvalidCondition {
+        /// 0-based step index.
+        step_index: usize,
+        /// Original predicate.
+        condition: String,
+        /// Explanation of the invalid expression.
+        reason: String,
+    },
     /// Naming template failed validation.
     #[error("{0}")]
     InvalidNamingTemplate(#[from] NamingTemplateError),
@@ -355,7 +425,16 @@ impl Recipe {
         }
 
         for (step_index, step) in self.steps.iter().enumerate() {
-            if let Step::Tool { tool, params } = step {
+            if let Some(condition) = step.condition() {
+                validate_step_condition(condition).map_err(|reason| {
+                    RecipeError::InvalidCondition {
+                        step_index,
+                        condition: condition.to_owned(),
+                        reason,
+                    }
+                })?;
+            }
+            if let Step::Tool { tool, params, .. } = step {
                 if !params.is_object() {
                     return Err(RecipeError::ParamsNotObject {
                         step_index,
@@ -416,4 +495,191 @@ pub fn generated_recipe_schema() -> String {
     let mut contents = serde_json::to_string_pretty(&schema).expect("schema serializes to JSON");
     contents.push('\n');
     contents
+}
+
+impl Step {
+    /// The predicate for this step, if any.
+    #[must_use]
+    pub fn condition(&self) -> Option<&str> {
+        match self {
+            Self::Tool { r#if, .. } | Self::Convert { r#if, .. } => r#if.as_deref(),
+        }
+    }
+
+    /// Effective error policy (omission means stop).
+    #[must_use]
+    pub fn error_policy(&self) -> StepErrorPolicy {
+        match self {
+            Self::Tool { on_error, .. } | Self::Convert { on_error, .. } => {
+                on_error.unwrap_or_default()
+            }
+        }
+    }
+}
+
+/// Metadata available to a step predicate for its current input.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConditionContext {
+    /// Page count, if available for the format and encryption state.
+    pub page_count: Option<u32>,
+    /// Serialized input length.
+    pub size_bytes: u64,
+    /// Whether a PDF contains raster pages without a text layer.
+    pub needs_ocr: bool,
+    /// Whether the input is encrypted.
+    pub is_encrypted: bool,
+    /// Whether the input contains digital signatures.
+    pub has_signatures: bool,
+    /// Canonical input format identifier.
+    pub format: String,
+}
+
+#[derive(Clone, Copy)]
+enum Comparison {
+    Gt,
+    Ge,
+    Lt,
+    Le,
+    Eq,
+    Ne,
+}
+
+impl Comparison {
+    fn compare<T: PartialOrd + PartialEq>(self, left: T, right: T) -> bool {
+        match self {
+            Self::Gt => left > right,
+            Self::Ge => left >= right,
+            Self::Lt => left < right,
+            Self::Le => left <= right,
+            Self::Eq => left == right,
+            Self::Ne => left != right,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum IntegerField {
+    PageCount,
+    SizeBytes,
+}
+
+#[derive(Clone, Copy)]
+enum BooleanField {
+    NeedsOcr,
+    IsEncrypted,
+    HasSignatures,
+}
+
+impl BooleanField {
+    fn parse(field: &str) -> Option<Self> {
+        match field {
+            "needs_ocr" => Some(Self::NeedsOcr),
+            "is_encrypted" => Some(Self::IsEncrypted),
+            "has_signatures" => Some(Self::HasSignatures),
+            _ => None,
+        }
+    }
+
+    fn value(self, context: &ConditionContext) -> bool {
+        match self {
+            Self::NeedsOcr => context.needs_ocr,
+            Self::IsEncrypted => context.is_encrypted,
+            Self::HasSignatures => context.has_signatures,
+        }
+    }
+}
+
+enum Predicate<'a> {
+    Integer(IntegerField, Comparison, u64),
+    Boolean(BooleanField, Comparison, bool),
+    Format(Comparison, &'a str),
+}
+
+fn parse_condition(expr: &str) -> Result<Predicate<'_>, String> {
+    let expr = expr.trim();
+    let bare = expr.strip_prefix('!').unwrap_or(expr).trim();
+    if let Some(field) = BooleanField::parse(bare) {
+        return Ok(Predicate::Boolean(
+            field,
+            Comparison::Eq,
+            !expr.starts_with('!'),
+        ));
+    }
+    let (field, rest) = expr
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .map(|idx| (&expr[..idx], expr[idx..].trim()))
+        .ok_or_else(|| "expected a known field and comparison".to_owned())?;
+    let (op, value) = [
+        (">=", Comparison::Ge),
+        ("<=", Comparison::Le),
+        ("==", Comparison::Eq),
+        ("!=", Comparison::Ne),
+        (">", Comparison::Gt),
+        ("<", Comparison::Lt),
+    ]
+    .into_iter()
+    .find_map(|(prefix, op)| rest.strip_prefix(prefix).map(|v| (op, v.trim())))
+    .ok_or_else(|| "unsupported comparison operator".to_owned())?;
+    let integer_field = match field {
+        "page_count" => Some(IntegerField::PageCount),
+        "size_bytes" => Some(IntegerField::SizeBytes),
+        _ => None,
+    };
+    if let Some(field) = integer_field {
+        if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+            return Err("expected an unsigned integer".to_owned());
+        }
+        return value
+            .parse()
+            .map(|v| Predicate::Integer(field, op, v))
+            .map_err(|_| "integer exceeds u64".to_owned());
+    }
+    if !matches!(op, Comparison::Eq | Comparison::Ne) {
+        return Err("this field supports only == and !=".to_owned());
+    }
+    if let Some(field) = BooleanField::parse(field) {
+        return match value {
+            "true" => Ok(Predicate::Boolean(field, op, true)),
+            "false" => Ok(Predicate::Boolean(field, op, false)),
+            _ => Err("expected true or false".to_owned()),
+        };
+    }
+    if field == "format" {
+        let quote = value.chars().next().unwrap_or(' ');
+        if matches!(quote, '\'' | '"') && value.len() >= 2 && value.ends_with(quote) {
+            let inner = &value[1..value.len() - 1];
+            if !inner.is_empty()
+                && inner
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            {
+                return Ok(Predicate::Format(op, inner));
+            }
+        }
+        return Err("expected a quoted format identifier".to_owned());
+    }
+    Err(format!("unknown condition field {field:?}"))
+}
+
+/// Checks the supported single-predicate grammar without inspecting an input.
+pub fn validate_step_condition(expr: &str) -> Result<(), String> {
+    parse_condition(expr).map(|_| ())
+}
+
+/// Evaluates a validated predicate. Unknown page counts never match numeric comparisons.
+/// Errors use step index 0; recipe validation supplies the actual index before execution.
+pub fn eval_step_condition(expr: &str, ctx: &ConditionContext) -> Result<bool, RecipeError> {
+    let predicate = parse_condition(expr).map_err(|reason| RecipeError::InvalidCondition {
+        step_index: 0,
+        condition: expr.to_owned(),
+        reason,
+    })?;
+    Ok(match predicate {
+        Predicate::Integer(IntegerField::PageCount, op, value) => ctx
+            .page_count
+            .is_some_and(|n| op.compare(u64::from(n), value)),
+        Predicate::Integer(IntegerField::SizeBytes, op, value) => op.compare(ctx.size_bytes, value),
+        Predicate::Boolean(field, op, value) => op.compare(field.value(ctx), value),
+        Predicate::Format(op, value) => op.compare(ctx.format.as_str(), value),
+    })
 }

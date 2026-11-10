@@ -78,6 +78,23 @@ async fn runtime_database_roles_cannot_read_identity_secrets_or_migrate() {
             .execute(&mut *conn)
             .await
             .unwrap();
+        sqlx::query("SELECT * FROM job_inputs")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        for pack in ariad_server::packs::Pack::ALL {
+            let sent: i64 = sqlx::query_scalar("SELECT pgmq.send($1, '{}'::jsonb, '{}'::jsonb)")
+                .bind(pack.queue())
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+            sqlx::query("SELECT pgmq.archive($1, $2)")
+                .bind(pack.queue())
+                .bind(sent)
+                .execute(&mut *conn)
+                .await
+                .unwrap();
+        }
         sqlx::query("SELECT * FROM _sqlx_migrations")
             .execute(&mut *conn)
             .await
@@ -219,7 +236,22 @@ async fn migrations_seed_plans_queues_and_the_anonymous_tenant() {
             .fetch_all(&test_db.pool)
             .await
             .expect("queues");
-    assert_eq!(queues, ["jobs_core", "jobs_docling", "jobs_office"]);
+    let mut expected: Vec<_> = ariad_server::packs::Pack::ALL
+        .iter()
+        .map(|p| p.queue())
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(queues, expected);
+    let pro = entitlements::load(&test_db.pool, "pro").await.unwrap();
+    assert_eq!(pro.tool_plan(), ariad_core::tools::Plan::Pro);
+    assert!(pro.jobs_per_day > free.jobs_per_day);
+    let inputs_table: Option<String> = sqlx::query_scalar("SELECT to_regclass('job_inputs')::text")
+        .fetch_one(&test_db.pool)
+        .await
+        .unwrap();
+    assert_eq!(inputs_table.as_deref(), Some("job_inputs"));
+    let columns: Vec<String> = sqlx::query_scalar("SELECT column_name FROM information_schema.columns WHERE table_name = 'jobs' AND column_name IN ('tool_id', 'params') ORDER BY column_name").fetch_all(&test_db.pool).await.unwrap();
+    assert_eq!(columns, ["params", "tool_id"]);
 
     let tenant: String = sqlx::query_scalar("SELECT plan FROM workspaces WHERE id = $1")
         .bind(db::ANONYMOUS_WORKSPACE)

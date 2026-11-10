@@ -417,7 +417,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Create a conversion job.",
+        "summary": "Create a conversion or document-tool job.",
         "description": "Plans the route for the upload's format, checks the plan's quotas, and\nqueues the job for the worker pack that runs the route.",
         "operationId": "create_job",
         "requestBody": {
@@ -451,6 +451,16 @@
           },
           "401": {
             "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tool tier or per-run quota not allowed",
             "content": {
               "application/json": {
                 "schema": {
@@ -1683,24 +1693,47 @@
       },
       "CreateJobRequest": {
         "type": "object",
-        "description": "Creates a conversion job.",
-        "required": [
-          "upload_id",
-          "to"
-        ],
+        "description": "Creates a conversion or document-tool job.",
         "properties": {
+          "params": {
+            "description": "Tool parameters; literal secrets are rejected."
+          },
           "profile": {
             "$ref": "#/components/schemas/Profile"
           },
           "to": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Target format id or extension.",
             "example": "docx"
           },
+          "tool": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Registered document tool identifier. Omit for conversions."
+          },
           "upload_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
             "description": "A completed upload."
+          },
+          "upload_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Ordered completed uploads for a document tool; mutually exclusive with `upload_id`."
           }
         },
         "additionalProperties": false
@@ -1894,6 +1927,7 @@
           "pack": {
             "$ref": "#/components/schemas/Pack"
           },
+          "params": {},
           "profile": {
             "$ref": "#/components/schemas/Profile"
           },
@@ -1917,9 +1951,26 @@
           "to": {
             "type": "string"
           },
+          "tool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "upload_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "First input upload; the nil UUID for tools requiring no inputs."
+          },
+          "upload_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           "warnings": {
             "type": "array",
@@ -2110,7 +2161,14 @@
         "enum": [
           "core",
           "office",
-          "docling"
+          "docling",
+          "pdfium",
+          "qpdf",
+          "tesseract",
+          "sign",
+          "verapdf",
+          "ai",
+          "inpaint"
         ]
       },
       "PlanAlternative": {

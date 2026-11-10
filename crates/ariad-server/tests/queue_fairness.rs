@@ -47,9 +47,12 @@ async fn enqueue(h: &Harness, subject: &str, pack: Pack) -> Uuid {
             id,
             workspace_id,
             subject,
-            upload_id: upload,
+            upload_id: Some(upload),
+            tool_id: None,
+            params: None,
+            tool_plan: ariad_core::tools::Plan::Free,
             source_format: "markdown",
-            target_format: "html",
+            target_format: Some("html"),
             profile: "editable",
             pack,
             limits: serde_json::to_value(ariad_core::limits::Limits::default()).unwrap(),
@@ -699,6 +702,30 @@ async fn terminal_leases_are_archived_without_redelivering_live_leases() {
             .unwrap()
             .attempts,
         0
+    );
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn document_engine_queues_share_the_subject_turn() {
+    let Some(h) = start("fair_document_packs").await else {
+        return;
+    };
+    let first = enqueue(&h, "a", Pack::Pdfium).await;
+    let backlog = enqueue(&h, "a", Pack::Qpdf).await;
+    let other = enqueue(&h, "b", Pack::Qpdf).await;
+    let queue = PgmqQueue::new(h.db.pool.clone());
+    assert_eq!(
+        read(&queue, Pack::Pdfium).await.message.unwrap().job_id,
+        first
+    );
+    assert_eq!(
+        read(&queue, Pack::Qpdf).await.message.unwrap().job_id,
+        other
+    );
+    assert_eq!(
+        read(&queue, Pack::Qpdf).await.message.unwrap().job_id,
+        backlog
     );
     h.stop().await;
 }

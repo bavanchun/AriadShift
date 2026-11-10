@@ -148,8 +148,11 @@ impl RemoteServer {
                     State(self.state.clone()),
                     copy_caller(caller),
                     ApiJson(CreateJobRequest {
-                        upload_id,
-                        to: request.to,
+                        upload_id: Some(upload_id),
+                        to: Some(request.to),
+                        upload_ids: None,
+                        tool: None,
+                        params: None,
                         profile: request.profile,
                     }),
                 )
@@ -176,6 +179,50 @@ impl RemoteServer {
                 let job = super::response_json(response).await?;
                 Ok(json!({"job": job, "outputs": [],
                     "next": "Call job_status with job.id until terminal; succeeded jobs include download URLs."}))
+            }
+            "list_doc_tools" => {
+                let request: ListDocToolsArgs = arguments_as(arguments)?;
+                let tools: Vec<_> = ariad_core::tools::all()
+                    .iter()
+                    .filter(|spec| {
+                        request.group.is_none_or(|group| group == spec.group)
+                            && request
+                                .runtime
+                                .is_none_or(|runtime| spec.runtimes.contains(&runtime))
+                            && request.tier.is_none_or(|tier| tier == spec.tier)
+                    })
+                    .map(|spec| spec.to_descriptor())
+                    .collect();
+                as_value(json!({"tools": tools}))
+            }
+            "run_doc_tool" => {
+                let request: RunDocToolArgs = arguments_as(arguments)?;
+                let ids = crate::tool_jobs::input_ids(request.upload_id, request.upload_ids)?;
+                let row = crate::tool_jobs::create_tool(
+                    &self.state,
+                    caller,
+                    &request.tool,
+                    ids,
+                    request.params,
+                    Profile::Editable,
+                )
+                .await?;
+                let job = api::jobs::job_dto(&self.state, &row).await?;
+                Ok(json!({"job": job, "outputs": [], "next": "Poll job_status for results."}))
+            }
+            "run_recipe" => {
+                let request: RunRecipeArgs = arguments_as(arguments)?;
+                let ids = crate::tool_jobs::input_ids(request.upload_id, request.upload_ids)?;
+                let row = crate::tool_jobs::create_recipe(
+                    &self.state,
+                    caller,
+                    request.recipe,
+                    request.confirmed,
+                    ids,
+                )
+                .await?;
+                let job = api::jobs::job_dto(&self.state, &row).await?;
+                Ok(json!({"job": job, "outputs": [], "next": "Poll job_status for results."}))
             }
             "job_status" => {
                 let request: JobArgs = arguments_as(arguments)?;
@@ -307,6 +354,38 @@ struct ConvertArgs {
     profile: Profile,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListDocToolsArgs {
+    group: Option<ariad_core::tools::ToolGroup>,
+    runtime: Option<ariad_core::tools::ToolRuntime>,
+    tier: Option<ariad_core::tools::Tier>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunDocToolArgs {
+    tool: String,
+    upload_id: Option<Uuid>,
+    upload_ids: Option<Vec<Uuid>>,
+    #[serde(default = "empty_params")]
+    params: Value,
+}
+
+fn empty_params() -> Value {
+    json!({})
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunRecipeArgs {
+    recipe: ariad_core::tools::Recipe,
+    #[serde(default)]
+    confirmed: bool,
+    upload_id: Option<Uuid>,
+    upload_ids: Option<Vec<Uuid>>,
+}
+
 enum Source {
     Upload(Uuid),
     Inline(Inline),
@@ -353,7 +432,7 @@ impl ServerHandler for RemoteServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("ariadshift-remote", env!("CARGO_PKG_VERSION")))
-            .with_instructions("Inspect verified uploads, plan routes, submit conversion jobs, and poll job_status for short-lived output URLs. File paths and URL inputs are not accepted.")
+            .with_instructions("Inspect verified uploads, list document tools, submit conversion, tool or confirmed recipe jobs, and poll job_status for short-lived output URLs. File paths and URL inputs are not accepted.")
     }
 
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
@@ -431,6 +510,18 @@ fn definitions() -> Vec<Tool> {
     let format = json!({"type": "string", "minLength": 1, "maxLength": 64});
     let profile =
         json!({"type": "string", "enum": ["editable", "faithful", "fast"], "default": "editable"});
+    let mut recipe_schema: Value =
+        serde_json::from_str(&ariad_core::tools::generated_recipe_schema())
+            .expect("recipe schema is valid JSON");
+    // Embedded references resolve against the MCP inputSchema root.
+    let recipe_defs = recipe_schema
+        .as_object_mut()
+        .and_then(|s| s.remove("$defs"))
+        .unwrap_or_else(|| json!({}));
+    recipe_schema
+        .as_object_mut()
+        .expect("recipe schema is an object")
+        .remove("$id");
     let schemas = [
         (
             "list_engines",
@@ -461,6 +552,24 @@ fn definitions() -> Vec<Tool> {
             "Get an authorized job's state and warnings. Succeeded jobs include output filenames, checksums, sizes and presigned URLs valid for five minutes. Poll again to refresh URLs; expired files cannot be recovered.",
             json!({"type": "object", "properties": {"job_id": uuid}, "required": ["job_id"], "additionalProperties": false}),
             true,
+        ),
+        (
+            "list_doc_tools",
+            "List registered document tools and their parameter schemas, filtered by group, runtime or tier. Check your plan before running Pro tools.",
+            json!({"type":"object", "properties":{"group":{"type":"string", "enum": ariad_core::tools::ToolGroup::ALL.iter().map(|g|g.as_str()).collect::<Vec<_>>()}, "runtime":{"type":"string", "enum":["local","wasm","cloud"]}, "tier":{"type":"string", "enum":["free","pro"]}}, "additionalProperties":false}),
+            true,
+        ),
+        (
+            "run_doc_tool",
+            "Queue a registered document tool over completed upload_id or ordered upload_ids. Parameters must match its schema; literal secrets and unresolved secret references are rejected. Consumes job quotas; poll job_status for output URLs.",
+            json!({"type":"object", "properties":{"tool":{"type":"string"}, "upload_id":uuid, "upload_ids":{"type":"array", "items":uuid}, "params":{"type":"object", "default":{}}}, "required":["tool"], "not":{"required":["upload_id","upload_ids"]}, "additionalProperties":false}),
+            false,
+        ),
+        (
+            "run_recipe",
+            "Queue an imported ariad-recipe/1 pipeline over completed uploads. Review every step and explicitly set confirmed:true. Watch folders, network-fetch steps, literal secrets and unresolved secret references are rejected. Enforces tool tiers and run quotas; poll job_status for outputs.",
+            json!({"type":"object", "properties":{"recipe":recipe_schema, "confirmed":{"type":"boolean", "default":false}, "upload_id":uuid, "upload_ids":{"type":"array", "items":uuid}}, "$defs":recipe_defs, "required":["recipe","confirmed"], "not":{"required":["upload_id","upload_ids"]}, "additionalProperties":false}),
+            false,
         ),
     ];
     schemas

@@ -57,7 +57,7 @@ pub const IMAGE_TO_PDF_MAX_INPUTS: usize = 500;
 /// Engine identifier of the PDFium engine pack.
 pub const PDFIUM_ENGINE: &str = "pdfium";
 
-const PDFIUM_RUNTIMES: &[ToolRuntime] = &[ToolRuntime::Local];
+const PDFIUM_RUNTIMES: &[ToolRuntime] = &[ToolRuntime::Local, ToolRuntime::Cloud];
 
 /// Returns the tool specifications registered by this module.
 #[must_use]
@@ -118,7 +118,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<ImageToPdfParams>,
             secret_params: &[],
@@ -286,7 +286,12 @@ mod tests {
     fn pdfium_tools_run_locally_in_the_pdfium_engine() {
         for spec in specs().iter().filter(|spec| spec.id != "image.to_pdf") {
             assert_eq!(spec.engine, "pdfium", "{}", spec.id);
-            assert_eq!(spec.runtimes, [ToolRuntime::Local], "{}", spec.id);
+            assert_eq!(
+                spec.runtimes,
+                [ToolRuntime::Local, ToolRuntime::Cloud],
+                "{}",
+                spec.id
+            );
             assert_eq!(spec.inputs, InputArity::One, "{}", spec.id);
             assert_eq!(spec.input_formats, ["pdf"], "{}", spec.id);
         }
@@ -296,7 +301,10 @@ mod tests {
     fn image_to_pdf_runs_in_ariad_pdf_on_wasm_and_local() {
         let spec = spec("image.to_pdf");
         assert_eq!(spec.engine, "ariad-pdf");
-        assert_eq!(spec.runtimes, [ToolRuntime::Wasm, ToolRuntime::Local]);
+        assert_eq!(
+            spec.runtimes,
+            [ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud]
+        );
         assert_eq!(spec.inputs, InputArity::many(1, IMAGE_TO_PDF_MAX_INPUTS));
         assert_eq!(spec.input_formats, ["png", "jpeg", "webp", "tiff", "bmp"]);
         assert!(!spec.accepts_format("heic"));

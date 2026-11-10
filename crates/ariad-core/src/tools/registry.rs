@@ -592,6 +592,28 @@ impl ToolSpec {
     ) -> bool {
         let norm = normalize_tool_format(artifact_format)
             .unwrap_or_else(|| artifact_format.trim().trim_start_matches('.'));
+        if self.id == "pdf.watermark_remove_raster" {
+            return norm.eq_ignore_ascii_case("pdf")
+                || (norm.eq_ignore_ascii_case("png")
+                    && params
+                        .get("preview")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(true));
+        }
+        if matches!(
+            self.id,
+            "ai.summarize" | "ai.translate" | "ai.extract_tables"
+        ) {
+            let expected = match params.get("format") {
+                None | Some(serde_json::Value::Null) => self.output_format,
+                Some(value) => match value.as_str() {
+                    Some(value) => value,
+                    None => return false,
+                },
+            };
+            return self.accepts_output_format(expected)
+                && norm.eq_ignore_ascii_case(normalize_tool_format(expected).unwrap_or(expected));
+        }
         if self.id == "edit.export_document" {
             let expected = match params.get("format") {
                 None => "pdf",

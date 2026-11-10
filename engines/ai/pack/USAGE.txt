@@ -1,0 +1,49 @@
+Offline AI development pack
+
+Run from the repository root (serialize commands with the coordinator build lock):
+  uv run --project engines/ai --locked python engines/ai/pack/build.py build --out /absolute/empty/ai-pack
+Then set ASHIFT_PACK_AI to that pack directory for the host.
+
+The development builder copies the active Python interpreter, standard library,
+local unmodified pypdf sources (verified against installed RECORD SHA-256/size),
+notices and an ariad-pack/1 manifest. No package install or model download occurs
+inside the builder or engine. Release assembly must use the Python archives
+pinned in pins.toml; this builder does not produce a signed release artifact.
+
+Protocol: one ariad-engine/2 NDJSON request on stdin, protocol output on the
+ARIAD_PROTOCOL_FD descriptor (stdout by default). The canonical discriminator is
+type, matching ariad-core::protocol::v2. Artifact/result events also expose the
+event alias. Artifacts precede the terminal result. Structured values are placed
+in result.data and result.metrics. JSON output is a standard artifact so the
+host can populate ToolOutcome.inline_json without a protocol schema change.
+
+ai.recipe_from_text accepts zero inputs or one staged UTF-8 prompt file.
+params.prompt takes priority. The staged file may be plain text, a JSON string,
+or a JSON object containing prompt. The JSON artifact contains only the recipe;
+result data/metrics carry origin=imported and requires_confirmation=true.
+Recipes are suggestions and never executed. Both EN/VI are accepted, including
+conditions and naming templates. Watermark candidate IDs are preserved verbatim.
+Without explicit candidate IDs, watermark removal selects raster auto detection.
+
+Default backends are extractive summarization, lexical per-page citation ranking,
+structure-preserving EN/VI glossary translation and conservative workflow parsing.
+Translation leaves unfamiliar terms unchanged and emits offline_glossary_partial;
+use a local model for fluent/general-purpose translation. JSON translation keeps
+ariad-ir/2 block IDs, structure, formatting, styles and source maps intact.
+Markdown/HTML markup and DOCX runs are preserved for translation to the same format.
+PDF output uses a searchable self-contained Type 3 font with Vietnamese accents.
+
+Optional local inference: supply absolute local llama_cli and model_path (or
+gguf_model) paths in the matching platform entry
+in pack.toml under [targets.options]. The engine reads these defaults directly
+and expands {root}; explicit request options can override them. Only summarize, ask and
+translate use inference; recipe/table parsing remain deterministic. No model or
+CLI is downloaded at execution time; Qwen GGUF and llama.cpp sources are pinned.
+Cloud providers are rejected here and belong to the consent-gated host adapter.
+The host EngineSpec marks ai sandbox_required=true and blocks network access.
+
+Tests:
+  uv run --no-project --python 3.14 --with pytest==9.2.0 --with pypdf==7.0.0 python3 -m pytest engines/ai/tests engines/inpaint/tests
+  uv run --no-project --with ruff==0.17.4 ruff check engines/ai engines/inpaint
+The 50-prompt evaluation checks exact ordered steps, arguments, conditions and
+naming, with 25 original English and 25 original Vietnamese prompts.

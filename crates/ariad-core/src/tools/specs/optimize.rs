@@ -17,7 +17,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Local], // Available in local applications.
+            runtimes: &[ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<CompressParams>,
             secret_params: &[],
@@ -32,7 +32,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Local], // Available in local applications.
+            runtimes: &[ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             params_schema: schema_for_params::<GrayscaleParams>,
             secret_params: &[],
@@ -47,7 +47,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Local], // Available in local applications.
+            runtimes: &[ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "qpdf",
             params_schema: schema_for_params::<RepairParams>,
             secret_params: &[],
@@ -62,7 +62,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_format: "pdf",
             output_formats: &[],
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Local], // Available in local applications.
+            runtimes: &[ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "qpdf",
             params_schema: schema_for_params::<LinearizeParams>,
             secret_params: &[],
@@ -73,13 +73,13 @@ pub fn specs() -> Vec<ToolSpec> {
 mod tests {
     use super::*;
     #[test]
-    fn specifications_are_valid_and_local_or_browser_only() {
+    fn specifications_are_valid_and_cloud_eligible() {
         let specs = specs();
         crate::tools::validate_specs(&specs).unwrap();
         assert!(
             specs
                 .iter()
-                .all(|s| !s.runtimes.contains(&ToolRuntime::Cloud))
+                .all(|s| s.runtimes.contains(&ToolRuntime::Cloud))
         );
         for spec in specs {
             let schema = serde_json::to_value(spec.resolved_params_schema()).unwrap();

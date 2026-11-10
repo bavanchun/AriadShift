@@ -1,5 +1,6 @@
 //! Per-file tool specification lists concatenated into the global tool registry.
 
+pub mod ai;
 pub mod annotate_forms;
 pub mod compare;
 pub mod compliance;
@@ -53,5 +54,6 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(compliance::specs());
     list.extend(web::specs());
     list.extend(edit::specs());
+    list.extend(ai::specs());
     list
 }

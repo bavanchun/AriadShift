@@ -309,7 +309,11 @@ impl Worker {
             tracing::warn!(error = %err, "could not remove the job directory");
         }
         let elapsed = started.elapsed();
-        let route = format!("{}->{}", job.source_format, job.target_format);
+        let route = format!(
+            "{}->{}",
+            job.source_format,
+            job.target_format.as_deref().unwrap_or("tool")
+        );
 
         match result {
             Ok(done) => {
@@ -373,7 +377,13 @@ impl Worker {
         dir: &FsPath,
         cancel: &CancellationToken,
     ) -> Result<Done, Outcome> {
-        let upload = db::get_upload(&self.db, job.upload_id)
+        if job.tool_id.is_some() {
+            return self.execute_tool(job, limits, dir, cancel).await;
+        }
+        let upload_id = job
+            .upload_id
+            .ok_or_else(|| Outcome::permanent("input_io", "missing conversion input"))?;
+        let upload = db::get_upload(&self.db, upload_id)
             .await
             .map_err(|err| Outcome::transient("database", err.to_string()))?
             .filter(|u| u.status() == UploadStatus::Completed)
@@ -385,7 +395,10 @@ impl Worker {
             })?;
         let source = routing::resolve_format(&job.source_format)
             .ok_or_else(|| Outcome::permanent("unsupported_route", "unknown source format"))?;
-        let target = routing::resolve_format(&job.target_format)
+        let target = job
+            .target_format
+            .as_deref()
+            .and_then(routing::resolve_format)
             .ok_or_else(|| Outcome::permanent("unsupported_route", "unknown target format"))?;
 
         if let Err(err) = tokio::fs::remove_dir_all(dir).await
@@ -524,12 +537,14 @@ impl Worker {
                 )
             })?;
         Ok(Done {
-            filename: format!("{stem}.{extension}"),
-            format: target.id().to_owned(),
-            media_type: target.media_type().to_owned(),
-            size,
-            sha256: sha,
-            key,
+            artifacts: vec![Uploaded {
+                filename: format!("{stem}.{extension}"),
+                format: target.id().to_owned(),
+                media_type: target.media_type().to_owned(),
+                size,
+                sha256: sha,
+                key,
+            }],
             input_bytes: upload.size_bytes,
             route: report
                 .route
@@ -546,12 +561,203 @@ impl Worker {
         })
     }
 
+    async fn execute_tool(
+        &self,
+        job: &JobRow,
+        limits: &Limits,
+        dir: &FsPath,
+        cancel: &CancellationToken,
+    ) -> Result<Done, Outcome> {
+        use ariad_host::tools::{InputRef, ToolError};
+        if let Err(err) = tokio::fs::remove_dir_all(dir).await
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(Outcome::transient("output_io", err.to_string()));
+        }
+        let out_dir = dir.join("out");
+        tokio::fs::create_dir_all(&out_dir)
+            .await
+            .map_err(|err| Outcome::transient("output_io", err.to_string()))?;
+        let ids = db::job_input_ids(&self.db, job)
+            .await
+            .map_err(|err| Outcome::transient("database", err.to_string()))?;
+        let mut inputs = Vec::new();
+        let mut input_bytes = 0i64;
+        for (position, id) in ids.iter().enumerate() {
+            let upload = db::get_upload(&self.db, *id)
+                .await
+                .map_err(|err| Outcome::transient("database", err.to_string()))?
+                .filter(|u| {
+                    u.workspace_id == job.workspace_id
+                        && u.status() == UploadStatus::Completed
+                        && u.expires_at > Utc::now()
+                })
+                .ok_or_else(|| Outcome::permanent("input_io", "an input is no longer available"))?;
+            let format = upload
+                .format
+                .as_deref()
+                .ok_or_else(|| Outcome::permanent("wrong_input", "unknown input format"))?;
+            let extension = ariad_core::tools::normalize_tool_format(format)
+                .ok_or_else(|| Outcome::permanent("wrong_input", "unknown input format"))?;
+            let input = dir.join(format!("input-{position}.{extension}"));
+            let declared = u64::try_from(upload.size_bytes).unwrap_or(0);
+            let downloaded = tokio::select! {
+                () = cancel.cancelled() => return Err(Outcome::Canceled),
+                result = self.storage.download(&upload.storage_key, &input, declared) => result,
+            };
+            match downloaded {
+                Ok((size, sha)) if size == declared && sha == upload.sha256 => {}
+                Ok(_) | Err(storage::StorageError::TooLarge(_)) => {
+                    self.remove_invalid_input(&upload.storage_key).await;
+                    return Err(Outcome::permanent(
+                        "input_io",
+                        "a stored input does not match its declared size or hash",
+                    ));
+                }
+                Err(err) if err.is_not_found() => {
+                    return Err(Outcome::permanent(
+                        "input_io",
+                        "an input is no longer available",
+                    ));
+                }
+                Err(err) => return Err(Outcome::transient("storage", err.to_string())),
+            }
+            input_bytes = input_bytes.saturating_add(upload.size_bytes);
+            inputs.push(InputRef::new(input));
+        }
+        let body = crate::tool_runner::RequestBody {
+            tool: job
+                .tool_id
+                .clone()
+                .ok_or_else(|| Outcome::permanent("unknown_tool", "missing tool"))?,
+            params: job
+                .params
+                .as_ref()
+                .map_or_else(|| json!({}), |p| p.0.clone()),
+            inputs,
+            output_dir: out_dir.clone(),
+            limits: limits.clone(),
+            plan: job.tool_plan.parse().unwrap_or_default(),
+            engine_program: Some(self.config.engine_program.clone()),
+        };
+        let program = self.config.conversion_program.clone();
+        let sandbox = self.config.sandbox.host_mode();
+        let helper_cancel = cancel.clone();
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
+        let progress = tokio::spawn(forward_progress(self.db.clone(), job.id, events_rx));
+        let result = tokio::task::spawn_blocking(move || {
+            crate::tool_runner::run(&program, body, sandbox, helper_cancel, |stage| {
+                let _ = events_tx.send(stage);
+            })
+        })
+        .await;
+        let _ = progress.await;
+        let report = match result {
+            _ if cancel.is_cancelled() => return Err(Outcome::Canceled),
+            Ok(Ok(report)) => report,
+            Ok(Err(ToolError::Interrupted)) => return Err(Outcome::Canceled),
+            Ok(Err(error)) => {
+                let failure = match error.code() {
+                    "tool_missing" | "sandbox_unavailable" | "engine_failure" => {
+                        Failure::transient(error.code(), "document tool failed")
+                    }
+                    code => Failure::permanent(code, "the document tool could not finish"),
+                };
+                return Err(Outcome::Failed(failure, Vec::new()));
+            }
+            Err(_) => return Err(Outcome::transient("failed", "tool helper failed")),
+        };
+        let warnings = report
+            .warnings
+            .into_iter()
+            .map(|w| JobWarning {
+                code: w.code,
+                message: w.message,
+            })
+            .collect();
+        let mut done = Done {
+            artifacts: Vec::new(),
+            input_bytes,
+            route: Vec::new(),
+            warnings,
+        };
+        let uploaded = self
+            .upload_tool_artifacts(job, &out_dir, report.artifacts, cancel, &mut done)
+            .await;
+        if let Err(error) = uploaded {
+            for artifact in &done.artifacts {
+                let _ = self.storage.delete(&artifact.key).await;
+            }
+            return Err(error);
+        }
+        Ok(done)
+    }
+
+    async fn upload_tool_artifacts(
+        &self,
+        job: &JobRow,
+        out_dir: &FsPath,
+        artifacts: Vec<ariad_host::tools::PublishedArtifact>,
+        cancel: &CancellationToken,
+        done: &mut Done,
+    ) -> Result<(), Outcome> {
+        let root = tokio::fs::canonicalize(out_dir)
+            .await
+            .map_err(|e| Outcome::transient("output_io", e.to_string()))?;
+        for artifact in artifacts {
+            if cancel.is_cancelled() {
+                return Err(Outcome::Canceled);
+            }
+            let metadata = tokio::fs::symlink_metadata(&artifact.path)
+                .await
+                .map_err(|e| Outcome::transient("output_io", e.to_string()))?;
+            let path = tokio::fs::canonicalize(&artifact.path)
+                .await
+                .map_err(|e| Outcome::transient("output_io", e.to_string()))?;
+            if !metadata.file_type().is_file() || path.parent() != Some(root.as_path()) {
+                return Err(Outcome::permanent("output_io", "invalid tool artifact"));
+            }
+            let filename = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| Outcome::permanent("output_io", "invalid tool output filename"))?
+                .to_owned();
+            let (size, sha) = hash_file(path.clone())
+                .await
+                .map_err(|e| Outcome::transient("output_io", e.to_string()))?;
+            let key = self
+                .storage
+                .key(job.workspace_id, job.id, Direction::Out, &sha);
+            // Track the key before writing so a failed multipart upload is cleaned too.
+            done.artifacts.push(Uploaded {
+                filename,
+                format: artifact.format.clone(),
+                media_type: media_type(&artifact.format).to_owned(),
+                size,
+                sha256: sha,
+                key: key.clone(),
+            });
+            self.storage
+                .upload_file(&key, &path)
+                .await
+                .map_err(|e| Outcome::transient("storage", e.to_string()))?;
+        }
+        if cancel.is_cancelled() {
+            return Err(Outcome::Canceled);
+        }
+        Ok(())
+    }
+
     async fn succeed(
         &self,
         job: &JobRow,
         done: Done,
         elapsed: Duration,
     ) -> Result<(), sqlx::Error> {
+        let size = done
+            .artifacts
+            .iter()
+            .fold(0u64, |n, a| n.saturating_add(a.size));
         let warnings = serde_json::to_value(&done.warnings).unwrap_or_else(|_| json!([]));
         let mut tx = self.db.begin().await?;
         let finished = db::finish_job(
@@ -568,30 +774,33 @@ impl Worker {
         if !finished {
             // Canceled or deleted meanwhile: keep nothing.
             tx.rollback().await?;
-            let referenced = db::live_artifacts(&self.db, job.id)
-                .await?
-                .iter()
-                .any(|artifact| artifact.storage_key == done.key);
-            if !referenced && let Err(err) = self.storage.delete(&done.key).await {
-                tracing::warn!(error = %err, "could not delete the output of a canceled job");
+            let live = db::live_artifacts(&self.db, job.id).await?;
+            for artifact in &done.artifacts {
+                if !live.iter().any(|a| a.storage_key == artifact.key)
+                    && let Err(err) = self.storage.delete(&artifact.key).await
+                {
+                    tracing::warn!(error = %err, "could not delete the output of a canceled job");
+                }
             }
             tracing::info!("job was canceled before it could finish; output discarded");
             return Ok(());
         }
-        db::insert_artifact(
-            &mut tx,
-            &NewArtifact {
-                id: Uuid::new_v4(),
-                job_id: job.id,
-                format: &done.format,
-                filename: &done.filename,
-                media_type: &done.media_type,
-                size_bytes: i64::try_from(done.size).unwrap_or(i64::MAX),
-                sha256: &done.sha256,
-                storage_key: &done.key,
-            },
-        )
-        .await?;
+        for artifact in &done.artifacts {
+            db::insert_artifact(
+                &mut tx,
+                &NewArtifact {
+                    id: Uuid::new_v4(),
+                    job_id: job.id,
+                    format: &artifact.format,
+                    filename: &artifact.filename,
+                    media_type: &artifact.media_type,
+                    size_bytes: i64::try_from(artifact.size).unwrap_or(i64::MAX),
+                    sha256: &artifact.sha256,
+                    storage_key: &artifact.key,
+                },
+            )
+            .await?;
+        }
         if !done.route.is_empty() {
             db::set_job_steps(&mut tx, job.id, &done.route).await?;
         }
@@ -605,7 +814,7 @@ impl Worker {
                 job_id: Some(job.id),
                 kind: "job_completed",
                 input_bytes: done.input_bytes,
-                output_bytes: i64::try_from(done.size).unwrap_or(i64::MAX),
+                output_bytes: i64::try_from(size).unwrap_or(i64::MAX),
                 pages: 0,
                 engine_ms,
             },
@@ -615,11 +824,11 @@ impl Worker {
             &mut tx,
             job.id,
             "succeeded",
-            json!({ "outputs": 1, "bytes": done.size, "elapsed_ms": engine_ms }),
+            json!({ "outputs": done.artifacts.len(), "bytes": size, "elapsed_ms": engine_ms }),
         )
         .await?;
         tx.commit().await?;
-        tracing::info!(bytes = done.size, elapsed_ms = engine_ms, "job succeeded");
+        tracing::info!(bytes = size, elapsed_ms = engine_ms, "job succeeded");
         Ok(())
     }
 
@@ -657,13 +866,17 @@ impl Worker {
 }
 
 /// A converted, uploaded output.
-struct Done {
+struct Uploaded {
     filename: String,
     format: String,
     media_type: String,
     size: u64,
     sha256: String,
     key: String,
+}
+
+struct Done {
+    artifacts: Vec<Uploaded>,
     input_bytes: i64,
     route: Vec<(String, String, String)>,
     warnings: Vec<JobWarning>,
@@ -757,6 +970,24 @@ async fn hash_file(path: PathBuf) -> std::io::Result<(u64, String)> {
     .map_err(std::io::Error::other)?
 }
 
+fn media_type(format: &str) -> &'static str {
+    if let Some(format) = routing::resolve_format(format) {
+        return format.media_type();
+    }
+    match format {
+        "json" => "application/json",
+        "txt" => "text/plain",
+        "csv" => "text/csv",
+        "png" => "image/png",
+        "jpeg" | "jpg" => "image/jpeg",
+        "webp" => "image/webp",
+        "zip" => "application/zip",
+        "svg" => "image/svg+xml",
+        "hocr" => "text/html",
+        _ => "application/octet-stream",
+    }
+}
+
 /// The output's base name: the upload's file stem, or `document`.
 fn output_stem(filename: &str) -> String {
     let stem = FsPath::new(filename)
@@ -773,11 +1004,15 @@ fn output_stem(filename: &str) -> String {
 
 /// The non-native engine of a job's route, for crash metrics.
 fn engine_label(job: &JobRow) -> String {
+    if let Some(spec) = job.tool_id.as_deref().and_then(ariad_core::tools::find) {
+        return spec.engine.to_owned();
+    }
     let pack = job.pack();
     match pack {
         Pack::Core => "pandoc".to_owned(),
         Pack::Office => "libreoffice".to_owned(),
         Pack::Docling => "docling".to_owned(),
+        other => other.as_str().to_owned(),
     }
 }
 

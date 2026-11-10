@@ -18,7 +18,7 @@ pub fn specs() -> Vec<ToolSpec> {
         output_format: "json",
         output_formats: &[],
         tier: Tier::Free,
-        runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+        runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
         engine: "ariad-pdf",
         params_schema: schema_for_params::<InfoParams>,
         secret_params: &[],

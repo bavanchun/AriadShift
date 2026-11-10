@@ -68,7 +68,14 @@ fn edit_tools_have_canonical_access_runtimes_and_formats() {
         assert_eq!(spec.engine, engine);
         assert_eq!(spec.input_formats, input_formats);
         assert_eq!(spec.output_format, output);
-        assert_eq!(spec.runtimes, &[ToolRuntime::Wasm, ToolRuntime::Local]);
+        assert_eq!(
+            spec.runtimes,
+            if spec.id == "edit.export_document" {
+                &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud][..]
+            } else {
+                &[ToolRuntime::Wasm, ToolRuntime::Local][..]
+            }
+        );
         assert!(ToolAccess::PRO.allows_spec(spec));
         assert_eq!(ToolAccess::FREE.allows_spec(spec), tier == Tier::Free);
         assert!(spec.secret_params.is_empty());
@@ -472,10 +479,13 @@ fn pdf_info_is_registered_with_expected_metadata_and_schema() {
     assert!(!spec.accepts_core_format(Format::Docx));
     assert_eq!(spec.output_format, "json");
     assert_eq!(spec.tier, Tier::Free);
-    assert_eq!(spec.runtimes, &[ToolRuntime::Wasm, ToolRuntime::Local]);
+    assert_eq!(
+        spec.runtimes,
+        &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud]
+    );
     assert!(spec.supports_runtime(ToolRuntime::Wasm));
     assert!(spec.supports_runtime(ToolRuntime::Local));
-    assert!(!spec.supports_runtime(ToolRuntime::Cloud));
+    assert!(spec.supports_runtime(ToolRuntime::Cloud));
     assert_eq!(Runtime::from(ToolRuntime::Wasm), Runtime::Wasm);
     assert_eq!(ToolRuntime::from(Runtime::Local), ToolRuntime::Local);
     assert_eq!(spec.engine, "ariad-pdf");
@@ -685,4 +695,127 @@ fn tools_schema_accepts_legacy_and_multi_format_descriptor_shapes() {
         roundtrip_multi.output_formats,
         vec!["png", "jpeg", "webp", "bmp", "tiff", "zip"]
     );
+}
+
+#[test]
+fn ai_and_raster_tools_have_typed_local_contracts_and_secret_annotations() {
+    assert_eq!(all().len(), 102);
+    validate_specs(all()).unwrap();
+    for (id, primary, formats) in [
+        ("ai.summarize", "json", &["json", "md"][..]),
+        ("ai.ask", "json", &[][..]),
+        (
+            "ai.translate",
+            "pdf",
+            &["pdf", "docx", "html", "md", "json"][..],
+        ),
+        ("ai.extract_tables", "csv", &["csv", "xlsx", "json"][..]),
+        ("ai.recipe_from_text", "json", &[][..]),
+    ] {
+        let spec = find(id).unwrap();
+        assert_eq!(spec.group, ToolGroup::Ai);
+        assert_eq!(spec.engine, "ai");
+        assert_eq!(spec.tier, Tier::Free);
+        assert_eq!(spec.output_format, primary);
+        assert_eq!(spec.output_formats, formats);
+        assert_eq!(spec.runtimes, &[ToolRuntime::Local]);
+        assert_eq!(spec.secret_params, &["api_key"]);
+        let schema = (spec.params_schema)();
+        assert_eq!(
+            schema.as_value()["properties"]["api_key"]["x-ariad-secret"],
+            true
+        );
+        assert_eq!(schema.as_value()["additionalProperties"], false);
+        let validator = jsonschema::validator_for(schema.as_value()).unwrap();
+        let valid = match id {
+            "ai.ask" => json!({"question":"What changed?"}),
+            "ai.translate" => json!({"target_lang":"vi"}),
+            "ai.recipe_from_text" => json!({"prompt":"Rotate every page"}),
+            _ => json!({}),
+        };
+        assert!(validator.is_valid(&valid));
+        let mut invalid = valid.clone();
+        invalid["unexpected"] = json!(true);
+        assert!(!validator.is_valid(&invalid));
+        assert!(
+            validate_secret_params(
+                spec,
+                &json!({"api_key":"inline-value"}),
+                SecretSource::Recipe
+            )
+            .is_err()
+        );
+        assert!(
+            validate_secret_params(
+                spec,
+                &json!({"api_key":{"$secret":"prompt"}}),
+                SecretSource::Recipe
+            )
+            .is_ok()
+        );
+        if id == "ai.recipe_from_text" {
+            assert_eq!(spec.inputs, InputArity::None);
+            assert!(spec.input_formats.is_empty());
+        } else {
+            assert_eq!(spec.inputs, InputArity::One);
+            assert_eq!(spec.input_formats, &["pdf", "docx", "html", "md", "json"]);
+        }
+        if !formats.is_empty() {
+            assert!(spec.allows_artifact_format(primary, &json!({})));
+            assert!(spec.allows_artifact_format(primary, &json!({"format":null})));
+            for format in formats {
+                assert!(spec.allows_artifact_format(format, &json!({"format":format})));
+                for other in formats {
+                    assert_eq!(
+                        spec.allows_artifact_format(other, &json!({"format":format})),
+                        other == format
+                    );
+                }
+            }
+        }
+    }
+    for (id, invalid) in [
+        ("ai.ask", json!({"question":" "})),
+        ("ai.ask", json!({"question":"Q", "max_citations":0})),
+        ("ai.ask", json!({"question":"Q", "max_citations":21})),
+        ("ai.translate", json!({"target_lang":""})),
+        ("ai.recipe_from_text", json!({"prompt":"\t"})),
+    ] {
+        let schema = find(id).unwrap().resolved_params_schema();
+        assert!(
+            !jsonschema::validator_for(schema.as_value())
+                .unwrap()
+                .is_valid(&invalid)
+        );
+    }
+    let spec = find("pdf.watermark_remove_raster").unwrap();
+    assert_eq!(spec.group, ToolGroup::Overlay);
+    assert_eq!(spec.engine, "inpaint");
+    assert_eq!(spec.tier, Tier::Free);
+    assert_eq!(spec.runtimes, &[ToolRuntime::Local]);
+    assert!(spec.secret_params.is_empty());
+    assert_eq!(spec.inputs, InputArity::One);
+    assert_eq!(spec.input_formats, &["pdf"]);
+    let schema = spec.resolved_params_schema();
+    let validator = jsonschema::validator_for(schema.as_value()).unwrap();
+    for valid in [
+        json!({}),
+        json!({"mask":"auto"}),
+        json!({"mask":[{"page":1,"x":0,"y":0,"width":20,"height":30}], "method":"ns", "radius":25}),
+    ] {
+        assert!(validator.is_valid(&valid), "{valid}");
+        let parsed: ariad_core::tools::params::WatermarkRemoveRasterParams =
+            serde_json::from_value(valid).unwrap();
+        parsed.validate().unwrap();
+        assert!(parsed.preview);
+    }
+    for invalid in [
+        json!({"radius":0}),
+        json!({"radius":26}),
+        json!({"mask":[]}),
+        json!({"mask":"all"}),
+        json!({"mask":[{"page":0,"x":0,"y":0,"width":0,"height":30}]}),
+    ] {
+        assert!(!validator.is_valid(&invalid), "{invalid}");
+    }
 }

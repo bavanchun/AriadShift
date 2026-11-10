@@ -10,12 +10,13 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use ariad_core::{
     limits::Limits,
     planner::Profile,
+    tools::recipe::{ConditionContext, StepErrorPolicy, eval_step_condition},
     tools::{
         InputArity, Plan, RECIPE_VERSION, Recipe, RecipeOrigin, RunSize, SecretSource, Step, Tier,
         ToolSpec, access::within_run_quota, validate_secret_params,
@@ -28,12 +29,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     confine::AllowedDirs,
-    convert::{ConvertError, ConvertRequest, ConvertWarning, convert_with_limits},
+    convert::{
+        ConvertError, ConvertRequest, ConvertWarning, convert_with_limits, read_bounded_file,
+    },
     runner::EngineCommand,
     tools::{
         publish::{
             PublishedArtifact, StagedArtifact, ensure_no_parent_traversal,
-            open_confined_output_dir, publish_atomic, render_naming_template_with_clock,
+            open_confined_output_dir, publish_atomic, render_naming_template_with_metadata,
         },
         run::{
             InputRef, OutputTarget, ToolError, ToolEvent, ToolMetrics, ToolRequest,
@@ -226,6 +229,8 @@ struct PipelineItem {
     path: PathBuf,
     stem: String,
     format: String,
+    title: Option<String>,
+    sources: Vec<usize>,
 }
 
 /// Executes a [`RecipeRequest`] synchronously with no event callback.
@@ -242,13 +247,22 @@ where
     F: FnMut(ToolEvent),
 {
     let scrubber = request.secrets.scrubber();
-    run_recipe_inner(request, &mut on_event).map_err(|e| e.scrubbed(&scrubber))
+    run_recipe_inner(request, &mut on_event)
+        .map(|(outcome, _)| outcome)
+        .map_err(|e| e.scrubbed(&scrubber))
+}
+
+/// Internal artifact provenance for watch-ledger entries, in published artifact order.
+pub(crate) fn run_recipe_with_sources(
+    request: &RecipeRequest,
+) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
+    run_recipe_inner(request, &mut |_| {}).map_err(|e| e.scrubbed(&request.secrets.scrubber()))
 }
 
 fn run_recipe_inner(
     request: &RecipeRequest,
     on_event: &mut dyn FnMut(ToolEvent),
-) -> Result<RecipeOutcome, ToolError> {
+) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
     let started = Instant::now();
     let scrubber = request.secrets.scrubber();
     let clock = super::inprocess::capture_clock()?;
@@ -263,7 +277,7 @@ fn run_recipe_inner(
         .validate(request.origin)
         .map_err(|e| ToolError::InvalidParams(scrubber.scrub(&e.to_string())))?;
     for step in &request.recipe.steps {
-        if let Step::Tool { tool, params } = step
+        if let Step::Tool { tool, params, .. } = step
             && let Some(spec) = request.spec_overrides.get(tool.as_str())
         {
             validate_secret_params(spec, params, SecretSource::Recipe)
@@ -302,7 +316,7 @@ fn run_recipe_inner(
     let mut input_paths = Vec::with_capacity(request.inputs.len());
     let mut current_items = Vec::with_capacity(request.inputs.len());
 
-    for input_ref in &request.inputs {
+    for (source_index, input_ref) in request.inputs.iter().enumerate() {
         let meta = if let Some(ref allowed) = request.allowed_dirs {
             let confined =
                 crate::confine::confine_input(&input_ref.path, allowed).map_err(|err| {
@@ -353,11 +367,25 @@ fn run_recipe_inner(
             .and_then(|e| e.to_str())
             .unwrap_or("pdf")
             .to_owned();
-        current_items.push(PipelineItem {
+        let format = ariad_core::tools::normalize_tool_format(&ext)
+            .unwrap_or(&ext)
+            .to_owned();
+        let mut item = PipelineItem {
             path: input_ref.path.clone(),
             stem,
-            format: ext,
-        });
+            format,
+            title: None,
+            sources: vec![source_index],
+        };
+        if request
+            .recipe
+            .naming
+            .as_deref()
+            .is_some_and(|template| template.contains("{title}"))
+        {
+            item.title = inspect_item(&item, request)?.1;
+        }
+        current_items.push(item);
     }
 
     if !within_run_quota(
@@ -391,8 +419,29 @@ fn run_recipe_inner(
         fs::create_dir_all(&step_dir)
             .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
 
-        match step {
-            Step::Tool { tool, params } => {
+        let policy = step.error_policy();
+        let mut slots = vec![Vec::new(); current_items.len()];
+        let mut selected = Vec::new();
+        for (idx, item) in current_items.iter().enumerate() {
+            let matches = step.condition().map_or(Ok(true), |expr| {
+                let (ctx, _) = inspect_item(item, request)?;
+                eval_step_condition(expr, &ctx).map_err(|e| ToolError::InvalidParams(e.to_string()))
+            });
+            match matches {
+                Ok(true) => selected.push(idx),
+                Ok(false) => slots[idx].push(item.clone()),
+                Err(error) => handle_step_error(
+                    policy,
+                    error,
+                    step_idx,
+                    std::slice::from_ref(item),
+                    &mut slots[idx],
+                    &mut warnings,
+                )?,
+            }
+        }
+        let (kind, target) = match step {
+            Step::Tool { tool, params, .. } => {
                 if let Some(date) = params.get("date").and_then(serde_json::Value::as_str) {
                     naming_date = Some(date);
                 }
@@ -401,117 +450,141 @@ fn run_recipe_inner(
                     .get(tool.as_str())
                     .or_else(|| ariad_core::tools::find(tool.as_str()))
                     .ok_or_else(|| ToolError::UnknownTool(tool.to_string()))?;
-
-                let mut next_items = Vec::new();
-                if spec.inputs == InputArity::One && current_items.len() > 1 {
-                    for (item_idx, item) in current_items.iter().enumerate() {
-                        let item_out_dir = step_dir.join(format!("item-{item_idx:03}"));
-                        fs::create_dir_all(&item_out_dir)
-                            .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
-
-                        let outcome = execute_recipe_tool_call(
-                            request,
-                            spec,
-                            params,
-                            vec![InputRef::new(&item.path)],
-                            &item_out_dir,
-                            on_event,
-                            clock,
-                        )?;
-                        warnings.extend(outcome.warnings);
-                        for art in outcome.artifacts {
-                            next_items.push(PipelineItem {
-                                path: art.path,
-                                stem: item.stem.clone(),
-                                format: art.format,
-                            });
-                        }
-                    }
-                } else {
-                    let first_stem = current_items
-                        .first()
-                        .map_or_else(|| "document".to_owned(), |i| i.stem.clone());
-                    let step_inputs: Vec<InputRef> = current_items
+                let selected_sources: Vec<_> = selected
+                    .iter()
+                    .flat_map(|&index| current_items[index].sources.iter().copied())
+                    .collect();
+                let groups = match spec.inputs {
+                    InputArity::One => selected.iter().map(|&idx| vec![idx]).collect::<Vec<_>>(),
+                    InputArity::None if !selected.is_empty() => vec![Vec::new()],
+                    InputArity::None => Vec::new(),
+                    InputArity::Many { .. } if !selected.is_empty() => vec![selected],
+                    InputArity::Many { .. } => Vec::new(),
+                };
+                for (group_idx, indices) in groups.iter().enumerate() {
+                    let items: Vec<_> = indices
                         .iter()
-                        .map(|i| InputRef::new(&i.path))
+                        .map(|&idx| current_items[idx].clone())
                         .collect();
-                    let outcome = execute_recipe_tool_call(
+                    let item_out_dir = step_dir.join(format!("item-{group_idx:03}"));
+                    fs::create_dir_all(&item_out_dir)
+                        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+                    let result = execute_recipe_tool_call(
                         request,
                         spec,
                         params,
-                        step_inputs,
-                        &step_dir,
+                        items.iter().map(|item| InputRef::new(&item.path)).collect(),
+                        &item_out_dir,
                         on_event,
                         clock,
-                    )?;
-                    warnings.extend(outcome.warnings);
-                    for art in outcome.artifacts {
-                        next_items.push(PipelineItem {
-                            path: art.path,
-                            stem: first_stem.clone(),
-                            format: art.format,
-                        });
+                    );
+                    let mut outputs = Vec::new();
+                    match result {
+                        Ok(outcome) => {
+                            warnings.extend(outcome.warnings);
+                            let fan_out = outcome.artifacts.len() > 1;
+                            for art in outcome.artifacts {
+                                let stem = if fan_out {
+                                    art.path
+                                        .file_stem()
+                                        .and_then(|s| s.to_str())
+                                        .unwrap_or("document")
+                                        .to_owned()
+                                } else {
+                                    items.first().map_or_else(
+                                        || "document".to_owned(),
+                                        |item| item.stem.clone(),
+                                    )
+                                };
+                                outputs.push(PipelineItem {
+                                    path: art.path,
+                                    stem,
+                                    format: art.format,
+                                    title: items.first().and_then(|item| item.title.clone()),
+                                    sources: if items.is_empty() {
+                                        selected_sources.clone()
+                                    } else {
+                                        items
+                                            .iter()
+                                            .flat_map(|item| item.sources.iter().copied())
+                                            .collect()
+                                    },
+                                });
+                            }
+                        }
+                        Err(error) => handle_step_error(
+                            policy,
+                            error,
+                            step_idx,
+                            &items,
+                            &mut outputs,
+                            &mut warnings,
+                        )?,
+                    }
+                    if let Some(&idx) = indices.first() {
+                        slots[idx].extend(outputs);
+                    } else {
+                        slots.push(outputs);
                     }
                 }
-
-                let step_elapsed =
-                    u64::try_from(step_started.elapsed().as_millis()).unwrap_or(u64::MAX);
-                step_outcomes.push(StepOutcome {
-                    step_index: step_idx,
-                    kind: "tool".to_owned(),
-                    target: tool.to_string(),
-                    artifacts: next_items.len(),
-                    elapsed_ms: step_elapsed,
-                });
-                current_items = next_items;
+                ("tool", tool.to_string())
             }
-            Step::Convert { to, profile } => {
+            Step::Convert { to, profile, .. } => {
                 let target_ext = to.user_name();
-                let mut next_items = Vec::with_capacity(current_items.len());
                 let engine_prog = request
                     .engine_program
                     .clone()
                     .or_else(|| std::env::current_exe().ok())
                     .unwrap_or_else(|| PathBuf::from("ashift"));
-
-                for (item_idx, item) in current_items.iter().enumerate() {
-                    let out_path =
-                        step_dir.join(format!("{item_idx:03}-{}.{target_ext}", item.stem));
+                for idx in selected {
+                    let item = &current_items[idx];
+                    let out_path = step_dir.join(format!("{idx:03}-{}.{target_ext}", item.stem));
                     let mut conv_req =
                         ConvertRequest::new(&item.path, &out_path, target_ext, &engine_prog);
                     conv_req.profile = profile.unwrap_or(Profile::Editable);
                     conv_req.overwrite = true;
-
-                    let report = convert_with_limits(
+                    let result = convert_with_limits(
                         &conv_req,
                         request.limits.clone(),
                         request.cancel.clone(),
                         |_| {},
                     )
-                    .map_err(map_convert_error)?;
-
-                    for w in report.warnings {
-                        warnings.push(scrubber.scrub_warning(&w));
+                    .map_err(map_convert_error);
+                    match result {
+                        Ok(report) => {
+                            warnings
+                                .extend(report.warnings.iter().map(|w| scrubber.scrub_warning(w)));
+                            slots[idx].push(PipelineItem {
+                                path: report.output,
+                                stem: item.stem.clone(),
+                                format: ariad_core::tools::normalize_tool_format(to.id())
+                                    .unwrap_or(to.id())
+                                    .to_owned(),
+                                title: item.title.clone(),
+                                sources: item.sources.clone(),
+                            });
+                        }
+                        Err(error) => handle_step_error(
+                            policy,
+                            error,
+                            step_idx,
+                            std::slice::from_ref(item),
+                            &mut slots[idx],
+                            &mut warnings,
+                        )?,
                     }
-                    next_items.push(PipelineItem {
-                        path: report.output,
-                        stem: item.stem.clone(),
-                        format: to.id().to_owned(),
-                    });
                 }
-
-                let step_elapsed =
-                    u64::try_from(step_started.elapsed().as_millis()).unwrap_or(u64::MAX);
-                step_outcomes.push(StepOutcome {
-                    step_index: step_idx,
-                    kind: "convert".to_owned(),
-                    target: target_ext.to_owned(),
-                    artifacts: next_items.len(),
-                    elapsed_ms: step_elapsed,
-                });
-                current_items = next_items;
+                ("convert", target_ext.to_owned())
             }
-        }
+        };
+        current_items = slots.into_iter().flatten().collect();
+        step_outcomes.push(StepOutcome {
+            step_index: step_idx,
+            kind: kind.to_owned(),
+            target,
+            artifacts: current_items.len(),
+            elapsed_ms: u64::try_from(step_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        });
     }
 
     // 7. Stage final step outputs into `workspace.output_dir()` and atomically publish.
@@ -525,12 +598,18 @@ fn run_recipe_inner(
             .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
 
         let target_name = if let Some(ref template) = request.recipe.naming {
-            render_naming_template_with_clock(
+            let title = if template.contains("{title}") {
+                inspect_item(item, request)?.1
+            } else {
+                None
+            };
+            render_naming_template_with_metadata(
                 template,
                 &item.stem,
                 index_1_based,
                 clock.clock,
                 naming_date,
+                title.as_deref(),
             )
             .map_err(|e| ToolError::InvalidParams(e.to_string()))?
         } else if let Some(name) = item.path.file_name().and_then(|n| n.to_str()) {
@@ -562,13 +641,94 @@ fn run_recipe_inner(
     metrics.insert("artifacts".to_owned(), json!(published.len()));
     metrics.insert("elapsed_ms".to_owned(), json!(elapsed_ms));
 
-    Ok(RecipeOutcome {
-        version: RECIPE_VERSION.to_owned(),
-        steps: step_outcomes,
-        artifacts: published,
-        warnings,
-        metrics,
-    })
+    let warnings = warnings.iter().map(|w| scrubber.scrub_warning(w)).collect();
+    let sources = current_items
+        .iter()
+        .map(|item| item.sources.clone())
+        .collect();
+    Ok((
+        RecipeOutcome {
+            version: RECIPE_VERSION.to_owned(),
+            steps: step_outcomes,
+            artifacts: published,
+            warnings,
+            metrics,
+        },
+        sources,
+    ))
+}
+
+fn handle_step_error(
+    policy: StepErrorPolicy,
+    error: ToolError,
+    step_index: usize,
+    items: &[PipelineItem],
+    next: &mut Vec<PipelineItem>,
+    warnings: &mut Vec<ConvertWarning>,
+) -> Result<(), ToolError> {
+    if policy == StepErrorPolicy::Stop || matches!(error, ToolError::Interrupted) {
+        return Err(error);
+    }
+    let code = if policy == StepErrorPolicy::Skip {
+        "recipe_step_skipped"
+    } else {
+        next.extend_from_slice(items);
+        "recipe_step_continued"
+    };
+    warnings.push(ConvertWarning {
+        code: code.to_owned(),
+        message: format!("step {step_index}: {error}"),
+    });
+    Ok(())
+}
+
+fn inspect_item(
+    item: &PipelineItem,
+    request: &RecipeRequest,
+) -> Result<(ConditionContext, Option<String>), ToolError> {
+    if request.cancel.is_cancelled() {
+        return Err(ToolError::Interrupted);
+    }
+    let size_bytes = fs::metadata(&item.path)
+        .map_err(|e| ToolError::InputIo(e.to_string()))?
+        .len();
+    let mut context = ConditionContext {
+        page_count: None,
+        size_bytes,
+        needs_ocr: false,
+        is_encrypted: false,
+        has_signatures: false,
+        format: item.format.clone(),
+    };
+    if item.format != "pdf" {
+        return Ok((context, item.title.clone()));
+    }
+    let bytes =
+        read_bounded_file(&item.path, request.limits.max_input_bytes).map_err(map_convert_error)?;
+    let bridge = super::inprocess::CancelBridge::new(&request.cancel);
+    let mut ctx = ariad_pdf::ToolCtx::with_cancel(bridge.flag.clone())
+        .with_max_pages(request.limits.max_pages);
+    ctx.deadline = request
+        .limits
+        .timeout_s
+        .and_then(|seconds| Instant::now().checked_add(Duration::from_secs(seconds)));
+    let scrubber = request.secrets.scrubber();
+    let map_error = |error| super::inprocess::map_pdf_error(error, &scrubber);
+    let doc = match ariad_pdf::document::open_for_info_with_ctx(&bytes, &request.limits, &ctx) {
+        Ok(doc) => doc,
+        Err(ariad_pdf::PdfError::Encrypted { .. }) => {
+            context.is_encrypted = true;
+            return Ok((context, None));
+        }
+        Err(error) => return Err(map_error(error)),
+    };
+    let info = ariad_pdf::info::from_doc_with_ctx(&doc, &ctx).map_err(map_error)?;
+    context.page_count = Some(info.page_count);
+    context.is_encrypted = info.encrypted;
+    context.needs_ocr = info.pages.iter().any(|page| page.image_only == Some(true));
+    context.has_signatures =
+        ariad_pdf::redact::has_signatures(doc.inner(), &ctx).map_err(map_error)?;
+    Ok((context, info.metadata.title))
 }
 
 fn execute_recipe_tool_call(

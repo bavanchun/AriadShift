@@ -73,10 +73,14 @@ fn canonical_recipe_json_roundtrips_byte_for_byte() {
         parsed.steps,
         vec![
             Step::Tool {
+                r#if: None,
+                on_error: None,
                 tool: ToolId::parse("pdf.merge").unwrap(),
                 params: json!({}),
             },
             Step::Convert {
+                r#if: None,
+                on_error: None,
                 to: Format::Docx,
                 profile: None,
             },
@@ -115,6 +119,8 @@ fn canonical_recipe_json_roundtrips_byte_for_byte() {
     assert_eq!(
         pretty_recipe.steps[2],
         Step::Convert {
+            r#if: None,
+            on_error: None,
             to: Format::Docx,
             profile: Some(Profile::Editable),
         }
@@ -128,6 +134,7 @@ fn canonical_recipe_json_roundtrips_byte_for_byte() {
 fn naming_template_validator_enforces_charset_and_token_whitelist() {
     let valid_templates = [
         "{stem}",
+        "{title}",
         "{stem}-{n}",
         "{stem}_{date}.final",
         "Prefix {stem} - {n} ({date})",
@@ -197,7 +204,7 @@ fn naming_template_validator_enforces_charset_and_token_whitelist() {
     }
 
     // Unknown placeholder tokens
-    for unknown in ["{}", "{title}", "{ext}", "{path}", "{0}", "{STEM}"] {
+    for unknown in ["{}", "{ext}", "{path}", "{0}", "{STEM}"] {
         assert!(
             matches!(
                 validate_naming_template(unknown),
@@ -292,4 +299,89 @@ fn recipe_rejects_literal_secrets_and_allows_prompt_reference() {
     }"#;
     assert!(Recipe::from_json_str(prompt_secret, RecipeOrigin::Trusted).is_ok());
     assert!(Recipe::from_json_str(prompt_secret, RecipeOrigin::Imported).is_ok());
+}
+
+#[test]
+fn predicates_and_policies_roundtrip_and_validate_before_execution() {
+    use ariad_core::tools::recipe::{
+        ConditionContext, StepErrorPolicy, eval_step_condition, validate_step_condition,
+    };
+    let context = ConditionContext {
+        page_count: Some(12),
+        size_bytes: 1000,
+        needs_ocr: true,
+        is_encrypted: false,
+        has_signatures: true,
+        format: "pdf".into(),
+    };
+    for expr in [
+        "page_count > 10",
+        "page_count>=12",
+        "page_count < 13",
+        "page_count <= 12",
+        "page_count == 12",
+        "page_count != 0",
+        "size_bytes <= 1000",
+        "needs_ocr",
+        "!is_encrypted",
+        "has_signatures == true",
+        "is_encrypted != true",
+        "needs_ocr != false",
+        "format == \"pdf\"",
+        "format != 'md'",
+    ] {
+        assert!(validate_step_condition(expr).is_ok(), "{expr}");
+        assert!(eval_step_condition(expr, &context).unwrap(), "{expr}");
+    }
+    for expr in [
+        "page_count > 12",
+        "needs_ocr == false",
+        "!has_signatures",
+        "format == 'docx'",
+        "size_bytes < 1",
+    ] {
+        assert!(!eval_step_condition(expr, &context).unwrap(), "{expr}");
+    }
+    let unknown_count = ConditionContext {
+        page_count: None,
+        ..context
+    };
+    assert!(!eval_step_condition("page_count != 1", &unknown_count).unwrap());
+    for expr in [
+        "",
+        "unknown",
+        "unknown == true",
+        "page_count > -1",
+        "size_bytes > 18446744073709551616",
+        "page_count == 1.5",
+        "needs_ocr > true",
+        "is_encrypted == 1",
+        "format == pdf",
+        "format == 'pdf\"",
+        "format == 'pdf' || needs_ocr",
+        "!!needs_ocr",
+        "page_count === 1",
+    ] {
+        assert!(validate_step_condition(expr).is_err(), "{expr}");
+        let bad = json!({"version":"ariad-recipe/1", "steps":[{"convert":{"to":"html"}}, {"tool":"pdf.rotate", "params":{"angle":90}, "if":expr}]});
+        assert!(
+            matches!(
+                Recipe::from_json_str(&bad.to_string(), RecipeOrigin::Trusted),
+                Err(RecipeError::InvalidCondition { step_index: 1, .. })
+            ),
+            "{expr}"
+        );
+    }
+    let raw = json!({"version":"ariad-recipe/1", "steps":[
+        {"tool":"pdf.rotate", "params":{"angle":90}, "if":"page_count > 1", "on_error":"skip"},
+        {"convert":{"to":"html"}, "if":"format == 'md'", "on_error":"continue"}
+    ], "naming":"{title}-{n}"});
+    let parsed = Recipe::from_json_str(&raw.to_string(), RecipeOrigin::Trusted).unwrap();
+    assert_eq!(serde_json::to_value(&parsed).unwrap(), raw);
+    assert_eq!(parsed.steps[0].error_policy(), StepErrorPolicy::Skip);
+    assert_eq!(parsed.steps[1].error_policy(), StepErrorPolicy::Continue);
+    assert_eq!(StepErrorPolicy::default(), StepErrorPolicy::Stop);
+    assert!(
+        serde_json::from_value::<Step>(json!({"tool":"pdf.rotate", "on_error":"ignore"})).is_err()
+    );
 }
