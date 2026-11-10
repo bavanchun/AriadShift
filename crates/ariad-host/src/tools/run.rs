@@ -643,6 +643,7 @@ fn run_tool_inner(
     let is_ocr_composite = !is_redact_composite
         && effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE
         && spec.group == ariad_core::tools::ToolGroup::Ocr;
+    let is_document_edit = matches!(spec.id, "edit.open_document" | "edit.export_document");
     let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
     let is_compare = spec.id == "pdf.compare";
@@ -681,7 +682,9 @@ fn run_tool_inner(
         extracts_attachments,
     )?;
 
-    if is_web_to_pdf {
+    if is_document_edit {
+        super::edit_document::preflight(spec.id, &resolved_secrets.schema_params)?;
+    } else if is_web_to_pdf {
         super::web_to_pdf::preflight()?;
     } else if is_cbz {
         super::cbz::preflight(
@@ -775,7 +778,21 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let mut raw_exec = if is_web_to_pdf {
+    let mut raw_exec = if is_document_edit {
+        super::edit_document::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if is_web_to_pdf {
         super::web_to_pdf::execute(
             &spec,
             &resolved_secrets.schema_params,
@@ -981,7 +998,7 @@ fn run_tool_inner(
         message,
     }));
 
-    Ok(ToolOutcome {
+    let mut outcome = ToolOutcome {
         tool: spec.id.to_owned(),
         version: spec.version.to_owned(),
         engine: effective_engine.to_owned(),
@@ -989,7 +1006,14 @@ fn run_tool_inner(
         warnings,
         metrics,
         inline_json: raw_exec.inline_json,
-    })
+    };
+    if spec.id == "edit.export_document" {
+        let report = serde_json::from_value(outcome.metrics["fidelity"].clone())
+            .map_err(|e| ToolError::EngineFailure(e.to_string()))?;
+        super::fidelity::attach_document_fidelity(&mut outcome, &report)
+            .map_err(|e| ToolError::EngineFailure(e.to_string()))?;
+    }
+    Ok(outcome)
 }
 
 fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {

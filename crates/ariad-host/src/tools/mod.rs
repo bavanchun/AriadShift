@@ -8,6 +8,7 @@
 pub mod cbz;
 pub mod compare;
 pub mod compliance;
+mod edit_document;
 pub mod engine;
 pub mod fidelity;
 pub mod inprocess;
