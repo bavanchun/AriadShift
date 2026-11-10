@@ -81,11 +81,17 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const press = (key: string, init: KeyboardEventInit = {}) =>
-  fireEvent.keyDown(window, { key, ctrlKey: true, ...init });
+const press = async (key: string, init: KeyboardEventInit = {}) => {
+  await act(async () => {
+    fireEvent.keyDown(window, { key, ctrlKey: true, ...init });
+  });
+};
 const isDisabled = (element: HTMLElement) =>
   element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true";
-const ready = () => waitFor(() => expect(ipc).toHaveBeenCalledWith("snapshot", { request: {} }));
+const ready = () =>
+  waitFor(() =>
+    expect(screen.getByLabelText<HTMLSelectElement>("Profile").value).toBe(settings.profile),
+  );
 
 describe("helpers", () => {
   it("accepts supported document extensions and skips folders and other types", () => {
@@ -191,7 +197,9 @@ describe("desktop polish", () => {
     expect(screen.getByText("Drop to add 1 document")).toBeTruthy();
     expect(screen.getByText("1 item will be skipped.")).toBeTruthy();
     expect(screen.getByRole("region", { name: "Drop documents" }).dataset.dragging).toBe("true");
-    act(() => drag.handler?.({ payload: { type: "drop", paths: ["/d/a.md", "/d/b.zip"] } }));
+    await act(async () =>
+      drag.handler?.({ payload: { type: "drop", paths: ["/d/a.md", "/d/b.zip"] } }),
+    );
     await screen.findByText("a.md");
     expect(screen.queryByText("Drop to add 1 document")).toBeNull();
     expect(
@@ -206,10 +214,10 @@ describe("desktop polish", () => {
   it("switches tabs from the keyboard and moves focus to the page heading", async () => {
     render(<App />);
     await ready();
-    press("2");
+    await press("2");
     const heading = await screen.findByRole("heading", { level: 1, name: "Queue" });
     expect(document.activeElement).toBe(heading);
-    press(",");
+    await press(",");
     await screen.findByRole("heading", { level: 1, name: "Settings" });
     expect(screen.getByRole("button", { name: /^Queue/ }).getAttribute("aria-keyshortcuts")).toBe(
       "Control+2",
@@ -220,9 +228,9 @@ describe("desktop polish", () => {
     picker.mockResolvedValue(["/docs/keyboard.md"]);
     render(<App />);
     await ready();
-    press("o");
+    await press("o");
     await screen.findByText("keyboard.md");
-    press("Enter");
+    await press("Enter");
     await waitFor(() =>
       expect(ipc).toHaveBeenCalledWith("enqueue", {
         request: expect.objectContaining({ paths: ["/docs/keyboard.md"] }),
@@ -279,6 +287,7 @@ describe("desktop polish", () => {
   });
 
   it("summarizes the queue, retries failed jobs and labels status with text", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     jobs = [job("done", "succeeded"), job("bad", "failed", { error: "No writer" })];
     render(<App />);
     await ready();
@@ -290,11 +299,15 @@ describe("desktop polish", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry failed (1)" }));
     await waitFor(() => expect(ipc).toHaveBeenCalledWith("retry", { request: { id: "bad" } }));
     jobs = [...jobs, job("next", "running"), job("later", "queued")];
+    // Flush the snapshot and shortcut effect before sending the cancel shortcut.
+    await act(async () => vi.advanceTimersByTimeAsync(500));
     await screen.findByText("1 converting · 1 waiting · 0 of 2 finished");
     expect(screen.getByRole("progressbar", { name: "Batch progress" })).toBeTruthy();
-    press(".");
-    await waitFor(() => expect(ipc).toHaveBeenCalledWith("cancel", { request: { id: "later" } }));
-    expect(ipc).toHaveBeenCalledWith("cancel", { request: { id: "next" } });
+    await press(".");
+    await waitFor(() => {
+      expect(ipc).toHaveBeenCalledWith("cancel", { request: { id: "next" } });
+      expect(ipc).toHaveBeenCalledWith("cancel", { request: { id: "later" } });
+    });
     expect(ipc).not.toHaveBeenCalledWith("cancel", { request: { id: "done" } });
   });
 
@@ -306,26 +319,30 @@ describe("desktop polish", () => {
     await ready();
     fireEvent.click(screen.getByRole("button", { name: /^Queue/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Copy error" }));
-    expect(writeText).toHaveBeenCalledWith("Pandoc 3.12 or newer was not found");
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("Pandoc 3.12 or newer was not found"),
+    );
     await screen.findByText("Error copied");
   });
 
   it("announces finished conversions outside the Queue with a follow-up action", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     jobs = [job("report", "running")];
     render(<App />);
     await ready();
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     jobs = [job("report", "succeeded")];
+    await act(async () => vi.advanceTimersByTimeAsync(500));
     const toast = await screen.findByText("Converted report.md to HTML.");
     expect(toast.closest("section")?.getAttribute("aria-live")).toBe("polite");
     fireEvent.click(screen.getByRole("button", { name: "Show output" }));
-    expect(reveal).toHaveBeenCalledWith("/docs/report.html");
+    await waitFor(() => expect(reveal).toHaveBeenCalledWith("/docs/report.html"));
     expect(screen.queryByText("Converted report.md to HTML.")).toBeNull();
 
     // A job that appears and fails between two snapshots is still reported.
     jobs = [job("report", "succeeded"), job("broken", "failed", { error: "Pandoc missing" })];
+    await act(async () => vi.advanceTimersByTimeAsync(500));
     await screen.findByText("Could not convert broken.md: Pandoc missing");
-    await act(async () => vi.advanceTimersByTime(toastTimeout + 1000));
+    await act(async () => vi.advanceTimersByTimeAsync(toastTimeout + 1000));
     expect(screen.getByText("Could not convert broken.md: Pandoc missing")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
     expect(screen.queryByText("Could not convert broken.md: Pandoc missing")).toBeNull();
