@@ -83,6 +83,39 @@ impl Serialize for SemanticBlock<'_> {
             map.serialize_entry("type", "table")?;
             return map.end();
         }
+        // Stream containers in the same sorted key order as the legacy JSON
+        // value. Building and dropping a value tree here multiplies recursive
+        // stack use for every ancestor while assigning deeply nested block IDs.
+        match block {
+            Block::List {
+                ordered,
+                start,
+                tight,
+                items,
+                ..
+            } => {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("items", &SemanticItems(items))?;
+                map.serialize_entry("ordered", ordered)?;
+                map.serialize_entry("start", start)?;
+                map.serialize_entry("tight", tight)?;
+                map.serialize_entry("type", "list")?;
+                return map.end();
+            }
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("blocks", &SemanticBlocks(blocks))?;
+                let kind = if let Block::Footnote { note_id, .. } = block {
+                    map.serialize_entry("id", note_id)?;
+                    "footnote"
+                } else {
+                    "quote"
+                };
+                map.serialize_entry("type", kind)?;
+                return map.end();
+            }
+            _ => {}
+        }
         // Table-heavy imports contain many plain paragraphs. Serialize this common
         // shape directly in canonical key order instead of allocating a JSON tree.
         if let Block::Paragraph { content, .. } = block
@@ -120,6 +153,25 @@ impl Serialize for SemanticBlocks<'_> {
             seq.serialize_element(&SemanticBlock(block))?;
         }
         seq.end()
+    }
+}
+struct SemanticItems<'a>(&'a [super::ListItem]);
+impl Serialize for SemanticItems<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for item in self.0 {
+            seq.serialize_element(&SemanticItem(item))?;
+        }
+        seq.end()
+    }
+}
+struct SemanticItem<'a>(&'a super::ListItem);
+impl Serialize for SemanticItem<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("blocks", &SemanticBlocks(&self.0.blocks))?;
+        map.serialize_entry("checked", &self.0.checked)?;
+        map.end()
     }
 }
 struct SemanticRows<'a>(&'a [Vec<super::TableCell>]);
@@ -401,6 +453,51 @@ fn push_wire_nodes<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn container_payloads_match_canonical_legacy_serialization() {
+        let paragraph = serde_json::json!({
+            "type":"paragraph", "id":"paragraph", "style":"named",
+            "direct":{"size_pt":14.0},
+            "content":[{"type":"styled", "content":[{"type":"text", "text":"Tiếng Việt \" \\ \n"}]}]
+        });
+        for checked in [None, Some(false), Some(true)] {
+            for start in [None, Some(3)] {
+                let list = serde_json::json!({
+                    "type":"list", "id":"list", "ordered":start.is_some(),
+                    "start":start, "tight":checked.is_some(),
+                    "items":[{"checked":checked, "blocks":[paragraph]},
+                        {"checked":null, "blocks":[]}]
+                });
+                let quote = serde_json::json!({"type":"quote", "id":"quote", "blocks":[list]});
+                let note = serde_json::json!({
+                    "type":"footnote", "id":"block", "note_id":"semantic-note", "blocks":[quote]
+                });
+                for value in [list, quote, note] {
+                    let block: Block = serde_json::from_value(value).unwrap();
+                    let mut reference = serde_json::to_value(&block).unwrap();
+                    downgrade_block(&mut reference);
+                    assert_eq!(
+                        semantic_payload(&block),
+                        serde_json::to_vec(&reference).unwrap()
+                    );
+                }
+            }
+        }
+        let read = crate::reader::markdown::read(
+            include_str!("../../../../fixtures/md/en-deep-list.md"),
+            &crate::limits::Limits::local(),
+        )
+        .unwrap();
+        for (_, block) in super::super::blocks_with_paths(&read.document) {
+            let mut reference = serde_json::to_value(block).unwrap();
+            downgrade_block(&mut reference);
+            assert_eq!(
+                semantic_payload(block),
+                serde_json::to_vec(&reference).unwrap()
+            );
+        }
+    }
 
     #[test]
     fn table_payload_matches_canonical_legacy_serialization() {

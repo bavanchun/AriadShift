@@ -12,10 +12,11 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
-    io::{self, Write},
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
-    time::{Duration, Instant},
+    sync::mpsc,
+    time::Duration,
 };
 
 fn root() -> PathBuf {
@@ -539,56 +540,6 @@ fn incremental_edit_preserves_real_signatures_and_their_byte_range_digests() {
     );
 }
 
-/// Runs the real engine dispatcher in a child, blocked after the first applied operation.
-/// This test-only sink makes the crash point deterministic without adding engine backdoors.
-#[test]
-fn crash_replay_child() {
-    let Some(root) = std::env::var_os("ARIAD_EDIT_CLI_REPLAY_ROOT") else {
-        return;
-    };
-
-    struct PauseAfterFirstEdit {
-        root: PathBuf,
-        buffered: Vec<u8>,
-    }
-
-    impl Write for PauseAfterFirstEdit {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            self.buffered.extend_from_slice(bytes);
-            while let Some(end) = self.buffered.iter().position(|b| *b == b'\n') {
-                let event: Value = serde_json::from_slice(&self.buffered[..end])?;
-                self.buffered.drain(..=end);
-                if event["type"] == "progress" && event["stage"] == "edit" && event["done"] == 1 {
-                    let marker = self.root.join("interrupted.pending");
-                    fs::write(&marker, serde_json::to_vec(&event)?)?;
-                    fs::rename(marker, self.root.join("interrupted"))?;
-                    loop {
-                        std::thread::park();
-                    }
-                }
-            }
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    let root = PathBuf::from(root);
-    let request = serde_json::from_slice(&fs::read(root.join("request.json")).unwrap()).unwrap();
-    let lib = PathBuf::from(std::env::var_os("ARIAD_TEST_PDFIUM_DIR").unwrap());
-    ariad_pdfium_engine::dispatch::handle_with(
-        request,
-        &mut PauseAfterFirstEdit {
-            root,
-            buffered: Vec::new(),
-        },
-        Some(&lib),
-    )
-    .unwrap();
-    panic!("expected the parent to kill the editing process");
-}
-
 #[test]
 fn replay_after_engine_kill_matches_uninterrupted_cli_bytes() {
     let Some(pack) = PdfiumPack::new() else {
@@ -632,33 +583,38 @@ fn replay_after_engine_kill_matches_uninterrupted_cli_bytes() {
         let saved = workspace.join("in/original.pdf");
         fs::write(&saved, &original).unwrap();
         let request = json!({"protocol":"ariad-engine/2", "op":"run_tool", "job":"crash-replay", "tool":"edit.apply", "inputs":[{"path":saved, "format":"pdf"}], "output":{"dir":workspace.join("out")}, "work_dir":workspace.join("tmp"), "params":params, "limits":ariad_core::limits::Limits::local()});
-        fs::write(
-            workspace.join("request.json"),
-            serde_json::to_vec(&request).unwrap(),
-        )
-        .unwrap();
         let mut child = EditingProcess(
-            Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "crash_replay_child", "--nocapture"])
-                .env("ARIAD_EDIT_CLI_REPLAY_ROOT", &workspace)
-                .stdout(Stdio::null())
-                .stderr(Stdio::inherit())
-                .spawn()
-                .unwrap(),
+            Command::new(pack.path().join(format!(
+                "ariad-pdfium-engine{}",
+                std::env::consts::EXE_SUFFIX
+            )))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
         );
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while !workspace.join("interrupted").exists() && Instant::now() < deadline {
-            if child.0.try_wait().unwrap().is_some() {
-                break;
+        let mut stdin = child.0.stdin.take().unwrap();
+        serde_json::to_writer(&mut stdin, &request).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        drop(stdin);
+        let stdout = child.0.stdout.take().unwrap();
+        let (send, receive) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let event: Value = serde_json::from_str(&line.unwrap()).unwrap();
+                if event["type"] == "progress" && event["stage"] == "edit" && event["done"] == 1 {
+                    let _ = send.send(event);
+                    return;
+                }
             }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        // Always reap the child, including timeout and unexpected-exit failures.
-        let interrupted = workspace.join("interrupted").exists();
+        });
+        let progress = receive.recv_timeout(Duration::from_secs(30));
+        // Always terminate and reap the engine, including timeout and unexpected exit.
         let _ = child.0.kill();
         child.0.wait().unwrap();
-        assert!(interrupted, "engine did not reach the first edit operation");
-        let progress = read_json(&workspace.join("interrupted"));
+        reader.join().unwrap();
+        let progress = progress.expect("engine did not reach the first edit operation");
         assert_eq!(progress["done"], 1);
         assert_eq!(progress["total"], 3);
         assert_eq!(fs::read_dir(workspace.join("out")).unwrap().count(), 0);
