@@ -161,7 +161,7 @@ def render(data):
         f"AriadShift SHA-256: `{data['ashift_sha256']}`. Config SHA-256: `{data['config_sha256']}`.", "",
         "Both products use identical authored sources and truth, OCR policy and the same versioned scorer. "
         "Source extraction, conversion and output read-back/evaluation are timed separately. "
-        "No auxiliary renderer is used; missing read-back layout stays unavailable. "
+        "No auxiliary renderer is used; missing reference layout is unavailable, while missing output boxes score zero. "
         "Means describe available observations; coverage and all failures remain visible and prevent acceptance.", "",
         "| Route | Product | CER ↓ | Table F1 ↑ | Style accuracy ↑ | Layout IoU ↑ | Conversion p50 ms | Gate |",
         "|---|---|---:|---:|---:|---:|---:|---|",

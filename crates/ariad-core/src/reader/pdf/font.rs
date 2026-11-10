@@ -530,6 +530,15 @@ fn family_name(bytes: &[u8]) -> Option<Rc<str>> {
             known.contains(&suffix).then_some(family)
         })
         .unwrap_or(name);
+    // These PostScript names are supplied by our bundled fonts. PDF subsetters often
+    // discard their human-readable family metadata; retain the original family spelling
+    // so re-export can select the same font instead of substituting it.
+    let family = match family {
+        "LibertinusSerif" => "Libertinus Serif",
+        "LibertinusMath" => "Libertinus Math",
+        "SourceCodePro" => "Source Code Pro",
+        other => other,
+    };
     (!family.is_empty()).then(|| Rc::from(family))
 }
 
@@ -789,8 +798,8 @@ mod tests {
     use lopdf::{Dictionary, Document, Object, Stream, dictionary};
 
     use super::{
-        CMapCache, Font, name_italic, normalize_into, strip_subset_tag, type1_builtin_encoding,
-        weight_from_name,
+        CMapCache, Font, family_name, name_italic, normalize_into, strip_subset_tag,
+        type1_builtin_encoding, weight_from_name,
     };
     use crate::reader::pdf::{encoding::Encodings, objects::Budget};
 
@@ -901,5 +910,30 @@ mod tests {
         let mut out = String::new();
         normalize_into("\u{FB01}x\u{0}\u{F0B7}\u{FFFD}\t", &mut out);
         assert_eq!(out, "fix• ");
+    }
+
+    #[test]
+    fn bundled_postscript_names_recover_their_authored_families() {
+        for (name, expected) in [
+            ("LibertinusSerif-Regular", "Libertinus Serif"),
+            ("LibertinusSerif-BoldItalic", "Libertinus Serif"),
+            ("LibertinusMath-Regular", "Libertinus Math"),
+            ("SourceCodePro-Bold", "Source Code Pro"),
+            ("ExampleSerif-Regular", "ExampleSerif"),
+            ("Example-Serif-Regular", "Example-Serif"),
+        ] {
+            assert_eq!(family_name(name.as_bytes()).as_deref(), Some(expected));
+        }
+        let font = load(
+            &Document::new(),
+            &dictionary! {
+                "Subtype" => "Type1", "BaseFont" => "ABCDEF+LibertinusSerif-Regular",
+                "FontDescriptor" => dictionary! {
+                    "FontName" => "ABCDEF+LibertinusSerif-Regular",
+                    "FontFamily" => Object::string_literal("Explicit Family"),
+                },
+            },
+        );
+        assert_eq!(font.family_name.as_deref(), Some("Explicit Family"));
     }
 }

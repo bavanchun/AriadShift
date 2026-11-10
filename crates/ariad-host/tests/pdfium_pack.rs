@@ -33,6 +33,8 @@ const PDFIUM_TOOLS: &[&str] = &[
     "pdf.deskew",
     "pdf.scan_split",
     "pdf.scanner_effect",
+    "edit.page_objects",
+    "edit.apply",
 ];
 
 /// Returns `true` inside the child process. In the parent it re-runs `test` in a child with the
@@ -307,7 +309,16 @@ fn a_missing_pdfium_pack_fails_every_pdfium_tool_with_exit_5_and_the_install_hin
         );
     }
     for spec in pdfium_specs {
-        let request = ToolRequest::new(spec.id, vec![InputRef::new(&input)], OutputTarget::None);
+        let params = if spec.id == "edit.apply" {
+            serde_json::json!({
+                "ops": [{"op": "delete_object", "page": 1, "object_id": "p1_obj0"}]
+            })
+        } else {
+            serde_json::json!({})
+        };
+        let request = ToolRequest::new(spec.id, vec![InputRef::new(&input)], OutputTarget::None)
+            .with_plan(ariad_core::tools::Plan::Pro)
+            .with_params(params);
         let error = run_tool(&request).expect_err("a missing pack must fail the tool");
         assert!(
             matches!(&error, ToolError::ToolMissing { engine, hint: shown }

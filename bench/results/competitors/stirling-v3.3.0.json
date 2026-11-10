@@ -1,6 +1,6 @@
 {
-  "artifact_directory": "runs/5196da072d1c4a5ab082e466ebc193ff",
-  "ashift_sha256": "f019dbab67842f3388dcc1399e3f6401d2f75ce37ac4a0fcefb63dd3891ed6ed",
+  "artifact_directory": "runs/e07c84594dd14759b879b89b287366b1",
+  "ashift_sha256": "71a03f8806c51b248876b64202144771a471501251b8f81825782d94f15f6a9f",
   "cleanup": "completed",
   "commands": [
     {
@@ -11,9 +11,9 @@
         "--format",
         "{{json .Endpoints.docker.Host}}"
       ],
-      "elapsed_ms": 32.040762998803984,
+      "elapsed_ms": 68.92613800300751,
       "exit_code": 0,
-      "pid": 1892728,
+      "pid": 3440858,
       "timeout_s": 120
     },
     {
@@ -23,9 +23,9 @@
         "--format",
         "{{json .Server}}"
       ],
-      "elapsed_ms": 32.14922700135503,
+      "elapsed_ms": 114.6220450027613,
       "exit_code": 0,
-      "pid": 1892758,
+      "pid": 3440871,
       "timeout_s": 120
     },
     {
@@ -35,9 +35,9 @@
         "inspect",
         "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
       ],
-      "elapsed_ms": 64.06669699936174,
+      "elapsed_ms": 114.69358099566307,
       "exit_code": 0,
-      "pid": 1892778,
+      "pid": 3440897,
       "timeout_s": 120
     },
     {
@@ -49,12 +49,12 @@
         "--driver",
         "bridge",
         "--label",
-        "org.ariadshift.benchmark.owner=b8ed2011c2f74d29920b9a99144dfb28",
-        "ariad-bench-network-b8ed2011c2f7"
+        "org.ariadshift.benchmark.owner=ebd4dec59a9642049711bd2cc4a18e87",
+        "ariad-bench-network-ebd4dec59a96"
       ],
-      "elapsed_ms": 64.09846699534683,
+      "elapsed_ms": 114.33469300391153,
       "exit_code": 0,
-      "pid": 1892791,
+      "pid": 3440913,
       "timeout_s": 120
     },
     {
@@ -62,11 +62,11 @@
         "docker",
         "network",
         "inspect",
-        "ariad-bench-network-b8ed2011c2f7"
+        "ariad-bench-network-ebd4dec59a96"
       ],
-      "elapsed_ms": 31.913111000903882,
+      "elapsed_ms": 64.44406100490596,
       "exit_code": 0,
-      "pid": 1892819,
+      "pid": 3440959,
       "timeout_s": 120
     },
     {
@@ -74,11 +74,11 @@
         "docker",
         "create",
         "--name",
-        "ariad-bench-stirling-b8ed2011c2f7",
+        "ariad-bench-stirling-ebd4dec59a96",
         "--label",
-        "org.ariadshift.benchmark.owner=b8ed2011c2f74d29920b9a99144dfb28",
+        "org.ariadshift.benchmark.owner=ebd4dec59a9642049711bd2cc4a18e87",
         "--network",
-        "ariad-bench-network-b8ed2011c2f7",
+        "ariad-bench-network-ebd4dec59a96",
         "--memory",
         "3g",
         "--cpus",
@@ -99,20 +99,20 @@
         "SYSTEM_DEFAULTLOCALE=en-US",
         "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
       ],
-      "elapsed_ms": 264.44303199969,
+      "elapsed_ms": 515.1437780004926,
       "exit_code": 0,
-      "pid": 1892832,
+      "pid": 3440975,
       "timeout_s": 120
     },
     {
       "command": [
         "docker",
         "start",
-        "ariad-bench-stirling-b8ed2011c2f7"
+        "ariad-bench-stirling-ebd4dec59a96"
       ],
-      "elapsed_ms": 214.91912100464106,
+      "elapsed_ms": 214.55846198659856,
       "exit_code": 0,
-      "pid": 1892851,
+      "pid": 3441013,
       "timeout_s": 120
     },
     {
@@ -120,11 +120,11 @@
         "docker",
         "container",
         "inspect",
-        "ariad-bench-stirling-b8ed2011c2f7"
+        "ariad-bench-stirling-ebd4dec59a96"
       ],
-      "elapsed_ms": 32.02606499689864,
+      "elapsed_ms": 31.938039988745004,
       "exit_code": 0,
-      "pid": 1892946,
+      "pid": 3441108,
       "timeout_s": 120
     },
     {
@@ -137,14 +137,14 @@
         "--profile",
         "editable",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/probe-ariadshift-pdf.docx",
+        "/tmp/ariad-competitors-p02ehpsk/probe-ariadshift-pdf.docx",
         "--overwrite",
         "--engine",
         "pdf"
       ],
-      "elapsed_ms": 414.6301049986505,
+      "elapsed_ms": 464.82772601302713,
       "exit_code": 0,
-      "pid": 1895470,
+      "pid": 3443942,
       "timeout_s": 120
     },
     {
@@ -157,12 +157,12 @@
         "--profile",
         "editable",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/probe-ariadshift-docx.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/probe-ariadshift-docx.pdf",
         "--overwrite"
       ],
-      "elapsed_ms": 1917.7665030001663,
+      "elapsed_ms": 1869.4105600006878,
       "exit_code": 0,
-      "pid": 1896112,
+      "pid": 3444473,
       "timeout_s": 120
     },
     {
@@ -171,74 +171,12 @@
         "__ir",
         "${WORKTREE}/fixtures/editor/vi-styled-pair.pdf",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/source.json",
+        "/tmp/ariad-competitors-p02ehpsk/source.json",
         "--overwrite"
       ],
-      "elapsed_ms": 114.17990300105885,
+      "elapsed_ms": 113.95333899417892,
       "exit_code": 0,
-      "pid": 1896389,
-      "timeout_s": 120
-    },
-    {
-      "command": [
-        "${ASHIFT_BIN}",
-        "convert",
-        "${WORKTREE}/fixtures/editor/vi-styled-pair.pdf",
-        "--to",
-        "docx",
-        "--profile",
-        "editable",
-        "-o",
-        "/tmp/ariad-competitors-3awni1c_/output-1.docx",
-        "--overwrite",
-        "--engine",
-        "pdf"
-      ],
-      "elapsed_ms": 414.84417299943743,
-      "exit_code": 0,
-      "pid": 1896422,
-      "timeout_s": 120
-    },
-    {
-      "command": [
-        "${ASHIFT_BIN}",
-        "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-1.docx",
-        "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-1.json",
-        "--overwrite"
-      ],
-      "elapsed_ms": 214.42749199923128,
-      "exit_code": 0,
-      "pid": 1896495,
-      "timeout_s": 120
-    },
-    {
-      "command": [
-        "${ASHIFT_BIN}",
-        "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-2.docx",
-        "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-2.json",
-        "--overwrite"
-      ],
-      "elapsed_ms": 164.17736500443425,
-      "exit_code": 0,
-      "pid": 1896524,
-      "timeout_s": 120
-    },
-    {
-      "command": [
-        "${ASHIFT_BIN}",
-        "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-3.docx",
-        "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-3.json",
-        "--overwrite"
-      ],
-      "elapsed_ms": 164.23871999722905,
-      "exit_code": 0,
-      "pid": 1896559,
+      "pid": 3444781,
       "timeout_s": 120
     },
     {
@@ -251,28 +189,56 @@
         "--profile",
         "editable",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/output-4.docx",
+        "/tmp/ariad-competitors-p02ehpsk/output-1.docx",
         "--overwrite",
         "--engine",
         "pdf"
       ],
-      "elapsed_ms": 464.97814200120047,
+      "elapsed_ms": 464.9259290017653,
       "exit_code": 0,
-      "pid": 1896580,
+      "pid": 3444785,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-4.docx",
+        "/tmp/ariad-competitors-p02ehpsk/output-1.docx",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-4.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-1.json",
         "--overwrite"
       ],
-      "elapsed_ms": 214.64436200039927,
+      "elapsed_ms": 214.66906400746666,
       "exit_code": 0,
-      "pid": 1896642,
+      "pid": 3444883,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-p02ehpsk/output-2.docx",
+        "-o",
+        "/tmp/ariad-competitors-p02ehpsk/readback-2.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 164.26900700025726,
+      "exit_code": 0,
+      "pid": 3444911,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-p02ehpsk/output-3.docx",
+        "-o",
+        "/tmp/ariad-competitors-p02ehpsk/readback-3.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 164.32593399076723,
+      "exit_code": 0,
+      "pid": 3444939,
       "timeout_s": 120
     },
     {
@@ -285,42 +251,76 @@
         "--profile",
         "editable",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/output-5.docx",
+        "/tmp/ariad-competitors-p02ehpsk/output-4.docx",
         "--overwrite",
         "--engine",
         "pdf"
       ],
-      "elapsed_ms": 465.055246000702,
+      "elapsed_ms": 414.6689810004318,
       "exit_code": 0,
-      "pid": 1896718,
+      "pid": 3444960,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-5.docx",
+        "/tmp/ariad-competitors-p02ehpsk/output-4.docx",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-5.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-4.json",
         "--overwrite"
       ],
-      "elapsed_ms": 214.5734369987622,
+      "elapsed_ms": 214.70930900250096,
       "exit_code": 0,
-      "pid": 1896786,
+      "pid": 3445028,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.pdf",
+        "--to",
+        "docx",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-p02ehpsk/output-5.docx",
+        "--overwrite",
+        "--engine",
+        "pdf"
+      ],
+      "elapsed_ms": 465.1935930014588,
+      "exit_code": 0,
+      "pid": 3445049,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-6.docx",
+        "/tmp/ariad-competitors-p02ehpsk/output-5.docx",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-6.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-5.json",
         "--overwrite"
       ],
-      "elapsed_ms": 164.13308100163704,
+      "elapsed_ms": 214.34299800603185,
       "exit_code": 0,
-      "pid": 1896958,
+      "pid": 3445172,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-p02ehpsk/output-6.docx",
+        "-o",
+        "/tmp/ariad-competitors-p02ehpsk/readback-6.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 164.1838049981743,
+      "exit_code": 0,
+      "pid": 3445203,
       "timeout_s": 120
     },
     {
@@ -329,12 +329,12 @@
         "__ir",
         "${WORKTREE}/fixtures/editor/vi-styled-pair.docx",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/source.json",
+        "/tmp/ariad-competitors-p02ehpsk/source.json",
         "--overwrite"
       ],
-      "elapsed_ms": 314.6616060039378,
+      "elapsed_ms": 364.79416499787476,
       "exit_code": 0,
-      "pid": 1896979,
+      "pid": 3445226,
       "timeout_s": 120
     },
     {
@@ -347,54 +347,54 @@
         "--profile",
         "editable",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/output-7.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-7.pdf",
         "--overwrite"
       ],
-      "elapsed_ms": 2068.334210998728,
+      "elapsed_ms": 1867.818619008176,
       "exit_code": 0,
-      "pid": 1897000,
+      "pid": 3445247,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-7.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-7.pdf",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-7.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-7.json",
         "--overwrite"
       ],
-      "elapsed_ms": 114.19751700304914,
+      "elapsed_ms": 114.1415029997006,
       "exit_code": 0,
-      "pid": 1897239,
+      "pid": 3445429,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-8.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-8.pdf",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-8.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-8.json",
         "--overwrite"
       ],
-      "elapsed_ms": 114.27192600240232,
+      "elapsed_ms": 114.37332000059541,
       "exit_code": 0,
-      "pid": 1897254,
+      "pid": 3445449,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-9.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-9.pdf",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-9.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-9.json",
         "--overwrite"
       ],
-      "elapsed_ms": 114.67796200304292,
+      "elapsed_ms": 114.31469899252988,
       "exit_code": 0,
-      "pid": 1897273,
+      "pid": 3445461,
       "timeout_s": 120
     },
     {
@@ -407,26 +407,26 @@
         "--profile",
         "editable",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/output-10.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-10.pdf",
         "--overwrite"
       ],
-      "elapsed_ms": 1817.5521209996077,
+      "elapsed_ms": 1817.3425270069856,
       "exit_code": 0,
-      "pid": 1897277,
+      "pid": 3445465,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-10.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-10.pdf",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-10.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-10.json",
         "--overwrite"
       ],
-      "elapsed_ms": 114.31430599623127,
+      "elapsed_ms": 114.16218099475373,
       "exit_code": 0,
-      "pid": 1897535,
+      "pid": 3445688,
       "timeout_s": 120
     },
     {
@@ -439,40 +439,40 @@
         "--profile",
         "editable",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/output-11.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-11.pdf",
         "--overwrite"
       ],
-      "elapsed_ms": 1867.7334649983095,
+      "elapsed_ms": 1917.7350719983224,
       "exit_code": 0,
-      "pid": 1897539,
+      "pid": 3445694,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-11.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-11.pdf",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-11.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-11.json",
         "--overwrite"
       ],
-      "elapsed_ms": 114.21655099547934,
+      "elapsed_ms": 114.16964499221649,
       "exit_code": 0,
-      "pid": 1897713,
+      "pid": 3445900,
       "timeout_s": 120
     },
     {
       "command": [
         "${ASHIFT_BIN}",
         "__ir",
-        "/tmp/ariad-competitors-3awni1c_/output-12.pdf",
+        "/tmp/ariad-competitors-p02ehpsk/output-12.pdf",
         "-o",
-        "/tmp/ariad-competitors-3awni1c_/readback-12.json",
+        "/tmp/ariad-competitors-p02ehpsk/readback-12.json",
         "--overwrite"
       ],
-      "elapsed_ms": 114.08679700252833,
+      "elapsed_ms": 114.05316500167828,
       "exit_code": 0,
-      "pid": 1897752,
+      "pid": 3445920,
       "timeout_s": 120
     },
     {
@@ -480,11 +480,11 @@
         "docker",
         "container",
         "inspect",
-        "ariad-bench-stirling-b8ed2011c2f7"
+        "ariad-bench-stirling-ebd4dec59a96"
       ],
-      "elapsed_ms": 64.74446100037312,
+      "elapsed_ms": 64.23232100496534,
       "exit_code": 0,
-      "pid": 1897756,
+      "pid": 3445924,
       "timeout_s": 5
     },
     {
@@ -493,22 +493,22 @@
         "stop",
         "--time",
         "3",
-        "ariad-bench-stirling-b8ed2011c2f7"
+        "ariad-bench-stirling-ebd4dec59a96"
       ],
-      "elapsed_ms": 3271.437280003738,
+      "elapsed_ms": 3321.182793995831,
       "exit_code": 0,
-      "pid": 1897768,
+      "pid": 3445936,
       "timeout_s": 10
     },
     {
       "command": [
         "docker",
         "rm",
-        "ariad-bench-stirling-b8ed2011c2f7"
+        "ariad-bench-stirling-ebd4dec59a96"
       ],
-      "elapsed_ms": 164.3119159998605,
+      "elapsed_ms": 164.69696900458075,
       "exit_code": 0,
-      "pid": 1897939,
+      "pid": 3446198,
       "timeout_s": 5
     },
     {
@@ -516,11 +516,11 @@
         "docker",
         "network",
         "inspect",
-        "ariad-bench-network-b8ed2011c2f7"
+        "ariad-bench-network-ebd4dec59a96"
       ],
-      "elapsed_ms": 32.131039995874744,
+      "elapsed_ms": 32.28663200570736,
       "exit_code": 0,
-      "pid": 1897952,
+      "pid": 3446210,
       "timeout_s": 5
     },
     {
@@ -528,19 +528,19 @@
         "docker",
         "network",
         "rm",
-        "ariad-bench-network-b8ed2011c2f7"
+        "ariad-bench-network-ebd4dec59a96"
       ],
-      "elapsed_ms": 114.28751399944304,
+      "elapsed_ms": 114.23445600667037,
       "exit_code": 0,
-      "pid": 1897964,
+      "pid": 3446222,
       "timeout_s": 5
     }
   ],
   "comparisons": {
     "docx->pdf": {
       "gates": {
-        "layout_iou": null,
-        "style_accuracy": false,
+        "layout_iou": true,
+        "style_accuracy": true,
         "table_f1": true,
         "text_cer": true
       },
@@ -548,12 +548,12 @@
         "ariadshift": {
           "layout_iou": {
             "expected": 3,
-            "mean": null,
-            "observed": 0
+            "mean": 0.0,
+            "observed": 3
           },
           "style_accuracy": {
             "expected": 3,
-            "mean": 0.4,
+            "mean": 1.0,
             "observed": 3
           },
           "table_f1": {
@@ -570,8 +570,8 @@
         "stirling": {
           "layout_iou": {
             "expected": 3,
-            "mean": null,
-            "observed": 0
+            "mean": 0.0,
+            "observed": 3
           },
           "style_accuracy": {
             "expected": 3,
@@ -590,13 +590,13 @@
           }
         }
       },
-      "status": "incomplete",
-      "style_delta_pp": -24.0,
-      "style_relative_percent": -37.5
+      "status": "pass",
+      "style_delta_pp": 36.0,
+      "style_relative_percent": 56.25
     },
     "pdf->docx": {
       "gates": {
-        "layout_iou": null,
+        "layout_iou": true,
         "style_accuracy": true,
         "table_f1": true,
         "text_cer": true
@@ -605,12 +605,12 @@
         "ariadshift": {
           "layout_iou": {
             "expected": 3,
-            "mean": null,
-            "observed": 0
+            "mean": 0.0,
+            "observed": 3
           },
           "style_accuracy": {
             "expected": 3,
-            "mean": 0.68,
+            "mean": 1.0,
             "observed": 3
           },
           "table_f1": {
@@ -627,8 +627,8 @@
         "stirling": {
           "layout_iou": {
             "expected": 3,
-            "mean": null,
-            "observed": 0
+            "mean": 0.0,
+            "observed": 3
           },
           "style_accuracy": {
             "expected": 3,
@@ -647,8 +647,8 @@
           }
         }
       },
-      "status": "incomplete",
-      "style_delta_pp": 68.0,
+      "status": "pass",
+      "style_delta_pp": 100.0,
       "style_relative_percent": null
     }
   },
@@ -666,19 +666,19 @@
           "path": "fixtures/editor/vi-styled-pair.docx",
           "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
           "truth": "fixtures/editor/vi-styled-pair-docx.truth.json",
-          "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+          "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
         },
         "pdf": {
           "path": "fixtures/editor/vi-styled-pair.pdf",
           "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
           "truth": "fixtures/editor/vi-styled-pair-pdf.truth.json",
-          "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+          "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
         }
       }
     }
   ],
   "gaps": [],
-  "generated_at": "2026-11-10T06:33:34.791994+00:00",
+  "generated_at": "2026-11-10T12:41:35.443771+00:00",
   "image": {
     "docker_version": "29.9.2",
     "id": "sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7",
@@ -686,7 +686,7 @@
       "org.opencontainers.image.licenses": "NOASSERTION"
     },
     "network_internal": true,
-    "openapi_sha256": "d3d2d9176077f58112f04f9bd004d8a048a7273f54541a879c134ae15ded72cd",
+    "openapi_sha256": "9f7de96a389cd625d5fce0099c231a861b0252aa61bad03c98323f4254c5fd88",
     "openapi_version": "3.3.0",
     "platform": "linux/amd64",
     "reference": "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7",
@@ -707,32 +707,32 @@
   },
   "probe_samples": [
     {
-      "conversion_ms": 415.10619199834764,
-      "output_sha256": "d402f5958317c8566ce8b0982542f3abe20b6ce3587fc1e4ca0eeb572ec71bcc",
+      "conversion_ms": 465.07951099192724,
+      "output_sha256": "6eb8a08bef5b7b39af55dee63a04cc174ba4e4746e5ca004ad564e60b97d3d50",
       "product": "ariadshift",
       "route": "pdf->docx",
       "sha256": "9956e5ec5ca2d86b482eeed5859fa880b0f06b24587a95e9e9f50264245e334b",
       "status": "converted"
     },
     {
-      "conversion_ms": 9353.154505995917,
-      "output_sha256": "52b300077fa5c818ae078d703f58e3fcfe3328b09569e0817373881ffd20d2b1",
+      "conversion_ms": 8249.61142000393,
+      "output_sha256": "88e00597d8d9e2092e29b91a26b643e8dfd104e5278b319c72cf9d1a0cdf2083",
       "product": "stirling",
       "route": "pdf->docx",
       "sha256": "9956e5ec5ca2d86b482eeed5859fa880b0f06b24587a95e9e9f50264245e334b",
       "status": "converted"
     },
     {
-      "conversion_ms": 1918.6307529962505,
-      "output_sha256": "f6447586edbd2ea71bbeb65463ffe1fe137d8081936ec1f5d1888435370b34fa",
+      "conversion_ms": 1869.7854970087064,
+      "output_sha256": "0a024caacf201a2c37e416338875216cf980ae615099537e2a2189a3796de7f7",
       "product": "ariadshift",
       "route": "docx->pdf",
       "sha256": "438042061d630dd60569766e37959e00c7f01337941c5ecb1067509e5560e6a7",
       "status": "converted"
     },
     {
-      "conversion_ms": 726.1072940018494,
-      "output_sha256": "ce29684c892ecdc29619695b85e0d616fc2bb0360f39e151d79c7d80776e2c87",
+      "conversion_ms": 605.5792340048356,
+      "output_sha256": "cffca83b87ec0f78a06d3d6459c116df135ec59924aad2fab4c423b325d071fb",
       "product": "stirling",
       "route": "docx->pdf",
       "sha256": "438042061d630dd60569766e37959e00c7f01337941c5ecb1067509e5560e6a7",
@@ -741,11 +741,11 @@
   ],
   "repeat": 3,
   "resources": {
-    "container": "ariad-bench-stirling-b8ed2011c2f7",
+    "container": "ariad-bench-stirling-ebd4dec59a96",
     "endpoint": "http://127.0.0.1:18711",
-    "network": "ariad-bench-network-b8ed2011c2f7",
-    "owner": "b8ed2011c2f74d29920b9a99144dfb28",
-    "pid": 1892680,
+    "network": "ariad-bench-network-ebd4dec59a96",
+    "owner": "ebd4dec59a9642049711bd2cc4a18e87",
+    "pid": 3440783,
     "worktree": "${WORKTREE}"
   },
   "routes": [
@@ -755,11 +755,11 @@
   "samples": [
     {
       "attempt": 1,
-      "conversion_ms": 415.3255609999178,
-      "evaluation_ms": 219.3168899975717,
-      "extraction_ms": 115.17964799713809,
+      "conversion_ms": 465.28167999349535,
+      "evaluation_ms": 219.6932619990548,
+      "extraction_ms": 114.44925500836689,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "47d8526e520bb8f8fd5fb88f5c73187c9106bda2b52402da38f46d61c759097d",
+      "output_sha256": "023a5500cdd7e84a9a149f3ba9ed50a738fa8bc8937b18b4a7924d5ba43824b6",
       "product": "ariadshift",
       "route": "pdf->docx",
       "score": {
@@ -769,23 +769,23 @@
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "style": {
             "hypothesis": 41,
-            "matched": 17,
+            "matched": 25,
             "observed": 25,
             "reference": 25
           },
           "style_accuracy": {
             "hypothesis": 41,
-            "matched": 17,
+            "matched": 25,
             "observed": 25,
             "reference": 25
           },
@@ -807,9 +807,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.6023728813559323,
+        "score": 0.5317796610169492,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -841,24 +841,22 @@
           }
         },
         "structure_f1": 0.5,
-        "style_accuracy": 0.68,
+        "style_accuracy": 1.0,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 1,
-      "conversion_ms": 284.48203400330385,
-      "evaluation_ms": 165.53872199438047,
-      "extraction_ms": 115.17964799713809,
+      "conversion_ms": 267.98286801204085,
+      "evaluation_ms": 167.15745600231458,
+      "extraction_ms": 114.44925500836689,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "1037f130db27a56e93eb396cbd37bdcf061aa1be50f08db7126b0af3c824c1f7",
+      "output_sha256": "cb764e7a1c3c8a7deccf7333ab0c459474a68c3da860af2e6d050771308cacb7",
       "product": "stirling",
       "route": "pdf->docx",
       "score": {
@@ -868,13 +866,13 @@
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "style": {
             "hypothesis": 2,
@@ -906,9 +904,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.031073446327683607,
+        "score": 0.023305084745762705,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -943,21 +941,19 @@
         "style_accuracy": 0.0,
         "table_f1": 0.0,
         "text_cer": 0.9067796610169492,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 2,
-      "conversion_ms": 300.26484599511605,
-      "evaluation_ms": 166.5834809973603,
-      "extraction_ms": 115.17964799713809,
+      "conversion_ms": 276.0617600142723,
+      "evaluation_ms": 165.31714399752673,
+      "extraction_ms": 114.44925500836689,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "1037f130db27a56e93eb396cbd37bdcf061aa1be50f08db7126b0af3c824c1f7",
+      "output_sha256": "dbf907385b87e6c3c1e44ca5036b87da0bae4fd8ef311f6035e5e062333b460c",
       "product": "stirling",
       "route": "pdf->docx",
       "score": {
@@ -967,13 +963,13 @@
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "style": {
             "hypothesis": 2,
@@ -1005,9 +1001,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.031073446327683607,
+        "score": 0.023305084745762705,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1042,21 +1038,19 @@
         "style_accuracy": 0.0,
         "table_f1": 0.0,
         "text_cer": 0.9067796610169492,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 2,
-      "conversion_ms": 465.59059599530883,
-      "evaluation_ms": 219.0634809958283,
-      "extraction_ms": 115.17964799713809,
+      "conversion_ms": 414.9639680108521,
+      "evaluation_ms": 219.98795800027438,
+      "extraction_ms": 114.44925500836689,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "d24fd914b1c00bfe70254cfacf357ec631554f671d85b46fa1fd3975178c9b39",
+      "output_sha256": "6e0425fcaabc7f9554019c6b3d62afc5338713abd4f1064771bca32c24c6767b",
       "product": "ariadshift",
       "route": "pdf->docx",
       "score": {
@@ -1066,23 +1060,23 @@
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "style": {
             "hypothesis": 41,
-            "matched": 17,
+            "matched": 25,
             "observed": 25,
             "reference": 25
           },
           "style_accuracy": {
             "hypothesis": 41,
-            "matched": 17,
+            "matched": 25,
             "observed": 25,
             "reference": 25
           },
@@ -1104,9 +1098,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.6023728813559323,
+        "score": 0.5317796610169492,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1138,24 +1132,22 @@
           }
         },
         "structure_f1": 0.5,
-        "style_accuracy": 0.68,
+        "style_accuracy": 1.0,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 3,
-      "conversion_ms": 465.9682179990341,
-      "evaluation_ms": 217.4540470005013,
-      "extraction_ms": 115.17964799713809,
+      "conversion_ms": 465.6293540028855,
+      "evaluation_ms": 216.97223800583743,
+      "extraction_ms": 114.44925500836689,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "8e60aebb66e8c456c9bb88e863a9b7b6924af33f373d9c95e5e9f1959980bc79",
+      "output_sha256": "6f2dca7dcd735e9f9caaeb2f620816bfecaa2204591f2853ea38acb2252426a6",
       "product": "ariadshift",
       "route": "pdf->docx",
       "score": {
@@ -1165,23 +1157,23 @@
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "style": {
             "hypothesis": 41,
-            "matched": 17,
+            "matched": 25,
             "observed": 25,
             "reference": 25
           },
           "style_accuracy": {
             "hypothesis": 41,
-            "matched": 17,
+            "matched": 25,
             "observed": 25,
             "reference": 25
           },
@@ -1203,9 +1195,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.6023728813559323,
+        "score": 0.5317796610169492,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1237,24 +1229,22 @@
           }
         },
         "structure_f1": 0.5,
-        "style_accuracy": 0.68,
+        "style_accuracy": 1.0,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 3,
-      "conversion_ms": 310.10025699652033,
-      "evaluation_ms": 165.4106190035236,
-      "extraction_ms": 115.17964799713809,
+      "conversion_ms": 321.84586599760223,
+      "evaluation_ms": 165.33663000154775,
+      "extraction_ms": 114.44925500836689,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "d6d63fd749691c7dac47400a8b81ac337c1fe89518b99ad27811989130e2280d",
+      "output_sha256": "a528b7a8777f9ae794ebe2123f8e3245720719e8e6ad362f819768eef48e4375",
       "product": "stirling",
       "route": "pdf->docx",
       "score": {
@@ -1264,13 +1254,13 @@
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 0,
             "matched": 0,
             "observed": 0,
-            "reference": 0
+            "reference": 9
           },
           "style": {
             "hypothesis": 2,
@@ -1302,9 +1292,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.031073446327683607,
+        "score": 0.023305084745762705,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1339,21 +1329,19 @@
         "style_accuracy": 0.0,
         "table_f1": 0.0,
         "text_cer": 0.9067796610169492,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 1,
-      "conversion_ms": 2069.0327669944963,
-      "evaluation_ms": 116.74741299793823,
-      "extraction_ms": 315.7988400053,
+      "conversion_ms": 1868.2731870067073,
+      "evaluation_ms": 117.74710600730032,
+      "extraction_ms": 366.5488950064173,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "134f59b8737b401d442e4caf30c3b09f2285f03b4db62f3205094f561cf8feb6",
+      "output_sha256": "435aec2fc59e6bf23736a438eb6d4f614d482b750ce890c9f58eb342bc829bf6",
       "product": "ariadshift",
       "route": "docx->pdf",
       "score": {
@@ -1361,26 +1349,26 @@
         "coverage": {
           "layout": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "style": {
-            "hypothesis": 41,
-            "matched": 10,
-            "observed": 18,
+            "hypothesis": 50,
+            "matched": 25,
+            "observed": 25,
             "reference": 25
           },
           "style_accuracy": {
-            "hypothesis": 41,
-            "matched": 10,
-            "observed": 18,
+            "hypothesis": 50,
+            "matched": 25,
+            "observed": 25,
             "reference": 25
           },
           "table_f1": {
@@ -1401,9 +1389,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.5090395480225989,
+        "score": 0.5317796610169492,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1435,24 +1423,22 @@
           }
         },
         "structure_f1": 0.5,
-        "style_accuracy": 0.4,
+        "style_accuracy": 1.0,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 1,
-      "conversion_ms": 385.69316799839726,
-      "evaluation_ms": 116.3341740029864,
-      "extraction_ms": 315.7988400053,
+      "conversion_ms": 439.51826899137814,
+      "evaluation_ms": 118.12345498765353,
+      "extraction_ms": 366.5488950064173,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "2609f8db95588ee3604055d9ec239ff7e37844f74480d2971bb1de6c410d6ca0",
+      "output_sha256": "f87801fa4efbf0e688ba4847ca16955cb25989e191c5b0a35bc7d4f42151be1b",
       "product": "stirling",
       "route": "docx->pdf",
       "score": {
@@ -1460,15 +1446,15 @@
         "coverage": {
           "layout": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "style": {
             "hypothesis": 50,
@@ -1500,9 +1486,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.5890395480225988,
+        "score": 0.44177966101694915,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1537,21 +1523,19 @@
         "style_accuracy": 0.64,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 2,
-      "conversion_ms": 354.25203700287966,
-      "evaluation_ms": 118.75808300101198,
-      "extraction_ms": 315.7988400053,
+      "conversion_ms": 381.3755540031707,
+      "evaluation_ms": 117.41752299712971,
+      "extraction_ms": 366.5488950064173,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "ba1c46a4a06fb44c0f83e4122d0ae63f0949ed37fc0dbd4d60552312f24223e9",
+      "output_sha256": "324483156ae475f04a5ff29b80236ddc125ea306511dd67a39c7b461bcc266e0",
       "product": "stirling",
       "route": "docx->pdf",
       "score": {
@@ -1559,15 +1543,15 @@
         "coverage": {
           "layout": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "style": {
             "hypothesis": 50,
@@ -1599,9 +1583,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.5890395480225988,
+        "score": 0.44177966101694915,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1636,21 +1620,19 @@
         "style_accuracy": 0.64,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 2,
-      "conversion_ms": 1818.091357999947,
-      "evaluation_ms": 116.77146799775073,
-      "extraction_ms": 315.7988400053,
+      "conversion_ms": 1817.6202809991082,
+      "evaluation_ms": 116.10072800249327,
+      "extraction_ms": 366.5488950064173,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "701b074998bde2dbc75e87b2bf3fea0855f11676644db8019f4b06cf9ed6928b",
+      "output_sha256": "2e256c00c9392be02477016ef924bcedb2fd6ab6f6eb8c0fad8ab9e709a641b7",
       "product": "ariadshift",
       "route": "docx->pdf",
       "score": {
@@ -1658,26 +1640,26 @@
         "coverage": {
           "layout": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "style": {
-            "hypothesis": 41,
-            "matched": 10,
-            "observed": 18,
+            "hypothesis": 50,
+            "matched": 25,
+            "observed": 25,
             "reference": 25
           },
           "style_accuracy": {
-            "hypothesis": 41,
-            "matched": 10,
-            "observed": 18,
+            "hypothesis": 50,
+            "matched": 25,
+            "observed": 25,
             "reference": 25
           },
           "table_f1": {
@@ -1698,9 +1680,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.5090395480225989,
+        "score": 0.5317796610169492,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1732,24 +1714,22 @@
           }
         },
         "structure_f1": 0.5,
-        "style_accuracy": 0.4,
+        "style_accuracy": 1.0,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 3,
-      "conversion_ms": 1868.2128289947286,
-      "evaluation_ms": 115.88546699931612,
-      "extraction_ms": 315.7988400053,
+      "conversion_ms": 1918.0823770002462,
+      "evaluation_ms": 116.85542200575583,
+      "extraction_ms": 366.5488950064173,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "53ff719591be2f4a8879e8d6cc3897c3b30d6c732ac33973c88f66ccc0a50116",
+      "output_sha256": "b9533f3a3b97dfacbe3f115fa787f0e69d0e61f131a2bab3791631910085b57a",
       "product": "ariadshift",
       "route": "docx->pdf",
       "score": {
@@ -1757,26 +1737,26 @@
         "coverage": {
           "layout": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "style": {
-            "hypothesis": 41,
-            "matched": 10,
-            "observed": 18,
+            "hypothesis": 50,
+            "matched": 25,
+            "observed": 25,
             "reference": 25
           },
           "style_accuracy": {
-            "hypothesis": 41,
-            "matched": 10,
-            "observed": 18,
+            "hypothesis": 50,
+            "matched": 25,
+            "observed": 25,
             "reference": 25
           },
           "table_f1": {
@@ -1797,9 +1777,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.5090395480225989,
+        "score": 0.5317796610169492,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1831,24 +1811,22 @@
           }
         },
         "structure_f1": 0.5,
-        "style_accuracy": 0.4,
+        "style_accuracy": 1.0,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     },
     {
       "attempt": 3,
-      "conversion_ms": 346.0841580017586,
-      "evaluation_ms": 123.25383700226666,
-      "extraction_ms": 315.7988400053,
+      "conversion_ms": 379.68438999087084,
+      "evaluation_ms": 121.02062899793964,
+      "extraction_ms": 366.5488950064173,
       "fixture": "fixtures/editor/vi-styled-pair",
-      "output_sha256": "0a6b22c164c6e2430a3897fb3c541c93696c1df16157cdf096660293cdac4f77",
+      "output_sha256": "63c40bcef0d32407c76f87d2f874fecfde73030a84e0c0a4f80adfc166ad39ff",
       "product": "stirling",
       "route": "docx->pdf",
       "score": {
@@ -1856,15 +1834,15 @@
         "coverage": {
           "layout": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "layout_iou": {
             "hypothesis": 10,
-            "matched": 0,
-            "observed": 0,
-            "reference": 0
+            "matched": 8,
+            "observed": 8,
+            "reference": 9
           },
           "style": {
             "hypothesis": 50,
@@ -1896,9 +1874,9 @@
             "reference": 118
           }
         },
-        "layout_iou": null,
+        "layout_iou": 0.0,
         "metric_version": "fidelity/2",
-        "score": 0.5890395480225988,
+        "score": 0.44177966101694915,
         "status": "measured",
         "structure_by_kind": {
           "heading": {
@@ -1933,13 +1911,11 @@
         "style_accuracy": 0.64,
         "table_f1": 0.0,
         "text_cer": 0.3728813559322034,
-        "unavailable_reasons": {
-          "layout": "no_reference_layout_observations"
-        }
+        "unavailable_reasons": {}
       },
       "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
       "status": "ok",
-      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+      "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
     }
   ],
   "schema": "ariad-competitors/1",
@@ -1947,7 +1923,7 @@
     "callable": "ariad_bench.competitors:score",
     "sha256": "941b1cf86e6efec7070b99f6fc62037c8a745692dfde901728414e815ec588fd"
   },
-  "source_revision": "af72c227cfab51456a1bb151abc52820b5103b63",
-  "status": "incomplete",
+  "source_revision": "b262a75e95bc7681cce802c64ee608b2b9cc7202",
+  "status": "pass",
   "worktree": "${WORKTREE}"
 }

@@ -36,6 +36,21 @@ PAIR_HEADER = "Ghi chép cộng đồng"
 PAIR_FOOTER = "Lưu bản gốc để đối chiếu"
 PAIR_ROWS = (("Điểm", "Số ghế"), ("Bến sông", "3"), ("Vườn đọc", "5"))
 FONT = {"family": "Libertinus Serif", "fallback": ["Noto Serif"]}
+# Frozen word bounds measured from the original authored PDF, never a converted output.
+# Reproduce with pdftotext 26.10.0 -bbox-layout fixtures/editor/vi-styled-pair.pdf.
+PAIR_PDF_SHA256 = "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc"
+PAIR_BOXES = (
+    (54.0, 49.518, 222.768, 70.038),
+    (54.0, 71.264, 354.278, 83.804),
+    (59.0, 96.702, 83.299, 109.242),
+    (302.5, 96.702, 332.464, 109.242),
+    (59.0, 113.940, 100.393, 126.480),
+    (302.5, 113.940, 307.615, 126.480),
+    (59.0, 131.178, 102.054, 143.718),
+    (302.5, 131.178, 307.615, 143.718),
+    (54.0, 27.966, 144.222, 40.506),
+    (54.0, 801.604, 166.343, 814.144),
+)
 
 
 def _json(value: dict) -> bytes:
@@ -280,7 +295,7 @@ def _truth(case: str) -> dict:
 
 
 def _paired_ir() -> dict:
-    """Author the paired expected /2 document before either binary is rendered."""
+    """Keep authored semantics/styles and frozen geometry from the original PDF."""
     document = {"version": "ariad-ir/2", "meta": {"title": PAIR_TITLE, "language": "vi"},
         "body": [
             {"type": "heading", "level": 1, "direct": {"font": FONT, "size_pt": 18.0, "color": "#185c4c"},
@@ -298,6 +313,18 @@ def _paired_ir() -> dict:
     }
     _identify(document["body"], "body")
     _identify(document["furniture"], "furniture")
+    table = document["body"][2]
+    cells = [block for row in table["body"] for cell in row for block in cell["blocks"]]
+    leaves = [*document["body"][:2], *cells, *document["furniture"]]
+    boxes = {block["id"]: {"page_no": 1, "bbox": dict(zip(
+        ("left", "top", "right", "bottom"), coordinates, strict=True))}
+        for block, coordinates in zip(leaves, PAIR_BOXES, strict=True)}
+    # A table's text bounds are the union of its independently positioned cells.
+    cell_boxes = [boxes[block["id"]]["bbox"] for block in cells]
+    boxes[table["id"]] = {"page_no": 1, "bbox": {
+        "left": min(box["left"] for box in cell_boxes), "top": min(box["top"] for box in cell_boxes),
+        "right": max(box["right"] for box in cell_boxes), "bottom": max(box["bottom"] for box in cell_boxes)}}
+    document["layout"]["blocks"] = boxes
     document["sections"] = [{"page_size": {"width_pt": 595.0, "height_pt": 842.0},
         "margins": {"top_pt": 54.0, "right_pt": 54.0, "bottom_pt": 54.0, "left_pt": 54.0},
         "columns": 1, "header": document["furniture"][0]["id"], "footer": document["furniture"][1]["id"]}]
@@ -310,8 +337,10 @@ def _pair_truth() -> dict:
             "table": [list(row) for row in PAIR_ROWS], "headings": [PAIR_TITLE]},
         "styles": {"font_family": "Libertinus Serif", "body_size_pt": 11.0, "body_weight": 400,
             "heading_size_pt": 18.0, "heading_weight": 700, "heading_color": "#185c4c"},
-        "layout": {"reference_kind": "authored-page-setup-not-measured-boxes", "page_width_pt": 595.0,
-            "page_height_pt": 842.0, "margins_pt": 54.0, "columns": 1},
+        "layout": {"reference_kind": "authored-pdf-word-bounds", "page_width_pt": 595.0,
+            "page_height_pt": 842.0, "margins_pt": 54.0, "columns": 1,
+            "source_pdf_sha256": PAIR_PDF_SHA256,
+            "measurement": "pdftotext 26.10.0 -bbox-layout; top-left points; table is cell-text union"},
         "ir": _paired_ir(),
         "canonical": {"text": "\n".join([PAIR_TITLE, PAIR_TEXT, *(value for row in PAIR_ROWS for value in row)]),
             "headings": [{"level": 1, "text": PAIR_TITLE, "children": []}],
