@@ -347,7 +347,7 @@ export class OpfsStore implements FileStore {
   }
 
   async putOutputs(artifacts: StoredArtifact[]): Promise<OutputLocation[]> {
-    checkSize(totalBytes(artifacts), this.inputLimitBytes);
+    checkSize(totalBytes(artifacts), MEMORY_LIMIT_BYTES);
     const directory = await this.directory("output");
     const staged: OutputLocation[] = [];
     try {

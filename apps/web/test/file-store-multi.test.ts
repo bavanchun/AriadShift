@@ -1,5 +1,10 @@
 import { openOutput } from "@/converter/client";
-import { MemoryStore, OpfsStore, STORE_INPUT_LIMIT_BYTES } from "@/converter/file-store";
+import {
+  MEMORY_LIMIT_BYTES,
+  MemoryStore,
+  OpfsStore,
+  STORE_INPUT_LIMIT_BYTES,
+} from "@/converter/file-store";
 
 const bytes = (value: string) => new TextEncoder().encode(value);
 
@@ -113,6 +118,42 @@ for (const [kind, create] of [
       await store.clear();
       expect(store.outputLocation()).toBeNull();
       expect(store.listInputs()).toEqual([]);
+    });
+
+    it("stores single and multiple outputs above the input limit", async () => {
+      const store = await create();
+      const output = new Uint8Array(STORE_INPUT_LIMIT_BYTES + 1024);
+      const location = await store.putOutput(output, "application/octet-stream");
+      expect((await openOutput(location)).size).toBe(output.byteLength);
+
+      const locations = await store.putOutputs([
+        { name: "large.bin", bytes: output, mediaType: "application/octet-stream" },
+        { name: "small.txt", bytes: bytes("x"), mediaType: "text/plain" },
+      ]);
+      expect(
+        await Promise.all(locations.map(async (location) => (await openOutput(location)).size)),
+      ).toEqual([output.byteLength, 1]);
+    });
+
+    it("rejects single and aggregate output overflow before replacing current outputs", async () => {
+      const store = await create();
+      const location = await store.putOutput(bytes("keep"), "text/plain");
+      const error = { code: "storage_limit", limit: MEMORY_LIMIT_BYTES };
+      await expect(
+        store.putOutput(new Uint8Array(MEMORY_LIMIT_BYTES + 1), "application/octet-stream"),
+      ).rejects.toMatchObject(error);
+      await expect(
+        store.putOutputs([
+          {
+            name: "large.bin",
+            bytes: new Uint8Array(MEMORY_LIMIT_BYTES),
+            mediaType: "application/octet-stream",
+          },
+          { name: "small.txt", bytes: bytes("x"), mediaType: "text/plain" },
+        ]),
+      ).rejects.toMatchObject(error);
+      expect(store.outputLocation()).toEqual(location);
+      expect(await (await openOutput(location)).text()).toBe("keep");
     });
 
     it("rejects aggregate overflow and duplicate IDs before replacing current inputs", async () => {
