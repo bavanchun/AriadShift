@@ -136,7 +136,7 @@ The Python tests prove primary-document count, exact case coverage, independentl
 authored style/layout values, real file structures, scoped determinism and negative
 read-only drift detection. The Rust suite exercises real JSON read/write, adjacent
 text edits, block moves, table/note preservation, HTML/Markdown losses, and shared
-CLI PDF/DOCX conversions. The styled DOCX-to-PDF contract selects the Pandoc reader and shared IR/Typst writer, using the bundled fonts; competitive measurements keep the default planner route, including any system LibreOffice font substitution. It never starts a build from a test subprocess. Set
+CLI PDF/DOCX conversions. The styled DOCX-to-PDF contract selects the Pandoc reader and shared IR/Typst writer, using the bundled fonts; competitive measurements keep the default planner route. Builds with Typst also provide those fonts to LibreOffice through its private job profile. It never starts a build from a test subprocess. Set
 `ARIAD_EDITOR_TEST_ASHIFT` to an already built binary if it is outside the assigned
 Cargo target; missing binaries or engines fail the integration test.
 
@@ -150,12 +150,23 @@ runtime warning. The integrated native-PDF gate retains this explicit zero-table
 
 The paired truth companions also include canonical benchmark data and a fully
 authored `/2` `ir` reference. Original IR cases carry their authored `/2` source
-alongside separate explicit expectations. Neither reference is a reader result.
+alongside separate explicit expectations. Text, style and structure expectations
+come from original authoring, never converter read-back.
+
+The paired reference also carries word bounds measured from the unchanged authored
+PDF with `pdftotext 26.10.0 -bbox-layout`, frozen in the generator with the source
+PDF hash. Its nine body boxes cover the heading, paragraph, six cell paragraphs
+and the union of cell text for the table; two more boxes locate furniture.
+An independent PDFium check verifies that the boxes contain the original glyphs.
+These are common target coordinates for both formats; the independently authored
+DOCX has its own reflow and is not assumed to have identical pagination.
+Missing output boxes contribute zero under the unchanged scorer. A zero IoU tie
+passes the non-regression inequality but does not establish visual preservation.
 
 The integrated suite validates all authored documents against the `/2` schema and exercises real PDF/DOCX exports with style read-back. The styled pair has
 the same source text/styles but different containers; it supports both competitor
 directions without treating either format's read-back as truth. Numeric style
-gates use size tolerance 0.5 pt, exact weight and maximum RGB-channel error 2/255. The corpus font-identity assertions accept the display and space-free PostScript family spellings evidenced by the paired containers; the shared fidelity scorer retains exact family-name comparison and reports any resulting loss.
+gates use size tolerance 0.5 pt, exact weight and maximum RGB-channel error 2/255. The corpus font-identity assertions accept the display and space-free PostScript family spellings evidenced by the paired containers; native PDF import now restores display family names for the three bundled families, while the shared fidelity scorer retains exact family-name comparison.
 Do not infer those style gates passed from a successful conversion alone.
 
 Future gates remain explicit: native IR → Tiptap → IR and IR → TextKit → IR,

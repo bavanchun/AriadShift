@@ -92,8 +92,10 @@ requests to the same local service, not three cold container launches.
 Input extraction, conversion and output read-back/evaluation have separate
 timings. Both products use the same hashed `ashift __ir` read-back binary and
 the same scorer; read-back limitations apply to both and remain explicit.
-No auxiliary renderer is used. If DOCX read-back cannot observe layout or a
-style, that component remains unavailable with its denominator and reason.
+No auxiliary renderer is used. Missing reference style or layout remains
+unavailable with its denominator and reason. When authored reference boxes exist,
+missing output boxes contribute zero under the unchanged scorer, with the
+observation coverage retained.
 Invalid PDF/DOCX artifacts, process failures, timeouts and unsupported backends
 are failed attempts, never successful zero-error observations. Raw scorer
 reports, output hashes, input hashes, image/runtime details and binary/config

@@ -364,6 +364,7 @@ fn convert(
     let source = source_dir.join(format!("source.{}", from.user_name()));
     fs::copy(&paths.input, &source).map_err(|_| EngineFailure::io())?;
     write_profile(&profile_dir)?;
+    write_bundled_fonts(&profile_dir)?;
 
     let mut user_installation = OsString::from("-env:UserInstallation=");
     user_installation.push(file_url(&profile_dir));
@@ -475,6 +476,21 @@ fn convert(
     Ok(artifact)
 }
 
+/// LibreOffice discovers profile-local fonts without installing them on the host.
+fn write_bundled_fonts(profile: &Path) -> Result<(), EngineFailure> {
+    #[cfg(feature = "typst")]
+    {
+        let directory = profile.join("user/fonts");
+        fs::create_dir_all(&directory).map_err(|_| EngineFailure::io())?;
+        for (name, bytes) in ariad_typst::bundled_fonts() {
+            fs::write(directory.join(name), bytes).map_err(|_| EngineFailure::io())?;
+        }
+    }
+    #[cfg(not(feature = "typst"))]
+    let _ = profile;
+    Ok(())
+}
+
 fn stop(child: &mut std::process::Child) {
     let _ = child.kill();
     let _ = child.wait();
@@ -538,6 +554,47 @@ mod tests {
                 "missing link-update policy: {item}"
             );
         }
+    }
+
+    #[cfg(all(feature = "typst", feature = "pdf"))]
+    #[test]
+    #[ignore = "requires system LibreOffice >=24.2"]
+    fn office_pdf_preserves_authored_styles_with_private_fonts() {
+        use ariad_core::{fidelity, format::Format, limits::Limits, reader::pdf};
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/editor");
+        let directory = tempfile::tempdir().unwrap();
+        let paths = super::ConvertPaths {
+            workspace: directory.path().to_owned(),
+            input: root.join("vi-styled-pair.docx"),
+            output_dir: directory.path().join("out"),
+            work_dir: directory.path().join("tmp"),
+        };
+        std::fs::create_dir_all(&paths.output_dir).unwrap();
+        let limits = Limits {
+            timeout_s: Some(60),
+            ..Limits::local()
+        };
+        let output = super::convert(
+            &super::locate().expect("LibreOffice >=24.2 is required"),
+            &paths,
+            (Format::Docx, Format::Pdf),
+            &limits,
+        )
+        .unwrap();
+        let actual = pdf::read(&std::fs::read(output).unwrap(), &limits).unwrap();
+        let truth: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("vi-styled-pair-docx.truth.json")).unwrap(),
+        )
+        .unwrap();
+        let reference = serde_json::from_value(truth["ir"].clone()).unwrap();
+        let report = fidelity::compare(
+            &reference,
+            &actual.document,
+            fidelity::FidelityBasis::IndependentReference,
+        );
+        assert_eq!(report.coverage["style"].reference, 25);
+        assert_eq!(report.style_accuracy, Some(1.0), "{report:?}");
     }
 
     #[test]

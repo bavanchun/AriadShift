@@ -1,0 +1,102 @@
+{
+  "attempt": 2,
+  "conversion_ms": 414.9639680108521,
+  "evaluation_ms": 219.98795800027438,
+  "extraction_ms": 114.44925500836689,
+  "fixture": "fixtures/editor/vi-styled-pair",
+  "metadata_redactions": {
+    "ASHIFT_BIN": "explicit hashed conversion binary",
+    "HOME": "user home directory",
+    "WORKTREE": "repository checkout"
+  },
+  "output_sha256": "6e0425fcaabc7f9554019c6b3d62afc5338713abd4f1064771bca32c24c6767b",
+  "product": "ariadshift",
+  "route": "pdf->docx",
+  "score": {
+    "basis": "independent_reference",
+    "coverage": {
+      "layout": {
+        "hypothesis": 0,
+        "matched": 0,
+        "observed": 0,
+        "reference": 9
+      },
+      "layout_iou": {
+        "hypothesis": 0,
+        "matched": 0,
+        "observed": 0,
+        "reference": 9
+      },
+      "style": {
+        "hypothesis": 41,
+        "matched": 25,
+        "observed": 25,
+        "reference": 25
+      },
+      "style_accuracy": {
+        "hypothesis": 41,
+        "matched": 25,
+        "observed": 25,
+        "reference": 25
+      },
+      "table_f1": {
+        "hypothesis": 0,
+        "matched": 0,
+        "reference": 1
+      },
+      "text": {
+        "hypothesis": 162,
+        "matched": 74,
+        "observed": 162,
+        "reference": 118
+      },
+      "text_cer": {
+        "hypothesis": 162,
+        "matched": 74,
+        "observed": 162,
+        "reference": 118
+      }
+    },
+    "layout_iou": 0.0,
+    "metric_version": "fidelity/2",
+    "score": 0.5317796610169492,
+    "status": "measured",
+    "structure_by_kind": {
+      "heading": {
+        "f1": 1.0,
+        "hypothesis": 1,
+        "matched": 1,
+        "observed": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "reference": 1
+      },
+      "list": {
+        "f1": null,
+        "hypothesis": 0,
+        "matched": 0,
+        "observed": 0,
+        "precision": null,
+        "recall": null,
+        "reference": 0
+      },
+      "table": {
+        "f1": 0.0,
+        "hypothesis": 0,
+        "matched": 0,
+        "observed": 0,
+        "precision": null,
+        "recall": 0.0,
+        "reference": 1
+      }
+    },
+    "structure_f1": 0.5,
+    "style_accuracy": 1.0,
+    "table_f1": 0.0,
+    "text_cer": 0.3728813559322034,
+    "unavailable_reasons": {}
+  },
+  "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+  "status": "ok",
+  "truth_sha256": "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6"
+}

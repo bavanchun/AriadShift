@@ -6482,7 +6482,7 @@ sha256 = "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27"
 tags = []
 phase = "11"
 routes = ["docx->pdf"]
-companions = [{ path = "fixtures/editor/vi-styled-pair-docx.truth.json", sha256 = "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee" }]
+companions = [{ path = "fixtures/editor/vi-styled-pair-docx.truth.json", sha256 = "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6" }]
 
 [[fixture]]
 id = "editor-vi-styled-pair-pdf"
@@ -6500,4 +6500,4 @@ sha256 = "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc"
 tags = []
 phase = "11"
 routes = ["pdf->docx"]
-companions = [{ path = "fixtures/editor/vi-styled-pair-pdf.truth.json", sha256 = "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee" }, { path = "fixtures/editor/vi-styled-pair.typ", sha256 = "414d022165210fa6f7627627f981202b7f8084ffe5f97829c09837f7b0c4cdec" }]
+companions = [{ path = "fixtures/editor/vi-styled-pair-pdf.truth.json", sha256 = "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6" }, { path = "fixtures/editor/vi-styled-pair.typ", sha256 = "414d022165210fa6f7627627f981202b7f8084ffe5f97829c09837f7b0c4cdec" }]
