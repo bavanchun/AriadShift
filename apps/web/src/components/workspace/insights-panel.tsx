@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import type { PdfFileInsights } from "@/converter/insights";
 import type { ToolDescriptor } from "@/converter/tool-catalog";
 import { useWorkspaceCopy } from "./copy";
-import { toolLabel } from "./tool-label";
+import { useToolLabel } from "./tool-label";
 import type { InsightsState } from "./types";
 
 export interface FileInsightsPanelProps {
@@ -38,6 +38,7 @@ function Fact({ label, children, warn }: { label: string; children: ReactNode; w
 /** The intent-first screen: what the dropped PDF contains, and one click to act on it. */
 export function FileInsightsPanel({ state, tools, onOpenTool, className }: FileInsightsPanelProps) {
   const copy = useWorkspaceCopy().insights;
+  const toolLabel = useToolLabel();
   const heading = (
     <CardHeader>
       <CardTitle>{copy.title}</CardTitle>

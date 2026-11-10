@@ -1,8 +1,9 @@
-import type { ToolDescriptor } from "@/converter/tool-catalog";
+"use client";
+import { useCallback } from "react";
+import { useWorkspaceCopy } from "./copy";
 
-/** A short display name derived from the id, `pdf.delete_pages` → "Delete pages". */
-export function toolLabel(tool: Pick<ToolDescriptor, "id">): string {
-  const name = tool.id.split(".").slice(1).join(" ") || tool.id;
-  const words = name.replaceAll("_", " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+/** The display name of a tool in the active locale, for example "Delete pages" for `pdf.delete_pages`. */
+export function useToolLabel(): (tool: { id: string }) => string {
+  const { title } = useWorkspaceCopy().tools;
+  return useCallback((tool) => title(tool.id), [title]);
 }

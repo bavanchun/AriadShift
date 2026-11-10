@@ -7,7 +7,7 @@ import { STORE_INPUT_LIMIT_BYTES } from "@/converter/file-store";
 import type { InputIngestResult, ToolExecutionArtifact } from "@/converter/protocol";
 import type { ToolDescriptor } from "@/converter/tool-catalog";
 import type { PageToolCall } from "./page-edits";
-import { toolLabel } from "./tool-label";
+import { useToolLabel } from "./tool-label";
 import type {
   InsightsState,
   RecipeStep,
@@ -46,6 +46,7 @@ export function useWorkspace({
   onProgress,
   budgetBytes = STORE_INPUT_LIMIT_BYTES,
 }: UseWorkspaceOptions) {
+  const toolLabel = useToolLabel();
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [insights, setInsights] = useState<Record<string, InsightsState>>({});
@@ -240,13 +241,13 @@ export function useWorkspace({
         started[index] = { ...(started[index] as ThreadStep), status };
         setThread([...completed, ...started]);
       };
+      const first = steps[0];
+      if (!first) return;
       setError(null);
       setRun(null);
       setBusy("run");
       setProgress(null);
       setThread([...completed, ...started]);
-      const first = steps[0];
-      if (!first) return;
       const inputs = inputIdsFor(first.tool);
       const sources = inputs.map((id) => original.find((entry) => entry.id === id));
       const input = {
@@ -286,6 +287,8 @@ export function useWorkspace({
           setThread(completed);
           // Cancelling replaced the worker, so its stored inputs are gone.
           await restore(original, originalActive?.key);
+          // Re-ingesting may be superseded by a newer file change, which would leave "run" set.
+          setBusy(null);
         } else {
           if (index >= 0) setStatus(index, "failed");
           setError(message(reason));
@@ -295,7 +298,7 @@ export function useWorkspace({
         setProgress(null);
       }
     },
-    [chain, client, budgetBytes, inputIdsFor, restore],
+    [chain, client, budgetBytes, inputIdsFor, restore, toolLabel],
   );
 
   const runTool = useCallback(

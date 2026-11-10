@@ -6,8 +6,15 @@ import type { ToolDescriptor } from "../converter/tool-catalog";
 
 /* ---------------------------------------------------------------- translation hook */
 
-/** Optional translation hook: returns the localised text for `key`, or `fallback` when absent. */
-export type ToolsTranslate = (key: string, fallback: string) => string;
+/**
+ * Optional translation hook: returns the localised text for `key`, or `fallback` when absent.
+ * `values` fill the `{name}` arguments and plural counts of a catalogue message.
+ */
+export type ToolsTranslate = (
+  key: string,
+  fallback: string,
+  values?: Record<string, string | number>,
+) => string;
 
 export const identityTranslate: ToolsTranslate = (_key, fallback) => fallback;
 
@@ -254,12 +261,16 @@ export interface HubTool {
   keywords: string[];
 }
 
-export function describeTools(catalog: ToolDescriptor[]): HubTool[] {
+/** With `translate`, titles and summaries come from the catalogue, so search matches them too. */
+export function describeTools(
+  catalog: ToolDescriptor[],
+  translate: ToolsTranslate = identityTranslate,
+): HubTool[] {
   return catalog.map((tool) => ({
     tool,
     id: tool.id,
-    title: toolTitle(tool),
-    summary: tool.summary,
+    title: translate(`tools.title.${tool.id}`, toolTitle(tool)),
+    summary: translate(`tools.summary.${tool.id}`, tool.summary),
     category: toolCategory(tool),
     runtime: primaryRuntime(tool),
     runtimes: toolRuntimes(tool),

@@ -12,6 +12,10 @@
 | [`packages/ui`](../packages/ui) | Shared React components (shadcn, Base UI style), the Tailwind theme with the brand palette, the file drop zone and the theme toggle; no Next.js imports, so the desktop app can use it |
 | [`packages/config`](../packages/config) | TypeScript and Biome presets |
 | [`apps/web`](../apps/web) | Pages, the converter worker, the service worker and the tests |
+| `apps/web/src/components/app` | The `/<locale>/app` shell: the Convert, Tools and PDF workspace tabs and their lazy loading |
+| `apps/web/src/components/tools`, `apps/web/src/lib/tools.ts` | The tool hub, the command palette and the registry model behind them |
+| `apps/web/src/components/workspace` | The document workspace: file tray, insights, page grid, tool inspector, result card and hand-off panel |
+| `apps/web/src/viewer` | The viewer adapter over EmbedPDF and PDFium |
 
 ## Locales and URLs
 
@@ -33,7 +37,7 @@ Install the JavaScript dependencies once with `just js`; the wasm recipes downlo
 | `just web-lighthouse` | Lighthouse on `/en` and `/en/app`, mobile and desktop (`just web-build` first) |
 | `just web-ci` | Typecheck, unit tests, static export and production build; part of `just ci` |
 
-`apps/web/scripts/sync-brand.mjs` copies the favicon and logos from [`brand/`](../brand) before every dev, build and typecheck run; the copies are gitignored, so `brand/` stays the only source.
+`apps/web/scripts/sync-brand.mjs` copies the favicon and logos from [`brand/`](../brand) before every dev, build and typecheck run; the copies are gitignored, so `brand/` stays the only source. `apps/web/scripts/sync-pdfium.mjs` does the same for the PDFium module (see [The PDF viewer](#the-pdf-viewer)).
 
 When adding a shadcn component, run `pnpm exec shadcn add <name>` inside `packages/ui`. shadcn 4.22.1 writes `import { cn } from "cn"` for the `#lib/utils` alias and adds an npm package called `cn`; change the import to `#lib/utils` and remove that dependency.
 
@@ -67,6 +71,37 @@ It is registered for the whole origin, because the converter's worker script liv
 ### Headers
 
 `/<locale>/app` is cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. Other pages get neither, so embeds and sign-in popups keep working. Isolation belongs to a document, not a route, so every link into or out of `/<locale>/app` (the header, the footer and the calls to action) is a plain link that loads a new document rather than a client-side navigation. Safari does not implement `credentialless`, so `/<locale>/app` is not isolated there; nothing needs isolation yet because the converter is single-threaded. The script chunks under `/_next/static/chunks/` also send `Cross-Origin-Embedder-Policy: credentialless`, because an isolated page may only start a worker whose script declares a compatible policy; on ordinary scripts the header has no effect. The single source is [`apps/web/route-headers.mjs`](../apps/web/route-headers.mjs).
+
+## Tools and the document workspace
+
+`/<locale>/app` is a shell with three tabs: **Convert** (the single-file converter described below, the landing view), **Tools** (the tool hub) and **PDF workspace**. `?view=tools|workspace` selects a tab and `?tool=<id>` opens a tool in the workspace, so a tool can be linked and reloaded; the shell keeps the address bar in step. The converter stays mounted when another tab is shown, so a running conversion survives a tab change. The hub and the workspace load on first use: the route's first load carries neither the tool registry, the viewer, nor `pdfium.wasm`. ⌘K / Ctrl+K opens the command palette from any tab; from the converter it loads the hub with the palette already open.
+
+### Tool hub
+
+The hub lists every tool of the registry ([tools.md](tools.md), `schemas/tools.v1.json`, refined by the browser runtime's `listTools()`), so a tool that a later engine phase registers shows up without a change here. Each card shows its primary runtime (Browser when the tool has a `wasm` runtime, otherwise Cloud when it has one, otherwise Desktop) and its tier. Categories, the runtime filter, search (typo tolerant, over the localised title, id, synonyms and summary), favourites and recents (browser `localStorage`, with an in-memory fallback) all run on the device. The palette also turns a plain sentence into a recipe preview; the shell does not pass a recipe handler yet, so sentences only search.
+
+### Document workspace
+
+The workspace drives the typed tools ([tools.md](tools.md)) from the browser. It owns a converter worker of its own, apart from the Convert tab's:
+
+1. Dropped files go to the worker's multi-file store (OPFS, or memory when OPFS is unavailable) under one byte budget; nothing is uploaded.
+2. Each PDF is analysed locally (`inspectInsights`): page count, scanned and blank pages, estimated image DPI, empty required fields, signatures, metadata and edit history, with next-step suggestions.
+3. The viewer, the page grid (drag, keyboard and rotate/delete controls with undo and redo; applying runs `pdf.rotate`, `pdf.delete_pages` and `pdf.reorder`) and the tool inspector, which renders the tool's JSON Schema parameters, work on the active file.
+4. A tool whose runtimes include `wasm` runs in the worker through `runTool`. Other tools show the **Run on your computer** panel with the exact `ashift tool ...` command and a copy button; secret parameters are masked by default. **Run in Cloud** appears only when the host passes a configured cloud API and handler, which the app does not yet.
+5. A result shows before and after sizes and pages, offers a download, **Continue with another tool** (the output becomes the workspace's input, with undo) and, when the host provides a handler, **Open in editor** and **Save as recipe**.
+
+### The PDF viewer
+
+`apps/web/src/viewer` wraps EmbedPDF 2.15.1 so the rest of the app never imports it: the PDFium engine runs in a worker, `pdfium.wasm` is fetched from the same origin by an absolute URL, and no font fallback is configured, so the viewer makes no external request. Scrolling and thumbnails are virtualised; search, zoom, fit modes and dark pages are provided. `apps/web/scripts/sync-pdfium.mjs` copies the unmodified `pdfium.wasm` and its licence files from the pinned `@embedpdf/pdfium` package to `public/wasm/pdfium/`, after checking the package version and the module's SHA-256 against [`pdfium-assets.mjs`](../apps/web/pdfium-assets.mjs); dev, build and export run it, and `sync-notices.mjs` lists the module on `/licenses`.
+
+Two rules in [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) keep the EmbedPDF dependency tree inside the licence policy:
+
+- **G1, optional framework peers.** `packageExtensions` makes `vue`, `svelte` and `preact` optional peers of every `@embedpdf/*` package the app uses. Each package needs only the adapter it is imported through (React here); without the rule pnpm installs the other two frameworks and the notice gate fails.
+- **G2, no bundled fonts.** `overrides` removes the seven `@embedpdf/fonts-*` packages (`"-"`). They are OFL-1.1 and the browser build never loads them, which keeps OFL-1.1 limited to Plus Jakarta Sans as [AGENTS.md](../AGENTS.md) allows.
+
+### Strings
+
+The shell, hub and workspace read the `web.app`, `web.tools` and `web.workspace` namespaces of the catalogue ([i18n.md](i18n.md)); the route passes exactly those to `RouteIntl`. `web.tools.title.<tool id>` and `web.tools.summary.<tool id>` hold each tool's name and description. `en` and `vi` are complete. The community locales are machine drafts of the interface strings and the tool titles; they keep the English tool summaries until they are translated in Weblate, and a key a locale lacks falls back to English at runtime.
 
 ## Cloud mode
 
@@ -177,19 +212,19 @@ Without the chunk header the converter worker does not start, and the page repor
 ## Tests
 
 - Vitest: the bindings against the built wasm module in Node (`packages/ariad-wasm/test`); the worker session, route runner and in-memory file store with the real module, and the client's worker replacement with a fake worker (`apps/web/test`); the UI components with Testing Library in jsdom. The OPFS store needs a browser and is covered by Playwright.
-- Playwright (`apps/web/e2e`): Markdown to HTML, HTML to Markdown, a Markdown → IR JSON → Markdown round trip, target preselection from a pair page, two tabs converting side by side, reset and the start-up sweep deleting OPFS folders, the 16 MB limit and oversized IR JSON Desktop hand-off, unsupported formats, file drops outside the picker, keyboard operation of the picker and the selects, headers on `/<locale>/app` only, isolation after following a site link, no wasm on `/`, sitemap and robots. Offline conversion tests run on Chromium only; activation tests verify old engine assets are removed and current chunks retained. Heavy-route tests use real repository fixtures on all three browsers: DOCX → Markdown, Markdown → DOCX (including an embedded image read back as Markdown), EPUB → HTML (including embedded images), HTML → EPUB, PDF → Markdown and Markdown → PDF with Vietnamese text read back through the PDF reader. They also cover lazy engine loading and OCR/Desktop hand-offs.
+- Playwright (`apps/web/e2e`): Markdown to HTML, HTML to Markdown, a Markdown → IR JSON → Markdown round trip, target preselection from a pair page, two tabs converting side by side, reset and the start-up sweep deleting OPFS folders, the 16 MB limit and oversized IR JSON Desktop hand-off, unsupported formats, file drops outside the picker, keyboard operation of the picker and the selects, headers on `/<locale>/app` only, isolation after following a site link, no wasm on `/`, sitemap and robots. Offline conversion tests run on Chromium only; activation tests verify old engine assets are removed and current chunks retained. Tool tests (`tools-hub`, `tools-workspace`, `tools-i18n`) cover the hub (every registered tool with its badges, filters, search, ⌘K and the "Run on your computer" panel), merge, rotate and reorder (keyboard and drag) with the downloaded PDF read back, a 1,000-page scroll smoke test, Vietnamese and right-to-left Arabic pages and cross-origin isolation. They build their PDFs in `e2e/pdf-fixtures.ts`, which `test/e2e-pdf-fixtures.test.ts` checks against the real core. Heavy-route tests use real repository fixtures on all three browsers: DOCX → Markdown, Markdown → DOCX (including an embedded image read back as Markdown), EPUB → HTML (including embedded images), HTML → EPUB, PDF → Markdown and Markdown → PDF with Vietnamese text read back through the PDF reader. They also cover lazy engine loading and OCR/Desktop hand-offs.
 
 ## Lighthouse
 
-Measured on 2026-10-24 with Lighthouse 13.5.0 (`just web-lighthouse`) against `next start` on the shared ASUS Linux x86_64 host, headless Chromium, default mobile (simulated throttling) and desktop presets:
+Measured on 2026-11-11 with Lighthouse 13.5.0 (`just web-lighthouse`) against `next start` on the shared ASUS Linux x86_64 host, headless Chromium, default mobile (simulated throttling) and desktop presets. The budgets, set in `apps/web/scripts/lighthouse.mjs`, are 90 for performance, best practices and SEO and 95 for accessibility. `/en/app` now carries the tool hub and the PDF workspace behind lazy loading, so its first load is unchanged by them:
 
 | Page | Form factor | Performance | Accessibility | Best practices | SEO |
 |---|---|---:|---:|---:|---:|
-| `/` | mobile | 94 | 100 | 100 | 100 |
-| `/app` | mobile | 91 | 100 | 100 | 100 |
-| `/` | desktop | 100 | 100 | 100 | 100 |
-| `/app` | desktop | 100 | 100 | 100 | 100 |
+| `/en` | mobile | 98 | 100 | 100 | 100 |
+| `/en/app` | mobile | 93 | 100 | 100 | 100 |
+| `/en` | desktop | 100 | 100 | 100 | 100 |
+| `/en/app` | desktop | 100 | 100 | 100 | 100 |
 
-An earlier run during unrelated concurrent compilation scored 67 and 73 for mobile performance. Repeating the same production build after that compilation ended produced the table above; all audits kept their default presets and the 90-point threshold.
+An earlier run (2026-10-24) during unrelated concurrent compilation scored 67 and 73 for mobile performance; repeat a low score after concurrent compilation has ended before treating it as a regression.
 
 Lighthouse is not a CI gate: scores on shared runners vary too much. Run it before changing fonts, images or anything on the landing page, and update this table.

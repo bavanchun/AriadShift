@@ -17,7 +17,7 @@ import { toolHandoff } from "@/converter/handoff";
 import type { ToolDescriptor } from "@/converter/tool-catalog";
 import { useWorkspaceCopy } from "./copy";
 import { HandoffPanel } from "./handoff-panel";
-import { toolLabel } from "./tool-label";
+import { useToolLabel } from "./tool-label";
 import type { WorkspaceFile } from "./types";
 
 export interface ToolInspectorProps {
@@ -58,6 +58,7 @@ export function ToolInspector({
   className,
 }: ToolInspectorProps) {
   const copy = useWorkspaceCopy().inspector;
+  const toolLabel = useToolLabel();
   const [params, setParams] = useState<Record<string, unknown>>({});
   const [validation, setValidation] = useState<ParamsValidation>({ isValid: true, errors: {} });
   const [forceDesktop, setForceDesktop] = useState(false);

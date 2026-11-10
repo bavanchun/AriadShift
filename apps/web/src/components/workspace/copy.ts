@@ -3,6 +3,7 @@
 // so a locale page can supply translations through `WorkspaceCopyProvider` without the
 // components knowing about the message catalogue.
 import { createContext, createElement, type ReactNode, useContext, useMemo } from "react";
+import { toolTitle } from "../../lib/tools";
 
 const plural = (count: number, one: string, other: string) =>
   `${count} ${count === 1 ? one : other}`;
@@ -22,7 +23,7 @@ export const DEFAULT_WORKSPACE_COPY = {
     moveDown: (name: string) => `Move ${name} down`,
     use: (name: string) => `Work on ${name}`,
     active: "Open",
-    storage: (kind: "opfs" | "memory") =>
+    storage: (kind: "opfs" | "memory"): string =>
       kind === "opfs" ? "Stored in browser file storage" : "Held in memory",
     reading: "Reading files…",
     list: "Files in this workspace",
@@ -145,6 +146,10 @@ export const DEFAULT_WORKSPACE_COPY = {
       skipped: "Skipped",
       failed: "Failed",
     },
+  },
+  tools: {
+    /** The display name of a tool; the locale page supplies the translated titles. */
+    title: (id: string) => toolTitle({ id }),
   },
   workspace: {
     title: "Workspace",

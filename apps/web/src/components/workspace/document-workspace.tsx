@@ -4,11 +4,11 @@ import { Button } from "@ariadshift/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ariadshift/ui/components/tabs";
 import { ToastProvider, ToastViewport } from "@ariadshift/ui/components/toast";
 import { Undo2Icon } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import type { StorageKind, ToolExecutionArtifact } from "@/converter/protocol";
 import { resolveWasmUrl } from "@/viewer/engine";
 import { loadEmbedPdfBackend, PdfViewer, useViewerBackend } from "@/viewer/pdf-viewer";
-import type { PdfViewerSource, ViewerBackendLoader } from "@/viewer/types";
+import type { PdfViewerSource, ViewerBackendLoader, ViewerLabels } from "@/viewer/types";
 import { useWorkspaceCopy, type WorkspaceCopyOverrides, WorkspaceCopyProvider } from "./copy";
 import { FileTray } from "./file-tray";
 import { GoldenThreadBar } from "./golden-thread";
@@ -17,7 +17,7 @@ import type { PageToolCall } from "./page-edits";
 import { PageGrid } from "./page-grid";
 import { ToolResultCard } from "./result-card";
 import { ToolInspector } from "./tool-inspector";
-import { toolLabel } from "./tool-label";
+import { useToolLabel } from "./tool-label";
 import type { RecipeStep, WorkspaceClient } from "./types";
 import { useWorkspace } from "./use-workspace";
 
@@ -31,6 +31,10 @@ export interface DocumentWorkspaceProps {
   onRunCloud?: (toolId: string, params: Record<string, unknown>) => void | Promise<void>;
   storage?: StorageKind;
   copy?: WorkspaceCopyOverrides;
+  /** Translated viewer chrome; English when omitted. */
+  viewerLabels?: Partial<ViewerLabels>;
+  /** Opens this tool; pass a new `nonce` to open the same tool again after it was changed. */
+  requestedTool?: { id: string; nonce: number } | null;
   loadBackend?: ViewerBackendLoader;
   /** Largest total input a tool may read. */
   budgetBytes?: number;
@@ -58,6 +62,8 @@ function WorkspaceBody({
   cloudApiUrl,
   onRunCloud,
   storage,
+  viewerLabels,
+  requestedTool,
   loadBackend = loadEmbedPdfBackend,
   budgetBytes,
   onOpenInEditor,
@@ -65,7 +71,12 @@ function WorkspaceBody({
 }: DocumentWorkspaceProps) {
   const copy = useWorkspaceCopy();
   const workspace = useWorkspace({ client, onProgress, budgetBytes });
-  const { active, tool, run } = workspace;
+  const { active, tool, run, openTool } = workspace;
+  const requestedId = requestedTool?.id;
+  const requestedNonce = requestedTool?.nonce;
+  useEffect(() => {
+    if (requestedId) openTool(requestedId);
+  }, [requestedId, requestedNonce, openTool]);
   const insightsState = active ? workspace.insights[active.id] : undefined;
   const source: PdfViewerSource | null = useMemo(
     () =>
@@ -122,7 +133,12 @@ function WorkspaceBody({
               <TabsTrigger value="pages">{copy.workspace.pagesTab}</TabsTrigger>
             </TabsList>
             <TabsContent value="preview">
-              <PdfViewer source={source} loadBackend={loadBackend} className="h-[70vh]" />
+              <PdfViewer
+                source={source}
+                loadBackend={loadBackend}
+                labels={viewerLabels}
+                className="h-[70vh]"
+              />
             </TabsContent>
             <TabsContent value="pages">
               {insights ? (
@@ -236,6 +252,7 @@ function ToolPicker({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const toolLabel = useToolLabel();
   const groups = useMemo(() => {
     const byGroup = new Map<string, Array<{ id: string; group: string }>>();
     for (const entry of tools)

@@ -145,7 +145,17 @@ export class ConverterSession {
   }
 
   listTools() {
-    return toolCatalog(this.core.listTools?.());
+    let runtime: ReturnType<NonNullable<Core["listTools"]>> | undefined;
+    try {
+      runtime = this.core.listTools?.();
+    } catch (cause) {
+      // A failing tool listing is a failed request, not a broken module: keep the worker alive.
+      throw {
+        code: "tools_unavailable",
+        message: `The tool list could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+      } satisfies ConverterError;
+    }
+    return toolCatalog(runtime);
   }
 
   async runTool(

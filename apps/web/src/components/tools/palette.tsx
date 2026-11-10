@@ -11,7 +11,7 @@ import {
   CommandSeparator,
 } from "@ariadshift/ui/components/command";
 import { KbdGroup } from "@ariadshift/ui/components/kbd";
-import { applyTheme, THEME_STORAGE_KEY } from "@ariadshift/ui/hooks/use-theme";
+import { toggleThemePreference } from "@ariadshift/ui/hooks/use-theme";
 import { cn } from "@ariadshift/ui/lib/utils";
 import {
   ArrowRightIcon,
@@ -64,17 +64,6 @@ export interface ToolCommandPaletteProps {
   /** Replaces the built-in light/dark switch, so the host can use its shared theme state. */
   onSwitchTheme?: () => void;
   translate?: ToolsTranslate;
-}
-
-/** Flips between explicit light and dark, persisting the choice the way the theme hook does. */
-function switchTheme() {
-  const next = document.documentElement.classList.contains("dark") ? "light" : "dark";
-  try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, next);
-  } catch {
-    // Storage can be unavailable (private mode); the choice then lasts for this page.
-  }
-  applyTheme(next);
 }
 
 interface QuickAction {
@@ -144,7 +133,7 @@ export function ToolCommandPalette({
   }, [disableShortcut, setOpen]);
 
   const tools = useMemo(() => catalog ?? toolCatalog(), [catalog]);
-  const entries = useMemo(() => describeTools(tools), [tools]);
+  const entries = useMemo(() => describeTools(tools, t), [tools, t]);
   const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
   const { favorites } = useToolFavorites();
   const { recents, clear: clearRecentTools } = useRecentTools();
@@ -181,7 +170,7 @@ export function ToolCommandPalette({
       label: t("tools.palette.switchTheme", "Switch theme"),
       keywords: ["dark", "light", "appearance", "mode"],
       icon: SunMoonIcon,
-      run: onSwitchTheme ?? switchTheme,
+      run: onSwitchTheme ?? toggleThemePreference,
     },
     ...(recents.length > 0
       ? [

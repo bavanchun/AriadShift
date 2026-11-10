@@ -114,6 +114,32 @@ describe("browser document tool runner", () => {
     await expect(runner.inspectInsights()).rejects.toMatchObject({ code: "no_input" });
   });
 
+  it("answers a failing tool listing with a non-fatal error response", async () => {
+    const core = loadCore();
+    const failing = new Proxy(core, {
+      get: (target, property, receiver) =>
+        property === "listTools"
+          ? () => {
+              throw new Error("module trap");
+            }
+          : Reflect.get(target, property, receiver),
+    });
+    const context: Promise<WorkerContext> = Promise.resolve({
+      session: new ConverterSession(failing, new MemoryStore()),
+      storageSession: "test",
+      version: "test",
+      memoryLimitBytes: 64,
+      resources: () => [],
+    });
+    const response = await handleRequest(context, { id: 9, type: "listTools" });
+    expect(response).toMatchObject({
+      id: 9,
+      ok: false,
+      error: { code: "tools_unavailable", message: expect.stringContaining("module trap") },
+    });
+    expect((response as { error: { fatal?: boolean } }).error.fatal).toBeFalsy();
+  });
+
   it("dispatches all new worker messages through the serialized session", async () => {
     const context: Promise<WorkerContext> = Promise.resolve({
       session: session(),

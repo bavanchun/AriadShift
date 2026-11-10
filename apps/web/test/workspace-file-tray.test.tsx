@@ -27,6 +27,8 @@ describe("<FileTray />", () => {
     expect(screen.getByText(/Nothing is uploaded/)).toBeTruthy();
     expect(screen.getByText("On this device · 0 bytes uploaded")).toBeTruthy();
     const input = container.querySelector("input[type=file]") as HTMLInputElement;
+    // The first picker takes several files at once, like the one shown after files were added.
+    expect(input.multiple).toBe(true);
     const file = pdfFile("a.pdf");
     fireEvent.change(input, { target: { files: [file] } });
     expect(actions.onAddFiles).toHaveBeenCalledWith([file]);

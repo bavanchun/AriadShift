@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Suspense } from "react";
-import { ConverterApp } from "@/components/converter/converter-app";
+import { AppShell } from "@/components/app/app-shell";
 import { pageAlternates } from "@/i18n/metadata";
 import { RouteIntl } from "@/i18n/route-intl";
 import { CLOUD } from "@/lib/cloud/config";
@@ -26,9 +26,12 @@ export default async function ConverterPage({ params }: PageProps<"/[locale]/app
         <h1 className="text-3xl font-bold tracking-tight">{t("title")}</h1>
         <p className="text-muted-foreground">{t("lede", { cloud: CLOUD ? "yes" : "no" })}</p>
       </div>
-      <RouteIntl locale={locale} namespaces={["web.route", "web.converter"]}>
+      <RouteIntl
+        locale={locale}
+        namespaces={["web.route", "web.converter", "web.app", "web.tools", "web.workspace"]}
+      >
         <Suspense fallback={null}>
-          <ConverterApp />
+          <AppShell />
         </Suspense>
       </RouteIntl>
     </div>

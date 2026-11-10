@@ -44,13 +44,23 @@ import {
 } from "./types";
 
 /** Reads the source into an ArrayBuffer once per document. */
-function useSourceBuffer(source: PdfViewerSource): ArrayBuffer | null {
+function useSourceBuffer(
+  source: PdfViewerSource,
+  onError: (reason: unknown) => void,
+): ArrayBuffer | null {
   const [loaded, setLoaded] = useState<{ id: string; buffer: ArrayBuffer } | null>(null);
+  const report = useRef(onError);
+  report.current = onError;
   useEffect(() => {
     let current = true;
-    sourceToBuffer(source).then((buffer) => {
-      if (current) setLoaded({ id: source.id, buffer });
-    });
+    sourceToBuffer(source).then(
+      (buffer) => {
+        if (current) setLoaded({ id: source.id, buffer });
+      },
+      (reason: unknown) => {
+        if (current) report.current(reason);
+      },
+    );
     return () => {
       current = false;
     };
@@ -285,7 +295,13 @@ function useEngineSession(
   onSnapshot: (snapshot: ViewerSnapshot) => void,
 ) {
   const { engine, error } = usePdfiumEngine({ wasmUrl, worker: true, fontFallback: null });
-  const buffer = useSourceBuffer(source);
+  const buffer = useSourceBuffer(source, (reason) =>
+    onSnapshot({
+      ...INITIAL_VIEWER_SNAPSHOT,
+      status: "error",
+      error: reason instanceof Error ? reason.message : String(reason),
+    }),
+  );
   const plugins = useDocumentPlugins(source, buffer);
   useEffect(() => {
     if (error)

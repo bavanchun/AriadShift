@@ -114,6 +114,7 @@ export function FileTray({
         <FileDropZone
           onFiles={onAddFiles}
           accept={accept}
+          multiple
           disabled={busy}
           buttonLabel={copy.choose}
           label={copy.title}

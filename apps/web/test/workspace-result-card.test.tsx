@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ToolResultCard } from "@/components/workspace/result-card";
 import type { WorkspaceRun } from "@/components/workspace/types";
+import { makePdf } from "../e2e/pdf-fixtures";
 import { runResult, tool } from "./workspace-fixtures";
 
 afterEach(cleanup);
@@ -37,6 +38,14 @@ describe("<ToolResultCard />", () => {
     render(<ToolResultCard run={grown} {...handlers()} />);
     expect(screen.getByText("(+100%)")).toBeTruthy();
     expect(within(screen.getByRole("table")).getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("reads the page count from the output PDF when the tool reports none", async () => {
+    const blob = new Blob([new Uint8Array(makePdf(5))], { type: "application/pdf" });
+    const measured = run({ primaryLocation: { kind: "memory", blob } });
+    render(<ToolResultCard run={measured} {...handlers()} />);
+    const pages = screen.getByRole("row", { name: /Pages/ });
+    await waitFor(() => expect(within(pages).getByText("5")).toBeTruthy());
   });
 
   it("lists warnings and the tool's JSON details", () => {

@@ -10,12 +10,13 @@ import {
   PencilIcon,
   Undo2Icon,
 } from "lucide-react";
-import { useState } from "react";
-import { downloadOutput } from "@/converter/client";
+import { useEffect, useState } from "react";
+import { downloadOutput, openOutput } from "@/converter/client";
 import type { ToolExecutionArtifact } from "@/converter/protocol";
 import { formatBytes } from "@/lib/format-bytes";
 import { useWorkspaceCopy } from "./copy";
-import { toolLabel } from "./tool-label";
+import { countPdfPages } from "./page-count";
+import { useToolLabel } from "./tool-label";
 import type { WorkspaceRun } from "./types";
 
 export interface ToolResultCardProps {
@@ -45,6 +46,27 @@ function pageCountOf(run: WorkspaceRun): number | null {
   return null;
 }
 
+/** The page count of the primary output, read from the file when the tool did not report one. */
+function useMeasuredPages(run: WorkspaceRun, needed: boolean): number | null {
+  const [pages, setPages] = useState<number | null>(null);
+  const { result } = run;
+  useEffect(() => {
+    setPages(null);
+    if (!(needed && result.mediaType === "application/pdf")) return;
+    let current = true;
+    openOutput(result.primaryLocation)
+      .then(countPdfPages)
+      .then(
+        (count) => current && setPages(count),
+        () => undefined,
+      );
+    return () => {
+      current = false;
+    };
+  }, [needed, result]);
+  return pages;
+}
+
 /** Before and after, measured, and four ways forward so a result is never a dead end. */
 export function ToolResultCard({
   run,
@@ -57,13 +79,16 @@ export function ToolResultCard({
   className,
 }: ToolResultCardProps) {
   const copy = useWorkspaceCopy().result;
+  const toolLabel = useToolLabel();
   const [failure, setFailure] = useState<string | null>(null);
   const { result } = run;
   const primary = result.artifacts[0];
   const outputSize = result.artifacts.reduce((sum, artifact) => sum + artifact.size, 0);
   const delta =
     run.input.size > 0 ? Math.round(((outputSize - run.input.size) / run.input.size) * 100) : 0;
-  const pagesAfter = pageCountOf(run);
+  const reported = pageCountOf(run);
+  const measured = useMeasuredPages(run, reported === null);
+  const pagesAfter = reported ?? measured;
   const details = result.data && Object.keys(result.data).length > 0 ? result.data : null;
 
   async function guarded(action: () => void | Promise<void>) {

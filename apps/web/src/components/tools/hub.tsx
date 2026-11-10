@@ -53,6 +53,8 @@ export interface ToolHubProps {
   runtimeTools?: WasmToolDescriptor[];
   /** Called when the palette opens, from the button or from ⌘K / Ctrl+K. */
   onOpenPalette?: () => void;
+  /** Opens the palette on mount, for a host that caught ⌘K before the hub was loaded. */
+  defaultPaletteOpen?: boolean;
   translate?: ToolsTranslate;
   className?: string;
 }
@@ -64,6 +66,7 @@ export function ToolHub({
   onRunRecipe,
   runtimeTools,
   onOpenPalette,
+  defaultPaletteOpen = false,
   translate = identityTranslate,
   className,
 }: ToolHubProps) {
@@ -73,12 +76,12 @@ export function ToolHub({
   const [category, setCategory] = useState<ToolCategory | "all">("all");
   const [runtime, setRuntime] = useState<RuntimeFilter>("all");
   const [innerSelected, setInnerSelected] = useState<string | null>(null);
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(defaultPaletteOpen);
   const [paletteSeed, setPaletteSeed] = useState("");
   const selected = selectedToolId === undefined ? innerSelected : selectedToolId;
 
   const catalog = useMemo(() => toolCatalog(runtimeTools), [runtimeTools]);
-  const entries = useMemo(() => describeTools(catalog), [catalog]);
+  const entries = useMemo(() => describeTools(catalog, t), [catalog, t]);
   const byId = useMemo(() => new Map(catalog.map((tool) => [tool.id, tool])), [catalog]);
   const { favorites, isFavorite, toggle } = useToolFavorites();
   const { recents } = useRecentTools();
@@ -239,9 +242,9 @@ export function ToolHub({
         )}
 
         <p role="status" className="text-sm text-muted-foreground" data-testid="result-count">
-          {results.length === 1
-            ? t("tools.hub.countOne", "1 tool")
-            : `${results.length} ${t("tools.hub.countMany", "tools")}`}
+          {t("tools.hub.count", results.length === 1 ? "1 tool" : `${results.length} tools`, {
+            count: results.length,
+          })}
         </p>
 
         {results.length === 0 ? (
