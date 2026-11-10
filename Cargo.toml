@@ -99,6 +99,8 @@ zip = { version = "9.2.1", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
+# Apple ld on macOS arm64 emits a non-fatal __eh_frame >16MB compact-unwind note on unoptimized test binaries.
+linker_messages = "allow"
 
 [workspace.lints.clippy]
 all = "warn"
