@@ -90,7 +90,10 @@ def load_config(path):
 def terminate_process_tree(process):
     """Stop the process and every descendant, including grandchildren that ignore termination."""
     if hasattr(os, "killpg"):
-        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         try:
             process.wait(timeout=2)
         except subprocess.TimeoutExpired:
