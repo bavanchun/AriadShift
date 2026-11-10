@@ -62,6 +62,7 @@ pub(super) fn read_for_tool(
         limits,
         cancel,
         engine_program,
+        #[cfg(feature = "typst")]
         clock: inprocess::capture_clock()?,
         started: Instant::now(),
         warnings: Vec::new(),
@@ -83,6 +84,7 @@ pub(super) fn write_for_tool(
         limits,
         cancel,
         engine_program,
+        #[cfg(feature = "typst")]
         clock: inprocess::capture_clock()?,
         started: Instant::now(),
         warnings: Vec::new(),

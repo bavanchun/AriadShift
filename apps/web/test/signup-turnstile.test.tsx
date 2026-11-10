@@ -89,8 +89,10 @@ describe("signup Turnstile", () => {
     const signup = calls.find((c) => c.path.endsWith("sign-up/email"));
     expect(signup?.headers.get("x-captcha-response")).toBe("fresh-proof");
     expect(submit.disabled).toBe(true);
-    expect(remove).toHaveBeenCalled();
-    expect(window.turnstile?.render).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(remove).toHaveBeenCalled();
+      expect(window.turnstile?.render).toHaveBeenCalledTimes(2);
+    });
     act(() => previousWidget.callback("late-stale-proof"));
     expect(submit.disabled).toBe(true);
   });

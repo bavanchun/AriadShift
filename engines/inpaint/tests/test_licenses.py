@@ -52,7 +52,7 @@ def test_licence_gate_rejects_unreviewed_license(tmp_path):
 
 
 def test_development_pack_build_and_entrypoint(tmp_path):
-    root = tmp_path / NAME
+    root = tmp_path / (NAME + " pack")
     result = subprocess.run(
         [sys.executable, str(ROOT / "pack/build.py"), "build", "--out", str(root)],
         capture_output=True,
@@ -77,9 +77,23 @@ def test_development_pack_build_and_entrypoint(tmp_path):
         assert len(package.getmembers()) == component["entries"]
         assert sum(info.size for info in package.getmembers()) == component["unpacked_size"]
     assert all((root / notice).stat().st_size for notice in manifest["notices"])
-    args = [str(program), *build["entrypoint"][1:]]
+    # Mirror host argument expansion after moving the pack away from its build path.
+    moved = tmp_path / (NAME + " relocated pack")
+    root.rename(moved)
+    root = moved
+    program = root / build["entrypoint"][0]
+    # Disable automatic site discovery to exercise the launcher's explicit import paths.
+    args = [
+        str(program),
+        "-S",
+        *(arg.replace("{root}", str(root)) for arg in build["entrypoint"][1:]),
+    ]
+    work = tmp_path / "job"
+    work.mkdir()
     child = subprocess.run(
         args,
+        cwd=work,
+        env={key: value for key, value in os.environ.items() if not key.startswith("PYTHON")},
         input=json.dumps({"protocol": "ariad-engine/2", "job": "pack-test", "op": "describe"})
         + "\n",
         capture_output=True,

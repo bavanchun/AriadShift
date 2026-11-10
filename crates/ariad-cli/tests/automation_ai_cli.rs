@@ -259,11 +259,13 @@ fn packs() -> &'static TempDir {
                 .args([
                     "run",
                     "--no-project",
+                    "--python-preference",
+                    "only-managed",
                     "--python",
                     "3.14",
                     "--with",
                     "pypdf==7.0.0",
-                    "python3",
+                    "python",
                 ])
                 .arg(format!("engines/{pack}/pack/build.py"))
                 .args(["build", "--out"])
