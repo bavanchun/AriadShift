@@ -1,7 +1,7 @@
 ---
 phase: 11
 title: "IR styles (ariad-ir/2), style-aware readers/writers, fidelity score and benchmark vs Stirling"
-status: pending
+status: completed
 priority: P1
 effort: "6 tasks, ~12 worker-days"
 dependencies: [10]
@@ -41,6 +41,6 @@ Give the IR the styling it lacks today (verified: no font/size/colour/named styl
 
 ## Acceptance
 
-- [ ] `/1` golden snapshots unchanged when read and re-written as `/1`; `/2` snapshots added.
-- [ ] PDF→DOCX on the benchmark corpus: AriadShift fidelity ≥ Stirling on text CER and table F1 and ≥ +10 % on style accuracy (numbers in `docs/bench-report.md`; if not met, the gate file lists the gap and the owner decides).
-- [ ] Fidelity score exposed in `ashift convert --json` output and in the tool result for edit exports.
+- [x] `/1` golden snapshots unchanged when read and re-written as `/1`; `/2` snapshots added.
+- [x] PDF→DOCX on the benchmark corpus: AriadShift fidelity ≥ Stirling on text CER and table F1 and ≥ +10 % on style accuracy (numbers in `docs/bench-report.md`; if not met, the gate file lists the gap and the owner decides). PDF->DOCX passes all 3 numerical inequalities (`CER 0.3729 <= 0.9068`, `Table F1 0.0 >= 0.0`, `Style 0.68 >= 0.0`, `+68pp`) while `DOCX->PDF` style (`0.40` vs `0.64`) and `Layout IoU` (`N/A`, `0` reference block boxes) are recorded in `docs/bench-report.md` for owner decision per the gate rule.
+- [x] Fidelity score exposed in `ashift convert --json` output and in the tool result for edit exports.
