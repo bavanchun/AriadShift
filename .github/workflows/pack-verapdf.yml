@@ -57,6 +57,11 @@ jobs:
       - name: Install Linux tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd unzip
+      - name: Enable namespaces for sandbox tests
+        if: runner.os == 'Linux'
+        run: |
+          # bubblewrap sandbox needs unprivileged userns on GitHub-hosted Ubuntu runners
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Install macOS tools
         if: runner.os == 'macOS'
         run: brew install zstd gnu-tar

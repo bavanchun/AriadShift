@@ -384,11 +384,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unroutable_format_txt() {
+    fn accepts_routable_text_and_rejects_unsupported_formats() {
         let dir = tempfile::tempdir().unwrap();
         let txt = dir.path().join("notes.txt");
         fs::write(&txt, b"hello").unwrap();
-        assert!(!accepts(&txt));
+        assert!(accepts(&txt));
+        let unsupported = dir.path().join("notes.djvu");
+        fs::write(&unsupported, b"hello").unwrap();
+        assert!(!accepts(&unsupported));
     }
 
     #[test]

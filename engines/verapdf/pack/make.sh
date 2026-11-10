@@ -66,11 +66,11 @@ extract_cli_jar() {
         fi
     fi
 
-    cat << 'XML' > "$work/auto-install.xml"
+    cat << XML > "$work/auto-install.xml"
 <AutomatedInstallation langpack="eng">
     <com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/>
     <com.izforge.izpack.panels.target.TargetPanel id="install_dir">
-        <installpath>OUTPUT_DIR</installpath>
+        <installpath>$work/installed</installpath>
     </com.izforge.izpack.panels.target.TargetPanel>
     <com.izforge.izpack.panels.packs.PacksPanel id="packs">
         <pack index="0" name="veraPDF CLI" selected="true"/>
@@ -79,7 +79,6 @@ extract_cli_jar() {
     <com.izforge.izpack.panels.finish.FinishPanel id="finish"/>
 </AutomatedInstallation>
 XML
-    sed -i "s|OUTPUT_DIR|$work/installed|g" "$work/auto-install.xml"
 
     "$java_bin" -jar "$installer_jar" "$work/auto-install.xml" >/dev/null 2>&1 || \
         die "IzPack headless installation failed"

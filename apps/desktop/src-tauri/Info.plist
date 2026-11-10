@@ -33,6 +33,17 @@
 				<string>public.jpeg</string>
 				<string>org.webmproject.webp</string>
 				<string>public.tiff</string>
+				<string>public.plain-text</string>
+				<string>public.comma-separated-values-text</string>
+				<string>com.apple.mail.email</string>
+				<string>com.ariadnev.ariadshift.outlook-msg</string>
+				<string>public.svg-image</string>
+				<string>public.cbz-archive</string>
+				<string>org.oasis-open.opendocument.graphics</string>
+				<string>org.libreoffice.wpd-document</string>
+				<string>org.libreoffice.wks-document</string>
+				<string>org.libreoffice.mspub-document</string>
+				<string>org.libreoffice.visio-document</string>
 			</array>
 		</dict>
 	</array>
@@ -58,6 +69,174 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>text/markdown</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.apple.mail.email</string>
+			<key>UTTypeDescription</key>
+			<string>Email message</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>eml</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>message/rfc822</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.ariadnev.ariadshift.outlook-msg</string>
+			<key>UTTypeDescription</key>
+			<string>Outlook message</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>msg</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-outlook</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>public.cbz-archive</string>
+			<key>UTTypeDescription</key>
+			<string>Comic book archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cbz</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.comicbook+zip</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.oasis-open.opendocument.graphics</string>
+			<key>UTTypeDescription</key>
+			<string>OpenDocument drawing</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>odg</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.oasis.opendocument.graphics</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.libreoffice.wpd-document</string>
+			<key>UTTypeDescription</key>
+			<string>WordPerfect document</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wpd</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.wordperfect</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.libreoffice.wks-document</string>
+			<key>UTTypeDescription</key>
+			<string>Microsoft Works document</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wps</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-works</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.libreoffice.mspub-document</string>
+			<key>UTTypeDescription</key>
+			<string>Microsoft Publisher document</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>pub</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-mspublisher</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.libreoffice.visio-document</string>
+			<key>UTTypeDescription</key>
+			<string>Microsoft Visio drawing</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>vsd</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.visio</string>
 				</array>
 			</dict>
 		</dict>
