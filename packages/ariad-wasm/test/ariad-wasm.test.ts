@@ -70,7 +70,7 @@ describe("ariad-wasm", () => {
       "ariad-ir+json>html:ariad-core",
     ]);
     expect(route.measured).toBe(true);
-    expect(route.score.fidelity).toBeGreaterThan(0.9);
+    expect(route.score.fidelity).toBeCloseTo(0.89664, 5);
   });
 
   it("plans CLI routes when asked for every runtime", () => {

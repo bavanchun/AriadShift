@@ -78,7 +78,7 @@ def test_competitor_config_requires_stable_tag_and_immutable_digest(tmp_path, be
     original = ROOT / "bench/competitors/stirling.toml"
     assert run.load_config(original)["repeat"] == 3
     path = tmp_path / "invalid.toml"
-    path.write_text(original.read_text().replace(before, after))
+    path.write_text(original.read_text(encoding="utf-8").replace(before, after), encoding="utf-8")
     with pytest.raises(ValueError):
         run.load_config(path)
 
@@ -141,8 +141,8 @@ def test_competitor_report_preserves_failures_and_missing_coverage():
 
 
 def test_competitor_report_is_reproducible_with_base_sections(tmp_path):
-    capabilities = json.loads((ROOT / "crates/ariad-core/data/capabilities.json").read_text())
-    heavy = json.loads((ROOT / "bench/results/heavy-routes.json").read_text())
+    capabilities = json.loads((ROOT / "crates/ariad-core/data/capabilities.json").read_text(encoding="utf-8"))
+    heavy = json.loads((ROOT / "bench/results/heavy-routes.json").read_text(encoding="utf-8"))
     base = render(capabilities, heavy, None)
     evidence = original_evidence()
     combined = render(capabilities, heavy, evidence)
@@ -151,12 +151,12 @@ def test_competitor_report_is_reproducible_with_base_sections(tmp_path):
     assert combined.count("## Local Stirling comparison") == 1
     path = tmp_path / "results.json"
     output = tmp_path / "report.md"
-    path.write_text(json.dumps(evidence))
+    path.write_text(json.dumps(evidence), encoding="utf-8")
     args = ["--competitors", str(path), "--out", str(output)]
     assert main(args) == 0
-    assert output.read_text() == combined
+    assert output.read_text(encoding="utf-8") == combined
     assert main([*args, "--check"]) == 0
-    output.write_text(combined + "stale")
+    output.write_text(combined + "stale", encoding="utf-8")
     with pytest.raises(SystemExit) as failure:
         main([*args, "--check"])
     assert failure.value.code == 1
@@ -172,13 +172,13 @@ def test_competitor_timeout_cleans_owned_resources(tmp_path):
     script = (
         "import subprocess,sys,time; from pathlib import Path; "
         "p=subprocess.Popen([sys.executable,'-c','import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(60)']); "
-        "Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)"
+        "Path(sys.argv[1]).write_text(str(p.pid), encoding='utf-8'); time.sleep(60)"
     )
     unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     try:
         with pytest.raises(run.HarnessError, match="Timed out"):
             run.Runner(5).run([sys.executable, "-c", script, str(pid_file)], timeout=0.5)
-        grandchild = int(pid_file.read_text())
+        grandchild = int(pid_file.read_text(encoding="utf-8"))
         deadline = time.monotonic() + 2
         while psutil.pid_exists(grandchild) and psutil.Process(grandchild).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -200,9 +200,13 @@ def test_competitor_rejects_invalid_output_and_unavailable_scorer(tmp_path):
 
 def test_competitor_signal_interrupts_attempt_and_releases_owned_scope(tmp_path):
     """Interrupt an actual sleeping process, without simulating engine success."""
-    sleeper = tmp_path / "sleeping-process"
-    sleeper.write_text("#!/bin/sh\nsleep 60\n")
-    sleeper.chmod(0o700)
+    if os.name == "nt":
+        sleeper = tmp_path / "sleeping-process.cmd"
+        sleeper.write_text("@ping -n 60 127.0.0.1 >nul\r\n", encoding="utf-8")
+    else:
+        sleeper = tmp_path / "sleeping-process"
+        sleeper.write_text("#!/bin/sh\nsleep 60\n", encoding="utf-8")
+        sleeper.chmod(0o700)
     cleaned = tmp_path / "cleaned"
     with pytest.raises(BaseException, match="Interrupted by signal"):
         try:
@@ -238,8 +242,8 @@ def test_competitor_reused_output_keeps_attempts_in_separate_runs(tmp_path):
     second = run.artifact_directory(tmp_path)
     run.write_json(second / "attempt-0001.json", {"original": "second"})
     assert first != second
-    assert json.loads((first / "attempt-0001.json").read_text()) == {"original": "first"}
-    assert json.loads((second / "attempt-0001.json").read_text()) == {"original": "second"}
+    assert json.loads((first / "attempt-0001.json").read_text(encoding="utf-8")) == {"original": "first"}
+    assert json.loads((second / "attempt-0001.json").read_text(encoding="utf-8")) == {"original": "second"}
     assert len(list(second.iterdir())) == 1
 
 
@@ -263,6 +267,8 @@ def test_competitor_public_evidence_redacts_paths_without_changing_measurements(
     assert public["worktree"] == "${WORKTREE}"
     assert public["command"] == ["${ASHIFT_BIN}", "${WORKTREE}/fixtures/heavy/en-map.pdf"]
     assert (public["sha256"], public["conversion_ms"], public["status"]) == (original["sha256"], 12.25, "converted")
+    windows = run.public_evidence({"win": str(ROOT) + "\\fixtures\\heavy\\en-map.pdf"}, binary)
+    assert windows["win"] == "${WORKTREE}/fixtures/heavy/en-map.pdf"
     assert original["worktree"] == str(ROOT)
 
 
@@ -301,7 +307,7 @@ def test_layout_regression_fails_the_competitive_gate():
 def test_integrated_fidelity_adapter_preserves_metric_values_and_denominators():
     from ariad_bench.competitors import score
     from ariad_bench.fidelity import compare
-    reference = json.loads((ROOT / "fixtures/editor/vi-styled-pair-pdf.truth.json").read_text())
+    reference = json.loads((ROOT / "fixtures/editor/vi-styled-pair-pdf.truth.json").read_text(encoding="utf-8"))
     hypothesis = reference["ir"]
     accepted = compare(reference, hypothesis)
     adapted = score(reference, hypothesis)

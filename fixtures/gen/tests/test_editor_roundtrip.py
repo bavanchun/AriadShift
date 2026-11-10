@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import tomllib
 from zipfile import ZipFile
 
 from lxml import etree
+from PIL import Image
 import pytest
 
 from ariad_fixture_gen import editor_roundtrip as corpus
@@ -28,7 +30,7 @@ REQUIRED_CASES = {
 
 
 def _records(root=ROOT):
-    return [item for item in tomllib.loads((root / "fixtures/manifest.toml").read_text())["fixture"]
+    return [item for item in tomllib.loads((root / "fixtures/manifest.toml").read_text(encoding="utf-8"))["fixture"]
             if item["path"].startswith("fixtures/editor/")]
 
 
@@ -49,6 +51,24 @@ def _sandbox(tmp_path):
     (tmp_path / "fixtures/manifest.toml").write_bytes((ROOT / "fixtures/manifest.toml").read_bytes())
     (tmp_path / "fixtures/existing-sentinel.txt").write_bytes(b"existing family: keep these exact bytes\r\n")
     return tmp_path
+
+
+def test_editor_png_preserves_canonical_bytes_and_pixels_without_encoding(monkeypatch):
+    def reject_save(*args, **kwargs):
+        raise AssertionError("The editor PNG must not be re-encoded")
+
+    monkeypatch.setattr(Image.Image, "save", reject_save)
+    png = corpus._png()
+    assert len(png) == 98
+    assert hashlib.sha256(png).hexdigest() == "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266"
+    with Image.open(BytesIO(png)) as image:
+        assert image.format == "PNG"
+        assert image.mode == "RGB"
+        assert image.size == (16, 12)
+        for y in range(12):
+            for x in range(16):
+                expected = (24, 92, 76) if 3 <= x < 13 and 4 <= y < 8 else (230, 243, 239)
+                assert image.getpixel((x, y)) == expected
 
 
 def test_editor_corpus_has_twenty_distinct_primary_documents():
@@ -77,7 +97,7 @@ def test_editor_generation_is_byte_deterministic(tmp_path):
     assert second.returncode == 0, second.stderr
     assert _files(root) == before
     assert before["fixtures/existing-sentinel.txt"] == b"existing family: keep these exact bytes\r\n"
-    original = tomllib.loads((ROOT / "fixtures/manifest.toml").read_text())["fixture"]
+    original = tomllib.loads((ROOT / "fixtures/manifest.toml").read_text(encoding="utf-8"))["fixture"]
     regenerated = tomllib.loads(before["fixtures/manifest.toml"].decode())["fixture"]
     assert [item for item in original if not item["path"].startswith(corpus.PREFIX)] == [
         item for item in regenerated if not item["path"].startswith(corpus.PREFIX)]
@@ -154,8 +174,8 @@ def test_real_docx_pdf_and_text_containers():
     pdf = (ROOT / "fixtures/editor/vi-styled-pair.pdf").read_bytes()
     assert pdf.startswith(b"%PDF-") and b"%%EOF" in pdf[-40:]
     assert b"/Font" in pdf and b"/MediaBox" in pdf
-    assert (ROOT / "fixtures/editor/vi-field-notes.md").read_text().startswith("# Ghi chép bên sông")
-    assert 'rowspan="2"' in (ROOT / "fixtures/editor/vi-field-notes.html").read_text()
+    assert (ROOT / "fixtures/editor/vi-field-notes.md").read_text(encoding="utf-8").startswith("# Ghi chép bên sông")
+    assert 'rowspan="2"' in (ROOT / "fixtures/editor/vi-field-notes.html").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("drift", ["none", "bytes", "hash", "missing", "undeclared", "unemitted"])
@@ -169,14 +189,14 @@ def test_check_is_read_only_and_rejects_drift(tmp_path, drift):
     if drift == "bytes":
         path.write_bytes(path.read_bytes() + b" ")
     elif drift == "hash":
-        manifest.write_text(manifest.read_text().replace(record["sha256"], "0" * 64))
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace(record["sha256"], "0" * 64), encoding="utf-8")
     elif drift == "missing":
         path.unlink()
     elif drift == "undeclared":
-        manifest.write_text(manifest.read_text().replace('path = "fixtures/editor/linked-footnote.ir.json"',
-            'path = "fixtures/editor/renamed.ir.json"'))
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('path = "fixtures/editor/linked-footnote.ir.json"',
+            'path = "fixtures/editor/renamed.ir.json"'), encoding="utf-8")
     elif drift == "unemitted":
-        manifest.write_text(manifest.read_text() + '\n[[fixture]]\npath = "fixtures/editor/extra.ir.json"\norigin = "generated"\nsha256 = "' + "0" * 64 + '"\n')
+        manifest.write_text(manifest.read_text(encoding="utf-8") + '\n[[fixture]]\npath = "fixtures/editor/extra.ir.json"\norigin = "generated"\nsha256 = "' + "0" * 64 + '"\n', encoding="utf-8")
     before = _files(root)
     checked = _run(root, "--check")
     assert (checked.returncode == 0) == (drift == "none"), checked.stdout + checked.stderr

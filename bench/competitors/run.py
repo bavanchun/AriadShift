@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import _thread
 import argparse
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
@@ -20,6 +21,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 from urllib.error import HTTPError, URLError
@@ -85,6 +87,43 @@ def load_config(path):
     return data
 
 
+def terminate_process_tree(process):
+    """Stop the process and every descendant, including grandchildren that ignore termination."""
+    if hasattr(os, "killpg"):
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        # The leader can exit before a grandchild that ignores SIGTERM.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=2)
+        return
+    import psutil
+
+    try:
+        parent = psutil.Process(process.pid)
+        victims = [*parent.children(recursive=True), parent]
+    except psutil.NoSuchProcess:
+        victims = []
+    for victim in victims:
+        try:
+            victim.terminate()
+        except psutil.NoSuchProcess:
+            pass
+    _, alive = psutil.wait_procs(victims, timeout=2)
+    for victim in alive:
+        try:
+            victim.kill()
+        except psutil.NoSuchProcess:
+            pass
+    psutil.wait_procs(alive, timeout=2)
+    process.wait(timeout=2)
+
+
 class Runner:
     def __init__(self, seconds):
         self.deadline = time.monotonic() + seconds
@@ -105,19 +144,22 @@ class Runner:
             record = {"command": [str(value) for value in command], "pid": process.pid, "timeout_s": limit}
             self.commands.append(record)
             try:
-                process.wait(timeout=limit)
+                if hasattr(signal, "setitimer"):
+                    process.wait(timeout=limit)
+                else:
+                    # Short slices let the interpreter deliver interrupt_main on Windows.
+                    while True:
+                        remaining = (started + limit) - time.monotonic()
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(command, limit)
+                        try:
+                            process.wait(timeout=min(0.05, remaining))
+                            break
+                        except subprocess.TimeoutExpired:
+                            if (started + limit) - time.monotonic() <= 0:
+                                raise
             except BaseException as exc:
-                os.killpg(process.pid, signal.SIGTERM)
-                try:
-                    process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    pass
-                # The leader can exit before a grandchild that ignores SIGTERM.
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait(timeout=2)
+                terminate_process_tree(process)
                 if isinstance(exc, subprocess.TimeoutExpired):
                     raise HarnessError(f"Timed out after {limit:.2f}s: {' '.join(map(str, command[:4]))}") from exc
                 raise
@@ -483,6 +525,8 @@ def public_evidence(data, binary):
         if isinstance(value, str):
             for original, placeholder in replacements:
                 value = value.replace(original, placeholder)
+                # Keep redacted paths POSIX-style on every platform.
+                value = re.sub(re.escape(placeholder) + r"[^\s\"']*", lambda m: m.group(0).replace("\\", "/"), value)
         return value
 
     result = redact(data)
@@ -502,14 +546,24 @@ def artifact_directory(out):
 def interrupt_cleanup(seconds=None):
     def interrupt(signum, _):
         raise HarnessAbort(f"Interrupted by signal {signum}")
-    previous = {s: signal.signal(s, interrupt) for s in (signal.SIGTERM, signal.SIGINT, signal.SIGALRM)}
+    signals = tuple(s for name in ("SIGTERM", "SIGINT", "SIGALRM") if (s := getattr(signal, name, None)) is not None)
+    previous = {s: signal.signal(s, interrupt) for s in signals}
+    timer = None
     if seconds is not None:
-        signal.setitimer(signal.ITIMER_REAL, seconds)
+        if hasattr(signal, "setitimer"):
+            signal.setitimer(signal.ITIMER_REAL, seconds)
+        else:
+            timer = threading.Timer(seconds, lambda: _thread.interrupt_main(signal.SIGINT))
+            timer.daemon = True
+            timer.start()
     try:
         yield
     finally:
         if seconds is not None:
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            if timer is not None:
+                timer.cancel()
+            else:
+                signal.setitimer(signal.ITIMER_REAL, 0)
         for sig, handler in previous.items():
             signal.signal(sig, handler)
 

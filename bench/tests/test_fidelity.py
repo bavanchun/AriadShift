@@ -7,7 +7,7 @@ import pytest
 from ariad_bench.fidelity import METRIC_VERSION, compare, observe_ir, score
 from ariad_bench.canonical import normalize
 
-VECTORS = json.loads((Path(__file__).parents[1] / "results/fidelity-v2/conformance.json").read_text())
+VECTORS = json.loads((Path(__file__).parents[1] / "results/fidelity-v2/conformance.json").read_text(encoding="utf-8"))
 
 
 def assert_subset(actual, expected):
@@ -112,7 +112,7 @@ def test_benchmark_parsers_accept_isolated_fidelity_evidence_paths():
 
 
 def test_committed_base_evidence_keeps_failures_as_versioned_unavailable_reports():
-    evidence = json.loads((Path(__file__).parents[1] / "results/fidelity-v2/base.json").read_text())
+    evidence = json.loads((Path(__file__).parents[1] / "results/fidelity-v2/base.json").read_text(encoding="utf-8"))
     assert evidence["metric_version"] == METRIC_VERSION
     assert evidence["samples"]
     for sample in evidence["samples"]:
