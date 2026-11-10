@@ -1,0 +1,47 @@
+pack = "inpaint"
+
+allowed_licenses = ["MIT", "Apache-2.0", "BSD-3-Clause", "PSF-2.0"]
+
+[[component]]
+name = "python"
+version = "3.14.9+20261021"
+spdx = "PSF-2.0"
+bundled = true
+
+[[component]]
+name = "pypdf"
+version = "7.0.0"
+spdx = "BSD-3-Clause"
+bundled = true
+
+[[component]]
+name = "florence"
+version = "5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac"
+spdx = "MIT"
+bundled = true
+
+[[component]]
+name = "opencv"
+version = "5.1.0"
+spdx = "Apache-2.0"
+bundled = false
+
+[[notice]]
+path = "notices/Florence-2-MIT.txt"
+sha256 = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[[notice]]
+path = "notices/INPAINT-PACK.txt"
+sha256 = "26629f526cd55884916e850dcb4cd2f6da5ed8107a5f9404bce05df84cb066c1"
+
+[[notice]]
+path = "notices/OpenCV-Apache-2.0.txt"
+sha256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+
+[[notice]]
+path = "notices/Python-LICENSE.txt"
+sha256 = "b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231"
+
+[[notice]]
+path = "notices/pypdf-BSD-3-Clause.txt"
+sha256 = "a97ac230e5f33ef10a5367a850eb01f91f1a0b064e34742c7794d2294557f524"
