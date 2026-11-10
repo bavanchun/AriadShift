@@ -63,7 +63,7 @@ jobs:
       - name: Download pinned inputs
         run: |
           mkdir -p "$RUNNER_TEMP/verapdf-input"
-          curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/verapdf-installer.zip -o "$RUNNER_TEMP/verapdf-input/verapdf-installer.zip"
+          curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip -o "$RUNNER_TEMP/verapdf-input/verapdf-installer.zip"
       - name: Build manifest tool
         run: cargo build -p ariad-cli --bin ashift
       - name: Assemble and verify unsigned pack

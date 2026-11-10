@@ -390,7 +390,7 @@ pack-verapdf out="target/packs/verapdf":
     installer_zip=${VERAPDF_INSTALLER_ZIP:-}
     if [ -z "$installer_zip" ]; then
         installer_zip=$work/verapdf-installer.zip
-        curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/verapdf-installer.zip -o "$installer_zip"
+        curl -fsSL --retry 3 --max-time 180 https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.3-installer.zip -o "$installer_zip"
     fi
     cargo build -p ariad-cli --bin ashift
     bash engines/verapdf/pack/make.sh pack "$slug" "$installer_zip" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"

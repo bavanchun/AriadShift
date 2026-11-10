@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn keeps_supported_files_and_resolves_relative_paths() {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["a.md", "b.PDF", "c.docx", "notes.txt"] {
+        for name in ["a.md", "b.PDF", "c.docx", "notes.djvu"] {
             fs::write(dir.path().join(name), b"x").unwrap();
         }
         fs::create_dir(dir.path().join("folder.md")).unwrap();
@@ -206,7 +206,7 @@ mod tests {
                 "a.md",
                 "b.PDF",
                 &absolute,
-                "notes.txt",
+                "notes.djvu",
                 "missing.md",
                 "folder.md",
                 "a.md",
