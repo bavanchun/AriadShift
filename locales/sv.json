@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Redigerbar",
+        "description": "Riktiga rubriker, listor och tabeller som du kan fortsätta redigera."
+      },
+      "faithful": {
+        "label": "Trogen",
+        "description": "Håll dig så nära layouten som möjligt."
+      },
+      "fast": {
+        "label": "Snabb",
+        "description": "Välj den snabbaste vägen."
+      },
+      "private": {
+        "label": "Privat",
+        "description": "Bara motorer som aldrig lämnar din enhet."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift-kärna",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF-textläsare"
+    },
+    "runtime": {
+      "wasm": "Webbläsare",
+      "local": "CLI och skrivbord",
+      "cloud": "Moln"
+    },
+    "score": {
+      "not_measured": "inte mätt"
+    },
+    "duration": {
+      "under_1_ms": "under 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown-dokument",
+        "description": "CommonMark med GitHub Flavored Markdown: rubriker, listor, tabeller, uppgiftslistor, fotnoter och matematik. Formatet som de flesta AI-verktyg läser bäst."
+      },
+      "html": {
+        "noun": "HTML-sida",
+        "description": "En fristående HTML5-sida. Rå markup i indata rensas; skript och osäkra attribut når aldrig utdata."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR-dokument",
+        "description": "Den strukturerade dokumentmodell som alla AriadShift-vägar går igenom: rubriker, block, tabeller, resurser och metadata som versionshanterad JSON."
+      },
+      "docx": {
+        "noun": "Word-dokument",
+        "description": "Office Open XML-dokument från Microsoft Word, LibreOffice och Google Docs, lästa och skrivna via Pandoc."
+      },
+      "epub": {
+        "noun": "EPUB-e-bok",
+        "description": "EPUB 3-e-böcker, lästa och skrivna via Pandoc med reproducerbara metadata."
+      },
+      "pdf": {
+        "noun": "PDF-dokument",
+        "description": "Text i digitala PDF-filer läses på den här enheten. PDF-utdata använder Typst och inbäddade typsnitt. Skannade sidor kräver OCR i skrivbordsappen."
+      },
+      "odt": {
+        "noun": "OpenDocument-textdokument",
+        "description": "OpenDocument-textfiler använder LibreOffice i skrivbordsappen."
+      },
+      "rtf": {
+        "noun": "Rich Text-dokument",
+        "description": "Rich Text-dokument använder LibreOffice i skrivbordsappen."
+      },
+      "pptx": {
+        "noun": "PowerPoint-presentation",
+        "description": "PowerPoint-presentationer använder Docling eller LibreOffice i skrivbordsappen."
+      },
+      "xlsx": {
+        "noun": "Excel-arbetsbok",
+        "description": "Excel-arbetsböcker använder Docling eller LibreOffice i skrivbordsappen."
+      },
+      "doc": {
+        "noun": "äldre Word-dokument",
+        "description": "Äldre Word-dokument använder LibreOffice i skrivbordsappen."
+      },
+      "xls": {
+        "noun": "äldre Excel-arbetsbok",
+        "description": "Äldre Excel-arbetsböcker använder LibreOffice i skrivbordsappen."
+      },
+      "ppt": {
+        "noun": "äldre PowerPoint-presentation",
+        "description": "Äldre PowerPoint-presentationer använder LibreOffice i skrivbordsappen."
+      },
+      "ods": {
+        "noun": "OpenDocument-kalkylblad",
+        "description": "OpenDocument-kalkylblad använder LibreOffice i skrivbordsappen."
+      },
+      "odp": {
+        "noun": "OpenDocument-presentation",
+        "description": "OpenDocument-presentationer använder LibreOffice i skrivbordsappen."
+      },
+      "png": {
+        "noun": "PNG-bild",
+        "description": "Textutvinning ur bilder kräver Docling-motorpaketet i skrivbordsappen."
+      },
+      "jpeg": {
+        "noun": "JPEG-bild",
+        "description": "Textutvinning ur bilder kräver Docling-motorpaketet i skrivbordsappen."
+      },
+      "webp": {
+        "noun": "WebP-bild",
+        "description": "Textutvinning ur bilder kräver Docling-motorpaketet i skrivbordsappen."
+      },
+      "tiff": {
+        "noun": "TIFF-bild",
+        "description": "Textutvinning ur bilder kräver Docling-motorpaketet i skrivbordsappen."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: privat dokumentkonvertering i din webbläsare",
+      "site_description": "Konvertera Markdown, HTML och strukturerad JSON på din egen enhet. Privat som standard, med mätt kvalitet på varje väg och redo för AI-agenter.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Hoppa till innehållet",
+      "home_link": "{site} startsida",
+      "nav_label": "Huvudmeny",
+      "nav": {
+        "converter": "Konverterare",
+        "formats": "Format",
+        "quality": "Kvalitet",
+        "download": "Ladda ned",
+        "privacy": "Integritet"
+      },
+      "footer": {
+        "license": "AriadShift är öppen källkod under licensen Apache-2.0.",
+        "privacy": "Integritet",
+        "licenses": "Licenser",
+        "quality": "Kvalitet",
+        "source": "Källkod"
+      },
+      "language": {
+        "label": "Språk",
+        "button": "Språk: {name}",
+        "list_label": "Välj ett språk",
+        "community_badge": "Community-översättning",
+        "community_note": "Community-översättningar är maskinella utkast som folk fortfarande kan rätta."
+      }
+    },
+    "not_found": {
+      "title": "Sidan hittades inte",
+      "body": "Den här sidan finns inte.",
+      "home_link": "Gå till startsidan"
+    },
+    "home": {
+      "meta_title": "Konvertera dokument på din egen enhet",
+      "title": "Konvertera dokument på din egen enhet",
+      "lede": "AriadShift konverterar Markdown, HTML, Word, EPUB och strukturerad JSON direkt i din webbläsare. Läs text i digitala PDF-filer och skapa PDF-filer på din enhet. En mätt planerare, inga uppladdningar.",
+      "open_converter": "Öppna konverteraren",
+      "install_cli": "Installera CLI:t",
+      "why_heading": "Varför AriadShift",
+      "why": {
+        "private": {
+          "title": "Privat som standard",
+          "body": "Konverteraren körs i din webbläsare med WebAssembly. Ditt dokument lagras i webbläsarens privata filsystem och laddas aldrig upp."
+        },
+        "quality": {
+          "title": "Mätt kvalitet",
+          "body": "Varje väg har poäng för trohet och redigerbarhet från ett offentligt benchmarktest. Planeraren väljer den bästa och berättar varför."
+        },
+        "agents": {
+          "title": "Redo för AI-agenter",
+          "body": "Gör dokument till ren Markdown eller strukturerad JSON som LLM-kontext. CLI:t levereras med en MCP-server, så att agenter kan konvertera filer själva."
+        }
+      },
+      "how_heading": "Så fungerar det",
+      "how": {
+        "step_label": "Steg {number}",
+        "step_1": "Du väljer en fil. Webbläsaren kopierar den till sitt privata filsystem.",
+        "step_2": "En bakgrundsarbetare läser in AriadShift-motorn, kompilerad till WebAssembly.",
+        "step_3": "Planeraren väljer den väg som har bäst mätt poäng för ditt mål.",
+        "step_4": "Du laddar ned resultatet. Om du börjar om raderas alla lagrade filer."
+      },
+      "pairs_heading": "Konvertera i din webbläsare",
+      "pair_link": "{from} till {to}",
+      "see_more": "Se alla <formats>format som stöds</formats> och den <quality>uppmätta kvaliteten</quality> för varje väg."
+    },
+    "formats": {
+      "meta_title": "Format som stöds",
+      "meta_description": "Vilka dokumentformat AriadShift läser och skriver, och vilka konverteringar som körs i din webbläsare.",
+      "title": "Format som stöds",
+      "lede": "Varje konvertering går genom AriadShifts dokumentmodell. Format markerade “webbläsare” konverteras helt på den här enheten; de andra kräver tills vidare kommandoradsverktyget.",
+      "badge_browser": "Webbläsare och CLI",
+      "badge_cli": "CLI",
+      "extensions": "Filändelser: {list}",
+      "engines": "Läses av {readers}; skrivs av {writers}.",
+      "no_engine": "ingen motor ännu",
+      "convert_to": "Konvertera till: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Mätt kvalitet",
+      "meta_description": "Trohet, redigerbarhet och hastighet för varje AriadShift-konverteringssteg, genererade från ett offentligt benchmarktest.",
+      "title": "Mätt kvalitet",
+      "lede": "De här poängen är inte handskrivna. Benchmarktestet konverterar {count, plural, one {# offentligt testdokument} other {# offentliga testdokument}} genom varje steg och jämför resultatet med facit. Planeraren läser samma siffror när den väljer väg.",
+      "generated": "{pandoc, select, none {Genererad {date}.} other {Genererad {date} med Pandoc {pandoc}.}}",
+      "methodology": "<link>Läs om metoden</link>.",
+      "caption": "Benchmarkpoäng per konverteringssteg",
+      "column": {
+        "step": "Steg",
+        "engine": "Motor",
+        "runs_in": "Körs i",
+        "fidelity": "Trohet",
+        "editability": "Redigerbarhet",
+        "median_time": "Mediantid",
+        "samples": "Mätningar"
+      }
+    },
+    "route": {
+      "label": "Konverteringsväg",
+      "then": "sedan",
+      "fidelity": "Trohet",
+      "editability": "Redigerbarhet",
+      "estimated_time": "Beräknad tid",
+      "unmeasured": "En del av den här vägen har inte benchmarkats ännu, så planeraren bedömer den försiktigt."
+    },
+    "download": {
+      "meta_title": "Ladda ned",
+      "meta_description": "Installera AriadShifts kommandoradsverktyg och MCP-server på macOS, Linux och Windows.",
+      "title": "Ladda ned AriadShift",
+      "lede": "Kommandot <code>ashift</code> konverterar Markdown, HTML, DOCX och EPUB på din dator och kör en MCP-server för AI-agenter. DOCX- och EPUB-vägar använder <pandoc>Pandoc 3.12 eller senare</pandoc> som ett separat program.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS och Linux)",
+          "note": "Tillgängligt när formeln har publicerats. Installerar även Pandoc, som DOCX- och EPUB-vägar behöver."
+        },
+        "shell": {
+          "title": "Shell-installationsprogram (macOS och Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell-installationsprogram (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Tillgängligt när paketinlämningen har godkänts."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Tillgängligt när cratena har publicerats på crates.io."
+        }
+      },
+      "then_heading": "Sedan",
+      "releases": "Arkiv för alla plattformar finns på <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Skrivbordsapp",
+        "body": "En skrivbordsapp för macOS, Windows och Linux med batchkonvertering och mappbevakning är på väg. Den listas här när den första versionen är ute."
+      }
+    },
+    "pair": {
+      "meta_title": "Konvertera {from} till {to}",
+      "meta_description_browser": "Konvertera {noun} till {to} i din webbläsare, privat, med AriadShift. Mätt trohet, inga uppladdningar.",
+      "meta_description_cli": "Konvertera {noun} till {to} på din egen dator med AriadShift. Mätt trohet, inga uppladdningar.",
+      "badge_browser": "Körs i din webbläsare",
+      "badge_cli": "Körs med AriadShift CLI",
+      "title": "Konvertera {from} till {to}",
+      "lede_browser": "Gör om {noun} till {to} utan att ladda upp det. AriadShift läser filen i din webbläsare, översätter den till sin dokumentmodell och skriver {to} på din enhet.",
+      "lede_cli": "Gör om {noun} till {to} på din egen dator med det kostnadsfria kommandoradsverktyget AriadShift. Webbläsarversionen kör inte den här vägen ännu.",
+      "convert_now": "Konvertera {from} till {to} nu",
+      "install_cli": "Installera CLI:t",
+      "route_heading": "Vägen AriadShift väljer",
+      "from_heading": "Från {format}",
+      "to_heading": "Till {format}",
+      "cli_heading": "Från kommandoraden",
+      "related_heading": "Relaterade konverteringar",
+      "related_link": "{from} till {to}"
+    },
+    "converter_page": {
+      "meta_title": "Konverterare",
+      "meta_description": "Konvertera Markdown, HTML, DOCX, EPUB, digital PDF och AriadShift IR JSON i din webbläsare. Filerna stannar på din enhet.",
+      "title": "Konvertera ett dokument",
+      "lede": "Välj en fil, välj ett mål och ladda ned resultatet. Allt sker i den här fliken{cloud, select, yes {, om du inte väljer att konvertera den här filen i molnet.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licenser",
+      "meta_description": "Licenser och källkod för AriadShift och dess webbläsarmotorer."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Molnläget stoppades oväntat",
+        "stopped_body": "Molnläget stötte på ett fel efter att uppladdningen hade startat. En kopia på servern raderas automatiskt när lagringstiden går ut, eller så kan du konvertera på den här enheten.",
+        "load_title": "Molnläget kunde inte läsas in",
+        "load_body": "Molnkonverteraren kunde inte läsas in (till exempel för att du är offline). Du kan fortfarande konvertera på den här enheten.",
+        "use_device": "Konvertera på den här enheten"
+      },
+      "status": {
+        "deleted_from_server": "{name} raderades från servern.",
+        "reading": "Läser {name} på den här enheten.",
+        "detected": "{name} är {format}.",
+        "read_failed": "Filen kunde inte läsas.",
+        "converting": "Konverterar till {format} på den här enheten.",
+        "ready": "{name} är redo att laddas ned.",
+        "convert_failed": "Konverteringen misslyckades.",
+        "saved": "{name} sparades.",
+        "reset": "{outcome, select, deleted {Filerna togs bort från den här enheten och från servern.} kept {Filerna togs bort från den här enheten. {name} finns fortfarande kvar på servern.} other {Filerna togs bort från den här enheten.}}",
+        "cloud_selected": "Molnkonvertering vald för {name}. Inget har laddats upp ännu.",
+        "cloud_selected_unnamed": "Molnkonvertering vald för den här filen. Inget har laddats upp ännu."
+      },
+      "device": {
+        "cloud": "<strong>Molnkonvertering vald.</strong> Den här filen lämnar din webbläsare först när du väljer Ladda upp och konvertera.",
+        "local": "<strong>Bearbetas på den här enheten.</strong> Filer lämnar aldrig din webbläsare och laddas inte upp."
+      },
+      "storage_badge": "{storage, select, opfs {Webbläsarens privata lagring} other {I minnet}}",
+      "memory": {
+        "title": "Fillagring på enheten är inte tillgänglig i den här webbläsaren",
+        "body": "Filer lagras i stället i minnet, så indata på upp till {limit} stöds. Inget laddas upp i något av fallen."
+      },
+      "error": {
+        "title": "{code, select, no_route {Inte tillgänglig här} engine_integrity {Integritetskontrollen av motorn misslyckades} other {Något gick fel}}"
+      },
+      "handoff": {
+        "title": "Fortsätt i skrivbordsappen",
+        "reason": "{reason, select, ocr {Vissa sidor behöver OCR för att all text ska kunna extraheras.} other {Det här dokumentet behöver en motor eller mer minne än webbläsaren kan erbjuda.}}",
+        "picker": "Skrivbordsappen öppnar en filväljare. Välj det här dokumentet igen; din webbläsare skickar inte filen.",
+        "open": "Öppna i skrivbordsappen",
+        "cloud_alternative": "Eller konvertera det på {host}, efter att du har bekräftat uppladdningen.",
+        "cloud_button": "Bearbeta i molnet"
+      },
+      "drop": {
+        "button": "Välj en fil",
+        "button_busy": "Läser…",
+        "label": "Dokument att konvertera",
+        "title": "Släpp ett dokument här",
+        "hint": "Markdown, HTML, DOCX, EPUB, digital PDF eller IR JSON på upp till {limit}. Det stannar på den här enheten."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Rubriker",
+        "paragraphs": "Stycken",
+        "tables": "Tabeller",
+        "images": "Bilder",
+        "links": "Länkar",
+        "footnotes": "Fotnoter",
+        "words": "Ord"
+      },
+      "unreachable": {
+        "cli": "{format} kan inte konverteras i webbläsaren ännu. <link>AriadShift CLI</link> konverterar det på din dator.",
+        "none": "AriadShift kan inte konvertera {format} ännu."
+      },
+      "cloud": {
+        "loading": "Läser in molnläget…"
+      },
+      "convert": {
+        "title": "Konvertera",
+        "hint": "Planeraren väljer den väg som har bäst mätt poäng.",
+        "target_label": "Konvertera till",
+        "profile_label": "Profil",
+        "route_heading": "Varför den här vägen",
+        "elsewhere": "{formats} {count, plural, one {kräver} other {kräver}} tills vidare <link>AriadShift CLI</link>.",
+        "button": "Konvertera",
+        "button_busy": "Konverterar…",
+        "cancel": "Avbryt"
+      },
+      "result": {
+        "title": "Klart",
+        "summary": "<output>{name}</output> · {size} · konverterad på {duration} på den här enheten",
+        "download": "Ladda ned {name}"
+      },
+      "start_over": "Börja om och radera filer"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Konto",
+        "description": "Ditt AriadShift-molnkonto: profil, lösenord, passkeys och tvåstegsinloggning."
+      },
+      "sign_in": {
+        "title": "Logga in",
+        "description": "Logga in på ditt AriadShift-molnkonto eller skapa ett."
+      },
+      "jobs": {
+        "title": "Jobb",
+        "description": "Status, nedladdningar och radering av dina AriadShift-molnkonverteringar."
+      },
+      "api_keys": {
+        "title": "API-nycklar",
+        "description": "Skapa och återkalla API-nycklar för AriadShifts moln-API."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Konto"
+      },
+      "shell": {
+        "not_configured_title": "Molnet är inte konfigurerat",
+        "not_configured_body": "Den här kopian av AriadShift körs bara på din enhet. Konton, API-nycklar och molnjobb kräver en server; dess driftansvarige anger <code>{api_variable}</code> och <code>{auth_variable}</code> när webbplatsen byggs.",
+        "not_configured_convert": "Du kan fortfarande <link>konvertera filer i din webbläsare</link>.",
+        "nav_label": "Konto",
+        "nav": {
+          "account": "Konto",
+          "api_keys": "API-nycklar",
+          "jobs": "Jobb"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Inloggad som <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Kontrollerar din session…",
+        "error_title": "Kan inte kontrollera din session",
+        "signed_out": "Du är inte inloggad."
+      },
+      "actions": {
+        "sign_in": "Logga in",
+        "try_again": "Försök igen",
+        "cancel": "Avbryt",
+        "done": "Klart",
+        "continue": "Fortsätt",
+        "revoke": "Återkalla",
+        "copied": "Kopierad"
+      },
+      "fields": {
+        "name": "Namn",
+        "email": "E-post",
+        "password": "Lösenord",
+        "authentication_code": "Autentiseringskod",
+        "password_hint": "Minst {min} tecken."
+      },
+      "dates": {
+        "unknown": "ett okänt datum"
+      },
+      "errors": {
+        "auth_refused": "Autentiseringstjänsten avvisade begäran.",
+        "service_unreachable": "Inloggningstjänsten kan inte nås. Kontrollera din anslutning och försök igen.",
+        "session_ended": "Din session har avslutats. Logga in igen.",
+        "rate_limited": "För många begäranden. Försök igen om en stund.",
+        "rate_limited_after": "För många begäranden. Försök igen om {seconds} s.",
+        "sign_in_unverifiable": "Servern kan inte verifiera din inloggning just nu. Försök igen om en stund.",
+        "token_invalid": "Inloggningstjänsten returnerade en ogiltig API-token.",
+        "reauth_required": "Logga in igen innan du raderar ditt konto.",
+        "delete_not_allowed": "Den här servern tillåter inte att konton raderas från webbappen. Be dess driftansvarige radera det.",
+        "job_gone": "Det här jobbet finns inte längre på servern.",
+        "file_deleted": "Den här filen har redan raderats.",
+        "job_conflict": "Jobbet är inte klart, eller så finns den uppladdade filen inte längre på servern.",
+        "quota_exceeded": "Du har förbrukat din plans molnkonverteringar för tillfället. Konvertera på den här enheten eller försök senare.",
+        "request_failed": "Servern kunde inte slutföra begäran. Försök igen om en stund.",
+        "network_unreachable": "Servern kan inte nås. Kontrollera din anslutning och försök igen.",
+        "transfer_incomplete": "Överföringen slutfördes inte. Försök igen."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Spara namn",
+        "saved": "Namnet sparades.",
+        "save_failed": "Namnet kunde inte sparas."
+      },
+      "password": {
+        "title": "Lösenord",
+        "current": "Nuvarande lösenord",
+        "new": "Nytt lösenord",
+        "confirm": "Bekräfta nytt lösenord",
+        "revoke_others": "Logga ut från andra sessioner",
+        "submit": "Ändra lösenord",
+        "mismatch": "De nya lösenorden stämmer inte överens.",
+        "changed": "Lösenordet har ändrats.",
+        "changed_revoked": "Lösenordet har ändrats. Andra sessioner har loggats ut.",
+        "failed": "Lösenordet kunde inte ändras."
+      },
+      "passkeys": {
+        "title": "Passkeys",
+        "description": "Logga in med enhetens skärmlås eller en säkerhetsnyckel i stället för ett lösenord.",
+        "load_failed": "Dina passkeys kunde inte läsas in.",
+        "loading": "Läser in passkeys…",
+        "empty": "Inga passkeys ännu.",
+        "unnamed": "Passkey utan namn",
+        "default_name": "Passkey",
+        "added_on": "Tillagd {date}",
+        "remove_label": "Ta bort passkey {name}",
+        "remove_button": "Ta bort<hidden> passkey {name}</hidden>",
+        "add_button": "Lägg till en passkey",
+        "add_title": "Lägg till en passkey",
+        "add_description": "Namnge den efter enheten eller nyckeln och följ sedan webbläsarens anvisningar.",
+        "name_label": "Namn på passkey",
+        "name_placeholder": "Till exempel: Jobbdatorn",
+        "added": "Passkey tillagd.",
+        "add_failed": "Passkeyn lades inte till.",
+        "remove_title": "Ta bort {name}?",
+        "remove_title_unnamed": "Ta bort den här passkeyn?",
+        "remove_description": "Du kan inte längre logga in med den. Dina andra inloggningsmetoder fortsätter fungera.",
+        "remove_confirm": "Ta bort passkey",
+        "removed": "{name} har tagits bort.",
+        "remove_failed": "Passkeyn kunde inte tas bort."
+      },
+      "two_factor": {
+        "title": "Tvåfaktorsautentisering",
+        "description": "Be om en kod från en autentiseringsapp efter ditt lösenord.",
+        "status_on": "Status: <badge>På</badge>",
+        "status_off": "Status: <badge>Av</badge>",
+        "enable": "Aktivera tvåfaktorsautentisering",
+        "disable": "Inaktivera tvåfaktorsautentisering",
+        "regenerate": "Skapa nya reservkoder",
+        "confirm_password": "Bekräfta ditt lösenord för att fortsätta.",
+        "enable_failed": "Det gick inte att starta konfigurationen av tvåfaktorsautentisering. Kontrollera ditt lösenord.",
+        "disable_failed": "Det gick inte att inaktivera tvåfaktorsautentisering. Kontrollera ditt lösenord.",
+        "regenerate_failed": "Det gick inte att skapa nya reservkoder. Kontrollera ditt lösenord.",
+        "verify_failed": "Den koden godkändes inte. Kontrollera tiden på din enhet och försök igen.",
+        "disabled": "Tvåfaktorsautentisering är avstängd.",
+        "enabled": "Tvåfaktorsautentisering är påslagen.",
+        "regenerated": "Nya reservkoder har skapats. De gamla fungerar inte längre.",
+        "setup_title": "Konfigurera din autentiseringsapp",
+        "setup_description": "Lägg till AriadShift i din autentiseringsapp och ange sedan koden som den visar.",
+        "setup_key_intro": "Ange den här installationsnyckeln i appen:",
+        "setup_key_unavailable": "Inte tillgänglig",
+        "open_in_app": "Öppna i en autentiseringsapp på den här enheten",
+        "turn_on": "Slå på",
+        "codes_title": "Nya reservkoder",
+        "backup_intro": "Spara de här reservkoderna på ett säkert ställe. Varje kod loggar in dig en gång om du förlorar din autentiseringsapp. De visas inte igen.",
+        "copy_codes": "Kopiera reservkoder",
+        "copy_failed": "Kopieringen misslyckades; markera koderna i stället"
+      },
+      "account_actions": {
+        "title": "Session och konto",
+        "sign_out": "Logga ut",
+        "delete": "Radera konto",
+        "signed_out": "Utloggad.",
+        "sign_out_failed": "Det gick inte att logga ut. Försök igen.",
+        "deleted": "Ditt konto har raderats.",
+        "delete_failed_password": "Kontot kunde inte raderas. Kontrollera ditt lösenord.",
+        "delete_failed_session": "Kontot kunde inte raderas. Logga in igen och försök på nytt.",
+        "delete_note": "När du raderar ditt konto återkallas dina <keys>API-nycklar</keys> automatiskt. Radera de <jobs>molnjobb</jobs> du fortfarande har innan du raderar kontot. Filer från jobb som du lämnar kvar tas bort när deras lagringstid går ut.",
+        "dialog_title": "Radera ditt konto?",
+        "dialog_description_password": "Det här kan inte ångras. Bekräfta ditt lösenord för att radera kontot.",
+        "dialog_description_session": "Det här kan inte ångras. Bekräfta nedan för att radera kontot med din nuvarande inloggningssession.",
+        "sign_in_again": "Logga in igen"
+      },
+      "connected_apps": {
+        "title": "Anslutna appar",
+        "description": "Appar och MCP-klienter som du har gett åtkomst till ditt konto, och OAuth-klienter som du har registrerat.",
+        "load_failed": "Dina anslutna appar kunde inte läsas in.",
+        "loading": "Läser in anslutna appar…",
+        "empty": "Inga anslutna appar eller registrerade OAuth-klienter ännu.",
+        "scopes_none": "inga",
+        "consent_details": "Godkänd app · Scopes: {scopes} · Godkänd {date}",
+        "client_details": "Registrerad OAuth-klient ({client_id})",
+        "client_details_dated": "Registrerad OAuth-klient ({client_id}) · Registrerad {date}",
+        "revoke_label": "Återkalla {name}",
+        "revoked": "{name} har återkallats.",
+        "revoke_failed": "Åtkomsten kunde inte återkallas.",
+        "revoke_title": "Återkalla {name}?",
+        "revoke_consent_description": "Återkallandet stoppar nya tokens och förnyelse av tokens omedelbart. Signerade åtkomsttokens som redan har utfärdats (livslängd 15 minuter) fungerar tills de löper ut.",
+        "revoke_client_description": "När du raderar den här registrerade OAuth-klienten återkallas dess autentiseringsuppgifter och medgivanden, och nya tokens och förnyelse av tokens stoppas omedelbart. Signerade åtkomsttokens som redan har utfärdats (livslängd 15 minuter) fungerar tills de löper ut."
+      },
+      "api_keys": {
+        "page_title": "API-nycklar",
+        "section_title": "Dina nycklar",
+        "section_description": "Skript och integrationer skickar en nyckel i rubriken <code>x-api-key</code> till {host}. En nyckel agerar med ditt konto och dess plan.",
+        "load_failed": "Dina API-nycklar kunde inte läsas in.",
+        "loading": "Läser in API-nycklar…",
+        "empty": "Inga API-nycklar ännu.",
+        "unnamed": "Nyckel utan namn",
+        "disabled": "Inaktiverad",
+        "key_details": "Skapad {date} · {expiry}",
+        "never_expires": "Löper aldrig ut",
+        "expired_on": "Gick ut {date}",
+        "expires_on": "Går ut {date}",
+        "revoke_label": "Återkalla API-nyckeln {name}",
+        "revoke_button": "Återkalla<hidden> API-nyckeln {name}</hidden>",
+        "create_button": "Skapa API-nyckel",
+        "create_title": "Skapa en API-nyckel",
+        "create_description": "Namnge nyckeln efter skriptet eller tjänsten som ska använda den.",
+        "name_placeholder": "Till exempel: CI",
+        "expires_after": "Går ut efter",
+        "lifetime_days": "{days, plural, one {# dag} other {# dagar}}",
+        "lifetime_year": "1 år",
+        "lifetime_never": "Ingen utgångstid",
+        "create_submit": "Skapa nyckel",
+        "create_failed": "Nyckeln kunde inte skapas.",
+        "created": "API-nyckeln {name} har skapats.",
+        "secret_title": "Din nya API-nyckel",
+        "secret_label": "API-nyckel",
+        "secret_notice": "Kopiera nyckeln nu. Den lagras bara som en hash och visas aldrig igen.",
+        "copy_key": "Kopiera nyckel",
+        "copy_failed": "Kopieringen misslyckades. Markera nyckeln och kopiera den.",
+        "revoke_title": "Återkalla {name}?",
+        "revoke_description": "Begäranden som använder den här nyckeln avvisas omedelbart. Det här kan inte ångras.",
+        "revoke_confirm": "Återkalla nyckel",
+        "revoked": "API-nyckeln {name} har återkallats. Begäranden som använder den avvisas från och med nu.",
+        "revoke_failed": "Nyckeln kunde inte återkallas."
+      },
+      "jobs": {
+        "title": "Jobb",
+        "intro_server": "Molnkonverteringar för ditt konto på {host}, från vilken enhet som helst. Filer ligger kvar på {host} tills de raderas automatiskt, eller tills du raderar dem här.",
+        "intro_account_browser": "Molnkonverteringar som startats i den här webbläsaren med ditt konto. Den här listan sparas bara på den här enheten. Filer ligger kvar på {host} tills de raderas automatiskt, eller tills du raderar dem här.",
+        "intro_anonymous_browser": "Molnkonverteringar som startats i den här webbläsaren utan konto. Den här listan sparas bara på den här enheten. Filer ligger kvar på {host} tills de raderas automatiskt, eller tills du raderar dem här.",
+        "signed_out_notice": "Visar jobb utan konto. <link>Logga in</link> för att se jobben för ditt konto.",
+        "loading": "Läser in dina jobb…",
+        "list_unsupported": "{host} kan inte lista ditt kontos jobb ännu, så den här sidan visar de jobb som startats i den här webbläsaren.",
+        "list_error_title": "Kan inte läsa in dina jobb från {host}",
+        "list_error_body": "{reason} Under tiden visar den här sidan de jobb som startats i den här webbläsaren.",
+        "count": "{count, plural, one {# jobb} other {# jobb}}",
+        "empty": "Inga molnjobb ännu. Starta ett från <link>konverteraren</link>.",
+        "show_more": "Visa fler jobb",
+        "loading_more": "Läser in fler jobb…",
+        "unnamed": "Jobb {id}",
+        "forgotten": "{filename} togs bort från den här listan. Dess filer på servern är oförändrade.",
+        "forgotten_unnamed": "Jobbet togs bort från den här listan. Dess filer på servern är oförändrade.",
+        "status": {
+          "queued": "I kö",
+          "converting": "Konverterar",
+          "converting_stage": "Konverterar: {stage}",
+          "retrying": "Försöker igen (försök {attempt})",
+          "reconnecting": "{step} · Återansluter…",
+          "ready": "Klart",
+          "failed": "Misslyckades",
+          "canceled": "Avbrutet",
+          "deleted": "Raderat",
+          "deleted_expired": "Raderat (utgånget)"
+        },
+        "until": {
+          "less_than_minute": "om mindre än en minut",
+          "minutes": "om {minutes} min",
+          "hours": "om {hours} h",
+          "hours_minutes": "om {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Raderades automatiskt kl. {clock}.",
+          "deleted_from_server": "Raderat från servern. Indata- och utdatafilerna är borta.",
+          "being_deleted": "Raderas nu.",
+          "deletes_at": "Raderas automatiskt {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Det här dokumentet kräver mer än din plan tillåter. Prova en mindre fil eller konvertera den på den här enheten.",
+          "unsupported_route": "Den här servern kan inte konvertera mellan dessa format. Välj ett annat mål i konverteraren.",
+          "input_io": "Den uppladdade filen kunde inte läsas eller finns inte längre på servern. Ladda upp den igen.",
+          "storage": "Servern kunde inte lagra resultatet. Försök igen om en stund.",
+          "tool_missing": "Den här servern saknar den motor som vägen behöver. Fråga dess driftansvarige eller välj ett annat mål.",
+          "other": "Konverteringen misslyckades. Försök igen eller konvertera filen på den här enheten."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Läser in status…",
+          "try_again": "Försök igen<hidden> att läsa in {filename}</hidden>",
+          "technical_details": "Tekniska detaljer",
+          "warnings": "{count, plural, one {# varning} other {# varningar}}",
+          "download": "Ladda ned {filename}",
+          "retry_label": "Försök igen med {filename}",
+          "retry_button": "Försök igen<hidden> {filename}</hidden>",
+          "delete_label": "Radera {filename} från servern nu",
+          "delete_button": "Radera nu<hidden> {filename} från servern</hidden>",
+          "remove_label": "Ta bort från den här listan ({filename})",
+          "remove_button": "Ta bort från den här listan<hidden> ({filename})</hidden>",
+          "deleted_note": "Raderat från {host}. Indata- och utdatafilerna är borta.",
+          "deleted_announce": "{filename} raderades från {host}. Indata- och utdatafilerna är borta.",
+          "ready_announce": "{filename} är konverterad och redo att laddas ned.",
+          "failed_announce": "Konverteringen av {filename} misslyckades. {reason}",
+          "canceled_announce": "Konverteringen av {filename} avbröts.",
+          "downloading": "Laddar ned {filename}.",
+          "retrying": "Försöker igen med {filename}.",
+          "retry_conflict": "Den uppladdade filen finns inte längre på servern. Ladda upp den igen från konverteraren."
+        }
+      },
+      "sign_in": {
+        "title": "Logga in",
+        "create_title": "Skapa ett konto",
+        "two_factor_title": "Tvåstegskontroll",
+        "signed_in": "Inloggad.",
+        "go_to_account": "Gå till ditt konto",
+        "passkey": "Logga in med en passkey",
+        "no_account": "Har du inget konto än? <switch>Skapa ett</switch>",
+        "have_account": "Har du redan ett konto? <switch>Logga in</switch>",
+        "sign_in_failed": "Det gick inte att logga in. Kontrollera din e-postadress och ditt lösenord.",
+        "passkey_failed": "Det gick inte att logga in med en passkey.",
+        "code_rejected": "Den koden godkändes inte. Försök igen.",
+        "create_failed": "Kontot kunde inte skapas.",
+        "passwords_mismatch": "Lösenorden stämmer inte överens.",
+        "bot_check": "Slutför robotkontrollen för registrering och försök igen.",
+        "confirm_password": "Bekräfta lösenord",
+        "create_account": "Skapa konto",
+        "totp_help": "Ange den sexsiffriga koden från din autentiseringsapp.",
+        "backup_help": "Ange en av de reservkoder som du sparade när du aktiverade tvåfaktorsautentisering. Varje kod fungerar en gång.",
+        "backup_code": "Reservkod",
+        "trust_device": "Lita på den här webbläsaren i 30 dagar",
+        "verify": "Verifiera",
+        "use_backup": "Använd en reservkod i stället",
+        "use_authenticator": "Använd en kod från autentiseringsappen i stället",
+        "signed_in_user": "Du är inloggad som <user>{email}</user>."
+      }
+    }
+  }
+}

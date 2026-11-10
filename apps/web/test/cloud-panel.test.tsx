@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import CloudPanel, { type CloudPanelProps } from "@/components/cloud/cloud-panel";
 import type { PlanLimits } from "@/lib/cloud/api";
 import type { DiscardOutcome } from "@/lib/cloud/cloud-job";
 import type { CloudConfig } from "@/lib/cloud/config";
+import { renderIntl } from "./intl";
 
 const CONFIG: CloudConfig = {
   apiUrl: "https://api.example.com",
@@ -82,7 +83,7 @@ function renderPanel(props: Partial<CloudPanelProps> & { limits?: PlanLimits | n
         };
   const cleanup = { current: null as (() => Promise<DiscardOutcome>) | null };
   const onUseDevice = vi.fn();
-  render(
+  renderIntl(
     <CloudPanel
       config={CONFIG}
       file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -195,7 +196,7 @@ describe("CloudPanel", () => {
         return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
       }) as typeof fetch;
 
-      const { unmount } = render(
+      const { unmount } = renderIntl(
         <CloudPanel
           config={CONFIG}
           file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -249,7 +250,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -314,7 +315,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -379,7 +380,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -446,7 +447,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -506,7 +507,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    const { unmount } = render(
+    const { unmount } = renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -566,7 +567,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -632,7 +633,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -693,7 +694,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -792,7 +793,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -867,7 +868,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -934,7 +935,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
@@ -985,7 +986,7 @@ describe("CloudPanel", () => {
       return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
     }) as typeof fetch;
 
-    render(
+    renderIntl(
       <CloudPanel
         config={CONFIG}
         file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}

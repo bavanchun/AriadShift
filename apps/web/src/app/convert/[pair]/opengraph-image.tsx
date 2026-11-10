@@ -2,6 +2,8 @@ import { loadPairs } from "@/lib/catalog";
 import { pairSlug, parsePairSlug } from "@/lib/formats";
 import { brandImage, OG_SIZE } from "@/lib/og-image";
 
+// One English preview per conversion, shared by every locale's page: the brand font covers
+// Latin text only, and the image would otherwise be rendered once per locale.
 export const alt = "AriadShift format conversion";
 export const size = OG_SIZE;
 export const contentType = "image/png";

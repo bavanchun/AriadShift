@@ -96,7 +96,11 @@ export interface AuthApi {
   apiToken(): Promise<string | undefined>;
 }
 
-/** A refused auth request. `message` comes from the service and is safe to show. */
+/**
+ * A refused auth request. `message` comes from the service and is safe to show, unless
+ * the client wrote it itself: then `messageKey` names its `web.account` message and the
+ * page shows the translation instead.
+ */
 export class AuthError extends Error {
   override readonly name = "AuthError";
 
@@ -104,6 +108,7 @@ export class AuthError extends Error {
     message: string,
     readonly status?: number,
     readonly code?: string,
+    readonly messageKey?: string,
   ) {
     super(message);
   }
@@ -112,12 +117,19 @@ export class AuthError extends Error {
 type BetterFetchError = { message?: string; status?: number; statusText?: string; code?: string };
 type Result = { data?: unknown; error?: BetterFetchError | null };
 
+const AUTH_REFUSED = "The auth service refused the request.";
+
 /** Returns `data`, or throws the result's error as an `AuthError`. */
 function unwrap(result: Result): unknown {
   const error = result.error;
   if (error) {
-    const message = error.message || error.statusText || "The auth service refused the request.";
-    throw new AuthError(message, error.status, error.code);
+    const message = error.message || error.statusText;
+    throw new AuthError(
+      message || AUTH_REFUSED,
+      error.status,
+      error.code,
+      message ? undefined : "errors.auth_refused",
+    );
   }
   return result.data;
 }
@@ -238,14 +250,19 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
           ? err.message
           : typeof err.error_description === "string" && err.error_description !== ""
             ? err.error_description
-            : response.statusText || "The auth service refused the request.";
+            : response.statusText;
       const code =
         typeof err.code === "string"
           ? err.code
           : typeof err.error === "string"
             ? err.error
             : undefined;
-      throw new AuthError(message, response.status, code);
+      throw new AuthError(
+        message || AUTH_REFUSED,
+        response.status,
+        code,
+        message ? undefined : "errors.auth_refused",
+      );
     }
     return payload;
   }
@@ -362,6 +379,8 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
           throw new AuthError(
             "This server does not allow deleting accounts from the web app. Ask its operator to delete it.",
             404,
+            undefined,
+            "errors.delete_not_allowed",
           );
         }
         if (
@@ -372,6 +391,7 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
             "Sign in again before deleting your account.",
             error.status ?? 400,
             "reauth_required",
+            "errors.reauth_required",
           );
         }
         throw error;
@@ -449,6 +469,7 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
           "The sign-in service cannot be reached. Check your connection and try again.",
           undefined,
           "network_error",
+          "errors.service_unreachable",
         );
       }
       if (!response.ok) {
@@ -459,22 +480,25 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
         } catch {
           // Non-JSON error bodies still surface a typed AuthError below.
         }
-        const defaultMessage =
+        const [defaultMessage, defaultCode, defaultKey] =
           response.status === 401
-            ? "Your session has ended. Sign in again."
+            ? ["Your session has ended. Sign in again.", "unauthorized", "errors.session_ended"]
             : response.status === 429
-              ? "Too many requests. Try again shortly."
-              : "The server cannot verify your sign-in right now. Try again shortly.";
-        const defaultCode =
-          response.status === 401
-            ? "unauthorized"
-            : response.status === 429
-              ? "rate_limited"
-              : "unavailable";
-        const message =
-          typeof body.message === "string" && body.message !== "" ? body.message : defaultMessage;
+              ? ["Too many requests. Try again shortly.", "rate_limited", "errors.rate_limited"]
+              : [
+                  "The server cannot verify your sign-in right now. Try again shortly.",
+                  "unavailable",
+                  "errors.sign_in_unverifiable",
+                ];
+        const serverMessage =
+          typeof body.message === "string" && body.message !== "" ? body.message : undefined;
         const code = typeof body.code === "string" && body.code !== "" ? body.code : defaultCode;
-        throw new AuthError(message, response.status, code);
+        throw new AuthError(
+          serverMessage ?? defaultMessage,
+          response.status,
+          code,
+          serverMessage ? undefined : defaultKey,
+        );
       }
       let data: unknown;
       try {
@@ -485,6 +509,7 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
           "The sign-in service returned an invalid API token.",
           response.status,
           "invalid_token_response",
+          "errors.token_invalid",
         );
       }
       const token = record(data).token;
@@ -494,6 +519,7 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
           "The sign-in service returned an invalid API token.",
           response.status,
           "invalid_token_response",
+          "errors.token_invalid",
         );
       }
       cachedToken = { token, until: Date.now() + TOKEN_REUSE_MS };

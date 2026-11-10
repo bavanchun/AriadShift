@@ -20,6 +20,7 @@ import { downloadAndSaveOutput } from "@/lib/cloud/cloud-job";
 import { formatBytes } from "@/lib/format-bytes";
 import { formatLabel } from "@/lib/formats";
 import { useAccount } from "./account-context";
+import { useAccountText } from "./account-ui";
 import type { JobHistoryEntry } from "./job-history";
 import {
   apiErrorCopy,
@@ -75,6 +76,7 @@ export function JobRow({
   pollIntervalMs = POLL_INTERVAL_MS,
 }: JobRowProps) {
   const { announce } = useAccount();
+  const { t, locale } = useAccountText();
   const titleId = useId();
   const [state, setState] = useState<RowState>(
     initialJob ? { kind: "job", job: initialJob } : { kind: "loading" },
@@ -107,11 +109,11 @@ export function JobRow({
         setState(
           errorCode(error) === "not_found"
             ? { kind: "gone" }
-            : { kind: "error", message: apiErrorCopy(error) },
+            : { kind: "error", message: apiErrorCopy(error, t) },
         );
       }
     },
-    [api, entry.id],
+    [api, entry.id, t],
   );
 
   // A job handed over by the list is current; read it only when it was not.
@@ -188,16 +190,19 @@ export function JobRow({
       return;
     }
     if (status === "succeeded") {
-      announce(`${entry.filename} is converted and ready to download.`);
+      announce(t("jobs.row.ready_announce", { filename: entry.filename }));
     } else if (status === "failed") {
       announce(
-        `Conversion of ${entry.filename} failed. ${jobErrorCopy(job?.error?.code)}`,
+        t("jobs.row.failed_announce", {
+          filename: entry.filename,
+          reason: jobErrorCopy(job?.error?.code, t),
+        }),
         "assertive",
       );
     } else if (status === "canceled") {
-      announce(`The conversion of ${entry.filename} was canceled.`);
+      announce(t("jobs.row.canceled_announce", { filename: entry.filename }));
     }
-  }, [status, deleted, announce, entry.filename, job?.error?.code]);
+  }, [status, deleted, announce, entry.filename, job?.error?.code, t]);
 
   // Show the output names and sizes before download.
   useEffect(() => {
@@ -214,11 +219,11 @@ export function JobRow({
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
-          setRowError(apiErrorCopy(error));
+          setRowError(apiErrorCopy(error, t));
         }
       });
     return () => controller.abort();
-  }, [status, api, entry.id]);
+  }, [status, api, entry.id, t]);
 
   const loaded = state.kind !== "loading";
   useEffect(() => {
@@ -242,10 +247,10 @@ export function JobRow({
       const target = fresh.find((candidate) => candidate.id === output.id) ?? output;
       const saved = await downloadAndSaveOutput(api, target);
       if (saved) {
-        announce(`Downloading ${target.filename}.`);
+        announce(t("jobs.row.downloading", { filename: target.filename }));
       }
     } catch (error) {
-      setRowError(apiErrorCopy(error));
+      setRowError(apiErrorCopy(error, t));
       if (errorCode(error) === "expired") {
         void load();
       }
@@ -266,14 +271,12 @@ export function JobRow({
       );
       setOutputs(null);
       setDeleted(true);
-      announce(
-        `Deleted ${entry.filename} from ${serverHost}. The input and output files are gone.`,
-      );
+      announce(t("jobs.row.deleted_announce", { filename: entry.filename, host: serverHost }));
     } catch (error) {
       if (errorCode(error) === "not_found") {
         setState({ kind: "gone" });
       } else {
-        setRowError(apiErrorCopy(error));
+        setRowError(apiErrorCopy(error, t));
       }
     } finally {
       setBusy(null);
@@ -292,7 +295,7 @@ export function JobRow({
         to: job.to,
         profile: job.profile,
       });
-      announce(`Retrying ${entry.filename}.`);
+      announce(t("jobs.row.retrying", { filename: entry.filename }));
       onRetried(
         {
           id: next.id,
@@ -305,9 +308,7 @@ export function JobRow({
       );
     } catch (error) {
       setRowError(
-        errorCode(error) === "conflict"
-          ? "The uploaded file is no longer on the server. Upload it again from the converter."
-          : apiErrorCopy(error),
+        errorCode(error) === "conflict" ? t("jobs.row.retry_conflict") : apiErrorCopy(error, t),
       );
     } finally {
       setBusy(null);
@@ -318,10 +319,13 @@ export function JobRow({
     <Button
       variant="ghost"
       size="sm"
-      aria-label={`Remove from this list (${entry.filename})`}
+      aria-label={t("jobs.row.remove_label", { filename: entry.filename })}
       onClick={() => onForget(entry.id)}
     >
-      Remove from this list<span className="sr-only"> ({entry.filename})</span>
+      {t.rich("jobs.row.remove_button", {
+        filename: entry.filename,
+        hidden: (chunks) => <span className="sr-only">{chunks}</span>,
+      })}
     </Button>
   ) : null;
 
@@ -329,14 +333,14 @@ export function JobRow({
   if (state.kind === "loading") {
     body = (
       <p ref={statusRef} tabIndex={-1} className="text-sm text-muted-foreground">
-        Loading status…
+        {t("jobs.row.loading_status")}
       </p>
     );
   } else if (state.kind === "gone") {
     body = (
       <>
         <p ref={statusRef} tabIndex={-1} className="text-sm">
-          This job is no longer on the server.
+          {t("errors.job_gone")}
         </p>
         <div className="flex flex-wrap gap-2">{removeButton}</div>
       </>
@@ -349,7 +353,10 @@ export function JobRow({
         </p>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => void load()}>
-            Try again<span className="sr-only"> to load {entry.filename}</span>
+            {t.rich("jobs.row.try_again", {
+              filename: entry.filename,
+              hidden: (chunks) => <span className="sr-only">{chunks}</span>,
+            })}
           </Button>
           {removeButton}
         </div>
@@ -357,7 +364,7 @@ export function JobRow({
     );
   } else {
     const current = state.job;
-    const label = jobStepLabel(current, live, now);
+    const label = jobStepLabel(current, live, t, now);
     const started = Date.parse(current.started_at ?? current.created_at);
     const Icon = active
       ? LoaderCircleIcon
@@ -393,11 +400,11 @@ export function JobRow({
 
         {current.status === "failed" ? (
           <div className="flex flex-col gap-1 text-sm">
-            <p>{jobErrorCopy(current.error?.code)}</p>
+            <p>{jobErrorCopy(current.error?.code, t)}</p>
             {current.error ? (
               <details>
                 <summary className="cursor-pointer text-muted-foreground">
-                  Technical details
+                  {t("jobs.row.technical_details")}
                 </summary>
                 <p className="mt-1 font-mono text-xs break-all">
                   {current.error.code}: {current.error.message}
@@ -410,7 +417,7 @@ export function JobRow({
         {current.warnings.length > 0 && current.status !== "expired" ? (
           <details className="text-sm">
             <summary className="cursor-pointer">
-              {current.warnings.length === 1 ? "1 warning" : `${current.warnings.length} warnings`}
+              {t("jobs.row.warnings", { count: current.warnings.length })}
             </summary>
             <ul className="mt-1 list-disc pl-5 text-muted-foreground">
               {current.warnings.map((warning, index) => (
@@ -423,10 +430,10 @@ export function JobRow({
 
         {deleted ? (
           <p ref={deletedRef} tabIndex={-1} className="text-sm">
-            Deleted from {serverHost}. The input and output files are gone.
+            {t("jobs.row.deleted_note", { host: serverHost })}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground">{expiryLine(current, now)}</p>
+          <p className="text-xs text-muted-foreground">{expiryLine(current, t, locale, now)}</p>
         )}
 
         {!deleted && current.status === "succeeded" && outputs && outputs.length > 0 ? (
@@ -435,9 +442,9 @@ export function JobRow({
               <li key={output.id} className="flex flex-wrap items-center gap-2 text-sm">
                 <Button size="sm" disabled={busy !== null} onClick={() => void onDownload(output)}>
                   <DownloadIcon aria-hidden="true" />
-                  Download {output.filename}
+                  {t("jobs.row.download", { filename: output.filename })}
                 </Button>
-                <span className="text-muted-foreground">{formatBytes(output.size)}</span>
+                <span className="text-muted-foreground">{formatBytes(output.size, locale)}</span>
               </li>
             ))}
           </ul>
@@ -449,11 +456,14 @@ export function JobRow({
               variant="outline"
               size="sm"
               disabled={busy !== null}
-              aria-label={`Retry ${entry.filename}`}
+              aria-label={t("jobs.row.retry_label", { filename: entry.filename })}
               onClick={() => void onRetry()}
             >
               <RotateCcwIcon aria-hidden="true" />
-              Retry<span className="sr-only"> {entry.filename}</span>
+              {t.rich("jobs.row.retry_button", {
+                filename: entry.filename,
+                hidden: (chunks) => <span className="sr-only">{chunks}</span>,
+              })}
             </Button>
           ) : null}
           {current.status !== "expired" ? (
@@ -461,11 +471,14 @@ export function JobRow({
               variant="destructive"
               size="sm"
               disabled={busy !== null}
-              aria-label={`Delete now ${entry.filename} from the server`}
+              aria-label={t("jobs.row.delete_label", { filename: entry.filename })}
               onClick={() => void onDelete()}
             >
               <Trash2Icon aria-hidden="true" />
-              Delete now<span className="sr-only"> {entry.filename} from the server</span>
+              {t.rich("jobs.row.delete_button", {
+                filename: entry.filename,
+                hidden: (chunks) => <span className="sr-only">{chunks}</span>,
+              })}
             </Button>
           ) : null}
           {removeButton}
@@ -485,7 +498,7 @@ export function JobRow({
         </h3>
         {job ? (
           <span className="text-xs text-muted-foreground">
-            {formatLabel(job.from)} → {formatLabel(job.to)}
+            {t("jobs.row.route", { from: formatLabel(job.from), to: formatLabel(job.to) })}
           </span>
         ) : null}
       </div>

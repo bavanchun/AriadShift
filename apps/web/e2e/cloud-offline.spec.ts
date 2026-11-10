@@ -12,7 +12,7 @@ test("choosing cloud while offline before the cloud chunk loaded falls back to t
 }) => {
   test.skip(browserName !== "chromium", "offline chunk failure is tested in Chromium");
 
-  await page.goto("/app");
+  await page.goto("/en/app");
   await expect(page.getByRole("heading", { name: "Convert a document" })).toBeVisible();
   await expect(page.getByTestId("device-indicator")).toContainText(/browser storage|In memory/, {
     timeout: 60_000,
@@ -26,7 +26,7 @@ test("choosing cloud while offline before the cloud chunk loaded falls back to t
         }),
       { timeout: 30_000 },
     )
-    .toEqual(expect.arrayContaining(["/app", expect.stringMatching(/\.wasm$/)]));
+    .toEqual(expect.arrayContaining(["/en/app", expect.stringMatching(/\.wasm$/)]));
 
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose a file" }).click();

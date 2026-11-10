@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Redigerbar",
+        "description": "Ekte overskrifter, lister og tabeller som du kan fortsette å redigere."
+      },
+      "faithful": {
+        "label": "Tro mot originalen",
+        "description": "Hold deg så nær layouten som mulig."
+      },
+      "fast": {
+        "label": "Rask",
+        "description": "Velg den raskeste ruten."
+      },
+      "private": {
+        "label": "Privat",
+        "description": "Bare motorer som aldri forlater enheten din."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift-kjerne",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF-tekstleser"
+    },
+    "runtime": {
+      "wasm": "Nettleser",
+      "local": "CLI og skrivebord",
+      "cloud": "Sky"
+    },
+    "score": {
+      "not_measured": "ikke målt"
+    },
+    "duration": {
+      "under_1_ms": "under 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown-dokument",
+        "description": "CommonMark med GitHub Flavored Markdown: overskrifter, lister, tabeller, oppgavelister, fotnoter og matematikk. Formatet de fleste AI-verktøy leser best."
+      },
+      "html": {
+        "noun": "HTML-side",
+        "description": "En selvstendig HTML5-side. Rå markup i inndataene renses; skript og utrygge attributter når aldri frem til utdataene."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR-dokument",
+        "description": "Den strukturerte dokumentmodellen som alle AriadShift-ruter går gjennom: overskrifter, blokker, tabeller, ressurser og metadata som versjonert JSON."
+      },
+      "docx": {
+        "noun": "Word-dokument",
+        "description": "Office Open XML-dokumenter fra Microsoft Word, LibreOffice og Google Docs, lest og skrevet via Pandoc."
+      },
+      "epub": {
+        "noun": "EPUB-e-bok",
+        "description": "EPUB 3-e-bøker, lest og skrevet via Pandoc med reproduserbare metadata."
+      },
+      "pdf": {
+        "noun": "PDF-dokument",
+        "description": "Tekst i digitale PDF-er leses på denne enheten. PDF-utdata bruker Typst og innebygde skrifttyper. Skannede sider krever OCR i skrivebordsappen."
+      },
+      "odt": {
+        "noun": "OpenDocument-tekstdokument",
+        "description": "OpenDocument-tekstfiler bruker LibreOffice i skrivebordsappen."
+      },
+      "rtf": {
+        "noun": "Rich Text-dokument",
+        "description": "Rich Text-dokumenter bruker LibreOffice i skrivebordsappen."
+      },
+      "pptx": {
+        "noun": "PowerPoint-presentasjon",
+        "description": "PowerPoint-presentasjoner bruker Docling eller LibreOffice i skrivebordsappen."
+      },
+      "xlsx": {
+        "noun": "Excel-arbeidsbok",
+        "description": "Excel-arbeidsbøker bruker Docling eller LibreOffice i skrivebordsappen."
+      },
+      "doc": {
+        "noun": "eldre Word-dokument",
+        "description": "Eldre Word-dokumenter bruker LibreOffice i skrivebordsappen."
+      },
+      "xls": {
+        "noun": "eldre Excel-arbeidsbok",
+        "description": "Eldre Excel-arbeidsbøker bruker LibreOffice i skrivebordsappen."
+      },
+      "ppt": {
+        "noun": "eldre PowerPoint-presentasjon",
+        "description": "Eldre PowerPoint-presentasjoner bruker LibreOffice i skrivebordsappen."
+      },
+      "ods": {
+        "noun": "OpenDocument-regneark",
+        "description": "OpenDocument-regneark bruker LibreOffice i skrivebordsappen."
+      },
+      "odp": {
+        "noun": "OpenDocument-presentasjon",
+        "description": "OpenDocument-presentasjoner bruker LibreOffice i skrivebordsappen."
+      },
+      "png": {
+        "noun": "PNG-bilde",
+        "description": "Tekstuthenting fra bilder krever Docling-motorpakken i skrivebordsappen."
+      },
+      "jpeg": {
+        "noun": "JPEG-bilde",
+        "description": "Tekstuthenting fra bilder krever Docling-motorpakken i skrivebordsappen."
+      },
+      "webp": {
+        "noun": "WebP-bilde",
+        "description": "Tekstuthenting fra bilder krever Docling-motorpakken i skrivebordsappen."
+      },
+      "tiff": {
+        "noun": "TIFF-bilde",
+        "description": "Tekstuthenting fra bilder krever Docling-motorpakken i skrivebordsappen."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: privat dokumentkonvertering i nettleseren din",
+      "site_description": "Konverter Markdown, HTML og strukturert JSON på din egen enhet. Privat som standard, med målt kvalitet på hver rute og klar for AI-agenter.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Gå til innholdet",
+      "home_link": "{site} startside",
+      "nav_label": "Hovedmeny",
+      "nav": {
+        "converter": "Konverterer",
+        "formats": "Formater",
+        "quality": "Kvalitet",
+        "download": "Last ned",
+        "privacy": "Personvern"
+      },
+      "footer": {
+        "license": "AriadShift er åpen kildekode under Apache-2.0-lisensen.",
+        "privacy": "Personvern",
+        "licenses": "Lisenser",
+        "quality": "Kvalitet",
+        "source": "Kildekode"
+      },
+      "language": {
+        "label": "Språk",
+        "button": "Språk: {name}",
+        "list_label": "Velg et språk",
+        "community_badge": "Fellesskapsoversettelse",
+        "community_note": "Fellesskapsoversettelser er maskinelle utkast som folk fortsatt kan rette opp."
+      }
+    },
+    "not_found": {
+      "title": "Fant ikke siden",
+      "body": "Denne siden finnes ikke.",
+      "home_link": "Gå til startsiden"
+    },
+    "home": {
+      "meta_title": "Konverter dokumenter på din egen enhet",
+      "title": "Konverter dokumenter på din egen enhet",
+      "lede": "AriadShift konverterer Markdown, HTML, Word, EPUB og strukturert JSON rett i nettleseren din. Les tekst fra digitale PDF-er og lag PDF-er på enheten din. Én målt planlegger, ingen opplastinger.",
+      "open_converter": "Åpne konvertereren",
+      "install_cli": "Installer CLI-en",
+      "why_heading": "Hvorfor AriadShift",
+      "why": {
+        "private": {
+          "title": "Privat som standard",
+          "body": "Konvertereren kjører i nettleseren din med WebAssembly. Dokumentet ditt lagres i nettleserens private filsystem og lastes aldri opp."
+        },
+        "quality": {
+          "title": "Målt kvalitet",
+          "body": "Hver rute har score for troskap og redigerbarhet fra en offentlig referansetest. Planleggeren velger den beste og forteller deg hvorfor."
+        },
+        "agents": {
+          "title": "Klar for AI-agenter",
+          "body": "Gjør dokumenter om til ren Markdown eller strukturert JSON som LLM-kontekst. CLI-en leveres med en MCP-server, slik at agenter kan konvertere filer selv."
+        }
+      },
+      "how_heading": "Slik fungerer det",
+      "how": {
+        "step_label": "Trinn {number}",
+        "step_1": "Du velger en fil. Nettleseren kopierer den inn i sitt private filsystem.",
+        "step_2": "En bakgrunnsarbeider laster AriadShift-motoren, kompilert til WebAssembly.",
+        "step_3": "Planleggeren velger ruten med best målt score for målet ditt.",
+        "step_4": "Du laster ned resultatet. Når du starter på nytt, slettes alle lagrede filer."
+      },
+      "pairs_heading": "Konverter i nettleseren din",
+      "pair_link": "{from} til {to}",
+      "see_more": "Se alle <formats>støttede formater</formats> og den <quality>målte kvaliteten</quality> til hver rute."
+    },
+    "formats": {
+      "meta_title": "Støttede formater",
+      "meta_description": "Hvilke dokumentformater AriadShift leser og skriver, og hvilke konverteringer som kjører i nettleseren din.",
+      "title": "Støttede formater",
+      "lede": "Hver konvertering går gjennom AriadShifts dokumentmodell. Formater merket “nettleser” konverteres helt og holdent på denne enheten; de andre krever foreløpig kommandolinjeverktøyet.",
+      "badge_browser": "Nettleser og CLI",
+      "badge_cli": "CLI",
+      "extensions": "Filtyper: {list}",
+      "engines": "Leses av {readers}; skrives av {writers}.",
+      "no_engine": "ingen motor ennå",
+      "convert_to": "Konverter til: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Målt kvalitet",
+      "meta_description": "Troskap, redigerbarhet og hastighet for hvert AriadShift-konverteringstrinn, generert fra en offentlig referansetest.",
+      "title": "Målt kvalitet",
+      "lede": "Disse skårene er ikke skrevet for hånd. Referansetesten konverterer {count, plural, one {# offentlig testdokument} other {# offentlige testdokumenter}} gjennom hvert trinn og sammenligner resultatet med fasiten. Planleggeren bruker de samme tallene når den velger en rute.",
+      "generated": "{pandoc, select, none {Generert {date}.} other {Generert {date} med Pandoc {pandoc}.}}",
+      "methodology": "<link>Les om metoden</link>.",
+      "caption": "Resultater fra referansetesten per konverteringstrinn",
+      "column": {
+        "step": "Trinn",
+        "engine": "Motor",
+        "runs_in": "Kjører i",
+        "fidelity": "Troskap",
+        "editability": "Redigerbarhet",
+        "median_time": "Mediantid",
+        "samples": "Målinger"
+      }
+    },
+    "route": {
+      "label": "Konverteringsrute",
+      "then": "deretter",
+      "fidelity": "Troskap",
+      "editability": "Redigerbarhet",
+      "estimated_time": "Estimert tid",
+      "unmeasured": "En del av denne ruten er ikke målt ennå, så planleggeren vurderer den forsiktig."
+    },
+    "download": {
+      "meta_title": "Last ned",
+      "meta_description": "Installer AriadShift-kommandolinjeverktøyet og MCP-serveren på macOS, Linux og Windows.",
+      "title": "Last ned AriadShift",
+      "lede": "Kommandoen <code>ashift</code> konverterer Markdown, HTML, DOCX og EPUB på datamaskinen din og kjører en MCP-server for AI-agenter. DOCX- og EPUB-ruter bruker <pandoc>Pandoc 3.12 eller nyere</pandoc> som et eget program.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS og Linux)",
+          "note": "Tilgjengelig når formelen er publisert. Installerer også Pandoc, som DOCX- og EPUB-ruter trenger."
+        },
+        "shell": {
+          "title": "Shell-installasjonsprogram (macOS og Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell-installasjonsprogram (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Tilgjengelig når pakkeinnsendingen er godkjent."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Tilgjengelig når crate-ene er publisert på crates.io."
+        }
+      },
+      "then_heading": "Deretter",
+      "releases": "Arkiver for alle plattformer ligger på <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Skrivebordsapp",
+        "body": "En skrivebordsapp for macOS, Windows og Linux med batchkonvertering og mappeovervåking er på vei. Den blir oppført her når den første utgivelsen er ute."
+      }
+    },
+    "pair": {
+      "meta_title": "Konverter {from} til {to}",
+      "meta_description_browser": "Konverter {noun} til {to} i nettleseren din, privat, med AriadShift. Målt troskap, ingen opplastinger.",
+      "meta_description_cli": "Konverter {noun} til {to} på din egen datamaskin med AriadShift. Målt troskap, ingen opplastinger.",
+      "badge_browser": "Kjører i nettleseren din",
+      "badge_cli": "Kjører med AriadShift CLI",
+      "title": "Konverter {from} til {to}",
+      "lede_browser": "Gjør {noun} om til {to} uten å laste det opp. AriadShift leser filen i nettleseren din, omsetter den til sin dokumentmodell og skriver {to} på enheten din.",
+      "lede_cli": "Gjør {noun} om til {to} på din egen datamaskin med det gratis AriadShift-kommandolinjeverktøyet. Nettleserversjonen kjører ikke denne ruten ennå.",
+      "convert_now": "Konverter {from} til {to} nå",
+      "install_cli": "Installer CLI-en",
+      "route_heading": "Ruten AriadShift velger",
+      "from_heading": "Fra {format}",
+      "to_heading": "Til {format}",
+      "cli_heading": "Fra kommandolinjen",
+      "related_heading": "Relaterte konverteringer",
+      "related_link": "{from} til {to}"
+    },
+    "converter_page": {
+      "meta_title": "Konverterer",
+      "meta_description": "Konverter Markdown, HTML, DOCX, EPUB, digital PDF og AriadShift IR JSON i nettleseren din. Filer blir på enheten din.",
+      "title": "Konverter et dokument",
+      "lede": "Velg en fil, velg et mål og last ned resultatet. Alt skjer i denne fanen{cloud, select, yes {, med mindre du velger å konvertere denne filen i skyen.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Lisenser",
+      "meta_description": "Lisenser og kildekode for AriadShift og nettlesermotorene."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Skymodus stoppet uventet",
+        "stopped_body": "Skymodus støtte på en feil etter at opplastingen startet. En kopi på serveren slettes automatisk når oppbevaringstiden utløper, eller du kan konvertere på denne enheten.",
+        "load_title": "Skymodus kunne ikke lastes",
+        "load_body": "Skykonvertereren kunne ikke lastes (for eksempel fordi du er frakoblet). Du kan fortsatt konvertere på denne enheten.",
+        "use_device": "Konverter på denne enheten"
+      },
+      "status": {
+        "deleted_from_server": "{name} ble slettet fra serveren.",
+        "reading": "Leser {name} på denne enheten.",
+        "detected": "{name} er {format}.",
+        "read_failed": "Filen kunne ikke leses.",
+        "converting": "Konverterer til {format} på denne enheten.",
+        "ready": "{name} er klar til nedlasting.",
+        "convert_failed": "Konverteringen mislyktes.",
+        "saved": "{name} er lagret.",
+        "reset": "{outcome, select, deleted {Filer ble fjernet fra denne enheten og fra serveren.} kept {Filer ble fjernet fra denne enheten. {name} ligger fortsatt på serveren.} other {Filer ble fjernet fra denne enheten.}}",
+        "cloud_selected": "Skykonvertering valgt for {name}. Ingenting er lastet opp ennå.",
+        "cloud_selected_unnamed": "Skykonvertering valgt for denne filen. Ingenting er lastet opp ennå."
+      },
+      "device": {
+        "cloud": "<strong>Skykonvertering valgt.</strong> Denne filen forlater nettleseren din først når du velger Last opp og konverter.",
+        "local": "<strong>Behandlet på denne enheten.</strong> Filer forlater aldri nettleseren din og lastes ikke opp."
+      },
+      "storage_badge": "{storage, select, opfs {Privat nettleserlagring} other {I minnet}}",
+      "memory": {
+        "title": "Fillagring på enheten er ikke tilgjengelig i denne nettleseren",
+        "body": "Filer holdes i stedet i minnet, så inndata på opptil {limit} støttes. Ingenting lastes opp uansett."
+      },
+      "error": {
+        "title": "{code, select, no_route {Ikke tilgjengelig her} engine_integrity {Integritetskontrollen av motoren mislyktes} other {Noe gikk galt}}"
+      },
+      "handoff": {
+        "title": "Fortsett i skrivebordsappen",
+        "reason": "{reason, select, ocr {Noen sider trenger OCR for å hente ut all teksten.} other {Dette dokumentet trenger en motor eller mer minne enn nettleseren har.}}",
+        "picker": "Skrivebordsappen åpner en filvelger. Velg dette dokumentet på nytt; nettleseren din sender ikke filen.",
+        "open": "Åpne i skrivebordsappen",
+        "cloud_alternative": "Eller konverter det på {host}, etter at du har bekreftet opplastingen.",
+        "cloud_button": "Behandle i skyen"
+      },
+      "drop": {
+        "button": "Velg en fil",
+        "button_busy": "Leser…",
+        "label": "Dokument som skal konverteres",
+        "title": "Slipp et dokument her",
+        "hint": "Markdown, HTML, DOCX, EPUB, digital PDF eller IR JSON på opptil {limit}. Det blir på denne enheten."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Overskrifter",
+        "paragraphs": "Avsnitt",
+        "tables": "Tabeller",
+        "images": "Bilder",
+        "links": "Lenker",
+        "footnotes": "Fotnoter",
+        "words": "Ord"
+      },
+      "unreachable": {
+        "cli": "{format} kan ikke konverteres i nettleseren ennå. <link>AriadShift CLI</link> konverterer det på datamaskinen din.",
+        "none": "AriadShift kan ikke konvertere {format} ennå."
+      },
+      "cloud": {
+        "loading": "Laster skymodus…"
+      },
+      "convert": {
+        "title": "Konverter",
+        "hint": "Planleggeren velger ruten med best målt score.",
+        "target_label": "Konverter til",
+        "profile_label": "Profil",
+        "route_heading": "Hvorfor denne ruten",
+        "elsewhere": "{formats} {count, plural, one {krever} other {krever}} foreløpig <link>AriadShift CLI</link>.",
+        "button": "Konverter",
+        "button_busy": "Konverterer…",
+        "cancel": "Avbryt"
+      },
+      "result": {
+        "title": "Klar",
+        "summary": "<output>{name}</output> · {size} · konvertert på {duration} på denne enheten",
+        "download": "Last ned {name}"
+      },
+      "start_over": "Start på nytt og slett filer"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Konto",
+        "description": "Din AriadShift-skykonto: profil, passord, passkeys og totrinnspålogging."
+      },
+      "sign_in": {
+        "title": "Logg inn",
+        "description": "Logg inn på AriadShift-skykontoen din, eller opprett en."
+      },
+      "jobs": {
+        "title": "Jobber",
+        "description": "Status, nedlastinger og sletting av AriadShift-skykonverteringene dine."
+      },
+      "api_keys": {
+        "title": "API-nøkler",
+        "description": "Opprett og tilbakekall API-nøkler for AriadShift sky-API."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Konto"
+      },
+      "shell": {
+        "not_configured_title": "Skyen er ikke konfigurert",
+        "not_configured_body": "Denne kopien av AriadShift kjører bare på enheten din. Kontoer, API-nøkler og skyjobber krever en server; driftsansvarlig angir <code>{api_variable}</code> og <code>{auth_variable}</code> når nettstedet bygges.",
+        "not_configured_convert": "Du kan fortsatt <link>konvertere filer i nettleseren din</link>.",
+        "nav_label": "Konto",
+        "nav": {
+          "account": "Konto",
+          "api_keys": "API-nøkler",
+          "jobs": "Jobber"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Logget inn som <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Sjekker økten din…",
+        "error_title": "Kan ikke sjekke økten din",
+        "signed_out": "Du er ikke logget inn."
+      },
+      "actions": {
+        "sign_in": "Logg inn",
+        "try_again": "Prøv igjen",
+        "cancel": "Avbryt",
+        "done": "Ferdig",
+        "continue": "Fortsett",
+        "revoke": "Tilbakekall",
+        "copied": "Kopiert"
+      },
+      "fields": {
+        "name": "Navn",
+        "email": "E-post",
+        "password": "Passord",
+        "authentication_code": "Godkjenningskode",
+        "password_hint": "Minst {min} tegn."
+      },
+      "dates": {
+        "unknown": "en ukjent dato"
+      },
+      "errors": {
+        "auth_refused": "Godkjenningstjenesten avviste forespørselen.",
+        "service_unreachable": "Påloggingstjenesten kan ikke nås. Sjekk tilkoblingen din og prøv igjen.",
+        "session_ended": "Økten din er avsluttet. Logg inn på nytt.",
+        "rate_limited": "For mange forespørsler. Prøv igjen om litt.",
+        "rate_limited_after": "For mange forespørsler. Prøv igjen om {seconds} s.",
+        "sign_in_unverifiable": "Serveren kan ikke bekrefte påloggingen din akkurat nå. Prøv igjen om litt.",
+        "token_invalid": "Påloggingstjenesten returnerte et ugyldig API-token.",
+        "reauth_required": "Logg inn på nytt før du sletter kontoen din.",
+        "delete_not_allowed": "Denne serveren tillater ikke at kontoer slettes fra nettappen. Be driftsansvarlig om å slette den.",
+        "job_gone": "Denne jobben finnes ikke lenger på serveren.",
+        "file_deleted": "Denne filen er allerede slettet.",
+        "job_conflict": "Jobben er ikke klar, eller den opplastede filen finnes ikke lenger på serveren.",
+        "quota_exceeded": "Du har brukt opp skykonverteringene i abonnementet ditt for nå. Konverter på denne enheten, eller prøv senere.",
+        "request_failed": "Serveren kunne ikke fullføre forespørselen. Prøv igjen om litt.",
+        "network_unreachable": "Serveren kan ikke nås. Sjekk tilkoblingen din og prøv igjen.",
+        "transfer_incomplete": "Overføringen ble ikke fullført. Prøv igjen."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Lagre navn",
+        "saved": "Navnet er lagret.",
+        "save_failed": "Navnet kunne ikke lagres."
+      },
+      "password": {
+        "title": "Passord",
+        "current": "Nåværende passord",
+        "new": "Nytt passord",
+        "confirm": "Bekreft nytt passord",
+        "revoke_others": "Logg ut av andre økter",
+        "submit": "Endre passord",
+        "mismatch": "De nye passordene er ikke like.",
+        "changed": "Passordet er endret.",
+        "changed_revoked": "Passordet er endret. Andre økter er logget ut.",
+        "failed": "Passordet kunne ikke endres."
+      },
+      "passkeys": {
+        "title": "Passkeys",
+        "description": "Logg inn med skjermlåsen på enheten din eller en sikkerhetsnøkkel i stedet for et passord.",
+        "load_failed": "Passkeys-ene dine kunne ikke lastes.",
+        "loading": "Laster passkeys…",
+        "empty": "Ingen passkeys ennå.",
+        "unnamed": "Passkey uten navn",
+        "default_name": "Passkey",
+        "added_on": "Lagt til {date}",
+        "remove_label": "Fjern passkey {name}",
+        "remove_button": "Fjern<hidden> passkey {name}</hidden>",
+        "add_button": "Legg til en passkey",
+        "add_title": "Legg til en passkey",
+        "add_description": "Gi den navn etter enheten eller nøkkelen, og følg deretter anvisningene fra nettleseren din.",
+        "name_label": "Navn på passkey",
+        "name_placeholder": "For eksempel: Jobb-PC",
+        "added": "Passkey lagt til.",
+        "add_failed": "Passkey-en ble ikke lagt til.",
+        "remove_title": "Fjerne {name}?",
+        "remove_title_unnamed": "Fjerne denne passkey-en?",
+        "remove_description": "Du kan ikke lenger logge inn med den. De andre påloggingsmetodene dine fungerer fortsatt.",
+        "remove_confirm": "Fjern passkey",
+        "removed": "{name} er fjernet.",
+        "remove_failed": "Passkey-en kunne ikke fjernes."
+      },
+      "two_factor": {
+        "title": "Totrinnsverifisering",
+        "description": "Be om en kode fra en autentiseringsapp etter passordet ditt.",
+        "status_on": "Status: <badge>På</badge>",
+        "status_off": "Status: <badge>Av</badge>",
+        "enable": "Slå på totrinnsverifisering",
+        "disable": "Slå av totrinnsverifisering",
+        "regenerate": "Opprett nye sikkerhetskopikoder",
+        "confirm_password": "Bekreft passordet ditt for å fortsette.",
+        "enable_failed": "Oppsettet av totrinnsverifisering kunne ikke startes. Sjekk passordet ditt.",
+        "disable_failed": "Totrinnsverifisering kunne ikke slås av. Sjekk passordet ditt.",
+        "regenerate_failed": "Nye sikkerhetskopikoder kunne ikke opprettes. Sjekk passordet ditt.",
+        "verify_failed": "Den koden ble ikke godtatt. Sjekk klokkeslettet på enheten din og prøv igjen.",
+        "disabled": "Totrinnsverifisering er av.",
+        "enabled": "Totrinnsverifisering er på.",
+        "regenerated": "Nye sikkerhetskopikoder er opprettet. De gamle fungerer ikke lenger.",
+        "setup_title": "Sett opp autentiseringsappen din",
+        "setup_description": "Legg til AriadShift i autentiseringsappen din, og skriv deretter inn koden den viser.",
+        "setup_key_intro": "Skriv inn denne oppsettsnøkkelen i appen:",
+        "setup_key_unavailable": "Ikke tilgjengelig",
+        "open_in_app": "Åpne i en autentiseringsapp på denne enheten",
+        "turn_on": "Slå på",
+        "codes_title": "Nye sikkerhetskopikoder",
+        "backup_intro": "Lagre disse sikkerhetskopikodene på et trygt sted. Hver kode logger deg inn én gang hvis du mister autentiseringsappen. De vises ikke igjen.",
+        "copy_codes": "Kopier sikkerhetskopikoder",
+        "copy_failed": "Kopieringen mislyktes; merk kodene i stedet"
+      },
+      "account_actions": {
+        "title": "Økt og konto",
+        "sign_out": "Logg ut",
+        "delete": "Slett konto",
+        "signed_out": "Logget ut.",
+        "sign_out_failed": "Kunne ikke logge ut. Prøv igjen.",
+        "deleted": "Kontoen din er slettet.",
+        "delete_failed_password": "Kontoen kunne ikke slettes. Sjekk passordet ditt.",
+        "delete_failed_session": "Kontoen kunne ikke slettes. Logg inn på nytt og prøv igjen.",
+        "delete_note": "Når du sletter kontoen din, tilbakekalles <keys>API-nøklene</keys> dine automatisk. Slett <jobs>skyjobbene</jobs> du fortsatt har før du sletter den. Filer fra jobber du lar stå, fjernes når oppbevaringstiden utløper.",
+        "dialog_title": "Slette kontoen din?",
+        "dialog_description_password": "Dette kan ikke angres. Bekreft passordet ditt for å slette kontoen.",
+        "dialog_description_session": "Dette kan ikke angres. Bekreft nedenfor for å slette kontoen med din nåværende påloggingsøkt.",
+        "sign_in_again": "Logg inn på nytt"
+      },
+      "connected_apps": {
+        "title": "Tilkoblede apper",
+        "description": "Apper og MCP-klienter du har gitt tilgang til kontoen din, og OAuth-klienter du har registrert.",
+        "load_failed": "De tilkoblede appene dine kunne ikke lastes.",
+        "loading": "Laster tilkoblede apper…",
+        "empty": "Ingen tilkoblede apper eller registrerte OAuth-klienter ennå.",
+        "scopes_none": "ingen",
+        "consent_details": "Godkjent app · Scopes: {scopes} · Godkjent {date}",
+        "client_details": "Registrert OAuth-klient ({client_id})",
+        "client_details_dated": "Registrert OAuth-klient ({client_id}) · Registrert {date}",
+        "revoke_label": "Tilbakekall {name}",
+        "revoked": "{name} er tilbakekalt.",
+        "revoke_failed": "Tilgangen kunne ikke tilbakekalles.",
+        "revoke_title": "Tilbakekalle {name}?",
+        "revoke_consent_description": "Tilbakekalling stopper nye tokens og fornyelse av tokens umiddelbart. Signerte tilgangstokens som allerede er utstedt (levetid 15 minutter), fungerer til de utløper.",
+        "revoke_client_description": "Når du sletter denne registrerte OAuth-klienten, tilbakekalles legitimasjonen og samtykkene dens, og nye tokens og fornyelse av tokens stoppes umiddelbart. Signerte tilgangstokens som allerede er utstedt (levetid 15 minutter), fungerer til de utløper."
+      },
+      "api_keys": {
+        "page_title": "API-nøkler",
+        "section_title": "Nøklene dine",
+        "section_description": "Skript og integrasjoner sender en nøkkel i headeren <code>x-api-key</code> til {host}. En nøkkel handler på vegne av kontoen din og abonnementet.",
+        "load_failed": "API-nøklene dine kunne ikke lastes.",
+        "loading": "Laster API-nøkler…",
+        "empty": "Ingen API-nøkler ennå.",
+        "unnamed": "Nøkkel uten navn",
+        "disabled": "Deaktivert",
+        "key_details": "Opprettet {date} · {expiry}",
+        "never_expires": "Utløper aldri",
+        "expired_on": "Utløp {date}",
+        "expires_on": "Utløper {date}",
+        "revoke_label": "Tilbakekall API-nøkkelen {name}",
+        "revoke_button": "Tilbakekall<hidden> API-nøkkelen {name}</hidden>",
+        "create_button": "Opprett API-nøkkel",
+        "create_title": "Opprett en API-nøkkel",
+        "create_description": "Gi nøkkelen navn etter skriptet eller tjenesten som skal bruke den.",
+        "name_placeholder": "For eksempel: CI",
+        "expires_after": "Utløper etter",
+        "lifetime_days": "{days, plural, one {# dag} other {# dager}}",
+        "lifetime_year": "1 år",
+        "lifetime_never": "Ingen utløpsdato",
+        "create_submit": "Opprett nøkkel",
+        "create_failed": "Nøkkelen kunne ikke opprettes.",
+        "created": "API-nøkkelen {name} er opprettet.",
+        "secret_title": "Den nye API-nøkkelen din",
+        "secret_label": "API-nøkkel",
+        "secret_notice": "Kopier nøkkelen nå. Den lagres bare som en hash og vises aldri igjen.",
+        "copy_key": "Kopier nøkkel",
+        "copy_failed": "Kopieringen mislyktes. Merk nøkkelen og kopier den.",
+        "revoke_title": "Tilbakekalle {name}?",
+        "revoke_description": "Forespørsler som bruker denne nøkkelen, avvises umiddelbart. Dette kan ikke angres.",
+        "revoke_confirm": "Tilbakekall nøkkel",
+        "revoked": "API-nøkkelen {name} er tilbakekalt. Forespørsler som bruker den, avvises fra nå av.",
+        "revoke_failed": "Nøkkelen kunne ikke tilbakekalles."
+      },
+      "jobs": {
+        "title": "Jobber",
+        "intro_server": "Skykonverteringer fra kontoen din på {host}, fra hvilken som helst enhet. Filer blir på {host} til de slettes automatisk, eller til du sletter dem her.",
+        "intro_account_browser": "Skykonverteringer startet i denne nettleseren med kontoen din. Denne listen lagres bare på denne enheten. Filer blir på {host} til de slettes automatisk, eller til du sletter dem her.",
+        "intro_anonymous_browser": "Skykonverteringer startet i denne nettleseren uten konto. Denne listen lagres bare på denne enheten. Filer blir på {host} til de slettes automatisk, eller til du sletter dem her.",
+        "signed_out_notice": "Viser jobber uten konto. <link>Logg inn</link> for å se jobbene til kontoen din.",
+        "loading": "Laster jobbene dine…",
+        "list_unsupported": "{host} kan ikke liste opp jobbene til kontoen din ennå, så denne siden viser jobbene som er startet i denne nettleseren.",
+        "list_error_title": "Kan ikke laste jobbene dine fra {host}",
+        "list_error_body": "{reason} Inntil videre viser denne siden jobbene som er startet i denne nettleseren.",
+        "count": "{count, plural, one {# jobb} other {# jobber}}",
+        "empty": "Ingen skyjobber ennå. Start en fra <link>konvertereren</link>.",
+        "show_more": "Vis flere jobber",
+        "loading_more": "Laster flere jobber…",
+        "unnamed": "Jobb {id}",
+        "forgotten": "{filename} ble fjernet fra denne listen. Filene på serveren er uendret.",
+        "forgotten_unnamed": "Jobben ble fjernet fra denne listen. Filene på serveren er uendret.",
+        "status": {
+          "queued": "I kø",
+          "converting": "Konverterer",
+          "converting_stage": "Konverterer: {stage}",
+          "retrying": "Prøver igjen (forsøk {attempt})",
+          "reconnecting": "{step} · Kobler til igjen…",
+          "ready": "Klar",
+          "failed": "Mislyktes",
+          "canceled": "Avbrutt",
+          "deleted": "Slettet",
+          "deleted_expired": "Slettet (utløpt)"
+        },
+        "until": {
+          "less_than_minute": "om mindre enn ett minutt",
+          "minutes": "om {minutes} min",
+          "hours": "om {hours} t",
+          "hours_minutes": "om {hours} t {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Slettet automatisk kl. {clock}.",
+          "deleted_from_server": "Slettet fra serveren. Inndata- og utdatafilene er borte.",
+          "being_deleted": "Slettes nå.",
+          "deletes_at": "Slettes automatisk {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Dette dokumentet krever mer enn abonnementet ditt tillater. Prøv en mindre fil, eller konverter den på denne enheten.",
+          "unsupported_route": "Denne serveren kan ikke konvertere mellom disse formatene. Velg et annet mål i konvertereren.",
+          "input_io": "Den opplastede filen kunne ikke leses eller finnes ikke lenger på serveren. Last den opp på nytt.",
+          "storage": "Serveren kunne ikke lagre resultatet. Prøv igjen om et øyeblikk.",
+          "tool_missing": "Denne serveren mangler motoren ruten trenger. Spør driftsansvarlig, eller velg et annet mål.",
+          "other": "Konverteringen mislyktes. Prøv igjen, eller konverter filen på denne enheten."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Laster status…",
+          "try_again": "Prøv igjen<hidden> å laste {filename}</hidden>",
+          "technical_details": "Tekniske detaljer",
+          "warnings": "{count, plural, one {# advarsel} other {# advarsler}}",
+          "download": "Last ned {filename}",
+          "retry_label": "Prøv {filename} igjen",
+          "retry_button": "Prøv igjen<hidden> {filename}</hidden>",
+          "delete_label": "Slett {filename} fra serveren nå",
+          "delete_button": "Slett nå<hidden> {filename} fra serveren</hidden>",
+          "remove_label": "Fjern fra denne listen ({filename})",
+          "remove_button": "Fjern fra denne listen<hidden> ({filename})</hidden>",
+          "deleted_note": "Slettet fra {host}. Inndata- og utdatafilene er borte.",
+          "deleted_announce": "{filename} er slettet fra {host}. Inndata- og utdatafilene er borte.",
+          "ready_announce": "{filename} er konvertert og klar til nedlasting.",
+          "failed_announce": "Konverteringen av {filename} mislyktes. {reason}",
+          "canceled_announce": "Konverteringen av {filename} ble avbrutt.",
+          "downloading": "Laster ned {filename}.",
+          "retrying": "Prøver {filename} igjen.",
+          "retry_conflict": "Den opplastede filen finnes ikke lenger på serveren. Last den opp på nytt fra konvertereren."
+        }
+      },
+      "sign_in": {
+        "title": "Logg inn",
+        "create_title": "Opprett en konto",
+        "two_factor_title": "Totrinnskontroll",
+        "signed_in": "Logget inn.",
+        "go_to_account": "Gå til kontoen din",
+        "passkey": "Logg inn med en passkey",
+        "no_account": "Har du ikke konto ennå? <switch>Opprett en</switch>",
+        "have_account": "Har du allerede en konto? <switch>Logg inn</switch>",
+        "sign_in_failed": "Kunne ikke logge inn. Sjekk e-posten og passordet ditt.",
+        "passkey_failed": "Kunne ikke logge inn med en passkey.",
+        "code_rejected": "Den koden ble ikke godtatt. Prøv igjen.",
+        "create_failed": "Kontoen kunne ikke opprettes.",
+        "passwords_mismatch": "Passordene er ikke like.",
+        "bot_check": "Fullfør robotkontrollen for registrering og prøv igjen.",
+        "confirm_password": "Bekreft passord",
+        "create_account": "Opprett konto",
+        "totp_help": "Skriv inn den sekssifrede koden fra autentiseringsappen din.",
+        "backup_help": "Skriv inn en av sikkerhetskopikodene du lagret da du slo på totrinnsverifisering. Hver kode fungerer én gang.",
+        "backup_code": "Sikkerhetskopikode",
+        "trust_device": "Stol på denne nettleseren i 30 dager",
+        "verify": "Bekreft",
+        "use_backup": "Bruk en sikkerhetskopikode i stedet",
+        "use_authenticator": "Bruk en kode fra autentiseringsappen i stedet",
+        "signed_in_user": "Du er logget inn som <user>{email}</user>."
+      }
+    }
+  }
+}

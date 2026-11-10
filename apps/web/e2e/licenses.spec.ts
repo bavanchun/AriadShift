@@ -7,29 +7,29 @@ import { expect, test } from "@playwright/test";
 const webDir = path.resolve(import.meta.dirname, "..");
 
 function noticeLinks(html: string): string[] {
-  return [...html.matchAll(/href="((?:notices|wasm\/pandoc)\/[^"]+)"/g)].map(
+  return [...html.matchAll(/href="((?:\.\.\/)(?:notices|wasm\/pandoc)\/[^"]+)"/g)].map(
     (match) => match[1] as string,
   );
 }
 
-test("/licenses links resolve in next start", async ({ request }) => {
-  const page = await request.get("/licenses");
+test("/en/licenses links resolve in next start", async ({ request }) => {
+  const page = await request.get("/en/licenses");
   expect(page.ok()).toBe(true);
   const html = await page.text();
   const links = noticeLinks(html);
   expect(links).toEqual(
     expect.arrayContaining([
-      "wasm/pandoc/COPYING.md",
-      "wasm/pandoc/COPYRIGHT",
-      "wasm/pandoc/SOURCE.txt",
-      "notices/NOTICE.txt",
-      "notices/THIRD_PARTY_LICENSES.txt",
-      "notices/THIRD_PARTY_JS_LICENSES.txt",
+      "../wasm/pandoc/COPYING.md",
+      "../wasm/pandoc/COPYRIGHT",
+      "../wasm/pandoc/SOURCE.txt",
+      "../notices/NOTICE.txt",
+      "../notices/THIRD_PARTY_LICENSES.txt",
+      "../notices/THIRD_PARTY_JS_LICENSES.txt",
     ]),
   );
 
   for (const href of links) {
-    const resolvedPath = new URL(href, "http://127.0.0.1:3100/licenses").pathname;
+    const resolvedPath = new URL(href, "http://127.0.0.1:3100/en/licenses").pathname;
     const response = await request.get(resolvedPath);
     expect(response.status(), resolvedPath).toBe(200);
     if (resolvedPath.endsWith(".txt")) {
@@ -39,11 +39,11 @@ test("/licenses links resolve in next start", async ({ request }) => {
   }
 });
 
-test("/licenses links resolve in the static export at root and under a path prefix", async () => {
+test("/en/licenses links resolve in the static export at root and under a path prefix", async () => {
   const outDir = path.join(webDir, "out");
   expect(
-    existsSync(path.join(outDir, "licenses.html")),
-    "static export out/licenses.html must exist; run `pnpm --filter @ariadshift/web export` before e2e",
+    existsSync(path.join(outDir, "en/licenses.html")),
+    "static export out/en/licenses.html must exist; run `pnpm --filter @ariadshift/web export` before e2e",
   ).toBe(true);
 
   const prefix = "/AriadShift";
@@ -85,7 +85,7 @@ test("/licenses links resolve in the static export at root and under a path pref
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   try {
-    for (const basePagePath of ["/licenses", `${prefix}/licenses`]) {
+    for (const basePagePath of ["/en/licenses", `${prefix}/en/licenses`]) {
       const pageUrl = `http://127.0.0.1:${port}${basePagePath}`;
       const page = await fetch(pageUrl);
       expect(page.status, pageUrl).toBe(200);
@@ -93,12 +93,12 @@ test("/licenses links resolve in the static export at root and under a path pref
       const links = noticeLinks(html);
       expect(links).toEqual(
         expect.arrayContaining([
-          "wasm/pandoc/COPYING.md",
-          "wasm/pandoc/COPYRIGHT",
-          "wasm/pandoc/SOURCE.txt",
-          "notices/NOTICE.txt",
-          "notices/THIRD_PARTY_LICENSES.txt",
-          "notices/THIRD_PARTY_JS_LICENSES.txt",
+          "../wasm/pandoc/COPYING.md",
+          "../wasm/pandoc/COPYRIGHT",
+          "../wasm/pandoc/SOURCE.txt",
+          "../notices/NOTICE.txt",
+          "../notices/THIRD_PARTY_LICENSES.txt",
+          "../notices/THIRD_PARTY_JS_LICENSES.txt",
         ]),
       );
       for (const href of links) {

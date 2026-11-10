@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Upravitelný",
+        "description": "Skutečné nadpisy, seznamy a tabulky, které můžete dál upravovat."
+      },
+      "faithful": {
+        "label": "Věrný",
+        "description": "Co nejvěrnější zachování rozvržení."
+      },
+      "fast": {
+        "label": "Rychlý",
+        "description": "Upřednostní nejrychlejší trasu."
+      },
+      "private": {
+        "label": "Soukromý",
+        "description": "Pouze moduly, které nikdy neopustí vaše zařízení."
+      }
+    },
+    "engine": {
+      "ariad_core": "Jádro AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Čtečka textu PDF"
+    },
+    "runtime": {
+      "wasm": "Prohlížeč",
+      "local": "CLI a desktopová aplikace",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "neměřeno"
+    },
+    "duration": {
+      "under_1_ms": "méně než 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Dokument Markdown",
+        "description": "CommonMark s GitHub Flavored Markdown: nadpisy, seznamy, tabulky, seznamy úkolů, poznámky pod čarou a matematika. Formát, který většina nástrojů AI čte nejlépe."
+      },
+      "html": {
+        "noun": "Stránka HTML",
+        "description": "Samostatná stránka HTML5. Nezpracovaný kód ve vstupu se čistí; skripty a nebezpečné atributy se do výstupu nikdy nedostanou."
+      },
+      "ir_json": {
+        "noun": "Dokument AriadShift IR",
+        "description": "Strukturovaný model dokumentu, kterým prochází každá trasa AriadShift: nadpisy, bloky, tabulky, zdroje a metadata jako verzovaný JSON."
+      },
+      "docx": {
+        "noun": "Dokument Word",
+        "description": "Dokumenty Office Open XML z Microsoft Wordu, LibreOffice a Dokumentů Google, čtené a zapisované přes Pandoc."
+      },
+      "epub": {
+        "noun": "E-kniha EPUB",
+        "description": "E-knihy EPUB 3, čtené a zapisované přes Pandoc s reprodukovatelnými metadaty."
+      },
+      "pdf": {
+        "noun": "Dokument PDF",
+        "description": "Text digitálních PDF se čte na tomto zařízení. Výstup PDF využívá Typst a vložená písma. Naskenované stránky vyžadují OCR v desktopové aplikaci."
+      },
+      "odt": {
+        "noun": "Textový dokument OpenDocument",
+        "description": "Textové soubory OpenDocument využívají v desktopové aplikaci LibreOffice."
+      },
+      "rtf": {
+        "noun": "Dokument Rich Text",
+        "description": "Dokumenty Rich Text využívají v desktopové aplikaci LibreOffice."
+      },
+      "pptx": {
+        "noun": "Prezentace PowerPoint",
+        "description": "Prezentace PowerPoint využívají v desktopové aplikaci Docling nebo LibreOffice."
+      },
+      "xlsx": {
+        "noun": "Sešit Excel",
+        "description": "Sešity Excel využívají v desktopové aplikaci Docling nebo LibreOffice."
+      },
+      "doc": {
+        "noun": "starší dokument Word",
+        "description": "Starší dokumenty Word využívají v desktopové aplikaci LibreOffice."
+      },
+      "xls": {
+        "noun": "starší sešit Excel",
+        "description": "Starší sešity Excel využívají v desktopové aplikaci LibreOffice."
+      },
+      "ppt": {
+        "noun": "starší prezentace PowerPoint",
+        "description": "Starší prezentace PowerPoint využívají v desktopové aplikaci LibreOffice."
+      },
+      "ods": {
+        "noun": "Tabulka OpenDocument",
+        "description": "Tabulky OpenDocument využívají v desktopové aplikaci LibreOffice."
+      },
+      "odp": {
+        "noun": "Prezentace OpenDocument",
+        "description": "Prezentace OpenDocument využívají v desktopové aplikaci LibreOffice."
+      },
+      "png": {
+        "noun": "Obrázek PNG",
+        "description": "Extrakce textu z obrázků vyžaduje v desktopové aplikaci balíček modulu Docling."
+      },
+      "jpeg": {
+        "noun": "Obrázek JPEG",
+        "description": "Extrakce textu z obrázků vyžaduje v desktopové aplikaci balíček modulu Docling."
+      },
+      "webp": {
+        "noun": "Obrázek WebP",
+        "description": "Extrakce textu z obrázků vyžaduje v desktopové aplikaci balíček modulu Docling."
+      },
+      "tiff": {
+        "noun": "Obrázek TIFF",
+        "description": "Extrakce textu z obrázků vyžaduje v desktopové aplikaci balíček modulu Docling."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: soukromý převod dokumentů ve vašem prohlížeči",
+      "site_description": "Převádějte Markdown, HTML a strukturovaný JSON na vlastním zařízení. Ve výchozím nastavení soukromě, s měřenou kvalitou každé trasy a připraveno pro agenty AI.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Přeskočit na obsah",
+      "home_link": "Domovská stránka {site}",
+      "nav_label": "Hlavní",
+      "nav": {
+        "converter": "Převodník",
+        "formats": "Formáty",
+        "quality": "Kvalita",
+        "download": "Stažení",
+        "privacy": "Soukromí"
+      },
+      "footer": {
+        "license": "AriadShift je open source software pod licencí Apache-2.0.",
+        "privacy": "Soukromí",
+        "licenses": "Licence",
+        "quality": "Kvalita",
+        "source": "Zdrojový kód"
+      },
+      "language": {
+        "label": "Jazyk",
+        "button": "Jazyk: {name}",
+        "list_label": "Vyberte jazyk",
+        "community_badge": "Komunitní překlad",
+        "community_note": "Komunitní překlady jsou strojové koncepty, které lidé mohou dál opravovat."
+      }
+    },
+    "not_found": {
+      "title": "Stránka nenalezena",
+      "body": "Tato stránka neexistuje.",
+      "home_link": "Přejít na domovskou stránku"
+    },
+    "home": {
+      "meta_title": "Převádějte dokumenty na vlastním zařízení",
+      "title": "Převádějte dokumenty na vlastním zařízení",
+      "lede": "AriadShift převádí Markdown, HTML, Word, EPUB a strukturovaný JSON přímo ve vašem prohlížeči. Čte text digitálních PDF a vytváří PDF na vašem zařízení. Jeden měřený plánovač, žádné nahrávání.",
+      "open_converter": "Otevřít převodník",
+      "install_cli": "Nainstalovat CLI",
+      "why_heading": "Proč AriadShift",
+      "why": {
+        "private": {
+          "title": "Ve výchozím nastavení soukromě",
+          "body": "Převodník běží ve vašem prohlížeči pomocí WebAssembly. Dokument se ukládá do soukromého souborového systému prohlížeče a nikdy se nenahrává."
+        },
+        "quality": {
+          "title": "Měřená kvalita",
+          "body": "Každá trasa má hodnocení věrnosti a upravitelnosti z veřejného srovnávacího testu. Plánovač vybere tu nejlepší a řekne vám proč."
+        },
+        "agents": {
+          "title": "Připraveno pro agenty AI",
+          "body": "Proměňte dokumenty v čistý Markdown nebo strukturovaný JSON jako kontext pro LLM. CLI obsahuje server MCP, takže agenti mohou soubory převádět sami."
+        }
+      },
+      "how_heading": "Jak to funguje",
+      "how": {
+        "step_label": "Krok {number}",
+        "step_1": "Vyberete soubor. Prohlížeč jej zkopíruje do svého soukromého souborového systému.",
+        "step_2": "Pracovní vlákno na pozadí načte modul AriadShift zkompilovaný do WebAssembly.",
+        "step_3": "Plánovač zvolí trasu s nejlepším naměřeným skóre pro váš cíl.",
+        "step_4": "Stáhnete výsledek. Nový začátek smaže všechny uložené soubory."
+      },
+      "pairs_heading": "Převádějte ve svém prohlížeči",
+      "pair_link": "{from} do {to}",
+      "see_more": "Podívejte se na všechny <formats>podporované formáty</formats> a na <quality>měřenou kvalitu</quality> každé trasy."
+    },
+    "formats": {
+      "meta_title": "Podporované formáty",
+      "meta_description": "Které formáty dokumentů AriadShift čte a zapisuje a které převody běží ve vašem prohlížeči.",
+      "title": "Podporované formáty",
+      "lede": "Každý převod prochází modelem dokumentu AriadShift. Formáty označené jako „prohlížeč“ se převádějí zcela na tomto zařízení; ostatní zatím vyžadují nástroj příkazového řádku.",
+      "badge_browser": "Prohlížeč a CLI",
+      "badge_cli": "CLI",
+      "extensions": "Přípony: {list}",
+      "engines": "Čte: {readers}; zapisuje: {writers}.",
+      "no_engine": "zatím žádný modul",
+      "convert_to": "Převést do: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Měřená kvalita",
+      "meta_description": "Věrnost, upravitelnost a rychlost každého kroku převodu AriadShift, vygenerované z veřejného srovnávacího testu.",
+      "title": "Měřená kvalita",
+      "lede": "Tato skóre nejsou psána ručně. Srovnávací test převede {count, plural, one {# veřejný testovací dokument} few {# veřejné testovací dokumenty} many {# veřejného testovacího dokumentu} other {# veřejných testovacích dokumentů}} každým krokem a porovná výsledek se známou předlohou. Plánovač při výběru trasy čte stejná čísla.",
+      "generated": "{pandoc, select, none {Vygenerováno {date}.} other {Vygenerováno {date} pomocí Pandoc {pandoc}.}}",
+      "methodology": "<link>Přečtěte si metodiku</link>.",
+      "caption": "Skóre srovnávacího testu pro jednotlivé kroky převodu",
+      "column": {
+        "step": "Krok",
+        "engine": "Modul",
+        "runs_in": "Běží v",
+        "fidelity": "Věrnost",
+        "editability": "Upravitelnost",
+        "median_time": "Medián času",
+        "samples": "Vzorky"
+      }
+    },
+    "route": {
+      "label": "Trasa převodu",
+      "then": "poté",
+      "fidelity": "Věrnost",
+      "editability": "Upravitelnost",
+      "estimated_time": "Odhadovaný čas",
+      "unmeasured": "Část této trasy zatím nebyla otestována, proto ji plánovač hodnotí opatrně."
+    },
+    "download": {
+      "meta_title": "Stažení",
+      "meta_description": "Nainstalujte nástroj příkazového řádku AriadShift a server MCP v systémech macOS, Linux a Windows.",
+      "title": "Stáhnout AriadShift",
+      "lede": "Příkaz <code>ashift</code> převádí Markdown, HTML, DOCX a EPUB na vašem počítači a spouští server MCP pro agenty AI. Trasy DOCX a EPUB používají <pandoc>Pandoc 3.12 nebo novější</pandoc> jako samostatný program.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS a Linux)",
+          "note": "K dispozici po zveřejnění formule. Nainstaluje také Pandoc, který trasy DOCX a EPUB potřebují."
+        },
+        "shell": {
+          "title": "Instalátor pro shell (macOS a Linux)"
+        },
+        "powershell": {
+          "title": "Instalátor pro PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "K dispozici po přijetí zaslaného balíčku."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "K dispozici po zveřejnění crates na crates.io."
+        }
+      },
+      "then_heading": "Poté",
+      "releases": "Archivy pro všechny platformy najdete na <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Desktopová aplikace",
+        "body": "Desktopová aplikace pro macOS, Windows a Linux s dávkovým převodem a sledováním složek je na cestě. Objeví se zde, jakmile vyjde první verze."
+      }
+    },
+    "pair": {
+      "meta_title": "Převod {from} do {to}",
+      "meta_description_browser": "Převeďte ve svém prohlížeči soukromě pomocí AriadShift: {noun} do {to}. Měřená věrnost, žádné nahrávání.",
+      "meta_description_cli": "Převeďte na vlastním počítači pomocí AriadShift: {noun} do {to}. Měřená věrnost, žádné nahrávání.",
+      "badge_browser": "Běží ve vašem prohlížeči",
+      "badge_cli": "Běží s AriadShift CLI",
+      "title": "Převod {from} do {to}",
+      "lede_browser": "Proměňte soubor ({noun}) na {to} bez nahrávání. AriadShift soubor přečte ve vašem prohlížeči, převede jej do svého modelu dokumentu a zapíše {to} na vašem zařízení.",
+      "lede_cli": "Proměňte soubor ({noun}) na {to} na vlastním počítači pomocí bezplatného nástroje příkazového řádku AriadShift. Verze v prohlížeči tuto trasu zatím nespouští.",
+      "convert_now": "Převést {from} do {to} hned",
+      "install_cli": "Nainstalovat CLI",
+      "route_heading": "Trasa, kterou AriadShift zvolí",
+      "from_heading": "Z formátu {format}",
+      "to_heading": "Do formátu {format}",
+      "cli_heading": "Z příkazového řádku",
+      "related_heading": "Související převody",
+      "related_link": "{from} do {to}"
+    },
+    "converter_page": {
+      "meta_title": "Převodník",
+      "meta_description": "Převádějte Markdown, HTML, DOCX, EPUB, digitální PDF a AriadShift IR JSON ve svém prohlížeči. Soubory zůstávají na vašem zařízení.",
+      "title": "Převést dokument",
+      "lede": "Vyberte soubor, zvolte cíl a stáhněte výsledek. Všechno se děje na této kartě{cloud, select, yes {, pokud se nerozhodnete tento soubor převést v cloudu.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licence",
+      "meta_description": "Licence a zdrojový kód AriadShift a jeho modulů pro prohlížeč."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Režim cloudu se neočekávaně zastavil",
+        "stopped_body": "V režimu cloudu došlo k chybě po zahájení nahrávání. Každá kopie na serveru se po uplynutí doby uchování automaticky smaže, nebo můžete soubor převést na tomto zařízení.",
+        "load_title": "Režim cloudu se nepodařilo načíst",
+        "load_body": "Cloudový převodník se nepodařilo načíst (například proto, že jste offline). Stále můžete převádět na tomto zařízení.",
+        "use_device": "Převést na tomto zařízení"
+      },
+      "status": {
+        "deleted_from_server": "Soubor {name} byl smazán ze serveru.",
+        "reading": "Čtení souboru {name} na tomto zařízení.",
+        "detected": "{name}: {format}.",
+        "read_failed": "Soubor se nepodařilo přečíst.",
+        "converting": "Převod do formátu {format} na tomto zařízení.",
+        "ready": "Soubor {name} je připraven ke stažení.",
+        "convert_failed": "Převod se nezdařil.",
+        "saved": "Uloženo: {name}.",
+        "reset": "{outcome, select, deleted {Soubory byly odstraněny z tohoto zařízení i ze serveru.} kept {Soubory byly odstraněny z tohoto zařízení. Soubor {name} je stále na serveru.} other {Soubory byly odstraněny z tohoto zařízení.}}",
+        "cloud_selected": "Pro soubor {name} byl vybrán převod v cloudu. Zatím nebylo nic nahráno.",
+        "cloud_selected_unnamed": "Pro tento soubor byl vybrán převod v cloudu. Zatím nebylo nic nahráno."
+      },
+      "device": {
+        "cloud": "<strong>Vybrán převod v cloudu.</strong> Tento soubor opustí váš prohlížeč, až když zvolíte Nahrát a převést.",
+        "local": "<strong>Zpracováno na tomto zařízení.</strong> Soubory nikdy neopustí váš prohlížeč a nenahrávají se."
+      },
+      "storage_badge": "{storage, select, opfs {Soukromé úložiště prohlížeče} other {V paměti}}",
+      "memory": {
+        "title": "Úložiště souborů na zařízení není v tomto prohlížeči k dispozici",
+        "body": "Soubory se proto uchovávají v paměti, takže jsou podporovány vstupy do {limit}. V obou případech se nic nenahrává."
+      },
+      "error": {
+        "title": "{code, select, no_route {Zde není k dispozici} engine_integrity {Kontrola integrity modulu selhala} other {Něco se pokazilo}}"
+      },
+      "handoff": {
+        "title": "Pokračovat v desktopové aplikaci",
+        "reason": "{reason, select, ocr {Některé stránky potřebují k získání veškerého textu OCR.} other {Tento dokument potřebuje modul nebo více paměti, než kolik poskytuje prohlížeč.}}",
+        "picker": "Desktopová aplikace otevře výběr souboru. Vyberte tento dokument znovu; váš prohlížeč soubor neodesílá.",
+        "open": "Otevřít v desktopové aplikaci",
+        "cloud_alternative": "Nebo jej převeďte na {host} po potvrzení nahrání.",
+        "cloud_button": "Zpracovat v cloudu"
+      },
+      "drop": {
+        "button": "Vybrat soubor",
+        "button_busy": "Čtení…",
+        "label": "Dokument k převodu",
+        "title": "Přetáhněte dokument sem",
+        "hint": "Markdown, HTML, DOCX, EPUB, digitální PDF nebo IR JSON do {limit}. Zůstává na tomto zařízení."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · „{title}“"
+      },
+      "count": {
+        "headings": "Nadpisy",
+        "paragraphs": "Odstavce",
+        "tables": "Tabulky",
+        "images": "Obrázky",
+        "links": "Odkazy",
+        "footnotes": "Poznámky pod čarou",
+        "words": "Slova"
+      },
+      "unreachable": {
+        "cli": "Formát {format} zatím nelze v prohlížeči převést. <link>AriadShift CLI</link> jej převede na vašem počítači.",
+        "none": "AriadShift zatím neumí převést formát {format}."
+      },
+      "cloud": {
+        "loading": "Načítání režimu cloudu…"
+      },
+      "convert": {
+        "title": "Převod",
+        "hint": "Plánovač vybere trasu s nejlepším naměřeným skóre.",
+        "target_label": "Převést do",
+        "profile_label": "Profil",
+        "route_heading": "Proč tato trasa",
+        "elsewhere": "{formats} {count, plural, one {vyžaduje} few {vyžadují} many {vyžaduje} other {vyžadují}} zatím <link>AriadShift CLI</link>.",
+        "button": "Převést",
+        "button_busy": "Převádí se…",
+        "cancel": "Zrušit"
+      },
+      "result": {
+        "title": "Hotovo",
+        "summary": "<output>{name}</output> · {size} · převedeno za {duration} na tomto zařízení",
+        "download": "Stáhnout {name}"
+      },
+      "start_over": "Začít znovu a smazat soubory"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Účet",
+        "description": "Váš cloudový účet AriadShift: profil, heslo, přístupové klíče a dvoufázové přihlášení."
+      },
+      "sign_in": {
+        "title": "Přihlášení",
+        "description": "Přihlaste se ke svému cloudovému účtu AriadShift nebo si jej vytvořte."
+      },
+      "jobs": {
+        "title": "Úlohy",
+        "description": "Stav, stahování a mazání vašich cloudových převodů AriadShift."
+      },
+      "api_keys": {
+        "title": "Klíče API",
+        "description": "Vytváření a odvolávání klíčů API pro cloudové API AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Účet"
+      },
+      "shell": {
+        "not_configured_title": "Cloud není nakonfigurován",
+        "not_configured_body": "Tato kopie AriadShift běží pouze na vašem zařízení. Účty, klíče API a cloudové úlohy vyžadují server; jeho provozovatel při sestavování webu nastavuje <code>{api_variable}</code> a <code>{auth_variable}</code>.",
+        "not_configured_convert": "Stále můžete <link>převádět soubory ve svém prohlížeči</link>.",
+        "nav_label": "Účet",
+        "nav": {
+          "account": "Účet",
+          "api_keys": "Klíče API",
+          "jobs": "Úlohy"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Přihlášen jako <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Kontrola vaší relace…",
+        "error_title": "Relaci se nepodařilo ověřit",
+        "signed_out": "Nejste přihlášeni."
+      },
+      "actions": {
+        "sign_in": "Přihlásit se",
+        "try_again": "Zkusit znovu",
+        "cancel": "Zrušit",
+        "done": "Hotovo",
+        "continue": "Pokračovat",
+        "revoke": "Odvolat",
+        "copied": "Zkopírováno"
+      },
+      "fields": {
+        "name": "Jméno",
+        "email": "E-mail",
+        "password": "Heslo",
+        "authentication_code": "Ověřovací kód",
+        "password_hint": "Alespoň {min} znaků."
+      },
+      "dates": {
+        "unknown": "neznámé datum"
+      },
+      "errors": {
+        "auth_refused": "Ověřovací služba požadavek odmítla.",
+        "service_unreachable": "Přihlašovací služba není dostupná. Zkontrolujte připojení a zkuste to znovu.",
+        "session_ended": "Vaše relace skončila. Přihlaste se znovu.",
+        "rate_limited": "Příliš mnoho požadavků. Zkuste to za chvíli znovu.",
+        "rate_limited_after": "Příliš mnoho požadavků. Zkuste to znovu za {seconds} s.",
+        "sign_in_unverifiable": "Server nyní nemůže ověřit vaše přihlášení. Zkuste to za chvíli znovu.",
+        "token_invalid": "Přihlašovací služba vrátila neplatný token API.",
+        "reauth_required": "Před smazáním účtu se přihlaste znovu.",
+        "delete_not_allowed": "Tento server nedovoluje mazat účty z webové aplikace. Požádejte o to jeho provozovatele.",
+        "job_gone": "Tato úloha už na serveru není.",
+        "file_deleted": "Tento soubor už byl smazán.",
+        "job_conflict": "Úloha není připravena, nebo nahraný soubor už na serveru není.",
+        "quota_exceeded": "Cloudové převody vašeho tarifu jste zatím vyčerpali. Převádějte na tomto zařízení, nebo to zkuste později.",
+        "request_failed": "Server nemohl požadavek dokončit. Zkuste to za chvíli znovu.",
+        "network_unreachable": "Server není dostupný. Zkontrolujte připojení a zkuste to znovu.",
+        "transfer_incomplete": "Přenos nebyl dokončen. Zkuste to znovu."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Uložit jméno",
+        "saved": "Jméno uloženo.",
+        "save_failed": "Jméno se nepodařilo uložit."
+      },
+      "password": {
+        "title": "Heslo",
+        "current": "Současné heslo",
+        "new": "Nové heslo",
+        "confirm": "Potvrďte nové heslo",
+        "revoke_others": "Odhlásit z ostatních relací",
+        "submit": "Změnit heslo",
+        "mismatch": "Nová hesla se neshodují.",
+        "changed": "Heslo bylo změněno.",
+        "changed_revoked": "Heslo bylo změněno. Ostatní relace byly odhlášeny.",
+        "failed": "Heslo se nepodařilo změnit."
+      },
+      "passkeys": {
+        "title": "Přístupové klíče",
+        "description": "Přihlašujte se zámkem obrazovky zařízení nebo bezpečnostním klíčem místo hesla.",
+        "load_failed": "Přístupové klíče se nepodařilo načíst.",
+        "loading": "Načítání přístupových klíčů…",
+        "empty": "Zatím žádné přístupové klíče.",
+        "unnamed": "Nepojmenovaný přístupový klíč",
+        "default_name": "Přístupový klíč",
+        "added_on": "Přidáno {date}",
+        "remove_label": "Odebrat přístupový klíč {name}",
+        "remove_button": "Odebrat<hidden> přístupový klíč {name}</hidden>",
+        "add_button": "Přidat přístupový klíč",
+        "add_title": "Přidat přístupový klíč",
+        "add_description": "Pojmenujte jej podle zařízení nebo klíče a poté postupujte podle pokynů prohlížeče.",
+        "name_label": "Název přístupového klíče",
+        "name_placeholder": "Například: Pracovní notebook",
+        "added": "Přístupový klíč byl přidán.",
+        "add_failed": "Přístupový klíč nebyl přidán.",
+        "remove_title": "Odebrat {name}?",
+        "remove_title_unnamed": "Odebrat tento přístupový klíč?",
+        "remove_description": "Už se jím nebudete moci přihlásit. Vaše ostatní způsoby přihlášení fungují dál.",
+        "remove_confirm": "Odebrat přístupový klíč",
+        "removed": "{name} byl odebrán.",
+        "remove_failed": "Přístupový klíč se nepodařilo odebrat."
+      },
+      "two_factor": {
+        "title": "Dvoufázové ověření",
+        "description": "Po zadání hesla vyžadovat kód z ověřovací aplikace.",
+        "status_on": "Stav: <badge>Zapnuto</badge>",
+        "status_off": "Stav: <badge>Vypnuto</badge>",
+        "enable": "Zapnout dvoufázové ověření",
+        "disable": "Vypnout dvoufázové ověření",
+        "regenerate": "Vytvořit nové záložní kódy",
+        "confirm_password": "Pro pokračování potvrďte své heslo.",
+        "enable_failed": "Nastavení dvoufázového ověření se nepodařilo zahájit. Zkontrolujte své heslo.",
+        "disable_failed": "Dvoufázové ověření se nepodařilo vypnout. Zkontrolujte své heslo.",
+        "regenerate_failed": "Nové záložní kódy se nepodařilo vytvořit. Zkontrolujte své heslo.",
+        "verify_failed": "Tento kód nebyl přijat. Zkontrolujte čas na svém zařízení a zkuste to znovu.",
+        "disabled": "Dvoufázové ověření je vypnuto.",
+        "enabled": "Dvoufázové ověření je zapnuto.",
+        "regenerated": "Nové záložní kódy byly vytvořeny. Ty staré už nefungují.",
+        "setup_title": "Nastavte svou ověřovací aplikaci",
+        "setup_description": "Přidejte AriadShift do ověřovací aplikace a poté zadejte kód, který zobrazí.",
+        "setup_key_intro": "Zadejte v aplikaci tento klíč pro nastavení:",
+        "setup_key_unavailable": "Nedostupný",
+        "open_in_app": "Otevřít v ověřovací aplikaci na tomto zařízení",
+        "turn_on": "Zapnout",
+        "codes_title": "Nové záložní kódy",
+        "backup_intro": "Uložte si tyto záložní kódy na bezpečné místo. Každý z nich vás jednou přihlásí, pokud ztratíte ověřovací aplikaci. Znovu se nezobrazí.",
+        "copy_codes": "Kopírovat záložní kódy",
+        "copy_failed": "Kopírování selhalo; kódy místo toho označte"
+      },
+      "account_actions": {
+        "title": "Relace a účet",
+        "sign_out": "Odhlásit se",
+        "delete": "Smazat účet",
+        "signed_out": "Odhlášeno.",
+        "sign_out_failed": "Odhlášení se nezdařilo. Zkuste to znovu.",
+        "deleted": "Váš účet byl smazán.",
+        "delete_failed_password": "Účet se nepodařilo smazat. Zkontrolujte své heslo.",
+        "delete_failed_session": "Účet se nepodařilo smazat. Přihlaste se znovu a zkuste to znovu.",
+        "delete_note": "Smazáním účtu se automaticky odvolají vaše <keys>klíče API</keys>. Před jeho smazáním smažte <jobs>cloudové úlohy</jobs>, které ještě máte. Soubory úloh, které ponecháte, se odstraní po uplynutí doby uchování.",
+        "dialog_title": "Smazat váš účet?",
+        "dialog_description_password": "Tuto akci nelze vrátit zpět. Pro smazání účtu potvrďte své heslo.",
+        "dialog_description_session": "Tuto akci nelze vrátit zpět. Níže potvrďte smazání účtu pomocí vaší aktuální přihlášené relace.",
+        "sign_in_again": "Přihlásit se znovu"
+      },
+      "connected_apps": {
+        "title": "Připojené aplikace",
+        "description": "Aplikace a klienti MCP, kterým jste povolili používat váš účet, a klienti OAuth, které jste zaregistrovali.",
+        "load_failed": "Připojené aplikace se nepodařilo načíst.",
+        "loading": "Načítání připojených aplikací…",
+        "empty": "Zatím žádné připojené aplikace ani zaregistrovaní klienti OAuth.",
+        "scopes_none": "žádné",
+        "consent_details": "Autorizovaná aplikace · Oprávnění: {scopes} · Autorizováno {date}",
+        "client_details": "Zaregistrovaný klient OAuth ({client_id})",
+        "client_details_dated": "Zaregistrovaný klient OAuth ({client_id}) · Zaregistrováno {date}",
+        "revoke_label": "Odvolat {name}",
+        "revoked": "{name} byl odvolán.",
+        "revoke_failed": "Přístup se nepodařilo odvolat.",
+        "revoke_title": "Odvolat {name}?",
+        "revoke_consent_description": "Odvoláním se okamžitě zastaví vydávání nových tokenů a obnova tokenů. Již vydané podepsané přístupové tokeny (platnost 15 minut) fungují, dokud nevyprší.",
+        "revoke_client_description": "Smazáním tohoto zaregistrovaného klienta OAuth se odvolají jeho přihlašovací údaje a souhlasy a okamžitě se zastaví vydávání nových tokenů a obnova tokenů. Již vydané podepsané přístupové tokeny (platnost 15 minut) fungují, dokud nevyprší."
+      },
+      "api_keys": {
+        "page_title": "Klíče API",
+        "section_title": "Vaše klíče",
+        "section_description": "Skripty a integrace posílají klíč v hlavičce <code>x-api-key</code> na {host}. Klíč jedná s oprávněními vašeho účtu a tarifu.",
+        "load_failed": "Klíče API se nepodařilo načíst.",
+        "loading": "Načítání klíčů API…",
+        "empty": "Zatím žádné klíče API.",
+        "unnamed": "Nepojmenovaný klíč",
+        "disabled": "Zakázáno",
+        "key_details": "Vytvořeno {date} · {expiry}",
+        "never_expires": "Nikdy nevyprší",
+        "expired_on": "Vypršelo {date}",
+        "expires_on": "Vyprší {date}",
+        "revoke_label": "Odvolat klíč API {name}",
+        "revoke_button": "Odvolat<hidden> klíč API {name}</hidden>",
+        "create_button": "Vytvořit klíč API",
+        "create_title": "Vytvořit klíč API",
+        "create_description": "Pojmenujte klíč podle skriptu nebo služby, která jej bude používat.",
+        "name_placeholder": "Například: CI",
+        "expires_after": "Vyprší po",
+        "lifetime_days": "{days, plural, one {# dni} few {# dnech} many {# dne} other {# dnech}}",
+        "lifetime_year": "1 roce",
+        "lifetime_never": "Bez vypršení",
+        "create_submit": "Vytvořit klíč",
+        "create_failed": "Klíč se nepodařilo vytvořit.",
+        "created": "Klíč API {name} byl vytvořen.",
+        "secret_title": "Váš nový klíč API",
+        "secret_label": "Klíč API",
+        "secret_notice": "Zkopírujte si klíč hned. Ukládá se pouze jako hash a znovu se nezobrazí.",
+        "copy_key": "Kopírovat klíč",
+        "copy_failed": "Kopírování selhalo. Označte klíč a zkopírujte jej ručně.",
+        "revoke_title": "Odvolat {name}?",
+        "revoke_description": "Požadavky používající tento klíč budou okamžitě odmítány. Tuto akci nelze vrátit zpět.",
+        "revoke_confirm": "Odvolat klíč",
+        "revoked": "Klíč API {name} byl odvolán. Požadavky, které jej používají, se od nynějška odmítají.",
+        "revoke_failed": "Klíč se nepodařilo odvolat."
+      },
+      "jobs": {
+        "title": "Úlohy",
+        "intro_server": "Cloudové převody vašeho účtu na {host} z libovolného zařízení. Soubory zůstávají na {host}, dokud se automaticky nesmažou nebo dokud je zde nesmažete.",
+        "intro_account_browser": "Cloudové převody zahájené v tomto prohlížeči s vaším účtem. Tento seznam se uchovává pouze na tomto zařízení. Soubory zůstávají na {host}, dokud se automaticky nesmažou nebo dokud je zde nesmažete.",
+        "intro_anonymous_browser": "Cloudové převody zahájené v tomto prohlížeči bez účtu. Tento seznam se uchovává pouze na tomto zařízení. Soubory zůstávají na {host}, dokud se automaticky nesmažou nebo dokud je zde nesmažete.",
+        "signed_out_notice": "Zobrazují se úlohy bez účtu. <link>Přihlaste se</link>, abyste viděli úlohy svého účtu.",
+        "loading": "Načítání vašich úloh…",
+        "list_unsupported": "{host} zatím neumí vypsat úlohy vašeho účtu, proto tato stránka zobrazuje úlohy zahájené v tomto prohlížeči.",
+        "list_error_title": "Úlohy z {host} se nepodařilo načíst",
+        "list_error_body": "{reason} Mezitím tato stránka zobrazuje úlohy zahájené v tomto prohlížeči.",
+        "count": "{count, plural, one {# úloha} few {# úlohy} many {# úlohy} other {# úloh}}",
+        "empty": "Zatím žádné cloudové úlohy. Zahajte jednu z <link>převodníku</link>.",
+        "show_more": "Zobrazit další úlohy",
+        "loading_more": "Načítání dalších úloh…",
+        "unnamed": "Úloha {id}",
+        "forgotten": "Úloha {filename} byla odebrána z tohoto seznamu. Její soubory na serveru zůstaly beze změny.",
+        "forgotten_unnamed": "Úloha byla odebrána z tohoto seznamu. Její soubory na serveru zůstaly beze změny.",
+        "status": {
+          "queued": "Ve frontě",
+          "converting": "Převádí se",
+          "converting_stage": "Převádí se: {stage}",
+          "retrying": "Opakování (pokus {attempt})",
+          "reconnecting": "{step} · Opětovné připojování…",
+          "ready": "Připraveno",
+          "failed": "Selhalo",
+          "canceled": "Zrušeno",
+          "deleted": "Smazáno",
+          "deleted_expired": "Smazáno (vypršelo)"
+        },
+        "until": {
+          "less_than_minute": "za méně než minutu",
+          "minutes": "za {minutes} min",
+          "hours": "za {hours} h",
+          "hours_minutes": "za {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Automaticky smazáno v {clock}.",
+          "deleted_from_server": "Smazáno ze serveru. Vstupní i výstupní soubory jsou pryč.",
+          "being_deleted": "Právě se maže.",
+          "deletes_at": "Automaticky se smaže v {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Tento dokument vyžaduje více, než váš tarif umožňuje. Zkuste menší soubor, nebo jej převeďte na tomto zařízení.",
+          "unsupported_route": "Tento server neumí převádět mezi těmito formáty. V převodníku zvolte jiný cíl.",
+          "input_io": "Nahraný soubor se nepodařilo přečíst, nebo už na serveru není. Nahrajte jej znovu.",
+          "storage": "Server nemohl výsledek uložit. Zkuste to za chvíli znovu.",
+          "tool_missing": "Tomuto serveru chybí modul, který trasa potřebuje. Zeptejte se jeho provozovatele, nebo zvolte jiný cíl.",
+          "other": "Převod se nezdařil. Zkuste to znovu, nebo soubor převeďte na tomto zařízení."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Načítání stavu…",
+          "try_again": "Zkusit znovu<hidden> načíst {filename}</hidden>",
+          "technical_details": "Technické podrobnosti",
+          "warnings": "{count, plural, one {# upozornění} few {# upozornění} many {# upozornění} other {# upozornění}}",
+          "download": "Stáhnout {filename}",
+          "retry_label": "Zopakovat {filename}",
+          "retry_button": "Zopakovat<hidden> {filename}</hidden>",
+          "delete_label": "Smazat {filename} ze serveru hned",
+          "delete_button": "Smazat hned<hidden> {filename} ze serveru</hidden>",
+          "remove_label": "Odebrat z tohoto seznamu ({filename})",
+          "remove_button": "Odebrat z tohoto seznamu<hidden> ({filename})</hidden>",
+          "deleted_note": "Smazáno z {host}. Vstupní i výstupní soubory jsou pryč.",
+          "deleted_announce": "Soubor {filename} byl smazán z {host}. Vstupní i výstupní soubory jsou pryč.",
+          "ready_announce": "Soubor {filename} je převeden a připraven ke stažení.",
+          "failed_announce": "Převod souboru {filename} se nezdařil. {reason}",
+          "canceled_announce": "Převod souboru {filename} byl zrušen.",
+          "downloading": "Stahování souboru {filename}.",
+          "retrying": "Opakování souboru {filename}.",
+          "retry_conflict": "Nahraný soubor už na serveru není. Nahrajte jej znovu z převodníku."
+        }
+      },
+      "sign_in": {
+        "title": "Přihlášení",
+        "create_title": "Vytvořit účet",
+        "two_factor_title": "Dvoufázové ověření",
+        "signed_in": "Přihlášeno.",
+        "go_to_account": "Přejít na váš účet",
+        "passkey": "Přihlásit se přístupovým klíčem",
+        "no_account": "Ještě nemáte účet? <switch>Vytvořte si jej</switch>",
+        "have_account": "Už máte účet? <switch>Přihlaste se</switch>",
+        "sign_in_failed": "Přihlášení se nezdařilo. Zkontrolujte e-mail a heslo.",
+        "passkey_failed": "Přihlášení přístupovým klíčem se nezdařilo.",
+        "code_rejected": "Tento kód nebyl přijat. Zkuste to znovu.",
+        "create_failed": "Účet se nepodařilo vytvořit.",
+        "passwords_mismatch": "Hesla se neshodují.",
+        "bot_check": "Dokončete kontrolu proti robotům při registraci a zkuste to znovu.",
+        "confirm_password": "Potvrďte heslo",
+        "create_account": "Vytvořit účet",
+        "totp_help": "Zadejte 6místný kód z ověřovací aplikace.",
+        "backup_help": "Zadejte jeden ze záložních kódů, které jste si uložili při zapnutí dvoufázového ověření. Každý kód funguje jen jednou.",
+        "backup_code": "Záložní kód",
+        "trust_device": "Důvěřovat tomuto prohlížeči 30 dní",
+        "verify": "Ověřit",
+        "use_backup": "Použít místo toho záložní kód",
+        "use_authenticator": "Použít místo toho kód z ověřovací aplikace",
+        "signed_in_user": "Jste přihlášeni jako <user>{email}</user>."
+      }
+    }
+  }
+}

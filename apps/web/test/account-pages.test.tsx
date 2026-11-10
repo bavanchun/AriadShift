@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { Mock } from "vitest";
 import { AccountPage } from "@/components/account/account-page";
@@ -9,8 +9,9 @@ import type { AccountUser, AuthApi } from "@/components/account/auth-api";
 import { AuthError } from "@/components/account/auth-api";
 import { SignInPanel } from "@/components/account/sign-in-panel";
 import type { AccountCloudConfig } from "@/lib/cloud/config";
+import { renderIntl } from "./intl";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/account" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/en/account" }));
 
 const CONFIG: AccountCloudConfig = {
   apiUrl: "http://localhost:3902",
@@ -98,7 +99,7 @@ function fakeAuth(user: AccountUser | null = USER): FakeAuth {
 }
 
 function renderInShell(ui: ReactNode, auth: FakeAuth) {
-  return render(
+  return renderIntl(
     <AccountShell config={CONFIG} auth={auth}>
       {ui}
     </AccountShell>,
@@ -124,7 +125,7 @@ afterEach(() => {
 describe("account shell", () => {
   it("shows the not-configured state and calls nothing without cloud origins", () => {
     const auth = fakeAuth();
-    render(
+    renderIntl(
       <AccountShell config={null} auth={auth}>
         <p>account content</p>
       </AccountShell>,
@@ -151,7 +152,7 @@ describe("account shell", () => {
   it("asks a signed-out visitor to sign in and come back", async () => {
     renderInShell(<AccountPage />, fakeAuth(null));
     const links = await screen.findAllByRole("link", { name: "Sign in" });
-    expect(links.map((link) => link.getAttribute("href"))).toContain("/sign-in?next=%2Faccount");
+    expect(links.map((link) => link.getAttribute("href"))).toContain("/en/sign-in?next=%2Faccount");
   });
 
   it("offers a retry when the auth service is unreachable", async () => {
@@ -181,7 +182,7 @@ describe("sign in", () => {
 
     fill("Authentication code", "123 456");
     fireEvent.click(screen.getByRole("button", { name: "Verify" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/jobs"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/en/jobs"));
     expect(auth.verifyTotp).toHaveBeenCalledWith("123456", false);
   });
 
@@ -196,7 +197,7 @@ describe("sign in", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Use a backup code instead" }));
     fill("Backup code", "aaaa-1111");
     fireEvent.click(screen.getByRole("button", { name: "Verify" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/account"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/en/account"));
     expect(auth.verifyBackupCode).toHaveBeenCalledWith("aaaa-1111");
   });
 
@@ -225,7 +226,7 @@ describe("sign in", () => {
 
     fill("Confirm password", "correct horse");
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/account"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/en/account"));
     expect(auth.signUpEmail).toHaveBeenCalledWith("Ada", "ada@example.com", "correct horse");
   });
 });
@@ -334,7 +335,7 @@ describe("account page", () => {
     const dialog = screen.getByRole("alertdialog", { name: "Delete your account?" });
     fill("Password", "secret password", dialog);
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/en"));
     expect(auth.deleteAccount).toHaveBeenCalledWith("secret password");
   });
 
@@ -352,7 +353,7 @@ describe("account page", () => {
     expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/en"));
     expect(auth.deleteAccount).toHaveBeenCalledWith(undefined);
   });
 
@@ -374,7 +375,7 @@ describe("account page", () => {
       await within(dialog).findByText("Sign in again before deleting your account."),
     ).toBeTruthy();
     const reauthLink = within(dialog).getByRole("link", { name: "Sign in again" });
-    expect(reauthLink.getAttribute("href")).toBe("/sign-in?next=%2Faccount");
+    expect(reauthLink.getAttribute("href")).toBe("/en/sign-in?next=%2Faccount");
   });
 
   it("lists connected OAuth apps and registered clients and revokes them after confirmation", async () => {
@@ -425,7 +426,7 @@ describe("account page", () => {
     const navigate = vi.fn();
     renderInShell(<AccountPage navigate={navigate} />, auth);
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/sign-in"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/en/sign-in"));
     expect(auth.signOut).toHaveBeenCalled();
   });
 

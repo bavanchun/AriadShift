@@ -244,7 +244,7 @@ test.describe("without cloud origins", () => {
       }
     });
     for (const path of ["/account", "/api-keys", "/jobs", "/sign-in"]) {
-      await page.goto(path);
+      await page.goto(`/en${path}`);
       await expect(page.getByText("Cloud is not configured")).toBeVisible();
     }
     expect(external).toEqual([]);
@@ -257,7 +257,7 @@ test.describe("with a mocked cloud", () => {
   test("signs in with the keyboard and returns to the requested page", async ({ page }) => {
     const state = newState({ signedIn: false });
     await mockCloud(page, state);
-    await page.goto("/sign-in?next=%2Fapi-keys");
+    await page.goto("/en/sign-in?next=%2Fapi-keys");
     await page.getByLabel("Email").fill("ada@example.com");
     await page.getByLabel("Password").fill("wrong password");
     await page.getByLabel("Password").press("Enter");
@@ -274,7 +274,7 @@ test.describe("with a mocked cloud", () => {
   test("creates an API key shown once and revokes it", async ({ page }) => {
     const state = newState();
     await mockCloud(page, state);
-    await page.goto("/api-keys");
+    await page.goto("/en/api-keys");
     await expect(page.getByText("No API keys yet.")).toBeVisible();
 
     const create = page.getByRole("button", { name: "Create API key" });
@@ -307,7 +307,7 @@ test.describe("with a mocked cloud", () => {
   test("saves the profile name and signs out", async ({ page }) => {
     const state = newState();
     await mockCloud(page, state);
-    await page.goto("/account");
+    await page.goto("/en/account");
     const profile = page.getByRole("region", { name: "Profile" });
     await profile.getByLabel("Name").fill("Ada Lovelace");
     await profile.getByRole("button", { name: "Save name" }).click();
@@ -334,7 +334,7 @@ test.describe("with a mocked cloud", () => {
         expiresAt: minutesFromNow(58),
       })),
     );
-    await page.goto("/jobs");
+    await page.goto("/en/jobs");
 
     const live = page.getByRole("listitem", { name: "job-live.md" });
     await expect(live.getByText("Ready")).toBeVisible();
@@ -364,7 +364,7 @@ test.describe("with a mocked cloud", () => {
     });
     await mockCloud(page, state);
     // Nothing is seeded into localStorage: the API is the only source of the list.
-    await page.goto("/jobs");
+    await page.goto("/en/jobs");
 
     await expect(page.getByRole("heading", { name: "2 jobs" })).toBeVisible();
     await expect(page.getByText(/from any device/)).toBeVisible();

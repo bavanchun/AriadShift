@@ -3,11 +3,12 @@
 import { Button, buttonVariants } from "@ariadshift/ui/components/button";
 import { LogOutIcon } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import { useLocalePath } from "@/i18n/use-locale-path";
 import { useAccount } from "./account-context";
 import { AccountDialog } from "./account-dialog";
-import { errorMessage, OutcomeMessage, Section, TextField } from "./account-ui";
+import { errorMessage, OutcomeMessage, Section, TextField, useAccountText } from "./account-ui";
 import { AuthError } from "./auth-api";
-import { signInHref } from "./session-gate";
+import { useSignInHref } from "./session-gate";
 
 export interface AccountActionsSectionProps {
   /** Navigates after signing out or deleting the account; defaults to a full page load. */
@@ -16,6 +17,9 @@ export interface AccountActionsSectionProps {
 
 export function AccountActionsSection({ navigate }: AccountActionsSectionProps) {
   const { auth, refreshSession, announce } = useAccount();
+  const { t } = useAccountText();
+  const toLocale = useLocalePath();
+  const toSignIn = useSignInHref();
   const [hasPassword, setHasPassword] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [password, setPassword] = useState("");
@@ -45,10 +49,10 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
     try {
       await auth.signOut();
       await refreshSession();
-      announce("Signed out.");
-      go("/sign-in");
+      announce(t("account_actions.signed_out"));
+      go(toLocale("/sign-in"));
     } catch (failure) {
-      setError(errorMessage(failure, "Could not sign out. Try again."));
+      setError(errorMessage(t, failure, "account_actions.sign_out_failed"));
     } finally {
       setBusy(false);
     }
@@ -64,22 +68,23 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
       setPassword("");
       setDeleting(false);
       await refreshSession();
-      announce("Your account was deleted.");
-      go("/");
+      announce(t("account_actions.deleted"));
+      go(toLocale("/"));
     } catch (failure) {
       const needsReauth =
         failure instanceof AuthError &&
         (failure.code === "reauth_required" || failure.code === "SESSION_EXPIRED");
       setReauthRequired(needsReauth);
       setError(
-        needsReauth
-          ? errorMessage(failure, "Sign in again before deleting your account.")
-          : errorMessage(
-              failure,
-              hasPassword
-                ? "Could not delete the account. Check your password."
-                : "Could not delete the account. Sign in again and retry.",
-            ),
+        errorMessage(
+          t,
+          failure,
+          needsReauth
+            ? "errors.reauth_required"
+            : hasPassword
+              ? "account_actions.delete_failed_password"
+              : "account_actions.delete_failed_session",
+        ),
       );
     } finally {
       setBusy(false);
@@ -87,14 +92,14 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
   };
 
   return (
-    <Section title="Session and account">
+    <Section title={t("account_actions.title")}>
       {!deleting ? (
         <OutcomeMessage outcome={error ? { kind: "error", message: error } : null} />
       ) : null}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={() => void onSignOut()} disabled={busy}>
           <LogOutIcon aria-hidden="true" />
-          Sign out
+          {t("account_actions.sign_out")}
         </Button>
         <Button
           variant="destructive"
@@ -105,36 +110,39 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
             setDeleting(true);
           }}
         >
-          Delete account
+          {t("account_actions.delete")}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        Deleting your account revokes your{" "}
-        <a href="/api-keys" className="underline underline-offset-3">
-          API keys
-        </a>{" "}
-        automatically. Before deleting it, delete the{" "}
-        <a href="/jobs" className="underline underline-offset-3">
-          cloud jobs
-        </a>{" "}
-        you still have. Files of jobs you leave are removed when their retention period ends.
+        {t.rich("account_actions.delete_note", {
+          keys: (chunks) => (
+            <a href={toLocale("/api-keys")} className="underline underline-offset-3">
+              {chunks}
+            </a>
+          ),
+          jobs: (chunks) => (
+            <a href={toLocale("/jobs")} className="underline underline-offset-3">
+              {chunks}
+            </a>
+          ),
+        })}
       </p>
 
       {deleting ? (
         <AccountDialog
           role="alertdialog"
-          title="Delete your account?"
-          description={
+          title={t("account_actions.dialog_title")}
+          description={t(
             hasPassword
-              ? "This cannot be undone. Confirm your password to delete the account."
-              : "This cannot be undone. Confirm below to delete the account using your current sign-in session."
-          }
+              ? "account_actions.dialog_description_password"
+              : "account_actions.dialog_description_session",
+          )}
           onClose={() => setDeleting(false)}
         >
           <form onSubmit={onDelete} className="flex flex-col gap-4">
             {hasPassword ? (
               <TextField
-                label="Password"
+                label={t("fields.password")}
                 type="password"
                 autoComplete="current-password"
                 data-autofocus
@@ -153,15 +161,15 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
                 {...(!hasPassword ? { "data-autofocus": true } : {})}
                 onClick={() => setDeleting(false)}
               >
-                Cancel
+                {t("actions.cancel")}
               </Button>
               {reauthRequired ? (
-                <a href={signInHref("/account")} className={buttonVariants({ variant: "outline" })}>
-                  Sign in again
+                <a href={toSignIn("/account")} className={buttonVariants({ variant: "outline" })}>
+                  {t("account_actions.sign_in_again")}
                 </a>
               ) : null}
               <Button type="submit" variant="destructive" disabled={busy}>
-                Delete account
+                {t("account_actions.delete")}
               </Button>
             </div>
           </form>

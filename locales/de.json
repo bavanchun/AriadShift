@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Bearbeitbar",
+        "description": "Echte Überschriften, Listen und Tabellen, die Sie weiter bearbeiten können."
+      },
+      "faithful": {
+        "label": "Originalgetreu",
+        "description": "So nah wie möglich am Layout bleiben."
+      },
+      "fast": {
+        "label": "Schnell",
+        "description": "Den schnellsten Weg bevorzugen."
+      },
+      "private": {
+        "label": "Privat",
+        "description": "Nur Engines, die Ihr Gerät nie verlassen."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift-Kern",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF-Textleser"
+    },
+    "runtime": {
+      "wasm": "Browser",
+      "local": "CLI und Desktop",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "nicht gemessen"
+    },
+    "duration": {
+      "under_1_ms": "unter 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown-Dokument",
+        "description": "CommonMark mit GitHub Flavored Markdown: Überschriften, Listen, Tabellen, Aufgabenlisten, Fußnoten und Formeln. Das Format, das KI-Tools am besten lesen."
+      },
+      "html": {
+        "noun": "HTML-Seite",
+        "description": "Eine eigenständige HTML5-Seite. Rohes Markup in der Eingabe wird bereinigt; Skripte und unsichere Attribute gelangen nie in die Ausgabe."
+      },
+      "ir_json": {
+        "noun": "AriadShift-IR-Dokument",
+        "description": "Das strukturierte Dokumentmodell, durch das jede AriadShift-Route läuft: Überschriften, Blöcke, Tabellen, Assets und Metadaten als versioniertes JSON."
+      },
+      "docx": {
+        "noun": "Word-Dokument",
+        "description": "Office-Open-XML-Dokumente aus Microsoft Word, LibreOffice und Google Docs, gelesen und geschrieben über Pandoc."
+      },
+      "epub": {
+        "noun": "EPUB-E-Book",
+        "description": "EPUB-3-E-Books, gelesen und geschrieben über Pandoc mit reproduzierbaren Metadaten."
+      },
+      "pdf": {
+        "noun": "PDF-Dokument",
+        "description": "Der Text digitaler PDFs wird auf diesem Gerät gelesen. Die PDF-Ausgabe nutzt Typst und eingebettete Schriften. Gescannte Seiten benötigen OCR in der Desktop-App."
+      },
+      "odt": {
+        "noun": "OpenDocument-Textdokument",
+        "description": "OpenDocument-Textdateien nutzen LibreOffice in der Desktop-App."
+      },
+      "rtf": {
+        "noun": "Rich-Text-Dokument",
+        "description": "Rich-Text-Dokumente nutzen LibreOffice in der Desktop-App."
+      },
+      "pptx": {
+        "noun": "PowerPoint-Präsentation",
+        "description": "PowerPoint-Präsentationen nutzen Docling oder LibreOffice in der Desktop-App."
+      },
+      "xlsx": {
+        "noun": "Excel-Arbeitsmappe",
+        "description": "Excel-Arbeitsmappen nutzen Docling oder LibreOffice in der Desktop-App."
+      },
+      "doc": {
+        "noun": "älteres Word-Dokument",
+        "description": "Ältere Word-Dokumente nutzen LibreOffice in der Desktop-App."
+      },
+      "xls": {
+        "noun": "ältere Excel-Arbeitsmappe",
+        "description": "Ältere Excel-Arbeitsmappen nutzen LibreOffice in der Desktop-App."
+      },
+      "ppt": {
+        "noun": "ältere PowerPoint-Präsentation",
+        "description": "Ältere PowerPoint-Präsentationen nutzen LibreOffice in der Desktop-App."
+      },
+      "ods": {
+        "noun": "OpenDocument-Tabelle",
+        "description": "OpenDocument-Tabellen nutzen LibreOffice in der Desktop-App."
+      },
+      "odp": {
+        "noun": "OpenDocument-Präsentation",
+        "description": "OpenDocument-Präsentationen nutzen LibreOffice in der Desktop-App."
+      },
+      "png": {
+        "noun": "PNG-Bild",
+        "description": "Die Textextraktion aus Bildern benötigt das Docling-Engine-Paket in der Desktop-App."
+      },
+      "jpeg": {
+        "noun": "JPEG-Bild",
+        "description": "Die Textextraktion aus Bildern benötigt das Docling-Engine-Paket in der Desktop-App."
+      },
+      "webp": {
+        "noun": "WebP-Bild",
+        "description": "Die Textextraktion aus Bildern benötigt das Docling-Engine-Paket in der Desktop-App."
+      },
+      "tiff": {
+        "noun": "TIFF-Bild",
+        "description": "Die Textextraktion aus Bildern benötigt das Docling-Engine-Paket in der Desktop-App."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: private Dokumentkonvertierung in Ihrem Browser",
+      "site_description": "Konvertieren Sie Markdown, HTML und strukturiertes JSON auf Ihrem eigenen Gerät. Standardmäßig privat, mit gemessener Qualität auf jeder Route und bereit für KI-Agenten.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Zum Inhalt springen",
+      "home_link": "{site} Startseite",
+      "nav_label": "Hauptnavigation",
+      "nav": {
+        "converter": "Konverter",
+        "formats": "Formate",
+        "quality": "Qualität",
+        "download": "Download",
+        "privacy": "Datenschutz"
+      },
+      "footer": {
+        "license": "AriadShift ist Open Source unter der Apache-2.0-Lizenz.",
+        "privacy": "Datenschutz",
+        "licenses": "Lizenzen",
+        "quality": "Qualität",
+        "source": "Quellcode"
+      },
+      "language": {
+        "label": "Sprache",
+        "button": "Sprache: {name}",
+        "list_label": "Sprache auswählen",
+        "community_badge": "Community-Übersetzung",
+        "community_note": "Community-Übersetzungen sind maschinelle Entwürfe, die Menschen weiterhin korrigieren können."
+      }
+    },
+    "not_found": {
+      "title": "Seite nicht gefunden",
+      "body": "Diese Seite existiert nicht.",
+      "home_link": "Zur Startseite"
+    },
+    "home": {
+      "meta_title": "Dokumente auf Ihrem eigenen Gerät konvertieren",
+      "title": "Dokumente auf Ihrem eigenen Gerät konvertieren",
+      "lede": "AriadShift konvertiert Markdown, HTML, Word, EPUB und strukturiertes JSON direkt in Ihrem Browser. Lesen Sie den Text digitaler PDFs und erstellen Sie PDFs auf Ihrem Gerät. Ein gemessener Planer, keine Uploads.",
+      "open_converter": "Konverter öffnen",
+      "install_cli": "CLI installieren",
+      "why_heading": "Warum AriadShift",
+      "why": {
+        "private": {
+          "title": "Standardmäßig privat",
+          "body": "Der Konverter läuft mit WebAssembly in Ihrem Browser. Ihr Dokument wird im privaten Dateisystem des Browsers gespeichert und nie hochgeladen."
+        },
+        "quality": {
+          "title": "Gemessene Qualität",
+          "body": "Jede Route hat Werte für Originaltreue und Bearbeitbarkeit aus einem öffentlichen Benchmark. Der Planer wählt die beste Route und sagt Ihnen, warum."
+        },
+        "agents": {
+          "title": "Bereit für KI-Agenten",
+          "body": "Machen Sie aus Dokumenten sauberes Markdown oder strukturiertes JSON als LLM-Kontext. Die CLI enthält einen MCP-Server, sodass Agenten Dateien selbst konvertieren können."
+        }
+      },
+      "how_heading": "So funktioniert es",
+      "how": {
+        "step_label": "Schritt {number}",
+        "step_1": "Sie wählen eine Datei. Der Browser kopiert sie in sein privates Dateisystem.",
+        "step_2": "Ein Hintergrund-Worker lädt die AriadShift-Engine, die zu WebAssembly kompiliert wurde.",
+        "step_3": "Der Planer wählt die Route mit dem besten gemessenen Wert für Ihr Ziel.",
+        "step_4": "Sie laden das Ergebnis herunter. Beim Neubeginn werden alle gespeicherten Dateien gelöscht."
+      },
+      "pairs_heading": "In Ihrem Browser konvertieren",
+      "pair_link": "{from} zu {to}",
+      "see_more": "Alle <formats>unterstützten Formate</formats> und die <quality>gemessene Qualität</quality> jeder Route ansehen."
+    },
+    "formats": {
+      "meta_title": "Unterstützte Formate",
+      "meta_description": "Welche Dokumentformate AriadShift liest und schreibt und welche Konvertierungen in Ihrem Browser laufen.",
+      "title": "Unterstützte Formate",
+      "lede": "Jede Konvertierung läuft durch das Dokumentmodell von AriadShift. Mit „Browser“ markierte Formate werden vollständig auf diesem Gerät konvertiert; die anderen benötigen vorerst das Befehlszeilenwerkzeug.",
+      "badge_browser": "Browser und CLI",
+      "badge_cli": "CLI",
+      "extensions": "Erweiterungen: {list}",
+      "engines": "Gelesen von {readers}; geschrieben von {writers}.",
+      "no_engine": "noch keine Engine",
+      "convert_to": "Konvertieren zu: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Gemessene Qualität",
+      "meta_description": "Originaltreue, Bearbeitbarkeit und Geschwindigkeit jedes AriadShift-Konvertierungsschritts, erzeugt aus einem öffentlichen Benchmark.",
+      "title": "Gemessene Qualität",
+      "lede": "Diese Werte sind nicht von Hand geschrieben. Der Benchmark konvertiert {count, plural, one {# öffentliches Testdokument} other {# öffentliche Testdokumente}} durch jeden Schritt und vergleicht das Ergebnis mit der bekannten Wahrheit. Der Planer liest dieselben Zahlen, wenn er eine Route wählt.",
+      "generated": "{pandoc, select, none {Erstellt am {date}.} other {Erstellt am {date} mit Pandoc {pandoc}.}}",
+      "methodology": "<link>Methodik lesen</link>.",
+      "caption": "Benchmark-Werte pro Konvertierungsschritt",
+      "column": {
+        "step": "Schritt",
+        "engine": "Engine",
+        "runs_in": "Läuft in",
+        "fidelity": "Originaltreue",
+        "editability": "Bearbeitbarkeit",
+        "median_time": "Mediane Zeit",
+        "samples": "Stichproben"
+      }
+    },
+    "route": {
+      "label": "Konvertierungsroute",
+      "then": "dann",
+      "fidelity": "Originaltreue",
+      "editability": "Bearbeitbarkeit",
+      "estimated_time": "Geschätzte Zeit",
+      "unmeasured": "Ein Teil dieser Route wurde noch nicht gemessen, daher bewertet der Planer sie vorsichtig."
+    },
+    "download": {
+      "meta_title": "Download",
+      "meta_description": "Installieren Sie das AriadShift-Befehlszeilenwerkzeug und den MCP-Server unter macOS, Linux und Windows.",
+      "title": "AriadShift herunterladen",
+      "lede": "Der Befehl <code>ashift</code> konvertiert Markdown, HTML, DOCX und EPUB auf Ihrem Computer und startet einen MCP-Server für KI-Agenten. DOCX- und EPUB-Routen verwenden <pandoc>Pandoc 3.12 oder neuer</pandoc> als separates Programm.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS und Linux)",
+          "note": "Verfügbar, sobald die Formel veröffentlicht ist. Installiert auch Pandoc, das DOCX- und EPUB-Routen benötigen."
+        },
+        "shell": {
+          "title": "Shell-Installer (macOS und Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell-Installer (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Verfügbar, sobald die Paketeinreichung akzeptiert wurde."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Verfügbar, sobald die Crates auf crates.io veröffentlicht sind."
+        }
+      },
+      "then_heading": "Danach",
+      "releases": "Archive für alle Plattformen finden Sie auf <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Desktop-App",
+        "body": "Eine Desktop-App für macOS, Windows und Linux mit Stapelkonvertierung und Ordnerüberwachung ist in Arbeit. Sie wird hier aufgeführt, sobald die erste Version erscheint."
+      }
+    },
+    "pair": {
+      "meta_title": "{from} in {to} konvertieren",
+      "meta_description_browser": "Konvertieren Sie {noun} privat in Ihrem Browser mit AriadShift in {to}. Gemessene Originaltreue, keine Uploads.",
+      "meta_description_cli": "Konvertieren Sie {noun} auf Ihrem eigenen Computer mit AriadShift in {to}. Gemessene Originaltreue, keine Uploads.",
+      "badge_browser": "Läuft in Ihrem Browser",
+      "badge_cli": "Läuft mit der AriadShift-CLI",
+      "title": "{from} in {to} konvertieren",
+      "lede_browser": "Machen Sie aus {noun} ein {to}-Dokument, ohne es hochzuladen. AriadShift liest die Datei in Ihrem Browser, bildet sie auf das eigene Dokumentmodell ab und schreibt {to} auf Ihrem Gerät.",
+      "lede_cli": "Machen Sie aus {noun} auf Ihrem eigenen Computer mit dem kostenlosen AriadShift-Befehlszeilenwerkzeug ein {to}-Dokument. Die Browserversion unterstützt diese Route noch nicht.",
+      "convert_now": "{from} jetzt in {to} konvertieren",
+      "install_cli": "CLI installieren",
+      "route_heading": "Die Route, die AriadShift nimmt",
+      "from_heading": "Von {format}",
+      "to_heading": "Nach {format}",
+      "cli_heading": "Über die Befehlszeile",
+      "related_heading": "Verwandte Konvertierungen",
+      "related_link": "{from} zu {to}"
+    },
+    "converter_page": {
+      "meta_title": "Konverter",
+      "meta_description": "Konvertieren Sie Markdown, HTML, DOCX, EPUB, digitale PDFs und AriadShift-IR-JSON in Ihrem Browser. Die Dateien bleiben auf Ihrem Gerät.",
+      "title": "Dokument konvertieren",
+      "lede": "Wählen Sie eine Datei, ein Ziel und laden Sie das Ergebnis herunter. Alles geschieht in diesem Tab{cloud, select, yes {, es sei denn, Sie entscheiden sich, diese Datei in der Cloud zu konvertieren.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Lizenzen",
+      "meta_description": "Lizenzen und Quellcode von AriadShift und seinen Browser-Engines."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Der Cloud-Modus wurde unerwartet beendet",
+        "stopped_body": "Im Cloud-Modus ist nach dem Start des Uploads ein Fehler aufgetreten. Jede Kopie auf dem Server wird automatisch gelöscht, wenn ihre Aufbewahrungsfrist endet, oder Sie konvertieren auf diesem Gerät.",
+        "load_title": "Der Cloud-Modus konnte nicht geladen werden",
+        "load_body": "Der Cloud-Konverter konnte nicht geladen werden (zum Beispiel, weil Sie offline sind). Sie können weiterhin auf diesem Gerät konvertieren.",
+        "use_device": "Auf diesem Gerät konvertieren"
+      },
+      "status": {
+        "deleted_from_server": "{name} wurde vom Server gelöscht.",
+        "reading": "{name} wird auf diesem Gerät gelesen.",
+        "detected": "{name} ist {format}.",
+        "read_failed": "Die Datei konnte nicht gelesen werden.",
+        "converting": "Konvertierung zu {format} auf diesem Gerät.",
+        "ready": "{name} kann heruntergeladen werden.",
+        "convert_failed": "Die Konvertierung ist fehlgeschlagen.",
+        "saved": "{name} wurde gespeichert.",
+        "reset": "{outcome, select, deleted {Die Dateien wurden von diesem Gerät und vom Server entfernt.} kept {Die Dateien wurden von diesem Gerät entfernt. {name} befindet sich noch auf dem Server.} other {Die Dateien wurden von diesem Gerät entfernt.}}",
+        "cloud_selected": "Cloud-Konvertierung für {name} ausgewählt. Es wurde noch nichts hochgeladen.",
+        "cloud_selected_unnamed": "Cloud-Konvertierung für diese Datei ausgewählt. Es wurde noch nichts hochgeladen."
+      },
+      "device": {
+        "cloud": "<strong>Cloud-Konvertierung ausgewählt.</strong> Diese Datei verlässt Ihren Browser nur, wenn Sie „Hochladen und konvertieren“ wählen.",
+        "local": "<strong>Auf diesem Gerät verarbeitet.</strong> Die Dateien verlassen Ihren Browser nie und werden nicht hochgeladen."
+      },
+      "storage_badge": "{storage, select, opfs {Privater Browserspeicher} other {Im Arbeitsspeicher}}",
+      "memory": {
+        "title": "Der Dateispeicher auf dem Gerät ist in diesem Browser nicht verfügbar",
+        "body": "Die Dateien werden stattdessen im Arbeitsspeicher gehalten, daher werden Eingaben bis {limit} unterstützt. In beiden Fällen wird nichts hochgeladen."
+      },
+      "error": {
+        "title": "{code, select, no_route {Hier nicht verfügbar} engine_integrity {Integritätsprüfung der Engine fehlgeschlagen} other {Etwas ist schiefgelaufen}}"
+      },
+      "handoff": {
+        "title": "In der Desktop-App fortfahren",
+        "reason": "{reason, select, ocr {Einige Seiten benötigen OCR, um ihren gesamten Text zu extrahieren.} other {Dieses Dokument benötigt eine Engine oder mehr Speicher, als der Browser bietet.}}",
+        "picker": "Die Desktop-App öffnet einen Dateiauswähler. Wählen Sie dieses Dokument erneut aus; Ihr Browser sendet die Datei nicht.",
+        "open": "In Desktop öffnen",
+        "cloud_alternative": "Oder konvertieren Sie es auf {host}, nachdem Sie den Upload bestätigt haben.",
+        "cloud_button": "In der Cloud verarbeiten"
+      },
+      "drop": {
+        "button": "Datei auswählen",
+        "button_busy": "Wird gelesen…",
+        "label": "Zu konvertierendes Dokument",
+        "title": "Dokument hier ablegen",
+        "hint": "Markdown, HTML, DOCX, EPUB, digitales PDF oder IR-JSON bis {limit}. Es bleibt auf diesem Gerät."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · „{title}“"
+      },
+      "count": {
+        "headings": "Überschriften",
+        "paragraphs": "Absätze",
+        "tables": "Tabellen",
+        "images": "Bilder",
+        "links": "Links",
+        "footnotes": "Fußnoten",
+        "words": "Wörter"
+      },
+      "unreachable": {
+        "cli": "{format} kann noch nicht im Browser konvertiert werden. <link>Die AriadShift-CLI</link> konvertiert es auf Ihrem Computer.",
+        "none": "AriadShift kann {format} noch nicht konvertieren."
+      },
+      "cloud": {
+        "loading": "Cloud-Modus wird geladen…"
+      },
+      "convert": {
+        "title": "Konvertieren",
+        "hint": "Der Planer wählt die Route mit dem besten gemessenen Wert.",
+        "target_label": "Konvertieren zu",
+        "profile_label": "Profil",
+        "route_heading": "Warum diese Route",
+        "elsewhere": "{formats} {count, plural, one {benötigt} other {benötigen}} vorerst die <link>AriadShift-CLI</link>.",
+        "button": "Konvertieren",
+        "button_busy": "Wird konvertiert…",
+        "cancel": "Abbrechen"
+      },
+      "result": {
+        "title": "Fertig",
+        "summary": "<output>{name}</output> · {size} · in {duration} auf diesem Gerät konvertiert",
+        "download": "{name} herunterladen"
+      },
+      "start_over": "Neu beginnen und Dateien löschen"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Konto",
+        "description": "Ihr AriadShift-Cloud-Konto: Profil, Passwort, Passkeys und Zwei-Faktor-Anmeldung."
+      },
+      "sign_in": {
+        "title": "Anmelden",
+        "description": "Melden Sie sich bei Ihrem AriadShift-Cloud-Konto an oder erstellen Sie eines."
+      },
+      "jobs": {
+        "title": "Aufträge",
+        "description": "Status, Downloads und Löschen Ihrer AriadShift-Cloud-Konvertierungen."
+      },
+      "api_keys": {
+        "title": "API-Schlüssel",
+        "description": "API-Schlüssel für die AriadShift-Cloud-API erstellen und widerrufen."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Konto"
+      },
+      "shell": {
+        "not_configured_title": "Die Cloud ist nicht konfiguriert",
+        "not_configured_body": "Diese Kopie von AriadShift läuft nur auf Ihrem Gerät. Konten, API-Schlüssel und Cloud-Aufträge benötigen einen Server; sein Betreiber setzt <code>{api_variable}</code> und <code>{auth_variable}</code>, wenn er die Website erstellt.",
+        "not_configured_convert": "Sie können weiterhin <link>Dateien in Ihrem Browser konvertieren</link>.",
+        "nav_label": "Konto",
+        "nav": {
+          "account": "Konto",
+          "api_keys": "API-Schlüssel",
+          "jobs": "Aufträge"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Angemeldet als <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Ihre Sitzung wird geprüft…",
+        "error_title": "Ihre Sitzung kann nicht geprüft werden",
+        "signed_out": "Sie sind nicht angemeldet."
+      },
+      "actions": {
+        "sign_in": "Anmelden",
+        "try_again": "Erneut versuchen",
+        "cancel": "Abbrechen",
+        "done": "Fertig",
+        "continue": "Weiter",
+        "revoke": "Widerrufen",
+        "copied": "Kopiert"
+      },
+      "fields": {
+        "name": "Name",
+        "email": "E-Mail",
+        "password": "Passwort",
+        "authentication_code": "Authentifizierungscode",
+        "password_hint": "Mindestens {min} Zeichen."
+      },
+      "dates": {
+        "unknown": "unbekanntes Datum"
+      },
+      "errors": {
+        "auth_refused": "Der Authentifizierungsdienst hat die Anfrage abgelehnt.",
+        "service_unreachable": "Der Anmeldedienst ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+        "session_ended": "Ihre Sitzung ist beendet. Melden Sie sich erneut an.",
+        "rate_limited": "Zu viele Anfragen. Versuchen Sie es in Kürze erneut.",
+        "rate_limited_after": "Zu viele Anfragen. Versuchen Sie es in {seconds} s erneut.",
+        "sign_in_unverifiable": "Der Server kann Ihre Anmeldung gerade nicht überprüfen. Versuchen Sie es in Kürze erneut.",
+        "token_invalid": "Der Anmeldedienst hat ein ungültiges API-Token zurückgegeben.",
+        "reauth_required": "Melden Sie sich erneut an, bevor Sie Ihr Konto löschen.",
+        "delete_not_allowed": "Dieser Server erlaubt das Löschen von Konten in der Web-App nicht. Bitten Sie den Betreiber, es zu löschen.",
+        "job_gone": "Dieser Auftrag ist nicht mehr auf dem Server.",
+        "file_deleted": "Diese Datei wurde bereits gelöscht.",
+        "job_conflict": "Der Auftrag ist nicht bereit, oder seine hochgeladene Datei ist nicht mehr auf dem Server.",
+        "quota_exceeded": "Sie haben die Cloud-Konvertierungen Ihres Tarifs vorerst aufgebraucht. Konvertieren Sie auf diesem Gerät oder versuchen Sie es später erneut.",
+        "request_failed": "Der Server konnte die Anfrage nicht abschließen. Versuchen Sie es in Kürze erneut.",
+        "network_unreachable": "Der Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+        "transfer_incomplete": "Die Übertragung wurde nicht abgeschlossen. Versuchen Sie es erneut."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Name speichern",
+        "saved": "Name gespeichert.",
+        "save_failed": "Der Name konnte nicht gespeichert werden."
+      },
+      "password": {
+        "title": "Passwort",
+        "current": "Aktuelles Passwort",
+        "new": "Neues Passwort",
+        "confirm": "Neues Passwort bestätigen",
+        "revoke_others": "Von anderen Sitzungen abmelden",
+        "submit": "Passwort ändern",
+        "mismatch": "Die neuen Passwörter stimmen nicht überein.",
+        "changed": "Passwort geändert.",
+        "changed_revoked": "Passwort geändert. Andere Sitzungen wurden abgemeldet.",
+        "failed": "Das Passwort konnte nicht geändert werden."
+      },
+      "passkeys": {
+        "title": "Passkeys",
+        "description": "Melden Sie sich mit der Bildschirmsperre Ihres Geräts oder einem Sicherheitsschlüssel statt mit einem Passwort an.",
+        "load_failed": "Ihre Passkeys konnten nicht geladen werden.",
+        "loading": "Passkeys werden geladen…",
+        "empty": "Noch keine Passkeys.",
+        "unnamed": "Passkey ohne Namen",
+        "default_name": "Passkey",
+        "added_on": "Hinzugefügt: {date}",
+        "remove_label": "Passkey {name} entfernen",
+        "remove_button": "Entfernen<hidden> Passkey {name}</hidden>",
+        "add_button": "Passkey hinzufügen",
+        "add_title": "Passkey hinzufügen",
+        "add_description": "Benennen Sie ihn nach dem Gerät oder Schlüssel und folgen Sie dann der Aufforderung Ihres Browsers.",
+        "name_label": "Passkey-Name",
+        "name_placeholder": "Zum Beispiel: Arbeitslaptop",
+        "added": "Passkey hinzugefügt.",
+        "add_failed": "Der Passkey wurde nicht hinzugefügt.",
+        "remove_title": "{name} entfernen?",
+        "remove_title_unnamed": "Diesen Passkey entfernen?",
+        "remove_description": "Sie können sich damit nicht mehr anmelden. Ihre anderen Anmeldemethoden funktionieren weiterhin.",
+        "remove_confirm": "Passkey entfernen",
+        "removed": "{name} entfernt.",
+        "remove_failed": "Der Passkey konnte nicht entfernt werden."
+      },
+      "two_factor": {
+        "title": "Zwei-Faktor-Authentifizierung",
+        "description": "Nach dem Passwort einen Code aus einer Authenticator-App verlangen.",
+        "status_on": "Status: <badge>Ein</badge>",
+        "status_off": "Status: <badge>Aus</badge>",
+        "enable": "Zwei-Faktor-Authentifizierung einschalten",
+        "disable": "Zwei-Faktor-Authentifizierung ausschalten",
+        "regenerate": "Neue Backup-Codes erstellen",
+        "confirm_password": "Bestätigen Sie Ihr Passwort, um fortzufahren.",
+        "enable_failed": "Die Einrichtung der Zwei-Faktor-Authentifizierung konnte nicht gestartet werden. Prüfen Sie Ihr Passwort.",
+        "disable_failed": "Die Zwei-Faktor-Authentifizierung konnte nicht ausgeschaltet werden. Prüfen Sie Ihr Passwort.",
+        "regenerate_failed": "Neue Backup-Codes konnten nicht erstellt werden. Prüfen Sie Ihr Passwort.",
+        "verify_failed": "Dieser Code wurde nicht akzeptiert. Prüfen Sie die Uhrzeit Ihres Geräts und versuchen Sie es erneut.",
+        "disabled": "Die Zwei-Faktor-Authentifizierung ist aus.",
+        "enabled": "Die Zwei-Faktor-Authentifizierung ist ein.",
+        "regenerated": "Neue Backup-Codes erstellt. Die alten funktionieren nicht mehr.",
+        "setup_title": "Authenticator einrichten",
+        "setup_description": "Fügen Sie AriadShift zu Ihrer Authenticator-App hinzu und geben Sie dann den angezeigten Code ein.",
+        "setup_key_intro": "Geben Sie diesen Einrichtungsschlüssel in der App ein:",
+        "setup_key_unavailable": "Nicht verfügbar",
+        "open_in_app": "In einer Authenticator-App auf diesem Gerät öffnen",
+        "turn_on": "Einschalten",
+        "codes_title": "Neue Backup-Codes",
+        "backup_intro": "Bewahren Sie diese Backup-Codes an einem sicheren Ort auf. Jeder meldet Sie einmal an, falls Sie Ihren Authenticator verlieren. Sie werden nicht erneut angezeigt.",
+        "copy_codes": "Backup-Codes kopieren",
+        "copy_failed": "Kopieren fehlgeschlagen; markieren Sie stattdessen die Codes"
+      },
+      "account_actions": {
+        "title": "Sitzung und Konto",
+        "sign_out": "Abmelden",
+        "delete": "Konto löschen",
+        "signed_out": "Abgemeldet.",
+        "sign_out_failed": "Abmelden nicht möglich. Versuchen Sie es erneut.",
+        "deleted": "Ihr Konto wurde gelöscht.",
+        "delete_failed_password": "Das Konto konnte nicht gelöscht werden. Prüfen Sie Ihr Passwort.",
+        "delete_failed_session": "Das Konto konnte nicht gelöscht werden. Melden Sie sich erneut an und versuchen Sie es noch einmal.",
+        "delete_note": "Beim Löschen Ihres Kontos werden Ihre <keys>API-Schlüssel</keys> automatisch widerrufen. Löschen Sie vorher die <jobs>Cloud-Aufträge</jobs>, die Sie noch haben. Dateien von Aufträgen, die Sie belassen, werden entfernt, wenn ihre Aufbewahrungsfrist endet.",
+        "dialog_title": "Ihr Konto löschen?",
+        "dialog_description_password": "Dies kann nicht rückgängig gemacht werden. Bestätigen Sie Ihr Passwort, um das Konto zu löschen.",
+        "dialog_description_session": "Dies kann nicht rückgängig gemacht werden. Bestätigen Sie unten, um das Konto mit Ihrer aktuellen Anmeldesitzung zu löschen.",
+        "sign_in_again": "Erneut anmelden"
+      },
+      "connected_apps": {
+        "title": "Verbundene Apps",
+        "description": "Apps und MCP-Clients, die Sie für die Nutzung Ihres Kontos autorisiert haben, und OAuth-Clients, die Sie registriert haben.",
+        "load_failed": "Ihre verbundenen Apps konnten nicht geladen werden.",
+        "loading": "Verbundene Apps werden geladen…",
+        "empty": "Noch keine verbundenen Apps oder registrierten OAuth-Clients.",
+        "scopes_none": "keine",
+        "consent_details": "Autorisierte App · Berechtigungen: {scopes} · Autorisiert: {date}",
+        "client_details": "Registrierter OAuth-Client ({client_id})",
+        "client_details_dated": "Registrierter OAuth-Client ({client_id}) · Registriert: {date}",
+        "revoke_label": "{name} widerrufen",
+        "revoked": "{name} widerrufen.",
+        "revoke_failed": "Der Zugriff konnte nicht widerrufen werden.",
+        "revoke_title": "{name} widerrufen?",
+        "revoke_consent_description": "Durch das Widerrufen werden neue Tokens und die Token-Erneuerung sofort gestoppt. Bereits ausgestellte signierte Zugriffstokens (Lebensdauer 15 Minuten) funktionieren, bis sie ablaufen.",
+        "revoke_client_description": "Wenn Sie diesen registrierten OAuth-Client löschen, werden seine Zugangsdaten und Einwilligungen widerrufen und neue Tokens und die Token-Erneuerung sofort gestoppt. Bereits ausgestellte signierte Zugriffstokens (Lebensdauer 15 Minuten) funktionieren, bis sie ablaufen."
+      },
+      "api_keys": {
+        "page_title": "API-Schlüssel",
+        "section_title": "Ihre Schlüssel",
+        "section_description": "Skripte und Integrationen senden einen Schlüssel im Header <code>x-api-key</code> an {host}. Ein Schlüssel handelt mit Ihrem Konto und dessen Tarif.",
+        "load_failed": "Ihre API-Schlüssel konnten nicht geladen werden.",
+        "loading": "API-Schlüssel werden geladen…",
+        "empty": "Noch keine API-Schlüssel.",
+        "unnamed": "Schlüssel ohne Namen",
+        "disabled": "Deaktiviert",
+        "key_details": "Erstellt: {date} · {expiry}",
+        "never_expires": "Läuft nie ab",
+        "expired_on": "Abgelaufen: {date}",
+        "expires_on": "Läuft ab: {date}",
+        "revoke_label": "API-Schlüssel {name} widerrufen",
+        "revoke_button": "Widerrufen<hidden> API-Schlüssel {name}</hidden>",
+        "create_button": "API-Schlüssel erstellen",
+        "create_title": "API-Schlüssel erstellen",
+        "create_description": "Benennen Sie den Schlüssel nach dem Skript oder Dienst, der ihn verwendet.",
+        "name_placeholder": "Zum Beispiel: CI",
+        "expires_after": "Läuft ab nach",
+        "lifetime_days": "{days, plural, one {# Tag} other {# Tage}}",
+        "lifetime_year": "1 Jahr",
+        "lifetime_never": "Kein Ablauf",
+        "create_submit": "Schlüssel erstellen",
+        "create_failed": "Der Schlüssel konnte nicht erstellt werden.",
+        "created": "API-Schlüssel {name} erstellt.",
+        "secret_title": "Ihr neuer API-Schlüssel",
+        "secret_label": "API-Schlüssel",
+        "secret_notice": "Kopieren Sie den Schlüssel jetzt. Er wird nur als Hash gespeichert und nie wieder angezeigt.",
+        "copy_key": "Schlüssel kopieren",
+        "copy_failed": "Kopieren fehlgeschlagen. Markieren Sie den Schlüssel und kopieren Sie ihn.",
+        "revoke_title": "{name} widerrufen?",
+        "revoke_description": "Anfragen mit diesem Schlüssel werden sofort abgelehnt. Dies kann nicht rückgängig gemacht werden.",
+        "revoke_confirm": "Schlüssel widerrufen",
+        "revoked": "API-Schlüssel {name} widerrufen. Anfragen mit diesem Schlüssel werden ab jetzt abgelehnt.",
+        "revoke_failed": "Der Schlüssel konnte nicht widerrufen werden."
+      },
+      "jobs": {
+        "title": "Aufträge",
+        "intro_server": "Cloud-Konvertierungen Ihres Kontos auf {host}, von jedem Gerät aus. Die Dateien bleiben auf {host}, bis sie automatisch gelöscht werden oder Sie sie hier löschen.",
+        "intro_account_browser": "Cloud-Konvertierungen, die in diesem Browser mit Ihrem Konto gestartet wurden. Diese Liste wird nur auf diesem Gerät gespeichert. Die Dateien bleiben auf {host}, bis sie automatisch gelöscht werden oder Sie sie hier löschen.",
+        "intro_anonymous_browser": "Cloud-Konvertierungen, die in diesem Browser ohne Konto gestartet wurden. Diese Liste wird nur auf diesem Gerät gespeichert. Die Dateien bleiben auf {host}, bis sie automatisch gelöscht werden oder Sie sie hier löschen.",
+        "signed_out_notice": "Es werden Aufträge ohne Konto angezeigt. <link>Melden Sie sich an</link>, um die Aufträge Ihres Kontos zu sehen.",
+        "loading": "Ihre Aufträge werden geladen…",
+        "list_unsupported": "{host} kann die Aufträge Ihres Kontos noch nicht auflisten, daher zeigt diese Seite die in diesem Browser gestarteten Aufträge.",
+        "list_error_title": "Ihre Aufträge von {host} können nicht geladen werden",
+        "list_error_body": "{reason} Bis dahin zeigt diese Seite die in diesem Browser gestarteten Aufträge.",
+        "count": "{count, plural, one {# Auftrag} other {# Aufträge}}",
+        "empty": "Noch keine Cloud-Aufträge. Starten Sie einen im <link>Konverter</link>.",
+        "show_more": "Weitere Aufträge anzeigen",
+        "loading_more": "Weitere Aufträge werden geladen…",
+        "unnamed": "Auftrag {id}",
+        "forgotten": "{filename} wurde aus dieser Liste entfernt. Die zugehörigen Dateien auf dem Server bleiben unverändert.",
+        "forgotten_unnamed": "Der Auftrag wurde aus dieser Liste entfernt. Seine Dateien auf dem Server bleiben unverändert.",
+        "status": {
+          "queued": "In der Warteschlange",
+          "converting": "Wird konvertiert",
+          "converting_stage": "Wird konvertiert: {stage}",
+          "retrying": "Neuer Versuch (Versuch {attempt})",
+          "reconnecting": "{step} · Verbindung wird wiederhergestellt…",
+          "ready": "Bereit",
+          "failed": "Fehlgeschlagen",
+          "canceled": "Abgebrochen",
+          "deleted": "Gelöscht",
+          "deleted_expired": "Gelöscht (abgelaufen)"
+        },
+        "until": {
+          "less_than_minute": "in weniger als einer Minute",
+          "minutes": "in {minutes} min",
+          "hours": "in {hours} h",
+          "hours_minutes": "in {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Automatisch gelöscht um {clock}.",
+          "deleted_from_server": "Vom Server gelöscht. Die Eingabe- und Ausgabedateien sind weg.",
+          "being_deleted": "Wird gerade gelöscht.",
+          "deletes_at": "Wird automatisch gelöscht um {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Dieses Dokument benötigt mehr, als Ihr Tarif erlaubt. Versuchen Sie eine kleinere Datei oder konvertieren Sie sie auf diesem Gerät.",
+          "unsupported_route": "Dieser Server kann nicht zwischen diesen Formaten konvertieren. Wählen Sie im Konverter ein anderes Ziel.",
+          "input_io": "Die hochgeladene Datei konnte nicht gelesen werden oder ist nicht mehr auf dem Server. Laden Sie sie erneut hoch.",
+          "storage": "Der Server konnte das Ergebnis nicht speichern. Versuchen Sie es gleich noch einmal.",
+          "tool_missing": "Auf diesem Server fehlt die Engine, die die Route benötigt. Fragen Sie den Betreiber oder wählen Sie ein anderes Ziel.",
+          "other": "Die Konvertierung ist fehlgeschlagen. Versuchen Sie es erneut oder konvertieren Sie die Datei auf diesem Gerät."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Status wird geladen…",
+          "try_again": "Erneut versuchen<hidden>, {filename} zu laden</hidden>",
+          "technical_details": "Technische Details",
+          "warnings": "{count, plural, one {# Warnung} other {# Warnungen}}",
+          "download": "{filename} herunterladen",
+          "retry_label": "{filename} wiederholen",
+          "retry_button": "Wiederholen<hidden> {filename}</hidden>",
+          "delete_label": "{filename} jetzt vom Server löschen",
+          "delete_button": "Jetzt löschen<hidden> {filename} vom Server</hidden>",
+          "remove_label": "Aus dieser Liste entfernen ({filename})",
+          "remove_button": "Aus dieser Liste entfernen<hidden> ({filename})</hidden>",
+          "deleted_note": "Von {host} gelöscht. Die Eingabe- und Ausgabedateien sind weg.",
+          "deleted_announce": "{filename} wurde von {host} gelöscht. Die Eingabe- und Ausgabedateien sind weg.",
+          "ready_announce": "{filename} ist konvertiert und kann heruntergeladen werden.",
+          "failed_announce": "Die Konvertierung von {filename} ist fehlgeschlagen. {reason}",
+          "canceled_announce": "Die Konvertierung von {filename} wurde abgebrochen.",
+          "downloading": "{filename} wird heruntergeladen.",
+          "retrying": "{filename} wird erneut versucht.",
+          "retry_conflict": "Die hochgeladene Datei ist nicht mehr auf dem Server. Laden Sie sie im Konverter erneut hoch."
+        }
+      },
+      "sign_in": {
+        "title": "Anmelden",
+        "create_title": "Konto erstellen",
+        "two_factor_title": "Zwei-Faktor-Prüfung",
+        "signed_in": "Angemeldet.",
+        "go_to_account": "Zu Ihrem Konto",
+        "passkey": "Mit einem Passkey anmelden",
+        "no_account": "Noch kein Konto? <switch>Erstellen Sie eines</switch>",
+        "have_account": "Sie haben bereits ein Konto? <switch>Anmelden</switch>",
+        "sign_in_failed": "Anmeldung nicht möglich. Prüfen Sie Ihre E-Mail-Adresse und Ihr Passwort.",
+        "passkey_failed": "Anmeldung mit einem Passkey nicht möglich.",
+        "code_rejected": "Dieser Code wurde nicht akzeptiert. Versuchen Sie es erneut.",
+        "create_failed": "Das Konto konnte nicht erstellt werden.",
+        "passwords_mismatch": "Die Passwörter stimmen nicht überein.",
+        "bot_check": "Schließen Sie die Bot-Prüfung der Registrierung ab und versuchen Sie es erneut.",
+        "confirm_password": "Passwort bestätigen",
+        "create_account": "Konto erstellen",
+        "totp_help": "Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.",
+        "backup_help": "Geben Sie einen der Backup-Codes ein, die Sie beim Einschalten der Zwei-Faktor-Authentifizierung gespeichert haben. Jeder Code funktioniert nur einmal.",
+        "backup_code": "Backup-Code",
+        "trust_device": "Diesem Browser 30 Tage vertrauen",
+        "verify": "Bestätigen",
+        "use_backup": "Stattdessen einen Backup-Code verwenden",
+        "use_authenticator": "Stattdessen einen Authenticator-Code verwenden",
+        "signed_in_user": "Sie sind angemeldet als <user>{email}</user>."
+      }
+    }
+  }
+}

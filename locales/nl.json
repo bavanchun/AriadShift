@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Bewerkbaar",
+        "description": "Echte koppen, lijsten en tabellen die je kunt blijven bewerken."
+      },
+      "faithful": {
+        "label": "Getrouw",
+        "description": "Blijf zo dicht mogelijk bij de opmaak."
+      },
+      "fast": {
+        "label": "Snel",
+        "description": "Kies de snelste route."
+      },
+      "private": {
+        "label": "Privé",
+        "description": "Alleen engines die je apparaat nooit verlaten."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift-kern",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF-tekstlezer"
+    },
+    "runtime": {
+      "wasm": "Browser",
+      "local": "CLI en desktop",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "niet gemeten"
+    },
+    "duration": {
+      "under_1_ms": "minder dan 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown-document",
+        "description": "CommonMark met GitHub Flavored Markdown: koppen, lijsten, tabellen, takenlijsten, voetnoten en formules. Het formaat dat de meeste AI-tools het best lezen."
+      },
+      "html": {
+        "noun": "HTML-pagina",
+        "description": "Een zelfstandige HTML5-pagina. Onbewerkte markup in de invoer wordt opgeschoond; scripts en onveilige attributen komen nooit in de uitvoer terecht."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR-document",
+        "description": "Het gestructureerde documentmodel waar elke AriadShift-route doorheen loopt: koppen, blokken, tabellen, bijlagen en metagegevens als JSON met versiebeheer."
+      },
+      "docx": {
+        "noun": "Word-document",
+        "description": "Office Open XML-documenten van Microsoft Word, LibreOffice en Google Docs, gelezen en geschreven via Pandoc."
+      },
+      "epub": {
+        "noun": "EPUB-e-boek",
+        "description": "EPUB 3-e-boeken, gelezen en geschreven via Pandoc met reproduceerbare metagegevens."
+      },
+      "pdf": {
+        "noun": "PDF-document",
+        "description": "Tekst in digitale PDF’s wordt op dit apparaat gelezen. PDF-uitvoer gebruikt Typst en ingesloten lettertypen. Gescande pagina’s hebben OCR nodig in de desktop-app."
+      },
+      "odt": {
+        "noun": "OpenDocument-tekstdocument",
+        "description": "OpenDocument-tekstbestanden gebruiken LibreOffice in de desktop-app."
+      },
+      "rtf": {
+        "noun": "Rich Text-document",
+        "description": "Rich Text-documenten gebruiken LibreOffice in de desktop-app."
+      },
+      "pptx": {
+        "noun": "PowerPoint-presentatie",
+        "description": "PowerPoint-presentaties gebruiken Docling of LibreOffice in de desktop-app."
+      },
+      "xlsx": {
+        "noun": "Excel-werkmap",
+        "description": "Excel-werkmappen gebruiken Docling of LibreOffice in de desktop-app."
+      },
+      "doc": {
+        "noun": "verouderd Word-document",
+        "description": "Verouderde Word-documenten gebruiken LibreOffice in de desktop-app."
+      },
+      "xls": {
+        "noun": "verouderde Excel-werkmap",
+        "description": "Verouderde Excel-werkmappen gebruiken LibreOffice in de desktop-app."
+      },
+      "ppt": {
+        "noun": "verouderde PowerPoint-presentatie",
+        "description": "Verouderde PowerPoint-presentaties gebruiken LibreOffice in de desktop-app."
+      },
+      "ods": {
+        "noun": "OpenDocument-spreadsheet",
+        "description": "OpenDocument-spreadsheets gebruiken LibreOffice in de desktop-app."
+      },
+      "odp": {
+        "noun": "OpenDocument-presentatie",
+        "description": "OpenDocument-presentaties gebruiken LibreOffice in de desktop-app."
+      },
+      "png": {
+        "noun": "PNG-afbeelding",
+        "description": "Tekstherkenning in afbeeldingen vereist het Docling-enginepakket in de desktop-app."
+      },
+      "jpeg": {
+        "noun": "JPEG-afbeelding",
+        "description": "Tekstherkenning in afbeeldingen vereist het Docling-enginepakket in de desktop-app."
+      },
+      "webp": {
+        "noun": "WebP-afbeelding",
+        "description": "Tekstherkenning in afbeeldingen vereist het Docling-enginepakket in de desktop-app."
+      },
+      "tiff": {
+        "noun": "TIFF-afbeelding",
+        "description": "Tekstherkenning in afbeeldingen vereist het Docling-enginepakket in de desktop-app."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: documenten privé omzetten in je browser",
+      "site_description": "Zet Markdown, HTML en gestructureerde JSON om op je eigen apparaat. Standaard privé, met gemeten kwaliteit voor elke route en klaar voor AI-agents.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Naar de inhoud",
+      "home_link": "{site} startpagina",
+      "nav_label": "Hoofdmenu",
+      "nav": {
+        "converter": "Omzetter",
+        "formats": "Formaten",
+        "quality": "Kwaliteit",
+        "download": "Downloaden",
+        "privacy": "Privacy"
+      },
+      "footer": {
+        "license": "AriadShift is open source onder de Apache-2.0-licentie.",
+        "privacy": "Privacy",
+        "licenses": "Licenties",
+        "quality": "Kwaliteit",
+        "source": "Broncode"
+      },
+      "language": {
+        "label": "Taal",
+        "button": "Taal: {name}",
+        "list_label": "Kies een taal",
+        "community_badge": "Community-vertaling",
+        "community_note": "Community-vertalingen zijn machinale concepten die mensen nog kunnen corrigeren."
+      }
+    },
+    "not_found": {
+      "title": "Pagina niet gevonden",
+      "body": "Deze pagina bestaat niet.",
+      "home_link": "Naar de startpagina"
+    },
+    "home": {
+      "meta_title": "Zet documenten om op je eigen apparaat",
+      "title": "Zet documenten om op je eigen apparaat",
+      "lede": "AriadShift zet Markdown, HTML, Word, EPUB en gestructureerde JSON direct in je browser om. Lees tekst uit digitale PDF’s en maak PDF’s op je apparaat. Eén gemeten planner, geen uploads.",
+      "open_converter": "Open de omzetter",
+      "install_cli": "Installeer de CLI",
+      "why_heading": "Waarom AriadShift",
+      "why": {
+        "private": {
+          "title": "Standaard privé",
+          "body": "De omzetter draait in je browser met WebAssembly. Je document wordt opgeslagen in het privébestandssysteem van de browser en nooit geüpload."
+        },
+        "quality": {
+          "title": "Gemeten kwaliteit",
+          "body": "Elke route heeft scores voor getrouwheid en bewerkbaarheid uit een openbare benchmark. De planner kiest de beste en legt uit waarom."
+        },
+        "agents": {
+          "title": "Klaar voor AI-agents",
+          "body": "Zet documenten om naar schone Markdown of gestructureerde JSON als LLM-context. De CLI levert een MCP-server mee, zodat agents zelf bestanden kunnen omzetten."
+        }
+      },
+      "how_heading": "Hoe het werkt",
+      "how": {
+        "step_label": "Stap {number}",
+        "step_1": "Je kiest een bestand. De browser kopieert het naar het eigen privébestandssysteem.",
+        "step_2": "Een achtergrondworker laadt de AriadShift-engine, gecompileerd naar WebAssembly.",
+        "step_3": "De planner kiest de route met de beste gemeten score voor jouw doel.",
+        "step_4": "Je downloadt het resultaat. Opnieuw beginnen verwijdert alle opgeslagen bestanden."
+      },
+      "pairs_heading": "Zet om in je browser",
+      "pair_link": "{from} naar {to}",
+      "see_more": "Bekijk elk <formats>ondersteund formaat</formats> en de <quality>gemeten kwaliteit</quality> van elke route."
+    },
+    "formats": {
+      "meta_title": "Ondersteunde formaten",
+      "meta_description": "Welke documentformaten AriadShift leest en schrijft, en welke conversies in je browser draaien.",
+      "title": "Ondersteunde formaten",
+      "lede": "Elke conversie loopt via het documentmodel van AriadShift. Formaten met het label “browser” worden volledig op dit apparaat omgezet; voor de andere heb je voorlopig de opdrachtregeltool nodig.",
+      "badge_browser": "Browser en CLI",
+      "badge_cli": "CLI",
+      "extensions": "Extensies: {list}",
+      "engines": "Gelezen door {readers}; geschreven door {writers}.",
+      "no_engine": "nog geen engine",
+      "convert_to": "Omzetten naar: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Gemeten kwaliteit",
+      "meta_description": "Getrouwheid, bewerkbaarheid en snelheid van elke AriadShift-conversiestap, gegenereerd uit een openbare benchmark.",
+      "title": "Gemeten kwaliteit",
+      "lede": "Deze scores zijn niet met de hand geschreven. De benchmark zet {count, plural, one {# openbaar testdocument} other {# openbare testdocumenten}} om via elke stap en vergelijkt het resultaat met de bekende waarheid. De planner gebruikt dezelfde cijfers om een route te kiezen.",
+      "generated": "{pandoc, select, none {Gegenereerd op {date}.} other {Gegenereerd op {date} met Pandoc {pandoc}.}}",
+      "methodology": "<link>Lees de methodologie</link>.",
+      "caption": "Benchmarkscores per conversiestap",
+      "column": {
+        "step": "Stap",
+        "engine": "Engine",
+        "runs_in": "Draait in",
+        "fidelity": "Getrouwheid",
+        "editability": "Bewerkbaarheid",
+        "median_time": "Mediane tijd",
+        "samples": "Metingen"
+      }
+    },
+    "route": {
+      "label": "Conversieroute",
+      "then": "dan",
+      "fidelity": "Getrouwheid",
+      "editability": "Bewerkbaarheid",
+      "estimated_time": "Geschatte tijd",
+      "unmeasured": "Een deel van deze route is nog niet gebenchmarkt, dus de planner beoordeelt hem voorzichtig."
+    },
+    "download": {
+      "meta_title": "Downloaden",
+      "meta_description": "Installeer de AriadShift-opdrachtregeltool en MCP-server op macOS, Linux en Windows.",
+      "title": "AriadShift downloaden",
+      "lede": "De opdracht <code>ashift</code> zet Markdown, HTML, DOCX en EPUB om op je computer en draait een MCP-server voor AI-agents. DOCX- en EPUB-routes gebruiken <pandoc>Pandoc 3.12 of nieuwer</pandoc> als apart programma.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS en Linux)",
+          "note": "Beschikbaar zodra de formula is gepubliceerd. Installeert ook Pandoc, dat DOCX- en EPUB-routes nodig hebben."
+        },
+        "shell": {
+          "title": "Shell-installatieprogramma (macOS en Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell-installatieprogramma (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Beschikbaar zodra de pakketinzending is geaccepteerd."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Beschikbaar zodra de crates op crates.io zijn gepubliceerd."
+        }
+      },
+      "then_heading": "Daarna",
+      "releases": "Archieven voor elk platform staan op <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Desktop-app",
+        "body": "Er komt een desktop-app voor macOS, Windows en Linux met batchconversie en mapbewaking. Zodra de eerste release uit is, staat hij hier vermeld."
+      }
+    },
+    "pair": {
+      "meta_title": "{from} omzetten naar {to}",
+      "meta_description_browser": "Zet een {noun} in je browser privé om naar {to} met AriadShift. Gemeten getrouwheid, geen uploads.",
+      "meta_description_cli": "Zet een {noun} op je eigen computer om naar {to} met AriadShift. Gemeten getrouwheid, geen uploads.",
+      "badge_browser": "Draait in je browser",
+      "badge_cli": "Draait met de AriadShift CLI",
+      "title": "{from} omzetten naar {to}",
+      "lede_browser": "Zet een {noun} om naar {to} zonder het te uploaden. AriadShift leest het bestand in je browser, zet het om naar het eigen documentmodel en schrijft {to} op je apparaat.",
+      "lede_cli": "Zet een {noun} op je eigen computer om naar {to} met de gratis AriadShift-opdrachtregeltool. De browserversie ondersteunt deze route nog niet.",
+      "convert_now": "{from} nu omzetten naar {to}",
+      "install_cli": "Installeer de CLI",
+      "route_heading": "De route die AriadShift volgt",
+      "from_heading": "Van {format}",
+      "to_heading": "Naar {format}",
+      "cli_heading": "Via de opdrachtregel",
+      "related_heading": "Verwante conversies",
+      "related_link": "{from} naar {to}"
+    },
+    "converter_page": {
+      "meta_title": "Omzetter",
+      "meta_description": "Zet Markdown, HTML, DOCX, EPUB, digitale PDF en AriadShift IR JSON om in je browser. Bestanden blijven op je apparaat.",
+      "title": "Een document omzetten",
+      "lede": "Kies een bestand, kies een doel en download het resultaat. Alles gebeurt in dit tabblad{cloud, select, yes {, tenzij je ervoor kiest dit bestand in de cloud om te zetten.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licenties",
+      "meta_description": "Licenties en broncode van AriadShift en de browser-engines."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Cloudmodus is onverwacht gestopt",
+        "stopped_body": "In de cloudmodus is een fout opgetreden nadat de upload was begonnen. Een kopie op de server wordt automatisch verwijderd zodra de bewaartermijn afloopt, of je kunt op dit apparaat omzetten.",
+        "load_title": "Cloudmodus kon niet worden geladen",
+        "load_body": "De cloudomzetter kon niet worden geladen (bijvoorbeeld omdat je offline bent). Je kunt nog steeds op dit apparaat omzetten.",
+        "use_device": "Op dit apparaat omzetten"
+      },
+      "status": {
+        "deleted_from_server": "{name} is van de server verwijderd.",
+        "reading": "{name} wordt op dit apparaat gelezen.",
+        "detected": "{name} is {format}.",
+        "read_failed": "Het bestand kon niet worden gelezen.",
+        "converting": "Omzetten naar {format} op dit apparaat.",
+        "ready": "{name} is klaar om te downloaden.",
+        "convert_failed": "De conversie is mislukt.",
+        "saved": "{name} opgeslagen.",
+        "reset": "{outcome, select, deleted {Bestanden zijn van dit apparaat en van de server verwijderd.} kept {Bestanden zijn van dit apparaat verwijderd. {name} staat nog op de server.} other {Bestanden zijn van dit apparaat verwijderd.}}",
+        "cloud_selected": "Cloudconversie geselecteerd voor {name}. Er is nog niets geüpload.",
+        "cloud_selected_unnamed": "Cloudconversie geselecteerd voor dit bestand. Er is nog niets geüpload."
+      },
+      "device": {
+        "cloud": "<strong>Cloudconversie geselecteerd.</strong> Dit bestand verlaat je browser pas als je Uploaden en omzetten kiest.",
+        "local": "<strong>Verwerkt op dit apparaat.</strong> Bestanden verlaten je browser nooit en worden niet geüpload."
+      },
+      "storage_badge": "{storage, select, opfs {Privéopslag van de browser} other {In het geheugen}}",
+      "memory": {
+        "title": "Bestandsopslag op het apparaat is niet beschikbaar in deze browser",
+        "body": "Bestanden worden in plaats daarvan in het geheugen bewaard, dus invoer tot {limit} wordt ondersteund. In beide gevallen wordt er niets geüpload."
+      },
+      "error": {
+        "title": "{code, select, no_route {Hier niet beschikbaar} engine_integrity {Integriteitscontrole van de engine mislukt} other {Er is iets misgegaan}}"
+      },
+      "handoff": {
+        "title": "Ga verder in de desktop-app",
+        "reason": "{reason, select, ocr {Voor sommige pagina’s is OCR nodig om alle tekst te halen.} other {Dit document heeft een engine of meer geheugen nodig dan de browser biedt.}}",
+        "picker": "De desktop-app opent een bestandskiezer. Kies dit document opnieuw; je browser stuurt het bestand niet door.",
+        "open": "Openen in Desktop",
+        "cloud_alternative": "Of zet het om op {host}, nadat je de upload hebt bevestigd.",
+        "cloud_button": "Verwerken in de cloud"
+      },
+      "drop": {
+        "button": "Kies een bestand",
+        "button_busy": "Lezen…",
+        "label": "Om te zetten document",
+        "title": "Zet hier een document neer",
+        "hint": "Markdown, HTML, DOCX, EPUB, digitale PDF of IR JSON tot {limit}. Het blijft op dit apparaat."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Koppen",
+        "paragraphs": "Alinea’s",
+        "tables": "Tabellen",
+        "images": "Afbeeldingen",
+        "links": "Koppelingen",
+        "footnotes": "Voetnoten",
+        "words": "Woorden"
+      },
+      "unreachable": {
+        "cli": "{format} kan nog niet in de browser worden omgezet. <link>De AriadShift CLI</link> zet het om op je computer.",
+        "none": "AriadShift kan {format} nog niet omzetten."
+      },
+      "cloud": {
+        "loading": "Cloudmodus laden…"
+      },
+      "convert": {
+        "title": "Omzetten",
+        "hint": "De planner kiest de route met de beste gemeten score.",
+        "target_label": "Omzetten naar",
+        "profile_label": "Profiel",
+        "route_heading": "Waarom deze route",
+        "elsewhere": "{formats} {count, plural, one {vereist} other {vereisen}} voorlopig de <link>AriadShift CLI</link>.",
+        "button": "Omzetten",
+        "button_busy": "Omzetten…",
+        "cancel": "Annuleren"
+      },
+      "result": {
+        "title": "Klaar",
+        "summary": "<output>{name}</output> · {size} · omgezet in {duration} op dit apparaat",
+        "download": "{name} downloaden"
+      },
+      "start_over": "Opnieuw beginnen en bestanden verwijderen"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Account",
+        "description": "Je AriadShift-cloudaccount: profiel, wachtwoord, passkeys en tweestapsaanmelding."
+      },
+      "sign_in": {
+        "title": "Aanmelden",
+        "description": "Meld je aan bij je AriadShift-cloudaccount of maak er een aan."
+      },
+      "jobs": {
+        "title": "Taken",
+        "description": "Status, downloads en verwijdering van je AriadShift-cloudconversies."
+      },
+      "api_keys": {
+        "title": "API-sleutels",
+        "description": "Maak API-sleutels voor de AriadShift-cloud-API aan en trek ze in."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Account"
+      },
+      "shell": {
+        "not_configured_title": "De cloud is niet geconfigureerd",
+        "not_configured_body": "Deze kopie van AriadShift draait alleen op je apparaat. Accounts, API-sleutels en cloudtaken hebben een server nodig; de beheerder stelt <code>{api_variable}</code> en <code>{auth_variable}</code> in bij het bouwen van de site.",
+        "not_configured_convert": "Je kunt nog steeds <link>bestanden in je browser omzetten</link>.",
+        "nav_label": "Account",
+        "nav": {
+          "account": "Account",
+          "api_keys": "API-sleutels",
+          "jobs": "Taken"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Aangemeld als <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Je sessie wordt gecontroleerd…",
+        "error_title": "Je sessie kan niet worden gecontroleerd",
+        "signed_out": "Je bent niet aangemeld."
+      },
+      "actions": {
+        "sign_in": "Aanmelden",
+        "try_again": "Opnieuw proberen",
+        "cancel": "Annuleren",
+        "done": "Klaar",
+        "continue": "Doorgaan",
+        "revoke": "Intrekken",
+        "copied": "Gekopieerd"
+      },
+      "fields": {
+        "name": "Naam",
+        "email": "E-mailadres",
+        "password": "Wachtwoord",
+        "authentication_code": "Verificatiecode",
+        "password_hint": "Minimaal {min} tekens."
+      },
+      "dates": {
+        "unknown": "een onbekende datum"
+      },
+      "errors": {
+        "auth_refused": "De authenticatieservice heeft het verzoek geweigerd.",
+        "service_unreachable": "De aanmeldservice is niet bereikbaar. Controleer je verbinding en probeer het opnieuw.",
+        "session_ended": "Je sessie is beëindigd. Meld je opnieuw aan.",
+        "rate_limited": "Te veel verzoeken. Probeer het zo meteen opnieuw.",
+        "rate_limited_after": "Te veel verzoeken. Probeer het over {seconds} s opnieuw.",
+        "sign_in_unverifiable": "De server kan je aanmelding nu niet verifiëren. Probeer het zo meteen opnieuw.",
+        "token_invalid": "De aanmeldservice heeft een ongeldig API-token teruggegeven.",
+        "reauth_required": "Meld je opnieuw aan voordat je je account verwijdert.",
+        "delete_not_allowed": "Deze server staat het verwijderen van accounts via de webapp niet toe. Vraag de beheerder het account te verwijderen.",
+        "job_gone": "Deze taak staat niet meer op de server.",
+        "file_deleted": "Dit bestand is al verwijderd.",
+        "job_conflict": "De taak is niet gereed, of het geüploade bestand staat niet meer op de server.",
+        "quota_exceeded": "Je hebt de cloudconversies van je abonnement voorlopig opgebruikt. Zet om op dit apparaat, of probeer het later opnieuw.",
+        "request_failed": "De server kon het verzoek niet voltooien. Probeer het zo meteen opnieuw.",
+        "network_unreachable": "De server is niet bereikbaar. Controleer je verbinding en probeer het opnieuw.",
+        "transfer_incomplete": "De overdracht is niet voltooid. Probeer het opnieuw."
+      },
+      "profile": {
+        "title": "Profiel",
+        "save": "Naam opslaan",
+        "saved": "Naam opgeslagen.",
+        "save_failed": "De naam kon niet worden opgeslagen."
+      },
+      "password": {
+        "title": "Wachtwoord",
+        "current": "Huidig wachtwoord",
+        "new": "Nieuw wachtwoord",
+        "confirm": "Bevestig nieuw wachtwoord",
+        "revoke_others": "Afmelden bij andere sessies",
+        "submit": "Wachtwoord wijzigen",
+        "mismatch": "De nieuwe wachtwoorden komen niet overeen.",
+        "changed": "Wachtwoord gewijzigd.",
+        "changed_revoked": "Wachtwoord gewijzigd. Andere sessies zijn afgemeld.",
+        "failed": "Het wachtwoord kon niet worden gewijzigd."
+      },
+      "passkeys": {
+        "title": "Passkeys",
+        "description": "Meld je aan met de schermvergrendeling van je apparaat of een beveiligingssleutel in plaats van een wachtwoord.",
+        "load_failed": "Je passkeys konden niet worden geladen.",
+        "loading": "Passkeys laden…",
+        "empty": "Nog geen passkeys.",
+        "unnamed": "Passkey zonder naam",
+        "default_name": "Passkey",
+        "added_on": "Toegevoegd op {date}",
+        "remove_label": "Passkey {name} verwijderen",
+        "remove_button": "Verwijderen<hidden> passkey {name}</hidden>",
+        "add_button": "Passkey toevoegen",
+        "add_title": "Een passkey toevoegen",
+        "add_description": "Geef hem de naam van het apparaat of de sleutel en volg dan de aanwijzingen van je browser.",
+        "name_label": "Naam van de passkey",
+        "name_placeholder": "Bijvoorbeeld: werklaptop",
+        "added": "Passkey toegevoegd.",
+        "add_failed": "De passkey is niet toegevoegd.",
+        "remove_title": "{name} verwijderen?",
+        "remove_title_unnamed": "Deze passkey verwijderen?",
+        "remove_description": "Je kunt er niet langer mee aanmelden. Je andere aanmeldmethoden blijven werken.",
+        "remove_confirm": "Passkey verwijderen",
+        "removed": "{name} verwijderd.",
+        "remove_failed": "De passkey kon niet worden verwijderd."
+      },
+      "two_factor": {
+        "title": "Tweestapsverificatie",
+        "description": "Vraag na je wachtwoord om een code uit een authenticator-app.",
+        "status_on": "Status: <badge>Aan</badge>",
+        "status_off": "Status: <badge>Uit</badge>",
+        "enable": "Tweestapsverificatie inschakelen",
+        "disable": "Tweestapsverificatie uitschakelen",
+        "regenerate": "Nieuwe back-upcodes aanmaken",
+        "confirm_password": "Bevestig je wachtwoord om door te gaan.",
+        "enable_failed": "Het instellen van tweestapsverificatie kon niet worden gestart. Controleer je wachtwoord.",
+        "disable_failed": "Tweestapsverificatie kon niet worden uitgeschakeld. Controleer je wachtwoord.",
+        "regenerate_failed": "Nieuwe back-upcodes konden niet worden aangemaakt. Controleer je wachtwoord.",
+        "verify_failed": "Die code is niet geaccepteerd. Controleer de tijd op je apparaat en probeer het opnieuw.",
+        "disabled": "Tweestapsverificatie is uitgeschakeld.",
+        "enabled": "Tweestapsverificatie is ingeschakeld.",
+        "regenerated": "Nieuwe back-upcodes aangemaakt. De oude werken niet meer.",
+        "setup_title": "Stel je authenticator in",
+        "setup_description": "Voeg AriadShift toe aan je authenticator-app en voer dan de code in die de app toont.",
+        "setup_key_intro": "Voer deze installatiesleutel in de app in:",
+        "setup_key_unavailable": "Niet beschikbaar",
+        "open_in_app": "Openen in een authenticator-app op dit apparaat",
+        "turn_on": "Inschakelen",
+        "codes_title": "Nieuwe back-upcodes",
+        "backup_intro": "Bewaar deze back-upcodes op een veilige plek. Elke code laat je één keer aanmelden als je je authenticator kwijtraakt. Ze worden niet opnieuw getoond.",
+        "copy_codes": "Back-upcodes kopiëren",
+        "copy_failed": "Kopiëren mislukt; selecteer de codes in plaats daarvan"
+      },
+      "account_actions": {
+        "title": "Sessie en account",
+        "sign_out": "Afmelden",
+        "delete": "Account verwijderen",
+        "signed_out": "Afgemeld.",
+        "sign_out_failed": "Afmelden is mislukt. Probeer het opnieuw.",
+        "deleted": "Je account is verwijderd.",
+        "delete_failed_password": "Het account kon niet worden verwijderd. Controleer je wachtwoord.",
+        "delete_failed_session": "Het account kon niet worden verwijderd. Meld je opnieuw aan en probeer het nogmaals.",
+        "delete_note": "Als je je account verwijdert, worden je <keys>API-sleutels</keys> automatisch ingetrokken. Verwijder voordat je dat doet de <jobs>cloudtaken</jobs> die je nog hebt. Bestanden van taken die je laat staan, worden verwijderd zodra hun bewaartermijn afloopt.",
+        "dialog_title": "Je account verwijderen?",
+        "dialog_description_password": "Dit kan niet ongedaan worden gemaakt. Bevestig je wachtwoord om het account te verwijderen.",
+        "dialog_description_session": "Dit kan niet ongedaan worden gemaakt. Bevestig hieronder om het account te verwijderen met je huidige aanmeldsessie.",
+        "sign_in_again": "Opnieuw aanmelden"
+      },
+      "connected_apps": {
+        "title": "Gekoppelde apps",
+        "description": "Apps en MCP-clients die je toegang tot je account hebt gegeven, en OAuth-clients die je hebt geregistreerd.",
+        "load_failed": "Je gekoppelde apps konden niet worden geladen.",
+        "loading": "Gekoppelde apps laden…",
+        "empty": "Nog geen gekoppelde apps of geregistreerde OAuth-clients.",
+        "scopes_none": "geen",
+        "consent_details": "Geautoriseerde app · Scopes: {scopes} · Geautoriseerd op {date}",
+        "client_details": "Geregistreerde OAuth-client ({client_id})",
+        "client_details_dated": "Geregistreerde OAuth-client ({client_id}) · Geregistreerd op {date}",
+        "revoke_label": "{name} intrekken",
+        "revoked": "{name} ingetrokken.",
+        "revoke_failed": "De toegang kon niet worden ingetrokken.",
+        "revoke_title": "{name} intrekken?",
+        "revoke_consent_description": "Intrekken stopt direct nieuwe tokens en het vernieuwen van tokens. Reeds uitgegeven ondertekende toegangstokens (levensduur 15 minuten) blijven werken tot ze verlopen.",
+        "revoke_client_description": "Als je deze geregistreerde OAuth-client verwijdert, worden de bijbehorende inloggegevens en toestemmingen ingetrokken en stoppen nieuwe tokens en het vernieuwen van tokens direct. Reeds uitgegeven ondertekende toegangstokens (levensduur 15 minuten) blijven werken tot ze verlopen."
+      },
+      "api_keys": {
+        "page_title": "API-sleutels",
+        "section_title": "Je sleutels",
+        "section_description": "Scripts en integraties sturen een sleutel mee in de header <code>x-api-key</code> naar {host}. Een sleutel werkt met je account en je abonnement.",
+        "load_failed": "Je API-sleutels konden niet worden geladen.",
+        "loading": "API-sleutels laden…",
+        "empty": "Nog geen API-sleutels.",
+        "unnamed": "Sleutel zonder naam",
+        "disabled": "Uitgeschakeld",
+        "key_details": "Aangemaakt op {date} · {expiry}",
+        "never_expires": "Verloopt nooit",
+        "expired_on": "Verlopen op {date}",
+        "expires_on": "Verloopt op {date}",
+        "revoke_label": "API-sleutel {name} intrekken",
+        "revoke_button": "Intrekken<hidden> API-sleutel {name}</hidden>",
+        "create_button": "API-sleutel aanmaken",
+        "create_title": "Een API-sleutel aanmaken",
+        "create_description": "Noem de sleutel naar het script of de service die hem gaat gebruiken.",
+        "name_placeholder": "Bijvoorbeeld: CI",
+        "expires_after": "Verloopt na",
+        "lifetime_days": "{days, plural, one {# dag} other {# dagen}}",
+        "lifetime_year": "1 jaar",
+        "lifetime_never": "Verloopt niet",
+        "create_submit": "Sleutel aanmaken",
+        "create_failed": "De sleutel kon niet worden aangemaakt.",
+        "created": "API-sleutel {name} aangemaakt.",
+        "secret_title": "Je nieuwe API-sleutel",
+        "secret_label": "API-sleutel",
+        "secret_notice": "Kopieer de sleutel nu. Hij wordt alleen als hash opgeslagen en nooit opnieuw getoond.",
+        "copy_key": "Sleutel kopiëren",
+        "copy_failed": "Kopiëren mislukt. Selecteer de sleutel en kopieer hem.",
+        "revoke_title": "{name} intrekken?",
+        "revoke_description": "Verzoeken met deze sleutel worden direct geweigerd. Dit kan niet ongedaan worden gemaakt.",
+        "revoke_confirm": "Sleutel intrekken",
+        "revoked": "API-sleutel {name} ingetrokken. Verzoeken met deze sleutel worden vanaf nu geweigerd.",
+        "revoke_failed": "De sleutel kon niet worden ingetrokken."
+      },
+      "jobs": {
+        "title": "Taken",
+        "intro_server": "Cloudconversies van je account op {host}, vanaf elk apparaat. Bestanden blijven op {host} staan tot ze automatisch worden verwijderd, of tot je ze hier verwijdert.",
+        "intro_account_browser": "Cloudconversies die in deze browser met je account zijn gestart. Deze lijst wordt alleen op dit apparaat bewaard. Bestanden blijven op {host} staan tot ze automatisch worden verwijderd, of tot je ze hier verwijdert.",
+        "intro_anonymous_browser": "Cloudconversies die in deze browser zonder account zijn gestart. Deze lijst wordt alleen op dit apparaat bewaard. Bestanden blijven op {host} staan tot ze automatisch worden verwijderd, of tot je ze hier verwijdert.",
+        "signed_out_notice": "Taken zonder account worden getoond. <link>Meld je aan</link> om de taken van je account te zien.",
+        "loading": "Je taken laden…",
+        "list_unsupported": "{host} kan de taken van je account nog niet weergeven, dus deze pagina toont de taken die in deze browser zijn gestart.",
+        "list_error_title": "Je taken kunnen niet van {host} worden geladen",
+        "list_error_body": "{reason} Ondertussen toont deze pagina de taken die in deze browser zijn gestart.",
+        "count": "{count, plural, one {# taak} other {# taken}}",
+        "empty": "Nog geen cloudtaken. Start er een via de <link>omzetter</link>.",
+        "show_more": "Meer taken tonen",
+        "loading_more": "Meer taken laden…",
+        "unnamed": "Taak {id}",
+        "forgotten": "{filename} is uit deze lijst verwijderd. De bestanden op de server blijven ongewijzigd.",
+        "forgotten_unnamed": "De taak is uit deze lijst verwijderd. De bestanden op de server blijven ongewijzigd.",
+        "status": {
+          "queued": "In wachtrij",
+          "converting": "Bezig met omzetten",
+          "converting_stage": "Bezig met omzetten: {stage}",
+          "retrying": "Opnieuw proberen (poging {attempt})",
+          "reconnecting": "{step} · Opnieuw verbinden…",
+          "ready": "Klaar",
+          "failed": "Mislukt",
+          "canceled": "Geannuleerd",
+          "deleted": "Verwijderd",
+          "deleted_expired": "Verwijderd (verlopen)"
+        },
+        "until": {
+          "less_than_minute": "over minder dan een minuut",
+          "minutes": "over {minutes} min",
+          "hours": "over {hours} u",
+          "hours_minutes": "over {hours} u {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Automatisch verwijderd om {clock}.",
+          "deleted_from_server": "Van de server verwijderd. De invoer- en uitvoerbestanden zijn weg.",
+          "being_deleted": "Wordt nu verwijderd.",
+          "deletes_at": "Wordt automatisch verwijderd om {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Dit document overschrijdt wat je abonnement toestaat. Probeer een kleiner bestand, of zet het om op dit apparaat.",
+          "unsupported_route": "Deze server kan niet tussen deze formaten omzetten. Kies een ander doel in de omzetter.",
+          "input_io": "Het geüploade bestand kon niet worden gelezen of staat niet meer op de server. Upload het opnieuw.",
+          "storage": "De server kon het resultaat niet opslaan. Probeer het zo meteen opnieuw.",
+          "tool_missing": "Deze server mist de engine die de route nodig heeft. Vraag de beheerder, of kies een ander doel.",
+          "other": "De conversie is mislukt. Probeer het opnieuw, of zet het bestand om op dit apparaat."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Status laden…",
+          "try_again": "Opnieuw proberen<hidden> om {filename} te laden</hidden>",
+          "technical_details": "Technische details",
+          "warnings": "{count, plural, one {# waarschuwing} other {# waarschuwingen}}",
+          "download": "{filename} downloaden",
+          "retry_label": "{filename} opnieuw proberen",
+          "retry_button": "Opnieuw proberen<hidden> {filename}</hidden>",
+          "delete_label": "{filename} nu van de server verwijderen",
+          "delete_button": "Nu verwijderen<hidden> {filename} van de server</hidden>",
+          "remove_label": "Uit deze lijst verwijderen ({filename})",
+          "remove_button": "Uit deze lijst verwijderen<hidden> ({filename})</hidden>",
+          "deleted_note": "Verwijderd van {host}. De invoer- en uitvoerbestanden zijn weg.",
+          "deleted_announce": "{filename} verwijderd van {host}. De invoer- en uitvoerbestanden zijn weg.",
+          "ready_announce": "{filename} is omgezet en klaar om te downloaden.",
+          "failed_announce": "Omzetten van {filename} is mislukt. {reason}",
+          "canceled_announce": "Het omzetten van {filename} is geannuleerd.",
+          "downloading": "{filename} wordt gedownload.",
+          "retrying": "{filename} wordt opnieuw geprobeerd.",
+          "retry_conflict": "Het geüploade bestand staat niet meer op de server. Upload het opnieuw vanuit de omzetter."
+        }
+      },
+      "sign_in": {
+        "title": "Aanmelden",
+        "create_title": "Een account aanmaken",
+        "two_factor_title": "Tweestapscontrole",
+        "signed_in": "Aangemeld.",
+        "go_to_account": "Naar je account",
+        "passkey": "Aanmelden met een passkey",
+        "no_account": "Nog geen account? <switch>Maak er een aan</switch>",
+        "have_account": "Heb je al een account? <switch>Meld je aan</switch>",
+        "sign_in_failed": "Aanmelden is mislukt. Controleer je e-mailadres en wachtwoord.",
+        "passkey_failed": "Aanmelden met een passkey is mislukt.",
+        "code_rejected": "Die code is niet geaccepteerd. Probeer het opnieuw.",
+        "create_failed": "Het account kon niet worden aangemaakt.",
+        "passwords_mismatch": "De wachtwoorden komen niet overeen.",
+        "bot_check": "Voltooi de botcontrole voor registratie en probeer het opnieuw.",
+        "confirm_password": "Bevestig wachtwoord",
+        "create_account": "Account aanmaken",
+        "totp_help": "Voer de 6-cijferige code uit je authenticator-app in.",
+        "backup_help": "Voer een van de back-upcodes in die je hebt bewaard toen je tweestapsverificatie inschakelde. Elke code werkt één keer.",
+        "backup_code": "Back-upcode",
+        "trust_device": "Vertrouw deze browser gedurende 30 dagen",
+        "verify": "Verifiëren",
+        "use_backup": "Gebruik in plaats daarvan een back-upcode",
+        "use_authenticator": "Gebruik in plaats daarvan een authenticatorcode",
+        "signed_in_user": "Je bent aangemeld als <user>{email}</user>."
+      }
+    }
+  }
+}

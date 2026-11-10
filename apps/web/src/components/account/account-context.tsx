@@ -4,8 +4,17 @@
 // current session, and the page's two live regions (polite for progress and
 // results, assertive for failures).
 
+import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { AccountCloudConfig } from "@/lib/cloud/config";
 import { type AccountUser, type AuthApi, createBetterAuthApi } from "./auth-api";
 
@@ -52,6 +61,10 @@ export function AccountProvider({ config, auth: customAuth, children }: AccountP
     () => customAuth ?? createBetterAuthApi(config.authUrl),
     [customAuth, config.authUrl],
   );
+  const t = useTranslations("web.account");
+  // Read when a failure happens, so a changed translator never refetches the session.
+  const unreachable = useRef("");
+  unreachable.current = t("errors.service_unreachable");
   const [session, setSession] = useState<SessionState>({ status: "loading" });
   const [polite, setPolite] = useState<Announcement>({ message: "", key: 0 });
   const [assertive, setAssertive] = useState<Announcement>({ message: "", key: 0 });
@@ -63,7 +76,7 @@ export function AccountProvider({ config, auth: customAuth, children }: AccountP
     } catch {
       setSession({
         status: "error",
-        message: "The sign-in service cannot be reached. Check your connection and try again.",
+        message: unreachable.current,
       });
     }
   }, [auth]);

@@ -6,9 +6,19 @@
 import { Alert, AlertDescription } from "@ariadshift/ui/components/alert";
 import { Card, CardContent, CardDescription, CardHeader } from "@ariadshift/ui/components/card";
 import { cn } from "@ariadshift/ui/lib/utils";
+import { useLocale, useTranslations } from "next-intl";
 import type { ComponentProps, ReactNode } from "react";
 import { useCallback, useId, useState } from "react";
 import { useAccount } from "./account-context";
+import { AuthError } from "./auth-api";
+
+/** Translates a `web.account` message; what `useTranslations("web.account")` returns. */
+export type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+/** The account namespace's translator and the active locale, for formatting. */
+export function useAccountText() {
+  return { t: useTranslations("web.account"), locale: useLocale() };
+}
 
 /** Better Auth's default minimum password length. */
 export const MIN_PASSWORD_LENGTH = 8;
@@ -133,14 +143,21 @@ export function useOutcome() {
 }
 
 /** A medium-length local date, for example "25 Oct 2026". */
-export function formatDate(iso: string): string {
+export function formatDate(iso: string, t: Translate, locale: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
-    ? "an unknown date"
-    : date.toLocaleDateString(undefined, { dateStyle: "medium" });
+    ? t("dates.unknown")
+    : date.toLocaleDateString(locale, { dateStyle: "medium" });
 }
 
-/** The message of a thrown error, or a fallback for anything else. */
-export function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+/**
+ * The text to show for a thrown error. Messages the auth client wrote itself carry a
+ * catalogue key and are translated; messages the auth service sent are shown as received.
+ * Anything else falls back to the translated `fallbackKey`.
+ */
+export function errorMessage(t: Translate, error: unknown, fallbackKey: string): string {
+  if (error instanceof AuthError && error.messageKey) {
+    return t(error.messageKey);
+  }
+  return error instanceof Error && error.message ? error.message : t(fallbackKey);
 }

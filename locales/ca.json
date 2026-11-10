@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Editable",
+        "description": "Capçaleres, llistes i taules reals que pots continuar editant."
+      },
+      "faithful": {
+        "label": "Fidel",
+        "description": "Es manté tan a prop com sigui possible del disseny."
+      },
+      "fast": {
+        "label": "Ràpid",
+        "description": "Prefereix la ruta més ràpida."
+      },
+      "private": {
+        "label": "Privat",
+        "description": "Només motors que mai surten del teu dispositiu."
+      }
+    },
+    "engine": {
+      "ariad_core": "Nucli d’AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Lector de text PDF"
+    },
+    "runtime": {
+      "wasm": "Navegador",
+      "local": "CLI i escriptori",
+      "cloud": "Núvol"
+    },
+    "score": {
+      "not_measured": "no mesurat"
+    },
+    "duration": {
+      "under_1_ms": "menys d’1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "document Markdown",
+        "description": "CommonMark amb GitHub Flavored Markdown: capçaleres, llistes, taules, llistes de tasques, notes al peu i matemàtiques. El format que millor llegeixen les eines d’IA."
+      },
+      "html": {
+        "noun": "pàgina HTML",
+        "description": "Una pàgina HTML5 independent. El marcatge en brut de l’entrada es neteja; els scripts i els atributs insegurs no arriben mai a la sortida."
+      },
+      "ir_json": {
+        "noun": "document AriadShift IR",
+        "description": "El model de document estructurat pel qual passa cada ruta d’AriadShift: capçaleres, blocs, taules, recursos i metadades com a JSON amb versions."
+      },
+      "docx": {
+        "noun": "document Word",
+        "description": "Documents Office Open XML de Microsoft Word, LibreOffice i Google Docs, llegits i escrits mitjançant Pandoc."
+      },
+      "epub": {
+        "noun": "llibre electrònic EPUB",
+        "description": "Llibres electrònics EPUB 3, llegits i escrits mitjançant Pandoc amb metadades reproduïbles."
+      },
+      "pdf": {
+        "noun": "document PDF",
+        "description": "El text dels PDF digitals es llegeix en aquest dispositiu. La sortida PDF utilitza Typst i tipus de lletra incrustats. Les pàgines escanejades necessiten OCR a l’aplicació d’escriptori."
+      },
+      "odt": {
+        "noun": "document de text OpenDocument",
+        "description": "Els fitxers de text OpenDocument utilitzen LibreOffice a l’aplicació d’escriptori."
+      },
+      "rtf": {
+        "noun": "document Rich Text",
+        "description": "Els documents Rich Text utilitzen LibreOffice a l’aplicació d’escriptori."
+      },
+      "pptx": {
+        "noun": "presentació de PowerPoint",
+        "description": "Les presentacions de PowerPoint utilitzen Docling o LibreOffice a l’aplicació d’escriptori."
+      },
+      "xlsx": {
+        "noun": "llibre de treball d’Excel",
+        "description": "Els llibres de treball d’Excel utilitzen Docling o LibreOffice a l’aplicació d’escriptori."
+      },
+      "doc": {
+        "noun": "document de Word antic",
+        "description": "Els documents de Word antics utilitzen LibreOffice a l’aplicació d’escriptori."
+      },
+      "xls": {
+        "noun": "llibre de treball d’Excel antic",
+        "description": "Els llibres de treball d’Excel antics utilitzen LibreOffice a l’aplicació d’escriptori."
+      },
+      "ppt": {
+        "noun": "presentació de PowerPoint antiga",
+        "description": "Les presentacions de PowerPoint antigues utilitzen LibreOffice a l’aplicació d’escriptori."
+      },
+      "ods": {
+        "noun": "full de càlcul OpenDocument",
+        "description": "Els fulls de càlcul OpenDocument utilitzen LibreOffice a l’aplicació d’escriptori."
+      },
+      "odp": {
+        "noun": "presentació OpenDocument",
+        "description": "Les presentacions OpenDocument utilitzen LibreOffice a l’aplicació d’escriptori."
+      },
+      "png": {
+        "noun": "imatge PNG",
+        "description": "L’extracció de text d’imatges necessita el paquet de motor Docling a l’aplicació d’escriptori."
+      },
+      "jpeg": {
+        "noun": "imatge JPEG",
+        "description": "L’extracció de text d’imatges necessita el paquet de motor Docling a l’aplicació d’escriptori."
+      },
+      "webp": {
+        "noun": "imatge WebP",
+        "description": "L’extracció de text d’imatges necessita el paquet de motor Docling a l’aplicació d’escriptori."
+      },
+      "tiff": {
+        "noun": "imatge TIFF",
+        "description": "L’extracció de text d’imatges necessita el paquet de motor Docling a l’aplicació d’escriptori."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: conversió privada de documents al teu navegador",
+      "site_description": "Converteix Markdown, HTML i JSON estructurat al teu propi dispositiu. Privat per defecte, amb qualitat mesurada a cada ruta i preparat per als agents d’IA.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Salta al contingut",
+      "home_link": "Inici de {site}",
+      "nav_label": "Principal",
+      "nav": {
+        "converter": "Convertidor",
+        "formats": "Formats",
+        "quality": "Qualitat",
+        "download": "Descàrrega",
+        "privacy": "Privadesa"
+      },
+      "footer": {
+        "license": "AriadShift és de codi obert sota la llicència Apache-2.0.",
+        "privacy": "Privadesa",
+        "licenses": "Llicències",
+        "quality": "Qualitat",
+        "source": "Codi font"
+      },
+      "language": {
+        "label": "Idioma",
+        "button": "Idioma: {name}",
+        "list_label": "Tria un idioma",
+        "community_badge": "Traducció comunitària",
+        "community_note": "Les traduccions comunitàries són esborranys automàtics que les persones encara poden corregir."
+      }
+    },
+    "not_found": {
+      "title": "No s’ha trobat la pàgina",
+      "body": "Aquesta pàgina no existeix.",
+      "home_link": "Vés a la pàgina d’inici"
+    },
+    "home": {
+      "meta_title": "Converteix documents al teu propi dispositiu",
+      "title": "Converteix documents al teu propi dispositiu",
+      "lede": "AriadShift converteix Markdown, HTML, Word, EPUB i JSON estructurat aquí mateix, al teu navegador. Llegeix el text de PDF digitals i crea PDF al teu dispositiu. Un únic planificador mesurat, sense pujades.",
+      "open_converter": "Obre el convertidor",
+      "install_cli": "Instal·la la CLI",
+      "why_heading": "Per què AriadShift",
+      "why": {
+        "private": {
+          "title": "Privat per defecte",
+          "body": "El convertidor s’executa dins del teu navegador amb WebAssembly. El document es guarda al sistema de fitxers privat del navegador i no es puja mai."
+        },
+        "quality": {
+          "title": "Qualitat mesurada",
+          "body": "Cada ruta té puntuacions de fidelitat i d’editabilitat d’un banc de proves públic. El planificador tria la millor i t’explica per què."
+        },
+        "agents": {
+          "title": "Preparat per als agents d’IA",
+          "body": "Converteix documents en Markdown net o JSON estructurat per al context dels LLM. La CLI inclou un servidor MCP perquè els agents puguin convertir fitxers pel seu compte."
+        }
+      },
+      "how_heading": "Com funciona",
+      "how": {
+        "step_label": "Pas {number}",
+        "step_1": "Tries un fitxer. El navegador el copia al seu sistema de fitxers privat.",
+        "step_2": "Un worker en segon pla carrega el motor d’AriadShift compilat a WebAssembly.",
+        "step_3": "El planificador tria la ruta amb la millor puntuació mesurada per a l’objectiu.",
+        "step_4": "Descarregues el resultat. Tornar a començar elimina tots els fitxers desats."
+      },
+      "pairs_heading": "Converteix al teu navegador",
+      "pair_link": "{from} a {to}",
+      "see_more": "Consulta tots els <formats>formats compatibles</formats> i la <quality>qualitat mesurada</quality> de cada ruta."
+    },
+    "formats": {
+      "meta_title": "Formats compatibles",
+      "meta_description": "Quins formats de document llegeix i escriu AriadShift, i quines conversions s’executen al teu navegador.",
+      "title": "Formats compatibles",
+      "lede": "Cada conversió passa pel model de document d’AriadShift. Els formats marcats com a «navegador» es converteixen íntegrament en aquest dispositiu; els altres necessiten, de moment, l’eina de línia d’ordres.",
+      "badge_browser": "Navegador i CLI",
+      "badge_cli": "CLI",
+      "extensions": "Extensions: {list}",
+      "engines": "Llegit per {readers}; escrit per {writers}.",
+      "no_engine": "encara no hi ha motor",
+      "convert_to": "Converteix a: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Qualitat mesurada",
+      "meta_description": "Fidelitat, editabilitat i velocitat de cada pas de conversió d’AriadShift, generades a partir d’un banc de proves públic.",
+      "title": "Qualitat mesurada",
+      "lede": "Aquestes puntuacions no s’escriuen a mà. El banc de proves converteix {count, plural, one {# document de prova públic} many {# de documents de prova públics} other {# documents de prova públics}} a través de cada pas i compara el resultat amb la veritat coneguda. El planificador llegeix els mateixos números quan tria una ruta.",
+      "generated": "{pandoc, select, none {Generat el {date}.} other {Generat el {date} amb Pandoc {pandoc}.}}",
+      "methodology": "<link>Llegeix la metodologia</link>.",
+      "caption": "Puntuacions del banc de proves per pas de conversió",
+      "column": {
+        "step": "Pas",
+        "engine": "Motor",
+        "runs_in": "S’executa a",
+        "fidelity": "Fidelitat",
+        "editability": "Editabilitat",
+        "median_time": "Temps mitjà",
+        "samples": "Mostres"
+      }
+    },
+    "route": {
+      "label": "Ruta de conversió",
+      "then": "després",
+      "fidelity": "Fidelitat",
+      "editability": "Editabilitat",
+      "estimated_time": "Temps estimat",
+      "unmeasured": "Una part d’aquesta ruta encara no s’ha mesurat, de manera que el planificador la puntua amb cautela."
+    },
+    "download": {
+      "meta_title": "Descàrrega",
+      "meta_description": "Instal·la l’eina de línia d’ordres d’AriadShift i el servidor MCP a macOS, Linux i Windows.",
+      "title": "Descarrega AriadShift",
+      "lede": "L’ordre <code>ashift</code> converteix Markdown, HTML, DOCX i EPUB al teu ordinador i executa un servidor MCP per a agents d’IA. Les rutes DOCX i EPUB utilitzen <pandoc>Pandoc 3.12 o més nou</pandoc> com a programa independent.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS i Linux)",
+          "note": "Disponible quan es publiqui la fórmula. També instal·la Pandoc, que necessiten les rutes DOCX i EPUB."
+        },
+        "shell": {
+          "title": "Instal·lador per a shell (macOS i Linux)"
+        },
+        "powershell": {
+          "title": "Instal·lador per a PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Disponible quan s’accepti l’enviament del paquet."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Disponible quan es publiquin els crates a crates.io."
+        }
+      },
+      "then_heading": "Després",
+      "releases": "Els arxius per a cada plataforma són a <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Aplicació d’escriptori",
+        "body": "Una aplicació d’escriptori per a macOS, Windows i Linux amb conversió per lots i vigilància de carpetes està en camí. Apareixerà aquí quan surti la primera versió."
+      }
+    },
+    "pair": {
+      "meta_title": "Converteix {from} a {to}",
+      "meta_description_browser": "Converteix al teu navegador, en privat, amb AriadShift: {noun} → {to}. Fidelitat mesurada, sense pujades.",
+      "meta_description_cli": "Converteix al teu propi ordinador amb AriadShift: {noun} → {to}. Fidelitat mesurada, sense pujades.",
+      "badge_browser": "S’executa al teu navegador",
+      "badge_cli": "S’executa amb la CLI d’AriadShift",
+      "title": "Converteix {from} a {to}",
+      "lede_browser": "Fes aquesta conversió sense pujar res: {noun} → {to}. AriadShift llegeix el fitxer al teu navegador, l’adapta al seu model de document i escriu la sortida {to} al teu dispositiu.",
+      "lede_cli": "Fes aquesta conversió al teu propi ordinador amb l’eina gratuïta de línia d’ordres d’AriadShift: {noun} → {to}. La versió per al navegador encara no executa aquesta ruta.",
+      "convert_now": "Converteix {from} a {to} ara",
+      "install_cli": "Instal·la la CLI",
+      "route_heading": "La ruta que segueix AriadShift",
+      "from_heading": "Des de {format}",
+      "to_heading": "A {format}",
+      "cli_heading": "Des de la línia d’ordres",
+      "related_heading": "Conversions relacionades",
+      "related_link": "{from} a {to}"
+    },
+    "converter_page": {
+      "meta_title": "Convertidor",
+      "meta_description": "Converteix Markdown, HTML, DOCX, EPUB, PDF digital i AriadShift IR JSON al teu navegador. Els fitxers es queden al teu dispositiu.",
+      "title": "Converteix un document",
+      "lede": "Tria un fitxer, escull una destinació i descarrega el resultat. Tot passa en aquesta pestanya{cloud, select, yes {, tret que triïs convertir aquest fitxer al núvol.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Llicències",
+      "meta_description": "Llicències i codi font d’AriadShift i dels seus motors per al navegador."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "El mode núvol s’ha aturat de manera inesperada",
+        "stopped_body": "El mode núvol ha trobat un error després de començar la pujada. Qualsevol còpia al servidor se suprimeix automàticament quan acaba el període de retenció, o pots convertir en aquest dispositiu.",
+        "load_title": "No s’ha pogut carregar el mode núvol",
+        "load_body": "No s’ha pogut carregar el convertidor del núvol (per exemple, perquè no tens connexió). Encara pots convertir en aquest dispositiu.",
+        "use_device": "Converteix en aquest dispositiu"
+      },
+      "status": {
+        "deleted_from_server": "S’ha suprimit {name} del servidor.",
+        "reading": "S’està llegint {name} en aquest dispositiu.",
+        "detected": "El format de {name} és {format}.",
+        "read_failed": "No s’ha pogut llegir el fitxer.",
+        "converting": "S’està convertint a {format} en aquest dispositiu.",
+        "ready": "{name} està llest per descarregar.",
+        "convert_failed": "La conversió ha fallat.",
+        "saved": "S’ha desat {name}.",
+        "reset": "{outcome, select, deleted {S’han eliminat els fitxers d’aquest dispositiu i del servidor.} kept {S’han eliminat els fitxers d’aquest dispositiu. {name} encara és al servidor.} other {S’han eliminat els fitxers d’aquest dispositiu.}}",
+        "cloud_selected": "S’ha seleccionat la conversió al núvol per a {name}. Encara no s’ha pujat res.",
+        "cloud_selected_unnamed": "S’ha seleccionat la conversió al núvol per a aquest fitxer. Encara no s’ha pujat res."
+      },
+      "device": {
+        "cloud": "<strong>Conversió al núvol seleccionada.</strong> Aquest fitxer només surt del teu navegador quan tries Puja i converteix.",
+        "local": "<strong>Processat en aquest dispositiu.</strong> Els fitxers no surten mai del teu navegador i no es pugen."
+      },
+      "storage_badge": "{storage, select, opfs {Emmagatzematge privat del navegador} other {A la memòria}}",
+      "memory": {
+        "title": "L’emmagatzematge de fitxers al dispositiu no està disponible en aquest navegador",
+        "body": "Els fitxers es mantenen a la memòria, de manera que s’admeten entrades de fins a {limit}. En cap cas es puja res."
+      },
+      "error": {
+        "title": "{code, select, no_route {No disponible aquí} engine_integrity {La comprovació d’integritat del motor ha fallat} other {Alguna cosa ha anat malament}}"
+      },
+      "handoff": {
+        "title": "Continua a l’aplicació d’escriptori",
+        "reason": "{reason, select, ocr {Algunes pàgines necessiten OCR per extreure’n tot el text.} other {Aquest document necessita un motor o més memòria dels que ofereix el navegador.}}",
+        "picker": "L’aplicació d’escriptori obre un selector de fitxers. Torna a triar aquest document; el teu navegador no envia el fitxer.",
+        "open": "Obre a l’escriptori",
+        "cloud_alternative": "O converteix-lo a {host}, després de confirmar la pujada.",
+        "cloud_button": "Processa al núvol"
+      },
+      "drop": {
+        "button": "Tria un fitxer",
+        "button_busy": "S’està llegint…",
+        "label": "Document que cal convertir",
+        "title": "Deixa un document aquí",
+        "hint": "Markdown, HTML, DOCX, EPUB, PDF digital o IR JSON de fins a {limit}. Es queda en aquest dispositiu."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · «{title}»"
+      },
+      "count": {
+        "headings": "Capçaleres",
+        "paragraphs": "Paràgrafs",
+        "tables": "Taules",
+        "images": "Imatges",
+        "links": "Enllaços",
+        "footnotes": "Notes al peu",
+        "words": "Paraules"
+      },
+      "unreachable": {
+        "cli": "{format} encara no es pot convertir al navegador. <link>La CLI d’AriadShift</link> el converteix al teu ordinador.",
+        "none": "AriadShift encara no pot convertir {format}."
+      },
+      "cloud": {
+        "loading": "S’està carregant el mode núvol…"
+      },
+      "convert": {
+        "title": "Converteix",
+        "hint": "El planificador tria la ruta amb la millor puntuació mesurada.",
+        "target_label": "Converteix a",
+        "profile_label": "Perfil",
+        "route_heading": "Per què aquesta ruta",
+        "elsewhere": "{formats} {count, plural, one {necessita} many {necessiten} other {necessiten}} de moment la <link>CLI d’AriadShift</link>.",
+        "button": "Converteix",
+        "button_busy": "S’està convertint…",
+        "cancel": "Cancel·la"
+      },
+      "result": {
+        "title": "Llest",
+        "summary": "<output>{name}</output> · {size} · convertit en {duration} en aquest dispositiu",
+        "download": "Descarrega {name}"
+      },
+      "start_over": "Torna a començar i suprimeix els fitxers"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Compte",
+        "description": "El teu compte al núvol d’AriadShift: perfil, contrasenya, claus d’accés i inici de sessió amb dos factors."
+      },
+      "sign_in": {
+        "title": "Inicia la sessió",
+        "description": "Inicia la sessió al teu compte al núvol d’AriadShift o crea’n un."
+      },
+      "jobs": {
+        "title": "Tasques",
+        "description": "Estat, descàrregues i supressió de les teves conversions al núvol d’AriadShift."
+      },
+      "api_keys": {
+        "title": "Claus d’API",
+        "description": "Crea i revoca claus d’API per a l’API al núvol d’AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Compte"
+      },
+      "shell": {
+        "not_configured_title": "El núvol no està configurat",
+        "not_configured_body": "Aquesta còpia d’AriadShift només s’executa al teu dispositiu. Els comptes, les claus d’API i les tasques al núvol necessiten un servidor; el seu operador defineix <code>{api_variable}</code> i <code>{auth_variable}</code> en compilar el lloc.",
+        "not_configured_convert": "Encara pots <link>convertir fitxers al teu navegador</link>.",
+        "nav_label": "Compte",
+        "nav": {
+          "account": "Compte",
+          "api_keys": "Claus d’API",
+          "jobs": "Tasques"
+        },
+        "server": "Servidor: {host}",
+        "signed_in_user": "Sessió iniciada com a <user>{email}</user>"
+      },
+      "session": {
+        "checking": "S’està comprovant la teva sessió…",
+        "error_title": "No es pot comprovar la teva sessió",
+        "signed_out": "No has iniciat la sessió."
+      },
+      "actions": {
+        "sign_in": "Inicia la sessió",
+        "try_again": "Torna-ho a provar",
+        "cancel": "Cancel·la",
+        "done": "Fet",
+        "continue": "Continua",
+        "revoke": "Revoca",
+        "copied": "Copiat"
+      },
+      "fields": {
+        "name": "Nom",
+        "email": "Correu electrònic",
+        "password": "Contrasenya",
+        "authentication_code": "Codi d’autenticació",
+        "password_hint": "Almenys {min} caràcters."
+      },
+      "dates": {
+        "unknown": "una data desconeguda"
+      },
+      "errors": {
+        "auth_refused": "El servei d’autenticació ha rebutjat la sol·licitud.",
+        "service_unreachable": "No es pot contactar amb el servei d’inici de sessió. Comprova la connexió i torna-ho a provar.",
+        "session_ended": "La teva sessió ha acabat. Torna a iniciar la sessió.",
+        "rate_limited": "Massa sol·licituds. Torna-ho a provar d’aquí a una estona.",
+        "rate_limited_after": "Massa sol·licituds. Torna-ho a provar d’aquí a {seconds} s.",
+        "sign_in_unverifiable": "El servidor no pot verificar ara el teu inici de sessió. Torna-ho a provar d’aquí a una estona.",
+        "token_invalid": "El servei d’inici de sessió ha retornat un token d’API no vàlid.",
+        "reauth_required": "Torna a iniciar la sessió abans de suprimir el teu compte.",
+        "delete_not_allowed": "Aquest servidor no permet suprimir comptes des de l’aplicació web. Demana al seu operador que el suprimeixi.",
+        "job_gone": "Aquesta tasca ja no és al servidor.",
+        "file_deleted": "Aquest fitxer ja s’ha suprimit.",
+        "job_conflict": "La tasca no està llesta, o el fitxer pujat ja no és al servidor.",
+        "quota_exceeded": "Ja has fet servir les conversions al núvol del teu pla per ara. Converteix en aquest dispositiu o prova-ho més tard.",
+        "request_failed": "El servidor no ha pogut completar la sol·licitud. Torna-ho a provar d’aquí a una estona.",
+        "network_unreachable": "No es pot contactar amb el servidor. Comprova la connexió i torna-ho a provar.",
+        "transfer_incomplete": "La transferència no s’ha completat. Torna-ho a provar."
+      },
+      "profile": {
+        "title": "Perfil",
+        "save": "Desa el nom",
+        "saved": "S’ha desat el nom.",
+        "save_failed": "No s’ha pogut desar el nom."
+      },
+      "password": {
+        "title": "Contrasenya",
+        "current": "Contrasenya actual",
+        "new": "Contrasenya nova",
+        "confirm": "Confirma la contrasenya nova",
+        "revoke_others": "Tanca la sessió a les altres sessions",
+        "submit": "Canvia la contrasenya",
+        "mismatch": "Les contrasenyes noves no coincideixen.",
+        "changed": "S’ha canviat la contrasenya.",
+        "changed_revoked": "S’ha canviat la contrasenya. S’ha tancat la sessió a les altres sessions.",
+        "failed": "No s’ha pogut canviar la contrasenya."
+      },
+      "passkeys": {
+        "title": "Claus d’accés",
+        "description": "Inicia la sessió amb el bloqueig de pantalla del dispositiu o amb una clau de seguretat en lloc d’una contrasenya.",
+        "load_failed": "No s’han pogut carregar les teves claus d’accés.",
+        "loading": "S’estan carregant les claus d’accés…",
+        "empty": "Encara no hi ha cap clau d’accés.",
+        "unnamed": "Clau d’accés sense nom",
+        "default_name": "Clau d’accés",
+        "added_on": "Afegida el {date}",
+        "remove_label": "Elimina la clau d’accés {name}",
+        "remove_button": "Elimina<hidden> la clau d’accés {name}</hidden>",
+        "add_button": "Afegeix una clau d’accés",
+        "add_title": "Afegeix una clau d’accés",
+        "add_description": "Posa-li el nom del dispositiu o de la clau i segueix les indicacions del navegador.",
+        "name_label": "Nom de la clau d’accés",
+        "name_placeholder": "Per exemple: Portàtil de la feina",
+        "added": "S’ha afegit la clau d’accés.",
+        "add_failed": "No s’ha afegit la clau d’accés.",
+        "remove_title": "Vols eliminar {name}?",
+        "remove_title_unnamed": "Vols eliminar aquesta clau d’accés?",
+        "remove_description": "Ja no podràs iniciar la sessió amb aquesta clau. Els altres mètodes d’inici de sessió continuen funcionant.",
+        "remove_confirm": "Elimina la clau d’accés",
+        "removed": "S’ha eliminat {name}.",
+        "remove_failed": "No s’ha pogut eliminar la clau d’accés."
+      },
+      "two_factor": {
+        "title": "Autenticació de dos factors",
+        "description": "Demana un codi d’una aplicació d’autenticació després de la contrasenya.",
+        "status_on": "Estat: <badge>Activada</badge>",
+        "status_off": "Estat: <badge>Desactivada</badge>",
+        "enable": "Activa l’autenticació de dos factors",
+        "disable": "Desactiva l’autenticació de dos factors",
+        "regenerate": "Crea codis de recuperació nous",
+        "confirm_password": "Confirma la contrasenya per continuar.",
+        "enable_failed": "No s’ha pogut iniciar la configuració de dos factors. Comprova la contrasenya.",
+        "disable_failed": "No s’ha pogut desactivar l’autenticació de dos factors. Comprova la contrasenya.",
+        "regenerate_failed": "No s’han pogut crear codis de recuperació nous. Comprova la contrasenya.",
+        "verify_failed": "No s’ha acceptat aquest codi. Comprova l’hora del dispositiu i torna-ho a provar.",
+        "disabled": "L’autenticació de dos factors està desactivada.",
+        "enabled": "L’autenticació de dos factors està activada.",
+        "regenerated": "S’han creat codis de recuperació nous. Els antics ja no funcionen.",
+        "setup_title": "Configura l’aplicació d’autenticació",
+        "setup_description": "Afegeix AriadShift a l’aplicació d’autenticació i després introdueix el codi que mostra.",
+        "setup_key_intro": "Introdueix aquesta clau de configuració a l’aplicació:",
+        "setup_key_unavailable": "No disponible",
+        "open_in_app": "Obre en una aplicació d’autenticació d’aquest dispositiu",
+        "turn_on": "Activa",
+        "codes_title": "Codis de recuperació nous",
+        "backup_intro": "Desa aquests codis de recuperació en un lloc segur. Cadascun t’inicia la sessió una vegada si perds l’aplicació d’autenticació. No es tornen a mostrar.",
+        "copy_codes": "Copia els codis de recuperació",
+        "copy_failed": "La còpia ha fallat; selecciona els codis"
+      },
+      "account_actions": {
+        "title": "Sessió i compte",
+        "sign_out": "Tanca la sessió",
+        "delete": "Suprimeix el compte",
+        "signed_out": "S’ha tancat la sessió.",
+        "sign_out_failed": "No s’ha pogut tancar la sessió. Torna-ho a provar.",
+        "deleted": "S’ha suprimit el teu compte.",
+        "delete_failed_password": "No s’ha pogut suprimir el compte. Comprova la contrasenya.",
+        "delete_failed_session": "No s’ha pogut suprimir el compte. Torna a iniciar la sessió i reintenta-ho.",
+        "delete_note": "Suprimir el compte revoca automàticament les teves <keys>claus d’API</keys>. Abans de suprimir-lo, suprimeix les <jobs>tasques al núvol</jobs> que encara tinguis. Els fitxers de les tasques que deixis s’eliminen quan acaba el seu període de retenció.",
+        "dialog_title": "Vols suprimir el teu compte?",
+        "dialog_description_password": "Aquesta acció no es pot desfer. Confirma la contrasenya per suprimir el compte.",
+        "dialog_description_session": "Aquesta acció no es pot desfer. Confirma a continuació per suprimir el compte amb la teva sessió actual.",
+        "sign_in_again": "Torna a iniciar la sessió"
+      },
+      "connected_apps": {
+        "title": "Aplicacions connectades",
+        "description": "Aplicacions i clients MCP que has autoritzat a fer servir el teu compte, i clients OAuth que has registrat.",
+        "load_failed": "No s’han pogut carregar les teves aplicacions connectades.",
+        "loading": "S’estan carregant les aplicacions connectades…",
+        "empty": "Encara no hi ha aplicacions connectades ni clients OAuth registrats.",
+        "scopes_none": "cap",
+        "consent_details": "Aplicació autoritzada · Àmbits: {scopes} · Autoritzada el {date}",
+        "client_details": "Client OAuth registrat ({client_id})",
+        "client_details_dated": "Client OAuth registrat ({client_id}) · Registrat el {date}",
+        "revoke_label": "Revoca {name}",
+        "revoked": "S’ha revocat {name}.",
+        "revoke_failed": "No s’ha pogut revocar l’accés.",
+        "revoke_title": "Vols revocar {name}?",
+        "revoke_consent_description": "Revocar atura de seguida els tokens nous i la renovació de tokens. Els tokens d’accés signats que ja s’han emès (amb una durada de 15 minuts) continuen funcionant fins que caduquin.",
+        "revoke_client_description": "Suprimir aquest client OAuth registrat en revoca les credencials i els consentiments, i atura de seguida els tokens nous i la renovació de tokens. Els tokens d’accés signats que ja s’han emès (amb una durada de 15 minuts) continuen funcionant fins que caduquin."
+      },
+      "api_keys": {
+        "page_title": "Claus d’API",
+        "section_title": "Les teves claus",
+        "section_description": "Els scripts i les integracions envien una clau a la capçalera <code>x-api-key</code> cap a {host}. Una clau actua amb el teu compte i el teu pla.",
+        "load_failed": "No s’han pogut carregar les teves claus d’API.",
+        "loading": "S’estan carregant les claus d’API…",
+        "empty": "Encara no hi ha cap clau d’API.",
+        "unnamed": "Clau sense nom",
+        "disabled": "Desactivada",
+        "key_details": "Creada el {date} · {expiry}",
+        "never_expires": "No caduca mai",
+        "expired_on": "Va caducar el {date}",
+        "expires_on": "Caduca el {date}",
+        "revoke_label": "Revoca la clau d’API {name}",
+        "revoke_button": "Revoca<hidden> la clau d’API {name}</hidden>",
+        "create_button": "Crea una clau d’API",
+        "create_title": "Crea una clau d’API",
+        "create_description": "Posa a la clau el nom de l’script o del servei que la farà servir.",
+        "name_placeholder": "Per exemple: CI",
+        "expires_after": "Caduca després de",
+        "lifetime_days": "{days, plural, one {# dia} many {# de dies} other {# dies}}",
+        "lifetime_year": "1 any",
+        "lifetime_never": "Sense caducitat",
+        "create_submit": "Crea la clau",
+        "create_failed": "No s’ha pogut crear la clau.",
+        "created": "S’ha creat la clau d’API {name}.",
+        "secret_title": "La teva clau d’API nova",
+        "secret_label": "Clau d’API",
+        "secret_notice": "Copia la clau ara. Només es desa com a hash i no es torna a mostrar mai.",
+        "copy_key": "Copia la clau",
+        "copy_failed": "La còpia ha fallat. Selecciona la clau i copia-la.",
+        "revoke_title": "Vols revocar {name}?",
+        "revoke_description": "Les sol·licituds que facin servir aquesta clau es rebutgen de seguida. Aquesta acció no es pot desfer.",
+        "revoke_confirm": "Revoca la clau",
+        "revoked": "S’ha revocat la clau d’API {name}. Les sol·licituds que la facin servir es rebutgen a partir d’ara.",
+        "revoke_failed": "No s’ha pogut revocar la clau."
+      },
+      "jobs": {
+        "title": "Tasques",
+        "intro_server": "Conversions al núvol del teu compte a {host}, des de qualsevol dispositiu. Els fitxers es queden a {host} fins que se suprimeixen automàticament o fins que els suprimeixes aquí.",
+        "intro_account_browser": "Conversions al núvol iniciades en aquest navegador amb el teu compte. Aquesta llista només es guarda en aquest dispositiu. Els fitxers es queden a {host} fins que se suprimeixen automàticament o fins que els suprimeixes aquí.",
+        "intro_anonymous_browser": "Conversions al núvol iniciades en aquest navegador sense compte. Aquesta llista només es guarda en aquest dispositiu. Els fitxers es queden a {host} fins que se suprimeixen automàticament o fins que els suprimeixes aquí.",
+        "signed_out_notice": "Es mostren les tasques sense compte. <link>Inicia la sessió</link> per veure les tasques del teu compte.",
+        "loading": "S’estan carregant les teves tasques…",
+        "list_unsupported": "{host} encara no pot llistar les tasques del teu compte, de manera que aquesta pàgina mostra les tasques iniciades en aquest navegador.",
+        "list_error_title": "No es poden carregar les teves tasques des de {host}",
+        "list_error_body": "{reason} Mentrestant, aquesta pàgina mostra les tasques iniciades en aquest navegador.",
+        "count": "{count, plural, one {# tasca} many {# de tasques} other {# tasques}}",
+        "empty": "Encara no hi ha tasques al núvol. Inicia’n una des del <link>convertidor</link>.",
+        "show_more": "Mostra més tasques",
+        "loading_more": "S’estan carregant més tasques…",
+        "unnamed": "Tasca {id}",
+        "forgotten": "S’ha eliminat {filename} d’aquesta llista. Els seus fitxers al servidor no han canviat.",
+        "forgotten_unnamed": "S’ha eliminat la tasca d’aquesta llista. Els seus fitxers al servidor no han canviat.",
+        "status": {
+          "queued": "En cua",
+          "converting": "Convertint",
+          "converting_stage": "Convertint: {stage}",
+          "retrying": "Reintentant (intent {attempt})",
+          "reconnecting": "{step} · Reconnectant…",
+          "ready": "Llesta",
+          "failed": "Fallada",
+          "canceled": "Cancel·lada",
+          "deleted": "Suprimida",
+          "deleted_expired": "Suprimida (caducada)"
+        },
+        "until": {
+          "less_than_minute": "d’aquí a menys d’un minut",
+          "minutes": "d’aquí a {minutes} min",
+          "hours": "d’aquí a {hours} h",
+          "hours_minutes": "d’aquí a {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Suprimida automàticament a les {clock}.",
+          "deleted_from_server": "Suprimida del servidor. Els fitxers d’entrada i de sortida ja no hi són.",
+          "being_deleted": "S’està suprimint ara.",
+          "deletes_at": "Se suprimirà automàticament a les {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Aquest document necessita més del que permet el teu pla. Prova amb un fitxer més petit o converteix-lo en aquest dispositiu.",
+          "unsupported_route": "Aquest servidor no pot convertir entre aquests formats. Tria una altra destinació al convertidor.",
+          "input_io": "No s’ha pogut llegir el fitxer pujat o ja no és al servidor. Torna’l a pujar.",
+          "storage": "El servidor no ha pogut desar el resultat. Torna-ho a provar d’aquí a un moment.",
+          "tool_missing": "A aquest servidor li falta el motor que necessita la ruta. Pregunta al seu operador o tria una altra destinació.",
+          "other": "La conversió ha fallat. Torna-ho a provar o converteix el fitxer en aquest dispositiu."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "S’està carregant l’estat…",
+          "try_again": "Torna-ho a provar<hidden> per carregar {filename}</hidden>",
+          "technical_details": "Detalls tècnics",
+          "warnings": "{count, plural, one {# advertència} many {# d’advertències} other {# advertències}}",
+          "download": "Descarrega {filename}",
+          "retry_label": "Reintenta {filename}",
+          "retry_button": "Reintenta<hidden> {filename}</hidden>",
+          "delete_label": "Suprimeix ara {filename} del servidor",
+          "delete_button": "Suprimeix ara<hidden> {filename} del servidor</hidden>",
+          "remove_label": "Elimina d’aquesta llista ({filename})",
+          "remove_button": "Elimina d’aquesta llista<hidden> ({filename})</hidden>",
+          "deleted_note": "Suprimit de {host}. Els fitxers d’entrada i de sortida ja no hi són.",
+          "deleted_announce": "S’ha suprimit {filename} de {host}. Els fitxers d’entrada i de sortida ja no hi són.",
+          "ready_announce": "{filename} s’ha convertit i està llest per descarregar.",
+          "failed_announce": "La conversió de {filename} ha fallat. {reason}",
+          "canceled_announce": "S’ha cancel·lat la conversió de {filename}.",
+          "downloading": "S’està descarregant {filename}.",
+          "retrying": "S’està reintentant {filename}.",
+          "retry_conflict": "El fitxer pujat ja no és al servidor. Torna’l a pujar des del convertidor."
+        }
+      },
+      "sign_in": {
+        "title": "Inicia la sessió",
+        "create_title": "Crea un compte",
+        "two_factor_title": "Verificació de dos factors",
+        "signed_in": "Sessió iniciada.",
+        "go_to_account": "Vés al teu compte",
+        "passkey": "Inicia la sessió amb una clau d’accés",
+        "no_account": "Encara no tens compte? <switch>Crea’n un</switch>",
+        "have_account": "Ja tens un compte? <switch>Inicia la sessió</switch>",
+        "sign_in_failed": "No s’ha pogut iniciar la sessió. Comprova el correu electrònic i la contrasenya.",
+        "passkey_failed": "No s’ha pogut iniciar la sessió amb una clau d’accés.",
+        "code_rejected": "No s’ha acceptat aquest codi. Torna-ho a provar.",
+        "create_failed": "No s’ha pogut crear el compte.",
+        "passwords_mismatch": "Les contrasenyes no coincideixen.",
+        "bot_check": "Completa la verificació antirobot del registre i torna-ho a provar.",
+        "confirm_password": "Confirma la contrasenya",
+        "create_account": "Crea el compte",
+        "totp_help": "Introdueix el codi de 6 dígits de l’aplicació d’autenticació.",
+        "backup_help": "Introdueix un dels codis de recuperació que vas desar en activar l’autenticació de dos factors. Cada codi funciona una sola vegada.",
+        "backup_code": "Codi de recuperació",
+        "trust_device": "Confia en aquest navegador durant 30 dies",
+        "verify": "Verifica",
+        "use_backup": "Fes servir un codi de recuperació",
+        "use_authenticator": "Fes servir un codi de l’aplicació d’autenticació",
+        "signed_in_user": "Has iniciat la sessió com a <user>{email}</user>."
+      }
+    }
+  }
+}

@@ -1,0 +1,686 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "قابل للتحرير",
+        "description": "عناوين وقوائم وجداول حقيقية يمكنك مواصلة تحريرها."
+      },
+      "faithful": {
+        "label": "مطابق",
+        "description": "البقاء أقرب ما يمكن إلى التخطيط الأصلي."
+      },
+      "fast": {
+        "label": "سريع",
+        "description": "تفضيل أسرع مسار."
+      },
+      "private": {
+        "label": "خاص",
+        "description": "محركات لا تغادر جهازك أبدًا."
+      }
+    },
+    "engine": {
+      "ariad_core": "نواة AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "قارئ نص PDF"
+    },
+    "runtime": {
+      "wasm": "المتصفح",
+      "local": "سطر الأوامر وسطح المكتب",
+      "cloud": "السحابة"
+    },
+    "score": {
+      "not_measured": "غير مقاس"
+    },
+    "duration": {
+      "under_1_ms": "أقل من 1 مللي ثانية"
+    },
+    "format": {
+      "markdown": {
+        "noun": "مستند Markdown",
+        "description": "CommonMark مع GitHub Flavored Markdown: عناوين وقوائم وجداول وقوائم مهام وحواشٍ سفلية ومعادلات رياضية. هذه هي الصيغة التي تقرؤها أدوات الذكاء الاصطناعي على أفضل وجه."
+      },
+      "html": {
+        "noun": "صفحة HTML",
+        "description": "صفحة HTML5 مستقلة. يُنقّى الترميز الخام في المدخلات، ولا تصل النصوص البرمجية ولا السمات غير الآمنة إلى المخرجات أبدًا."
+      },
+      "ir_json": {
+        "noun": "مستند AriadShift IR",
+        "description": "نموذج المستند المنظم الذي يمر عبره كل مسار في AriadShift: العناوين والكتل والجداول والأصول والبيانات الوصفية بصيغة JSON ذات إصدارات."
+      },
+      "docx": {
+        "noun": "مستند Word",
+        "description": "مستندات Office Open XML من Microsoft Word وLibreOffice وGoogle Docs، تُقرأ وتُكتب عبر Pandoc."
+      },
+      "epub": {
+        "noun": "كتاب إلكتروني EPUB",
+        "description": "كتب EPUB 3 الإلكترونية، تُقرأ وتُكتب عبر Pandoc مع بيانات وصفية قابلة لإعادة الإنتاج."
+      },
+      "pdf": {
+        "noun": "مستند PDF",
+        "description": "يُقرأ نص ملفات PDF الرقمية على هذا الجهاز. ويستخدم إخراج PDF محرك Typst وخطوطًا مضمّنة. أما الصفحات الممسوحة ضوئيًا فتحتاج إلى OCR في تطبيق سطح المكتب."
+      },
+      "odt": {
+        "noun": "مستند نصي OpenDocument",
+        "description": "تستخدم ملفات OpenDocument النصية LibreOffice في تطبيق سطح المكتب."
+      },
+      "rtf": {
+        "noun": "مستند Rich Text",
+        "description": "تستخدم مستندات Rich Text برنامج LibreOffice في تطبيق سطح المكتب."
+      },
+      "pptx": {
+        "noun": "عرض PowerPoint التقديمي",
+        "description": "تستخدم عروض PowerPoint التقديمية Docling أو LibreOffice في تطبيق سطح المكتب."
+      },
+      "xlsx": {
+        "noun": "مصنف Excel",
+        "description": "تستخدم مصنفات Excel المحرك Docling أو LibreOffice في تطبيق سطح المكتب."
+      },
+      "doc": {
+        "noun": "مستند Word قديم",
+        "description": "تستخدم مستندات Word القديمة LibreOffice في تطبيق سطح المكتب."
+      },
+      "xls": {
+        "noun": "مصنف Excel قديم",
+        "description": "تستخدم مصنفات Excel القديمة LibreOffice في تطبيق سطح المكتب."
+      },
+      "ppt": {
+        "noun": "عرض PowerPoint تقديمي قديم",
+        "description": "تستخدم عروض PowerPoint التقديمية القديمة LibreOffice في تطبيق سطح المكتب."
+      },
+      "ods": {
+        "noun": "جدول بيانات OpenDocument",
+        "description": "تستخدم جداول بيانات OpenDocument برنامج LibreOffice في تطبيق سطح المكتب."
+      },
+      "odp": {
+        "noun": "عرض OpenDocument تقديمي",
+        "description": "تستخدم عروض OpenDocument التقديمية برنامج LibreOffice في تطبيق سطح المكتب."
+      },
+      "png": {
+        "noun": "صورة PNG",
+        "description": "يتطلب استخراج النص من الصور حزمة محرك Docling في تطبيق سطح المكتب."
+      },
+      "jpeg": {
+        "noun": "صورة JPEG",
+        "description": "يتطلب استخراج النص من الصور حزمة محرك Docling في تطبيق سطح المكتب."
+      },
+      "webp": {
+        "noun": "صورة WebP",
+        "description": "يتطلب استخراج النص من الصور حزمة محرك Docling في تطبيق سطح المكتب."
+      },
+      "tiff": {
+        "noun": "صورة TIFF",
+        "description": "يتطلب استخراج النص من الصور حزمة محرك Docling في تطبيق سطح المكتب."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: تحويل المستندات بخصوصية داخل متصفحك",
+      "site_description": "حوّل Markdown وHTML وJSON المنظم على جهازك. خاص افتراضيًا، مع جودة مقاسة لكل مسار، وجاهز لوكلاء الذكاء الاصطناعي.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "تخطَّ إلى المحتوى",
+      "home_link": "الصفحة الرئيسية لـ {site}",
+      "nav_label": "الرئيسية",
+      "nav": {
+        "converter": "المحوّل",
+        "formats": "الصيغ",
+        "quality": "الجودة",
+        "download": "التنزيل",
+        "privacy": "الخصوصية"
+      },
+      "footer": {
+        "license": "AriadShift مفتوح المصدر بموجب ترخيص Apache-2.0.",
+        "privacy": "الخصوصية",
+        "licenses": "التراخيص",
+        "quality": "الجودة",
+        "source": "الشيفرة المصدرية"
+      },
+      "language": {
+        "label": "اللغة",
+        "button": "اللغة: {name}",
+        "list_label": "اختر لغة",
+        "community_badge": "ترجمة مجتمعية",
+        "community_note": "الترجمات المجتمعية مسودات آلية يمكن للناس تصحيحها."
+      }
+    },
+    "not_found": {
+      "title": "الصفحة غير موجودة",
+      "body": "هذه الصفحة غير موجودة.",
+      "home_link": "انتقل إلى الصفحة الرئيسية"
+    },
+    "home": {
+      "meta_title": "حوّل المستندات على جهازك",
+      "title": "حوّل المستندات على جهازك",
+      "lede": "يحوّل AriadShift ملفات Markdown وHTML وWord وEPUB وJSON المنظم هنا في متصفحك مباشرة. اقرأ نص ملفات PDF الرقمية وأنشئ ملفات PDF على جهازك. مخطِّط واحد مقاس، بلا رفع.",
+      "open_converter": "افتح المحوّل",
+      "install_cli": "ثبّت CLI",
+      "why_heading": "لماذا AriadShift",
+      "why": {
+        "private": {
+          "title": "خاص افتراضيًا",
+          "body": "يعمل المحوّل داخل متصفحك بتقنية WebAssembly. يُخزَّن مستندك في نظام الملفات الخاص بالمتصفح ولا يُرفع أبدًا."
+        },
+        "quality": {
+          "title": "جودة مقاسة",
+          "body": "يحمل كل مسار درجات الدقة وقابلية التحرير من اختبار أداء علني. يختار المخطِّط أفضل مسار ويخبرك بالسبب."
+        },
+        "agents": {
+          "title": "جاهز لوكلاء الذكاء الاصطناعي",
+          "body": "حوّل المستندات إلى Markdown نظيف أو JSON منظم ليكون سياقًا للنماذج اللغوية. يأتي CLI مع خادم MCP، فيستطيع الوكلاء تحويل الملفات بأنفسهم."
+        }
+      },
+      "how_heading": "كيف يعمل",
+      "how": {
+        "step_label": "الخطوة {number}",
+        "step_1": "تختار ملفًا. ينسخه المتصفح إلى نظام الملفات الخاص به.",
+        "step_2": "يحمّل عامل في الخلفية محرك AriadShift المُصرَّف إلى WebAssembly.",
+        "step_3": "يختار المخطِّط المسار ذا أفضل درجة مقاسة لهدفك.",
+        "step_4": "تنزّل النتيجة. تؤدي البداية من جديد إلى حذف كل ملف مخزَّن."
+      },
+      "pairs_heading": "حوّل في متصفحك",
+      "pair_link": "{from} إلى {to}",
+      "see_more": "اطّلع على كل <formats>الصيغ المدعومة</formats> و<quality>الجودة المقاسة</quality> لكل مسار."
+    },
+    "formats": {
+      "meta_title": "الصيغ المدعومة",
+      "meta_description": "صيغ المستندات التي يقرؤها AriadShift ويكتبها، والتحويلات التي تعمل في متصفحك.",
+      "title": "الصيغ المدعومة",
+      "lede": "يمر كل تحويل عبر نموذج المستند في AriadShift. الصيغ المعلَّمة بـ «المتصفح» تُحوَّل بالكامل على هذا الجهاز؛ أما الأخرى فتحتاج حاليًا إلى أداة سطر الأوامر.",
+      "badge_browser": "المتصفح وCLI",
+      "badge_cli": "CLI",
+      "extensions": "الامتدادات: {list}",
+      "engines": "يقرؤها {readers}؛ ويكتبها {writers}.",
+      "no_engine": "لا يوجد محرك بعد",
+      "convert_to": "التحويل إلى: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "الجودة المقاسة",
+      "meta_description": "دقة كل خطوة تحويل في AriadShift وقابليتها للتحرير وسرعتها، مولَّدة من اختبار أداء علني.",
+      "title": "الجودة المقاسة",
+      "lede": "هذه الدرجات ليست مكتوبة يدويًا. يحوّل اختبار الأداء {count, plural, zero {# مستند اختبار علني} one {مستند اختبار علني واحد} two {مستندَي اختبار علنيين} few {# مستندات اختبار علنية} many {# مستند اختبار علني} other {# مستند اختبار علني}} عبر كل خطوة ويقارن النتيجة بالحقيقة المعروفة. ويقرأ المخطِّط الأرقام نفسها عند اختيار المسار.",
+      "generated": "{pandoc, select, none {أُنشئ في {date}.} other {أُنشئ في {date} باستخدام Pandoc {pandoc}.}}",
+      "methodology": "<link>اقرأ المنهجية</link>.",
+      "caption": "درجات اختبار الأداء لكل خطوة تحويل",
+      "column": {
+        "step": "الخطوة",
+        "engine": "المحرك",
+        "runs_in": "يعمل في",
+        "fidelity": "الدقة",
+        "editability": "قابلية التحرير",
+        "median_time": "الزمن الوسيط",
+        "samples": "العينات"
+      }
+    },
+    "route": {
+      "label": "مسار التحويل",
+      "then": "ثم",
+      "fidelity": "الدقة",
+      "editability": "قابلية التحرير",
+      "estimated_time": "الزمن المقدَّر",
+      "unmeasured": "لم يُقَس جزء من هذا المسار بعد، لذلك يقيّمه المخطِّط بحذر."
+    },
+    "download": {
+      "meta_title": "التنزيل",
+      "meta_description": "ثبّت أداة سطر أوامر AriadShift وخادم MCP على macOS وLinux وWindows.",
+      "title": "نزّل AriadShift",
+      "lede": "يحوّل الأمر <code>ashift</code> ملفات Markdown وHTML وDOCX وEPUB على حاسوبك ويشغّل خادم MCP لوكلاء الذكاء الاصطناعي. تستخدم مسارات DOCX وEPUB برنامج <pandoc>Pandoc 3.12 أو أحدث</pandoc> بوصفه برنامجًا منفصلًا.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS وLinux)",
+          "note": "متاح بمجرد نشر الصيغة. يثبّت Pandoc أيضًا، وهو مطلوب لمسارات DOCX وEPUB."
+        },
+        "shell": {
+          "title": "مثبّت Shell (macOS وLinux)"
+        },
+        "powershell": {
+          "title": "مثبّت PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "متاح بمجرد قبول طلب إضافة الحزمة."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "متاح بمجرد نشر الحزم على crates.io."
+        }
+      },
+      "then_heading": "ثم",
+      "releases": "أرشيفات كل المنصات متوفرة على <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "تطبيق سطح المكتب",
+        "body": "تطبيق لسطح المكتب على macOS وWindows وLinux مع التحويل الدفعي ومراقبة المجلدات قيد الإعداد. سيُدرج هنا عند صدور أول إصدار."
+      }
+    },
+    "pair": {
+      "meta_title": "تحويل {from} إلى {to}",
+      "meta_description_browser": "حوّل {noun} إلى {to} في متصفحك وبخصوصية باستخدام AriadShift. دقة مقاسة، بلا رفع.",
+      "meta_description_cli": "حوّل {noun} إلى {to} على حاسوبك باستخدام AriadShift. دقة مقاسة، بلا رفع.",
+      "badge_browser": "يعمل في متصفحك",
+      "badge_cli": "يعمل مع AriadShift CLI",
+      "title": "تحويل {from} إلى {to}",
+      "lede_browser": "حوّل {noun} إلى {to} دون رفعه. يقرأ AriadShift الملف في متصفحك ويحوّله إلى نموذج المستند الخاص به ثم يكتب {to} على جهازك.",
+      "lede_cli": "حوّل {noun} إلى {to} على حاسوبك باستخدام أداة سطر أوامر AriadShift المجانية. لا يشغّل إصدار المتصفح هذا المسار بعد.",
+      "convert_now": "حوّل {from} إلى {to} الآن",
+      "install_cli": "ثبّت CLI",
+      "route_heading": "المسار الذي يسلكه AriadShift",
+      "from_heading": "من {format}",
+      "to_heading": "إلى {format}",
+      "cli_heading": "من سطر الأوامر",
+      "related_heading": "تحويلات ذات صلة",
+      "related_link": "{from} إلى {to}"
+    },
+    "converter_page": {
+      "meta_title": "المحوّل",
+      "meta_description": "حوّل Markdown وHTML وDOCX وEPUB وPDF الرقمي وAriadShift IR JSON في متصفحك. تبقى الملفات على جهازك.",
+      "title": "حوّل مستندًا",
+      "lede": "اختر ملفًا وحدد الهدف ونزّل النتيجة. كل شيء يحدث في هذا التبويب{cloud, select, yes {، ما لم تختر تحويل هذا الملف في السحابة.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "التراخيص",
+      "meta_description": "تراخيص AriadShift ومحركات المتصفح التابعة له وشيفرتها المصدرية."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "توقف وضع السحابة بشكل غير متوقع",
+        "stopped_body": "واجه وضع السحابة خطأً بعد بدء الرفع. تُحذف أي نسخة على الخادم تلقائيًا عند انتهاء مدة الاحتفاظ بها، أو يمكنك التحويل على هذا الجهاز.",
+        "load_title": "تعذّر تحميل وضع السحابة",
+        "load_body": "تعذّر تحميل محوّل السحابة (مثلًا لأنك غير متصل بالإنترنت). لا يزال بإمكانك التحويل على هذا الجهاز.",
+        "use_device": "حوّل على هذا الجهاز"
+      },
+      "status": {
+        "deleted_from_server": "حُذف {name} من الخادم.",
+        "reading": "جارٍ قراءة {name} على هذا الجهاز.",
+        "detected": "{name} هو {format}.",
+        "read_failed": "تعذّرت قراءة الملف.",
+        "converting": "جارٍ التحويل إلى {format} على هذا الجهاز.",
+        "ready": "{name} جاهز للتنزيل.",
+        "convert_failed": "فشل التحويل.",
+        "saved": "تم حفظ {name}.",
+        "reset": "{outcome, select, deleted {أُزيلت الملفات من هذا الجهاز ومن الخادم.} kept {أُزيلت الملفات من هذا الجهاز. لا يزال {name} على الخادم.} other {أُزيلت الملفات من هذا الجهاز.}}",
+        "cloud_selected": "اختير التحويل السحابي لـ {name}. لم يُرفع شيء بعد.",
+        "cloud_selected_unnamed": "اختير التحويل السحابي لهذا الملف. لم يُرفع شيء بعد."
+      },
+      "device": {
+        "cloud": "<strong>اختير التحويل السحابي.</strong> لا يغادر هذا الملف متصفحك إلا عندما تختار «Upload and convert».",
+        "local": "<strong>تتم المعالجة على هذا الجهاز.</strong> لا تغادر الملفات متصفحك ولا تُرفع."
+      },
+      "storage_badge": "{storage, select, opfs {تخزين المتصفح الخاص} other {في الذاكرة}}",
+      "memory": {
+        "title": "تخزين الملفات على الجهاز غير متاح في هذا المتصفح",
+        "body": "تُحفظ الملفات في الذاكرة بدلًا من ذلك، لذا تُدعم المدخلات حتى {limit}. لا يُرفع شيء في الحالتين."
+      },
+      "error": {
+        "title": "{code, select, no_route {غير متاح هنا} engine_integrity {فشل فحص سلامة المحرك} other {حدث خطأ ما}}"
+      },
+      "handoff": {
+        "title": "تابع في تطبيق سطح المكتب",
+        "reason": "{reason, select, ocr {تحتاج بعض الصفحات إلى OCR لاستخراج كل نصوصها.} other {يحتاج هذا المستند إلى محرك أو ذاكرة أكبر مما يوفره المتصفح.}}",
+        "picker": "يفتح تطبيق سطح المكتب نافذة اختيار الملفات. اختر هذا المستند مرة أخرى؛ فالمتصفح لا يرسل الملف.",
+        "open": "افتح في سطح المكتب",
+        "cloud_alternative": "أو حوّله على {host} بعد تأكيد الرفع.",
+        "cloud_button": "عالج في السحابة"
+      },
+      "drop": {
+        "button": "اختر ملفًا",
+        "button_busy": "جارٍ القراءة…",
+        "label": "المستند المراد تحويله",
+        "title": "أفلت مستندًا هنا",
+        "hint": "Markdown أو HTML أو DOCX أو EPUB أو PDF الرقمي أو IR JSON حتى {limit}. يبقى على هذا الجهاز."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · «{title}»"
+      },
+      "count": {
+        "headings": "العناوين",
+        "paragraphs": "الفقرات",
+        "tables": "الجداول",
+        "images": "الصور",
+        "links": "الروابط",
+        "footnotes": "الحواشي السفلية",
+        "words": "الكلمات"
+      },
+      "unreachable": {
+        "cli": "لا يمكن تحويل {format} في المتصفح بعد. يحوّله <link>AriadShift CLI</link> على حاسوبك.",
+        "none": "لا يستطيع AriadShift تحويل {format} بعد."
+      },
+      "cloud": {
+        "loading": "جارٍ تحميل وضع السحابة…"
+      },
+      "convert": {
+        "title": "التحويل",
+        "hint": "يختار المخطِّط المسار ذا أفضل درجة مقاسة.",
+        "target_label": "التحويل إلى",
+        "profile_label": "الملف الشخصي",
+        "route_heading": "لماذا هذا المسار",
+        "elsewhere": "{formats} {count, plural, zero {تحتاج} one {يحتاج} two {يحتاجان} few {تحتاج} many {تحتاج} other {تحتاج}} إلى <link>AriadShift CLI</link> حاليًا.",
+        "button": "حوّل",
+        "button_busy": "جارٍ التحويل…",
+        "cancel": "إلغاء"
+      },
+      "result": {
+        "title": "جاهز",
+        "summary": "<output>{name}</output> · {size} · حُوّل في {duration} على هذا الجهاز",
+        "download": "نزّل {name}"
+      },
+      "start_over": "ابدأ من جديد واحذف الملفات"
+    },
+    "account_meta": {
+      "account": {
+        "title": "الحساب",
+        "description": "حسابك السحابي في AriadShift: الملف الشخصي وكلمة المرور ومفاتيح المرور وتسجيل الدخول بخطوتين."
+      },
+      "sign_in": {
+        "title": "تسجيل الدخول",
+        "description": "سجّل الدخول إلى حسابك السحابي في AriadShift أو أنشئ حسابًا."
+      },
+      "jobs": {
+        "title": "المهام",
+        "description": "حالة تحويلاتك السحابية في AriadShift وتنزيلها وحذفها."
+      },
+      "api_keys": {
+        "title": "مفاتيح API",
+        "description": "أنشئ مفاتيح API لواجهة AriadShift السحابية وألغِها."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "الحساب"
+      },
+      "shell": {
+        "not_configured_title": "السحابة غير مهيأة",
+        "not_configured_body": "تعمل هذه النسخة من AriadShift على جهازك فقط. تحتاج الحسابات ومفاتيح API والمهام السحابية إلى خادم؛ ويضبط مشغّله <code>{api_variable}</code> و<code>{auth_variable}</code> عند بناء الموقع.",
+        "not_configured_convert": "لا يزال بإمكانك <link>تحويل الملفات في متصفحك</link>.",
+        "nav_label": "الحساب",
+        "nav": {
+          "account": "الحساب",
+          "api_keys": "مفاتيح API",
+          "jobs": "المهام"
+        },
+        "server": "الخادم: {host}",
+        "signed_in_user": "تم تسجيل الدخول باسم <user>{email}</user>"
+      },
+      "session": {
+        "checking": "جارٍ التحقق من جلستك…",
+        "error_title": "تعذّر التحقق من جلستك",
+        "signed_out": "لم تسجّل الدخول."
+      },
+      "actions": {
+        "sign_in": "تسجيل الدخول",
+        "try_again": "حاول مرة أخرى",
+        "cancel": "إلغاء",
+        "done": "تم",
+        "continue": "متابعة",
+        "revoke": "إلغاء الصلاحية",
+        "copied": "تم النسخ"
+      },
+      "fields": {
+        "name": "الاسم",
+        "email": "البريد الإلكتروني",
+        "password": "كلمة المرور",
+        "authentication_code": "رمز المصادقة",
+        "password_hint": "{min} أحرف على الأقل."
+      },
+      "dates": {
+        "unknown": "تاريخ غير معروف"
+      },
+      "errors": {
+        "auth_refused": "رفضت خدمة المصادقة الطلب.",
+        "service_unreachable": "تعذّر الوصول إلى خدمة تسجيل الدخول. تحقق من اتصالك وحاول مرة أخرى.",
+        "session_ended": "انتهت جلستك. سجّل الدخول مرة أخرى.",
+        "rate_limited": "طلبات كثيرة جدًا. حاول مرة أخرى بعد قليل.",
+        "rate_limited_after": "طلبات كثيرة جدًا. حاول مرة أخرى بعد {seconds} ث.",
+        "sign_in_unverifiable": "لا يستطيع الخادم التحقق من تسجيل دخولك الآن. حاول مرة أخرى بعد قليل.",
+        "token_invalid": "أعادت خدمة تسجيل الدخول رمز API غير صالح.",
+        "reauth_required": "سجّل الدخول مرة أخرى قبل حذف حسابك.",
+        "delete_not_allowed": "لا يسمح هذا الخادم بحذف الحسابات من تطبيق الويب. اطلب من مشغّله حذفه.",
+        "job_gone": "لم تعد هذه المهمة موجودة على الخادم.",
+        "file_deleted": "سبق حذف هذا الملف.",
+        "job_conflict": "المهمة غير جاهزة، أو لم يعد ملفها المرفوع موجودًا على الخادم.",
+        "quota_exceeded": "استنفدت التحويلات السحابية المتاحة في خطتك حاليًا. حوّل على هذا الجهاز أو حاول لاحقًا.",
+        "request_failed": "تعذّر على الخادم إكمال الطلب. حاول مرة أخرى بعد قليل.",
+        "network_unreachable": "تعذّر الوصول إلى الخادم. تحقق من اتصالك وحاول مرة أخرى.",
+        "transfer_incomplete": "لم يكتمل النقل. حاول مرة أخرى."
+      },
+      "profile": {
+        "title": "الملف الشخصي",
+        "save": "احفظ الاسم",
+        "saved": "تم حفظ الاسم.",
+        "save_failed": "تعذّر حفظ الاسم."
+      },
+      "password": {
+        "title": "كلمة المرور",
+        "current": "كلمة المرور الحالية",
+        "new": "كلمة المرور الجديدة",
+        "confirm": "تأكيد كلمة المرور الجديدة",
+        "revoke_others": "تسجيل الخروج من الجلسات الأخرى",
+        "submit": "غيّر كلمة المرور",
+        "mismatch": "كلمتا المرور الجديدتان غير متطابقتين.",
+        "changed": "تم تغيير كلمة المرور.",
+        "changed_revoked": "تم تغيير كلمة المرور. سُجّل الخروج من الجلسات الأخرى.",
+        "failed": "تعذّر تغيير كلمة المرور."
+      },
+      "passkeys": {
+        "title": "مفاتيح المرور",
+        "description": "سجّل الدخول بقفل شاشة جهازك أو بمفتاح أمان بدلًا من كلمة المرور.",
+        "load_failed": "تعذّر تحميل مفاتيح المرور.",
+        "loading": "جارٍ تحميل مفاتيح المرور…",
+        "empty": "لا توجد مفاتيح مرور بعد.",
+        "unnamed": "مفتاح مرور بلا اسم",
+        "default_name": "مفتاح مرور",
+        "added_on": "أُضيف في {date}",
+        "remove_label": "أزل مفتاح المرور {name}",
+        "remove_button": "إزالة<hidden> مفتاح المرور {name}</hidden>",
+        "add_button": "أضف مفتاح مرور",
+        "add_title": "أضف مفتاح مرور",
+        "add_description": "سمِّه باسم الجهاز أو المفتاح، ثم اتبع تعليمات متصفحك.",
+        "name_label": "اسم مفتاح المرور",
+        "name_placeholder": "مثال: حاسوب العمل المحمول",
+        "added": "تمت إضافة مفتاح المرور.",
+        "add_failed": "لم تتم إضافة مفتاح المرور.",
+        "remove_title": "إزالة {name}؟",
+        "remove_title_unnamed": "إزالة مفتاح المرور هذا؟",
+        "remove_description": "لن تتمكن من تسجيل الدخول به بعد ذلك. تظل طرق تسجيل الدخول الأخرى تعمل.",
+        "remove_confirm": "أزل مفتاح المرور",
+        "removed": "أُزيل {name}.",
+        "remove_failed": "تعذّرت إزالة مفتاح المرور."
+      },
+      "two_factor": {
+        "title": "المصادقة الثنائية",
+        "description": "اطلب رمزًا من تطبيق مصادقة بعد كلمة المرور.",
+        "status_on": "الحالة: <badge>مفعّلة</badge>",
+        "status_off": "الحالة: <badge>معطّلة</badge>",
+        "enable": "فعّل المصادقة الثنائية",
+        "disable": "عطّل المصادقة الثنائية",
+        "regenerate": "أنشئ رموزًا احتياطية جديدة",
+        "confirm_password": "أكّد كلمة المرور للمتابعة.",
+        "enable_failed": "تعذّر بدء إعداد المصادقة الثنائية. تحقق من كلمة المرور.",
+        "disable_failed": "تعذّر تعطيل المصادقة الثنائية. تحقق من كلمة المرور.",
+        "regenerate_failed": "تعذّر إنشاء رموز احتياطية جديدة. تحقق من كلمة المرور.",
+        "verify_failed": "لم يُقبل هذا الرمز. تحقق من الوقت على جهازك وحاول مرة أخرى.",
+        "disabled": "المصادقة الثنائية معطّلة.",
+        "enabled": "المصادقة الثنائية مفعّلة.",
+        "regenerated": "أُنشئت رموز احتياطية جديدة. لم تعد الرموز القديمة صالحة.",
+        "setup_title": "أعدّ تطبيق المصادقة",
+        "setup_description": "أضف AriadShift إلى تطبيق المصادقة، ثم أدخل الرمز الذي يعرضه.",
+        "setup_key_intro": "أدخل مفتاح الإعداد هذا في التطبيق:",
+        "setup_key_unavailable": "غير متاح",
+        "open_in_app": "افتح في تطبيق مصادقة على هذا الجهاز",
+        "turn_on": "تفعيل",
+        "codes_title": "رموز احتياطية جديدة",
+        "backup_intro": "احفظ هذه الرموز الاحتياطية في مكان آمن. يتيح لك كل رمز تسجيل الدخول مرة واحدة إذا فقدت تطبيق المصادقة. لن تُعرض مرة أخرى.",
+        "copy_codes": "انسخ الرموز الاحتياطية",
+        "copy_failed": "فشل النسخ؛ حدّد الرموز بدلًا من ذلك"
+      },
+      "account_actions": {
+        "title": "الجلسة والحساب",
+        "sign_out": "تسجيل الخروج",
+        "delete": "حذف الحساب",
+        "signed_out": "تم تسجيل الخروج.",
+        "sign_out_failed": "تعذّر تسجيل الخروج. حاول مرة أخرى.",
+        "deleted": "تم حذف حسابك.",
+        "delete_failed_password": "تعذّر حذف الحساب. تحقق من كلمة المرور.",
+        "delete_failed_session": "تعذّر حذف الحساب. سجّل الدخول مرة أخرى وأعد المحاولة.",
+        "delete_note": "يؤدي حذف حسابك إلى إلغاء <keys>مفاتيح API</keys> الخاصة بك تلقائيًا. قبل حذفه، احذف <jobs>المهام السحابية</jobs> التي لا تزال لديك. تُزال ملفات المهام التي تتركها عند انتهاء مدة الاحتفاظ بها.",
+        "dialog_title": "حذف حسابك؟",
+        "dialog_description_password": "لا يمكن التراجع عن هذا. أكّد كلمة المرور لحذف الحساب.",
+        "dialog_description_session": "لا يمكن التراجع عن هذا. أكّد أدناه لحذف الحساب باستخدام جلسة تسجيل الدخول الحالية.",
+        "sign_in_again": "سجّل الدخول مرة أخرى"
+      },
+      "connected_apps": {
+        "title": "التطبيقات المتصلة",
+        "description": "التطبيقات وعملاء MCP الذين خوّلتهم باستخدام حسابك، وعملاء OAuth الذين سجّلتهم.",
+        "load_failed": "تعذّر تحميل تطبيقاتك المتصلة.",
+        "loading": "جارٍ تحميل التطبيقات المتصلة…",
+        "empty": "لا توجد تطبيقات متصلة أو عملاء OAuth مسجّلون بعد.",
+        "scopes_none": "لا شيء",
+        "consent_details": "تطبيق مخوَّل · النطاقات: {scopes} · خُوّل في {date}",
+        "client_details": "عميل OAuth مسجَّل ({client_id})",
+        "client_details_dated": "عميل OAuth مسجَّل ({client_id}) · سُجّل في {date}",
+        "revoke_label": "ألغِ صلاحية {name}",
+        "revoked": "أُلغيت صلاحية {name}.",
+        "revoke_failed": "تعذّر إلغاء الوصول.",
+        "revoke_title": "إلغاء صلاحية {name}؟",
+        "revoke_consent_description": "يوقف الإلغاء إصدار الرموز الجديدة وتجديدها فورًا. تظل رموز الوصول الموقّعة التي صدرت بالفعل (مدة صلاحيتها 15 دقيقة) تعمل حتى تنتهي.",
+        "revoke_client_description": "يؤدي حذف عميل OAuth المسجَّل هذا إلى إلغاء بيانات اعتماده وموافقاته ويوقف إصدار الرموز الجديدة وتجديدها فورًا. تظل رموز الوصول الموقّعة التي صدرت بالفعل (مدة صلاحيتها 15 دقيقة) تعمل حتى تنتهي."
+      },
+      "api_keys": {
+        "page_title": "مفاتيح API",
+        "section_title": "مفاتيحك",
+        "section_description": "ترسل البرامج النصية والتكاملات مفتاحًا في ترويسة <code>x-api-key</code> إلى {host}. يعمل المفتاح بحسابك وخطتك.",
+        "load_failed": "تعذّر تحميل مفاتيح API.",
+        "loading": "جارٍ تحميل مفاتيح API…",
+        "empty": "لا توجد مفاتيح API بعد.",
+        "unnamed": "مفتاح بلا اسم",
+        "disabled": "معطّل",
+        "key_details": "أُنشئ في {date} · {expiry}",
+        "never_expires": "لا تنتهي صلاحيته",
+        "expired_on": "انتهت صلاحيته في {date}",
+        "expires_on": "تنتهي صلاحيته في {date}",
+        "revoke_label": "ألغِ مفتاح API {name}",
+        "revoke_button": "إلغاء<hidden> مفتاح API {name}</hidden>",
+        "create_button": "أنشئ مفتاح API",
+        "create_title": "أنشئ مفتاح API",
+        "create_description": "سمِّ المفتاح باسم البرنامج النصي أو الخدمة التي ستستخدمه.",
+        "name_placeholder": "مثال: CI",
+        "expires_after": "تنتهي صلاحيته بعد",
+        "lifetime_days": "{days, plural, zero {# يوم} one {يوم واحد} two {يومين} few {# أيام} many {# يومًا} other {# يوم}}",
+        "lifetime_year": "سنة واحدة",
+        "lifetime_never": "بلا انتهاء",
+        "create_submit": "أنشئ المفتاح",
+        "create_failed": "تعذّر إنشاء المفتاح.",
+        "created": "تم إنشاء مفتاح API {name}.",
+        "secret_title": "مفتاح API الجديد",
+        "secret_label": "مفتاح API",
+        "secret_notice": "انسخ المفتاح الآن. يُخزَّن على هيئة تجزئة فقط ولن يُعرض مرة أخرى.",
+        "copy_key": "انسخ المفتاح",
+        "copy_failed": "فشل النسخ. حدّد المفتاح وانسخه.",
+        "revoke_title": "إلغاء صلاحية {name}؟",
+        "revoke_description": "تُرفض الطلبات التي تستخدم هذا المفتاح فورًا. لا يمكن التراجع عن هذا.",
+        "revoke_confirm": "ألغِ المفتاح",
+        "revoked": "أُلغيت صلاحية مفتاح API {name}. تُرفض الطلبات التي تستخدمه من الآن فصاعدًا.",
+        "revoke_failed": "تعذّر إلغاء المفتاح."
+      },
+      "jobs": {
+        "title": "المهام",
+        "intro_server": "التحويلات السحابية لحسابك على {host}، من أي جهاز. تبقى الملفات على {host} حتى تُحذف تلقائيًا أو حتى تحذفها من هنا.",
+        "intro_account_browser": "التحويلات السحابية التي بدأت في هذا المتصفح بحسابك. تُحفظ هذه القائمة على هذا الجهاز فقط. تبقى الملفات على {host} حتى تُحذف تلقائيًا أو حتى تحذفها من هنا.",
+        "intro_anonymous_browser": "التحويلات السحابية التي بدأت في هذا المتصفح بدون حساب. تُحفظ هذه القائمة على هذا الجهاز فقط. تبقى الملفات على {host} حتى تُحذف تلقائيًا أو حتى تحذفها من هنا.",
+        "signed_out_notice": "تُعرض مهام بلا حساب. <link>سجّل الدخول</link> لرؤية مهام حسابك.",
+        "loading": "جارٍ تحميل مهامك…",
+        "list_unsupported": "لا يستطيع {host} سرد مهام حسابك بعد، لذا تعرض هذه الصفحة المهام التي بدأت في هذا المتصفح.",
+        "list_error_title": "تعذّر تحميل مهامك من {host}",
+        "list_error_body": "{reason} وفي الأثناء تعرض هذه الصفحة المهام التي بدأت في هذا المتصفح.",
+        "count": "{count, plural, zero {لا مهام} one {مهمة واحدة} two {مهمتان} few {# مهام} many {# مهمة} other {# مهمة}}",
+        "empty": "لا توجد مهام سحابية بعد. ابدأ واحدة من <link>المحوّل</link>.",
+        "show_more": "اعرض المزيد من المهام",
+        "loading_more": "جارٍ تحميل مزيد من المهام…",
+        "unnamed": "مهمة {id}",
+        "forgotten": "أُزيل {filename} من هذه القائمة. تبقى ملفاته على الخادم دون تغيير.",
+        "forgotten_unnamed": "أُزيلت المهمة من هذه القائمة. تبقى ملفاتها على الخادم دون تغيير.",
+        "status": {
+          "queued": "في قائمة الانتظار",
+          "converting": "جارٍ التحويل",
+          "converting_stage": "جارٍ التحويل: {stage}",
+          "retrying": "إعادة المحاولة (المحاولة {attempt})",
+          "reconnecting": "{step} · جارٍ إعادة الاتصال…",
+          "ready": "جاهز",
+          "failed": "فشل",
+          "canceled": "أُلغي",
+          "deleted": "محذوف",
+          "deleted_expired": "محذوف (منتهي الصلاحية)"
+        },
+        "until": {
+          "less_than_minute": "خلال أقل من دقيقة",
+          "minutes": "خلال {minutes} د",
+          "hours": "خلال {hours} س",
+          "hours_minutes": "خلال {hours} س و{minutes} د"
+        },
+        "expiry": {
+          "deleted_at": "حُذف تلقائيًا في {clock}.",
+          "deleted_from_server": "حُذف من الخادم. اختفى ملفا الإدخال والإخراج.",
+          "being_deleted": "جارٍ الحذف الآن.",
+          "deletes_at": "يُحذف تلقائيًا في {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "يحتاج هذا المستند إلى أكثر مما تتيحه خطتك. جرّب ملفًا أصغر أو حوّله على هذا الجهاز.",
+          "unsupported_route": "لا يستطيع هذا الخادم التحويل بين هاتين الصيغتين. اختر هدفًا آخر في المحوّل.",
+          "input_io": "تعذّرت قراءة الملف المرفوع أو لم يعد موجودًا على الخادم. ارفعه مرة أخرى.",
+          "storage": "تعذّر على الخادم تخزين النتيجة. حاول مرة أخرى بعد قليل.",
+          "tool_missing": "يفتقر هذا الخادم إلى المحرك الذي يحتاجه المسار. اسأل مشغّله أو اختر هدفًا آخر.",
+          "other": "فشل التحويل. حاول مرة أخرى أو حوّل الملف على هذا الجهاز."
+        },
+        "row": {
+          "route": "{from} ← {to}",
+          "loading_status": "جارٍ تحميل الحالة…",
+          "try_again": "حاول مرة أخرى<hidden> لتحميل {filename}</hidden>",
+          "technical_details": "تفاصيل تقنية",
+          "warnings": "{count, plural, zero {لا تحذيرات} one {تحذير واحد} two {تحذيران} few {# تحذيرات} many {# تحذيرًا} other {# تحذير}}",
+          "download": "نزّل {filename}",
+          "retry_label": "أعد محاولة {filename}",
+          "retry_button": "إعادة المحاولة<hidden> {filename}</hidden>",
+          "delete_label": "احذف {filename} من الخادم الآن",
+          "delete_button": "احذف الآن<hidden> {filename} من الخادم</hidden>",
+          "remove_label": "أزل من هذه القائمة ({filename})",
+          "remove_button": "أزل من هذه القائمة<hidden> ({filename})</hidden>",
+          "deleted_note": "حُذف من {host}. اختفى ملفا الإدخال والإخراج.",
+          "deleted_announce": "حُذف {filename} من {host}. اختفى ملفا الإدخال والإخراج.",
+          "ready_announce": "تم تحويل {filename} وهو جاهز للتنزيل.",
+          "failed_announce": "فشل تحويل {filename}. {reason}",
+          "canceled_announce": "أُلغي تحويل {filename}.",
+          "downloading": "جارٍ تنزيل {filename}.",
+          "retrying": "جارٍ إعادة محاولة {filename}.",
+          "retry_conflict": "لم يعد الملف المرفوع موجودًا على الخادم. ارفعه مرة أخرى من المحوّل."
+        }
+      },
+      "sign_in": {
+        "title": "تسجيل الدخول",
+        "create_title": "أنشئ حسابًا",
+        "two_factor_title": "التحقق بخطوتين",
+        "signed_in": "تم تسجيل الدخول.",
+        "go_to_account": "انتقل إلى حسابك",
+        "passkey": "سجّل الدخول بمفتاح مرور",
+        "no_account": "ليس لديك حساب بعد؟ <switch>أنشئ حسابًا</switch>",
+        "have_account": "لديك حساب بالفعل؟ <switch>سجّل الدخول</switch>",
+        "sign_in_failed": "تعذّر تسجيل الدخول. تحقق من بريدك الإلكتروني وكلمة المرور.",
+        "passkey_failed": "تعذّر تسجيل الدخول بمفتاح المرور.",
+        "code_rejected": "لم يُقبل هذا الرمز. حاول مرة أخرى.",
+        "create_failed": "تعذّر إنشاء الحساب.",
+        "passwords_mismatch": "كلمتا المرور غير متطابقتين.",
+        "bot_check": "أكمل فحص منع الروبوتات الخاص بالتسجيل وحاول مرة أخرى.",
+        "confirm_password": "تأكيد كلمة المرور",
+        "create_account": "أنشئ حسابًا",
+        "totp_help": "أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة.",
+        "backup_help": "أدخل أحد الرموز الاحتياطية التي حفظتها عند تفعيل المصادقة الثنائية. يعمل كل رمز مرة واحدة.",
+        "backup_code": "رمز احتياطي",
+        "trust_device": "الوثوق بهذا المتصفح لمدة 30 يومًا",
+        "verify": "تحقق",
+        "use_backup": "استخدم رمزًا احتياطيًا بدلًا من ذلك",
+        "use_authenticator": "استخدم رمز تطبيق المصادقة بدلًا من ذلك",
+        "signed_in_user": "تم تسجيل دخولك باسم <user>{email}</user>."
+      }
+    }
+  }
+}
