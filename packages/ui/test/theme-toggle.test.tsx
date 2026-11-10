@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { ThemeToggle } from "../src/components/theme-toggle";
-import { THEME_STORAGE_KEY } from "../src/hooks/use-theme";
+import { THEME_STORAGE_KEY, toggleThemePreference } from "../src/hooks/use-theme";
 
 function mockSystemTheme(dark: boolean) {
   window.matchMedia = vi.fn().mockReturnValue({
@@ -39,5 +39,18 @@ describe("ThemeToggle", () => {
     fireEvent.click(button);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
+
+  it("stays in step when another control changes the theme", () => {
+    mockSystemTheme(false);
+    render(<ThemeToggle />);
+    expect(screen.getByRole("button").getAttribute("aria-label")).toContain("system");
+
+    act(() => toggleThemePreference());
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(screen.getByRole("button").getAttribute("aria-label")).toContain("Theme: dark");
+
+    act(() => toggleThemePreference());
+    expect(screen.getByRole("button").getAttribute("aria-label")).toContain("Theme: light");
   });
 });

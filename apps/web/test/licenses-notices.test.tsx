@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import LicensesPage from "@/app/licenses/page";
+import LicensesPage from "@/app/[locale]/licenses/page";
 import {
   pandocSourceInventory,
   renderPandocSourceTxt,
@@ -30,17 +30,18 @@ const syncNoticesScript = path.join(webDir, "scripts/sync-notices.mjs");
 const syncPandocScript = path.join(webDir, "scripts/sync-pandoc.mjs");
 
 function noticeLinks(html: string): string[] {
-  return [...html.matchAll(/href="((?:notices|wasm\/pandoc)\/[^"]+)"/g)].map(
+  // Links are relative to /<locale>/licenses, so they climb one level to the site root.
+  return [...html.matchAll(/href="\.\.\/((?:notices|wasm\/pandoc)\/[^"]+)"/g)].map(
     (match) => match[1] as string,
   );
 }
 
 function createCleanNoticeWorkspace(directory: string) {
-  mkdirSync(path.join(directory, "apps/web/src/app/licenses"), { recursive: true });
+  mkdirSync(path.join(directory, "apps/web/src/app/[locale]/licenses"), { recursive: true });
   for (const name of ["NOTICE", "THIRD_PARTY_LICENSES", "crates", "node_modules"]) {
     symlinkSync(path.join(rootDir, name), path.join(directory, name));
   }
-  for (const name of ["package.json", "node_modules", "src/app/licenses/page.tsx"]) {
+  for (const name of ["package.json", "node_modules", "src/app/[locale]/licenses/page.tsx"]) {
     symlinkSync(path.join(webDir, name), path.join(directory, "apps/web", name));
   }
   for (const name of ["Cargo.lock", "pnpm-lock.yaml"]) {
@@ -49,8 +50,13 @@ function createCleanNoticeWorkspace(directory: string) {
 }
 
 describe("web licence notices", () => {
-  it("renders relative notice links, Pandoc 3.12 recipe/toolchain/inventory, MPL-2.0 crate sources and verbatim WASI shim licence on /licenses", () => {
-    const html = renderToStaticMarkup(<LicensesPage />);
+  it("renders relative notice links, Pandoc 3.12 recipe/toolchain/inventory, MPL-2.0 crate sources and verbatim WASI shim licence on /licenses", async () => {
+    const html = renderToStaticMarkup(
+      await LicensesPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
     const links = noticeLinks(html);
 
     expect(links).toEqual(
@@ -277,7 +283,7 @@ describe("web licence notices", () => {
 
   it("generates web notices, resolves relative links under root and path prefixes, and covers production bundle dependencies", {
     timeout: 20_000,
-  }, () => {
+  }, async () => {
     const syncResult = spawnSync(process.execPath, [syncNoticesScript], {
       cwd: webDir,
       encoding: "utf8",
@@ -290,14 +296,20 @@ describe("web licence notices", () => {
     });
     expect(pandocResult.status, pandocResult.stderr).toBe(0);
 
-    const html = renderToStaticMarkup(<LicensesPage />);
+    const html = renderToStaticMarkup(
+      await LicensesPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
     const links = noticeLinks(html);
     expect(links.length).toBeGreaterThanOrEqual(6);
 
     for (const href of links) {
-      const rootResolved = new URL(href, "https://example.test/licenses").pathname;
+      const rootResolved = new URL(`../${href}`, "https://example.test/en/licenses").pathname;
       expect(rootResolved).toBe(`/${href}`);
-      const prefixResolved = new URL(href, "https://example.test/AriadShift/licenses").pathname;
+      const prefixResolved = new URL(`../${href}`, "https://example.test/AriadShift/en/licenses")
+        .pathname;
       expect(prefixResolved).toBe(`/AriadShift/${href}`);
 
       const publicFile = path.join(webDir, "public", href);
@@ -547,10 +559,13 @@ describe("web licence notices", () => {
 
       // 4. Moving-branch URL or missing written-offer reference in page.tsx fixture
       writeFileSync(path.join(rootFixture, "apps/web/engine-assets.mjs"), realEngineAssets, "utf8");
-      const realPage = readFileSync(path.join(webDir, "src/app/licenses/page.tsx"), "utf8");
-      unlinkSync(path.join(rootFixture, "apps/web/src/app/licenses/page.tsx"));
+      const realPage = readFileSync(
+        path.join(webDir, "src/app/[locale]/licenses/page.tsx"),
+        "utf8",
+      );
+      unlinkSync(path.join(rootFixture, "apps/web/src/app/[locale]/licenses/page.tsx"));
       writeFileSync(
-        path.join(rootFixture, "apps/web/src/app/licenses/page.tsx"),
+        path.join(rootFixture, "apps/web/src/app/[locale]/licenses/page.tsx"),
         realPage.replace(
           "pandocSourceInventory.writtenOffer.text",
           '"https://github.com/jgm/pandoc/blob/main/.circleci/config.yml"',

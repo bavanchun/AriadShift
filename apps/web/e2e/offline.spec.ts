@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("activation retires obsolete engine assets and retains current chunks", async ({ page }) => {
-  await page.goto("/app");
+  await page.goto("/en/app");
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const current = await page.evaluate(async () => {
     const script = await (await fetch("/sw.js")).text();
@@ -57,7 +57,7 @@ test("the converter works offline after the first visit", async ({
 }) => {
   test.skip(browserName !== "chromium", "service worker offline emulation is reliable in Chromium");
 
-  await page.goto("/app");
+  await page.goto("/en/app");
   await expect(page.getByTestId("device-indicator")).toContainText("browser storage");
   // The service worker caches the page, its assets, the worker and the wasm module.
   await expect
@@ -67,7 +67,7 @@ test("the converter works offline after the first visit", async ({
         return keys.map((request) => new URL(request.url).pathname);
       }),
     )
-    .toEqual(expect.arrayContaining(["/app", expect.stringMatching(/\.wasm$/)]));
+    .toEqual(expect.arrayContaining(["/en/app", expect.stringMatching(/\.wasm$/)]));
 
   await context.setOffline(true);
   await page.reload();

@@ -12,7 +12,7 @@ test("cancels a conversion and converts another file with a fresh worker", async
       }
     };
   });
-  await page.goto("/app");
+  await page.goto("/en/app");
   await expect(page.getByTestId("device-indicator")).toContainText(/browser storage|In memory/, {
     timeout: 60_000,
   });

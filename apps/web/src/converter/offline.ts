@@ -1,4 +1,4 @@
-// Registers the service worker that keeps /app usable offline after the first visit.
+// Registers the service worker that keeps /<locale>/app usable offline after the first visit.
 import { isOfflineAsset } from "../../offline-policy.mjs";
 
 /**
@@ -12,7 +12,7 @@ export function offlineUrls(
   workerResources: string[],
 ): string[] {
   const page = new URL(pageUrl);
-  const urls = new Set<string>([`${page.origin}/app`]);
+  const urls = new Set<string>([`${page.origin}${page.pathname}`]);
   for (const candidate of [...pageResources, ...workerResources]) {
     let url: URL;
     try {

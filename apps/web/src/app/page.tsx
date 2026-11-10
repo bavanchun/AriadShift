@@ -1,120 +1,41 @@
-import { buttonVariants } from "@ariadshift/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@ariadshift/ui/components/card";
-import { BotIcon, GaugeIcon, ShieldCheckIcon } from "lucide-react";
-import Link from "next/link";
-import { loadPairs } from "@/lib/catalog";
-import { pairSlug } from "@/lib/formats";
+import { allLocales, DEFAULT_LOCALE } from "@/i18n/locales";
 
-const DIFFERENTIATORS = [
-  {
-    icon: ShieldCheckIcon,
-    title: "Private by default",
-    body: "The converter runs inside your browser with WebAssembly. Your document is stored in the browser's private file system and never uploaded.",
-  },
-  {
-    icon: GaugeIcon,
-    title: "Measured quality",
-    body: "Every route carries fidelity and editability scores from a public benchmark. The planner picks the best one and tells you why.",
-  },
-  {
-    icon: BotIcon,
-    title: "Ready for AI agents",
-    body: "Turn documents into clean Markdown or structured JSON for LLM context. The CLI ships an MCP server, so agents can convert files themselves.",
-  },
-] as const;
-
-export default function HomePage() {
-  const browserPairs = loadPairs().filter((pair) => pair.browser !== null);
+// Static entry page for `/`. The site is statically exported, so there is no request-time
+// locale negotiation: this page sends visitors to the best supported language from the
+// browser's language list and falls back to English. It is only a convenience, never the
+// only way to reach a locale: every language also has its own link below, and the refresh
+// tag covers visitors without scripting.
+export default function RootPage() {
+  const locales = allLocales().filter((locale) => locale.published);
+  const supported = locales.map((locale) => locale.tag);
+  const script = `(function(){var s=${JSON.stringify(supported)};var d=${JSON.stringify(DEFAULT_LOCALE)};var l=navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language];var lower=s.map(function(x){return x.toLowerCase()});for(var i=0;i<l.length;i++){var w=String(l[i]).toLowerCase();var k=lower.indexOf(w);if(k<0){var b=w.split("-")[0];k=lower.indexOf(b);if(k<0){for(var j=0;j<lower.length;j++){if(lower[j].split("-")[0]===b){k=j;break}}}}if(k>=0){d=s[k];break}}location.replace("/"+d+location.search+location.hash)})()`;
   return (
-    <div className="flex flex-col gap-16">
-      <section className="flex flex-col items-start gap-6 pt-6">
-        <img src="/brand/ariadshift-app-icon.svg" alt="" width={88} height={88} />
-        <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
-          Convert documents on your own device
-        </h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          AriadShift converts Markdown, HTML, Word, EPUB and structured JSON right here in your
-          browser. Read digital PDF text and create PDFs on your device. One measured planner, no
-          uploads.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <a href="/app" className={buttonVariants({ size: "lg" })}>
-            Open the converter
-          </a>
-          <Link href="/download" className={buttonVariants({ size: "lg", variant: "secondary" })}>
-            Install the CLI
-          </Link>
-        </div>
-      </section>
-
-      <section aria-labelledby="why-heading" className="flex flex-col gap-6">
-        <h2 id="why-heading" className="text-2xl font-bold tracking-tight">
-          Why AriadShift
-        </h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          {DIFFERENTIATORS.map(({ icon: Icon, title, body }) => (
-            <Card key={title}>
-              <CardHeader>
-                <Icon aria-hidden="true" className="size-6 text-primary" />
-                <CardTitle>
-                  <h3 className="text-lg">{title}</h3>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">{body}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section aria-labelledby="how-heading" className="flex flex-col gap-4">
-        <h2 id="how-heading" className="text-2xl font-bold tracking-tight">
-          How it works
-        </h2>
-        <ol className="grid gap-3 text-sm sm:grid-cols-4">
-          {[
-            "You pick a file. The browser copies it into its private file system.",
-            "A background worker loads the AriadShift engine compiled to WebAssembly.",
-            "The planner chooses the route with the best measured score for your goal.",
-            "You download the result. Starting over deletes every stored file.",
-          ].map((step, index) => (
-            <li key={step} className="rounded-xl border border-border bg-card p-4">
-              <span className="mb-2 block font-semibold text-primary">Step {index + 1}</span>
-              {step}
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section aria-labelledby="pairs-heading" className="flex flex-col gap-4">
-        <h2 id="pairs-heading" className="text-2xl font-bold tracking-tight">
-          Convert in your browser
-        </h2>
-        <ul className="flex flex-wrap gap-3">
-          {browserPairs.map(({ from, to }) => (
-            <li key={pairSlug(from.id, to.id)}>
-              <Link
-                href={`/convert/${pairSlug(from.id, to.id)}`}
-                className={buttonVariants({ variant: "secondary" })}
-              >
-                {from.label} to {to.label}
-              </Link>
+    <html lang="en">
+      <head>
+        <title>AriadShift</title>
+        <meta httpEquiv="refresh" content={`1;url=/${DEFAULT_LOCALE}`} />
+        <meta name="robots" content="noindex" />
+        <script dangerouslySetInnerHTML={{ __html: script }} />
+      </head>
+      <body
+        style={{
+          fontFamily: "system-ui, sans-serif",
+          margin: "3rem auto",
+          maxWidth: "40rem",
+          padding: "0 1rem",
+        }}
+      >
+        <h1>AriadShift</h1>
+        <ul style={{ columns: "12rem", listStyle: "none", padding: 0 }}>
+          {locales.map((locale) => (
+            <li key={locale.tag}>
+              <a href={`/${locale.tag}`} lang={locale.tag} hrefLang={locale.tag}>
+                {locale.name}
+              </a>
             </li>
           ))}
         </ul>
-        <p className="text-sm text-muted-foreground">
-          See every{" "}
-          <Link className="underline" href="/formats">
-            supported format
-          </Link>{" "}
-          and the{" "}
-          <Link className="underline" href="/quality">
-            measured quality
-          </Link>{" "}
-          of each route.
-        </p>
-      </section>
-    </div>
+      </body>
+    </html>
   );
 }

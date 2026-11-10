@@ -25,7 +25,7 @@ test("verifies live signup proofs and rejects a direct bypass", async ({ page, r
   });
   expect(refused.status()).toBe(400);
   expect((await refused.json()).code).toBe("MISSING_CAPTCHA_RESPONSE");
-  await page.goto("/sign-in?next=/sign-in");
+  await page.goto("/en/sign-in?next=/sign-in");
   await page.getByRole("button", { name: "Create one" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Browser signup");
   await page.getByLabel("Email", { exact: true }).fill(email);
@@ -62,7 +62,7 @@ test("verifies live signup proofs and rejects a direct bypass", async ({ page, r
 
 test("loads the live upload widget on the credentialless converter route", async ({ page }) => {
   test.setTimeout(90_000);
-  const document = await page.goto("/app?to=docx");
+  const document = await page.goto("/en/app?to=docx");
   expect(document?.headers()["cross-origin-embedder-policy"]).toBe("credentialless");
   await page.locator("input[type=file]").setInputFiles({
     name: "challenge.md",

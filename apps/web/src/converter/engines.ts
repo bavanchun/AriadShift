@@ -9,6 +9,8 @@ import type {
   Notice,
   Plan,
   PlanStep,
+  ToolDescriptor,
+  ToolRunResult,
 } from "@ariadshift/ariad-wasm";
 
 export interface Engine {
@@ -28,9 +30,20 @@ export interface Core {
   inspect(bytes: Uint8Array, name: string, totalBytes?: number | null): InspectResult;
   plan(input: FormatId, to: FormatId, profile?: string | null, scope?: string | null): Plan;
   engines: ReadonlyMap<string, Engine>;
+  listTools?(): ToolDescriptor[];
+  runTool?: CoreModule["runTool"];
 }
 
 export interface CoreModule {
+  listTools(): ToolDescriptor[];
+  runTool(
+    inputs: Uint8Array[],
+    names: string[],
+    toolId: string,
+    paramsJson: string,
+    budgetBytes: number,
+    entitled?: boolean | null,
+  ): ToolRunResult;
   version(): string;
   inspect(bytes: Uint8Array, name: string, totalBytes?: number | null): InspectResult;
   plan(input: FormatId, to: FormatId, profile?: string | null, scope?: string | null): Plan;
@@ -49,6 +62,8 @@ export function coreFrom(module: CoreModule, memory: WebAssembly.Memory): Core {
     memoryBytes: () => memory.buffer.byteLength,
     inspect: (bytes, name, totalBytes) => module.inspect(bytes, name, totalBytes),
     plan: (input, to, profile, scope) => module.plan(input, to, profile, scope),
+    listTools: () => module.listTools(),
+    runTool: (...args) => module.runTool(...args),
     engines: new Map<string, Engine>([
       [
         "ariad-core",

@@ -1,6 +1,6 @@
-// Runs the pinned Lighthouse against the production build: / and /app, mobile and
+// Runs the pinned Lighthouse against the production build: /en and /en/app, mobile and
 // desktop. Starts `next start` on port 3100 itself and stops it afterwards. Exits non-zero
-// when any category scores below 90. Run `just web-build` first.
+// when a category scores below its budget (below). Run `just web-build` first.
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -10,9 +10,11 @@ import desktopConfig from "lighthouse/core/config/desktop-config.js";
 
 const PORT = 3100;
 const BASE = `http://localhost:${PORT}`;
-const PAGES = ["/", "/app"];
-const CATEGORIES = ["performance", "accessibility", "best-practices", "seo"];
-const THRESHOLD = 0.9;
+const PAGES = ["/en", "/en/app"];
+// The budget of each category. The app page carries the tool hub and the PDF workspace behind
+// lazy loading, so it keeps the same performance budget as the landing page.
+const BUDGETS = { performance: 0.9, accessibility: 0.95, "best-practices": 0.9, seo: 0.9 };
+const CATEGORIES = Object.keys(BUDGETS);
 const web = path.join(import.meta.dirname, "..");
 const reports = path.join(web, "../../.lighthouse");
 
@@ -111,10 +113,10 @@ try {
         const lhr = result.lhr;
         const scores = CATEGORIES.map((id) => lhr.categories[id].score);
         rows.push({ page, formFactor, scores });
-        if (scores.some((score) => score === null || score < THRESHOLD)) {
+        if (scores.some((score, index) => score === null || score < BUDGETS[CATEGORIES[index]])) {
           failed = true;
         }
-        const name = `${formFactor}-${page === "/" ? "home" : page.slice(1)}.json`;
+        const name = `${formFactor}-${page === "/" ? "home" : page.slice(1).replaceAll("/", "-")}.json`;
         writeFileSync(path.join(reports, name), result.report);
       } finally {
         await activeChrome.kill();

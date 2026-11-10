@@ -1,13 +1,14 @@
-/** Display information for the formats the site talks about, keyed by registry id. */
+/**
+ * Display information for the formats the site talks about, keyed by registry id. Names and
+ * extensions are fixed; the descriptive prose is `common.format.<key>.noun` and
+ * `.description` in the message catalogue (see `formatMessageKey`).
+ */
 export interface FormatInfo {
   id: string;
   /** URL segment used in /convert/<from>-to-<to>. */
   slug: string;
   label: string;
-  /** Short noun phrase, for example "Markdown document". */
-  noun: string;
   extensions: string[];
-  description: string;
   /** Internal engine interchange retains labels but has no public format page. */
   internal?: boolean;
 }
@@ -17,280 +18,216 @@ export const FORMATS: FormatInfo[] = [
     id: "markdown",
     slug: "markdown",
     label: "Markdown",
-    noun: "Markdown document",
     extensions: ["md", "markdown", "mdown"],
-    description:
-      "CommonMark with GitHub Flavored Markdown: headings, lists, tables, task lists, footnotes and math. The format most AI tools read best.",
   },
   {
     id: "html",
     slug: "html",
     label: "HTML",
-    noun: "HTML page",
     extensions: ["html", "htm"],
-    description:
-      "A standalone HTML5 page. Raw markup in the input is sanitized; scripts and unsafe attributes never reach the output.",
   },
   {
     id: "ariad-ir+json",
     slug: "ir-json",
     label: "AriadShift IR (JSON)",
-    noun: "AriadShift IR document",
     extensions: ["ir.json", "json"],
-    description:
-      "The structured document model every AriadShift route passes through: headings, blocks, tables, assets and metadata as versioned JSON.",
   },
   {
     id: "docx",
     slug: "docx",
     label: "Word (DOCX)",
-    noun: "Word document",
     extensions: ["docx"],
-    description:
-      "Office Open XML documents from Microsoft Word, LibreOffice and Google Docs, read and written through Pandoc.",
   },
   {
     id: "epub",
     slug: "epub",
     label: "EPUB",
-    noun: "EPUB e-book",
     extensions: ["epub"],
-    description: "EPUB 3 e-books, read and written through Pandoc with reproducible metadata.",
   },
   {
     id: "pdf",
     slug: "pdf",
     label: "PDF",
-    noun: "PDF document",
     extensions: ["pdf"],
-    description:
-      "Digital PDF text is read on this device. PDF output uses Typst and embedded fonts. Scanned pages need OCR in the desktop app.",
   },
   {
     id: "odt",
     slug: "odt",
     label: "OpenDocument Text (ODT)",
-    noun: "OpenDocument text document",
     extensions: ["odt"],
-    description: "OpenDocument text files use LibreOffice in the desktop app.",
   },
   {
     id: "rtf",
     slug: "rtf",
     label: "Rich Text (RTF)",
-    noun: "Rich Text document",
     extensions: ["rtf"],
-    description: "Rich Text documents use LibreOffice in the desktop app.",
   },
   {
     id: "pptx",
     slug: "pptx",
     label: "PowerPoint (PPTX)",
-    noun: "PowerPoint presentation",
     extensions: ["pptx"],
-    description: "PowerPoint presentations use Docling or LibreOffice in the desktop app.",
   },
   {
     id: "xlsx",
     slug: "xlsx",
     label: "Excel (XLSX)",
-    noun: "Excel workbook",
     extensions: ["xlsx"],
-    description: "Excel workbooks use Docling or LibreOffice in the desktop app.",
   },
   {
     id: "doc",
     slug: "doc",
     label: "Word (DOC)",
-    noun: "legacy Word document",
     extensions: ["doc"],
-    description: "Legacy Word documents use LibreOffice in the desktop app.",
   },
   {
     id: "xls",
     slug: "xls",
     label: "Excel (XLS)",
-    noun: "legacy Excel workbook",
     extensions: ["xls"],
-    description: "Legacy Excel workbooks use LibreOffice in the desktop app.",
   },
   {
     id: "ppt",
     slug: "ppt",
     label: "PowerPoint (PPT)",
-    noun: "legacy PowerPoint presentation",
     extensions: ["ppt"],
-    description: "Legacy PowerPoint presentations use LibreOffice in the desktop app.",
   },
   {
     id: "ods",
     slug: "ods",
     label: "OpenDocument Spreadsheet (ODS)",
-    noun: "OpenDocument spreadsheet",
     extensions: ["ods"],
-    description: "OpenDocument spreadsheets use LibreOffice in the desktop app.",
   },
   {
     id: "odp",
     slug: "odp",
     label: "OpenDocument Presentation (ODP)",
-    noun: "OpenDocument presentation",
     extensions: ["odp"],
-    description: "OpenDocument presentations use LibreOffice in the desktop app.",
   },
   {
     id: "png",
     slug: "png",
     label: "PNG",
-    noun: "PNG image",
     extensions: ["png"],
-    description: "Image text extraction needs the Docling engine pack in the desktop app.",
   },
   {
     id: "jpeg",
     slug: "jpeg",
     label: "JPEG",
-    noun: "JPEG image",
     extensions: ["jpg", "jpeg"],
-    description: "Image text extraction needs the Docling engine pack in the desktop app.",
   },
   {
     id: "webp",
     slug: "webp",
     label: "WebP",
-    noun: "WebP image",
     extensions: ["webp"],
-    description: "Image text extraction needs the Docling engine pack in the desktop app.",
   },
   {
     id: "tiff",
     slug: "tiff",
     label: "TIFF",
-    noun: "TIFF image",
     extensions: ["tif", "tiff"],
-    description: "Image text extraction needs the Docling engine pack in the desktop app.",
   },
   {
     id: "txt",
     internal: true,
     slug: "txt",
     label: "Plain Text (TXT)",
-    noun: "Plain text document",
     extensions: ["txt", "text"],
-    description: "Plain text files without rich formatting.",
   },
   {
     id: "csv",
     internal: true,
     slug: "csv",
     label: "Comma-Separated Values (CSV)",
-    noun: "CSV spreadsheet",
     extensions: ["csv"],
-    description: "Comma-separated tabular data.",
   },
   {
     id: "eml",
     internal: true,
     slug: "eml",
     label: "Email Message (EML)",
-    noun: "Email message",
     extensions: ["eml"],
-    description: "Email message format.",
   },
   {
     id: "msg",
     internal: true,
     slug: "msg",
     label: "Outlook Message (MSG)",
-    noun: "Outlook email message",
     extensions: ["msg"],
-    description: "Outlook email message format.",
   },
   {
     id: "svg",
     internal: true,
     slug: "svg",
     label: "Scalable Vector Graphics (SVG)",
-    noun: "SVG image",
     extensions: ["svg"],
-    description: "Scalable Vector Graphics image format.",
   },
   {
     id: "cbz",
     internal: true,
     slug: "cbz",
     label: "Comic Book Archive (CBZ)",
-    noun: "Comic book archive",
     extensions: ["cbz"],
-    description: "Comic book archive format.",
   },
   {
     id: "odg",
     internal: true,
     slug: "odg",
     label: "OpenDocument Graphics (ODG)",
-    noun: "OpenDocument drawing",
     extensions: ["odg"],
-    description: "OpenDocument Drawing format.",
   },
   {
     id: "wpd",
     internal: true,
     slug: "wpd",
     label: "WordPerfect (WPD)",
-    noun: "WordPerfect document",
     extensions: ["wpd"],
-    description: "WordPerfect document format.",
   },
   {
     id: "wps",
     internal: true,
     slug: "wps",
     label: "Microsoft Works (WPS)",
-    noun: "Microsoft Works document",
     extensions: ["wps"],
-    description: "Microsoft Works document format.",
   },
   {
     id: "pub",
     internal: true,
     slug: "pub",
     label: "Microsoft Publisher (PUB)",
-    noun: "Microsoft Publisher document",
     extensions: ["pub"],
-    description: "Microsoft Publisher document format.",
   },
   {
     id: "vsd",
     internal: true,
     slug: "vsd",
     label: "Microsoft Visio (VSD)",
-    noun: "Microsoft Visio diagram",
     extensions: ["vsd"],
-    description: "Microsoft Visio diagram format.",
   },
   {
     id: "docling+json",
     internal: true,
     slug: "docling-json",
     label: "DoclingDocument (JSON)",
-    noun: "DoclingDocument JSON document",
     extensions: [],
-    description: "Docling extraction results map to AriadShift IR on this device.",
   },
   {
     id: "pandoc+json",
     internal: true,
     slug: "pandoc-json",
     label: "Pandoc AST (JSON)",
-    noun: "Pandoc JSON document",
     extensions: [],
-    description: "Internal interchange used by the Pandoc engine.",
   },
 ];
 
 const BY_ID = new Map(FORMATS.map((format) => [format.id, format]));
 const BY_SLUG = new Map(FORMATS.map((format) => [format.slug, format]));
+
+/** Catalogue key segment of a format: its slug with underscores, e.g. `ir_json`. */
+export function formatMessageKey(format: FormatInfo): string {
+  return format.slug.replaceAll("-", "_");
+}
 
 export function formatById(id: string): FormatInfo | undefined {
   return BY_ID.get(id);

@@ -57,7 +57,7 @@ const scriptChunks = (worker: Worker) =>
   );
 
 test("reads a real DOCX entirely in the browser", async ({ page }) => {
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "route.docx", await readFile(fixture("docx/vi-route-table.docx")));
   const output = await convert(page, "Markdown");
   expect(output.toString()).toContain("Bảng hành trình ven sông");
@@ -65,7 +65,7 @@ test("reads a real DOCX entirely in the browser", async ({ page }) => {
 });
 
 test("writes DOCX then reads its text and structure back", async ({ page }) => {
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "browser.md", Buffer.from(MARKDOWN));
   const output = await convert(page, "Word (DOCX)");
   expect(output.subarray(0, 2).toString()).toBe("PK");
@@ -80,7 +80,7 @@ test("writes DOCX then reads its text and structure back", async ({ page }) => {
 test("preserves an embedded image from Markdown through DOCX and back", async ({ page }) => {
   const image = await readFile(fixture("md/assets/vietnamese-route.png"));
   const data = image.toString("base64");
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(
     page,
     "image.md",
@@ -97,7 +97,7 @@ test("preserves an embedded image from Markdown through DOCX and back", async ({
 });
 
 test("reads EPUB with its embedded image into HTML", async ({ page }) => {
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "book.epub", await readFile(fixture("epub/vi-epub-table-image.epub")));
   const output = (await convert(page, "HTML")).toString();
   expect(output).toContain("<table>");
@@ -105,7 +105,7 @@ test("reads EPUB with its embedded image into HTML", async ({ page }) => {
 });
 
 test("writes EPUB from HTML and reads it back", async ({ page }) => {
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(
     page,
     "book.html",
@@ -121,7 +121,7 @@ test("writes EPUB from HTML and reads it back", async ({ page }) => {
 });
 
 test("reads the text of a digital PDF", async ({ page }) => {
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "map.pdf", await readFile(fixture("pdf/en-map-room.pdf")));
   expect((await convert(page, "Markdown")).toString()).toContain("Map Room");
 });
@@ -129,7 +129,7 @@ test("reads the text of a digital PDF", async ({ page }) => {
 test("loads Typst only for PDF output and preserves Vietnamese text", async ({ page }) => {
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "browser.md", Buffer.from(MARKDOWN));
   await convert(page, "HTML");
   expect(requests.some((url) => /ariad_typst.*wasm|pandoc\.wasm/.test(url))).toBe(false);
@@ -144,7 +144,7 @@ test("loads Typst only for PDF output and preserves Vietnamese text", async ({ p
 });
 
 test("offers OCR through Desktop without offering cloud processing", async ({ page }) => {
-  await page.goto("/app?to=docx&profile=editable");
+  await page.goto("/en/app?to=docx&profile=editable");
   await pick(page, "scan.pdf", await readFile(fixture("pdf/vi-garden-image-only.pdf")));
   await expect(page.getByTestId("desktop-handoff")).toContainText("Some pages need OCR");
   await expect(page.getByRole("link", { name: "Open in Desktop" })).toHaveAttribute(
@@ -159,7 +159,7 @@ for (const [source, target, targetLabel] of [
   ["epub", "docx", "Word (DOCX)"],
 ] as const) {
   test(`converts ${source} to ${target} through IR`, async ({ page }) => {
-    await page.goto("/app");
+    await page.goto("/en/app");
     const input = source === "docx" ? "docx/vi-route-table.docx" : "epub/vi-epub-chapters.epub";
     await pick(page, `document.${source}`, await readFile(fixture(input)));
     const output = await convert(page, targetLabel);
@@ -180,7 +180,7 @@ test("reuses the cached Pandoc engine and lazy chunks offline", async ({
     browserName !== "chromium",
     "Chromium supports reliable service worker offline emulation",
   );
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "offline.md", Buffer.from(MARKDOWN));
   const output = await convert(page, "Word (DOCX)");
   const resources = await page.workers()[0]?.evaluate(() =>
@@ -222,7 +222,7 @@ test("keeps cached engines usable offline after a deployment renames their chunk
     "Chromium supports reliable service worker offline emulation",
   );
   test.setTimeout(240_000);
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "deploy.md", Buffer.from(MARKDOWN));
   await convert(page, "Word (DOCX)");
   await convert(page, "PDF");

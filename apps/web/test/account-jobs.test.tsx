@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { DownloadStreamTarget, Job, JobEvent, OutputFile } from "@ariadshift/sdk";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { AccountShell } from "@/components/account/account-shell";
 import type { AccountUser, AuthApi } from "@/components/account/auth-api";
 import { JOB_HISTORY_KEY, type JobHistoryEntry } from "@/components/account/job-history";
@@ -8,8 +8,9 @@ import type { JobListPage, JobsApi, ListedJob } from "@/components/account/jobs-
 import { JobsPanel } from "@/components/account/jobs-panel";
 import { STREAM_DOWNLOAD_THRESHOLD_BYTES } from "@/lib/cloud/cloud-job";
 import { resolveCloudConfig } from "@/lib/cloud/config";
+import { renderIntl } from "./intl";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/jobs" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/en/jobs" }));
 
 const CONFIG = { apiUrl: "http://localhost:3902", authUrl: "http://localhost:3901" };
 const USER: AccountUser = {
@@ -96,7 +97,7 @@ function seed(...entries: JobHistoryEntry[]) {
 
 function renderJobs(api: JobsApi, user: AccountUser | null = USER, pollIntervalMs?: number) {
   const createApi = vi.fn(() => api);
-  render(
+  renderIntl(
     <AccountShell config={CONFIG} auth={fakeAuth(user)}>
       <JobsPanel createApi={createApi} pollIntervalMs={pollIntervalMs} />
     </AccountShell>,
@@ -144,14 +145,14 @@ describe("jobs page", () => {
     expect(await row("anonymous.pdf")).toBeTruthy();
     expect(screen.queryByText("mine.pdf")).toBeNull();
     const signIn = screen.getAllByRole("link", { name: "Sign in" });
-    expect(signIn.map((link) => link.getAttribute("href"))).toContain("/sign-in?next=%2Fjobs");
+    expect(signIn.map((link) => link.getAttribute("href"))).toContain("/en/sign-in?next=%2Fjobs");
     expect(createApi).toHaveBeenLastCalledWith(false);
   });
 
   it("says how to start a job when the list is empty", async () => {
     renderJobs(fakeJobs({}));
     expect(await screen.findByText(/No cloud jobs yet/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "converter" }).getAttribute("href")).toBe("/app");
+    expect(screen.getByRole("link", { name: "converter" }).getAttribute("href")).toBe("/en/app");
   });
 
   it("shows a finished job's output, expiry and download", async () => {
@@ -486,7 +487,7 @@ describe("jobs page with the account's job list", () => {
         apiUrl: "https://example.com/api",
         authUrl: "https://auth.example.com",
       });
-      render(
+      renderIntl(
         <AccountShell config={config} auth={fakeAuth(USER)}>
           <JobsPanel />
         </AccountShell>,
@@ -515,7 +516,7 @@ describe("jobs page with the account's job list", () => {
           throw Object.assign(new Error("unauthorized"), { status: 401, code: "unauthorized" });
         }),
       } as unknown as AuthApi;
-      render(
+      renderIntl(
         <AccountShell config={CONFIG} auth={expiredAuth}>
           <JobsPanel />
         </AccountShell>,
@@ -545,7 +546,7 @@ describe("jobs page with the account's job list", () => {
           throw Object.assign(new Error("transient"), failWith);
         }),
       } as unknown as AuthApi;
-      render(
+      renderIntl(
         <AccountShell config={CONFIG} auth={transientAuth}>
           <JobsPanel />
         </AccountShell>,
