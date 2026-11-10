@@ -46,7 +46,7 @@ AriadShift today converts documents (36 routes, shared IR, CLI/MCP/web/desktop/c
 | 9 | [Redaction and signatures](./phase-09-redaction-and-signatures.md) | B | 4, 5 | Completed |
 | 10 | [Conversion parity, PDF/A-UA, compare](./phase-10-conversion-parity-compliance-compare.md) | B → 0.4.0 (with 14) | 4, 7 | Completed |
 | 11 | [IR styles (`ariad-ir/2`) + fidelity score](./phase-11-ir-styles-and-fidelity-score.md) | C | 10 | Completed |
-| 12 | [Edit engine: Document + Page mode](./phase-12-document-and-page-edit-engine.md) | C | 11, 8 | Pending |
+| 12 | [Edit engine: Document + Page mode](./phase-12-document-and-page-edit-engine.md) | C | 11, 8 | Completed |
 | 13 | [Automation, recipes, offline AI, cloud tool jobs, watermark L2](./phase-13-automation-recipes-and-ai.md) | C → 0.5.0 (with 15) | 12, 6, 7 | Pending |
 | 14 | [Web foundation: shell, i18n 40+, viewer](./phase-14-web-foundation-i18n-viewer.md) | D (parallel with 5-13) → 0.4.0 | 3, 4 | Pending |
 | 15 | [Web tool suite](./phase-15-web-tool-suite.md) | D → 0.5.0 | 14, 10 | Pending |

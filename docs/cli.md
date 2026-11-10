@@ -814,6 +814,8 @@ ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--param
 - `--overwrite`: Replace existing destination file(s).
 - `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
 
+`ASHIFT_PLAN` supplies the local plan context for `tool`, `recipe run`, and MCP `run_doc_tool`. Unset defaults to `free`; set values are trimmed and must be `free`, `pro`, `team`, or `enterprise`. Empty, invalid or non-UTF-8 values return `invalid_params` (exit 9). Pro page editing uses `ASHIFT_PLAN=pro`; recipes pass this plan through to every step and quota check. For MCP, set it when launching the server (`ASHIFT_PLAN=pro ashift mcp --allow-dir "$PWD"`). This local context does not authenticate a subscription; see [tool access control](tools.md#local-plan-context-ashift_plan).
+
 #### Examples
 
 ```bash
@@ -915,7 +917,29 @@ ashift tool pdf.sign document.pdf --secret certificate=@cert.p12 --secret passwo
 
 # Verify all digital signatures and timestamps in a PDF
 ashift tool pdf.sign_verify signed.pdf --json
+
+# List all four document/page edit tools and their schemas
+ashift tools --group edit --json
+
+# Open a document as ariad-ir/2; --json reports export previews and source-map counts
+ashift tool edit.open_document report.pdf --param target_format=docx -o opened.ir.json --json
+
+# Edit the IR, retaining existing block IDs, then export with original-document changes
+ashift tool edit.export_document edited.ir.json report.pdf --param format=docx -o edited.docx --json
+
+# The original is optional; format defaults to pdf (also accepts html and md)
+ashift tool edit.export_document edited.ir.json -o edited.pdf --json
+
+# Inspect stable object IDs before preparing an ordered page-edit operation list
+ASHIFT_PLAN=pro ashift tool edit.page_objects report.pdf --param pages=1 -o objects.json --json
+
+# edits.json contains {"ops":[...],"save":"incremental"}; retain it for crash recovery
+ASHIFT_PLAN=pro ashift tool edit.apply report.pdf --params-json edits.json -o edited-in-place.pdf --json
 ```
+
+Document-mode opening accepts PDF, DOCX, HTML and Markdown; it writes `ariad-ir/2` with source maps and available layout geometry. Opening reports `metrics.fidelity_preview`; export reports measured `metrics.fidelity` and `metrics.change_list` (`added`, `removed`, `modified` block IDs). With an original second input, changes describe the edit; without it, changes describe the exported read-back relative to the edited IR. PDF export uses the bundled Typst compiler and DOCX requires Pandoc. See [the edit tool contract](tools.md#document-and-page-editing-edit-group) for parameters and operation fields.
+
+Page mode requires Pro access and the PDFium engine pack. `edit.apply` takes 1–1000 operations and defaults to a full rewrite; `save=incremental` appends a revision while preserving the original bytes and earlier signature byte ranges. Store the input bytes and operation list together to replay after a crash. Font substitution emits `font_substituted`; unsupported characters fail with a `glyph_unavailable` diagnostic (`engine_failure`, exit 1) before publication.
 
 ---
 

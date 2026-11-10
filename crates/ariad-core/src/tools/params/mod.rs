@@ -24,6 +24,7 @@ pub mod delete_pages;
 pub mod deskew;
 pub mod detect_scanned;
 pub mod divide_pages;
+pub mod edit;
 pub mod encrypt;
 pub mod extract_images;
 pub mod extract_pages;
@@ -105,6 +106,11 @@ pub use delete_pages::DeletePagesParams;
 pub use deskew::DeskewParams;
 pub use detect_scanned::DetectScannedParams;
 pub use divide_pages::DividePagesParams;
+pub use edit::{
+    BlockChangeList, EditApplyParams, EditExportDocumentParams, EditExportFormat,
+    EditOpenDocumentParams, EditPageObjectsParams, EditSaveMode, FidelityPreview, PageEditOp,
+    PageObjectEntry, PageObjectKind, PageObjectsDocument, PageObjectsPage,
+};
 pub use encrypt::{EncryptParams, EncryptionAlgorithm};
 pub use extract_images::{ExtractFormat, ExtractImagesParams};
 pub use extract_pages::ExtractPagesParams;

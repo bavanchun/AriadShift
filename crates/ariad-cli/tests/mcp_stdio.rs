@@ -4,6 +4,9 @@
 //! tool schema & invocation matching CLI outputs, path confinement,
 //! capability-based promotion, and session-scoped resources.
 
+#[path = "support/edit.rs"]
+mod edit_support;
+
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
@@ -101,6 +104,7 @@ impl McpTestClient {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_ashift"));
         cmd.arg("mcp")
             .args(args)
+            .env_remove("ASHIFT_PLAN")
             .env("ASHIFT_PANDOC", pandoc_path())
             .env("SOURCE_DATE_EPOCH", "1700000000")
             .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path());
@@ -2612,7 +2616,7 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let listed = list_resp["result"]["structuredContent"]
         .as_array()
         .expect("list_doc_tools array");
-    assert_eq!(listed.len(), 92);
+    assert_eq!(listed.len(), 96);
     assert_eq!(listed[0]["id"], "pdf.info");
     assert_eq!(listed[0]["group"], "organize");
     assert_eq!(listed[0]["engine"], "ariad-pdf");
@@ -2744,6 +2748,186 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     assert!(read_resp.get("result").is_some(), "{read_resp}");
 
     client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_document_edit_round_trip() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("original.md");
+    fs::write(&input, "Original paragraph\n\nKeep this paragraph\n").unwrap();
+    let mut client =
+        McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], Vec::new());
+    client.initialize();
+    client.send_request(
+        1100,
+        "tools/call",
+        json!({"name":"list_doc_tools", "arguments":{"group":"edit"}}),
+    );
+    let response = client.read_response(1100);
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let listed = response["result"]["structuredContent"].as_array().unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|t| t["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "edit.open_document",
+            "edit.export_document",
+            "edit.page_objects",
+            "edit.apply"
+        ]
+    );
+    let opened = dir.path().join("opened.json");
+    client.send_request(1101, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.open_document", "inputs":[input], "output":opened}}));
+    let response = client.read_response(1101);
+    converted_resource_uri(&response, &opened);
+    let metrics = &response["result"]["structuredContent"]["metrics"];
+    assert_eq!(metrics["fidelity_preview"].as_array().unwrap().len(), 4);
+    let mut document: ariad_core::ir::Document =
+        serde_json::from_slice(&fs::read(&opened).unwrap()).unwrap();
+    assert_eq!(document.version, "ariad-ir/2");
+    assert!(!document.source_map.is_empty());
+    let changed_id = document.body[0].id().to_string();
+    if let ariad_core::ir::Block::Paragraph { content, .. } = &mut document.body[0] {
+        *content = vec![ariad_core::ir::Inline::Text {
+            text: "MCP Tiếng Việt".into(),
+        }];
+    } else {
+        panic!("expected a paragraph");
+    }
+    let edited = dir.path().join("edited.json");
+    fs::write(&edited, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+    let exported = dir.path().join("exported.html");
+    client.send_request(1102, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.export_document", "inputs":[edited, input], "output":exported, "params":{"format":"html"}}}));
+    let response = client.read_response(1102);
+    let uri = converted_resource_uri(&response, &exported);
+    let metrics = &response["result"]["structuredContent"]["metrics"];
+    assert_eq!(metrics["fidelity"]["status"], "measured");
+    assert!(
+        metrics["change_list"]["modified"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(changed_id))
+    );
+    assert!(
+        fs::read_to_string(&exported)
+            .unwrap()
+            .contains("MCP Tiếng Việt")
+    );
+    client.send_request(1103, "resources/read", json!({"uri":uri}));
+    let response = client.read_response(1103);
+    assert!(response.get("result").is_some(), "{response}");
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_page_edit_round_trip_with_real_pdfium() {
+    let Some(pack) = edit_support::PdfiumPack::new() else {
+        return;
+    };
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("subset.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-tools/vi-diacritics-subset-font.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client = McpTestClient::spawn_with_env(
+        &["--allow-dir", dir.path().to_str().unwrap()],
+        Vec::new(),
+        &[
+            ("ASHIFT_PACK_PDFIUM", pack.path().as_os_str()),
+            ("ASHIFT_PLAN", std::ffi::OsStr::new("pro")),
+        ],
+    );
+    client.initialize();
+    let objects = dir.path().join("objects.json");
+    client.send_request(1110, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.page_objects", "inputs":[input], "output":objects, "params":{"pages":"1"}}}));
+    let response = client.read_response(1110);
+    converted_resource_uri(&response, &objects);
+    let listed: Value = serde_json::from_slice(&fs::read(&objects).unwrap()).unwrap();
+    let target = listed["pages"][0]["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["kind"] == "text")
+        .unwrap();
+    let output = dir.path().join("edited.pdf");
+    client.send_request(1111, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.apply", "inputs":[input], "output":output, "params":{"save":"incremental", "ops":[{"op":"replace_text", "page":1, "object_id":target["id"], "text":"MCP Tiếng Việt"}]}}}));
+    let response = client.read_response(1111);
+    let uri = converted_resource_uri(&response, &output);
+    assert!(
+        response["result"]["structuredContent"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "font_substituted")
+    );
+    let original = fs::read(&input).unwrap();
+    let edited = fs::read(&output).unwrap();
+    assert!(edited.starts_with(&original));
+    assert!(
+        lopdf::Document::load_mem(&edited)
+            .unwrap()
+            .extract_text(&[1])
+            .unwrap()
+            .contains("MCP Tiếng Việt")
+    );
+    client.send_request(1112, "resources/read", json!({"uri":uri}));
+    let response = client.read_response(1112);
+    assert!(response.get("result").is_some(), "{response}");
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_page_tools_reject_default_free_access() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("subset.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-tools/vi-diacritics-subset-font.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client =
+        McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], Vec::new());
+    client.initialize();
+    for (index, tool) in ["edit.page_objects", "edit.apply"].into_iter().enumerate() {
+        let id = 1120 + index as u64;
+        let output = dir.path().join(format!("refused-{index}"));
+        client.send_request(id, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":tool, "inputs":[input], "output":output}}));
+        let response = client.read_response(id);
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        let error = &response["result"]["structuredContent"]["error"];
+        assert_eq!(error["code"], "tier_not_allowed");
+        assert_eq!(error["exit_code"], 11);
+        assert!(!output.exists());
+    }
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_mcp_invalid_local_plan_fails_closed() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("input.md");
+    fs::write(&input, "Original paragraph").unwrap();
+    for plan in edit_support::invalid_local_plans() {
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", dir.path().to_str().unwrap()],
+            Vec::new(),
+            &[("ASHIFT_PLAN", plan.as_os_str())],
+        );
+        client.initialize();
+        let output = dir.path().join("refused.json");
+        client.send_request(1130, "tools/call", json!({"name":"run_doc_tool", "arguments":{"tool":"edit.open_document", "inputs":[input], "output":output}}));
+        let response = client.read_response(1130);
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        let error = &response["result"]["structuredContent"]["error"];
+        assert_eq!(error["code"], "invalid_params");
+        assert_eq!(error["exit_code"], 9);
+        assert!(!output.exists());
+        client.close_and_assert_purity();
+    }
 }
 
 #[test]

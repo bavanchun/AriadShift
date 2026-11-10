@@ -575,9 +575,11 @@ impl ToolSpec {
     pub fn accepts_output_format(&self, format: &str) -> bool {
         let norm =
             normalize_tool_format(format).unwrap_or_else(|| format.trim().trim_start_matches('.'));
-        self.allowed_output_formats()
-            .iter()
-            .any(|candidate| candidate.eq_ignore_ascii_case(norm))
+        self.allowed_output_formats().iter().any(|candidate| {
+            normalize_tool_format(candidate)
+                .unwrap_or(candidate)
+                .eq_ignore_ascii_case(norm)
+        })
     }
 
     /// Returns `true` if an emitted artifact of `artifact_format` is permitted both by this tool's
@@ -590,6 +592,18 @@ impl ToolSpec {
     ) -> bool {
         let norm = normalize_tool_format(artifact_format)
             .unwrap_or_else(|| artifact_format.trim().trim_start_matches('.'));
+        if self.id == "edit.export_document" {
+            let expected = match params.get("format") {
+                None => "pdf",
+                Some(value) => match value.as_str() {
+                    Some(format) => format,
+                    None => return false,
+                },
+            };
+            return self.accepts_output_format(expected)
+                && normalize_tool_format(expected)
+                    .is_some_and(|format| norm.eq_ignore_ascii_case(format));
+        }
         if self.id == "pdf.annotations" {
             let expected =
                 if params.get("action").and_then(serde_json::Value::as_str) == Some("list") {
@@ -681,6 +695,16 @@ impl ToolSpec {
     /// out-of-process `"pdfium"` engine.
     #[must_use]
     pub fn engine_for_params(&self, params: &serde_json::Value) -> &'static str {
+        if self.id == "edit.export_document" {
+            return match params.get("format") {
+                None => "ariad-typst",
+                Some(format) => match format.as_str() {
+                    Some("pdf") => "ariad-typst",
+                    Some("docx") => "pandoc",
+                    _ => "ariad-core",
+                },
+            };
+        }
         let requires_pdfium = (self.id == "pdf.split"
             && params.get("detect").and_then(serde_json::Value::as_str) == Some("pixel"))
             || (self.id == "pdf.compare"

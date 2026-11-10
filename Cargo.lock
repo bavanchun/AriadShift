@@ -185,6 +185,7 @@ version = "0.5.0"
 dependencies = [
  "ariad-core",
  "ariad-host",
+ "ariad-pdfium-engine",
  "assert_cmd",
  "base64 0.23.1",
  "clap",
@@ -366,6 +367,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
+ "unicode-normalization",
  "zip",
 ]
 
