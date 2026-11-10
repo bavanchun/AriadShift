@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Core, Engine } from "@/converter/engines";
 import { browserEngines } from "@/converter/browser-engines";
+import type { Core, Engine } from "@/converter/engines";
 
 let lastTarget = "";
 let stampCalls: { bytes: Uint8Array; target: string; timestamp: string }[] = [];
@@ -69,17 +69,17 @@ describe("browserEngines Pandoc media types and package stamping", () => {
     stampCalls = [];
     const core = browserEngines(fakeCore());
     const pandocEngine = core.engines.get("pandoc");
-    expect(pandocEngine).toBeDefined();
+    if (!pandocEngine) throw new Error("Pandoc engine is not registered");
 
     const inputIr = new TextEncoder().encode('{"version":"ariad-ir/1","body":[]}');
-    const result = await pandocEngine!.convert(inputIr, "ariad-ir+json", "odt", {});
+    const result = await pandocEngine.convert(inputIr, "ariad-ir+json", "odt", {});
 
     expect(result.format).toBe("odt");
     expect(result.extension).toBe("odt");
     expect(result.media_type).toBe("application/vnd.oasis.opendocument.text");
     expect(lastTarget).toBe("odt");
     expect(stampCalls).toHaveLength(1);
-    expect(stampCalls[0]!.target).toBe("odt");
+    expect(stampCalls[0]?.target).toBe("odt");
     expect(result.bytes).toEqual(new Uint8Array([10, 20, 30, 99]));
   });
 
@@ -87,10 +87,10 @@ describe("browserEngines Pandoc media types and package stamping", () => {
     stampCalls = [];
     const core = browserEngines(fakeCore());
     const pandocEngine = core.engines.get("pandoc");
-    expect(pandocEngine).toBeDefined();
+    if (!pandocEngine) throw new Error("Pandoc engine is not registered");
 
     const inputIr = new TextEncoder().encode('{"version":"ariad-ir/1","body":[]}');
-    const result = await pandocEngine!.convert(inputIr, "ariad-ir+json", "rtf", {});
+    const result = await pandocEngine.convert(inputIr, "ariad-ir+json", "rtf", {});
 
     expect(result.format).toBe("rtf");
     expect(result.extension).toBe("rtf");
@@ -104,19 +104,20 @@ describe("browserEngines Pandoc media types and package stamping", () => {
     stampCalls = [];
     const core = browserEngines(fakeCore());
     const pandocEngine = core.engines.get("pandoc");
+    if (!pandocEngine) throw new Error("Pandoc engine is not registered");
 
     const inputIr = new TextEncoder().encode('{"version":"ariad-ir/1","body":[]}');
 
-    const docxResult = await pandocEngine!.convert(inputIr, "ariad-ir+json", "docx", {});
+    const docxResult = await pandocEngine.convert(inputIr, "ariad-ir+json", "docx", {});
     expect(docxResult.media_type).toBe(
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
     expect(lastTarget).toBe("docx");
-    expect(stampCalls[0]!.target).toBe("docx");
+    expect(stampCalls[0]?.target).toBe("docx");
 
-    const epubResult = await pandocEngine!.convert(inputIr, "ariad-ir+json", "epub", {});
+    const epubResult = await pandocEngine.convert(inputIr, "ariad-ir+json", "epub", {});
     expect(epubResult.media_type).toBe("application/epub+zip");
     expect(lastTarget).toBe("epub3"); // epub passes epub3 to pandoc
-    expect(stampCalls[1]!.target).toBe("epub");
+    expect(stampCalls[1]?.target).toBe("epub");
   });
 });

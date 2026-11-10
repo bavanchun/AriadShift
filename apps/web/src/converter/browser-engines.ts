@@ -64,8 +64,7 @@ export function browserEngines(core: Core): Core {
       if (to === "epub") {
         media_type = "application/epub+zip";
       } else if (to === "docx") {
-        media_type =
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
       } else if (to === "odt") {
         media_type = "application/vnd.oasis.opendocument.text";
       } else if (to === "rtf") {
