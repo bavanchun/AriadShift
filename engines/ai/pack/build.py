@@ -9,6 +9,7 @@ import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import sysconfig
 import tarfile
@@ -81,12 +82,18 @@ def build(out: Path) -> Path:
             "tkinter",
         ),
     )
+    # Some distributions keep extension modules outside the pure standard library.
+    dynload = Path(sysconfig.get_config_var("DESTSHARED") or stdlib / "lib-dynload")
+    if sys.platform != "win32" and dynload.is_dir():
+        shutil.copytree(dynload, bundled_stdlib / "lib-dynload", dirs_exist_ok=True)
     (runtime / "pyvenv.cfg").unlink()
     base = Path(sys.base_prefix)
     for candidate in (base / "lib").glob("libpython*"):
         if candidate.is_file():
             shutil.copyfile(candidate, runtime / "lib" / candidate.name)
     if sys.platform == "win32":
+        # The venv launcher requires pyvenv.cfg; use the actual interpreter instead.
+        shutil.copyfile(base / "python.exe", executable)
         for candidate in base.glob("*.dll"):
             shutil.copyfile(candidate, runtime / "Scripts" / candidate.name)
         if (base / "DLLs").is_dir():
@@ -128,6 +135,19 @@ def build(out: Path) -> Path:
         receipt_count += 1
     if not receipt_count:
         raise ValueError("pypdf has no installed RECORD receipts")
+    # Isolated Python does not consistently discover site-packages without a venv
+    # redirect (for example with Debian or macOS framework builds).
+    launcher = runtime / "run-engine.py"
+    launcher.write_text(
+        "import pathlib, runpy, sys\n"
+        "root = pathlib.Path(__file__).resolve().parent\n"
+        "stdlib = root / ('Lib' if sys.platform == 'win32' else "
+        "f'lib/python{sys.version_info.major}.{sys.version_info.minor}')\n"
+        "sys.path[:0] = [str(stdlib / 'site-packages'), str(stdlib), "
+        "str(root / 'DLLs' if sys.platform == 'win32' else stdlib / 'lib-dynload')]\n"
+        f"runpy.run_module({MODULE!r}, run_name='__main__', alter_sys=True)\n",
+        encoding="utf-8",
+    )
     shutil.copytree(ROOT / "pack/notices", out / "notices")
     for name in ("LICENSE", "NOTICE"):
         source = ROOT.parents[1] / name
@@ -147,6 +167,7 @@ def build(out: Path) -> Path:
         return json.dumps(value, ensure_ascii=True)
 
     relative_program = executable.relative_to(out).as_posix()
+    entrypoint = [relative_program, "-I", "-B", "{root}/python-env/run-engine.py"]
     manifest = [
         'schema = "ariad-pack/1"',
         f'name = "{PACK_NAME}"',
@@ -159,7 +180,7 @@ def build(out: Path) -> Path:
         "",
         "[[targets]]",
         "triple = " + quote(host_triple()),
-        "entrypoint = " + quote([relative_program, "-I", "-B", "-m", MODULE]),
+        "entrypoint = " + quote(entrypoint),
         "executables = " + quote([relative_program]),
         "",
         "[[targets.components]]",
@@ -177,6 +198,21 @@ def build(out: Path) -> Path:
     # Explicit assertion of the sandbox-required host resolution invariant.
     if not executable.resolve().is_relative_to(out) or not os.access(executable, os.X_OK):
         raise ValueError("development pack entrypoint escapes its root or is not executable")
+    result = subprocess.run(
+        [str(executable), *(arg.replace("{root}", str(out)) for arg in entrypoint[1:])],
+        input=json.dumps({"protocol": "ariad-engine/2", "job": "self-check", "op": "describe"})
+        + "\n",
+        cwd=out.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if result.returncode:
+        raise ValueError("development pack self-check failed: " + result.stdout + result.stderr)
+    events = [json.loads(line) for line in result.stdout.splitlines()]
+    if not events or events[0].get("engine") != PACK_NAME or events[-1].get("ok") is not True:
+        raise ValueError("development pack self-check did not report success")
     return path
 
 
