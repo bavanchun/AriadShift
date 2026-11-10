@@ -30,6 +30,9 @@ fn command() -> Command {
         cmd.env_remove(name);
     }
     cmd.env("ASHIFT_PANDOC", root().join(".tools/pandoc/bin/pandoc"));
+    if cfg!(windows) {
+        Command::env(&mut cmd, "ASHIFT_SANDBOX", "off");
+    }
     cmd
 }
 fn success(output: Output) -> Value {
@@ -259,11 +262,13 @@ fn packs() -> &'static TempDir {
                 .args([
                     "run",
                     "--no-project",
+                    "--python-preference",
+                    "only-managed",
                     "--python",
                     "3.14",
                     "--with",
                     "pypdf==7.0.0",
-                    "python3",
+                    "python",
                 ])
                 .arg(format!("engines/{pack}/pack/build.py"))
                 .args(["build", "--out"])
