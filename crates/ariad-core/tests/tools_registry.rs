@@ -31,6 +31,328 @@ fn output_format_selection_distinguishes_page_number_templates() {
 }
 
 #[test]
+fn edit_tools_have_canonical_access_runtimes_and_formats() {
+    use ariad_core::tools::ToolAccess;
+
+    validate_specs(all()).unwrap();
+    let edit: Vec<_> = by_group(ToolGroup::Edit).collect();
+    assert_eq!(edit.len(), 4);
+    for (id, tier, engine, input_formats, output) in [
+        (
+            "edit.open_document",
+            Tier::Free,
+            "ariad-core",
+            &["pdf", "docx", "html", "md"][..],
+            "json",
+        ),
+        (
+            "edit.export_document",
+            Tier::Free,
+            "ariad-core",
+            &["json", "pdf", "docx", "html", "md"][..],
+            "pdf",
+        ),
+        (
+            "edit.page_objects",
+            Tier::Pro,
+            "pdfium",
+            &["pdf"][..],
+            "json",
+        ),
+        ("edit.apply", Tier::Pro, "pdfium", &["pdf"][..], "pdf"),
+    ] {
+        let spec = find(id).unwrap();
+        assert_eq!(spec.group, ToolGroup::Edit);
+        assert_eq!(spec.version, "1");
+        assert_eq!(spec.tier, tier);
+        assert_eq!(spec.engine, engine);
+        assert_eq!(spec.input_formats, input_formats);
+        assert_eq!(spec.output_format, output);
+        assert_eq!(spec.runtimes, &[ToolRuntime::Wasm, ToolRuntime::Local]);
+        assert!(ToolAccess::PRO.allows_spec(spec));
+        assert_eq!(ToolAccess::FREE.allows_spec(spec), tier == Tier::Free);
+        assert!(spec.secret_params.is_empty());
+        assert_eq!(
+            spec.inputs,
+            if id == "edit.export_document" {
+                InputArity::Many { min: 1, max: 2 }
+            } else {
+                InputArity::One
+            }
+        );
+        jsonschema::validator_for(spec.resolved_params_schema().as_value()).unwrap();
+    }
+    let export = find("edit.export_document").unwrap();
+    assert_eq!(
+        export.allowed_output_formats(),
+        &["pdf", "docx", "html", "md"]
+    );
+    assert!(export.allows_artifact_format("pdf", &json!({})));
+    assert!(!export.allows_artifact_format("html", &json!({})));
+    assert!(!export.allows_artifact_format("pdf", &json!({"format": null})));
+    for (format, engine) in [
+        ("pdf", "ariad-typst"),
+        ("docx", "pandoc"),
+        ("html", "ariad-core"),
+        ("md", "ariad-core"),
+    ] {
+        let params = json!({"format": format});
+        assert_eq!(export.engine_for_params(&params), engine);
+        for artifact in ["pdf", "docx", "html", "md", "json"] {
+            assert_eq!(
+                export.allows_artifact_format(artifact, &params),
+                artifact == format
+            );
+        }
+    }
+    assert_eq!(export.engine_for_params(&json!({})), "ariad-typst");
+    assert_eq!(
+        export.engine_for_params(&json!({"format": null})),
+        "ariad-core"
+    );
+    assert_eq!(
+        export.engine_for_params(&json!({"format": 1})),
+        "ariad-core"
+    );
+    assert!(export.accepts_output_format("md"));
+    assert!(export.accepts_output_format("markdown"));
+    assert!(export.allows_artifact_format(".MD", &json!({"format": "md"})));
+    assert!(export.allows_artifact_format("markdown", &json!({"format": "md"})));
+}
+
+fn edit_ops_example() -> serde_json::Value {
+    json!({"ops": [
+        {"op": "replace_text", "page": 1, "object_id": "p1_obj0", "text": "Updated"},
+        {"op": "set_text_style", "page": 1, "object_id": "p1_obj0", "font_name": "Arial", "font_size": 12.5, "color": "#1234ABCD"},
+        {"op": "move_object", "page": 1, "object_id": "p1_obj1", "dx_pt": -10.0, "dy_pt": 0.5},
+        {"op": "delete_object", "page": 2, "object_id": "p2_obj0"},
+        {"op": "add_text", "page": 2, "text": "New", "x_pt": -2.0, "y_pt": 40.0, "font_size": 1000.0, "color": "#ab12CD"},
+        {"op": "add_image", "page": 2, "bbox": [-1.0, 0.0, 100.0, 200.0], "image_base64": "aW1hZ2U="},
+        {"op": "replace_image", "page": 3, "object_id": "p3_obj0", "image_base64": "aW1hZ2U="}
+    ]})
+}
+
+#[test]
+fn edit_parameters_share_schema_defaults_and_reject_unknown_fields() {
+    use ariad_core::tools::params::{
+        EditApplyParams, EditExportDocumentParams, EditExportFormat, EditOpenDocumentParams,
+        EditPageObjectsParams, EditSaveMode,
+    };
+
+    let open: EditOpenDocumentParams = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(open, EditOpenDocumentParams::default());
+    let export: EditExportDocumentParams = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(export.format, EditExportFormat::Pdf);
+    assert_eq!(export.format.as_str(), "pdf");
+    let objects: EditPageObjectsParams = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(objects, EditPageObjectsParams::default());
+    for selector in ["1-3,5", "odd", "last", "all"] {
+        let open: EditOpenDocumentParams =
+            serde_json::from_value(json!({"pages": selector})).unwrap();
+        let objects: EditPageObjectsParams =
+            serde_json::from_value(json!({"pages": selector})).unwrap();
+        open.validate().unwrap();
+        objects.validate().unwrap();
+    }
+    for selector in ["", "0", "1,,2", "garbage"] {
+        assert!(
+            EditOpenDocumentParams {
+                pages: Some(selector.into()),
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            EditPageObjectsParams {
+                pages: Some(selector.into())
+            }
+            .validate()
+            .is_err()
+        );
+    }
+    assert!(serde_json::from_value::<EditOpenDocumentParams>(json!({"unknown": true})).is_err());
+    assert!(serde_json::from_value::<EditPageObjectsParams>(json!({"unknown": true})).is_err());
+    assert!(serde_json::from_value::<EditExportDocumentParams>(json!({"unknown": true})).is_err());
+    assert!(serde_json::from_value::<EditExportDocumentParams>(json!({"format": "epub"})).is_err());
+    assert!(
+        serde_json::from_value::<EditOpenDocumentParams>(json!({"target_format": "epub"})).is_err()
+    );
+
+    let value = edit_ops_example();
+    let params: EditApplyParams = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(params.save, EditSaveMode::Full);
+    params.validate().unwrap();
+    let schema = find("edit.apply").unwrap().resolved_params_schema();
+    let validator = jsonschema::validator_for(schema.as_value()).unwrap();
+    assert!(validator.is_valid(&value));
+    let roundtrip = serde_json::to_value(&params).unwrap();
+    assert!(validator.is_valid(&roundtrip));
+    let mut incremental = value;
+    incremental["save"] = json!("incremental");
+    let parsed: EditApplyParams = serde_json::from_value(incremental).unwrap();
+    assert_eq!(parsed.save, EditSaveMode::Incremental);
+    for invalid in [
+        json!({"ops": []}),
+        json!({}),
+        json!({"ops": [], "save": "unknown"}),
+        json!({"ops": [], "unknown": true}),
+        json!({"ops": [{"op": "delete_object", "page": 1, "object_id": "p1_obj0", "unknown": true}]}),
+    ] {
+        assert!(!validator.is_valid(&invalid));
+        assert!(
+            !serde_json::from_value::<EditApplyParams>(invalid).is_ok_and(|p| p.validate().is_ok())
+        );
+    }
+}
+
+#[test]
+fn edit_validation_rejects_invalid_geometry_ids_colors_and_operation_counts() {
+    use ariad_core::tools::params::{EditApplyParams, PageEditOp};
+
+    let valid: EditApplyParams = serde_json::from_value(edit_ops_example()).unwrap();
+    for id in [
+        "p0_obj0",
+        "p01_obj0",
+        "p1_obj",
+        "p1_obj-1",
+        "p1_obj１",
+        "p2_obj0",
+        "p1_obj0suffix",
+    ] {
+        let mut params = valid.clone();
+        params.ops = vec![PageEditOp::DeleteObject {
+            page: 1,
+            object_id: id.into(),
+        }];
+        assert!(params.validate().is_err(), "{id}");
+    }
+    for ops in [vec![], vec![valid.ops[0].clone(); 1001]] {
+        assert!(
+            EditApplyParams {
+                ops,
+                save: valid.save
+            }
+            .validate()
+            .is_err()
+        );
+    }
+    EditApplyParams {
+        ops: vec![valid.ops[0].clone(); 1000],
+        save: valid.save,
+    }
+    .validate()
+    .unwrap();
+    for (index, field, value) in [
+        (0, "page", json!(0)),
+        (0, "text", json!("")),
+        (1, "font_size", json!(0)),
+        (1, "font_size", json!(1000.1)),
+        (1, "color", json!("#12345")),
+        (1, "color", json!("#GG0000")),
+        (4, "font_size", json!(-1)),
+        (4, "text", json!("")),
+        (4, "color", json!("red")),
+        (5, "bbox", json!([0, 0, 0, 1])),
+        (5, "bbox", json!([0, 2, 1, 1])),
+    ] {
+        let mut value_ops = edit_ops_example();
+        value_ops["ops"][index][field] = value;
+        let params: EditApplyParams = serde_json::from_value(value_ops).unwrap();
+        assert!(params.validate().is_err(), "{index}.{field}");
+    }
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut ops = valid.ops.clone();
+        if let PageEditOp::SetTextStyle { font_size, .. } = &mut ops[1] {
+            *font_size = Some(invalid);
+        }
+        if let PageEditOp::MoveObject { dx_pt, .. } = &mut ops[2] {
+            *dx_pt = invalid;
+        }
+        if let PageEditOp::MoveObject { dy_pt, .. } = &mut ops[2] {
+            *dy_pt = invalid;
+        }
+        if let PageEditOp::AddText { x_pt, .. } = &mut ops[4] {
+            *x_pt = invalid;
+        }
+        if let PageEditOp::AddText { y_pt, .. } = &mut ops[4] {
+            *y_pt = invalid;
+        }
+        if let PageEditOp::AddText { font_size, .. } = &mut ops[4] {
+            *font_size = invalid;
+        }
+        if let PageEditOp::AddImage { bbox, .. } = &mut ops[5] {
+            bbox[0] = invalid;
+        }
+        for op in [
+            ops[1].clone(),
+            ops[2].clone(),
+            ops[4].clone(),
+            ops[5].clone(),
+        ] {
+            assert!(
+                EditApplyParams {
+                    ops: vec![op],
+                    save: valid.save
+                }
+                .validate()
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn edit_output_contracts_round_trip_and_generate_schemas() {
+    use ariad_core::{
+        fidelity::{FidelityBasis, FidelityReport},
+        tools::params::{BlockChangeList, EditExportFormat, FidelityPreview, PageObjectsDocument},
+    };
+
+    let value = json!({"schema": "ariad-pdf-page-objects/1", "page_count": 3, "pages": [{
+        "page": 2, "width_pt": 600.0, "height_pt": 800.0, "rotation_deg": 90, "objects": [{
+            "id": "p2_obj0", "page": 2, "index": 0, "kind": "text", "bbox": [10.0, 20.0, 50.0, 60.0],
+            "text": "Text", "font_name": "Arial", "font_size": 12.0, "weight": 400, "italic": false,
+            "fill_color": "#000000", "stroke_color": null, "width_px": null, "height_px": null,
+            "matrix": [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        }]
+    }]});
+    let parsed: PageObjectsDocument = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&parsed).unwrap(), value);
+    assert_eq!(
+        PageObjectsDocument::new(3, parsed.pages).schema,
+        PageObjectsDocument::SCHEMA
+    );
+    let validator =
+        jsonschema::validator_for(schema_for_params::<PageObjectsDocument>().as_value()).unwrap();
+    assert!(validator.is_valid(&value));
+    let preview = FidelityPreview {
+        format: EditExportFormat::Docx,
+        report: FidelityReport::unavailable(FidelityBasis::RuntimeReadback, "preview_not_measured"),
+        losses: vec![],
+    };
+    let json_preview = serde_json::to_value(&preview).unwrap();
+    assert_eq!(
+        serde_json::from_value::<FidelityPreview>(json_preview.clone()).unwrap(),
+        preview
+    );
+    assert!(
+        jsonschema::validator_for(schema_for_params::<FidelityPreview>().as_value())
+            .unwrap()
+            .is_valid(&json_preview)
+    );
+    let changes = BlockChangeList {
+        added: vec!["/blocks/1".into()],
+        removed: vec!["/blocks/2".into()],
+        modified: vec!["/blocks/0".into()],
+    };
+    assert_eq!(
+        serde_json::from_value::<BlockChangeList>(serde_json::to_value(&changes).unwrap()).unwrap(),
+        changes
+    );
+}
+
+#[test]
 #[ignore = "writes schemas/tools.v1.json"]
 fn regenerate_tools_schema() {
     let path = tools_schema_path();
