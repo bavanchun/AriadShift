@@ -38,6 +38,30 @@ const utis = {
   jpeg: "public.jpeg",
   webp: "org.webmproject.webp",
   tiff: "public.tiff",
+  txt: "public.plain-text",
+  csv: "public.comma-separated-values-text",
+  eml: "com.apple.mail.email",
+  msg: "com.ariadnev.ariadshift.outlook-msg",
+  svg: "public.svg-image",
+  cbz: "public.cbz-archive",
+  odg: "org.oasis-open.opendocument.graphics",
+  wpd: "org.libreoffice.wpd-document",
+  wps: "org.libreoffice.wks-document",
+  pub: "org.libreoffice.mspub-document",
+  vsd: "org.libreoffice.visio-document",
+};
+
+// Declare third-party types so Finder recognizes them without another app installed.
+const importedTypes = {
+  markdown: ["Markdown document", "public.plain-text"],
+  eml: ["Email message", "public.data"],
+  msg: ["Outlook message", "public.data"],
+  cbz: ["Comic book archive", "public.zip-archive"],
+  odg: ["OpenDocument drawing", "public.data"],
+  wpd: ["WordPerfect document", "public.data"],
+  wps: ["Microsoft Works document", "public.data"],
+  pub: ["Microsoft Publisher document", "public.data"],
+  vsd: ["Microsoft Visio drawing", "public.data"],
 };
 
 /** Tauri applies platform config and the aggregated CLI override using JSON Merge Patch. */
@@ -110,9 +134,33 @@ const typeIdentifiers = (formats) => [...new Set(formats.map((format) => utis[fo
 const extensions = (formats) => formats.flatMap((format) => format.extensions);
 const mediaTypes = (formats) => [...new Set(formats.map((format) => format.media_type))];
 
+function importedTypeDeclaration(format) {
+  const [description, conformsTo] = importedTypes[format.id];
+  return `		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>${utis[format.id]}</string>
+			<key>UTTypeDescription</key>
+			<string>${xml(description)}</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>${conformsTo}</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+${plistStrings(format.extensions, "\t\t\t\t\t")}
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>${xml(format.media_type)}</string>
+				</array>
+			</dict>
+		</dict>`;
+}
+
 /** The app's Info.plist additions: document types for Finder "Open With" and drops on the Dock. */
 function appInfoPlist({ formats }) {
-  const markdown = formats.find((format) => format.id === "markdown");
   return plist(`	<key>CFBundleIconName</key>
 	<string>AriadShift</string>
 	<key>CFBundleDocumentTypes</key>
@@ -132,27 +180,10 @@ ${plistStrings(typeIdentifiers(formats), "\t\t\t\t")}
 	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>${utis.markdown}</string>
-			<key>UTTypeDescription</key>
-			<string>Markdown document</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.plain-text</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-${plistStrings(markdown.extensions, "\t\t\t\t\t")}
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>${markdown.media_type}</string>
-				</array>
-			</dict>
-		</dict>
+${formats
+  .filter((format) => importedTypes[format.id])
+  .map(importedTypeDeclaration)
+  .join("\n")}
 	</array>`);
 }
 
