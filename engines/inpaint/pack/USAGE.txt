@@ -1,0 +1,47 @@
+Offline inpainting development pack
+
+Run from the repository root (serialize commands with the coordinator build lock):
+  uv run --project engines/inpaint --locked python engines/inpaint/pack/build.py build --out /absolute/empty/inpaint-pack
+Set ASHIFT_PACK_INPAINT to the output directory. The manifest resolves through the
+normal host development override, with a copied interpreter inside the pack root.
+The runtime copies its standard library and reviewed pure Python pypdf sources.
+It includes no native wheels or model weights and is not a signed release pack.
+Release packaging must consume the standalone Python archives in pins.toml.
+
+Protocol: one ariad-engine/2 request on stdin; output uses ARIAD_PROTOCOL_FD or
+stdout. type is the canonical event discriminator; artifact/result also carry the
+event alias. Artifacts precede result; data is present in result.data and metrics.
+The existing host marks inpaint sandbox_required=true and blocks engine network.
+
+pdf.watermark_remove_raster takes one PDF. Parameters:
+  pages: 1-based ranges, such as 1-3,5 (default all).
+  mask: auto, or rectangles with x, y, width, height and optional 1-based page.
+  Rectangle coordinates are PDF points from the top-left of the unrotated CropBox.
+  A rectangle with no page applies to all selected pages.
+  method: telea (default) or ns. radius: 1..25, default 3.
+  preview: true by default, writes before_page_NNN.png and after_page_NNN.png.
+
+The portable detector selects connected, neutral gray, low-contrast marks against
+light backgrounds and preserves dark text. It is a heuristic: previews should be
+reviewed when gray artwork, shading or photographs may resemble watermarks.
+Florence-2-base configuration and its MIT licence are pinned; Florence inference
+weights are not bundled. LaMa and Places365 weights are explicitly excluded.
+
+OpenCV cv2.inpaint is used when available. Without native modules, telea uses
+boundary-first fast marching with weighted neighborhood interpolation; ns relaxes
+a biharmonic field after boundary initialization. Unmasked pixels are unchanged.
+The result reports the actual backend as well as requested method and region/page
+counts. All PDF text, metadata, vector content and unselected pages are preserved.
+Shared image/form XObjects are edited per occurrence to isolate selected pages.
+
+The portable PDF path supports 8-bit DeviceRGB/Gray/CMYK and 1-bit gray images,
+including Flate predictors and nested Form XObjects. Local Pillow additionally
+supports JPEG/JPX. Other image color spaces return unsupported_route; JPEG/JPX
+without a local decoder returns tool_missing. Raster previews are at 72 dpi and
+show raster layers; vector content remains in the PDF and triggers a preview
+warning. Images/previews are bounded to 16 million pixels; the pure Python mask
+is bounded to 2 million pixels. Auto mode is not a secure redaction operation.
+
+Run the pytest/ruff commands in engines/ai/pack/USAGE.txt under the build lock.
+Tests verify actual PDF image pixels, before/after PNG CRC/data, selected pages,
+shared/nested objects, CropBox coordinates, validation, manifests and notices.

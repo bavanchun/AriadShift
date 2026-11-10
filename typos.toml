@@ -29,6 +29,8 @@ loca = "loca"
 # IzPack installer framework used by veraPDF release installer.
 IzPack = "IzPack"
 Iz = "Iz"
+# Vietnamese accent-folded compression-level keyword in the NL recipe parser.
+muc = "muc"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".
@@ -47,6 +49,8 @@ extend-exclude = [
     # Full upstream notices; the pack checks their reviewed SHA-256 digests.
     "engines/docling/pack/licenses/*-notice*.txt",
     "engines/verapdf/pack/notices/*",
+    "engines/ai/pack/notices/*",
+    "engines/inpaint/pack/notices/*",
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
