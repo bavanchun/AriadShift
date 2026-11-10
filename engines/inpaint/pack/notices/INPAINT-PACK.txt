@@ -1,0 +1,13 @@
+AriadShift inpaint development engine pack
+
+Engine adapter: Apache-2.0 AND MIT (repository LICENSE and NOTICE).
+Development runtime: host Python, PSF-2.0. The release runtime is pinned to
+python-build-standalone 3.14.9+20261021 in pins.toml; development builds do not
+claim to contain that standalone archive.
+PDF parser: unmodified pypdf 7.0.0, BSD-3-Clause (pypdf-BSD-3-Clause.txt).
+No native wheels or model weights are included in the development pack.
+Florence-2-base configuration: MIT (Florence-2-MIT.txt).
+Optional OpenCV Telea/NS: Apache-2.0 (OpenCV-Apache-2.0.txt).
+The portable detector uses neutral gray connected components. Florence weights
+are not bundled or loaded. Pure Python uses fast marching or biharmonic filling.
+LaMa (big-lama) and Places365 weights are excluded pending owner licence review.

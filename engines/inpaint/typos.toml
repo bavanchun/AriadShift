@@ -1,0 +1,10 @@
+[default.extend-words]
+# Preserve the Dutch legal entity's exact name in the upstream Python licence.
+Stichting = "Stichting"
+Mathematisch = "Mathematisch"
+# PDF compression spelling already accepted by the root config.
+flate = "flate"
+
+[default.extend-identifiers]
+# Exact ISO PDF stream dictionary key, also accepted by the root config.
+DecodeParms = "DecodeParms"
