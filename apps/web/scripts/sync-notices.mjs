@@ -20,6 +20,7 @@ import {
   renderPandocSourceTxt,
   verifyPandocSourceInventory,
 } from "../pandoc-source-inventory.mjs";
+import { pdfiumPackageVersion, pdfiumWasmSha256 } from "../pdfium-assets.mjs";
 
 const defaultWebDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRootDir = path.resolve(defaultWebDir, "../..");
@@ -73,6 +74,21 @@ function unquote(value) {
 
 function isOsSpecificPackage(metadata) {
   return Array.isArray(metadata.os) || Array.isArray(metadata.cpu);
+}
+
+/**
+ * Packages the install removes with an `overrides` entry of "-", such as the OFL font
+ * packages @embedpdf/engines declares but the browser build never loads. They are not
+ * installed, so the walk below must not require them. The lockfile records what pnpm
+ * actually applied, so it is the source of truth.
+ */
+function removedByOverrides(rootDir) {
+  const file = path.join(rootDir, "pnpm-lock.yaml");
+  if (!existsSync(file)) return new Set();
+  const block = /^overrides:\n((?:[ \t]+.*\n?)*)/m.exec(readFileSync(file, "utf8"))?.[1] ?? "";
+  return new Set(
+    [...block.matchAll(/^[ \t]+["']?([^"':\s]+)["']?:\s*["']-["']\s*$/gm)].map((m) => m[1]),
+  );
 }
 
 function resolveDependency(directory, name, optional = false) {
@@ -136,6 +152,7 @@ function readLicenseTexts(directory, metadata) {
 export function generateWebJsNotices(rootDir = defaultRootDir) {
   const seen = new Set();
   const notices = new Map();
+  const removed = removedByOverrides(rootDir);
 
   function visit(directory) {
     if (seen.has(directory)) {
@@ -164,7 +181,7 @@ export function generateWebJsNotices(rootDir = defaultRootDir) {
     );
     const allNames = new Set([...depNames, ...optionalNames, ...peerNames, ...bundledDevNames]);
     for (const name of [...allNames].sort()) {
-      if (DEV_ONLY_PEERS.has(name)) {
+      if (DEV_ONLY_PEERS.has(name) || removed.has(name)) {
         continue;
       }
       const isOptional =
@@ -618,7 +635,16 @@ export function generateWebNoticeTxt(rootDir = defaultRootDir, inventory = pando
     "Written Corresponding-Source Offer (Three Years):",
     inventory.writtenOffer.text,
   ].join("\n");
-  return normalize(`${rootNotice}\n\n${pandocSection}\n`);
+  const pdfiumSection = [
+    "------------------------------------------------------------------------------",
+    "",
+    `PDFium WebAssembly Module (Browser PDF Viewer Engine, @embedpdf/pdfium ${pdfiumPackageVersion})`,
+    "",
+    "The web application distributes the unmodified pdfium.wasm binary from the @embedpdf/pdfium package (MIT wrapper; PDFium itself is BSD-3-Clause with Apache-2.0 components) as a separate WebAssembly file (public/wasm/pdfium/pdfium.wasm), loaded only by the PDF viewer and run in a Web Worker. It is never linked into AriadShift code.",
+    `Shipped pdfium.wasm SHA-256: ${pdfiumWasmSha256}`,
+    "Licence texts shipped with the package are served unmodified next to the module: wasm/pdfium/LICENSE (package, MIT) and wasm/pdfium/LICENSE.pdfium (PDFium BSD-3-Clause and Apache-2.0). Both are also reproduced under @embedpdf/pdfium in THIRD_PARTY_JS_LICENSES.txt.",
+  ].join("\n");
+  return normalize(`${rootNotice}\n\n${pandocSection}\n\n${pdfiumSection}\n`);
 }
 
 export function expectedNotices(rootDir = defaultRootDir) {

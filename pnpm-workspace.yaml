@@ -53,3 +53,80 @@ catalog:
 allowBuilds:
   "@parcel/watcher": false
   "@swc/core": false
+
+# EmbedPDF declares vue, svelte and preact as required peers although each package only
+# uses the one framework adapter it is imported through. This app uses React, so the other
+# three stay uninstalled (otherwise pnpm adds the svelte tree and breaks the notice gate).
+packageExtensions:
+  "@embedpdf/core":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/engines":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/utils":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-document-manager":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-interaction-manager":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-render":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-scroll":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-search":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-selection":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-thumbnail":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-viewport":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+  "@embedpdf/plugin-zoom":
+    peerDependenciesMeta:
+      vue: { optional: true }
+      svelte: { optional: true }
+      preact: { optional: true }
+
+# @embedpdf/engines hard-depends on seven OFL-1.1 font packages that the browser build never
+# loads (fonts are fetched only when configured). Removing them keeps OFL-1.1 limited to
+# Plus Jakarta Sans, as AGENTS.md allows.
+overrides:
+  "@embedpdf/fonts-arabic": "-"
+  "@embedpdf/fonts-hebrew": "-"
+  "@embedpdf/fonts-jp": "-"
+  "@embedpdf/fonts-kr": "-"
+  "@embedpdf/fonts-latin": "-"
+  "@embedpdf/fonts-sc": "-"
+  "@embedpdf/fonts-tc": "-"
