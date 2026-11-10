@@ -1,4 +1,4 @@
-// Web Worker that owns ariad-wasm and the converter's files.
+// Web Worker that owns ariad-wasm, local tool analysis, and the converter's files.
 import init, * as ariadWasm from "@ariadshift/ariad-wasm";
 import { browserEngines, warmCachedEngines } from "./browser-engines";
 import { coreFrom } from "./engines";
@@ -12,11 +12,12 @@ const storageSession = randomSessionId();
 const context: Promise<WorkerContext> = (async () => {
   const { memory } = await init();
   const store = (await OpfsStore.open(storageSession)) ?? new MemoryStore();
+  const engines = browserEngines(coreFrom(ariadWasm, memory));
   await warmCachedEngines();
   return {
-    session: new ConverterSession(browserEngines(coreFrom(ariadWasm, memory)), store),
+    session: new ConverterSession(engines, store),
     storageSession,
-    version: ariadWasm.version(),
+    version: engines.version(),
     memoryLimitBytes: MEMORY_LIMIT_BYTES,
     // Engines read from Cache Storage leave no Resource Timing entry, so list them too.
     resources: () => [
