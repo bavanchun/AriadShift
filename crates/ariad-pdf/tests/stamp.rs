@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Stamps use removable markers and supplied date tokens.
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};
 use serde_json::json;

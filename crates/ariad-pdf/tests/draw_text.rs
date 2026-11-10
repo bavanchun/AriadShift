@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Text subset and Unicode extraction tests.
 
 use ariad_core::{limits::Limits, tools::params::FontFace};

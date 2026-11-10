@@ -9,7 +9,10 @@ use super::{
     lists,
 };
 use crate::{
-    ir::{Block, BlockPosition, BoundingBox, Inline, ListItem},
+    ir::{
+        Block, BlockPosition, BoundingBox, CharacterStyle, Colour, FontRef, Inline, ListItem,
+        ParagraphStyle, StyleSheet,
+    },
     limits::Limits,
     reader::common::nfc,
 };
@@ -68,6 +71,7 @@ struct OpenParagraph {
     bbox: [f64; 4],
     size: f64,
     chars: usize,
+    direct: ParagraphStyle,
 }
 
 /// Collects body blocks in reading order.
@@ -94,7 +98,12 @@ impl Emitter<'_> {
         if let Some(paragraph) = self.paragraph.take() {
             let content = inlines(&paragraph.spans, false, self.limits, 0)?;
             self.push_body(
-                Block::Paragraph { content },
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: paragraph.direct,
+                    content,
+                },
                 paragraph.page_no,
                 paragraph.bbox,
             );
@@ -110,6 +119,9 @@ impl Emitter<'_> {
         if let Some(list) = self.list.take() {
             self.push_body(
                 Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: list.ordered,
                     start: list.start,
                     tight: true,
@@ -128,10 +140,21 @@ impl Emitter<'_> {
         level: u8,
         page_no: u32,
         bbox: [f64; 4],
+        direct: &ParagraphStyle,
     ) -> Result<(), ReadError> {
         self.flush()?;
         let content = inlines(spans, true, self.limits, 0)?;
-        self.push_body(Block::Heading { level, content }, page_no, bbox);
+        self.push_body(
+            Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: direct.clone(),
+                level,
+                content,
+            },
+            page_no,
+            bbox,
+        );
         Ok(())
     }
 
@@ -145,8 +168,16 @@ impl Emitter<'_> {
             // Rotated margin text (such as an arXiv identifier) waits until the paragraph it
             // interrupts is complete.
             let content = inlines(&spans, false, self.limits, 0)?;
-            self.deferred
-                .push((Block::Paragraph { content }, page_no, block.bbox));
+            self.deferred.push((
+                Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: block.direct.clone(),
+                    content,
+                },
+                page_no,
+                block.bbox,
+            ));
             return Ok(());
         }
         if let Some(open) = &mut self.paragraph
@@ -157,6 +188,13 @@ impl Emitter<'_> {
                 open.bbox = union(open.bbox, block.bbox);
             }
             open.chars += block.chars;
+            open.direct.space_after_pt = block.direct.space_after_pt;
+            if open.direct.line_height != block.direct.line_height {
+                open.direct.line_height = None;
+            }
+            if open.direct.align != block.direct.align {
+                open.direct.align = None;
+            }
             return Ok(());
         }
         self.flush()?;
@@ -166,6 +204,7 @@ impl Emitter<'_> {
             bbox: block.bbox,
             size: block.size,
             chars: block.chars,
+            direct: block.direct.clone(),
         });
         Ok(())
     }
@@ -181,7 +220,12 @@ impl Emitter<'_> {
         let content = inlines(&strip_marker(spans, marker.len), false, self.limits, 1)?;
         let item = ListItem {
             checked: None,
-            blocks: vec![Block::Paragraph { content }],
+            blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: block.direct.clone(),
+                content,
+            }],
         };
         let next_number = marker
             .number
@@ -287,7 +331,12 @@ pub(super) fn assemble(pages: &[PageBlocks], limits: &Limits) -> Result<Assemble
                     let path = format!("furniture/{}", out.furniture.len());
                     out.positions
                         .insert(path, position(page.page_no, block.bbox));
-                    out.furniture.push(Block::Paragraph { content });
+                    out.furniture.push(Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: block.direct.clone(),
+                        content,
+                    });
                 }
                 continue;
             };
@@ -299,7 +348,7 @@ pub(super) fn assemble(pages: &[PageBlocks], limits: &Limits) -> Result<Assemble
                         .position(|&size| size <= round_size(block.size))
                         .unwrap_or(0);
                     let level = u8::try_from(rank + 1).unwrap_or(3).min(3);
-                    emitter.heading(&spans, level, page.page_no, block.bbox)?;
+                    emitter.heading(&spans, level, page.page_no, block.bbox, &block.direct)?;
                 }
                 Kind::Paragraph => emitter.paragraph(spans, block, page.page_no)?,
             }
@@ -311,7 +360,7 @@ pub(super) fn assemble(pages: &[PageBlocks], limits: &Limits) -> Result<Assemble
 
 fn block_is_empty(block: &Block) -> bool {
     match block {
-        Block::Heading { content, .. } | Block::Paragraph { content } => content.is_empty(),
+        Block::Heading { content, .. } | Block::Paragraph { content, .. } => content.is_empty(),
         _ => false,
     }
 }
@@ -674,11 +723,7 @@ fn join_lines(lines: &[Vec<Span>], vocabulary: &HashSet<String>) -> Vec<Span> {
 
 fn push_span(out: &mut Vec<Span>, span: Span) {
     match out.last_mut() {
-        Some(last)
-            if last.bold == span.bold
-                && last.italic == span.italic
-                && last.script == span.script =>
-        {
+        Some(last) if last.same_style(&span) => {
             last.text.push_str(&span.text);
         }
         _ => out.push(span),
@@ -707,8 +752,8 @@ fn strip_marker(spans: Vec<Span>, len: usize) -> Vec<Span> {
     out
 }
 
-/// Converts spans to NFC inline content, wrapping styled runs in `Strong`, `Emph`,
-/// `Superscript` and `Subscript`, and checking the nesting limit.
+/// Keep semantic wrappers, with observed absolute run properties inside them so
+/// an already-transformed size/weight is not applied twice through inheritance.
 fn inlines(
     spans: &[Span],
     heading: bool,
@@ -717,6 +762,7 @@ fn inlines(
 ) -> Result<Vec<Inline>, ReadError> {
     let mut out: Vec<Inline> = Vec::new();
     let mut text = String::new();
+    let styles = StyleSheet::default();
     // Collapse whitespace across span boundaries and trim the block.
     let mut cleaned: Vec<(String, &Span)> = Vec::new();
     for span in spans {
@@ -750,7 +796,26 @@ fn inlines(
             continue;
         }
         let bold = span.bold && !heading;
-        let styled = bold || span.italic || span.script != Script::Normal;
+        let observed = CharacterStyle {
+            font: span.font.family.as_ref().map(|family| FontRef {
+                family: family.to_string(),
+                fallback: Vec::new(),
+            }),
+            size_pt: (span.size.is_finite() && span.size > 0.0).then_some(span.size),
+            weight: span
+                .font
+                .weight
+                .or_else(|| (span.bold && !span.font.bold).then_some(700)),
+            italic: span.font.italic_evidence,
+            color: span.color.map(|[r, g, b]| {
+                Colour::new(format!("#{r:02x}{g:02x}{b:02x}")).expect("RGB is canonical")
+            }),
+            ..CharacterStyle::default()
+        };
+        let direct = styles
+            .resolve_character(None, &observed, None)
+            .map_err(|_| ReadError::Malformed)?;
+        let styled = !direct.is_empty() || bold || span.italic || span.script != Script::Normal;
         if !styled {
             text.push_str(&value);
             continue;
@@ -769,6 +834,14 @@ fn inlines(
         }
         let mut depth = block_depth;
         let mut inline = Inline::Text { text: nfc(core) };
+        if !direct.is_empty() {
+            inline = Inline::Styled {
+                style: None,
+                direct,
+                content: vec![inline],
+            };
+            depth += 1;
+        }
         if span.italic {
             inline = Inline::Emph {
                 content: vec![inline],
@@ -838,6 +911,9 @@ mod tests {
             bold: false,
             italic: false,
             script: Script::Normal,
+            font: Default::default(),
+            size: 0.0,
+            color: None,
         }
     }
 
@@ -849,6 +925,7 @@ mod tests {
             bold,
             chars: lines.iter().map(|line| line.chars().count()).sum(),
             upright: true,
+            direct: Default::default(),
         }
     }
 
@@ -858,6 +935,7 @@ mod tests {
                 match inline {
                     Inline::Text { text } => out.push_str(text),
                     Inline::Strong { content }
+                    | Inline::Styled { content, .. }
                     | Inline::Emph { content }
                     | Inline::Superscript { content } => flatten(content, out),
                     _ => {}
@@ -869,15 +947,15 @@ mod tests {
             .map(|block| {
                 let mut out = String::new();
                 match block {
-                    Block::Heading { level, content } => {
+                    Block::Heading { level, content, .. } => {
                         out.push_str(&format!("h{level}:"));
                         flatten(content, &mut out);
                     }
-                    Block::Paragraph { content } => flatten(content, &mut out),
+                    Block::Paragraph { content, .. } => flatten(content, &mut out),
                     Block::List { items, ordered, .. } => {
                         out.push_str(if *ordered { "ol:" } else { "ul:" });
                         for item in items {
-                            if let [Block::Paragraph { content }] = item.blocks.as_slice() {
+                            if let [Block::Paragraph { content, .. }] = item.blocks.as_slice() {
                                 flatten(content, &mut out);
                                 out.push('|');
                             }
@@ -1019,10 +1097,11 @@ mod tests {
                 bold: false,
                 chars: 10,
                 upright: true,
+                direct: Default::default(),
             }],
         }];
         let out = assemble(&pages, &Limits::local()).unwrap();
-        let Block::Paragraph { content } = &out.body[0] else {
+        let Block::Paragraph { content, .. } = &out.body[0] else {
             panic!("expected a paragraph");
         };
         assert_eq!(content.len(), 3);

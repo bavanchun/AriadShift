@@ -76,14 +76,15 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if bytes.is_empty() {
         return Ok(ReadOutput {
-            document: Document {
+            document: (Document {
                 meta: Metadata {
                     source_format: Some(Format::Csv),
                     ..Metadata::default()
                 },
                 body: Vec::new(),
                 ..Document::default()
-            },
+            })
+            .finalize_import(),
             warnings: Vec::new(),
         });
     }
@@ -124,14 +125,15 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if rows.is_empty() {
         return Ok(ReadOutput {
-            document: Document {
+            document: (Document {
                 meta: Metadata {
                     source_format: Some(Format::Csv),
                     ..Metadata::default()
                 },
                 body: Vec::new(),
                 ..Document::default()
-            },
+            })
+            .finalize_import(),
             warnings: Vec::new(),
         });
     }
@@ -168,6 +170,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             colspan: 1,
             header: if is_header { Some(true) } else { None },
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: text.to_owned(),
                 }],
@@ -201,6 +206,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     }
 
     let table = Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: None,
         columns,
         head,
@@ -218,7 +226,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     };
 
     Ok(ReadOutput {
-        document,
+        document: document.finalize_import(),
         warnings: Vec::new(),
     })
 }
@@ -276,7 +284,7 @@ mod tests {
         let Block::Table { body, .. } = &out.document.body[0] else {
             panic!("expected Table block");
         };
-        let Block::Paragraph { content } = &body[0][0].blocks[0] else {
+        let Block::Paragraph { content, .. } = &body[0][0].blocks[0] else {
             panic!("expected paragraph in cell");
         };
         assert_eq!(
@@ -285,7 +293,7 @@ mod tests {
                 text: "'=1+2".to_owned()
             }
         );
-        let Block::Paragraph { content } = &body[1][0].blocks[0] else {
+        let Block::Paragraph { content, .. } = &body[1][0].blocks[0] else {
             panic!("expected paragraph in cell");
         };
         assert_eq!(

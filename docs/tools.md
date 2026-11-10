@@ -554,6 +554,10 @@ Progress events use **pages** as their canonical unit (`done: u64`, `total: u64`
 
 ---
 
+### Document Fidelity Attachment
+
+`ariad_host::tools::fidelity::attach_document_fidelity(&mut ToolOutcome, &FidelityReport)` adds the actual shared report at `metrics.fidelity`. It preserves artifacts, warnings, elapsed metrics and inline results. Use a measured conversion/read-back report, or an explicit unavailable report; never a planner estimate. The versioned contract and coverage are described in [benchmark methodology](bench.md#measured-fidelity-fidelity2) and [CLI output](cli.md#json-output-shape). An executable contract test attaches a real conversion report to an actual PDF tool outcome. The `edit.export_document` tool belongs to the next editor phase and is not registered here; its live integration must call this helper after export.
+
 ## 8. Determinism
 
 For every in-process tool in `ariad-pdf` (and deterministic native writers), running the same tool with **the same input bytes, the same `params`, and the same `SOURCE_DATE_EPOCH`** produces **byte-identical output**:
@@ -999,3 +1003,5 @@ When `run_doc_tool` or `list_doc_tools` fails, the MCP server returns a tool res
 | Destination exists and overwrite is not active | `destination_exists` | `6` | `409` |
 | Path outside allowed roots or self-overwrite | `usage` | `2` | `400` |
 | Corrupt input or runtime engine failure | `engine_failure` | `1` | `500` |
+
+Document exports consume the shared `ariad-ir/2` style cascade (defaults, containing table paragraph baseline, named inheritance, direct overrides) and ID-keyed geometry. The production Document-mode export caller remains in the edit-engine stage; the reusable fidelity attachment helper is implemented and tested now. See [the IR contract](../ARCHITECTURE.md#62-document-ir) and [editor preservation](editor-roundtrip.md).

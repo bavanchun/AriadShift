@@ -87,6 +87,8 @@ impl From<PipelineError> for ApiError {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ConvertOptions {
+    /// IR JSON wire version (1 or 2); defaults to 2.
+    pub ir_version: Option<u8>,
     /// Routing profile; defaults to `editable`.
     pub profile: Option<String>,
     /// Title for writers that need one when the document has none, such as HTML.
@@ -277,6 +279,7 @@ pub fn convert(
 ) -> Result<Conversion, ApiError> {
     let from = parse_format(from)?;
     let to = parse_format(to)?;
+    pipeline::validate_ir_version(to, options.ir_version)?;
     let profile = parse_profile(options.profile.as_deref())?;
     let limits = options.limits.unwrap_or_else(Limits::local);
     limits.validate().map_err(PipelineError::from)?;
@@ -316,6 +319,7 @@ pub fn convert(
             .collect::<Vec<_>>(),
         &limits,
         WriteOptions {
+            ir_version: options.ir_version,
             title_fallback: options.title.as_deref(),
         },
     )?;
@@ -1082,7 +1086,7 @@ mod tests {
         assert!(markdown.contains("## Title"), "{markdown}");
 
         let ir = convert_text("# Hi\n", "markdown", "ariad-ir+json");
-        assert!(ir.contains("\"version\": \"ariad-ir/1\""), "{ir}");
+        assert!(ir.contains("\"version\": \"ariad-ir/2\""), "{ir}");
         let back = convert_text(&ir, "ariad-ir+json", "markdown");
         assert_eq!(back.trim_end(), "# Hi");
     }

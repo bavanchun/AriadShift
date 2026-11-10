@@ -1,0 +1,207 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Notice of Public Meeting of the North Carolina Advisory Committee to the U.S. Commission on Civil Rights",
+          "type": "text"
+        }
+      ],
+      "id": "bf7beb7749ea81f7f9b9504f0b4662c1d2ea1e96f0c928e0e46272775098599ab",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Agency",
+          "type": "text"
+        }
+      ],
+      "id": "b13375ff0e70fe6ce5cb78a12ffb964a1f07964ba0459bae7a1f7744b0437fa86",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "U.S. Commission on Civil Rights",
+          "type": "text"
+        }
+      ],
+      "id": "b388043b53f204070faa742bed8fab4b9c0cef1748ebf86f5263766fae1b3550a",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Action",
+          "type": "text"
+        }
+      ],
+      "id": "b017df3c770eb419173bd1f7f45d2c33687e0a3817e678fc27adf31013222dafa",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Notice of public meeting",
+          "type": "text"
+        }
+      ],
+      "id": "bbeb251e38c26cada81565d70a4d929eac80c356f7850c6d6b5a81d262c75d4b8",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Date",
+          "type": "text"
+        }
+      ],
+      "id": "becdf5c9a825bda2546fe965dcf0f6076f750f26470687d7ff05790b90568b632",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Monday, April 28, 2025, from 1 p.m. to 2:30 p.m. Eastern Time",
+          "type": "text"
+        }
+      ],
+      "id": "b883762a481b325eaf8115017af7a8ce50a2934b05b4b95f3d42ee54d85909161",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Summary",
+          "type": "text"
+        }
+      ],
+      "id": "b480030305945b9177848f72c68ca88b60a0b5cea75eed6782e544d77c9f4207e",
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The North Carolina Advisory Committee will hold a virtual public meeting to discuss its report on civil rights and the child welfare system in North Carolina.",
+          "type": "text"
+        }
+      ],
+      "id": "b11a1e61ef7ef3987339435b489820360da690954df5e1c866e9de77d45e47a60",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Agenda",
+          "type": "text"
+        }
+      ],
+      "id": "b61e399a12645af26741863b9d5f26cc7f505a2895777191f9ec7c834a7322d64",
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "id": "b7531919581873e5c40d4d3eb951c778f7955c2ce815b7dfc59638cc2cd2f49ab",
+      "items": [
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Welcome and roll call",
+                  "type": "text"
+                }
+              ],
+              "id": "b3a6082880be9004d809a4e05bbc66d75317bd99d64f61820c4fc99e05858d770",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Committee discussion",
+                  "type": "text"
+                }
+              ],
+              "id": "b202eba51ff156cf6eb79c5e998c09bb1e14fea6ee0e4b99af028d3f617dd2af4",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Public comment",
+                  "type": "text"
+                }
+              ],
+              "id": "b0db94d7a1b153ed26b6b8ae167bd5aba522d415bb9ec5c5a8464d6eb0f988488",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Next steps",
+                  "type": "text"
+                }
+              ],
+              "id": "b401583f345c25db0fa5f714b948eab17ed773ec473142a207565212373f8ba30",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Adjournment",
+                  "type": "text"
+                }
+              ],
+              "id": "ba762a19e5d06dee95f2bcfaf871fa6d564375317f0df479e5816182327f6d35e",
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        }
+      ],
+      "ordered": true,
+      "start": null,
+      "tight": false,
+      "type": "list"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "html",
+    "subject": null,
+    "title": "North Carolina Advisory Committee Public Meeting"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

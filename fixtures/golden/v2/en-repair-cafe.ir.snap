@@ -1,0 +1,67 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "The Repair Café",
+          "type": "text"
+        }
+      ],
+      "id": "b3ba870632d1e34485001d614409e52d1843c695cea322ac892749526500b85d1",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The repair café opens one Saturday each month in the old tram depot. Neighbors bring lamps, clocks, radios, and small appliances that have stopped working. Volunteers set out screwdrivers and labeled trays so every loose part has a safe place.",
+          "type": "text"
+        }
+      ],
+      "id": "b73c467bc749f8a364ffc357dc51e036ced15878a8900482a203b69dbc0093edc",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "No one promises a quick fix. The visitor sits beside a volunteer, describes what happened, and learns how to inspect the object. Sometimes a clean contact solves the problem; sometimes the group discovers that a replacement part is no longer made.",
+          "type": "text"
+        }
+      ],
+      "id": "b6743a06c52c16cc3cdf54cac23d44e1c25ece2c2199380edbbdf6de6c3edb015",
+      "type": "paragraph"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "The café measures success in more than repaired devices.",
+              "type": "text"
+            }
+          ],
+          "id": "b7c2ca70dbd6d02bb93b3a9381a3b16a2a9b4a6841acb52f8066df04303d6b21f",
+          "type": "paragraph"
+        }
+      ],
+      "id": "bf4ef7103ee6e3aad79105382d6e3c67cd00c7ab925df8ce0752a10e9d280b92e",
+      "type": "quote"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "html",
+    "subject": null,
+    "title": "The Repair Café"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

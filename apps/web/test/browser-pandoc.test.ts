@@ -20,6 +20,8 @@ vi.mock("@/converter/pandoc", () => ({
 vi.mock("@ariadshift/ariad-wasm", () => ({
   writePandoc: (bytes: Uint8Array) => ({ bytes, warnings: [] }),
   readPandoc: (bytes: Uint8Array) => ({ bytes, warnings: [] }),
+  referenceDocx: (_ir: Uint8Array, template: Uint8Array) => template,
+  finishDocx: (_ir: Uint8Array, bytes: Uint8Array) => bytes,
   stampPackage: (bytes: Uint8Array, target: string, timestamp: string) => {
     stampCalls.push({ bytes, target, timestamp });
     const stamped = new Uint8Array(bytes.length + 1);

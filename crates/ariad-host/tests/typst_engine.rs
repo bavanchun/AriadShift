@@ -59,7 +59,12 @@ fn text(value: &str) -> Inline {
 }
 
 fn para(content: Vec<Inline>) -> Block {
-    Block::Paragraph { content }
+    Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        content,
+    }
 }
 
 fn cell(blocks: Vec<Block>) -> TableCell {
@@ -72,10 +77,35 @@ fn cell(blocks: Vec<Block>) -> TableCell {
 }
 
 fn document(body: Vec<Block>) -> Document {
-    Document {
+    let mut document = Document {
         body,
         ..Document::default()
+    };
+    // These renderer-bound fixtures include deliberately excessive nesting.
+    // Give them explicit identities without invoking bounded import hashing.
+    let mut pending: Vec<_> = document.body.iter_mut().collect();
+    let mut next = 0usize;
+    while let Some(block) = pending.pop() {
+        if block.id().as_str().is_empty() {
+            *block.id_mut() = ariad_core::ir::BlockId::new(format!("TestBlock{next}")).unwrap();
+        }
+        next += 1;
+        match block {
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => pending.extend(blocks),
+            Block::List { items, .. } => {
+                for item in items {
+                    pending.extend(&mut item.blocks);
+                }
+            }
+            Block::Table { head, body, .. } => {
+                for cell in head.iter_mut().chain(body).flatten() {
+                    pending.extend(&mut cell.blocks);
+                }
+            }
+            _ => {}
+        }
     }
+    document
 }
 
 fn options() -> TypstOptions {
@@ -135,6 +165,9 @@ fn hostile_documents_compile_and_show_their_text_verbatim() {
         let footnote_id = format!("note {value}");
         let document = document(vec![
             Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 level: 1,
                 content: vec![Inline::Emph {
                     content: vec![text(value)],
@@ -147,10 +180,16 @@ fn hostile_documents_compile_and_show_their_text_verbatim() {
                 },
             ]),
             Block::Code {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 lang: Some((*value).to_owned()),
                 text: (*value).to_owned(),
             },
             Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: Some(vec![text(value)]),
                 columns: vec![ColumnSpec {
                     align: Alignment::Right,
@@ -164,7 +203,10 @@ fn hostile_documents_compile_and_show_their_text_verbatim() {
                 footnotes: vec![text(value)],
             },
             Block::Footnote {
-                id: footnote_id,
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                note_id: footnote_id,
                 blocks: vec![para(vec![text(value)])],
             },
         ]);
@@ -233,6 +275,9 @@ fn vietnamese_documents_are_fully_covered_by_the_embedded_fonts() {
             }],
         }]),
         Block::Code {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             lang: None,
             text: line.clone(),
         },
@@ -303,6 +348,7 @@ fn undecodable_images_fall_back_to_alt_text() {
         document.assets.insert(
             id.to_owned(),
             Asset {
+                font: None,
                 media_type: media_type.to_owned(),
                 bytes,
             },
@@ -339,7 +385,17 @@ fn nested_quotes(depth: usize) -> Block {
     let mut block = para(vec![text("quote leaf")]);
     for _ in 0..depth {
         block = Block::Quote {
-            blocks: vec![block, Block::PageBreak {}],
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            blocks: vec![
+                block,
+                Block::PageBreak {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                },
+            ],
         };
     }
     block
@@ -349,6 +405,9 @@ fn nested_lists(depth: usize) -> Block {
     let mut block = para(vec![text("list leaf")]);
     for level in 0..depth {
         block = Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: level % 2 == 0,
             start: Some(u64::MAX),
             tight: level % 3 == 0,
@@ -365,6 +424,9 @@ fn nested_tables(depth: usize) -> Block {
     let mut block = para(vec![text("table leaf")]);
     for _ in 0..depth {
         block = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: Some(vec![text("caption")]),
             columns: vec![],
             head: vec![vec![TableCell {
@@ -418,9 +480,15 @@ fn nested_mixed(depth: usize) -> Block {
     for level in 0..depth {
         block = match level % 4 {
             0 => Block::Quote {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 blocks: vec![block],
             },
             1 => Block::List {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 ordered: false,
                 start: None,
                 tight: false,
@@ -430,6 +498,9 @@ fn nested_mixed(depth: usize) -> Block {
                 }],
             },
             2 => Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![vec![cell(vec![block])]],
@@ -437,6 +508,9 @@ fn nested_mixed(depth: usize) -> Block {
                 footnotes: vec![],
             },
             _ => Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: Some(vec![nested_inline(40)]),
                 columns: vec![],
                 head: vec![],
@@ -461,7 +535,10 @@ fn deep_and_irregular_structures_compile() {
     // referenced from several places.
     for index in 0..30 {
         body.push(Block::Footnote {
-            id: format!("n{index}"),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: format!("n{index}"),
             blocks: vec![
                 para(vec![
                     text(&format!("note {index}")),
@@ -474,6 +551,9 @@ fn deep_and_irregular_structures_compile() {
         });
     }
     body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: Some(vec![text("long")]),
         columns: vec![],
         head: vec![vec![cell(vec![para(vec![
@@ -582,6 +662,7 @@ fn engine_round_trip_writes_a_reproducible_pdf() {
         title: None,
         content: vec![text("unsafe")],
     }]));
+    document.assign_block_ids();
     let options = json!({
         "title_fallback": "Fallback Stem",
         "timestamp": TIMESTAMP,
@@ -661,7 +742,11 @@ fn output_page_limit_is_checked_before_publishing_an_artifact() {
     let workspace = Workspace::new().unwrap();
     let document = document(vec![
         para(vec![text("First")]),
-        Block::PageBreak {},
+        Block::PageBreak {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+        },
         para(vec![text("Second")]),
     ]);
     fs::write(
@@ -681,4 +766,88 @@ fn output_page_limit_is_checked_before_publishing_an_artifact() {
             .any(|event| matches!(event, Event::Artifact { .. }))
     );
     assert!(!workspace.output_dir().join("document.pdf").exists());
+}
+
+#[test]
+fn styled_text_renders_with_resets_sections_and_permitted_font_fallback() {
+    use ariad_core::ir::{CharacterStyle, FontRef, Margins, PageSize, ParagraphStyle, Section};
+    let mut doc = document(vec![Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: ParagraphStyle {
+            size_pt: Some(16.0),
+            line_height: Some(1.4),
+            indent_first_pt: Some(8.0),
+            indent_left_pt: Some(4.0),
+            indent_right_pt: Some(5.0),
+            keep_with_next: Some(true),
+            background: Some("#ddeeff".to_owned().try_into().unwrap()),
+            ..Default::default()
+        },
+        content: vec![Inline::Styled {
+            style: None,
+            direct: CharacterStyle {
+                font: Some(FontRef {
+                    family: "x\"); panic(\"injected\")".into(),
+                    fallback: vec!["Libertinus Serif".into()],
+                }),
+                weight: Some(700),
+                italic: Some(true),
+                underline: Some(true),
+                strike: Some(true),
+                small_caps: Some(false),
+                letter_spacing: Some(0.2),
+                baseline_shift: Some(1.0),
+                highlight: Some("#ffffaa".to_owned().try_into().unwrap()),
+                ..Default::default()
+            },
+            content: vec![
+                text("Tiếng Việt "),
+                Inline::Styled {
+                    style: None,
+                    direct: CharacterStyle {
+                        weight: Some(400),
+                        italic: Some(false),
+                        underline: Some(false),
+                        ..Default::default()
+                    },
+                    content: vec![text("được giữ")],
+                },
+            ],
+        }],
+    }]);
+    doc.sections.push(Section {
+        start: None,
+        page_size: PageSize {
+            width_pt: 500.0,
+            height_pt: 700.0,
+        },
+        margins: Margins {
+            top_pt: 30.0,
+            right_pt: 35.0,
+            bottom_pt: 40.0,
+            left_pt: 45.0,
+        },
+        columns: 2,
+        header: None,
+        footer: None,
+    });
+    let pdf = rendered(&doc);
+    assert_eq!(pdf.missing_glyphs, 0);
+    assert!(
+        pdf.writer_warnings
+            .iter()
+            .any(|w| w.message.contains("substituted"))
+    );
+    assert_eq!(
+        visible_text(&doc, &options()),
+        without_whitespace("Tiếng Việt được giữ")
+    );
+    let parsed = lopdf::Document::load_mem(&pdf.bytes).unwrap();
+    let page = parsed
+        .get_object(*parsed.get_pages().values().next().unwrap())
+        .unwrap()
+        .as_dict()
+        .unwrap();
+    assert!(format!("{:?}", page.get(b"MediaBox").unwrap()).contains("500"));
 }

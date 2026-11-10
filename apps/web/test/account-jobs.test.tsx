@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { DownloadStreamTarget, Job, JobEvent, OutputFile } from "@ariadshift/sdk";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AccountShell } from "@/components/account/account-shell";
 import type { AccountUser, AuthApi } from "@/components/account/auth-api";
 import { JOB_HISTORY_KEY, type JobHistoryEntry } from "@/components/account/job-history";
@@ -208,8 +208,11 @@ describe("jobs page", () => {
   it("deletes a job now and leaves a focused tombstone", async () => {
     seed(entry("done"));
     const api = fakeJobs({ done: job("done") });
+    const pendingOutputs = Promise.withResolvers<Awaited<ReturnType<JobsApi["outputs"]>>>();
+    api.outputs.mockReturnValue(pendingOutputs.promise);
     renderJobs(api);
     const item = await row("done.pdf");
+    await waitFor(() => expect(api.outputs).toHaveBeenCalledTimes(1));
     fireEvent.click(
       await within(item).findByRole("button", { name: "Delete now done.pdf from the server" }),
     );
@@ -218,6 +221,9 @@ describe("jobs page", () => {
     );
     expect(api.deleteJob).toHaveBeenCalledWith("done");
     await waitFor(() => expect(document.activeElement).toBe(tombstone));
+    await act(async () => {
+      pendingOutputs.resolve({ job_id: "done", outputs: [OUTPUT] });
+    });
     expect(within(item).getByText("Deleted")).toBeTruthy();
     expect(within(item).queryByRole("button", { name: /Delete now/ })).toBeNull();
     expect(within(item).queryByRole("button", { name: /Download/ })).toBeNull();

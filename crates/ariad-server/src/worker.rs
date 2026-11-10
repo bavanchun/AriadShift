@@ -432,6 +432,7 @@ impl Worker {
         let extension = routing::output_extension(target);
         let output = out_dir.join(format!("output.{extension}"));
         let request = ConvertRequest {
+            ir_version: None,
             input,
             output: output.clone(),
             target_format: routing::target_arg(target).to_owned(),

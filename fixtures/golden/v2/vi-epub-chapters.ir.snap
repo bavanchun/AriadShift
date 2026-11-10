@@ -1,0 +1,179 @@
+---
+source: crates/ariad-cli/tests/reader_golden.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách",
+          "type": "text"
+        }
+      ],
+      "id": "b9cb599a22b1d3167f6caf6fa1985623035ccf985c9db7db2b8baaac672aa5495",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.",
+          "type": "text"
+        }
+      ],
+      "id": "bff011a60a820a887d9588574d8ee594a6a49065ef3314b0712954d1fa08b70f7",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Sinh hoạt hằng tuần",
+          "type": "text"
+        }
+      ],
+      "id": "bdbbebaf895c9c7d7c02dfdca610e56ff07f3823a452e50c82e4ba685d37753e0",
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.",
+          "type": "text"
+        }
+      ],
+      "id": "b40dcee760b4233c02c684b96bac00b34fcce402a35634d6bd0151b90b680ff9d",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.",
+          "type": "text"
+        }
+      ],
+      "id": "bb698829e0e75e55899aff104aa7eb78850f9bf2a87cf0e6fdaff78d5c79a9e51",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Hành trình ven sông",
+          "type": "text"
+        }
+      ],
+      "id": "b98dcfa9398242f2e5775b090d269af3dfa969558f4c42652c02aaec8b89ea5be",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
+          "type": "text"
+        }
+      ],
+      "id": "bdb662cd2d322838a589e17cf9f54bf2634763029cafc4350b4d9a671d9177361",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Đoạn đường men bến đá",
+          "type": "text"
+        }
+      ],
+      "id": "b8c20ee2011bc46795a7d6ecf882ec86cd5a46c2b46d0acfdbdbc5d90429faa21",
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn.",
+          "type": "text"
+        }
+      ],
+      "id": "b4f31027b21bc4ba8fb11c549a8d77768c47dd02a62815ef86ebf9459197cb05c",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Ghi chép hằng ngày",
+          "type": "text"
+        }
+      ],
+      "id": "b7cd6741617db7d7cc167ddcce53a4bbdd8fc7ed479d4fdf2e2022dbcbccaaf9c",
+      "level": 3,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Khi trời nắng, bóng cây đổ thành những vệt dài trên mặt nước. Buổi chiều, trẻ con mang diều ra bãi cỏ, còn người lớn ngồi dưới mái hiên nói chuyện mùa mưa. Lối đi không dẫn đến một nơi đặc biệt; giá trị của nó nằm ở những cuộc gặp gỡ hằng ngày.",
+          "type": "text"
+        }
+      ],
+      "id": "b578ceccbd02fc53f0ec762c97542ba13b0a97a6349e094f8a513bbe292f2d820",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Không gian sinh hoạt chung",
+          "type": "text"
+        }
+      ],
+      "id": "bd0558e1c3225f02e663981fe26496b650b4a767d73307563a17f0649ad21f841",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Cả khu vườn và lối đi ven sông đều mở cửa cho mọi người ghé thăm bất kỳ lúc nào.",
+          "type": "text"
+        }
+      ],
+      "id": "b73001a349a2c199492d921ee27b66e30ba22bd62e8bf3230fdd7bb6acf7913c6",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Gặp gỡ cuối tuần",
+          "type": "text"
+        }
+      ],
+      "id": "bc8e72cd26db7cbd20bf9979ed6a3b7b647a325182e5811984db38ca1a4364578",
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Mỗi buổi chiều, người dân trong khu phố lại cùng nhau trò chuyện và chia sẻ những câu chuyện thường nhật.",
+          "type": "text"
+        }
+      ],
+      "id": "bdc757e6965582125e5253a485fc75746a8e2d21cd7ec0a1ad229feae333e055d",
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "vi",
+    "source_format": "epub",
+    "subject": null,
+    "title": "Tuyển tập đọc sách và hành trình"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

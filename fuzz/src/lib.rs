@@ -12,7 +12,7 @@ pub fn nfc(s: &str) -> String {
 pub fn block_depth(block: &Block) -> usize {
     match block {
         Block::Heading { .. } | Block::Paragraph { .. } => 0,
-        Block::Quote { blocks } => 1 + blocks_depth(blocks),
+        Block::Quote { blocks, .. } => 1 + blocks_depth(blocks),
         Block::List { items, .. } => {
             1 + items
                 .iter()
@@ -31,7 +31,7 @@ pub fn block_depth(block: &Block) -> usize {
         }
         Block::Figure { .. } => 0,
         Block::Footnote { blocks, .. } => 1 + blocks_depth(blocks),
-        Block::Code { .. } | Block::Math { .. } | Block::Raw { .. } | Block::PageBreak {} => 0,
+        Block::Code { .. } | Block::Math { .. } | Block::Raw { .. } | Block::PageBreak { .. } => 0,
     }
 }
 
@@ -55,7 +55,8 @@ pub fn assert_inlines_nfc(inlines: &[Inline]) {
     for inline in inlines {
         match inline {
             Inline::Text { text } => assert_eq!(text, &nfc(text), "Inline text must be NFC"),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -90,10 +91,10 @@ pub fn assert_blocks_nfc(blocks: &[Block], depth: usize, max_depth: usize) {
     );
     for block in blocks {
         match block {
-            Block::Heading { content, .. } | Block::Paragraph { content } => {
+            Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
                 assert_inlines_nfc(content);
             }
-            Block::Quote { blocks } => assert_blocks_nfc(blocks, depth + 1, max_depth),
+            Block::Quote { blocks, .. } => assert_blocks_nfc(blocks, depth + 1, max_depth),
             Block::List { items, .. } => {
                 for item in items {
                     assert_blocks_nfc(&item.blocks, depth + 1, max_depth);
@@ -119,13 +120,18 @@ pub fn assert_blocks_nfc(blocks: &[Block], depth: usize, max_depth: usize) {
             Block::Figure { caption, .. } => {
                 assert_inlines_nfc(caption);
             }
-            Block::Footnote { id: _, blocks } => {
+            Block::Footnote {
+                note_id: _, blocks, ..
+            } => {
                 // Footnote IDs are identifiers; FootnoteRef IDs are kept verbatim to maintain
-                // referential integrity without altering identifier tokens, so Block::Footnote.id
+                // referential integrity without altering identifier tokens, so Block::Footnote.note_id
                 // is preserved verbatim as well and excluded from the NFC normalization check.
                 assert_blocks_nfc(blocks, depth + 1, max_depth);
             }
-            Block::Code { .. } | Block::Math { .. } | Block::Raw { .. } | Block::PageBreak {} => {}
+            Block::Code { .. }
+            | Block::Math { .. }
+            | Block::Raw { .. }
+            | Block::PageBreak { .. } => {}
         }
     }
 }
@@ -168,44 +174,51 @@ pub fn assert_ir_v1_round_trip(original: &Document, deserialized: &Document) {
         .and_then(ariad_core::ir::IrFormat::from_format)
         .map(ariad_core::ir::IrFormat::to_format);
     assert_eq!(
-        deserialized.meta.source_format,
-        expected_source_format,
+        deserialized.meta.source_format, expected_source_format,
         "deserialized source_format must match D1 IrFormat projection"
     );
 
     let Document {
         version: orig_version,
-        meta: Metadata {
-            title: orig_title,
-            authors: orig_authors,
-            language: orig_language,
-            date: orig_date,
-            subject: orig_subject,
-            keywords: orig_keywords,
-            source_format: _,
-        },
+        meta:
+            Metadata {
+                title: orig_title,
+                authors: orig_authors,
+                language: orig_language,
+                date: orig_date,
+                subject: orig_subject,
+                keywords: orig_keywords,
+                source_format: _,
+            },
         body: orig_body,
         assets: orig_assets,
         layout: orig_layout,
         provenance: orig_provenance,
         furniture: orig_furniture,
+        styles: orig_styles,
+        sections: orig_sections,
+        source_map: orig_source_map,
     } = original;
     let Document {
         version: de_version,
-        meta: Metadata {
-            title: de_title,
-            authors: de_authors,
-            language: de_language,
-            date: de_date,
-            subject: de_subject,
-            keywords: de_keywords,
-            source_format: _,
-        },
+        meta:
+            Metadata {
+                title: de_title,
+                authors: de_authors,
+                language: de_language,
+                date: de_date,
+                subject: de_subject,
+                keywords: de_keywords,
+                source_format: _,
+            },
         body: de_body,
         assets: de_assets,
         layout: de_layout,
         provenance: de_provenance,
         furniture: de_furniture,
+        styles: de_styles,
+        sections: de_sections,
+        source_map: de_source_map,
     } = deserialized;
 
     assert_eq!(orig_version, de_version);
@@ -220,6 +233,9 @@ pub fn assert_ir_v1_round_trip(original: &Document, deserialized: &Document) {
     assert_eq!(orig_layout, de_layout);
     assert_eq!(orig_provenance, de_provenance);
     assert_eq!(orig_furniture, de_furniture);
+    assert_eq!(orig_styles, de_styles);
+    assert_eq!(orig_sections, de_sections);
+    assert_eq!(orig_source_map, de_source_map);
 }
 
 #[cfg(test)]
@@ -240,6 +256,9 @@ mod tests {
                 source_format: Some(format),
             },
             body: vec![Block::Paragraph {
+                id: ariad_core::ir::BlockId::new("b1").unwrap(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "Paragraph content".to_string(),
                 }],
@@ -311,6 +330,9 @@ mod tests {
         let original = sample_doc_with_format(Format::Txt);
         let mut deserialized = round_trip_json(&original);
         deserialized.body.push(Block::Paragraph {
+            id: ariad_core::ir::BlockId::new("b2").unwrap(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "Extra block".to_string(),
             }],
@@ -378,6 +400,9 @@ mod tests {
         let original = sample_doc_with_format(Format::Txt);
         let mut deserialized = round_trip_json(&original);
         deserialized.furniture.push(Block::Paragraph {
+            id: ariad_core::ir::BlockId::new("f1").unwrap(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "Furniture text".to_string(),
             }],

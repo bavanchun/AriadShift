@@ -1,0 +1,3367 @@
+{
+  "assets": {
+    "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266": {
+      "bytes": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAMCAIAAADkharWAAAAKUlEQVR4nGN89vk9AymAiSTVdNHAAmcZZcbiUXdu+mJ6OYlkDYzDIB4A1DoIqeyqtdgAAAAASUVORK5CYII=",
+      "media_type": "image/png"
+    }
+  },
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Editable neighbour before mixed-document.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b068d9416e1cba63df5c8c4fb61090828c3ac338b78ce2e6bf9e53ef593af6162",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Editor case: mixed-document",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b271480be2df92e109deced4a0a45d7ce105a1b70a0575f718c092b465b69d523",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Read the survey note",
+          "type": "text"
+        },
+        {
+          "id": "survey-note",
+          "type": "footnote_ref"
+        },
+        {
+          "text": " and the same observation again",
+          "type": "text"
+        },
+        {
+          "id": "survey-note",
+          "type": "footnote_ref"
+        }
+      ],
+      "direct": {},
+      "id": "bc8d053aa9f4041c9b3d487727dbfc0e1943ac220fcf8732373a54b25418dcd17",
+      "type": "paragraph"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "The survey records seats, not visitors.",
+              "type": "text"
+            }
+          ],
+          "direct": {},
+          "id": "b5f672e80038dc5818612aeed3fe99eccdcf94e249d74fe455a2e7210cc708d25",
+          "type": "paragraph"
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Count only usable seats.",
+                  "type": "text"
+                }
+              ],
+              "direct": {},
+              "id": "b0f5956bf33f68215666a6179a8acb398ba2f26f1127f96e150f3d5039af700dc",
+              "type": "paragraph"
+            },
+            {
+              "direct": {},
+              "id": "b00cf9a47399617897e33fbe90dab4253d4eb15df38de9d59c87a85ea70ac4484",
+              "items": [
+                {
+                  "blocks": [
+                    {
+                      "content": [
+                        {
+                          "text": "Check each bench.",
+                          "type": "text"
+                        }
+                      ],
+                      "direct": {},
+                      "id": "b68a33e5d9e1a564e4dbddfaefd7314f39b5c31b2898b8bae2c38dc9c6275afe5",
+                      "type": "paragraph"
+                    }
+                  ],
+                  "checked": null
+                }
+              ],
+              "ordered": true,
+              "start": 2,
+              "tight": false,
+              "type": "list"
+            }
+          ],
+          "direct": {},
+          "id": "bd40377ab11f10ca2dea9d0a258bf1f8b451222908bb30e6dfd12e03013b4d8a6",
+          "type": "quote"
+        }
+      ],
+      "direct": {},
+      "id": "b385b3f5391b1c45c5074601c3c22e3933f9a53ff81d5a863e2b659837b0b01d2",
+      "note_id": "survey-note",
+      "type": "footnote"
+    },
+    {
+      "direct": {},
+      "format": "html",
+      "id": "b0d4e3b673034729d5a3d509ab48c9109aa8191a1f69c06ea31514bb95029e2bb",
+      "text": "<aside data-original=\"yes\">  Café\r\n<strong>Keep spacing</strong></aside>\n",
+      "type": "raw"
+    },
+    {
+      "direct": {},
+      "format": "tex",
+      "id": "bbd236df0f9d53eb6c2acffbf28908bba438923c4b8e4e3d28175e9a6c216fca1",
+      "text": "\\newcommand{\\route}[1]{  #1 }% original\r\n\\route{Bến sông}\n",
+      "type": "raw"
+    },
+    {
+      "content": [
+        {
+          "text": "Before ",
+          "type": "text"
+        },
+        {
+          "format": "html",
+          "text": "<span data-note=\"x\"> Á </span>",
+          "type": "raw"
+        },
+        {
+          "text": " between ",
+          "type": "text"
+        },
+        {
+          "format": "tex",
+          "text": "\\kern  2pt % exact",
+          "type": "raw"
+        },
+        {
+          "text": " after.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b7d25cb7247d5e252b60ca88dcf3f1ebf11416f9d7d18786f06317e703d65f520",
+      "type": "paragraph"
+    },
+    {
+      "asset": {
+        "id": "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266",
+        "type": "asset"
+      },
+      "caption": [
+        {
+          "text": "Original bench diagram",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": " at dawn",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "direct": {},
+      "id": "b9e88a5b8cec92e43a06b11608affa86fef53ef945ceca181cf8bb497dd4a0e3f",
+      "type": "figure"
+    },
+    {
+      "blocks": [
+        {
+          "asset": {
+            "id": "b0debd1df3a76a699ff45540b8db2d967790805fe3d5a5a5558dfd5cdabc1266",
+            "type": "asset"
+          },
+          "caption": [
+            {
+              "text": "Original bench diagram",
+              "type": "text"
+            },
+            {
+              "content": [
+                {
+                  "text": " at dawn",
+                  "type": "text"
+                }
+              ],
+              "type": "emph"
+            }
+          ],
+          "direct": {},
+          "id": "b8b75fc223a51d87f99f7c90883605e6bc114fce49c21edf2d9621920c6a734fe",
+          "type": "figure"
+        }
+      ],
+      "direct": {},
+      "id": "b950cd17cbc514260a6354843677a916734e05686ea39d21dd35f3e09033c3627",
+      "type": "quote"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "River",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b4f84737810f31212bd48e2c80787318bed0c0a89b12d1b6325344091e22b5b3c",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "3",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "be5ff5000cbc5f70ea1dded1acc62e9698bc0f21e134d75849bd3ed4b56c352ea",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Shade",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b5cc06c3259b59476ee575abe570e5161e5866fd56e26cb90a0e00dc3e5e46305",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Garden",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b07de1646840e86f06970b0253ab551dcbe2f44fc2b0c243bc6c310952987297e",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "5",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b07a98da0b51b35a66da5d39868cb396e3633b8e3d9eb15d55ead046d7a56f207",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Books",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b29b4a4286341a031015f859e44793b10a4088c9b544217b2d54c02e6252eb847",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "center"
+        }
+      ],
+      "direct": {},
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Survey totals",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bce387ccafc9f2f0a75f675ccb502ba53071ceef723d8a3ecbf3bb508e59c1fc7",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 3,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "beb16de2a2092cc34d5b0d236e60bbbf83d4d9452c120d2a96d4d677e9283b3c2",
+      "style": "survey",
+      "type": "table"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "River",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "be7653d6467899a606cac1b07fd8a20148a22ec81e9c2485fd4229ba44ca6e2fd",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 2
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "3",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b23dc657ab91b6d638992f4a93518da0b3d29af936c46a7450df098b6458bcfd3",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Shade",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bc0c8f47e405a42abda5c46ae3f6e7b7d181e682c5327a3dfde9c797127436cb0",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "5",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "be901381b26de4d680c14f49833205c4ebc7238ff248d85bcbdbdf4b0ec6fee08",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Books",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bd4932ccb5682e8c7617ab9319b1ff48d420a42a98b611c177ea2b63f02dde943",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "center"
+        }
+      ],
+      "direct": {},
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Place",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bc639846451c692f216995cd9ee6b11987db5b31798486d14574db230ac4b6488",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Seats",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b929171f833404b1d6bd7520a679b93c2748c18c13c5585660d01d8af6e62e37a",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Note",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bd2f8a0b4d38f9f50d7b0f6f506e860fbaf7654d38703b659450e05394c65d06e",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "b2bfef6ac9d888540a11fb046e52677ff54d8c73f9aa4fd4e441cdf1709692bb1",
+      "style": "survey",
+      "type": "table"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "River",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b618241135aa2d020efa337cfad26298ed29f696f3abb4a7e223d87939326e8d2",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 2
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "3",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bd811721cf9c92330efaf0a91a13a0746302d8805371c50428eec073d7e263cad",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Shade",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b3b2d278eacaf64cf3ac1236ec63ccc7c0ac7fc8e2dc4441d714f822c78432f07",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "5",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b01b578a4288dc5a39d49f0b2ba43ebed705727a173167cc97895ee52de2e2d13",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Books",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b6cbed0cfb85fccb15ab555b9c53e171d0f58f7d85161cc6123036f8eab31e295",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "center"
+        }
+      ],
+      "direct": {},
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Places and seats",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b3de5630aed4094983887c31e9dd11f7549b278cd1fc7a7672dffa145bf14f70e",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 2,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Note",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b0d77364abd4643283d22d1813b8e75eafc14ec1e14b87b65542b8e9bada1d67d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "bb5b351264670e790df27356e8ff652c5faa5f89fac5d91440d2bf55f3f14ebd3",
+      "style": "survey",
+      "type": "table"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "River",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bcebadd526a222becbec04275445b696e956b8d37121bcaf28619186904d81e2b",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "3",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b3131c363207041dfd0cabce864ffd6006a178a8e6d00ced7a1efbd26ebbadc21",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Shade",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b9ca0bba52688b1672d4561b3eab16414a823ea85a26e1be2b913ae156b9fd4df",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Garden",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b9bcdf43904a30029cb1e36b46f86a43fb5e613de8b96bcacb3ffd92710384b2f",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "5",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b7deb4852acd08f9aee076bf6bff73d980737df809b7092177092bc791dcd0336",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Books",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b30e24ef11e5c05519eb5ce0582604fd417d6a98480b84cd7ee7f14bc22a7a3e7",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": [
+        {
+          "text": "Survey: ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "morning seats",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "center"
+        }
+      ],
+      "direct": {},
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Place",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b936d3eeaef981a6b1c94a0377cd27c6ac7bf6b3f8ae275d91ece489a1eb7afa4",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Seats",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bf88085ab14e7368e753bbbb71511676f8df7960bdfffe5de7eca2b2c37616e55",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Note",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b5d05deb3ecfc01dd6444fbf914fd0dbaf1b976546182dfeb9863ddd55fb64c33",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "b8d108d9cf5121b1a3095eee6bbdd044387abd7de826ab891fffbc5256b7d6ad2",
+      "style": "survey",
+      "type": "table"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "River",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bd0c82cbdc69d8dd1c02ffa89e90b32f7fb5c4dfabe4c71f5a13c7041ed3b2b67",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "3",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b867dfad5556f702f491fc5747d0c362b9cce5bc34c0e471b3e670ffe904409ad",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Shade",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b5741b078515363a77404ebbd57ee766cca9bd6ddd01c1e41e9e71b0477549efa",
+                "type": "paragraph"
+              },
+              {
+                "blocks": [
+                  {
+                    "content": [
+                      {
+                        "text": "Keep this cell quotation.",
+                        "type": "text"
+                      }
+                    ],
+                    "direct": {},
+                    "id": "be17bbefa96393de0bb288b180582bfc1cfa86bf4d8cf3293e6e4c6e36575ebd7",
+                    "type": "paragraph"
+                  }
+                ],
+                "direct": {},
+                "id": "b0cc1c047833b9a54e965d6affa94ce2b76c8caebf9495f4a1ff945e709401186",
+                "type": "quote"
+              },
+              {
+                "direct": {},
+                "id": "bcccbd35baa429f44e5f205ba430f3640ad1b53f551d9b4e6503d1670d68b9ef3",
+                "items": [
+                  {
+                    "blocks": [
+                      {
+                        "content": [
+                          {
+                            "text": "Check the shade.",
+                            "type": "text"
+                          }
+                        ],
+                        "direct": {},
+                        "id": "b1acbb93aa6ad75b71677604668e212b92a079587ec8b125348ddc68bf2982776",
+                        "type": "paragraph"
+                      }
+                    ],
+                    "checked": null
+                  }
+                ],
+                "ordered": false,
+                "start": null,
+                "tight": false,
+                "type": "list"
+              },
+              {
+                "body": [
+                  [
+                    {
+                      "blocks": [
+                        {
+                          "content": [
+                            {
+                              "text": "Inner reading",
+                              "type": "text"
+                            }
+                          ],
+                          "direct": {},
+                          "id": "bd6b58613aca410feeacb7d536f38cbe3b1fb564c3640b2aeee035cb9c82cf511",
+                          "type": "paragraph"
+                        }
+                      ],
+                      "colspan": 1,
+                      "header": false,
+                      "rowspan": 1
+                    }
+                  ]
+                ],
+                "caption": null,
+                "columns": [
+                  {
+                    "align": "left"
+                  }
+                ],
+                "direct": {},
+                "head": [],
+                "id": "b5c98b5281acb8009473f277aa17bd926cf22351112a45660f93c17e0e7eee1ef",
+                "style": "survey",
+                "type": "table"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Garden",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b1d6ea91191a643e0ddf88ea966888db6826f43b61b1081801496c7dd6266b07b",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "5",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b3afb2b396c58acc6e735a85f4dc46947f3ea42cd49c3284f21910795615ecce6",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Books",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b4fcde89d0c5c5763e2f5a905d8dc3b9524f59b29462a5705bdec9c2306b6b6b7",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "center"
+        }
+      ],
+      "direct": {},
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Place",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b8a1c855feaae50393d15be8ec9cba24a41d5e6f4abf6df1c21b5bc74d984814d",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Seats",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bb85493afe792da1669f93b36e385d76061ed30a86de3204fcba7cb5b40299078",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Note",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bcac719766ea434b9a94908a3f6bb45fd075ee110265661fb58b99ceafa9d10d0",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "be35fc0a10a54ac5c03b1d7e884eb8d9bf1d1e84b6a2a064e48e8bf0814db8df5",
+      "style": "survey",
+      "type": "table"
+    },
+    {
+      "content": [
+        {
+          "text": "Furniture remains separate from this body paragraph.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "ba2c4d502850ef396b732e92a750abe3eebbd771554c666eb1b1f8de3a62615d7",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Furniture remains separate from this body paragraph.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b17a6e195040d6d21067aa68803683c79d4d8e64e9838a5f5d39778447e656e8e",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Inline formula ",
+          "type": "text"
+        },
+        {
+          "display": false,
+          "tex": "x^2 + \\alpha  = 5",
+          "type": "math"
+        },
+        {
+          "text": " ends here.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "bb41ec8c7796774107752b5bb58dbe245a90ff306d36a0df1fb38ef2312a91f74",
+      "type": "paragraph"
+    },
+    {
+      "direct": {},
+      "display": true,
+      "id": "b6a0bcce76c9976c0fd8558137ee3c7cdb8d264d5125f96bb1bd65b92b667776c",
+      "tex": "\\sum_{i=1}^{3} i\n  = 6",
+      "type": "math"
+    },
+    {
+      "blocks": [
+        {
+          "direct": {},
+          "id": "bad4aff906f7db6d060ea4ba8b6ba71ca138541fcf51a622d16f75f0c51a04cc3",
+          "items": [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "content": [
+                        {
+                          "text": "Giữ nguyên tiếng Việt: Nguyễn, đường, ươm.",
+                          "type": "text"
+                        },
+                        {
+                          "content": [
+                            {
+                              "text": " Nhấn mạnh bên trong.",
+                              "type": "text"
+                            }
+                          ],
+                          "direct": {
+                            "size_pt": 13.0,
+                            "underline": true
+                          },
+                          "type": "styled"
+                        }
+                      ],
+                      "direct": {
+                        "italic": false,
+                        "weight": 650
+                      },
+                      "style": "accent",
+                      "type": "styled"
+                    }
+                  ],
+                  "direct": {
+                    "align": "justify",
+                    "size_pt": 12.0
+                  },
+                  "id": "bbf66fccf5e835a4cee3c4f34a81b189a0feeb4a65bc0279d7b9a36bbe9d2ccdf",
+                  "style": "body",
+                  "type": "paragraph"
+                }
+              ],
+              "checked": false
+            }
+          ],
+          "ordered": false,
+          "start": null,
+          "tight": false,
+          "type": "list"
+        }
+      ],
+      "direct": {
+        "indent_left_pt": 14.0
+      },
+      "id": "b50e36c2459e91560cca4d1b8d4f875a67df6832d128989bad828d892f11c7261",
+      "style": "lead",
+      "type": "quote"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "River",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bab7fa2a337ae5b6c02141fb484d8fb27386b0f13b0a7315354fb61d4035fc18a",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "3",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b969c9a2dfba9be53b351d5c48f165bcadbc5003b712f3609fc21559ca9963557",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Shade",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b94e9ac6ea87c573b1ea0384bda7d19b2b15e5d44289d2d5a3c9f78821e799c2a",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Garden",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bb7b9722597e6abf9a26d89994dfb834201de68564f2bef6a0d02060a45a39ceb",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "5",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "ba7045e94cb970d4b77d74cb215363d31ac9c5fcd5efb3c00dfc8e34e9380d10a",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Books",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b314c8d7006d26a33224697f65a4c15eec508154dbd2378d43b122ce5b6c46b36",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": false,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "left"
+        },
+        {
+          "align": "right"
+        },
+        {
+          "align": "center"
+        }
+      ],
+      "direct": {},
+      "footnotes": [
+        {
+          "text": "Counts checked twice",
+          "type": "text"
+        },
+        {
+          "id": "survey-note",
+          "type": "footnote_ref"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Place",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bef915ef37c084267c703196f5bd0e1b9e2e2a6021bf0bcab78866fb9bc1414f8",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Seats",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "bccc40b9f1f65e5e8c7281761b3e9a612f5dc79ca5cdd008e03e2c8e8942c26bf",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Note",
+                    "type": "text"
+                  }
+                ],
+                "direct": {},
+                "id": "b8ec2a4a8673da9d7c386ece2efd0bb7c524e48b68aa96047e13135c3d5e582c4",
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "id": "bc13b7373d019dc78486ed555b0efd4fdb54365e38c70a4b6c7b73bc8ab9cab3e",
+      "style": "survey",
+      "type": "table"
+    },
+    {
+      "content": [
+        {
+          "text": "Editable neighbour after mixed-document.",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b58689330abca271863edd5e93f8b61910c23fbb95d07cf5526d3dea965a13d52",
+      "type": "paragraph"
+    }
+  ],
+  "furniture": [
+    {
+      "content": [
+        {
+          "text": "Ghi chép cộng đồng",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Lưu bản gốc để đối chiếu",
+          "type": "text"
+        }
+      ],
+      "direct": {},
+      "id": "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313",
+      "type": "paragraph"
+    }
+  ],
+  "layout": {
+    "blocks": {
+      "b00cf9a47399617897e33fbe90dab4253d4eb15df38de9d59c87a85ea70ac4484": {
+        "bbox": {
+          "bottom": 104.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 88.0
+        },
+        "page_no": 1
+      },
+      "b01b578a4288dc5a39d49f0b2ba43ebed705727a173167cc97895ee52de2e2d13": {
+        "bbox": {
+          "bottom": 228.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 212.0
+        },
+        "page_no": 1
+      },
+      "b068d9416e1cba63df5c8c4fb61090828c3ac338b78ce2e6bf9e53ef593af6162": {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      },
+      "b07a98da0b51b35a66da5d39868cb396e3633b8e3d9eb15d55ead046d7a56f207": {
+        "bbox": {
+          "bottom": 160.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 144.0
+        },
+        "page_no": 1
+      },
+      "b07de1646840e86f06970b0253ab551dcbe2f44fc2b0c243bc6c310952987297e": {
+        "bbox": {
+          "bottom": 156.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 140.0
+        },
+        "page_no": 1
+      },
+      "b0cc1c047833b9a54e965d6affa94ce2b76c8caebf9495f4a1ff945e709401186": {
+        "bbox": {
+          "bottom": 304.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 288.0
+        },
+        "page_no": 1
+      },
+      "b0d4e3b673034729d5a3d509ab48c9109aa8191a1f69c06ea31514bb95029e2bb": {
+        "bbox": {
+          "bottom": 112.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 96.0
+        },
+        "page_no": 1
+      },
+      "b0d77364abd4643283d22d1813b8e75eafc14ec1e14b87b65542b8e9bada1d67d": {
+        "bbox": {
+          "bottom": 212.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 196.0
+        },
+        "page_no": 1
+      },
+      "b0f5956bf33f68215666a6179a8acb398ba2f26f1127f96e150f3d5039af700dc": {
+        "bbox": {
+          "bottom": 100.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 84.0
+        },
+        "page_no": 1
+      },
+      "b17a6e195040d6d21067aa68803683c79d4d8e64e9838a5f5d39778447e656e8e": {
+        "bbox": {
+          "bottom": 344.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 328.0
+        },
+        "page_no": 1
+      },
+      "b1acbb93aa6ad75b71677604668e212b92a079587ec8b125348ddc68bf2982776": {
+        "bbox": {
+          "bottom": 316.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 300.0
+        },
+        "page_no": 1
+      },
+      "b1d6ea91191a643e0ddf88ea966888db6826f43b61b1081801496c7dd6266b07b": {
+        "bbox": {
+          "bottom": 328.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 312.0
+        },
+        "page_no": 1
+      },
+      "b23dc657ab91b6d638992f4a93518da0b3d29af936c46a7450df098b6458bcfd3": {
+        "bbox": {
+          "bottom": 188.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 172.0
+        },
+        "page_no": 1
+      },
+      "b271480be2df92e109deced4a0a45d7ce105a1b70a0575f718c092b465b69d523": {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      },
+      "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e": {
+        "bbox": {
+          "bottom": 412.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 396.0
+        },
+        "page_no": 1
+      },
+      "b29b4a4286341a031015f859e44793b10a4088c9b544217b2d54c02e6252eb847": {
+        "bbox": {
+          "bottom": 164.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 148.0
+        },
+        "page_no": 1
+      },
+      "b2bfef6ac9d888540a11fb046e52677ff54d8c73f9aa4fd4e441cdf1709692bb1": {
+        "bbox": {
+          "bottom": 168.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 152.0
+        },
+        "page_no": 1
+      },
+      "b30e24ef11e5c05519eb5ce0582604fd417d6a98480b84cd7ee7f14bc22a7a3e7": {
+        "bbox": {
+          "bottom": 272.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 256.0
+        },
+        "page_no": 1
+      },
+      "b3131c363207041dfd0cabce864ffd6006a178a8e6d00ced7a1efbd26ebbadc21": {
+        "bbox": {
+          "bottom": 256.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 240.0
+        },
+        "page_no": 1
+      },
+      "b314c8d7006d26a33224697f65a4c15eec508154dbd2378d43b122ce5b6c46b36": {
+        "bbox": {
+          "bottom": 404.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 388.0
+        },
+        "page_no": 1
+      },
+      "b385b3f5391b1c45c5074601c3c22e3933f9a53ff81d5a863e2b659837b0b01d2": {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      },
+      "b3afb2b396c58acc6e735a85f4dc46947f3ea42cd49c3284f21910795615ecce6": {
+        "bbox": {
+          "bottom": 332.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 316.0
+        },
+        "page_no": 1
+      },
+      "b3b2d278eacaf64cf3ac1236ec63ccc7c0ac7fc8e2dc4441d714f822c78432f07": {
+        "bbox": {
+          "bottom": 224.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 208.0
+        },
+        "page_no": 1
+      },
+      "b3de5630aed4094983887c31e9dd11f7549b278cd1fc7a7672dffa145bf14f70e": {
+        "bbox": {
+          "bottom": 208.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 192.0
+        },
+        "page_no": 1
+      },
+      "b4f84737810f31212bd48e2c80787318bed0c0a89b12d1b6325344091e22b5b3c": {
+        "bbox": {
+          "bottom": 144.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 128.0
+        },
+        "page_no": 1
+      },
+      "b4fcde89d0c5c5763e2f5a905d8dc3b9524f59b29462a5705bdec9c2306b6b6b7": {
+        "bbox": {
+          "bottom": 336.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 320.0
+        },
+        "page_no": 1
+      },
+      "b50e36c2459e91560cca4d1b8d4f875a67df6832d128989bad828d892f11c7261": {
+        "bbox": {
+          "bottom": 356.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 340.0
+        },
+        "page_no": 1
+      },
+      "b5741b078515363a77404ebbd57ee766cca9bd6ddd01c1e41e9e71b0477549efa": {
+        "bbox": {
+          "bottom": 300.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 284.0
+        },
+        "page_no": 1
+      },
+      "b58689330abca271863edd5e93f8b61910c23fbb95d07cf5526d3dea965a13d52": {
+        "bbox": {
+          "bottom": 408.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 392.0
+        },
+        "page_no": 1
+      },
+      "b5c98b5281acb8009473f277aa17bd926cf22351112a45660f93c17e0e7eee1ef": {
+        "bbox": {
+          "bottom": 320.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 304.0
+        },
+        "page_no": 1
+      },
+      "b5cc06c3259b59476ee575abe570e5161e5866fd56e26cb90a0e00dc3e5e46305": {
+        "bbox": {
+          "bottom": 152.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 136.0
+        },
+        "page_no": 1
+      },
+      "b5d05deb3ecfc01dd6444fbf914fd0dbaf1b976546182dfeb9863ddd55fb64c33": {
+        "bbox": {
+          "bottom": 248.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 232.0
+        },
+        "page_no": 1
+      },
+      "b5f672e80038dc5818612aeed3fe99eccdcf94e249d74fe455a2e7210cc708d25": {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      },
+      "b618241135aa2d020efa337cfad26298ed29f696f3abb4a7e223d87939326e8d2": {
+        "bbox": {
+          "bottom": 216.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 200.0
+        },
+        "page_no": 1
+      },
+      "b68a33e5d9e1a564e4dbddfaefd7314f39b5c31b2898b8bae2c38dc9c6275afe5": {
+        "bbox": {
+          "bottom": 108.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 92.0
+        },
+        "page_no": 1
+      },
+      "b6a0bcce76c9976c0fd8558137ee3c7cdb8d264d5125f96bb1bd65b92b667776c": {
+        "bbox": {
+          "bottom": 352.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 336.0
+        },
+        "page_no": 1
+      },
+      "b6cbed0cfb85fccb15ab555b9c53e171d0f58f7d85161cc6123036f8eab31e295": {
+        "bbox": {
+          "bottom": 232.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 216.0
+        },
+        "page_no": 1
+      },
+      "b7d25cb7247d5e252b60ca88dcf3f1ebf11416f9d7d18786f06317e703d65f520": {
+        "bbox": {
+          "bottom": 120.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 104.0
+        },
+        "page_no": 1
+      },
+      "b7deb4852acd08f9aee076bf6bff73d980737df809b7092177092bc791dcd0336": {
+        "bbox": {
+          "bottom": 268.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 252.0
+        },
+        "page_no": 1
+      },
+      "b867dfad5556f702f491fc5747d0c362b9cce5bc34c0e471b3e670ffe904409ad": {
+        "bbox": {
+          "bottom": 296.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 280.0
+        },
+        "page_no": 1
+      },
+      "b8a1c855feaae50393d15be8ec9cba24a41d5e6f4abf6df1c21b5bc74d984814d": {
+        "bbox": {
+          "bottom": 280.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 264.0
+        },
+        "page_no": 1
+      },
+      "b8b75fc223a51d87f99f7c90883605e6bc114fce49c21edf2d9621920c6a734fe": {
+        "bbox": {
+          "bottom": 132.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 116.0
+        },
+        "page_no": 1
+      },
+      "b8d108d9cf5121b1a3095eee6bbdd044387abd7de826ab891fffbc5256b7d6ad2": {
+        "bbox": {
+          "bottom": 236.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 220.0
+        },
+        "page_no": 1
+      },
+      "b8ec2a4a8673da9d7c386ece2efd0bb7c524e48b68aa96047e13135c3d5e582c4": {
+        "bbox": {
+          "bottom": 380.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 364.0
+        },
+        "page_no": 1
+      },
+      "b929171f833404b1d6bd7520a679b93c2748c18c13c5585660d01d8af6e62e37a": {
+        "bbox": {
+          "bottom": 176.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 160.0
+        },
+        "page_no": 1
+      },
+      "b936d3eeaef981a6b1c94a0377cd27c6ac7bf6b3f8ae275d91ece489a1eb7afa4": {
+        "bbox": {
+          "bottom": 240.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 224.0
+        },
+        "page_no": 1
+      },
+      "b94e9ac6ea87c573b1ea0384bda7d19b2b15e5d44289d2d5a3c9f78821e799c2a": {
+        "bbox": {
+          "bottom": 392.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 376.0
+        },
+        "page_no": 1
+      },
+      "b950cd17cbc514260a6354843677a916734e05686ea39d21dd35f3e09033c3627": {
+        "bbox": {
+          "bottom": 128.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 112.0
+        },
+        "page_no": 1
+      },
+      "b969c9a2dfba9be53b351d5c48f165bcadbc5003b712f3609fc21559ca9963557": {
+        "bbox": {
+          "bottom": 388.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 372.0
+        },
+        "page_no": 1
+      },
+      "b9bcdf43904a30029cb1e36b46f86a43fb5e613de8b96bcacb3ffd92710384b2f": {
+        "bbox": {
+          "bottom": 264.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 248.0
+        },
+        "page_no": 1
+      },
+      "b9ca0bba52688b1672d4561b3eab16414a823ea85a26e1be2b913ae156b9fd4df": {
+        "bbox": {
+          "bottom": 260.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 244.0
+        },
+        "page_no": 1
+      },
+      "b9e88a5b8cec92e43a06b11608affa86fef53ef945ceca181cf8bb497dd4a0e3f": {
+        "bbox": {
+          "bottom": 124.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 108.0
+        },
+        "page_no": 1
+      },
+      "ba2c4d502850ef396b732e92a750abe3eebbd771554c666eb1b1f8de3a62615d7": {
+        "bbox": {
+          "bottom": 340.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 324.0
+        },
+        "page_no": 1
+      },
+      "ba7045e94cb970d4b77d74cb215363d31ac9c5fcd5efb3c00dfc8e34e9380d10a": {
+        "bbox": {
+          "bottom": 400.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 384.0
+        },
+        "page_no": 1
+      },
+      "bab7fa2a337ae5b6c02141fb484d8fb27386b0f13b0a7315354fb61d4035fc18a": {
+        "bbox": {
+          "bottom": 384.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 368.0
+        },
+        "page_no": 1
+      },
+      "bad4aff906f7db6d060ea4ba8b6ba71ca138541fcf51a622d16f75f0c51a04cc3": {
+        "bbox": {
+          "bottom": 360.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 344.0
+        },
+        "page_no": 1
+      },
+      "bb41ec8c7796774107752b5bb58dbe245a90ff306d36a0df1fb38ef2312a91f74": {
+        "bbox": {
+          "bottom": 348.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 332.0
+        },
+        "page_no": 1
+      },
+      "bb5b351264670e790df27356e8ff652c5faa5f89fac5d91440d2bf55f3f14ebd3": {
+        "bbox": {
+          "bottom": 204.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 188.0
+        },
+        "page_no": 1
+      },
+      "bb7b9722597e6abf9a26d89994dfb834201de68564f2bef6a0d02060a45a39ceb": {
+        "bbox": {
+          "bottom": 396.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 380.0
+        },
+        "page_no": 1
+      },
+      "bb85493afe792da1669f93b36e385d76061ed30a86de3204fcba7cb5b40299078": {
+        "bbox": {
+          "bottom": 284.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 268.0
+        },
+        "page_no": 1
+      },
+      "bbd236df0f9d53eb6c2acffbf28908bba438923c4b8e4e3d28175e9a6c216fca1": {
+        "bbox": {
+          "bottom": 116.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 100.0
+        },
+        "page_no": 1
+      },
+      "bbf66fccf5e835a4cee3c4f34a81b189a0feeb4a65bc0279d7b9a36bbe9d2ccdf": {
+        "bbox": {
+          "bottom": 364.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 348.0
+        },
+        "page_no": 1
+      },
+      "bc0c8f47e405a42abda5c46ae3f6e7b7d181e682c5327a3dfde9c797127436cb0": {
+        "bbox": {
+          "bottom": 192.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 176.0
+        },
+        "page_no": 1
+      },
+      "bc13b7373d019dc78486ed555b0efd4fdb54365e38c70a4b6c7b73bc8ab9cab3e": {
+        "bbox": {
+          "bottom": 368.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 352.0
+        },
+        "page_no": 1
+      },
+      "bc639846451c692f216995cd9ee6b11987db5b31798486d14574db230ac4b6488": {
+        "bbox": {
+          "bottom": 172.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 156.0
+        },
+        "page_no": 1
+      },
+      "bc8d053aa9f4041c9b3d487727dbfc0e1943ac220fcf8732373a54b25418dcd17": {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      },
+      "bcac719766ea434b9a94908a3f6bb45fd075ee110265661fb58b99ceafa9d10d0": {
+        "bbox": {
+          "bottom": 288.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 272.0
+        },
+        "page_no": 1
+      },
+      "bccc40b9f1f65e5e8c7281761b3e9a612f5dc79ca5cdd008e03e2c8e8942c26bf": {
+        "bbox": {
+          "bottom": 376.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 360.0
+        },
+        "page_no": 1
+      },
+      "bcccbd35baa429f44e5f205ba430f3640ad1b53f551d9b4e6503d1670d68b9ef3": {
+        "bbox": {
+          "bottom": 312.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 296.0
+        },
+        "page_no": 1
+      },
+      "bce387ccafc9f2f0a75f675ccb502ba53071ceef723d8a3ecbf3bb508e59c1fc7": {
+        "bbox": {
+          "bottom": 140.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 124.0
+        },
+        "page_no": 1
+      },
+      "bcebadd526a222becbec04275445b696e956b8d37121bcaf28619186904d81e2b": {
+        "bbox": {
+          "bottom": 252.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 236.0
+        },
+        "page_no": 1
+      },
+      "bd0c82cbdc69d8dd1c02ffa89e90b32f7fb5c4dfabe4c71f5a13c7041ed3b2b67": {
+        "bbox": {
+          "bottom": 292.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 276.0
+        },
+        "page_no": 1
+      },
+      "bd2f8a0b4d38f9f50d7b0f6f506e860fbaf7654d38703b659450e05394c65d06e": {
+        "bbox": {
+          "bottom": 180.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 164.0
+        },
+        "page_no": 1
+      },
+      "bd40377ab11f10ca2dea9d0a258bf1f8b451222908bb30e6dfd12e03013b4d8a6": {
+        "bbox": {
+          "bottom": 96.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 80.0
+        },
+        "page_no": 1
+      },
+      "bd4932ccb5682e8c7617ab9319b1ff48d420a42a98b611c177ea2b63f02dde943": {
+        "bbox": {
+          "bottom": 200.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 184.0
+        },
+        "page_no": 1
+      },
+      "bd6b58613aca410feeacb7d536f38cbe3b1fb564c3640b2aeee035cb9c82cf511": {
+        "bbox": {
+          "bottom": 324.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 308.0
+        },
+        "page_no": 1
+      },
+      "bd811721cf9c92330efaf0a91a13a0746302d8805371c50428eec073d7e263cad": {
+        "bbox": {
+          "bottom": 220.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 204.0
+        },
+        "page_no": 1
+      },
+      "be17bbefa96393de0bb288b180582bfc1cfa86bf4d8cf3293e6e4c6e36575ebd7": {
+        "bbox": {
+          "bottom": 308.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 292.0
+        },
+        "page_no": 1
+      },
+      "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313": {
+        "bbox": {
+          "bottom": 416.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 400.0
+        },
+        "page_no": 1
+      },
+      "be35fc0a10a54ac5c03b1d7e884eb8d9bf1d1e84b6a2a064e48e8bf0814db8df5": {
+        "bbox": {
+          "bottom": 276.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 260.0
+        },
+        "page_no": 1
+      },
+      "be5ff5000cbc5f70ea1dded1acc62e9698bc0f21e134d75849bd3ed4b56c352ea": {
+        "bbox": {
+          "bottom": 148.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 132.0
+        },
+        "page_no": 1
+      },
+      "be7653d6467899a606cac1b07fd8a20148a22ec81e9c2485fd4229ba44ca6e2fd": {
+        "bbox": {
+          "bottom": 184.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 168.0
+        },
+        "page_no": 1
+      },
+      "be901381b26de4d680c14f49833205c4ebc7238ff248d85bcbdbdf4b0ec6fee08": {
+        "bbox": {
+          "bottom": 196.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 180.0
+        },
+        "page_no": 1
+      },
+      "beb16de2a2092cc34d5b0d236e60bbbf83d4d9452c120d2a96d4d677e9283b3c2": {
+        "bbox": {
+          "bottom": 136.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 120.0
+        },
+        "page_no": 1
+      },
+      "bef915ef37c084267c703196f5bd0e1b9e2e2a6021bf0bcab78866fb9bc1414f8": {
+        "bbox": {
+          "bottom": 372.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 356.0
+        },
+        "page_no": 1
+      },
+      "bf88085ab14e7368e753bbbb71511676f8df7960bdfffe5de7eca2b2c37616e55": {
+        "bbox": {
+          "bottom": 244.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 228.0
+        },
+        "page_no": 1
+      }
+    },
+    "pages": [
+      {
+        "height": 842.0,
+        "page_no": 1,
+        "width": 595.0
+      },
+      {
+        "height": 842.0,
+        "page_no": 2,
+        "width": 595.0
+      }
+    ]
+  },
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "vi",
+    "source_format": "ariad-ir+json",
+    "subject": "Original editor preservation corpus",
+    "title": "Editor preservation: mixed-document"
+  },
+  "provenance": {
+    "org.ariadshift.editor-corpus": {
+      "case": "mixed-document",
+      "font_permission_evidence": {
+        "Libertinus Serif": "No embedded font asset is supplied; family availability grants no embedding permission."
+      },
+      "source": "original-authoring"
+    }
+  },
+  "sections": [
+    {
+      "columns": 1,
+      "footer": "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313",
+      "header": "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e",
+      "margins": {
+        "bottom_pt": 54.0,
+        "left_pt": 54.0,
+        "right_pt": 54.0,
+        "top_pt": 54.0
+      },
+      "page_size": {
+        "height_pt": 842.0,
+        "width_pt": 595.0
+      }
+    },
+    {
+      "columns": 2,
+      "footer": "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313",
+      "header": "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e",
+      "margins": {
+        "bottom_pt": 54.0,
+        "left_pt": 54.0,
+        "right_pt": 54.0,
+        "top_pt": 54.0
+      },
+      "page_size": {
+        "height_pt": 842.0,
+        "width_pt": 595.0
+      },
+      "start": "b58689330abca271863edd5e93f8b61910c23fbb95d07cf5526d3dea965a13d52"
+    }
+  ],
+  "source_map": {
+    "b00cf9a47399617897e33fbe90dab4253d4eb15df38de9d59c87a85ea70ac4484": [
+      {
+        "bbox": {
+          "bottom": 104.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 88.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b01b578a4288dc5a39d49f0b2ba43ebed705727a173167cc97895ee52de2e2d13": [
+      {
+        "bbox": {
+          "bottom": 228.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 212.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b068d9416e1cba63df5c8c4fb61090828c3ac338b78ce2e6bf9e53ef593af6162": [
+      {
+        "bbox": {
+          "bottom": 76.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 60.0
+        },
+        "page_no": 1
+      },
+      {
+        "bbox": {
+          "bottom": 86.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 70.0
+        },
+        "page_no": 2
+      }
+    ],
+    "b07a98da0b51b35a66da5d39868cb396e3633b8e3d9eb15d55ead046d7a56f207": [
+      {
+        "bbox": {
+          "bottom": 160.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 144.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b07de1646840e86f06970b0253ab551dcbe2f44fc2b0c243bc6c310952987297e": [
+      {
+        "bbox": {
+          "bottom": 156.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 140.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b0cc1c047833b9a54e965d6affa94ce2b76c8caebf9495f4a1ff945e709401186": [
+      {
+        "bbox": {
+          "bottom": 304.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 288.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b0d4e3b673034729d5a3d509ab48c9109aa8191a1f69c06ea31514bb95029e2bb": [
+      {
+        "bbox": {
+          "bottom": 112.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 96.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b0d77364abd4643283d22d1813b8e75eafc14ec1e14b87b65542b8e9bada1d67d": [
+      {
+        "bbox": {
+          "bottom": 212.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 196.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b0f5956bf33f68215666a6179a8acb398ba2f26f1127f96e150f3d5039af700dc": [
+      {
+        "bbox": {
+          "bottom": 100.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 84.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b17a6e195040d6d21067aa68803683c79d4d8e64e9838a5f5d39778447e656e8e": [
+      {
+        "bbox": {
+          "bottom": 344.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 328.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b1acbb93aa6ad75b71677604668e212b92a079587ec8b125348ddc68bf2982776": [
+      {
+        "bbox": {
+          "bottom": 316.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 300.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b1d6ea91191a643e0ddf88ea966888db6826f43b61b1081801496c7dd6266b07b": [
+      {
+        "bbox": {
+          "bottom": 328.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 312.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b23dc657ab91b6d638992f4a93518da0b3d29af936c46a7450df098b6458bcfd3": [
+      {
+        "bbox": {
+          "bottom": 188.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 172.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b271480be2df92e109deced4a0a45d7ce105a1b70a0575f718c092b465b69d523": [
+      {
+        "bbox": {
+          "bottom": 80.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 64.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b27c6a05f2cc9ced6848240d3886cd8af1397bfc76b0eb94bcb19982e452df90e": [
+      {
+        "bbox": {
+          "bottom": 412.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 396.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b29b4a4286341a031015f859e44793b10a4088c9b544217b2d54c02e6252eb847": [
+      {
+        "bbox": {
+          "bottom": 164.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 148.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b2bfef6ac9d888540a11fb046e52677ff54d8c73f9aa4fd4e441cdf1709692bb1": [
+      {
+        "bbox": {
+          "bottom": 168.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 152.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b30e24ef11e5c05519eb5ce0582604fd417d6a98480b84cd7ee7f14bc22a7a3e7": [
+      {
+        "bbox": {
+          "bottom": 272.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 256.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b3131c363207041dfd0cabce864ffd6006a178a8e6d00ced7a1efbd26ebbadc21": [
+      {
+        "bbox": {
+          "bottom": 256.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 240.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b314c8d7006d26a33224697f65a4c15eec508154dbd2378d43b122ce5b6c46b36": [
+      {
+        "bbox": {
+          "bottom": 404.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 388.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b385b3f5391b1c45c5074601c3c22e3933f9a53ff81d5a863e2b659837b0b01d2": [
+      {
+        "bbox": {
+          "bottom": 88.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 72.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b3afb2b396c58acc6e735a85f4dc46947f3ea42cd49c3284f21910795615ecce6": [
+      {
+        "bbox": {
+          "bottom": 332.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 316.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b3b2d278eacaf64cf3ac1236ec63ccc7c0ac7fc8e2dc4441d714f822c78432f07": [
+      {
+        "bbox": {
+          "bottom": 224.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 208.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b3de5630aed4094983887c31e9dd11f7549b278cd1fc7a7672dffa145bf14f70e": [
+      {
+        "bbox": {
+          "bottom": 208.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 192.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b4f84737810f31212bd48e2c80787318bed0c0a89b12d1b6325344091e22b5b3c": [
+      {
+        "bbox": {
+          "bottom": 144.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 128.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b4fcde89d0c5c5763e2f5a905d8dc3b9524f59b29462a5705bdec9c2306b6b6b7": [
+      {
+        "bbox": {
+          "bottom": 336.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 320.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b50e36c2459e91560cca4d1b8d4f875a67df6832d128989bad828d892f11c7261": [
+      {
+        "bbox": {
+          "bottom": 356.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 340.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b5741b078515363a77404ebbd57ee766cca9bd6ddd01c1e41e9e71b0477549efa": [
+      {
+        "bbox": {
+          "bottom": 300.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 284.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b58689330abca271863edd5e93f8b61910c23fbb95d07cf5526d3dea965a13d52": [
+      {
+        "bbox": {
+          "bottom": 408.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 392.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b5c98b5281acb8009473f277aa17bd926cf22351112a45660f93c17e0e7eee1ef": [
+      {
+        "bbox": {
+          "bottom": 320.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 304.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b5cc06c3259b59476ee575abe570e5161e5866fd56e26cb90a0e00dc3e5e46305": [
+      {
+        "bbox": {
+          "bottom": 152.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 136.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b5d05deb3ecfc01dd6444fbf914fd0dbaf1b976546182dfeb9863ddd55fb64c33": [
+      {
+        "bbox": {
+          "bottom": 248.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 232.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b5f672e80038dc5818612aeed3fe99eccdcf94e249d74fe455a2e7210cc708d25": [
+      {
+        "bbox": {
+          "bottom": 92.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 76.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b618241135aa2d020efa337cfad26298ed29f696f3abb4a7e223d87939326e8d2": [
+      {
+        "bbox": {
+          "bottom": 216.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 200.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b68a33e5d9e1a564e4dbddfaefd7314f39b5c31b2898b8bae2c38dc9c6275afe5": [
+      {
+        "bbox": {
+          "bottom": 108.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 92.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b6a0bcce76c9976c0fd8558137ee3c7cdb8d264d5125f96bb1bd65b92b667776c": [
+      {
+        "bbox": {
+          "bottom": 352.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 336.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b6cbed0cfb85fccb15ab555b9c53e171d0f58f7d85161cc6123036f8eab31e295": [
+      {
+        "bbox": {
+          "bottom": 232.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 216.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b7d25cb7247d5e252b60ca88dcf3f1ebf11416f9d7d18786f06317e703d65f520": [
+      {
+        "bbox": {
+          "bottom": 120.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 104.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b7deb4852acd08f9aee076bf6bff73d980737df809b7092177092bc791dcd0336": [
+      {
+        "bbox": {
+          "bottom": 268.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 252.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b867dfad5556f702f491fc5747d0c362b9cce5bc34c0e471b3e670ffe904409ad": [
+      {
+        "bbox": {
+          "bottom": 296.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 280.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b8a1c855feaae50393d15be8ec9cba24a41d5e6f4abf6df1c21b5bc74d984814d": [
+      {
+        "bbox": {
+          "bottom": 280.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 264.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b8b75fc223a51d87f99f7c90883605e6bc114fce49c21edf2d9621920c6a734fe": [
+      {
+        "bbox": {
+          "bottom": 132.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 116.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b8d108d9cf5121b1a3095eee6bbdd044387abd7de826ab891fffbc5256b7d6ad2": [
+      {
+        "bbox": {
+          "bottom": 236.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 220.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b8ec2a4a8673da9d7c386ece2efd0bb7c524e48b68aa96047e13135c3d5e582c4": [
+      {
+        "bbox": {
+          "bottom": 380.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 364.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b929171f833404b1d6bd7520a679b93c2748c18c13c5585660d01d8af6e62e37a": [
+      {
+        "bbox": {
+          "bottom": 176.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 160.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b936d3eeaef981a6b1c94a0377cd27c6ac7bf6b3f8ae275d91ece489a1eb7afa4": [
+      {
+        "bbox": {
+          "bottom": 240.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 224.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b94e9ac6ea87c573b1ea0384bda7d19b2b15e5d44289d2d5a3c9f78821e799c2a": [
+      {
+        "bbox": {
+          "bottom": 392.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 376.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b950cd17cbc514260a6354843677a916734e05686ea39d21dd35f3e09033c3627": [
+      {
+        "bbox": {
+          "bottom": 128.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 112.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b969c9a2dfba9be53b351d5c48f165bcadbc5003b712f3609fc21559ca9963557": [
+      {
+        "bbox": {
+          "bottom": 388.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 372.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b9bcdf43904a30029cb1e36b46f86a43fb5e613de8b96bcacb3ffd92710384b2f": [
+      {
+        "bbox": {
+          "bottom": 264.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 248.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b9ca0bba52688b1672d4561b3eab16414a823ea85a26e1be2b913ae156b9fd4df": [
+      {
+        "bbox": {
+          "bottom": 260.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 244.0
+        },
+        "page_no": 1
+      }
+    ],
+    "b9e88a5b8cec92e43a06b11608affa86fef53ef945ceca181cf8bb497dd4a0e3f": [
+      {
+        "bbox": {
+          "bottom": 124.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 108.0
+        },
+        "page_no": 1
+      }
+    ],
+    "ba2c4d502850ef396b732e92a750abe3eebbd771554c666eb1b1f8de3a62615d7": [
+      {
+        "bbox": {
+          "bottom": 340.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 324.0
+        },
+        "page_no": 1
+      }
+    ],
+    "ba7045e94cb970d4b77d74cb215363d31ac9c5fcd5efb3c00dfc8e34e9380d10a": [
+      {
+        "bbox": {
+          "bottom": 400.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 384.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bab7fa2a337ae5b6c02141fb484d8fb27386b0f13b0a7315354fb61d4035fc18a": [
+      {
+        "bbox": {
+          "bottom": 384.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 368.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bad4aff906f7db6d060ea4ba8b6ba71ca138541fcf51a622d16f75f0c51a04cc3": [
+      {
+        "bbox": {
+          "bottom": 360.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 344.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bb41ec8c7796774107752b5bb58dbe245a90ff306d36a0df1fb38ef2312a91f74": [
+      {
+        "bbox": {
+          "bottom": 348.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 332.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bb5b351264670e790df27356e8ff652c5faa5f89fac5d91440d2bf55f3f14ebd3": [
+      {
+        "bbox": {
+          "bottom": 204.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 188.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bb7b9722597e6abf9a26d89994dfb834201de68564f2bef6a0d02060a45a39ceb": [
+      {
+        "bbox": {
+          "bottom": 396.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 380.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bb85493afe792da1669f93b36e385d76061ed30a86de3204fcba7cb5b40299078": [
+      {
+        "bbox": {
+          "bottom": 284.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 268.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bbd236df0f9d53eb6c2acffbf28908bba438923c4b8e4e3d28175e9a6c216fca1": [
+      {
+        "bbox": {
+          "bottom": 116.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 100.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bbf66fccf5e835a4cee3c4f34a81b189a0feeb4a65bc0279d7b9a36bbe9d2ccdf": [
+      {
+        "bbox": {
+          "bottom": 364.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 348.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bc0c8f47e405a42abda5c46ae3f6e7b7d181e682c5327a3dfde9c797127436cb0": [
+      {
+        "bbox": {
+          "bottom": 192.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 176.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bc13b7373d019dc78486ed555b0efd4fdb54365e38c70a4b6c7b73bc8ab9cab3e": [
+      {
+        "bbox": {
+          "bottom": 368.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 352.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bc639846451c692f216995cd9ee6b11987db5b31798486d14574db230ac4b6488": [
+      {
+        "bbox": {
+          "bottom": 172.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 156.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bc8d053aa9f4041c9b3d487727dbfc0e1943ac220fcf8732373a54b25418dcd17": [
+      {
+        "bbox": {
+          "bottom": 84.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 68.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bcac719766ea434b9a94908a3f6bb45fd075ee110265661fb58b99ceafa9d10d0": [
+      {
+        "bbox": {
+          "bottom": 288.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 272.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bccc40b9f1f65e5e8c7281761b3e9a612f5dc79ca5cdd008e03e2c8e8942c26bf": [
+      {
+        "bbox": {
+          "bottom": 376.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 360.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bcccbd35baa429f44e5f205ba430f3640ad1b53f551d9b4e6503d1670d68b9ef3": [
+      {
+        "bbox": {
+          "bottom": 312.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 296.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bce387ccafc9f2f0a75f675ccb502ba53071ceef723d8a3ecbf3bb508e59c1fc7": [
+      {
+        "bbox": {
+          "bottom": 140.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 124.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bcebadd526a222becbec04275445b696e956b8d37121bcaf28619186904d81e2b": [
+      {
+        "bbox": {
+          "bottom": 252.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 236.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bd0c82cbdc69d8dd1c02ffa89e90b32f7fb5c4dfabe4c71f5a13c7041ed3b2b67": [
+      {
+        "bbox": {
+          "bottom": 292.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 276.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bd2f8a0b4d38f9f50d7b0f6f506e860fbaf7654d38703b659450e05394c65d06e": [
+      {
+        "bbox": {
+          "bottom": 180.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 164.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bd40377ab11f10ca2dea9d0a258bf1f8b451222908bb30e6dfd12e03013b4d8a6": [
+      {
+        "bbox": {
+          "bottom": 96.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 80.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bd4932ccb5682e8c7617ab9319b1ff48d420a42a98b611c177ea2b63f02dde943": [
+      {
+        "bbox": {
+          "bottom": 200.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 184.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bd6b58613aca410feeacb7d536f38cbe3b1fb564c3640b2aeee035cb9c82cf511": [
+      {
+        "bbox": {
+          "bottom": 324.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 308.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bd811721cf9c92330efaf0a91a13a0746302d8805371c50428eec073d7e263cad": [
+      {
+        "bbox": {
+          "bottom": 220.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 204.0
+        },
+        "page_no": 1
+      }
+    ],
+    "be17bbefa96393de0bb288b180582bfc1cfa86bf4d8cf3293e6e4c6e36575ebd7": [
+      {
+        "bbox": {
+          "bottom": 308.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 292.0
+        },
+        "page_no": 1
+      }
+    ],
+    "be2727712300f21bb025b8d5b49f93b7e994c2819c12f404511a733c0a09d3313": [
+      {
+        "bbox": {
+          "bottom": 416.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 400.0
+        },
+        "page_no": 1
+      }
+    ],
+    "be35fc0a10a54ac5c03b1d7e884eb8d9bf1d1e84b6a2a064e48e8bf0814db8df5": [
+      {
+        "bbox": {
+          "bottom": 276.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 260.0
+        },
+        "page_no": 1
+      }
+    ],
+    "be5ff5000cbc5f70ea1dded1acc62e9698bc0f21e134d75849bd3ed4b56c352ea": [
+      {
+        "bbox": {
+          "bottom": 148.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 132.0
+        },
+        "page_no": 1
+      }
+    ],
+    "be7653d6467899a606cac1b07fd8a20148a22ec81e9c2485fd4229ba44ca6e2fd": [
+      {
+        "bbox": {
+          "bottom": 184.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 168.0
+        },
+        "page_no": 1
+      }
+    ],
+    "be901381b26de4d680c14f49833205c4ebc7238ff248d85bcbdbdf4b0ec6fee08": [
+      {
+        "bbox": {
+          "bottom": 196.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 180.0
+        },
+        "page_no": 1
+      }
+    ],
+    "beb16de2a2092cc34d5b0d236e60bbbf83d4d9452c120d2a96d4d677e9283b3c2": [
+      {
+        "bbox": {
+          "bottom": 136.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 120.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bef915ef37c084267c703196f5bd0e1b9e2e2a6021bf0bcab78866fb9bc1414f8": [
+      {
+        "bbox": {
+          "bottom": 372.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 356.0
+        },
+        "page_no": 1
+      }
+    ],
+    "bf88085ab14e7368e753bbbb71511676f8df7960bdfffe5de7eca2b2c37616e55": [
+      {
+        "bbox": {
+          "bottom": 244.0,
+          "left": 54.0,
+          "right": 540.0,
+          "top": 228.0
+        },
+        "page_no": 1
+      }
+    ]
+  },
+  "styles": {
+    "character": {
+      "accent": {
+        "color": "#185c4c",
+        "italic": true,
+        "weight": 700
+      }
+    },
+    "defaults": {
+      "character": {
+        "weight": 400
+      },
+      "paragraph": {
+        "size_pt": 11.0
+      },
+      "table": {
+        "character": {},
+        "paragraph": {}
+      }
+    },
+    "paragraph": {
+      "body": {
+        "font": {
+          "fallback": [
+            "Noto Serif"
+          ],
+          "family": "Libertinus Serif"
+        },
+        "line_height": 1.25,
+        "size_pt": 11.0
+      },
+      "lead": {
+        "based_on": "body",
+        "color": "#185c4c",
+        "space_after_pt": 6.0
+      }
+    },
+    "table": {
+      "survey": {
+        "background": "#e6f3ef",
+        "character": {
+          "weight": 400
+        },
+        "paragraph": {
+          "size_pt": 10.0
+        }
+      }
+    }
+  },
+  "version": "ariad-ir/2"
+}

@@ -52,12 +52,18 @@ fn run_engine(request: &Request) -> Result<runner::RunOutcome, runner::RunError>
 
 fn nested_document(depth: usize) -> Document {
     let mut block = Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Text {
             text: "nested content".to_owned(),
         }],
     };
     for _ in 0..depth {
         block = Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![block],
         };
     }
@@ -65,6 +71,7 @@ fn nested_document(depth: usize) -> Document {
         body: vec![block],
         ..Document::default()
     }
+    .finalize_import()
 }
 
 #[test]
@@ -154,13 +161,17 @@ fn eight_megabyte_memory_limit_is_a_typed_limit_exceeded_error() {
     let document = Document {
         body: (0..10_000)
             .map(|_| Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "memory limited Pandoc conversion".to_owned(),
                 }],
             })
             .collect(),
         ..Document::default()
-    };
+    }
+    .finalize_import();
     let mut limits = Limits::local();
     limits.max_memory_mb = Some(8);
     let request = request_for(&workspace, &document, limits);
@@ -252,4 +263,65 @@ fn pandoc_engine_answers_describe_request() {
         }
         other => panic!("expected capabilities event, got {other:?}"),
     }
+}
+
+#[test]
+fn styled_ir_exports_real_styles_through_the_sandboxed_engine() {
+    use ariad_core::ir::{CharacterStyle, FontRef, ParagraphStyle, StyleId};
+    use std::io::{Cursor, Read};
+    let mut document = nested_document(0);
+    let body_style = StyleId::new("Body").unwrap();
+    document.styles.paragraph.insert(
+        body_style.clone(),
+        ParagraphStyle {
+            font: Some(FontRef {
+                family: "Libertinus Serif".into(),
+                fallback: Vec::new(),
+            }),
+            size_pt: Some(18.0),
+            color: Some("#123456".to_owned().try_into().unwrap()),
+            ..Default::default()
+        },
+    );
+    if let Block::Paragraph { style, content, .. } = &mut document.body[0] {
+        *style = Some(body_style);
+        *content = vec![Inline::Styled {
+            style: None,
+            direct: CharacterStyle {
+                weight: Some(700),
+                ..Default::default()
+            },
+            content: content.clone(),
+        }];
+    }
+    let mut workspace = Workspace::new().expect("create engine workspace");
+    let request = request_for(
+        &workspace,
+        &document,
+        Limits {
+            timeout_s: Some(60),
+            max_memory_mb: Some(1024),
+            ..Limits::local()
+        },
+    );
+    let outcome =
+        run_engine(&request).expect("export styles with the real sandboxed Pandoc engine");
+    let bytes = fs::read(&outcome.artifacts[0].path).unwrap();
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut styles = String::new();
+    zip.by_name("word/styles.xml")
+        .unwrap()
+        .read_to_string(&mut styles)
+        .unwrap();
+    assert!(styles.contains("AriadPStyleBody"));
+    assert!(styles.contains("w:sz w:val=\"36\""));
+    assert!(styles.contains("w:color w:val=\"123456\""));
+    let mut content = String::new();
+    zip.by_name("word/document.xml")
+        .unwrap()
+        .read_to_string(&mut content)
+        .unwrap();
+    assert!(content.contains("w:pStyle w:val=\"AriadPStyleBody\""));
+    assert!(content.contains("w:rStyle w:val=\"AriadCDirect"));
+    workspace.close().expect("remove engine workspace");
 }

@@ -50,6 +50,7 @@ fn plain(content: &[Inline]) -> String {
         .map(|inline| match inline {
             Inline::Text { text } => text.clone(),
             Inline::Strong { content }
+            | Inline::Styled { content, .. }
             | Inline::Emph { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -83,14 +84,14 @@ fn maps_headings_paragraphs_and_metadata_without_the_file_name() {
     assert!(matches!(&ir.body[0], Block::Heading { level: 1, .. }));
     assert!(matches!(&ir.body[1], Block::Heading { level: 3, .. }));
     match &ir.body[2] {
-        Block::Paragraph { content } => assert_eq!(plain(content), "Vé đẹp"),
+        Block::Paragraph { content, .. } => assert_eq!(plain(content), "Vé đẹp"),
         other => panic!("expected paragraph, got {other:?}"),
     }
 
     let layout = ir.layout.expect("layout index");
     assert_eq!(layout.pages.len(), 1);
     assert_eq!(layout.pages[0].height, 800.0);
-    let position = &layout.blocks["body/0"];
+    let position = &layout.blocks[ir.body[0].id()];
     assert_eq!(position.page_no, 1);
     assert_eq!(position.bbox.left, 10.0);
     assert_eq!(position.bbox.top, 10.0);
@@ -151,7 +152,7 @@ fn groups_loose_list_items_and_joins_inline_runs() {
     );
     let ir = map(&doc).document;
     assert!(matches!(&ir.body[0], Block::List { items, .. } if items.len() == 2));
-    let Block::Paragraph { content } = &ir.body[1] else {
+    let Block::Paragraph { content, .. } = &ir.body[1] else {
         panic!("expected paragraph");
     };
     assert!(matches!(content[2], Inline::Strong { .. }));
@@ -193,6 +194,7 @@ fn maps_tables_with_spans_headers_captions_and_rich_cells() {
         head,
         body,
         footnotes,
+        ..
     } = &ir.body[0]
     else {
         panic!("expected table");
@@ -206,7 +208,7 @@ fn maps_tables_with_spans_headers_captions_and_rich_cells() {
     assert_eq!(body[0][1].rowspan, 2);
     assert_eq!(body[1].len(), 1);
     match &body[1][0].blocks[0] {
-        Block::Paragraph { content } => assert!(matches!(content[0], Inline::Strong { .. })),
+        Block::Paragraph { content, .. } => assert!(matches!(content[0], Inline::Strong { .. })),
         other => panic!("expected rich paragraph, got {other:?}"),
     }
 }
@@ -252,6 +254,7 @@ fn embeds_pictures_and_drops_pictures_without_data() {
     let Block::Figure {
         asset: AssetRef::Asset { id },
         caption,
+        ..
     } = &ir.body[0]
     else {
         panic!("expected figure");
@@ -285,7 +288,7 @@ fn moves_page_furniture_out_of_the_body() {
     assert_eq!(ir.body.len(), 1);
     assert_eq!(ir.furniture.len(), 1);
     assert!(
-        matches!(&ir.furniture[0], Block::Paragraph { content } if plain(content) == "Trang 1")
+        matches!(&ir.furniture[0], Block::Paragraph { content , ..} if plain(content) == "Trang 1")
     );
 }
 
@@ -304,10 +307,10 @@ fn applies_the_link_policy_and_keeps_code_verbatim() {
     let output = map(&doc);
     let ir = output.document;
     assert!(
-        matches!(&ir.body[0], Block::Paragraph { content } if matches!(&content[0], Inline::Link { url, .. } if url == "https://example.test/a"))
+        matches!(&ir.body[0], Block::Paragraph { content , ..} if matches!(&content[0], Inline::Link { url, .. } if url == "https://example.test/a"))
     );
     assert!(
-        matches!(&ir.body[1], Block::Paragraph { content } if matches!(&content[0], Inline::Text { .. }))
+        matches!(&ir.body[1], Block::Paragraph { content , ..} if matches!(&content[0], Inline::Text { .. }))
     );
     assert!(
         output
@@ -316,7 +319,7 @@ fn applies_the_link_policy_and_keeps_code_verbatim() {
             .any(|warning| warning.code == WarningCode::LinkDropped)
     );
     assert!(
-        matches!(&ir.body[2], Block::Code { lang: Some(lang), text } if lang == "rust" && text == "fn main() {}\n")
+        matches!(&ir.body[2], Block::Code { lang: Some(lang), text , ..} if lang == "rust" && text == "fn main() {}\n")
     );
 }
 
@@ -407,7 +410,7 @@ fn presentation_geometry_becomes_points_and_spreadsheets_have_no_layout() {
     let layout = ir.layout.expect("slide layout");
     assert_eq!(layout.pages[0].width, 720.0);
     assert_eq!(layout.pages[0].height, 540.0);
-    let position = &layout.blocks["body/0"];
+    let position = &layout.blocks[ir.body[0].id()];
     assert_eq!(position.bbox.left, 10.0);
     assert_eq!(position.bbox.top, 20.0);
     assert_eq!(position.bbox.right, 100.0);
@@ -436,12 +439,13 @@ fn layout_coordinates_are_rounded_to_a_thousandth_of_a_point() {
     slides["origin"] = json!({"mimetype": "application/vnd.openxmlformats-officedocument.presentationml.presentation", "binary_hash": 1, "filename": "deck.pptx"});
     slides["pages"] =
         json!({"1": {"size": {"width": 9144001.0, "height": 6858003.0}, "page_no": 1}});
-    let layout = map(&slides).document.layout.expect("slide layout");
+    let ir = map(&slides).document;
+    let layout = ir.layout.as_ref().expect("slide layout");
     let rounded = |value: f64| (value * 1000.0).round() / 1000.0;
     let page = &layout.pages[0];
     assert_eq!(page.width, 720.0);
     assert_eq!(page.height, 540.0);
-    let bbox = &layout.blocks["body/0"].bbox;
+    let bbox = &layout.blocks[ir.body[0].id()].bbox;
     for value in [bbox.left, bbox.top, bbox.right, bbox.bottom] {
         assert_eq!(value, rounded(value));
     }
@@ -529,9 +533,11 @@ fn a_title_whose_text_sits_in_an_inline_group_is_still_a_heading() {
     let ir = map(&doc).document;
     assert_eq!(ir.body.len(), 2, "the groups must not repeat as paragraphs");
     assert!(
-        matches!(&ir.body[0], Block::Heading { level: 1, content } if plain(content) == "Tiêu đề")
+        matches!(&ir.body[0], Block::Heading { level: 1, content , ..} if plain(content) == "Tiêu đề")
     );
-    assert!(matches!(&ir.body[1], Block::Heading { level: 2, content } if plain(content) == "Mục"));
+    assert!(
+        matches!(&ir.body[1], Block::Heading { level: 2, content , ..} if plain(content) == "Mục")
+    );
     assert_eq!(ir.meta.title.as_deref(), Some("Tiêu đề"));
 }
 
@@ -553,7 +559,7 @@ fn picture_footnotes_follow_the_figure() {
     assert_eq!(ir.body.len(), 2);
     assert!(matches!(&ir.body[0], Block::Figure { caption, .. } if plain(caption) == "Hình 2"));
     assert!(
-        matches!(&ir.body[1], Block::Paragraph { content } if plain(content) == "Nguồn: tác giả")
+        matches!(&ir.body[1], Block::Paragraph { content , ..} if plain(content) == "Nguồn: tác giả")
     );
 }
 

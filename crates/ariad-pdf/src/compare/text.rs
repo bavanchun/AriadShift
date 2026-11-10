@@ -69,7 +69,7 @@ pub fn union_bboxes(boxes: &[[f64; 4]]) -> [f64; 4] {
 fn block_text(block: &Block) -> String {
     let mut out = String::new();
     match block {
-        Block::Heading { content, .. } | Block::Paragraph { content } => {
+        Block::Heading { content, .. } | Block::Paragraph { content, .. } => {
             extract_inlines(content, &mut out);
         }
         Block::Code { text, .. } => {
@@ -78,7 +78,7 @@ fn block_text(block: &Block) -> String {
         Block::Math { tex, .. } => {
             out.push_str(tex);
         }
-        Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+        Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
             for b in blocks {
                 let t = block_text(b);
                 if !t.is_empty() {
@@ -131,7 +131,7 @@ fn block_text(block: &Block) -> String {
         Block::Raw { text, .. } => {
             out.push_str(text);
         }
-        Block::PageBreak {} => {}
+        Block::PageBreak { .. } => {}
     }
     out
 }
@@ -145,7 +145,8 @@ fn extract_inlines(inlines: &[Inline], out: &mut String) {
             Inline::Math { tex, .. } => {
                 out.push_str(tex);
             }
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -184,9 +185,8 @@ pub fn extract_words_from_reader(
     };
 
     // Iterate through blocks associated with `page_no` in reading order
-    for (idx, block) in doc.body.iter().enumerate() {
-        let path = format!("body/{idx}");
-        let Some(pos) = layout.blocks.get(&path) else {
+    for block in &doc.body {
+        let Some(pos) = layout.blocks.get(block.id()) else {
             continue;
         };
         if pos.page_no != page_no {

@@ -2,7 +2,7 @@
 
 use ariad_core::{
     docling::{ReadError, read},
-    ir::{AssetRef, Block},
+    ir::{AssetRef, Block, blocks_with_paths},
     limits::Limits,
 };
 use ariad_fuzz::{assert_blocks_depth, assert_document_nfc};
@@ -41,7 +41,11 @@ fuzz_target!(|data: &[u8]| {
                 assert_document_nfc(&document, max_depth);
 
                 // Every figure points at an embedded asset within the asset limit.
-                for block in document.body.iter().chain(&document.furniture) {
+                let blocks = blocks_with_paths(&document);
+                let ids: std::collections::BTreeSet<_> =
+                    blocks.iter().map(|(_, block)| block.id()).collect();
+                assert_eq!(ids.len(), document.block_count(), "block IDs are unique");
+                for (_, block) in &blocks {
                     if let Block::Figure {
                         asset: AssetRef::Asset { id },
                         ..
@@ -56,17 +60,8 @@ fuzz_target!(|data: &[u8]| {
 
                 // Layout positions name blocks that exist.
                 if let Some(layout) = &document.layout {
-                    for path in layout.blocks.keys() {
-                        let mut parts = path.split('/');
-                        let root = parts.next().unwrap();
-                        let index: usize = parts.next().unwrap().parse().unwrap();
-                        let len = if root == "body" {
-                            document.body.len()
-                        } else {
-                            assert_eq!(root, "furniture");
-                            document.furniture.len()
-                        };
-                        assert!(index < len, "layout path {path} names a missing block");
+                    for id in layout.blocks.keys() {
+                        assert!(ids.contains(id), "layout ID {id} names a missing block");
                     }
                 }
 

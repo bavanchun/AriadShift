@@ -1,3 +1,6 @@
+#[path = "docx_style_writer.rs"]
+mod docx_style_writer;
+use docx_style_writer::DocxStyles;
 use std::collections::{BTreeMap, BTreeSet};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -5,8 +8,8 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::{
     ir::{
-        Alignment as IrAlignment, AssetRef, Block as IrBlock, Document, Inline as IrInline,
-        ListItem, Metadata, RawFormat,
+        Alignment as IrAlignment, AssetRef, Block as IrBlock, CharacterStyle, Document,
+        Inline as IrInline, ListItem, Metadata, ParagraphStyle, RawFormat,
     },
     warning::{Warning, WarningCode},
 };
@@ -21,22 +24,54 @@ const DOCX_PAGE_BREAK: &str = "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>";
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapOutput {
     pub pandoc: Pandoc,
+    pub docx_styles: DocxStyles,
     pub warnings: Vec<Warning>,
 }
 
-/// Maps AriadShift IR to the Pandoc 1.23 JSON AST used by the DOCX writer.
+impl MapOutput {
+    /// Maps styles for DOCX, including its reserved heading and run-style rules.
+    #[must_use]
+    pub fn for_docx(document: &Document) -> Self {
+        map_document(document, true)
+    }
+}
+
+/// Maps AriadShift IR to the target-neutral Pandoc 1.23 JSON AST.
 #[must_use]
 pub fn from_ir(document: &Document) -> MapOutput {
+    map_document(document, false)
+}
+
+fn map_document(document: &Document, docx: bool) -> MapOutput {
+    let prohibited_fonts = document
+        .assets
+        .values()
+        .any(|asset| !asset.can_export_bytes());
+    let safe_document = prohibited_fonts.then(|| document.without_prohibited_fonts().0);
+    let document = safe_document.as_ref().unwrap_or(document);
     let mut footnotes = BTreeMap::new();
     collect_footnotes(&document.body, &mut footnotes);
 
     let mut mapper = Mapper {
         document,
+        docx,
+        docx_styles: DocxStyles::new(document),
+        character: document.styles.defaults.character.clone(),
+        table_character: None,
+        table_paragraph: None,
+        character_base: None,
         footnotes,
         used_footnotes: BTreeSet::new(),
         active_footnotes: BTreeSet::new(),
         warned_missing_footnotes: BTreeSet::new(),
-        warnings: Vec::new(),
+        warnings: if prohibited_fonts {
+            vec![Warning::new(
+                WarningCode::FontEmbeddingRestricted,
+                "Embedded font bytes with restricted or unknown permission were omitted; use the family fallback.",
+            )]
+        } else {
+            Vec::new()
+        },
     };
     let blocks = mapper.map_blocks(&document.body);
     for id in mapper.footnotes.keys() {
@@ -54,18 +89,26 @@ pub fn from_ir(document: &Document) -> MapOutput {
         ));
     }
 
+    mapper.warnings.extend(mapper.docx_styles.warnings());
     MapOutput {
         pandoc: Pandoc {
             meta: map_metadata(&document.meta),
             blocks,
             ..Pandoc::default()
         },
+        docx_styles: mapper.docx_styles,
         warnings: mapper.warnings,
     }
 }
 
 struct Mapper<'a> {
     document: &'a Document,
+    docx: bool,
+    docx_styles: DocxStyles,
+    character: CharacterStyle,
+    table_character: Option<CharacterStyle>,
+    table_paragraph: Option<ParagraphStyle>,
+    character_base: Option<crate::ir::StyleId>,
     footnotes: BTreeMap<String, &'a [IrBlock]>,
     used_footnotes: BTreeSet<String>,
     active_footnotes: BTreeSet<String>,
@@ -82,18 +125,120 @@ impl Mapper<'_> {
     }
 
     fn map_block(&mut self, block: &IrBlock) -> Vec<Block> {
+        let parent = self.character.clone();
+        let parent_table = self.table_character.clone();
+        let parent_paragraph = self.table_paragraph.clone();
+        let is_table = matches!(block, IrBlock::Table { .. });
+        let resolved = if is_table {
+            self.document
+                .styles
+                .resolve_table(block.style().as_ref(), block.direct(), 100)
+                .map(|table| {
+                    self.table_character = Some(table.character.clone());
+                    self.table_paragraph = Some(table.paragraph.clone());
+                    let name = self.docx_styles.table(&table, block.style().as_ref());
+                    (table.paragraph, name)
+                })
+        } else {
+            self.document
+                .styles
+                .resolve_paragraph_with_baseline(
+                    block.style().as_ref(),
+                    block.direct(),
+                    self.table_paragraph.as_ref(),
+                    100,
+                )
+                .map(|p| {
+                    let name =
+                        self.docx_styles
+                            .paragraph(block.style().as_ref(), block.direct(), &p);
+                    (p, name)
+                })
+        };
+        let (paragraph, mut name) = match resolved {
+            Ok(value) => value,
+            Err(error) => {
+                self.warnings
+                    .push(Warning::new(WarningCode::UnsupportedNode, error));
+                (ParagraphStyle::default(), None)
+            }
+        };
+        self.character.overlay(&CharacterStyle {
+            font: paragraph.font.clone(),
+            size_pt: paragraph.size_pt,
+            color: paragraph.color.clone(),
+            ..Default::default()
+        });
+        if let Some(table) = &self.table_character {
+            self.character.overlay(table);
+            let direct = if block.direct().based_on.is_some() {
+                &paragraph
+            } else {
+                block.direct()
+            };
+            self.character.overlay(&CharacterStyle {
+                font: direct.font.clone(),
+                size_pt: direct.size_pt,
+                color: direct.color.clone(),
+                ..Default::default()
+            });
+        }
+        let mut blocks = self.map_block_content(block);
+        if let IrBlock::Heading { level, .. } = block
+            && name.is_some()
+            && self.docx
+        {
+            // Pandoc reserves Header's style. An outline paragraph style keeps
+            // heading semantics while allowing a custom size/alignment/spacing.
+            name = Some(self.docx_styles.heading(&paragraph, *level));
+            for mapped in &mut blocks {
+                if let Block::Header(_, _, content) = mapped {
+                    *mapped = Block::Para(std::mem::take(content));
+                }
+            }
+        }
+        self.character = parent;
+        self.table_character = parent_table;
+        self.table_paragraph = parent_paragraph;
+        if let Some(name) = name {
+            if is_table {
+                if let Some(Block::Table(table)) = blocks.first_mut() {
+                    table.0.2.push(("custom-style".into(), name));
+                }
+            } else {
+                // Div custom styles apply to ordinary paragraphs. Header attributes
+                // retain the semantic heading and its named style for other writers.
+                for mapped in &mut blocks {
+                    if let Block::Header(_, attr, _) = mapped {
+                        attr.2.push(("custom-style".into(), name.clone()));
+                    }
+                }
+                blocks = vec![Block::Div(
+                    (
+                        String::new(),
+                        Vec::new(),
+                        vec![("custom-style".into(), name)],
+                    ),
+                    blocks,
+                )];
+            }
+        }
+        blocks
+    }
+
+    fn map_block_content(&mut self, block: &IrBlock) -> Vec<Block> {
         match block {
-            IrBlock::Heading { level, content } => {
+            IrBlock::Heading { level, content, .. } => {
                 vec![Block::Header(
                     *level,
                     empty_attr(),
                     self.map_inlines(content),
                 )]
             }
-            IrBlock::Paragraph { content } => {
+            IrBlock::Paragraph { content, .. } => {
                 vec![Block::Para(self.map_inlines(content))]
             }
-            IrBlock::Code { lang, text } => {
+            IrBlock::Code { lang, text, .. } => {
                 let classes = lang
                     .as_deref()
                     .filter(|language| !language.is_empty())
@@ -103,7 +248,7 @@ impl Mapper<'_> {
                     text.clone(),
                 )]
             }
-            IrBlock::Math { tex, display } => {
+            IrBlock::Math { tex, display, .. } => {
                 let math_type = if *display {
                     MathType::DisplayMath
                 } else {
@@ -111,8 +256,8 @@ impl Mapper<'_> {
                 };
                 vec![Block::Para(vec![Inline::Math(math_type, tex.clone())])]
             }
-            IrBlock::Quote { blocks } => vec![Block::BlockQuote(self.map_blocks(blocks))],
-            IrBlock::PageBreak {} => vec![Block::RawBlock(
+            IrBlock::Quote { blocks, .. } => vec![Block::BlockQuote(self.map_blocks(blocks))],
+            IrBlock::PageBreak { .. } => vec![Block::RawBlock(
                 "openxml".to_owned(),
                 DOCX_PAGE_BREAK.to_owned(),
             )],
@@ -121,6 +266,7 @@ impl Mapper<'_> {
                 start,
                 tight,
                 items,
+                ..
             } => {
                 let items = items
                     .iter()
@@ -145,6 +291,7 @@ impl Mapper<'_> {
                 head,
                 body,
                 footnotes,
+                ..
             } => {
                 if !footnotes.is_empty() {
                     self.warnings.push(Warning::new(
@@ -175,7 +322,7 @@ impl Mapper<'_> {
                     (empty_attr(), Vec::new()),
                 )))]
             }
-            IrBlock::Figure { asset, caption } => {
+            IrBlock::Figure { asset, caption, .. } => {
                 let mapped_caption = self.map_inlines(caption);
                 if let Some(target) = self.embedded_asset_target(asset) {
                     let caption_blocks = if mapped_caption.is_empty() {
@@ -195,7 +342,7 @@ impl Mapper<'_> {
                 }
             }
             IrBlock::Footnote { .. } => Vec::new(),
-            IrBlock::Raw { format, text } => {
+            IrBlock::Raw { format, text, .. } => {
                 self.warn_raw_dropped(*format, "block");
                 vec![Block::RawBlock(raw_format(*format), text.clone())]
             }
@@ -257,10 +404,106 @@ impl Mapper<'_> {
     }
 
     fn map_inline(&mut self, inline: &IrInline) -> Vec<Inline> {
+        let mapped = self.map_inline_content(inline);
+        if matches!(
+            inline,
+            IrInline::Styled { .. }
+                | IrInline::Emph { .. }
+                | IrInline::Strong { .. }
+                | IrInline::Strikeout { .. }
+                | IrInline::Superscript { .. }
+                | IrInline::Subscript { .. }
+                | IrInline::Link { .. }
+        ) {
+            return mapped;
+        }
+        if let Some(name) = self
+            .docx_styles
+            .character(&self.character, self.character_base.as_ref())
+        {
+            vec![Inline::Span(
+                (
+                    String::new(),
+                    Vec::new(),
+                    vec![("custom-style".into(), name)],
+                ),
+                mapped,
+            )]
+        } else {
+            mapped
+        }
+    }
+
+    fn semantic_character(&mut self, content: &[IrInline], direct: CharacterStyle) -> Vec<Inline> {
+        let parent = self.character.clone();
+        self.character.overlay(&direct);
+        let mapped = self.map_inlines(content);
+        self.character = parent;
+        mapped
+    }
+    fn map_inline_content(&mut self, inline: &IrInline) -> Vec<Inline> {
         match inline {
             IrInline::Text { text } => text_inlines(text),
+            IrInline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                let parent = self.character.clone();
+                let parent_base = self.character_base.clone();
+                if style.is_some() {
+                    self.character_base.clone_from(style);
+                }
+                match self
+                    .document
+                    .styles
+                    .resolve_character(style.as_ref(), direct, Some(&parent))
+                {
+                    Ok(resolved) => self.character = resolved,
+                    Err(error) => self
+                        .warnings
+                        .push(Warning::new(WarningCode::UnsupportedNode, error)),
+                }
+                let mapped = self.map_inlines(content);
+                self.character = parent;
+                self.character_base = parent_base;
+                mapped
+            }
+            IrInline::Emph { content }
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        italic: Some(true),
+                        ..Default::default()
+                    },
+                )
+            }
             IrInline::Emph { content } => vec![Inline::Emph(self.map_inlines(content))],
+            IrInline::Strong { content }
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        weight: Some(700),
+                        ..Default::default()
+                    },
+                )
+            }
             IrInline::Strong { content } => vec![Inline::Strong(self.map_inlines(content))],
+            IrInline::Strikeout { content }
+                if self.docx && (!self.character.is_empty() || contains_styled(content)) =>
+            {
+                self.semantic_character(
+                    content,
+                    CharacterStyle {
+                        strike: Some(true),
+                        ..Default::default()
+                    },
+                )
+            }
             IrInline::Strikeout { content } => {
                 vec![Inline::Strikeout(self.map_inlines(content))]
             }
@@ -438,6 +681,7 @@ fn plain_text(inlines: &[IrInline]) -> String {
             IrInline::Text { text: val } | IrInline::Code { text: val } => text.push_str(val),
             IrInline::Math { tex, .. } => text.push_str(tex),
             IrInline::Link { content, .. }
+            | IrInline::Styled { content, .. }
             | IrInline::Emph { content }
             | IrInline::Strong { content }
             | IrInline::Strikeout { content }
@@ -500,7 +744,7 @@ fn collect_footnotes<'a>(blocks: &'a [IrBlock], footnotes: &mut BTreeMap<String,
     let mut pending: Vec<&'a IrBlock> = blocks.iter().rev().collect();
     while let Some(block) = pending.pop() {
         match block {
-            IrBlock::Quote { blocks } => pending.extend(blocks.iter().rev()),
+            IrBlock::Quote { blocks, .. } => pending.extend(blocks.iter().rev()),
             IrBlock::List { items, .. } => {
                 pending.extend(items.iter().flat_map(|item| item.blocks.iter().rev()));
             }
@@ -512,7 +756,11 @@ fn collect_footnotes<'a>(blocks: &'a [IrBlock], footnotes: &mut BTreeMap<String,
                         .flat_map(|cell| cell.blocks.iter().rev()),
                 );
             }
-            IrBlock::Footnote { id, blocks } => {
+            IrBlock::Footnote {
+                note_id: id,
+                blocks,
+                ..
+            } => {
                 footnotes.entry(id.clone()).or_insert(blocks);
                 pending.extend(blocks.iter().rev());
             }
@@ -520,11 +768,37 @@ fn collect_footnotes<'a>(blocks: &'a [IrBlock], footnotes: &mut BTreeMap<String,
             | IrBlock::Paragraph { .. }
             | IrBlock::Code { .. }
             | IrBlock::Math { .. }
-            | IrBlock::PageBreak {}
+            | IrBlock::PageBreak { .. }
             | IrBlock::Figure { .. }
             | IrBlock::Raw { .. } => {}
         }
     }
+}
+
+fn contains_styled(inlines: &[IrInline]) -> bool {
+    let mut pending: Vec<_> = inlines.iter().collect();
+    while let Some(inline) = pending.pop() {
+        match inline {
+            IrInline::Styled {
+                style,
+                direct,
+                content,
+            } => {
+                if style.is_some() || !direct.is_empty() {
+                    return true;
+                }
+                pending.extend(content);
+            }
+            IrInline::Emph { content }
+            | IrInline::Strong { content }
+            | IrInline::Strikeout { content }
+            | IrInline::Superscript { content }
+            | IrInline::Subscript { content }
+            | IrInline::Link { content, .. } => pending.extend(content),
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -554,7 +828,8 @@ mod tests {
                 source_format: None,
             },
             ..Document::default()
-        };
+        }
+        .finalize_import();
 
         let output = from_ir(&document);
         assert_eq!(
@@ -579,12 +854,18 @@ mod tests {
         let document = Document {
             body: vec![
                 IrBlock::Heading {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     level: 2,
                     content: vec![IrInline::Text {
                         text: "A title".to_owned(),
                     }],
                 },
                 IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![
                         IrInline::Emph {
                             content: vec![IrInline::Text {
@@ -627,28 +908,48 @@ mod tests {
                     ],
                 },
                 IrBlock::Code {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     lang: Some("rust".to_owned()),
                     text: "fn main() {}".to_owned(),
                 },
                 IrBlock::Math {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     tex: "x = 2".to_owned(),
                     display: true,
                 },
                 IrBlock::Quote {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     blocks: vec![IrBlock::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![IrInline::Text {
                             text: "quoted".to_owned(),
                         }],
                     }],
                 },
-                IrBlock::PageBreak {},
+                IrBlock::PageBreak {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                },
                 IrBlock::Raw {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     format: RawFormat::Tex,
                     text: "\\emph{x}".to_owned(),
                 },
             ],
             ..Document::default()
-        };
+        }
+        .finalize_import();
 
         let output = from_ir(&document);
         assert!(matches!(output.pandoc.blocks[0], Block::Header(2, _, _)));
@@ -684,12 +985,18 @@ mod tests {
         let document = Document {
             body: vec![
                 IrBlock::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: false,
                     start: None,
                     tight: true,
                     items: vec![ListItem {
                         checked: Some(true),
                         blocks: vec![IrBlock::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![IrInline::Text {
                                 text: "done".to_owned(),
                             }],
@@ -697,12 +1004,18 @@ mod tests {
                     }],
                 },
                 IrBlock::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: true,
                     start: Some(3),
                     tight: false,
                     items: vec![ListItem {
                         checked: None,
                         blocks: vec![IrBlock::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![IrInline::Text {
                                 text: "item".to_owned(),
                             }],
@@ -711,7 +1024,8 @@ mod tests {
                 },
             ],
             ..Document::default()
-        };
+        }
+        .finalize_import();
 
         let output = from_ir(&document);
         assert!(
@@ -728,6 +1042,9 @@ mod tests {
         let mut document = Document {
             body: vec![
                 IrBlock::Table {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     caption: Some(vec![IrInline::Text {
                         text: "Caption".to_owned(),
                     }]),
@@ -739,6 +1056,9 @@ mod tests {
                         colspan: 2,
                         header: None,
                         blocks: vec![IrBlock::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![IrInline::Text {
                                 text: "head".to_owned(),
                             }],
@@ -749,6 +1069,9 @@ mod tests {
                         colspan: 1,
                         header: None,
                         blocks: vec![IrBlock::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![IrInline::Text {
                                 text: "body".to_owned(),
                             }],
@@ -757,6 +1080,9 @@ mod tests {
                     footnotes: Vec::new(),
                 },
                 IrBlock::Figure {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     asset: AssetRef::Asset {
                         id: "figure".to_owned(),
                     },
@@ -766,10 +1092,12 @@ mod tests {
                 },
             ],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         document.assets.insert(
             "figure".to_owned(),
             Asset {
+                font: None,
                 media_type: "image/png".to_owned(),
                 bytes: vec![1, 2, 3],
             },
@@ -789,6 +1117,9 @@ mod tests {
     fn populates_figure_image_alt_with_caption_plain_text() {
         let mut document = Document {
             body: vec![IrBlock::Figure {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 asset: AssetRef::Asset {
                     id: "diagram".to_owned(),
                 },
@@ -808,10 +1139,12 @@ mod tests {
                 ],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         document.assets.insert(
             "diagram".to_owned(),
             Asset {
+                font: None,
                 media_type: "image/png".to_owned(),
                 bytes: vec![1, 2, 3],
             },
@@ -844,6 +1177,9 @@ mod tests {
     fn embeds_assets_and_reduces_url_images_to_alt_text() {
         let mut document = Document {
             body: vec![IrBlock::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![
                     IrInline::Image {
                         target: AssetRef::Asset {
@@ -862,10 +1198,12 @@ mod tests {
                 ],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         document.assets.insert(
             "asset".to_owned(),
             Asset {
+                font: None,
                 media_type: "image/png".to_owned(),
                 bytes: vec![0, 1, 2, 255],
             },
@@ -914,10 +1252,18 @@ mod tests {
                 }],
             });
         }
-        let output = from_ir(&Document {
-            body: vec![IrBlock::Paragraph { content }],
-            ..Document::default()
-        });
+        let output = from_ir(
+            &Document {
+                body: vec![IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content,
+                }],
+                ..Document::default()
+            }
+            .finalize_import(),
+        );
 
         assert!(
             matches!(&output.pandoc.blocks[0], Block::Para(content) if content.iter().filter(|inline| matches!(inline, Inline::Link(..))).count() == 4 && content.iter().any(|inline| matches!(inline, Inline::Str(text) if text == "shown")))
@@ -941,6 +1287,9 @@ mod tests {
         let document = Document {
             body: vec![
                 IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![
                         IrInline::Text {
                             text: "note".to_owned(),
@@ -954,20 +1303,30 @@ mod tests {
                     ],
                 },
                 IrBlock::Footnote {
-                    id: "used".to_owned(),
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    note_id: "used".to_owned(),
                     blocks: vec![IrBlock::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![IrInline::Text {
                             text: "defined".to_owned(),
                         }],
                     }],
                 },
                 IrBlock::Footnote {
-                    id: "unused".to_owned(),
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    note_id: "unused".to_owned(),
                     blocks: Vec::new(),
                 },
             ],
             ..Document::default()
-        };
+        }
+        .finalize_import();
 
         let output = from_ir(&document);
         assert!(
@@ -993,23 +1352,29 @@ mod tests {
 
     #[test]
     fn emits_exact_json_for_a_paragraph_and_reduces_unsafe_links() {
-        let output = from_ir(&Document {
-            body: vec![IrBlock::Paragraph {
-                content: vec![
-                    IrInline::Text {
-                        text: "Hello world".to_owned(),
-                    },
-                    IrInline::Link {
-                        url: "https://example.test".to_owned(),
-                        title: None,
-                        content: vec![IrInline::Text {
-                            text: "site".to_owned(),
-                        }],
-                    },
-                ],
-            }],
-            ..Document::default()
-        });
+        let output = from_ir(
+            &Document {
+                body: vec![IrBlock::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                    content: vec![
+                        IrInline::Text {
+                            text: "Hello world".to_owned(),
+                        },
+                        IrInline::Link {
+                            url: "https://example.test".to_owned(),
+                            title: None,
+                            content: vec![IrInline::Text {
+                                text: "site".to_owned(),
+                            }],
+                        },
+                    ],
+                }],
+                ..Document::default()
+            }
+            .finalize_import(),
+        );
         assert_eq!(
             serde_json::to_string(&output.pandoc).unwrap(),
             r#"{"pandoc-api-version":[1,23],"meta":{},"blocks":[{"t":"Para","c":[{"t":"Str","c":"Hello"},{"t":"Space"},{"t":"Str","c":"world"},{"t":"Link","c":[["",[],[]],[{"t":"Str","c":"site"}],["https://example.test",""]]}]}]}"#
@@ -1023,12 +1388,16 @@ mod tests {
         // 1. Furniture
         let doc_with_furniture = Document {
             furniture: vec![IrBlock::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![IrInline::Text {
                     text: "Header text".to_owned(),
                 }],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         let out_furniture = from_ir(&doc_with_furniture);
         assert!(out_furniture.warnings.iter().any(|w| {
             w.code == WarningCode::UnsupportedNode && w.message.contains("document furniture")
@@ -1037,6 +1406,9 @@ mod tests {
         // 2. Table footnotes
         let doc_with_table_footnotes = Document {
             body: vec![IrBlock::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -1048,7 +1420,8 @@ mod tests {
                 }],
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         let out_table_footnotes = from_ir(&doc_with_table_footnotes);
         assert!(out_table_footnotes.warnings.iter().any(|w| {
             w.code == WarningCode::UnsupportedNode && w.message.contains("table footnotes")
@@ -1057,6 +1430,9 @@ mod tests {
         // 3. Cell header
         let doc_with_cell_header = Document {
             body: vec![IrBlock::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -1067,6 +1443,9 @@ mod tests {
                     colspan: 1,
                     header: Some(true),
                     blocks: vec![IrBlock::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![IrInline::Text {
                             text: "Row header".to_owned(),
                         }],
@@ -1075,7 +1454,8 @@ mod tests {
                 footnotes: Vec::new(),
             }],
             ..Document::default()
-        };
+        }
+        .finalize_import();
         let out_cell_header = from_ir(&doc_with_cell_header);
         assert!(out_cell_header.warnings.iter().any(|w| {
             w.code == WarningCode::UnsupportedNode && w.message.contains("table cell header")

@@ -226,7 +226,7 @@ fn every_phase_zero_markdown_fixture_has_a_reviewable_docx_golden() {
         let package = read_package(&output);
         let snapshot = package_snapshot(&package);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../fixtures/golden/v2",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -423,7 +423,24 @@ fn captioned_html_figure_preserves_image_descr_in_docx() {
     );
 
     let roundtrip = fs::read_to_string(&roundtrip_html).expect("read round-trip HTML");
-    assert!(roundtrip.contains("<figure>"));
+    assert!(roundtrip.contains("<figure"), "{roundtrip}");
     assert!(roundtrip.contains("alt=\"Sơ đồ tuyến đi bộ\""));
-    assert!(roundtrip.contains("<figcaption>Sơ đồ tuyến đi bộ</figcaption>"));
+    let parsed =
+        ariad_core::reader::html::read(roundtrip.as_bytes(), &ariad_core::limits::Limits::local())
+            .expect("read styled figure HTML");
+    assert!(
+        parsed
+            .document
+            .body
+            .iter()
+            .any(|block| matches!(block, ariad_core::ir::Block::Figure { .. })),
+        "styled figure must survive HTML read-back: {:?}\n{roundtrip}",
+        parsed.document.body
+    );
+    assert_eq!(
+        ariad_core::fidelity::observe(&parsed.document)
+            .unwrap()
+            .text,
+        "Sơ đồ tuyến đi bộ"
+    );
 }

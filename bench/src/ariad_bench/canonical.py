@@ -131,6 +131,7 @@ class CanonicalDoc:
     lists: list[ListStructure] = field(default_factory=list)
     image_count: int = 0
     link_count: int = 0
+    observations: dict[str, Any] | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -140,6 +141,7 @@ class CanonicalDoc:
             "lists": [lst.to_dict() for lst in self.lists],
             "image_count": self.image_count,
             "link_count": self.link_count,
+            **({"observations": self.observations} if self.observations is not None else {}),
         }
 
     @classmethod
@@ -153,6 +155,7 @@ class CanonicalDoc:
             lists=[ListStructure.from_dict(lst) for lst in (data.get("lists") or [])],
             image_count=max(0, int(data.get("image_count", 0))),
             link_count=max(0, int(data.get("link_count", 0))),
+            observations=data.get("observations"),
         )
 
 
@@ -179,6 +182,11 @@ def _build_heading_tree(flat_headings: list[tuple[int, str]]) -> list[HeadingNod
 
 def from_ir(doc: dict[str, Any]) -> CanonicalDoc:
     """Extract canonical document representation from an AriadShift IR JSON document."""
+    from ariad_bench.fidelity import observe_ir
+    try:
+        observations = observe_ir(doc)
+    except (ValueError, KeyError, TypeError, RecursionError) as error:
+        observations = {"unavailable_reason": str(error)}
     text_pieces: list[str] = []
     deferred_footnotes: list[str] = []
     flat_headings: list[tuple[int, str]] = []
@@ -192,7 +200,7 @@ def from_ir(doc: dict[str, Any]) -> CanonicalDoc:
             inline_type = inline.get("type", "")
             if inline_type == "text":
                 parts.append(inline.get("text", ""))
-            elif inline_type in ("emph", "strong", "strikeout", "superscript", "subscript"):
+            elif inline_type in ("emph", "strong", "strikeout", "superscript", "subscript", "styled"):
                 parts.append(process_inlines(inline.get("content", [])))
             elif inline_type == "code":
                 parts.append(inline.get("text", ""))
@@ -380,6 +388,7 @@ def from_ir(doc: dict[str, Any]) -> CanonicalDoc:
         lists=lists,
         image_count=counts["images"],
         link_count=counts["links"],
+        observations=observations,
     )
 
 
@@ -671,7 +680,10 @@ def normalize(source: Any) -> CanonicalDoc:
     if isinstance(data, dict):
         # 1. Authored truth file containing "canonical"
         if "canonical" in data and isinstance(data["canonical"], dict):
-            return CanonicalDoc.from_dict(data["canonical"])
+            result = CanonicalDoc.from_dict(data["canonical"])
+            if isinstance(data.get("ir"), dict):
+                result.observations = from_ir(data["ir"]).observations
+            return result
 
         # 1b. Authored truth file containing "ir"
         if "ir" in data and isinstance(data["ir"], dict):

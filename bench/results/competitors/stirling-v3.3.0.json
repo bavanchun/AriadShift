@@ -1,0 +1,1953 @@
+{
+  "artifact_directory": "runs/5196da072d1c4a5ab082e466ebc193ff",
+  "ashift_sha256": "f019dbab67842f3388dcc1399e3f6401d2f75ce37ac4a0fcefb63dd3891ed6ed",
+  "cleanup": "completed",
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}"
+      ],
+      "elapsed_ms": 32.040762998803984,
+      "exit_code": 0,
+      "pid": 1892728,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "version",
+        "--format",
+        "{{json .Server}}"
+      ],
+      "elapsed_ms": 32.14922700135503,
+      "exit_code": 0,
+      "pid": 1892758,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "image",
+        "inspect",
+        "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
+      ],
+      "elapsed_ms": 64.06669699936174,
+      "exit_code": 0,
+      "pid": 1892778,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "create",
+        "--internal",
+        "--driver",
+        "bridge",
+        "--label",
+        "org.ariadshift.benchmark.owner=b8ed2011c2f74d29920b9a99144dfb28",
+        "ariad-bench-network-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 64.09846699534683,
+      "exit_code": 0,
+      "pid": 1892791,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "inspect",
+        "ariad-bench-network-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 31.913111000903882,
+      "exit_code": 0,
+      "pid": 1892819,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "create",
+        "--name",
+        "ariad-bench-stirling-b8ed2011c2f7",
+        "--label",
+        "org.ariadshift.benchmark.owner=b8ed2011c2f74d29920b9a99144dfb28",
+        "--network",
+        "ariad-bench-network-b8ed2011c2f7",
+        "--memory",
+        "3g",
+        "--cpus",
+        "2",
+        "--pids-limit",
+        "512",
+        "--security-opt",
+        "no-new-privileges",
+        "--env",
+        "SECURITY_ENABLELOGIN=false",
+        "--env",
+        "SYSTEM_ENABLEANALYTICS=false",
+        "--env",
+        "SYSTEM_ENABLEPOSTHOG=false",
+        "--env",
+        "SYSTEM_ENABLESCARF=false",
+        "--env",
+        "SYSTEM_DEFAULTLOCALE=en-US",
+        "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
+      ],
+      "elapsed_ms": 264.44303199969,
+      "exit_code": 0,
+      "pid": 1892832,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "start",
+        "ariad-bench-stirling-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 214.91912100464106,
+      "exit_code": 0,
+      "pid": 1892851,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "container",
+        "inspect",
+        "ariad-bench-stirling-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 32.02606499689864,
+      "exit_code": 0,
+      "pid": 1892946,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/heavy/en-map.pdf",
+        "--to",
+        "docx",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/probe-ariadshift-pdf.docx",
+        "--overwrite",
+        "--engine",
+        "pdf"
+      ],
+      "elapsed_ms": 414.6301049986505,
+      "exit_code": 0,
+      "pid": 1895470,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/heavy/en-map.docx",
+        "--to",
+        "pdf",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/probe-ariadshift-docx.pdf",
+        "--overwrite"
+      ],
+      "elapsed_ms": 1917.7665030001663,
+      "exit_code": 0,
+      "pid": 1896112,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.pdf",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/source.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 114.17990300105885,
+      "exit_code": 0,
+      "pid": 1896389,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.pdf",
+        "--to",
+        "docx",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/output-1.docx",
+        "--overwrite",
+        "--engine",
+        "pdf"
+      ],
+      "elapsed_ms": 414.84417299943743,
+      "exit_code": 0,
+      "pid": 1896422,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-1.docx",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-1.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 214.42749199923128,
+      "exit_code": 0,
+      "pid": 1896495,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-2.docx",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-2.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 164.17736500443425,
+      "exit_code": 0,
+      "pid": 1896524,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-3.docx",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-3.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 164.23871999722905,
+      "exit_code": 0,
+      "pid": 1896559,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.pdf",
+        "--to",
+        "docx",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/output-4.docx",
+        "--overwrite",
+        "--engine",
+        "pdf"
+      ],
+      "elapsed_ms": 464.97814200120047,
+      "exit_code": 0,
+      "pid": 1896580,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-4.docx",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-4.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 214.64436200039927,
+      "exit_code": 0,
+      "pid": 1896642,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.pdf",
+        "--to",
+        "docx",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/output-5.docx",
+        "--overwrite",
+        "--engine",
+        "pdf"
+      ],
+      "elapsed_ms": 465.055246000702,
+      "exit_code": 0,
+      "pid": 1896718,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-5.docx",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-5.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 214.5734369987622,
+      "exit_code": 0,
+      "pid": 1896786,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-6.docx",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-6.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 164.13308100163704,
+      "exit_code": 0,
+      "pid": 1896958,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.docx",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/source.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 314.6616060039378,
+      "exit_code": 0,
+      "pid": 1896979,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.docx",
+        "--to",
+        "pdf",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/output-7.pdf",
+        "--overwrite"
+      ],
+      "elapsed_ms": 2068.334210998728,
+      "exit_code": 0,
+      "pid": 1897000,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-7.pdf",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-7.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 114.19751700304914,
+      "exit_code": 0,
+      "pid": 1897239,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-8.pdf",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-8.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 114.27192600240232,
+      "exit_code": 0,
+      "pid": 1897254,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-9.pdf",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-9.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 114.67796200304292,
+      "exit_code": 0,
+      "pid": 1897273,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.docx",
+        "--to",
+        "pdf",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/output-10.pdf",
+        "--overwrite"
+      ],
+      "elapsed_ms": 1817.5521209996077,
+      "exit_code": 0,
+      "pid": 1897277,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-10.pdf",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-10.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 114.31430599623127,
+      "exit_code": 0,
+      "pid": 1897535,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "convert",
+        "${WORKTREE}/fixtures/editor/vi-styled-pair.docx",
+        "--to",
+        "pdf",
+        "--profile",
+        "editable",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/output-11.pdf",
+        "--overwrite"
+      ],
+      "elapsed_ms": 1867.7334649983095,
+      "exit_code": 0,
+      "pid": 1897539,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-11.pdf",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-11.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 114.21655099547934,
+      "exit_code": 0,
+      "pid": 1897713,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "${ASHIFT_BIN}",
+        "__ir",
+        "/tmp/ariad-competitors-3awni1c_/output-12.pdf",
+        "-o",
+        "/tmp/ariad-competitors-3awni1c_/readback-12.json",
+        "--overwrite"
+      ],
+      "elapsed_ms": 114.08679700252833,
+      "exit_code": 0,
+      "pid": 1897752,
+      "timeout_s": 120
+    },
+    {
+      "command": [
+        "docker",
+        "container",
+        "inspect",
+        "ariad-bench-stirling-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 64.74446100037312,
+      "exit_code": 0,
+      "pid": 1897756,
+      "timeout_s": 5
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "3",
+        "ariad-bench-stirling-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 3271.437280003738,
+      "exit_code": 0,
+      "pid": 1897768,
+      "timeout_s": 10
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "ariad-bench-stirling-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 164.3119159998605,
+      "exit_code": 0,
+      "pid": 1897939,
+      "timeout_s": 5
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "inspect",
+        "ariad-bench-network-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 32.131039995874744,
+      "exit_code": 0,
+      "pid": 1897952,
+      "timeout_s": 5
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "rm",
+        "ariad-bench-network-b8ed2011c2f7"
+      ],
+      "elapsed_ms": 114.28751399944304,
+      "exit_code": 0,
+      "pid": 1897964,
+      "timeout_s": 5
+    }
+  ],
+  "comparisons": {
+    "docx->pdf": {
+      "gates": {
+        "layout_iou": null,
+        "style_accuracy": false,
+        "table_f1": true,
+        "text_cer": true
+      },
+      "products": {
+        "ariadshift": {
+          "layout_iou": {
+            "expected": 3,
+            "mean": null,
+            "observed": 0
+          },
+          "style_accuracy": {
+            "expected": 3,
+            "mean": 0.4,
+            "observed": 3
+          },
+          "table_f1": {
+            "expected": 3,
+            "mean": 0.0,
+            "observed": 3
+          },
+          "text_cer": {
+            "expected": 3,
+            "mean": 0.3728813559322034,
+            "observed": 3
+          }
+        },
+        "stirling": {
+          "layout_iou": {
+            "expected": 3,
+            "mean": null,
+            "observed": 0
+          },
+          "style_accuracy": {
+            "expected": 3,
+            "mean": 0.64,
+            "observed": 3
+          },
+          "table_f1": {
+            "expected": 3,
+            "mean": 0.0,
+            "observed": 3
+          },
+          "text_cer": {
+            "expected": 3,
+            "mean": 0.3728813559322034,
+            "observed": 3
+          }
+        }
+      },
+      "status": "incomplete",
+      "style_delta_pp": -24.0,
+      "style_relative_percent": -37.5
+    },
+    "pdf->docx": {
+      "gates": {
+        "layout_iou": null,
+        "style_accuracy": true,
+        "table_f1": true,
+        "text_cer": true
+      },
+      "products": {
+        "ariadshift": {
+          "layout_iou": {
+            "expected": 3,
+            "mean": null,
+            "observed": 0
+          },
+          "style_accuracy": {
+            "expected": 3,
+            "mean": 0.68,
+            "observed": 3
+          },
+          "table_f1": {
+            "expected": 3,
+            "mean": 0.0,
+            "observed": 3
+          },
+          "text_cer": {
+            "expected": 3,
+            "mean": 0.3728813559322034,
+            "observed": 3
+          }
+        },
+        "stirling": {
+          "layout_iou": {
+            "expected": 3,
+            "mean": null,
+            "observed": 0
+          },
+          "style_accuracy": {
+            "expected": 3,
+            "mean": 0.0,
+            "observed": 3
+          },
+          "table_f1": {
+            "expected": 3,
+            "mean": 0.0,
+            "observed": 3
+          },
+          "text_cer": {
+            "expected": 3,
+            "mean": 0.9067796610169492,
+            "observed": 3
+          }
+        }
+      },
+      "status": "incomplete",
+      "style_delta_pp": 68.0,
+      "style_relative_percent": null
+    }
+  },
+  "config_sha256": "0295ba30775555230225736c763f55f02a3c148e2dd15960bcc1afdb3083f8c2",
+  "environment": {
+    "architecture": "x86_64",
+    "os": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "python": "3.14.8"
+  },
+  "fixtures": [
+    {
+      "id": "fixtures/editor/vi-styled-pair",
+      "sources": {
+        "docx": {
+          "path": "fixtures/editor/vi-styled-pair.docx",
+          "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
+          "truth": "fixtures/editor/vi-styled-pair-docx.truth.json",
+          "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+        },
+        "pdf": {
+          "path": "fixtures/editor/vi-styled-pair.pdf",
+          "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+          "truth": "fixtures/editor/vi-styled-pair-pdf.truth.json",
+          "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+        }
+      }
+    }
+  ],
+  "gaps": [],
+  "generated_at": "2026-11-10T06:33:34.791994+00:00",
+  "image": {
+    "docker_version": "29.9.2",
+    "id": "sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7",
+    "license_labels": {
+      "org.opencontainers.image.licenses": "NOASSERTION"
+    },
+    "network_internal": true,
+    "openapi_sha256": "d3d2d9176077f58112f04f9bd004d8a048a7273f54541a879c134ae15ded72cd",
+    "openapi_version": "3.3.0",
+    "platform": "linux/amd64",
+    "reference": "stirlingtools/stirling-pdf:3.3.0@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7",
+    "repo_digests": [
+      "stirlingtools/stirling-pdf@sha256:b670779e1984ab3b7d2009d34b4fff63f6294aeb2325c97dc93f5f616bf4b9c7"
+    ]
+  },
+  "kind": "corpus",
+  "metadata_redactions": {
+    "ASHIFT_BIN": "explicit hashed conversion binary",
+    "HOME": "user home directory",
+    "WORKTREE": "repository checkout"
+  },
+  "policy": {
+    "auxiliary_renderer": null,
+    "ocr": "off",
+    "profile": "editable"
+  },
+  "probe_samples": [
+    {
+      "conversion_ms": 415.10619199834764,
+      "output_sha256": "d402f5958317c8566ce8b0982542f3abe20b6ce3587fc1e4ca0eeb572ec71bcc",
+      "product": "ariadshift",
+      "route": "pdf->docx",
+      "sha256": "9956e5ec5ca2d86b482eeed5859fa880b0f06b24587a95e9e9f50264245e334b",
+      "status": "converted"
+    },
+    {
+      "conversion_ms": 9353.154505995917,
+      "output_sha256": "52b300077fa5c818ae078d703f58e3fcfe3328b09569e0817373881ffd20d2b1",
+      "product": "stirling",
+      "route": "pdf->docx",
+      "sha256": "9956e5ec5ca2d86b482eeed5859fa880b0f06b24587a95e9e9f50264245e334b",
+      "status": "converted"
+    },
+    {
+      "conversion_ms": 1918.6307529962505,
+      "output_sha256": "f6447586edbd2ea71bbeb65463ffe1fe137d8081936ec1f5d1888435370b34fa",
+      "product": "ariadshift",
+      "route": "docx->pdf",
+      "sha256": "438042061d630dd60569766e37959e00c7f01337941c5ecb1067509e5560e6a7",
+      "status": "converted"
+    },
+    {
+      "conversion_ms": 726.1072940018494,
+      "output_sha256": "ce29684c892ecdc29619695b85e0d616fc2bb0360f39e151d79c7d80776e2c87",
+      "product": "stirling",
+      "route": "docx->pdf",
+      "sha256": "438042061d630dd60569766e37959e00c7f01337941c5ecb1067509e5560e6a7",
+      "status": "converted"
+    }
+  ],
+  "repeat": 3,
+  "resources": {
+    "container": "ariad-bench-stirling-b8ed2011c2f7",
+    "endpoint": "http://127.0.0.1:18711",
+    "network": "ariad-bench-network-b8ed2011c2f7",
+    "owner": "b8ed2011c2f74d29920b9a99144dfb28",
+    "pid": 1892680,
+    "worktree": "${WORKTREE}"
+  },
+  "routes": [
+    "pdf->docx",
+    "docx->pdf"
+  ],
+  "samples": [
+    {
+      "attempt": 1,
+      "conversion_ms": 415.3255609999178,
+      "evaluation_ms": 219.3168899975717,
+      "extraction_ms": 115.17964799713809,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "47d8526e520bb8f8fd5fb88f5c73187c9106bda2b52402da38f46d61c759097d",
+      "product": "ariadshift",
+      "route": "pdf->docx",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 41,
+            "matched": 17,
+            "observed": 25,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 41,
+            "matched": 17,
+            "observed": 25,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.6023728813559323,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.68,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 1,
+      "conversion_ms": 284.48203400330385,
+      "evaluation_ms": 165.53872199438047,
+      "extraction_ms": 115.17964799713809,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "1037f130db27a56e93eb396cbd37bdcf061aa1be50f08db7126b0af3c824c1f7",
+      "product": "stirling",
+      "route": "pdf->docx",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 2,
+            "matched": 0,
+            "observed": 0,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 2,
+            "matched": 0,
+            "observed": 0,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 18,
+            "matched": 11,
+            "observed": 18,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 18,
+            "matched": 11,
+            "observed": 18,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.031073446327683607,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.0,
+        "style_accuracy": 0.0,
+        "table_f1": 0.0,
+        "text_cer": 0.9067796610169492,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 2,
+      "conversion_ms": 300.26484599511605,
+      "evaluation_ms": 166.5834809973603,
+      "extraction_ms": 115.17964799713809,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "1037f130db27a56e93eb396cbd37bdcf061aa1be50f08db7126b0af3c824c1f7",
+      "product": "stirling",
+      "route": "pdf->docx",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 2,
+            "matched": 0,
+            "observed": 0,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 2,
+            "matched": 0,
+            "observed": 0,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 18,
+            "matched": 11,
+            "observed": 18,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 18,
+            "matched": 11,
+            "observed": 18,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.031073446327683607,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.0,
+        "style_accuracy": 0.0,
+        "table_f1": 0.0,
+        "text_cer": 0.9067796610169492,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 2,
+      "conversion_ms": 465.59059599530883,
+      "evaluation_ms": 219.0634809958283,
+      "extraction_ms": 115.17964799713809,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "d24fd914b1c00bfe70254cfacf357ec631554f671d85b46fa1fd3975178c9b39",
+      "product": "ariadshift",
+      "route": "pdf->docx",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 41,
+            "matched": 17,
+            "observed": 25,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 41,
+            "matched": 17,
+            "observed": 25,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.6023728813559323,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.68,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 3,
+      "conversion_ms": 465.9682179990341,
+      "evaluation_ms": 217.4540470005013,
+      "extraction_ms": 115.17964799713809,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "8e60aebb66e8c456c9bb88e863a9b7b6924af33f373d9c95e5e9f1959980bc79",
+      "product": "ariadshift",
+      "route": "pdf->docx",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 41,
+            "matched": 17,
+            "observed": 25,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 41,
+            "matched": 17,
+            "observed": 25,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.6023728813559323,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.68,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 3,
+      "conversion_ms": 310.10025699652033,
+      "evaluation_ms": 165.4106190035236,
+      "extraction_ms": 115.17964799713809,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "d6d63fd749691c7dac47400a8b81ac337c1fe89518b99ad27811989130e2280d",
+      "product": "stirling",
+      "route": "pdf->docx",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 2,
+            "matched": 0,
+            "observed": 0,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 2,
+            "matched": 0,
+            "observed": 0,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 18,
+            "matched": 11,
+            "observed": 18,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 18,
+            "matched": 11,
+            "observed": 18,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.031073446327683607,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.0,
+        "style_accuracy": 0.0,
+        "table_f1": 0.0,
+        "text_cer": 0.9067796610169492,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "da0fab6a16d44f9fcb4dbef7dd0b741cc79654f9b165996bb2c6b2288ae131cc",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 1,
+      "conversion_ms": 2069.0327669944963,
+      "evaluation_ms": 116.74741299793823,
+      "extraction_ms": 315.7988400053,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "134f59b8737b401d442e4caf30c3b09f2285f03b4db62f3205094f561cf8feb6",
+      "product": "ariadshift",
+      "route": "docx->pdf",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 41,
+            "matched": 10,
+            "observed": 18,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 41,
+            "matched": 10,
+            "observed": 18,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.5090395480225989,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.4,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 1,
+      "conversion_ms": 385.69316799839726,
+      "evaluation_ms": 116.3341740029864,
+      "extraction_ms": 315.7988400053,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "2609f8db95588ee3604055d9ec239ff7e37844f74480d2971bb1de6c410d6ca0",
+      "product": "stirling",
+      "route": "docx->pdf",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 50,
+            "matched": 16,
+            "observed": 25,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 50,
+            "matched": 16,
+            "observed": 25,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.5890395480225988,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.64,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 2,
+      "conversion_ms": 354.25203700287966,
+      "evaluation_ms": 118.75808300101198,
+      "extraction_ms": 315.7988400053,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "ba1c46a4a06fb44c0f83e4122d0ae63f0949ed37fc0dbd4d60552312f24223e9",
+      "product": "stirling",
+      "route": "docx->pdf",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 50,
+            "matched": 16,
+            "observed": 25,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 50,
+            "matched": 16,
+            "observed": 25,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.5890395480225988,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.64,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 2,
+      "conversion_ms": 1818.091357999947,
+      "evaluation_ms": 116.77146799775073,
+      "extraction_ms": 315.7988400053,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "701b074998bde2dbc75e87b2bf3fea0855f11676644db8019f4b06cf9ed6928b",
+      "product": "ariadshift",
+      "route": "docx->pdf",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 41,
+            "matched": 10,
+            "observed": 18,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 41,
+            "matched": 10,
+            "observed": 18,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.5090395480225989,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.4,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 3,
+      "conversion_ms": 1868.2128289947286,
+      "evaluation_ms": 115.88546699931612,
+      "extraction_ms": 315.7988400053,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "53ff719591be2f4a8879e8d6cc3897c3b30d6c732ac33973c88f66ccc0a50116",
+      "product": "ariadshift",
+      "route": "docx->pdf",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 41,
+            "matched": 10,
+            "observed": 18,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 41,
+            "matched": 10,
+            "observed": 18,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.5090395480225989,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.4,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    },
+    {
+      "attempt": 3,
+      "conversion_ms": 346.0841580017586,
+      "evaluation_ms": 123.25383700226666,
+      "extraction_ms": 315.7988400053,
+      "fixture": "fixtures/editor/vi-styled-pair",
+      "output_sha256": "0a6b22c164c6e2430a3897fb3c541c93696c1df16157cdf096660293cdac4f77",
+      "product": "stirling",
+      "route": "docx->pdf",
+      "score": {
+        "basis": "independent_reference",
+        "coverage": {
+          "layout": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "layout_iou": {
+            "hypothesis": 10,
+            "matched": 0,
+            "observed": 0,
+            "reference": 0
+          },
+          "style": {
+            "hypothesis": 50,
+            "matched": 16,
+            "observed": 25,
+            "reference": 25
+          },
+          "style_accuracy": {
+            "hypothesis": 50,
+            "matched": 16,
+            "observed": 25,
+            "reference": 25
+          },
+          "table_f1": {
+            "hypothesis": 0,
+            "matched": 0,
+            "reference": 1
+          },
+          "text": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          },
+          "text_cer": {
+            "hypothesis": 162,
+            "matched": 74,
+            "observed": 162,
+            "reference": 118
+          }
+        },
+        "layout_iou": null,
+        "metric_version": "fidelity/2",
+        "score": 0.5890395480225988,
+        "status": "measured",
+        "structure_by_kind": {
+          "heading": {
+            "f1": 1.0,
+            "hypothesis": 1,
+            "matched": 1,
+            "observed": 1,
+            "precision": 1.0,
+            "recall": 1.0,
+            "reference": 1
+          },
+          "list": {
+            "f1": null,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": null,
+            "reference": 0
+          },
+          "table": {
+            "f1": 0.0,
+            "hypothesis": 0,
+            "matched": 0,
+            "observed": 0,
+            "precision": null,
+            "recall": 0.0,
+            "reference": 1
+          }
+        },
+        "structure_f1": 0.5,
+        "style_accuracy": 0.64,
+        "table_f1": 0.0,
+        "text_cer": 0.3728813559322034,
+        "unavailable_reasons": {
+          "layout": "no_reference_layout_observations"
+        }
+      },
+      "sha256": "1ea769f41900f58664abf7cd3e95dbb9137b9d29b69fedfeef41873a417e5d27",
+      "status": "ok",
+      "truth_sha256": "4152cfafe35582de9ac28a6ba91a6a128b29cf7854645a636329dadf950215ee"
+    }
+  ],
+  "schema": "ariad-competitors/1",
+  "scorer": {
+    "callable": "ariad_bench.competitors:score",
+    "sha256": "941b1cf86e6efec7070b99f6fc62037c8a745692dfde901728414e815ec588fd"
+  },
+  "source_revision": "af72c227cfab51456a1bb151abc52820b5103b63",
+  "status": "incomplete",
+  "worktree": "${WORKTREE}"
+}

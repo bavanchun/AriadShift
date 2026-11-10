@@ -1,0 +1,95 @@
+---
+source: crates/ariad-cli/tests/reader_golden.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Notes from the Map Room",
+          "type": "text"
+        }
+      ],
+      "id": "b71c2399679ffcf2dd71a6159c42448559d93fada9e032375c41775f77476b439",
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions. ",
+          "type": "text"
+        },
+        {
+          "id": "fn1",
+          "type": "footnote_ref"
+        }
+      ],
+      "id": "bb22ea46452941d4d9d8f092e7b458d795ec6438be7854d0942fe1f6fec37470c",
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map. ",
+          "type": "text"
+        },
+        {
+          "id": "fn2",
+          "type": "footnote_ref"
+        }
+      ],
+      "id": "bbfc91d7c424d088b51db2e80794597ca3f212854172b4d9a92e300e1a5422d2d",
+      "type": "paragraph"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "The archive keeps older map editions beside later revisions.",
+              "type": "text"
+            }
+          ],
+          "id": "b72a847d04b084268ee8a0968656dd62cbab2ce24f281efc129399f8f2ac807c6",
+          "type": "paragraph"
+        }
+      ],
+      "id": "b5bb372eb2dbe0d36e6328c21b4188cd302ae70bad023cd59c771750b7709796a",
+      "note_id": "fn1",
+      "type": "footnote"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "Catalog records are verified during regular review cycles.",
+              "type": "text"
+            }
+          ],
+          "id": "b8f53748bdfa8eea8dcfb5bf75a85297374f3c1789776d7d1fa7538c4c6374ad7",
+          "type": "paragraph"
+        }
+      ],
+      "id": "b4955b7bc5d68ac94ad80dd6187a4d692f11a63dd147d419e5125d8c4a874591c",
+      "note_id": "fn2",
+      "type": "footnote"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "epub",
+    "subject": null,
+    "title": "Map archive notes with footnotes"
+  },
+  "provenance": null,
+  "version": "ariad-ir/2"
+}

@@ -158,19 +158,26 @@ fn engine_answers_describe_request_without_workspace() {
     assert_eq!(capabilities["license"], "GPL-2.0-or-later");
     assert_eq!(capabilities["enforces_memory_limit"], true);
     let routes = capabilities["routes"].as_array().expect("routes array");
-    assert_eq!(routes.len(), 6);
-    assert_eq!(routes[0]["input"], "ariad-ir+json");
-    assert_eq!(routes[0]["output"], "docx");
-    assert_eq!(routes[1]["input"], "ariad-ir+json");
-    assert_eq!(routes[1]["output"], "epub");
-    assert_eq!(routes[2]["input"], "ariad-ir+json");
-    assert_eq!(routes[2]["output"], "odt");
-    assert_eq!(routes[3]["input"], "ariad-ir+json");
-    assert_eq!(routes[3]["output"], "rtf");
-    assert_eq!(routes[4]["input"], "docx");
-    assert_eq!(routes[4]["output"], "ariad-ir+json");
-    assert_eq!(routes[5]["input"], "epub");
-    assert_eq!(routes[5]["output"], "ariad-ir+json");
+    let actual: Vec<_> = routes
+        .iter()
+        .map(|route| {
+            (
+                route["input"].as_str().unwrap(),
+                route["output"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            ("ariad-ir+json", "docx"),
+            ("ariad-ir+json", "epub"),
+            ("ariad-ir+json", "odt"),
+            ("ariad-ir+json", "rtf"),
+            ("docx", "ariad-ir+json"),
+            ("epub", "ariad-ir+json"),
+        ]
+    );
 
     let result = &events[1];
     assert_eq!(result["type"], "result");

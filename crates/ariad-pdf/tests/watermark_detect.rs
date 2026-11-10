@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Stable candidate lists for the watermark corpus.
 
 use ariad_pdf::{InputDoc, ToolCtx, run_tool};

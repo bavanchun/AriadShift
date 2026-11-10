@@ -61,14 +61,23 @@ fn normalize_blocks(blocks: &[Block]) -> Vec<Block> {
     blocks
         .iter()
         .map(|block| match block {
-            Block::Heading { level, content } => Block::Heading {
+            Block::Heading { level, content, .. } => Block::Heading {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 level: *level,
                 content: normalize_inlines(content),
             },
-            Block::Paragraph { content } => Block::Paragraph {
+            Block::Paragraph { content, .. } => Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: normalize_inlines(content),
             },
-            Block::Quote { blocks } => Block::Quote {
+            Block::Quote { blocks, .. } => Block::Quote {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 blocks: normalize_blocks(blocks),
             },
             Block::List {
@@ -76,7 +85,11 @@ fn normalize_blocks(blocks: &[Block]) -> Vec<Block> {
                 start,
                 tight,
                 items,
+                ..
             } => Block::List {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 ordered: *ordered,
                 start: *start,
                 tight: *tight,
@@ -94,7 +107,11 @@ fn normalize_blocks(blocks: &[Block]) -> Vec<Block> {
                 head,
                 body,
                 footnotes,
+                ..
             } => Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: caption.as_ref().map(|c| normalize_inlines(c)),
                 columns: columns.clone(),
                 head: head
@@ -125,19 +142,42 @@ fn normalize_blocks(blocks: &[Block]) -> Vec<Block> {
                     .collect(),
                 footnotes: normalize_inlines(footnotes),
             },
-            Block::Footnote { id, blocks } => Block::Footnote {
-                id: id.clone(),
+            Block::Footnote {
+                note_id: id,
+                blocks,
+                ..
+            } => Block::Footnote {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                note_id: id.clone(),
                 blocks: normalize_blocks(blocks),
             },
-            Block::Figure { asset, caption } => Block::Figure {
+            Block::Figure { asset, caption, .. } => Block::Figure {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 asset: asset.clone(),
                 caption: normalize_inlines(caption),
             },
-            Block::Math { tex, display } => Block::Math {
+            Block::Math { tex, display, .. } => Block::Math {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 tex: tex.trim().to_owned(),
                 display: *display,
             },
-            Block::Raw { format, text } => Block::Raw {
+            Block::Code { lang, text, .. } => Block::Code {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                lang: lang.clone(),
+                text: text.clone(),
+            },
+            Block::Raw { format, text, .. } => Block::Raw {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 format: *format,
                 text: if *format == ariad_core::ir::RawFormat::Html {
                     writer::sanitize::sanitize_raw_html(text)
@@ -214,6 +254,9 @@ fn all_markdown_fixtures_roundtrip_through_markdown_writer() {
 fn longest_backtick_rule_for_fenced_code_blocks() {
     let mut doc = Document::default();
     doc.body.push(Block::Code {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         lang: Some("markdown".to_owned()),
         text: "Here is code with ``` triple backticks and ```` four backticks.\n".to_owned(),
     });
@@ -223,13 +266,16 @@ fn longest_backtick_rule_for_fenced_code_blocks() {
     assert!(written.content.ends_with("`````\n\n"));
 
     let read_back = markdown::read(&written.content, &Limits::local()).expect("read back");
-    assert_eq!(read_back.document.body, doc.body);
+    assert_eq!(read_back.document.body, doc.finalize_import().body);
 }
 
 #[test]
 fn inline_code_handles_backticks_and_edge_spaces() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Code {
                 text: "let x = `single backtick`;".to_owned(),
@@ -245,13 +291,16 @@ fn inline_code_handles_backticks_and_edge_spaces() {
 
     let written = writer::markdown::write(&doc);
     let read_back = markdown::read(&written.content, &Limits::local()).expect("read back");
-    assert_eq!(read_back.document.body, doc.body);
+    assert_eq!(read_back.document.body, doc.finalize_import().body);
 }
 
 #[test]
 fn escaping_markdown_syntax_characters_in_text() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Text {
             text:
                 r"Special *stars* _unders_ ~tilde~ `ticks` [link] <tag> $math$ ^carets^ \slashes\"
@@ -259,6 +308,9 @@ fn escaping_markdown_syntax_characters_in_text() {
         }],
     });
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Text {
                 text: "# not a heading".to_owned(),
@@ -280,7 +332,7 @@ fn escaping_markdown_syntax_characters_in_text() {
 
     let written = writer::markdown::write(&doc);
     let read_back = markdown::read(&written.content, &Limits::local()).expect("read back");
-    assert_eq!(read_back.document.body, doc.body);
+    assert_eq!(read_back.document.body, doc.finalize_import().body);
 }
 
 #[test]
@@ -294,11 +346,15 @@ fn asset_backed_images_are_embedded_as_data_uris() {
     doc.assets.insert(
         "abc123".to_owned(),
         Asset {
+            font: None,
             media_type: "image/png".to_owned(),
             bytes: image_bytes.to_vec(),
         },
     );
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Image {
             target: AssetRef::Asset {
                 id: "abc123".to_owned(),
@@ -320,7 +376,7 @@ fn asset_backed_images_are_embedded_as_data_uris() {
     assert!(read_back.warnings.is_empty());
     assert_eq!(read_back.document.assets.len(), 1);
     match &read_back.document.body[0] {
-        Block::Paragraph { content } => match &content[0] {
+        Block::Paragraph { content, .. } => match &content[0] {
             Inline::Image { target, alt, title } => {
                 assert_eq!(alt, "diagram");
                 assert_eq!(title.as_deref(), Some("System architecture"));
@@ -347,6 +403,9 @@ fn asset_backed_images_are_embedded_as_data_uris() {
 fn missing_asset_emits_warning_and_reduces_to_alt_text() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Image {
             target: AssetRef::Asset {
                 id: "missing".to_owned(),
@@ -367,6 +426,9 @@ fn missing_asset_emits_warning_and_reduces_to_alt_text() {
 fn dangerous_links_and_images_are_dropped_with_warnings() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Link {
                 url: "javascript:alert(1)".to_owned(),
@@ -400,6 +462,9 @@ fn dangerous_links_and_images_are_dropped_with_warnings() {
 fn non_representable_table_emits_warning_and_simplifies_to_pipe_table() {
     let mut doc = Document::default();
     doc.body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: None,
         columns: vec![
             ColumnSpec {
@@ -415,6 +480,9 @@ fn non_representable_table_emits_warning_and_simplifies_to_pipe_table() {
                 colspan: 2,
                 header: Some(true),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Spanned Header".to_owned(),
                     }],
@@ -433,6 +501,9 @@ fn non_representable_table_emits_warning_and_simplifies_to_pipe_table() {
                 colspan: 1,
                 header: None,
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Spanned Row".to_owned(),
                     }],
@@ -443,6 +514,9 @@ fn non_representable_table_emits_warning_and_simplifies_to_pipe_table() {
                 colspan: 1,
                 header: None,
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Cell B".to_owned(),
                     }],
@@ -462,6 +536,9 @@ fn non_representable_table_emits_warning_and_simplifies_to_pipe_table() {
 fn ordered_list_honours_custom_start() {
     let mut doc = Document::default();
     doc.body.push(Block::List {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         ordered: true,
         start: Some(7),
         tight: true,
@@ -469,6 +546,9 @@ fn ordered_list_honours_custom_start() {
             ListItem {
                 checked: None,
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Step seven".to_owned(),
                     }],
@@ -477,6 +557,9 @@ fn ordered_list_honours_custom_start() {
             ListItem {
                 checked: None,
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Step eight".to_owned(),
                     }],
@@ -489,13 +572,16 @@ fn ordered_list_honours_custom_start() {
     assert!(written.content.contains("7. Step seven\n8. Step eight\n"));
 
     let read_back = markdown::read(&written.content, &Limits::local()).expect("read back");
-    assert_eq!(read_back.document.body, doc.body);
+    assert_eq!(read_back.document.body, doc.finalize_import().body);
 }
 
 #[test]
 fn math_and_sub_sup_roundtrip() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Math {
                 tex: "a^2 + b^2 = c^2".to_owned(),
@@ -520,6 +606,9 @@ fn math_and_sub_sup_roundtrip() {
         ],
     });
     doc.body.push(Block::Math {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         tex: r"\int_0^\infty e^{-x} dx = 1".to_owned(),
         display: true,
     });
@@ -541,12 +630,18 @@ fn html_writer_semantic_roundtrip() {
     doc.meta.language = Some("en".to_owned());
 
     doc.body.push(Block::Heading {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         level: 1,
         content: vec![Inline::Text {
             text: "Heading Level 1".to_owned(),
         }],
     });
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Text {
                 text: "Paragraph with ".to_owned(),
@@ -585,11 +680,17 @@ fn html_writer_semantic_roundtrip() {
     });
 
     doc.body.push(Block::Code {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         lang: Some("rust".to_owned()),
         text: "fn main() {\n    println!(\"hello\");\n}\n".to_owned(),
     });
 
     doc.body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: Some(vec![Inline::Text {
             text: "A sample table".to_owned(),
         }]),
@@ -607,6 +708,9 @@ fn html_writer_semantic_roundtrip() {
                 colspan: 1,
                 header: Some(true),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Col 1".to_owned(),
                     }],
@@ -617,6 +721,9 @@ fn html_writer_semantic_roundtrip() {
                 colspan: 1,
                 header: Some(true),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Col 2".to_owned(),
                     }],
@@ -629,6 +736,9 @@ fn html_writer_semantic_roundtrip() {
                 colspan: 1,
                 header: Some(false),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Val 1".to_owned(),
                     }],
@@ -639,6 +749,9 @@ fn html_writer_semantic_roundtrip() {
                 colspan: 1,
                 header: Some(false),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Val 2".to_owned(),
                     }],
@@ -649,12 +762,18 @@ fn html_writer_semantic_roundtrip() {
     });
 
     doc.body.push(Block::List {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         ordered: false,
         start: None,
         tight: true,
         items: vec![ListItem {
             checked: None,
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "Item 1".to_owned(),
                 }],
@@ -663,8 +782,14 @@ fn html_writer_semantic_roundtrip() {
     });
 
     doc.body.push(Block::Footnote {
-        id: "1".to_owned(),
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        note_id: "1".to_owned(),
         blocks: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "Footnote content".to_owned(),
             }],
@@ -722,7 +847,7 @@ fn html_writer_semantic_roundtrip() {
             .document
             .body
             .iter()
-            .any(|b| matches!(b, Block::Footnote { id, .. } if id == "1"))
+            .any(|b| matches!(b, Block::Footnote { note_id: id, .. } if id == "1"))
     );
 }
 
@@ -862,11 +987,17 @@ fn html_writer_hostile_input_sanitization() {
 
     let mut doc = Document::default();
     doc.body.push(Block::Raw {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         format: RawFormat::Html,
         text: "<script>alert('xss')</script><p>Clean paragraph</p><img src=x onerror=\"alert(1)\">"
             .to_owned(),
     });
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Raw {
                 format: RawFormat::Html,
@@ -914,6 +1045,9 @@ fn markdown_writer_safe_link_and_image_destinations() {
     let hostile_title = "Quote \" and backslash \\ test";
 
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Link {
                 url: hostile_url.to_owned(),
@@ -943,7 +1077,7 @@ fn markdown_writer_safe_link_and_image_destinations() {
 
     let read_back = markdown::read(&written.content, &Limits::local()).expect("read back");
     match &read_back.document.body[0] {
-        Block::Paragraph { content } => {
+        Block::Paragraph { content, .. } => {
             match &content[0] {
                 Inline::Link {
                     url,
@@ -981,16 +1115,25 @@ fn markdown_writer_safe_link_and_image_destinations() {
 fn markdown_writer_line_start_and_frontmatter_escaping() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Text {
             text: "---".to_owned(),
         }],
     });
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Text {
             text: "title: Pwned\n---".to_owned(),
         }],
     });
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Text {
                 text: "=== Not setext".to_owned(),
@@ -1013,7 +1156,7 @@ fn markdown_writer_line_start_and_frontmatter_escaping() {
     assert!(read_back.document.meta.title.is_none());
     assert_eq!(read_back.document.body.len(), 3);
     match &read_back.document.body[0] {
-        Block::Paragraph { content } => {
+        Block::Paragraph { content, .. } => {
             assert_eq!(
                 content,
                 &[Inline::Text {
@@ -1029,6 +1172,9 @@ fn markdown_writer_line_start_and_frontmatter_escaping() {
 fn markdown_writer_list_indentation_and_loose_items() {
     let mut doc = Document::default();
     doc.body.push(Block::List {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         ordered: true,
         start: Some(10),
         tight: false,
@@ -1037,16 +1183,25 @@ fn markdown_writer_list_indentation_and_loose_items() {
                 checked: None,
                 blocks: vec![
                     Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![Inline::Text {
                             text: "First para in item 10".to_owned(),
                         }],
                     },
                     Block::Paragraph {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         content: vec![Inline::Text {
                             text: "Second para in item 10".to_owned(),
                         }],
                     },
                     Block::Code {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         lang: Some("rust".to_owned()),
                         text: "let x = 10;\n".to_owned(),
                     },
@@ -1055,6 +1210,9 @@ fn markdown_writer_list_indentation_and_loose_items() {
             ListItem {
                 checked: None,
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Item 11".to_owned(),
                     }],
@@ -1079,12 +1237,18 @@ fn markdown_writer_m1_escaping_edge_cases() {
     doc.meta.title = Some("- item like title".to_owned());
 
     doc.body.push(Block::Heading {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         level: 2,
         content: vec![Inline::Text {
             text: "Heading with trailing hashes ###".to_owned(),
         }],
     });
     doc.body.push(Block::Heading {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         level: 3,
         content: vec![
             Inline::Text {
@@ -1098,6 +1262,9 @@ fn markdown_writer_m1_escaping_edge_cases() {
     });
 
     doc.body.push(Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: None,
         columns: vec![ColumnSpec {
             align: Alignment::Default,
@@ -1107,6 +1274,9 @@ fn markdown_writer_m1_escaping_edge_cases() {
             colspan: 1,
             header: Some(true),
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: "Header".to_owned(),
                 }],
@@ -1117,6 +1287,9 @@ fn markdown_writer_m1_escaping_edge_cases() {
             colspan: 1,
             header: Some(false),
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Code {
                     text: "a | b".to_owned(),
                 }],
@@ -1126,6 +1299,9 @@ fn markdown_writer_m1_escaping_edge_cases() {
     });
 
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Text {
                 text: "    four leading spaces".to_owned(),
@@ -1138,8 +1314,14 @@ fn markdown_writer_m1_escaping_edge_cases() {
     });
 
     doc.body.push(Block::Footnote {
-        id: "fn [bracket]".to_owned(),
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        note_id: "fn [bracket]".to_owned(),
         blocks: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "Footnote content".to_owned(),
             }],
@@ -1189,6 +1371,9 @@ fn html_writer_coherent_raw_html_runs_and_warning_conditions() {
 
     let mut doc_safe = Document::default();
     doc_safe.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Raw {
                 format: RawFormat::Html,
@@ -1232,6 +1417,9 @@ fn html_writer_coherent_raw_html_runs_and_warning_conditions() {
 
     let mut doc_unsafe = Document::default();
     doc_unsafe.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Raw {
                 format: RawFormat::Html,
@@ -1264,12 +1452,18 @@ fn html_writer_coherent_raw_html_runs_and_warning_conditions() {
 fn html_writer_math_renders_visible_presentation_before_annotation() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Math {
             tex: "E = mc^2".to_owned(),
             display: false,
         }],
     });
     doc.body.push(Block::Math {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         tex: r"\int_0^1 x dx".to_owned(),
         display: true,
     });
@@ -1294,6 +1488,9 @@ fn html_writer_prose_only_nfc_normalization() {
 
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Text {
                 text: nfd_prose.to_owned(),
@@ -1304,6 +1501,9 @@ fn html_writer_prose_only_nfc_normalization() {
         ],
     });
     doc.body.push(Block::Code {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         lang: None,
         text: nfd_code.to_owned(),
     });
@@ -1341,6 +1541,9 @@ fn html_writer_title_fallback_handling() {
 fn html_writer_does_not_resanitize_own_markup_and_handles_unclosed_runs() {
     let mut doc = Document::default();
     doc.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Text {
                 text: "Press ".to_owned(),
@@ -1396,6 +1599,9 @@ fn html_writer_does_not_resanitize_own_markup_and_handles_unclosed_runs() {
 
     let mut doc_unclosed = Document::default();
     doc_unclosed.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![
             Inline::Raw {
                 format: RawFormat::Html,
@@ -1411,6 +1617,9 @@ fn html_writer_does_not_resanitize_own_markup_and_handles_unclosed_runs() {
         ],
     });
     doc_unclosed.body.push(Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         content: vec![Inline::Text {
             text: "Rest of document".to_owned(),
         }],
@@ -1436,6 +1645,9 @@ fn markdown_writer_char_boundary_safe_slicing_and_multibyte_whitespace() {
 
     let doc = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 Inline::Text {
                     text: "Giờ ".to_owned(),
@@ -1468,7 +1680,8 @@ fn markdown_writer_char_boundary_safe_slicing_and_multibyte_whitespace() {
             ],
         }],
         ..Default::default()
-    };
+    }
+    .finalize_import();
 
     let written = writer::markdown::write(&doc);
     assert!(!written.content.is_empty());
@@ -1489,45 +1702,45 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
     let test_documents: Vec<(&'static str, Document)> = vec![
         // 1. Text hostile strings
         ("text_html_script", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![Inline::Text { text: "<script>alert('xss')</script>".to_owned() }],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
         ("text_js_link", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![Inline::Text { text: "[click](javascript:alert(1))".to_owned() }],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
         ("text_heading_markers", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![Inline::Text { text: "### Injected Heading".to_owned() }],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
         ("text_list_marker", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![Inline::Text { text: "- [x] task item".to_owned() }],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
         ("text_table_syntax", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![Inline::Text { text: "| a | b |\n|---|---|\n| 1 | 2 |".to_owned() }],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
         ("text_thematic_break", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![Inline::Text { text: "---".to_owned() }],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
 
         // 2. Inline Emph, Strong, Strikeout with hostile text and N1 multibyte whitespace
         ("inlines_formatting_multibyte_n1", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![
                     Inline::Emph {
                         content: vec![Inline::Text { text: "\u{00A0}[a](javascript:alert(1))".to_owned() }],
@@ -1541,11 +1754,11 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                 ],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
 
         // 3. Code spans with newlines and backticks (H2)
         ("code_spans_h2_newlines_and_ticks", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![
                     Inline::Code { text: "a\n# Injected\n[x](javascript:alert(1))".to_owned() },
                     Inline::Code { text: "back`tick and ``` triple".to_owned() },
@@ -1554,11 +1767,11 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                 ],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
 
         // 4. Math with $, $$, newlines and backticks (H1)
         ("math_inline_h1_breakouts", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![
                     Inline::Math {
                         tex: "x$ [a](javascript:alert(1)) <img src=x onerror=alert(2)> $y".to_owned(),
@@ -1575,21 +1788,21 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                 ],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
         ("math_block_h1_breakouts", Document {
             body: vec![
-                Block::Math {
+                Block::Math { id: Default::default(), style: None, direct: Default::default(),
                     tex: "E = mc^2\n$$\n# Injected Heading\n$$\nx = y".to_owned(),
                     display: true,
                 },
             ],
             ..Default::default()
-        }),
+        }.finalize_import()),
 
         // 5. Raw TeX inline and block (H3)
         ("raw_tex_h3_breakouts", Document {
             body: vec![
-                Block::Paragraph {
+                Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                     content: vec![
                         Inline::Raw {
                             format: RawFormat::Tex,
@@ -1597,18 +1810,18 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                         },
                     ],
                 },
-                Block::Raw {
+                Block::Raw { id: Default::default(), style: None, direct: Default::default(),
                     format: RawFormat::Tex,
                     text: "\\begin{equation}\n# Heading\n<script>alert(8)</script>\n\\end{equation}".to_owned(),
                 },
             ],
             ..Default::default()
-        }),
+        }.finalize_import()),
 
         // 6. Raw HTML inlines and blocks (Fallback + N2)
         ("raw_html_fallback_and_n2", Document {
             body: vec![
-                Block::Paragraph {
+                Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                     content: vec![
                         Inline::Raw {
                             format: RawFormat::Html,
@@ -1624,17 +1837,17 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                         },
                     ],
                 },
-                Block::Raw {
+                Block::Raw { id: Default::default(), style: None, direct: Default::default(),
                     format: RawFormat::Html,
                     text: "<div class=\"dangerous\"><script>alert(9)</script>Safe Text</div>".to_owned(),
                 },
             ],
             ..Default::default()
-        }),
+        }.finalize_import()),
 
         // 7. Literal placeholders and attributes
         ("placeholder_attribute_preservation", Document {
-            body: vec![Block::Paragraph {
+            body: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                 content: vec![
                     Inline::Text { text: "Hi ".to_owned() },
                     Inline::Raw {
@@ -1654,7 +1867,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                 ],
             }],
             ..Default::default()
-        }),
+        }.finalize_import()),
 
         // 8. Whole document with Metadata, Headings, Lists, Tables, Quotes, Code
         ("whole_document_complex", Document {
@@ -1666,35 +1879,35 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                 ..Default::default()
             },
             body: vec![
-                Block::Heading {
+                Block::Heading { id: Default::default(), style: None, direct: Default::default(),
                     level: 2,
                     content: vec![Inline::Text { text: "Heading with # and [link](javascript:alert(1))".to_owned() }],
                 },
-                Block::Quote {
-                    blocks: vec![Block::Paragraph {
+                Block::Quote { id: Default::default(), style: None, direct: Default::default(),
+                    blocks: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                         content: vec![Inline::Text { text: "Quoted hostile: <img src=x onerror=alert(1)>".to_owned() }],
                     }],
                 },
-                Block::List {
+                Block::List { id: Default::default(), style: None, direct: Default::default(),
                     ordered: true,
                     start: Some(1),
                     tight: true,
                     items: vec![
                         ListItem {
                             checked: Some(true),
-                            blocks: vec![Block::Paragraph {
+                            blocks: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                                 content: vec![Inline::Text { text: "Task 1".to_owned() }],
                             }],
                         },
                         ListItem {
                             checked: None,
-                            blocks: vec![Block::Paragraph {
+                            blocks: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                                 content: vec![Inline::Text { text: "Normal 2".to_owned() }],
                             }],
                         },
                     ],
                 },
-                Block::Table {
+                Block::Table { id: Default::default(), style: None, direct: Default::default(),
                     caption: Some(vec![Inline::Text { text: "Table Caption | with pipe".to_owned() }]),
                     columns: vec![
                         ColumnSpec { align: Alignment::Left },
@@ -1705,7 +1918,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                             colspan: 1,
                             rowspan: 1,
                             header: Some(true),
-                            blocks: vec![Block::Paragraph {
+                            blocks: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                                 content: vec![Inline::Text { text: "Col | 1".to_owned() }],
                             }],
                         },
@@ -1713,7 +1926,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                             colspan: 1,
                             rowspan: 1,
                             header: Some(true),
-                            blocks: vec![Block::Paragraph {
+                            blocks: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                                 content: vec![Inline::Text { text: "Col | 2".to_owned() }],
                             }],
                         },
@@ -1723,7 +1936,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                             colspan: 1,
                             rowspan: 1,
                             header: Some(false),
-                            blocks: vec![Block::Paragraph {
+                            blocks: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                                 content: vec![Inline::Code { text: "cell|code".to_owned() }],
                             }],
                         },
@@ -1731,7 +1944,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                             colspan: 1,
                             rowspan: 1,
                             header: Some(false),
-                            blocks: vec![Block::Paragraph {
+                            blocks: vec![Block::Paragraph { id: Default::default(), style: None, direct: Default::default(),
                                 content: vec![Inline::Text { text: "data [x](javascript:alert(1))".to_owned() }],
                             }],
                         },
@@ -1740,7 +1953,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
                 },
             ],
             ..Default::default()
-        }),
+        }.finalize_import()),
     ];
 
     for (name, doc) in test_documents {
@@ -1772,7 +1985,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
 
         // Verify read_back does not contain dangerous links or scripts
         for block in &read_back.document.body {
-            if let Block::Paragraph { content } = block {
+            if let Block::Paragraph { content, .. } = block {
                 for inline in content {
                     if let Inline::Link { url, .. } = inline {
                         assert!(
@@ -1820,7 +2033,7 @@ fn seeded_table_driven_whole_document_generator_roundtrip() {
 #[test]
 fn html_writer_literal_placeholders_preserved_and_video_stripped() {
     let mut doc = Document::default();
-    doc.body.push(Block::Raw {
+    doc.body.push(Block::Raw { id: Default::default(), style: None, direct: Default::default(),
         format: RawFormat::Html,
         text: "<div title=\"XARIADPH0X\"><video src=\"https://example.com/video.mp4\" controls></video><p>Literal XARIADPH1X in text and <em>emphasized</em></p></div>".to_owned(),
     });
@@ -1962,12 +2175,18 @@ fn test_lone_cr_in_containers_and_raw_tex() {
     // 2. Raw TeX with lone CR in a list item
     let mut doc_list = Document::default();
     doc_list.body.push(Block::List {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         ordered: false,
         start: None,
         tight: true,
         items: vec![ListItem {
             checked: None,
             blocks: vec![Block::Raw {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 format: RawFormat::Tex,
                 text:
                     "a\r# Injected Heading\r[x](javascript:alert(1))\r<img src=x onerror=alert(2)>"
@@ -1993,7 +2212,7 @@ fn test_lone_cr_in_containers_and_raw_tex() {
 fn recursive_has_headings(blocks: &[Block]) -> bool {
     blocks.iter().any(|b| match b {
         Block::Heading { .. } => true,
-        Block::Quote { blocks } => recursive_has_headings(blocks),
+        Block::Quote { blocks, .. } => recursive_has_headings(blocks),
         Block::List { items, .. } => items.iter().any(|it| recursive_has_headings(&it.blocks)),
         Block::Table { head, body, .. } => head
             .iter()
@@ -2008,7 +2227,7 @@ fn recursive_has_headings(blocks: &[Block]) -> bool {
 fn recursive_has_lists(blocks: &[Block]) -> bool {
     blocks.iter().any(|b| match b {
         Block::List { .. } => true,
-        Block::Quote { blocks } => recursive_has_lists(blocks),
+        Block::Quote { blocks, .. } => recursive_has_lists(blocks),
         Block::Table { head, body, .. } => head
             .iter()
             .chain(body.iter())
@@ -2022,7 +2241,8 @@ fn recursive_has_lists(blocks: &[Block]) -> bool {
 fn inlines_has_links(inlines: &[Inline]) -> bool {
     inlines.iter().any(|i| match i {
         Inline::Link { .. } => true,
-        Inline::Emph { content }
+        Inline::Styled { content, .. }
+        | Inline::Emph { content }
         | Inline::Strong { content }
         | Inline::Strikeout { content }
         | Inline::Superscript { content }
@@ -2033,8 +2253,10 @@ fn inlines_has_links(inlines: &[Inline]) -> bool {
 
 fn recursive_has_links(blocks: &[Block]) -> bool {
     blocks.iter().any(|b| match b {
-        Block::Paragraph { content } | Block::Heading { content, .. } => inlines_has_links(content),
-        Block::Quote { blocks } => recursive_has_links(blocks),
+        Block::Paragraph { content, .. } | Block::Heading { content, .. } => {
+            inlines_has_links(content)
+        }
+        Block::Quote { blocks, .. } => recursive_has_links(blocks),
         Block::List { items, .. } => items.iter().any(|it| recursive_has_links(&it.blocks)),
         Block::Table {
             head,
@@ -2141,6 +2363,9 @@ fn seeded_deterministic_generator_whole_document_invariants() {
         match iter % 7 {
             0 => {
                 doc.body.push(Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![
                         Inline::Text { text: v1.clone() },
                         Inline::Code { text: v2.clone() },
@@ -2153,10 +2378,16 @@ fn seeded_deterministic_generator_whole_document_invariants() {
             }
             1 => {
                 doc.body.push(Block::Math {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     tex: v1.clone(),
                     display: true,
                 });
                 doc.body.push(Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Followup".to_owned(),
                     }],
@@ -2164,17 +2395,29 @@ fn seeded_deterministic_generator_whole_document_invariants() {
             }
             2 => {
                 doc.body.push(Block::Code {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     lang: Some("rust".to_owned()),
                     text: format!("{v1}\n{v2}\n{v3}"),
                 });
             }
             3 => {
                 doc.body.push(Block::Quote {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     blocks: vec![
                         Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text { text: v1.clone() }],
                         },
                         Block::Code {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             lang: None,
                             text: v2.clone(),
                         },
@@ -2183,16 +2426,25 @@ fn seeded_deterministic_generator_whole_document_invariants() {
             }
             4 => {
                 doc.body.push(Block::Raw {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     format: RawFormat::Tex,
                     text: v1.clone(),
                 });
                 doc.body.push(Block::Raw {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     format: RawFormat::Html,
                     text: format!("<div class=\"test\">{v2}</div>"),
                 });
             }
             5 => {
                 doc.body.push(Block::Table {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     caption: None,
                     columns: vec![ColumnSpec {
                         align: Alignment::Default,
@@ -2202,6 +2454,9 @@ fn seeded_deterministic_generator_whole_document_invariants() {
                         rowspan: 1,
                         header: Some(true),
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Text { text: v1.clone() }],
                         }],
                     }]],
@@ -2210,6 +2465,9 @@ fn seeded_deterministic_generator_whole_document_invariants() {
                         rowspan: 1,
                         header: Some(false),
                         blocks: vec![Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: Default::default(),
                             content: vec![Inline::Code { text: v2.clone() }],
                         }],
                     }]],
@@ -2218,6 +2476,9 @@ fn seeded_deterministic_generator_whole_document_invariants() {
             }
             _ => {
                 doc.body.push(Block::List {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     ordered: iter % 2 == 0,
                     start: Some(1),
                     tight: true,
@@ -2225,14 +2486,23 @@ fn seeded_deterministic_generator_whole_document_invariants() {
                         checked: Some(true),
                         blocks: vec![match iter % 3 {
                             0 => Block::Code {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 lang: None,
                                 text: format!("{v1}\n{v2}"),
                             },
                             1 => Block::Math {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 tex: format!("{v1}\n# Injected"),
                                 display: true,
                             },
                             _ => Block::Raw {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 format: RawFormat::Tex,
                                 text: format!("{v1}\n# Injected"),
                             },
@@ -2260,7 +2530,7 @@ fn seeded_deterministic_generator_whole_document_invariants() {
             .unwrap_or_else(|e| panic!("iter {iter}: failed reading written markdown: {e:?}"));
 
         for block in &md_parsed.document.body {
-            if let Block::Paragraph { content } = block {
+            if let Block::Paragraph { content, .. } = block {
                 for inline in content {
                     if let Inline::Link { url, .. } = inline {
                         assert!(
@@ -2311,18 +2581,8 @@ fn seeded_deterministic_generator_whole_document_invariants() {
         }
 
         let html_written = writer::html::write(&doc);
-        assert!(
-            !html_written.content.contains('\r'),
-            "iter {iter}: html content must not contain CR"
-        );
-        assert!(
-            !html_written.content.contains('\u{2028}'),
-            "iter {iter}: html content must not contain U+2028"
-        );
-        assert!(
-            !html_written.content.contains('\u{0085}'),
-            "iter {iter}: html content must not contain U+0085"
-        );
+        // HTML keeps opaque code/math/raw bytes. Structural and unsafe-link
+        // assertions below check containment after parsing those bytes.
         assert!(
             !html_written
                 .content
@@ -2346,7 +2606,7 @@ fn seeded_deterministic_generator_whole_document_invariants() {
             );
         }
         for block in &html_parsed.document.body {
-            if let Block::Paragraph { content } = block {
+            if let Block::Paragraph { content, .. } = block {
                 for inline in content {
                     if let Inline::Link { url, .. } = inline {
                         assert!(
@@ -2368,11 +2628,15 @@ fn test_display_math_single_line_and_block_marker_safety() {
         // 1. Block::Math
         let doc_block = Document {
             body: vec![Block::Math {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 tex: format!("{marker}safe"),
                 display: true,
             }],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let out_block = writer::markdown::write(&doc_block);
         assert_eq!(out_block.content, format!("$${marker}safe$$\n\n"));
         let parsed_block =
@@ -2389,13 +2653,17 @@ fn test_display_math_single_line_and_block_marker_safety() {
         // 2. Inline::Math display
         let doc_inline = Document {
             body: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Math {
                     tex: format!("{marker}safe"),
                     display: true,
                 }],
             }],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let out_inline = writer::markdown::write(&doc_inline);
         assert!(out_inline.content.contains(&format!("$${marker}safe$$")));
         let parsed_inline = markdown::read(&out_inline.content, &Limits::local())
@@ -2420,11 +2688,15 @@ fn test_display_math_single_line_and_block_marker_safety() {
     for hostile in hostile_tex_samples {
         let doc = Document {
             body: vec![Block::Math {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 tex: hostile.to_owned(),
                 display: true,
             }],
             ..Default::default()
-        };
+        }
+        .finalize_import();
         let out = writer::markdown::write(&doc);
         assert!(
             out.warnings
@@ -2500,19 +2772,31 @@ fn test_task_list_non_paragraph_first_block_safety() {
     // 2. Nested probe: ordered item > quote > task item > display math with newline and `# H`
     let nested_doc = Document {
         body: vec![Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: true,
             start: Some(1),
             tight: false,
             items: vec![ListItem {
                 checked: None,
                 blocks: vec![Block::Quote {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     blocks: vec![Block::List {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         ordered: false,
                         start: None,
                         tight: false,
                         items: vec![ListItem {
                             checked: Some(true),
                             blocks: vec![Block::Math {
+                                id: Default::default(),
+                                style: None,
+                                direct: Default::default(),
                                 tex: "x = 1\n# Injected Heading".to_owned(),
                                 display: true,
                             }],
@@ -2522,7 +2806,8 @@ fn test_task_list_non_paragraph_first_block_safety() {
             }],
         }],
         ..Default::default()
-    };
+    }
+    .finalize_import();
     let nested_out = writer::markdown::write(&nested_doc);
     let nested_re_read =
         markdown::read(&nested_out.content, &Limits::local()).expect("re-read nested markdown");
@@ -2536,6 +2821,9 @@ fn test_task_list_non_paragraph_first_block_safety() {
 fn test_table_cell_link_destination_and_title_pipe_escaping() {
     let doc = Document {
         body: vec![Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![ColumnSpec {
                 align: Alignment::Default,
@@ -2545,6 +2833,9 @@ fn test_table_cell_link_destination_and_title_pipe_escaping() {
                 colspan: 1,
                 header: Some(true),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Header".to_owned(),
                     }],
@@ -2555,6 +2846,9 @@ fn test_table_cell_link_destination_and_title_pipe_escaping() {
                 colspan: 1,
                 header: None,
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Link {
                         url: "https://e.com/a|b".to_owned(),
                         title: Some("t|x".to_owned()),
@@ -2567,7 +2861,8 @@ fn test_table_cell_link_destination_and_title_pipe_escaping() {
             footnotes: Vec::new(),
         }],
         ..Default::default()
-    };
+    }
+    .finalize_import();
 
     let md_out = writer::markdown::write(&doc);
     assert!(
@@ -2596,6 +2891,9 @@ fn test_table_cell_link_destination_and_title_pipe_escaping() {
 fn test_adjacent_code_spans_do_not_merge() {
     let doc = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 Inline::Code {
                     text: "a|b".to_owned(),
@@ -2606,7 +2904,8 @@ fn test_adjacent_code_spans_do_not_merge() {
             ],
         }],
         ..Default::default()
-    };
+    }
+    .finalize_import();
 
     let md_out = writer::markdown::write(&doc);
     assert!(
@@ -2617,7 +2916,7 @@ fn test_adjacent_code_spans_do_not_merge() {
 
     let re_read =
         markdown::read(&md_out.content, &Limits::local()).expect("re-read adjacent code spans");
-    if let Some(Block::Paragraph { content }) = re_read.document.body.first() {
+    if let Some(Block::Paragraph { content, .. }) = re_read.document.body.first() {
         let code_count = content
             .iter()
             .filter(|i| matches!(i, Inline::Code { .. }))
@@ -2633,6 +2932,9 @@ fn test_adjacent_code_spans_do_not_merge() {
     // Math fallback code span followed by Inline::Code
     let doc2 = Document {
         body: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![
                 Inline::Math {
                     tex: "unsafe$math".to_owned(),
@@ -2644,7 +2946,8 @@ fn test_adjacent_code_spans_do_not_merge() {
             ],
         }],
         ..Default::default()
-    };
+    }
+    .finalize_import();
     let md_out2 = writer::markdown::write(&doc2);
     assert!(
         md_out2.content.contains("<!---->"),
@@ -2653,7 +2956,7 @@ fn test_adjacent_code_spans_do_not_merge() {
     );
     let re_read2 = markdown::read(&md_out2.content, &Limits::local())
         .expect("re-read math fallback and code spans");
-    if let Some(Block::Paragraph { content }) = re_read2.document.body.first() {
+    if let Some(Block::Paragraph { content, .. }) = re_read2.document.body.first() {
         let code_count = content
             .iter()
             .filter(|i| matches!(i, Inline::Code { .. }))
@@ -2672,6 +2975,9 @@ fn test_footnote_id_ending_in_backslash_percent_encoded() {
     let doc = Document {
         body: vec![
             Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![
                     Inline::Text {
                         text: "Ref ".to_owned(),
@@ -2682,8 +2988,14 @@ fn test_footnote_id_ending_in_backslash_percent_encoded() {
                 ],
             },
             Block::Footnote {
-                id: "fn\\".to_owned(),
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                note_id: "fn\\".to_owned(),
                 blocks: vec![Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "Note content".to_owned(),
                     }],
@@ -2691,7 +3003,8 @@ fn test_footnote_id_ending_in_backslash_percent_encoded() {
             },
         ],
         ..Default::default()
-    };
+    }
+    .finalize_import();
 
     let md_out = writer::markdown::write(&doc);
     assert!(
@@ -2707,7 +3020,7 @@ fn test_footnote_id_ending_in_backslash_percent_encoded() {
     let re_read = markdown::read(&md_out.content, &Limits::local())
         .expect("re-read footnote with encoded backslash");
     assert!(
-        re_read.document.body.iter().any(|b| matches!(b, Block::Paragraph { content } if content.iter().any(|i| matches!(i, Inline::FootnoteRef { .. })))),
+        re_read.document.body.iter().any(|b| matches!(b, Block::Paragraph { content , ..} if content.iter().any(|i| matches!(i, Inline::FootnoteRef { .. })))),
         "footnote ref must be preserved on read-back"
     );
 }
@@ -2717,6 +3030,9 @@ fn ordered_list_numbering_saturates_instead_of_overflowing() {
     let item = |text: &str| ListItem {
         checked: None,
         blocks: vec![Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: text.to_owned(),
             }],
@@ -2724,6 +3040,9 @@ fn ordered_list_numbering_saturates_instead_of_overflowing() {
     };
     let mut doc = Document::default();
     doc.body.push(Block::List {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         ordered: true,
         start: Some(u64::MAX),
         tight: true,

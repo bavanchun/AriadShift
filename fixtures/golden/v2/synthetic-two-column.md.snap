@@ -1,0 +1,10 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+# Two-column archive note
+
+The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.
+
+Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.
+
+This paragraph follows the page break and preserves document order.

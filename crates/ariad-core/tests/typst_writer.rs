@@ -39,7 +39,12 @@ fn text(value: &str) -> Inline {
 }
 
 fn para(content: Vec<Inline>) -> Block {
-    Block::Paragraph { content }
+    Block::Paragraph {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
+        content,
+    }
 }
 
 fn cell(blocks: Vec<Block>) -> TableCell {
@@ -66,6 +71,7 @@ fn text_cell(value: &str) -> TableCell {
 
 fn png_asset() -> Asset {
     Asset {
+        font: None,
         media_type: "image/png".to_owned(),
         bytes: vec![0x89, b'P', b'N', b'G'],
     }
@@ -183,22 +189,37 @@ fn document_with(value: &str) -> Document {
     };
     let mut document = document(vec![
         Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 2,
             content: inline(value),
         },
         para(inline(value)),
         Block::Code {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             lang: Some("rust".to_owned()),
             text: value.to_owned(),
         },
         Block::Math {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             tex: value.to_owned(),
             display: true,
         },
         Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![para(inline(value))],
         },
         Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: true,
@@ -208,6 +229,9 @@ fn document_with(value: &str) -> Document {
             }],
         },
         Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: Some(vec![text(value)]),
             columns: vec![ColumnSpec {
                 align: Alignment::Center,
@@ -217,13 +241,19 @@ fn document_with(value: &str) -> Document {
             footnotes: vec![text(value)],
         },
         Block::Figure {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             asset: AssetRef::Asset {
                 id: asset_id.clone(),
             },
             caption: vec![text(value)],
         },
         Block::Footnote {
-            id: value.to_owned(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: value.to_owned(),
             blocks: vec![para(vec![text(value)])],
         },
     ]);
@@ -280,6 +310,9 @@ fn hostile_text_only_ever_appears_inside_string_literals() {
 #[test]
 fn hostile_code_language_tags_are_reduced_to_safe_characters() {
     let document = document(vec![Block::Code {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         lang: Some("rust\", block: false); #eval(\"1\") //".to_owned()),
         text: "fn main() {}".to_owned(),
     }]);
@@ -290,6 +323,9 @@ fn hostile_code_language_tags_are_reduced_to_safe_characters() {
     );
 
     let empty = self::document(vec![Block::Code {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         lang: Some("\"#".to_owned()),
         text: "x".to_owned(),
     }]);
@@ -304,27 +340,56 @@ fn markup_of(document: &Document) -> String {
 fn every_block_kind_has_markup() {
     let mut document = document(vec![
         Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 1,
             content: vec![text("Title")],
         },
         Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 9,
             content: vec![text("Deep")],
         },
         para(vec![text("Hello "), Inline::SoftBreak {}, text("world")]),
         Block::Code {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             lang: Some("rust".to_owned()),
             text: "fn main() {\n\tprintln!(\"hi\");\n}".to_owned(),
         },
         Block::Math {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             tex: "x^2".to_owned(),
             display: true,
         },
         Block::Quote {
-            blocks: vec![para(vec![text("quoted")]), Block::PageBreak {}],
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            blocks: vec![
+                para(vec![text("quoted")]),
+                Block::PageBreak {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
+                },
+            ],
         },
-        Block::PageBreak {},
+        Block::PageBreak {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+        },
         Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: true,
@@ -340,6 +405,9 @@ fn every_block_kind_has_markup() {
             ],
         },
         Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: true,
             start: Some(3),
             tight: false,
@@ -351,6 +419,9 @@ fn every_block_kind_has_markup() {
                 ListItem {
                     checked: Some(false),
                     blocks: vec![Block::Code {
+                        id: Default::default(),
+                        style: None,
+                        direct: Default::default(),
                         lang: None,
                         text: "todo".to_owned(),
                     }],
@@ -358,6 +429,9 @@ fn every_block_kind_has_markup() {
             ],
         },
         Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: true,
             start: Some(u64::MAX),
             tight: true,
@@ -367,12 +441,18 @@ fn every_block_kind_has_markup() {
             }],
         },
         Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: true,
             items: vec![],
         },
         Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: Some(vec![text("Cap")]),
             columns: vec![
                 ColumnSpec {
@@ -393,6 +473,9 @@ fn every_block_kind_has_markup() {
             footnotes: vec![text("Table note")],
         },
         Block::Figure {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             asset: AssetRef::Asset {
                 id: "ab12".to_owned(),
             },
@@ -404,10 +487,16 @@ fn every_block_kind_has_markup() {
             ],
         },
         Block::Raw {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             format: RawFormat::Html,
             text: "<p>visible <b>html</b></p><script>alert(1)</script>".to_owned(),
         },
         Block::Raw {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             format: RawFormat::Tex,
             text: "\\newpage".to_owned(),
         },
@@ -517,6 +606,7 @@ fn every_inline_kind_has_markup() {
     document.assets.insert(
         "cd34".to_owned(),
         Asset {
+            font: None,
             media_type: "image/svg+xml".to_owned(),
             bytes: b"<svg/>".to_vec(),
         },
@@ -632,7 +722,10 @@ fn footnotes_render_at_their_first_reference_and_are_reused_afterwards() {
             },
         ]),
         Block::Footnote {
-            id: "n1".to_owned(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "n1".to_owned(),
             blocks: vec![para(vec![
                 text("Note body"),
                 Inline::FootnoteRef {
@@ -641,11 +734,17 @@ fn footnotes_render_at_their_first_reference_and_are_reused_afterwards() {
             ])],
         },
         Block::Footnote {
-            id: "inner".to_owned(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "inner".to_owned(),
             blocks: vec![para(vec![text("Inner")])],
         },
         Block::Footnote {
-            id: "loop".to_owned(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "loop".to_owned(),
             blocks: vec![para(vec![
                 text("Loop"),
                 Inline::FootnoteRef {
@@ -654,11 +753,17 @@ fn footnotes_render_at_their_first_reference_and_are_reused_afterwards() {
             ])],
         },
         Block::Footnote {
-            id: "unused".to_owned(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "unused".to_owned(),
             blocks: vec![para(vec![text("Never shown")])],
         },
         Block::Footnote {
-            id: "n1".to_owned(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "n1".to_owned(),
             blocks: vec![para(vec![text("Duplicate definition")])],
         },
     ]);
@@ -702,7 +807,10 @@ fn footnote_markers_inside_links_follow_the_link() {
             ],
         }]),
         Block::Footnote {
-            id: "n".to_owned(),
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            note_id: "n".to_owned(),
             blocks: vec![para(vec![text("note")])],
         },
     ]);
@@ -784,6 +892,9 @@ fn only_decodable_image_assets_become_virtual_files() {
             },
         ]),
         Block::Figure {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             asset: AssetRef::Asset {
                 id: "ee".to_owned(),
             },
@@ -800,6 +911,7 @@ fn only_decodable_image_assets_become_virtual_files() {
         document.assets.insert(
             id.to_owned(),
             Asset {
+                font: None,
                 media_type: media_type.to_owned(),
                 bytes: id.as_bytes().to_vec(),
             },
@@ -833,6 +945,9 @@ fn only_decodable_image_assets_become_virtual_files() {
 #[test]
 fn table_rows_are_filled_and_spans_fit_the_grid() {
     let table = Block::Table {
+        id: Default::default(),
+        style: None,
+        direct: Default::default(),
         caption: None,
         columns: vec![],
         head: vec![vec![span_cell("A", 3, 5)]],
@@ -866,6 +981,9 @@ fn table_cells_past_the_column_cap_are_kept_below_the_table() {
     let row: Vec<TableCell> = (0..130).map(|i| text_cell(&format!("c{i}"))).collect();
     let output = write(
         &document(vec![Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: vec![],
             head: vec![],
@@ -888,6 +1006,9 @@ fn deep_nesting_is_flattened_without_losing_text() {
     let mut block = para(vec![text("leaf block")]);
     for _ in 0..500 {
         block = Block::Quote {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             blocks: vec![block],
         };
     }
@@ -914,6 +1035,9 @@ fn control_characters_are_dropped_from_prose_and_kept_as_escapes_in_code() {
         &document(vec![
             para(vec![text("a\u{0}b\u{1b}[31mc\u{7f}d\te")]),
             Block::Code {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 lang: None,
                 text: "x\u{0}\ty\u{c}z".to_owned(),
             },

@@ -1,4 +1,6 @@
 //! QR modules are emitted as vector rectangles.
+#![cfg(feature = "codecs")]
+
 use ariad_pdf::{InputDoc, PdfError, ToolCtx, run_tool};
 use serde_json::json;
 #[path = "support/color_snapshot.rs"]

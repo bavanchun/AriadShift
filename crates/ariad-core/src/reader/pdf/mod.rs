@@ -10,8 +10,8 @@
 //! each page by [`MAX_PAGE_OPERATORS`] operators and [`MAX_PAGE_GLYPHS`] glyphs, the array
 //! elements one content operator keeps by a fixed cap, and form XObject nesting by
 //! [`MAX_FORM_DEPTH`]. An amplification budget of [`CONTENT_BUDGET_BASE`] plus
-//! [`CONTENT_BUDGET_PER_INPUT_BYTE`] per input byte is charged for decoded bytes, 16 bytes plus
-//! the decoded text of every glyph, every element a font walks in its `/Differences` and `/W`
+//! [`CONTENT_BUDGET_PER_INPUT_BYTE`] per input byte is charged for decoded bytes, 112 bytes plus
+//! the text and bounded family metadata per glyph, every element a font walks in its `/Differences` and `/W`
 //! arrays, and the widths, encodings and parsed CMaps fonts keep. Exceeding either limit is
 //! [`ReadError::DecompressedTooLarge`]. Documents declaring more than [`MAX_OBJECTS`] objects
 //! are refused once `lopdf` has parsed them; that parse is bounded per stream by the
@@ -21,6 +21,7 @@ mod assemble;
 mod cmap;
 mod encoding;
 mod font;
+mod icc;
 mod interpreter;
 mod layout;
 mod lexer;
@@ -148,6 +149,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut pages = Vec::with_capacity(page_ids.len());
     let mut unmapped = 0_u64;
     let mut truncated = 0_u32;
+    let mut unknown_color = false;
     let mut block_total = 0_usize;
     for (index, &page_id) in page_ids.iter().enumerate() {
         let page_no = u32::try_from(index + 1).unwrap_or(u32::MAX);
@@ -178,6 +180,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         }
         unmapped += content.unmapped;
         truncated += u32::from(content.truncated);
+        unknown_color |= content.unknown_color;
         let blocks = layout_page(&content, &state.styles, width, height);
         block_total += blocks.len();
         if block_total > limits.max_blocks as usize {
@@ -206,7 +209,11 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     fill_metadata(&doc, &mut document, &mut stats);
     document.layout = Some(LayoutIndex {
         pages: geometry,
-        blocks: assembled.positions,
+        blocks: assembled
+            .positions
+            .into_iter()
+            .map(|(path, pos)| (crate::ir::BlockId::import_path(path), pos))
+            .collect(),
     });
     let stats_value = serde_json::to_value(&stats).map_err(|_| ReadError::Malformed)?;
     document.provenance = Some(Provenance(BTreeMap::from([(
@@ -215,6 +222,12 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     )])));
 
     let mut warnings = Vec::new();
+    if unknown_color {
+        warnings.push(Warning::new(
+            WarningCode::StylesDropped,
+            "Unsupported PDF colour spaces or invalid colour operands were left unknown",
+        ));
+    }
     if stats.needs_ocr() {
         warnings.push(Warning::new(
             WarningCode::OcrRequired,
@@ -240,7 +253,10 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             ),
         ));
     }
-    Ok(ReadOutput { document, warnings })
+    Ok(ReadOutput {
+        document: document.finalize_import(),
+        warnings,
+    })
 }
 
 /// A [`lopdf::Document`] loaded within [`Limits`], together with cross-reference repair status.

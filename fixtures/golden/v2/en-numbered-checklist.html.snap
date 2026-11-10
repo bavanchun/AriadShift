@@ -1,0 +1,75 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>en-numbered-checklist</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<h1 data-ariad-style="sb4fde411aee91886b9fe65935e7e3ed35e8095e72c8d69062676ba6d810ca869" style="font-size:14pt;margin-top:24pt;margin-bottom:0pt;line-height:1.15;break-after:avoid;color:#365f91;"><span data-ariad-style="pRun4cff2c33598c91d2c9e380f1bddc89b567eec83271c70ddfa6aa3dd67066e56d"><span style="font-size:14pt;font-weight:700;color:#365f91;">Before the café opens</span></span></h1>
+<p style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">The repair café opens one Saturday each month in the old tram depot. Neighbors bring lamps, clocks, radios, and small appliances that have stopped working. Volunteers set out screwdrivers and labeled trays so every loose part has a safe place.</span></p>
+<ol start="1" style="font-size:11pt;margin-bottom:10pt;line-height:1.15;">
+<li><p data-ariad-style="sa11b1e1d827b5099736279af364939851c9957cd90b56ab3140b4d467e36c2e5" style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Clear the workbench</span></p>
+</li>
+<li><p data-ariad-style="sa11b1e1d827b5099736279af364939851c9957cd90b56ab3140b4d467e36c2e5" style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Check each lamp</span></p>
+</li>
+<li><p data-ariad-style="sa11b1e1d827b5099736279af364939851c9957cd90b56ab3140b4d467e36c2e5" style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Label the parts tray</span></p>
+</li>
+</ol>
+<ul style="font-size:11pt;margin-bottom:10pt;line-height:1.15;">
+<li><p data-ariad-style="s8c4b9dde3a307b8432c7b9af251ab58591468b8c69e592ea3c54b1a89f8b1d96" style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Ask the visitor before replacing a part.</span></p>
+</li>
+</ul>
+<ul style="font-size:11pt;margin-bottom:10pt;line-height:1.15;">
+<li><p data-ariad-style="s3c125f97f492b7ee2852c91c222c041cae429491265e4a749275329b200fcd82" style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Record the repair</span></p>
+</li>
+</ul>
+<p style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">No one promises a quick fix. The visitor sits beside a volunteer, describes what happened, and learns how to inspect the object. Sometimes a clean contact solves the problem; sometimes the group discovers that a replacement part is no longer made.</span></p>
+</body>
+</html>

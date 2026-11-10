@@ -53,7 +53,8 @@ fn append_inlines(inlines: &[Inline], out: &mut String) {
     for inline in inlines {
         match inline {
             Inline::Text { text } => out.push_str(text),
-            Inline::Emph { content }
+            Inline::Styled { content, .. }
+            | Inline::Emph { content }
             | Inline::Strong { content }
             | Inline::Strikeout { content }
             | Inline::Superscript { content }
@@ -84,18 +85,18 @@ fn append_blocks(blocks: &[Block], out: &mut String) {
             out.push('\n');
         }
         match block {
-            Block::Paragraph { content } | Block::Heading { content, .. } => {
+            Block::Paragraph { content, .. } | Block::Heading { content, .. } => {
                 append_inlines(content, out);
             }
             Block::Code { text, .. } => out.push_str(text),
             Block::Math { tex, .. } => out.push_str(tex),
-            Block::Quote { blocks } => append_blocks(blocks, out),
+            Block::Quote { blocks, .. } => append_blocks(blocks, out),
             Block::List { items, .. } => append_list_items(items, out),
             Block::Table { .. } => {}
             Block::Figure { caption, .. } => append_inlines(caption, out),
             Block::Footnote { blocks, .. } => append_blocks(blocks, out),
             Block::Raw { text, .. } => out.push_str(text),
-            Block::PageBreak {} => {}
+            Block::PageBreak { .. } => {}
         }
     }
 }
@@ -321,7 +322,7 @@ fn collect_tables<'a>(blocks: &'a [Block], out: &mut Vec<&'a Block>) {
     for block in blocks {
         match block {
             b @ Block::Table { .. } => out.push(b),
-            Block::Quote { blocks } => collect_tables(blocks, out),
+            Block::Quote { blocks, .. } => collect_tables(blocks, out),
             Block::List { items, .. } => {
                 for item in items {
                     collect_tables(&item.blocks, out);
@@ -490,6 +491,9 @@ mod tests {
             colspan,
             header: None,
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: text.to_owned(),
                 }],
@@ -536,6 +540,9 @@ mod tests {
         ]];
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns,
                 head,
@@ -554,12 +561,18 @@ mod tests {
         let doc = Document {
             body: vec![
                 Block::Heading {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     level: 1,
                     content: vec![Inline::Text {
                         text: "Title".into(),
                     }],
                 },
                 Block::Paragraph {
+                    id: Default::default(),
+                    style: None,
+                    direct: Default::default(),
                     content: vec![Inline::Text {
                         text: "=Formula Para".into(),
                     }],
@@ -577,6 +590,9 @@ mod tests {
     fn bounded_colspan_and_rowspan_prevent_allocation_overflow() {
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -606,6 +622,9 @@ mod tests {
         let long_text = "B".repeat(40_000);
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![ColumnSpec {
                     align: Alignment::Default,
@@ -636,6 +655,9 @@ mod tests {
             .collect();
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],
@@ -658,6 +680,9 @@ mod tests {
         let body = vec![single_row; MAX_EXCEL_ROWS + 2];
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],
@@ -678,6 +703,9 @@ mod tests {
     fn table_cap_emits_warning_when_tables_exceed_limit() {
         let tables: Vec<Block> = (0..260)
             .map(|i| Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: Some(vec![Inline::Text {
                     text: format!("Table {i}"),
                 }]),
@@ -747,6 +775,9 @@ mod tests {
         let rows: Vec<Vec<TableCell>> = (0..70).map(|_| vec![make_cell("cell", 1, 2000)]).collect();
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],
@@ -770,6 +801,9 @@ mod tests {
         let rows: Vec<Vec<TableCell>> = (0..1800).map(|_| vec![make_cell(&chunk, 1, 1)]).collect();
         let doc = Document {
             body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 caption: None,
                 columns: vec![],
                 head: vec![],

@@ -5,13 +5,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::format::Format;
 
+mod identity;
+pub mod legacy;
+mod styles;
+pub(crate) mod version;
+pub use identity::{BlockId, Margins, PageSize, Section, SourceMap, blocks_with_paths};
+pub use styles::*;
+
 /// The active version of the document intermediate representation.
-pub const IR_VERSION: &str = "ariad-ir/1";
+pub const IR_VERSION: &str = "ariad-ir/2";
 
 /// Readers retain compatibility with the last draft without accepting future versions.
 #[must_use]
 pub fn is_supported_version(version: Option<&str>) -> bool {
-    matches!(version, Some(IR_VERSION | "ariad-ir/0"))
+    matches!(version, Some(IR_VERSION | "ariad-ir/1" | "ariad-ir/0"))
 }
 
 /// A format-independent document.
@@ -27,6 +34,12 @@ pub struct Document {
     pub provenance: Option<Provenance>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub furniture: Vec<Block>,
+    #[serde(default, skip_serializing_if = "StyleSheet::is_empty")]
+    pub styles: StyleSheet,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sections: Vec<Section>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source_map: SourceMap,
 }
 
 impl Default for Document {
@@ -39,6 +52,9 @@ impl Default for Document {
             layout: None,
             provenance: None,
             furniture: Vec::new(),
+            styles: StyleSheet::default(),
+            sections: Vec::new(),
+            source_map: SourceMap::new(),
         }
     }
 }
@@ -59,7 +75,7 @@ pub fn count_blocks(blocks: &[Block]) -> usize {
     while let Some(block) = stack.pop() {
         count += 1;
         match block {
-            Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+            Block::Quote { blocks, .. } | Block::Footnote { blocks, .. } => {
                 stack.extend(blocks);
             }
             Block::List { items, .. } => {
@@ -238,31 +254,72 @@ fn source_format_schema(generator: &mut schemars::SchemaGenerator) -> schemars::
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Block {
     Heading {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         level: u8,
         content: Vec<Inline>,
     },
     Paragraph {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         content: Vec<Inline>,
     },
     Code {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         lang: Option<String>,
         text: String,
     },
     Math {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         tex: String,
         display: bool,
     },
     Quote {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         blocks: Vec<Block>,
     },
-    PageBreak {},
+    PageBreak {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
+    },
     List {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         ordered: bool,
         start: Option<u64>,
         tight: bool,
         items: Vec<ListItem>,
     },
     Table {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         caption: Option<Vec<Inline>>,
         columns: Vec<ColumnSpec>,
         head: Vec<Vec<TableCell>>,
@@ -271,14 +328,29 @@ pub enum Block {
         footnotes: Vec<Inline>,
     },
     Figure {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         asset: AssetRef,
         caption: Vec<Inline>,
     },
     Footnote {
-        id: String,
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
+        note_id: String,
         blocks: Vec<Block>,
     },
     Raw {
+        id: BlockId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "ParagraphStyle::is_empty")]
+        direct: ParagraphStyle,
         format: RawFormat,
         text: String,
     },
@@ -288,6 +360,13 @@ pub enum Block {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Inline {
+    Styled {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<StyleId>,
+        #[serde(default, skip_serializing_if = "CharacterStyle::is_empty")]
+        direct: CharacterStyle,
+        content: Vec<Inline>,
+    },
     Text {
         text: String,
     },
@@ -387,6 +466,39 @@ pub struct Asset {
     #[serde(with = "base64_bytes")]
     #[schemars(with = "String")]
     pub bytes: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<FontAsset>,
+}
+
+impl Asset {
+    /// Font bytes require explicit permission; absent font metadata grants none.
+    #[must_use]
+    pub fn can_export_bytes(&self) -> bool {
+        self.font
+            .as_ref()
+            .map_or_else(|| !self.is_font_media_type(), FontAsset::can_embed)
+    }
+
+    #[must_use]
+    pub fn is_font_media_type(&self) -> bool {
+        let media_type = self
+            .media_type
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        media_type.starts_with("font/")
+            || matches!(
+                media_type.as_str(),
+                "application/font-sfnt"
+                    | "application/vnd.ms-opentype"
+                    | "application/font-woff"
+                    | "application/x-font-ttf"
+                    | "application/x-font-opentype"
+                    | "application/x-font-woff"
+            )
+    }
 }
 
 /// Bounding box coordinates with a top-left origin: `[left, top, right, bottom]`.
@@ -419,7 +531,7 @@ pub struct LayoutIndex {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pages: Vec<PageGeometry>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub blocks: BTreeMap<String, BlockPosition>,
+    pub blocks: BTreeMap<BlockId, BlockPosition>,
 }
 
 /// Optional source and processing metadata, keyed by a stable extension identifier.
@@ -454,13 +566,16 @@ mod tests {
     #[test]
     fn enum_variants_use_internally_tagged_struct_forms() {
         let block = Block::Paragraph {
+            id: super::BlockId::new("test-block").unwrap(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "Hello".to_owned(),
             }],
         };
         assert_eq!(
             serde_json::to_string(&block).unwrap(),
-            r#"{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}"#
+            r#"{"type":"paragraph","id":"test-block","content":[{"type":"text","text":"Hello"}]}"#
         );
 
         let reference = AssetRef::Url {
@@ -476,19 +591,23 @@ mod tests {
     fn document_roundtrips_and_asset_bytes_are_base64() {
         let mut document = Document::default();
         document.body.push(Block::Raw {
+            id: super::BlockId::new("test-block").unwrap(),
+            style: None,
+            direct: Default::default(),
             format: RawFormat::Html,
             text: "<b>text</b>".to_owned(),
         });
         document.assets.insert(
             "abc".to_owned(),
             Asset {
+                font: None,
                 media_type: "image/png".to_owned(),
                 bytes: vec![0, 1, 2, 255],
             },
         );
 
         let json = serde_json::to_string(&document).unwrap();
-        assert!(json.contains(r#""version":"ariad-ir/1""#));
+        assert!(json.contains(r#""version":"ariad-ir/2""#));
         assert!(json.contains(r#""bytes":"AAEC/w==""#));
         let roundtripped: Document = serde_json::from_str(&json).unwrap();
         assert_eq!(roundtripped, document);
@@ -509,13 +628,16 @@ mod tests {
 
         let mut custom_doc = Document::default();
         custom_doc.furniture.push(Block::Paragraph {
+            id: super::BlockId::new("test-block").unwrap(),
+            style: None,
+            direct: Default::default(),
             content: vec![Inline::Text {
                 text: "Header text".to_owned(),
             }],
         });
         let mut blocks = std::collections::BTreeMap::new();
         blocks.insert(
-            "body/0".to_owned(),
+            super::BlockId::new("test-block").unwrap(),
             super::BlockPosition {
                 page_no: 1,
                 bbox: super::BoundingBox {
@@ -567,6 +689,9 @@ mod tests {
         assert_eq!(roundtrip_cell, cell_header);
 
         let table_empty = Block::Table {
+            id: super::BlockId::new("test-block").unwrap(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: Vec::new(),
             head: Vec::new(),
@@ -577,6 +702,9 @@ mod tests {
         assert!(!table_empty_json.contains("\"footnotes\""));
 
         let table_with_footnotes = Block::Table {
+            id: super::BlockId::new("test-block").unwrap(),
+            style: None,
+            direct: Default::default(),
             caption: None,
             columns: Vec::new(),
             head: Vec::new(),

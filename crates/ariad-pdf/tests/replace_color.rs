@@ -1,3 +1,5 @@
+#![cfg(feature = "codecs")]
+
 //! Integration coverage for selective text and vector colour replacement.
 
 use ariad_core::limits::Limits;

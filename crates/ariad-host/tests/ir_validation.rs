@@ -50,6 +50,7 @@ fn native_asset_limit_errors_remain_resource_failures() {
     document.assets.insert(
         hex::encode(Sha256::digest(&bytes)),
         Asset {
+            font: None,
             media_type: "image/png".into(),
             bytes,
         },

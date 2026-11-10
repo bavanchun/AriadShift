@@ -1219,14 +1219,16 @@ fn ir_family_inputs_write_pdf_through_typst_in_every_profile() {
             }
         }
     }
-    // Office spreadsheets keep LibreOffice's direct rendering instead of a Pandoc DOCX detour.
+    // Office spreadsheets retain direct LibreOffice rendering alongside optional readers.
     let xlsx = plan(caps, Format::Xlsx, Format::Pdf, Profile::Editable, &engines).unwrap();
-    assert_eq!(
-        xlsx.steps,
-        [PlanStep {
-            from: Format::Xlsx,
-            to: Format::Pdf,
-            engine: "libreoffice".to_owned(),
-        }]
+    let direct = [PlanStep {
+        from: Format::Xlsx,
+        to: Format::Pdf,
+        engine: "libreoffice".to_owned(),
+    }];
+    assert!(
+        std::iter::once(&xlsx)
+            .chain(&xlsx.alternatives)
+            .any(|candidate| candidate.steps == direct)
     );
 }

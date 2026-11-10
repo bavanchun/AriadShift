@@ -1,0 +1,64 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vi-styled-report</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<h1 data-ariad-style="sb4fde411aee91886b9fe65935e7e3ed35e8095e72c8d69062676ba6d810ca869" style="font-size:14pt;margin-top:24pt;margin-bottom:0pt;line-height:1.15;break-after:avoid;color:#365f91;"><span data-ariad-style="pRun4cff2c33598c91d2c9e380f1bddc89b567eec83271c70ddfa6aa3dd67066e56d"><span style="font-size:14pt;font-weight:700;color:#365f91;">Khu vườn đọc sách</span></span></h1>
+<p style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.</span></p>
+<blockquote style="font-size:11pt;margin-bottom:10pt;line-height:1.15;">
+<p data-ariad-style="Quote" style="font-size:11pt;margin-bottom:10pt;line-height:1.15;color:#000000;"><span data-ariad-style="pRuna904b13e3a5fba0d80ef025082460ca0eadf038355536ba03224e41b94d0d9d7"><span><span style="font-size:11pt;font-style:italic;color:#000000;">Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách.</span></span></span></p>
+</blockquote>
+<h2 data-ariad-style="sae80a22e83a0b23ab4bbfe894d8c34a4ccdf1503f36ccfded4cb346a5c9fdc04" style="font-size:13pt;margin-top:10pt;margin-bottom:0pt;line-height:1.15;break-after:avoid;color:#4f81bd;"><span data-ariad-style="pRun99b35753a1ebcd475fbe8c9729274844d22c5a528f75e5ee4ed8aeb222d6ab16"><span style="font-size:13pt;font-weight:700;color:#4f81bd;">Sinh hoạt hằng tuần</span></span></h2>
+<p style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.</span></p>
+<p style="font-size:11pt;margin-bottom:10pt;line-height:1.15;"><span style="font-size:11pt;">Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.</span></p>
+</body>
+</html>

@@ -8,7 +8,7 @@ use ariad_core::{
     protocol::{Message, v2::MessageV2},
 };
 
-pub const IR_SCHEMA_ID: &str = "https://ariadshift.ariadnev.com/schemas/ir.v1.json";
+pub const IR_SCHEMA_ID: &str = "https://ariadshift.ariadnev.com/schemas/ir.v2.json";
 pub const ENGINE_PROTOCOL_SCHEMA_ID: &str =
     "https://ariadshift.ariadnev.com/schemas/engine-protocol.v1.json";
 pub const ENGINE_PROTOCOL_V2_SCHEMA_ID: &str =
@@ -24,8 +24,9 @@ pub fn repository_root() -> PathBuf {
     fixtures::repository_root()
 }
 
+#[allow(dead_code)]
 pub fn ir_schema_path() -> PathBuf {
-    repository_root().join("schemas/ir.v1.json")
+    repository_root().join("schemas/ir.v2.json")
 }
 
 #[allow(dead_code)]
@@ -55,6 +56,27 @@ pub fn generated_ir_schema() -> String {
     object.insert("x-status".to_owned(), json!("final"));
     object.insert("required".to_owned(), json!(["version"]));
     object.get_mut("properties").unwrap()["version"]["const"] = json!(ariad_core::ir::IR_VERSION);
+    let mut contents = serde_json::to_string_pretty(&schema).expect("schema serializes to JSON");
+    contents.push('\n');
+    contents
+}
+
+#[allow(dead_code)]
+pub fn generated_legacy_ir_schema() -> String {
+    let mut schema = SchemaSettings::draft2020_12()
+        .into_generator()
+        .into_root_schema_for::<ariad_core::ir::legacy::Document>();
+    let object = schema
+        .as_object_mut()
+        .expect("Document schema is an object");
+    object.insert(
+        "$id".to_owned(),
+        json!("https://ariadshift.ariadnev.com/schemas/ir.v1.json"),
+    );
+    object.insert("x-status".to_owned(), json!("final"));
+    object.insert("required".to_owned(), json!(["version"]));
+    object.get_mut("properties").unwrap()["version"]["const"] =
+        json!(ariad_core::ir::legacy::IR_VERSION);
     let mut contents = serde_json::to_string_pretty(&schema).expect("schema serializes to JSON");
     contents.push('\n');
     contents
@@ -122,4 +144,28 @@ pub fn generated_capabilities_schema() -> String {
     let mut contents = serde_json::to_string_pretty(&schema).expect("schema serializes to JSON");
     contents.push('\n');
     contents
+}
+
+#[allow(dead_code)]
+pub fn legacy_ir_schema_path() -> PathBuf {
+    repository_root().join("schemas/ir.v1.json")
+}
+
+// Existing reader assertions compare the frozen semantic contract; identity
+// invariants are covered separately by the versioned IR tests.
+#[allow(dead_code)]
+pub fn assert_semantic_blocks_eq(
+    actual: &[ariad_core::ir::Block],
+    expected: &[ariad_core::ir::Block],
+) {
+    let legacy = |blocks: &[ariad_core::ir::Block]| {
+        ariad_core::ir::Document {
+            body: blocks.to_vec(),
+            ..Default::default()
+        }
+        .to_v1()
+        .unwrap()
+        .body
+    };
+    assert_eq!(legacy(actual), legacy(expected));
 }

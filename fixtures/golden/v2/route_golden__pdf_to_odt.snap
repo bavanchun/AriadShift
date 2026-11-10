@@ -1,0 +1,69 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+expression: content
+---
+<?xml version="1.0" encoding="utf-8" ?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" xmlns:dr3d="urn:oasis:names:tc:opendocument:xmlns:dr3d:1.0" xmlns:math="http://www.w3.org/1998/Math/MathML" xmlns:form="urn:oasis:names:tc:opendocument:xmlns:form:1.0" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0" xmlns:ooo="http://openoffice.org/2004/office" xmlns:ooow="http://openoffice.org/2004/writer" xmlns:oooc="http://openoffice.org/2004/calc" xmlns:dom="http://www.w3.org/2001/xml-events" xmlns:xforms="http://www.w3.org/2002/xforms" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" office:version="1.3">
+  <office:font-face-decls>
+    <style:font-face style:name="Courier New" style:font-family-generic="modern" style:font-pitch="fixed" svg:font-family="'Courier New'" />
+  </office:font-face-decls>
+  <office:automatic-styles>
+    <style:style style:name="fr2" style:family="graphic" style:parent-style-name="Formula">
+      <style:graphic-properties style:vertical-pos="middle" style:vertical-rel="text" style:horizontal-pos="center" style:horizontal-rel="paragraph-content" style:wrap="none" />
+    </style:style>
+    <style:style style:name="fr1" style:family="graphic" style:parent-style-name="Formula">
+      <style:graphic-properties style:vertical-pos="middle" style:vertical-rel="text" />
+    </style:style>
+  </office:automatic-styles>
+<office:body>
+<office:text>
+<text:p text:style-name="Title">Notes from the Map Room</text:p>
+<text:p text:style-name="Author">AriadShift contributors</text:p>
+<text:h text:style-name="Heading_20_1" text:outline-level="1">
+        <text:span text:style-name="AriadCDirect73d7d5745b85a59e08722132f4886d18073d368de4db4bb25fed59f26e5c3401">Notes from the Map Room</text:span>
+      </text:h>
+<text:p text:style-name="AriadPDirectfe58b82b99736840cf803c46f1ae1b3706b34e2a91038fe0586df28188dd516c">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.</text:span>
+      </text:p>
+<text:p text:style-name="AriadPDirectc98823d129118a361339348cb92c00127ac15878e5a5418aea9a7321680a46ae">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.</text:span>
+      </text:p>
+<text:p text:style-name="AriadPDirect806b18835800daf3a5506a0a8c8f34ea124d1638c6c9b293ec1b1a1f74d73822">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Visitors often arrive looking for one address and leave with a longer story. They discover a footbridge that no longer exists, a lane named after a vanished orchard, or a public stair hidden behind a market. The archive cannot answer every question, but it can show where to ask next.</text:span>
+      </text:p>
+<text:p text:style-name="AriadPDirect8b0ad7e1c541dfc3ec8ceafb62ba874e5cbd38f0bf48457210c0f432f4121f08">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">The repair café opens one Saturday each month in the old tram depot. Neighbors bring lamps, clocks, radios, and small appliances that have stopped working. Volunteers set out screwdrivers and labeled trays so every loose part has a safe place.</text:span>
+      </text:p>
+<text:p text:style-name="First_20_paragraph">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Archive note1</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Archive item</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Recorded detail</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Street plan</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Survey date</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Overlay</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Transparent sheet</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Map weight</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect0633cf828ef9420c70c7a9b7002c39fdef2400dcd01f37aee4ab3ec370e1ec3d">Brass</text:span>
+      </text:p>
+<text:p text:style-name="Text_20_body">
+        <text:span text:style-name="AriadCDirect50875f7dc7a16e8a3c1072b26df060ace11f8f66c5425bfd2c1ccb09daafe8f7">1The archive keeps older map editions beside later revisions.</text:span>
+      </text:p>
+</office:text>
+</office:body>
+</office:document-content>

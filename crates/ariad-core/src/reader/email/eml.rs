@@ -135,6 +135,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if !header_inlines.is_empty() {
         blocks.push(Block::Paragraph {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             content: header_inlines,
         });
     }
@@ -182,6 +185,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         attachment_items.push(ListItem {
             checked: None,
             blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
                 content: vec![Inline::Text {
                     text: nfc(&item_text),
                 }],
@@ -200,12 +206,18 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if !attachment_items.is_empty() {
         blocks.push(Block::Heading {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             level: 2,
             content: vec![Inline::Text {
                 text: "Attachments".to_owned(),
             }],
         });
         blocks.push(Block::List {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
             ordered: false,
             start: None,
             tight: true,
@@ -226,7 +238,10 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         ..Document::default()
     };
 
-    Ok(ReadOutput { document, warnings })
+    Ok(ReadOutput {
+        document: document.finalize_import(),
+        warnings,
+    })
 }
 
 #[cfg(test)]
@@ -259,7 +274,7 @@ This is a test email message.\r\n";
 
         // Check that body paragraphs contain the actual body text
         let found_body = out.document.body.iter().any(|b| match b {
-            Block::Paragraph { content } => content.iter().any(|inline| match inline {
+            Block::Paragraph { content, .. } => content.iter().any(|inline| match inline {
                 Inline::Text { text } => {
                     text.contains("Hello Bob,") || text.contains("This is a test email message.")
                 }
@@ -304,7 +319,7 @@ U29tZSBzZWNyZXQgYXR0YWNobWVudCBkYXRhCg==\r\n\
             if let Block::List { items, .. } = b {
                 items.iter().any(|item| {
                     item.blocks.iter().any(|ib| match ib {
-                        Block::Paragraph { content } => content.iter().any(|c| match c {
+                        Block::Paragraph { content, .. } => content.iter().any(|c| match c {
                             Inline::Text { text } => {
                                 text.contains("notestxt") && text.contains("28 bytes")
                             }

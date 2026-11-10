@@ -10,8 +10,8 @@ import tomllib
 import unittest
 from unittest.mock import patch
 
-from ariad_bench.canonical import CanonicalDoc
-from ariad_bench.references import get_reference_for_fixture
+from ariad_bench.canonical import CanonicalDoc, normalize
+from ariad_bench.references import editor_assertions_only, get_reference_for_fixture
 from ariad_bench.run import find_binary
 
 
@@ -111,6 +111,20 @@ class TestReferences(unittest.TestCase):
 
         for tf in truth_files:
             data = json.loads(tf.read_text(encoding="utf-8"))
+            if data.get("schema") == "ariad-editor-truth/1":
+                self.assertEqual(data["origin"], "independent-original-specification")
+                self.assertTrue(data["case"])
+                if editor_assertions_only(data):
+                    unscored_count += 1
+                    fixture = next(f for f in manifest["fixture"] if any(
+                        c.get("path") == tf.relative_to(self.root).as_posix()
+                        for c in f.get("companions", [])
+                    ))
+                    self.assertIsNone(get_reference_for_fixture(fixture, self.root))
+                else:
+                    scored_count += 1
+                    self.assertTrue(normalize(data).text, f"{tf} empty authored IR reference")
+                continue
             self.assertEqual(data.get("version"), "ariad-truth/0", f"{tf} invalid version")
             self.assertTrue("id" in data, f"{tf} missing id")
 

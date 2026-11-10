@@ -79,6 +79,12 @@ Converts the formats below through the shared planner. Native readers cover Mark
 ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 ```
 
+IR JSON defaults to `ariad-ir/2` with stable block IDs, ID-keyed layout/source maps, named and direct styles, and page sections. The shared cascade is paragraph defaults, the containing table paragraph baseline, named paragraph inheritance, then direct overrides. Character spans inherit outer values and retain explicit false resets. DOCX reads named and direct OOXML formatting through `docx+styles`; HTML reads a safe inline CSS subset, PDF retains evidenced font/size/weight/colour (including verified matrix/TRC sRGB ICC profiles; other ICC colour spaces remain unknown), and Docling retains its formatting flags. Typst, HTML and DOCX write supported styles; Markdown reports style loss. See [the IR contract](../ARCHITECTURE.md#62-document-ir).
+
+DOCX text-box stories remain under the semantic reader's control. Their content and formatting may be omitted, with an explicit `unsupported_node` warning; they do not cause the entire DOCX to be rejected as malformed.
+
+Unsupported PDF colour values remain unknown and emit `styles_dropped`; missing Unicode mappings and truncated content retain their separate content-loss warnings.
+
 #### Arguments and Options
 
 - `<INPUT>...`: One or more input document paths, processed in order.
@@ -86,6 +92,7 @@ ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
 - `--pdf-standard <STANDARD>`: Request `a-2b`, `a-2u`, `a-3b`, or `ua-1` on a PDF route whose final writer is Typst. The host requires the `verapdf` pack and system Java >=11, validates the candidate against the requested flavour, and publishes only after compliance passes. Missing pack/Java exits 5; failed validation exits 1 without changing the destination. PDF/UA requires meaningful figure alternative text; missing descriptions are reported, never invented.
+- `--ir-version <1|2>`: Select the IR JSON wire version for single or batch JSON conversion. The default is `ariad-ir/2`; explicit `1` writes through the frozen legacy representation and reports `ir_version_loss` because identities, styles, sections, source maps and font metadata are omitted. Unsupported values and use with non-JSON output fail before destination creation.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -109,6 +116,7 @@ ashift convert notes.md --to pdf --pdf-standard a-2b
 ashift convert legacy.doc --to md
 ashift convert slides.pptx --to pdf
 ashift convert notes.md --to json
+ashift convert notes.md --to json --ir-version 1 -o legacy.ir.json
 
 # Convert with JSON output for scripts or pipelines
 ashift convert draft.md --to docx --json
@@ -221,7 +229,7 @@ decode these names as UTF-8. Preserving name bytes and flags exactly is a v1.x i
 
 #### JSON Output Shape
 
-For one input, `--json` preserves the existing report shape:
+For one input, `--json` keeps `output`, `route`, `warnings` and `elapsed_ms`, and adds `fidelity`. This example shows unavailable read-back evidence:
 
 ```json
 {
@@ -244,11 +252,28 @@ For one input, `--json` preserves the existing report shape:
       "message": "The input file extension does not match the detected format."
     }
   ],
-  "elapsed_ms": 42
+  "elapsed_ms": 42,
+  "fidelity": {
+    "metric_version": "fidelity/2",
+    "status": "unavailable",
+    "basis": "runtime_readback",
+    "score": null,
+    "text_cer": null,
+    "structure_f1": null,
+    "structure_by_kind": {},
+    "style_accuracy": null,
+    "layout_iou": null,
+    "coverage": {},
+    "unavailable_reasons": {"report": "readback_limit_exceeded"}
+  }
 }
 ```
 
-For several inputs, `--json` emits one document with results in input order:
+Measured reports compare observations captured from the first input IR with one output read-back through existing readers. They measure preservation after extraction, independently of planner estimates. See [fidelity definitions](bench.md#measured-fidelity-fidelity2) for the aggregate, tolerances and coverage. `structure_by_kind` contains heading/list/table precision, recall, F1 and counts. `coverage` contains reference/hypothesis/matched/observed counts for text, style and layout; missing components are null with reasons. Batch successes and MCP conversion results carry the same report.
+
+Read-back adds at most one engine invocation, capped at five seconds, 512 MiB engine memory, 2 MiB input, 8 MiB IR, 16 MiB decompressed content, 2,048 archive entries, 4,096 blocks and 100 pages; stricter caller limits prevail. Native readers and the shared scorer enforce their bounds. Unsupported read-back, missing input IR, limits or engine failures return `unavailable` without failing a completed conversion. Scoring retains the caller's isolation policy and never recursively converts or launches Python.
+
+For several inputs, `--json` emits one document with results in input order. The successful entry below abbreviates the route and omits `fidelity` for readability:
 
 ```json
 {
