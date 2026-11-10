@@ -1,0 +1,1062 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Redaktə edilə bilən",
+        "description": "Redaktəni davam etdirə biləcəyiniz real başlıqlar, siyahılar və cədvəllər."
+      },
+      "faithful": {
+        "label": "Dəqiq",
+        "description": "Düzəndən mümkün qədər az uzaqlaşır."
+      },
+      "fast": {
+        "label": "Sürətli",
+        "description": "Ən sürətli yola üstünlük verir."
+      },
+      "private": {
+        "label": "Məxfi",
+        "description": "Yalnız cihazınızı heç vaxt tərk etməyən mühərriklər."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift nüvəsi",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF mətn oxuyucusu"
+    },
+    "runtime": {
+      "wasm": "Brauzer",
+      "local": "CLI və masaüstü",
+      "cloud": "Bulud"
+    },
+    "score": {
+      "not_measured": "ölçülməyib"
+    },
+    "duration": {
+      "under_1_ms": "1 ms-dən az"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown sənədi",
+        "description": "GitHub Flavored Markdown ilə CommonMark: başlıqlar, siyahılar, cədvəllər, tapşırıq siyahıları, haşiyə qeydləri və riyaziyyat. Süni intellekt alətlərinin ən yaxşı oxuduğu format."
+      },
+      "html": {
+        "noun": "HTML səhifəsi",
+        "description": "Müstəqil HTML5 səhifəsi. Girişdəki xam işarələmə təmizlənir; skriptlər və təhlükəli atributlar çıxışa heç vaxt çatmır."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR sənədi",
+        "description": "Hər AriadShift marşrutunun keçdiyi strukturlaşdırılmış sənəd modeli: başlıqlar, bloklar, cədvəllər, resurslar və metadata versiyalı JSON şəklində."
+      },
+      "docx": {
+        "noun": "Word sənədi",
+        "description": "Microsoft Word, LibreOffice və Google Docs-dan olan Office Open XML sənədləri Pandoc vasitəsilə oxunur və yazılır."
+      },
+      "epub": {
+        "noun": "EPUB e-kitabı",
+        "description": "EPUB 3 e-kitabları təkrarlana bilən metadata ilə Pandoc vasitəsilə oxunur və yazılır."
+      },
+      "pdf": {
+        "noun": "PDF sənədi",
+        "description": "Rəqəmsal PDF mətni bu cihazda oxunur. PDF çıxışı Typst və daxil edilmiş şriftlərdən istifadə edir. Skan edilmiş səhifələr üçün masaüstü tətbiqində OCR lazımdır."
+      },
+      "odt": {
+        "noun": "OpenDocument mətn sənədi",
+        "description": "OpenDocument mətn faylları masaüstü tətbiqində LibreOffice-dən istifadə edir."
+      },
+      "rtf": {
+        "noun": "Rich Text sənədi",
+        "description": "Rich Text sənədləri masaüstü tətbiqində LibreOffice-dən istifadə edir."
+      },
+      "pptx": {
+        "noun": "PowerPoint təqdimatı",
+        "description": "PowerPoint təqdimatları masaüstü tətbiqində Docling və ya LibreOffice-dən istifadə edir."
+      },
+      "xlsx": {
+        "noun": "Excel iş kitabı",
+        "description": "Excel iş kitabları masaüstü tətbiqində Docling və ya LibreOffice-dən istifadə edir."
+      },
+      "doc": {
+        "noun": "köhnə Word sənədi",
+        "description": "Köhnə Word sənədləri masaüstü tətbiqində LibreOffice-dən istifadə edir."
+      },
+      "xls": {
+        "noun": "köhnə Excel iş kitabı",
+        "description": "Köhnə Excel iş kitabları masaüstü tətbiqində LibreOffice-dən istifadə edir."
+      },
+      "ppt": {
+        "noun": "köhnə PowerPoint təqdimatı",
+        "description": "Köhnə PowerPoint təqdimatları masaüstü tətbiqində LibreOffice-dən istifadə edir."
+      },
+      "ods": {
+        "noun": "OpenDocument cədvəli",
+        "description": "OpenDocument cədvəlləri masaüstü tətbiqində LibreOffice-dən istifadə edir."
+      },
+      "odp": {
+        "noun": "OpenDocument təqdimatı",
+        "description": "OpenDocument təqdimatları masaüstü tətbiqində LibreOffice-dən istifadə edir."
+      },
+      "png": {
+        "noun": "PNG təsviri",
+        "description": "Təsvirdən mətn çıxarmaq üçün masaüstü tətbiqində Docling mühərrik paketi lazımdır."
+      },
+      "jpeg": {
+        "noun": "JPEG təsviri",
+        "description": "Təsvirdən mətn çıxarmaq üçün masaüstü tətbiqində Docling mühərrik paketi lazımdır."
+      },
+      "webp": {
+        "noun": "WebP təsviri",
+        "description": "Təsvirdən mətn çıxarmaq üçün masaüstü tətbiqində Docling mühərrik paketi lazımdır."
+      },
+      "tiff": {
+        "noun": "TIFF təsviri",
+        "description": "Təsvirdən mətn çıxarmaq üçün masaüstü tətbiqində Docling mühərrik paketi lazımdır."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: brauzerinizdə məxfi sənəd çevrilməsi",
+      "site_description": "Markdown, HTML və strukturlaşdırılmış JSON fayllarını öz cihazınızda çevirin. Defolt olaraq məxfi, hər marşrutda ölçülmüş keyfiyyət və süni intellekt agentləri üçün hazırdır.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Məzmuna keç",
+      "home_link": "{site} ana səhifəsi",
+      "nav_label": "Əsas menyu",
+      "nav": {
+        "converter": "Çevirici",
+        "formats": "Formatlar",
+        "quality": "Keyfiyyət",
+        "download": "Yüklə",
+        "privacy": "Məxfilik"
+      },
+      "footer": {
+        "license": "AriadShift Apache-2.0 lisenziyası ilə açıq mənbəlidir.",
+        "privacy": "Məxfilik",
+        "licenses": "Lisenziyalar",
+        "quality": "Keyfiyyət",
+        "source": "Mənbə kodu"
+      },
+      "language": {
+        "label": "Dil",
+        "button": "Dil: {name}",
+        "list_label": "Dil seçin",
+        "community_badge": "İcma tərcüməsi",
+        "community_note": "İcma tərcümələri maşın layihələridir və insanlar onları hələ də düzəldə bilər."
+      }
+    },
+    "not_found": {
+      "title": "Səhifə tapılmadı",
+      "body": "Bu səhifə mövcud deyil.",
+      "home_link": "Ana səhifəyə keç"
+    },
+    "home": {
+      "meta_title": "Sənədləri öz cihazınızda çevirin",
+      "title": "Sənədləri öz cihazınızda çevirin",
+      "lede": "AriadShift Markdown, HTML, Word, EPUB və strukturlaşdırılmış JSON fayllarını birbaşa brauzerinizdə çevirir. Rəqəmsal PDF mətnini oxuyun və PDF-ləri cihazınızda yaradın. Ölçən vahid planlaşdırıcı, yükləmə yoxdur.",
+      "open_converter": "Çeviricini aç",
+      "install_cli": "CLI-ni quraşdır",
+      "why_heading": "Niyə AriadShift",
+      "why": {
+        "private": {
+          "title": "Defolt olaraq məxfi",
+          "body": "Çevirici brauzerinizin daxilində WebAssembly ilə işləyir. Sənədiniz brauzerin xüsusi fayl sistemində saxlanılır və heç vaxt yüklənmir."
+        },
+        "quality": {
+          "title": "Ölçülmüş keyfiyyət",
+          "body": "Hər marşrut açıq müqayisə testindən gələn dəqiqlik və redaktə oluna bilmə xalları daşıyır. Planlaşdırıcı ən yaxşısını seçir və səbəbini deyir."
+        },
+        "agents": {
+          "title": "Süni intellekt agentləri üçün hazırdır",
+          "body": "Sənədləri LLM konteksti üçün təmiz Markdown-a və ya strukturlaşdırılmış JSON-a çevirin. CLI MCP serveri ilə gəlir, beləliklə agentlər faylları özləri çevirə bilər."
+        }
+      },
+      "how_heading": "Necə işləyir",
+      "how": {
+        "step_label": "Addım {number}",
+        "step_1": "Siz fayl seçirsiniz. Brauzer onu öz xüsusi fayl sisteminə köçürür.",
+        "step_2": "Arxa plan işçisi WebAssembly-yə tərtib edilmiş AriadShift mühərrikini yükləyir.",
+        "step_3": "Planlaşdırıcı məqsədiniz üçün ən yaxşı ölçülmüş xalı olan marşrutu seçir.",
+        "step_4": "Nəticəni yükləyirsiniz. Yenidən başlamaq saxlanılan bütün faylları silir."
+      },
+      "pairs_heading": "Brauzerinizdə çevirin",
+      "pair_link": "{from} → {to}",
+      "see_more": "Bütün <formats>dəstəklənən formatlara</formats> və hər marşrutun <quality>ölçülmüş keyfiyyətinə</quality> baxın."
+    },
+    "formats": {
+      "meta_title": "Dəstəklənən formatlar",
+      "meta_description": "AriadShift hansı sənəd formatlarını oxuyur və yazır, hansı çevirmələr brauzerinizdə işləyir.",
+      "title": "Dəstəklənən formatlar",
+      "lede": "Hər çevirmə AriadShift-in sənəd modelindən keçir. “Brauzer” işarəli formatlar tamamilə bu cihazda çevrilir; digərləri hələlik əmr sətri alətini tələb edir.",
+      "badge_browser": "Brauzer və CLI",
+      "badge_cli": "CLI",
+      "extensions": "Uzantılar: {list}",
+      "engines": "Oxuyan: {readers}; yazan: {writers}.",
+      "no_engine": "hələ mühərrik yoxdur",
+      "convert_to": "Çevirmə hədəfləri: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Ölçülmüş keyfiyyət",
+      "meta_description": "Hər AriadShift çevirmə addımının dəqiqliyi, redaktə oluna bilməsi və sürəti açıq müqayisə testindən yaradılır.",
+      "title": "Ölçülmüş keyfiyyət",
+      "lede": "Bu xallar əllə yazılmır. Müqayisə testi {count, plural, one {# açıq nümunə sənədini} other {# açıq nümunə sənədini}} hər addımdan keçirərək çevirir və nəticəni məlum doğru ilə müqayisə edir. Planlaşdırıcı marşrut seçərkən eyni rəqəmləri oxuyur.",
+      "generated": "{pandoc, select, none {{date} tarixində yaradılıb.} other {{date} tarixində Pandoc {pandoc} ilə yaradılıb.}}",
+      "methodology": "<link>Metodologiyanı oxuyun</link>.",
+      "caption": "Çevirmə addımı üzrə müqayisə xalları",
+      "column": {
+        "step": "Addım",
+        "engine": "Mühərrik",
+        "runs_in": "İşlədiyi yer",
+        "fidelity": "Dəqiqlik",
+        "editability": "Redaktə oluna bilmə",
+        "median_time": "Median vaxt",
+        "samples": "Nümunələr"
+      }
+    },
+    "route": {
+      "label": "Çevirmə marşrutu",
+      "then": "sonra",
+      "fidelity": "Dəqiqlik",
+      "editability": "Redaktə oluna bilmə",
+      "estimated_time": "Təxmini vaxt",
+      "unmeasured": "Bu marşrutun bir hissəsi hələ müqayisə edilməyib, ona görə planlaşdırıcı onu ehtiyatla qiymətləndirir."
+    },
+    "download": {
+      "meta_title": "Yüklə",
+      "meta_description": "AriadShift əmr sətri alətini və MCP serverini macOS, Linux və Windows üzərində quraşdırın.",
+      "title": "AriadShift-i yükləyin",
+      "lede": "<code>ashift</code> əmri Markdown, HTML, DOCX və EPUB fayllarını kompüterinizdə çevirir və süni intellekt agentləri üçün MCP serveri işlədir. DOCX və EPUB marşrutları ayrıca proqram kimi <pandoc>Pandoc 3.12 və ya daha yenisindən</pandoc> istifadə edir.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS və Linux)",
+          "note": "Formula dərc edildikdən sonra əlçatan olacaq. DOCX və EPUB marşrutlarının tələb etdiyi Pandoc-u da quraşdırır."
+        },
+        "shell": {
+          "title": "Shell quraşdırıcısı (macOS və Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell quraşdırıcısı (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Paket müraciəti qəbul edildikdən sonra əlçatan olacaq."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Crate-lər crates.io-da dərc edildikdən sonra əlçatan olacaq."
+        }
+      },
+      "then_heading": "Sonra",
+      "releases": "Hər platforma üçün arxivlər <link>GitHub Releases</link> səhifəsindədir.",
+      "desktop": {
+        "title": "Masaüstü tətbiqi",
+        "body": "Toplu çevirmə və qovluq izləmə ilə macOS, Windows və Linux üçün masaüstü tətbiqi hazırlanır. İlk buraxılış çıxanda burada göstəriləcək."
+      }
+    },
+    "pair": {
+      "meta_title": "{from} formatından {to} formatına çevir",
+      "meta_description_browser": "AriadShift ilə brauzerinizdə məxfi şəkildə çevirin: {noun} → {to}. Ölçülmüş dəqiqlik, yükləmə yoxdur.",
+      "meta_description_cli": "AriadShift ilə öz kompüterinizdə çevirin: {noun} → {to}. Ölçülmüş dəqiqlik, yükləmə yoxdur.",
+      "badge_browser": "Brauzerinizdə işləyir",
+      "badge_cli": "AriadShift CLI ilə işləyir",
+      "title": "{from} formatından {to} formatına çevir",
+      "lede_browser": "Yükləmədən bu çevirməni edin: {noun} → {to}. AriadShift faylı brauzerinizdə oxuyur, sənəd modelinə uyğunlaşdırır və {to} çıxışını cihazınızda yazır.",
+      "lede_cli": "Pulsuz AriadShift əmr sətri aləti ilə öz kompüterinizdə bu çevirməni edin: {noun} → {to}. Brauzer versiyası bu marşrutu hələ işlətmir.",
+      "convert_now": "{from} formatından {to} formatına indi çevir",
+      "install_cli": "CLI-ni quraşdır",
+      "route_heading": "AriadShift-in getdiyi marşrut",
+      "from_heading": "Mənbə: {format}",
+      "to_heading": "Hədəf: {format}",
+      "cli_heading": "Əmr sətrindən",
+      "related_heading": "Əlaqəli çevirmələr",
+      "related_link": "{from} → {to}"
+    },
+    "converter_page": {
+      "meta_title": "Çevirici",
+      "meta_description": "Markdown, HTML, DOCX, EPUB, rəqəmsal PDF və AriadShift IR JSON fayllarını brauzerinizdə çevirin. Fayllar cihazınızda qalır.",
+      "title": "Sənədi çevirin",
+      "lede": "Fayl seçin, hədəf təyin edin və nəticəni yükləyin. Hər şey bu vərəqdə baş verir{cloud, select, yes {, əgər bu faylı buludda çevirməyi seçməsəniz.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Lisenziyalar",
+      "meta_description": "AriadShift və onun brauzer mühərriklərinin lisenziyaları və mənbəsi."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Bulud rejimi gözlənilmədən dayandı",
+        "stopped_body": "Bulud rejimi yükləmə başladıqdan sonra xəta ilə qarşılaşdı. Serverdəki nüsxə saxlama müddəti bitəndə avtomatik silinir və ya bu cihazda çevirə bilərsiniz.",
+        "load_title": "Bulud rejimi yüklənmədi",
+        "load_body": "Bulud çeviricisi yüklənə bilmədi (məsələn, oflayn olduğunuz üçün). Yenə də bu cihazda çevirə bilərsiniz.",
+        "use_device": "Bu cihazda çevir"
+      },
+      "status": {
+        "deleted_from_server": "{name} serverdən silindi.",
+        "reading": "{name} bu cihazda oxunur.",
+        "detected": "{name} faylının formatı: {format}.",
+        "read_failed": "Fayl oxuna bilmədi.",
+        "converting": "Bu cihazda {format} formatına çevrilir.",
+        "ready": "{name} yükləməyə hazırdır.",
+        "convert_failed": "Çevirmə uğursuz oldu.",
+        "saved": "{name} saxlanıldı.",
+        "reset": "{outcome, select, deleted {Fayllar bu cihazdan və serverdən silindi.} kept {Fayllar bu cihazdan silindi. {name} hələ də serverdədir.} other {Fayllar bu cihazdan silindi.}}",
+        "cloud_selected": "{name} üçün bulud çevirməsi seçildi. Hələ heç nə yüklənməyib.",
+        "cloud_selected_unnamed": "Bu fayl üçün bulud çevirməsi seçildi. Hələ heç nə yüklənməyib."
+      },
+      "device": {
+        "cloud": "<strong>Bulud çevirməsi seçildi.</strong> Bu fayl brauzerinizi yalnız Yüklə və çevir düyməsini seçəndə tərk edir.",
+        "local": "<strong>Bu cihazda emal edildi.</strong> Fayllar brauzerinizi heç vaxt tərk etmir və yüklənmir."
+      },
+      "storage_badge": "{storage, select, opfs {Xüsusi brauzer yaddaşı} other {Yaddaşda}}",
+      "memory": {
+        "title": "Bu brauzerdə cihaz daxili fayl saxlama əlçatan deyil",
+        "body": "Fayllar əvəzində yaddaşda saxlanılır, ona görə {limit} həcminə qədər girişlər dəstəklənir. Hər iki halda heç nə yüklənmir."
+      },
+      "error": {
+        "title": "{code, select, no_route {Burada əlçatan deyil} engine_integrity {Mühərrikin bütövlük yoxlaması uğursuz oldu} other {Nəsə səhv getdi}}"
+      },
+      "handoff": {
+        "title": "Masaüstü tətbiqində davam edin",
+        "reason": "{reason, select, ocr {Bəzi səhifələrin bütün mətnini çıxarmaq üçün OCR lazımdır.} other {Bu sənəd brauzerin təmin etdiyindən artıq mühərrik və ya yaddaş tələb edir.}}",
+        "picker": "Masaüstü tətbiqi fayl seçici açır. Bu sənədi yenidən seçin; brauzeriniz faylı göndərmir.",
+        "open": "Masaüstündə aç",
+        "cloud_alternative": "Və ya yükləməni təsdiqlədikdən sonra {host} üzərində çevirin.",
+        "cloud_button": "Buludda emal et"
+      },
+      "drop": {
+        "button": "Fayl seçin",
+        "button_busy": "Oxunur…",
+        "label": "Çevriləcək sənəd",
+        "title": "Sənədi bura buraxın",
+        "hint": "{limit} həcminə qədər Markdown, HTML, DOCX, EPUB, rəqəmsal PDF və ya IR JSON. Bu cihazda qalır."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Başlıqlar",
+        "paragraphs": "Abzaslar",
+        "tables": "Cədvəllər",
+        "images": "Təsvirlər",
+        "links": "Keçidlər",
+        "footnotes": "Haşiyə qeydləri",
+        "words": "Sözlər"
+      },
+      "unreachable": {
+        "cli": "{format} hələlik brauzerdə çevrilə bilmir. <link>AriadShift CLI</link> onu kompüterinizdə çevirir.",
+        "none": "AriadShift {format} formatını hələ çevirə bilmir."
+      },
+      "cloud": {
+        "loading": "Bulud rejimi yüklənir…"
+      },
+      "convert": {
+        "title": "Çevir",
+        "hint": "Planlaşdırıcı ən yaxşı ölçülmüş xalı olan marşrutu seçir.",
+        "target_label": "Çevir",
+        "profile_label": "Profil",
+        "route_heading": "Niyə bu marşrut",
+        "elsewhere": "{formats} üçün hələlik <link>AriadShift CLI</link> {count, plural, one {lazımdır} other {lazımdır}}.",
+        "button": "Çevir",
+        "button_busy": "Çevrilir…",
+        "cancel": "Ləğv et"
+      },
+      "result": {
+        "title": "Hazırdır",
+        "summary": "<output>{name}</output> · {size} · bu cihazda {duration} ərzində çevrildi",
+        "download": "{name} faylını yüklə"
+      },
+      "start_over": "Yenidən başla və faylları sil"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Hesab",
+        "description": "AriadShift bulud hesabınız: profil, parol, giriş açarları və iki faktorlu giriş."
+      },
+      "sign_in": {
+        "title": "Daxil ol",
+        "description": "AriadShift bulud hesabınıza daxil olun və ya hesab yaradın."
+      },
+      "jobs": {
+        "title": "İşlər",
+        "description": "AriadShift bulud çevirmələrinizin statusu, yükləmələri və silinməsi."
+      },
+      "api_keys": {
+        "title": "API açarları",
+        "description": "AriadShift bulud API-si üçün API açarları yaradın və ləğv edin."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Hesab"
+      },
+      "shell": {
+        "not_configured_title": "Bulud konfiqurasiya edilməyib",
+        "not_configured_body": "AriadShift-in bu nüsxəsi yalnız cihazınızda işləyir. Hesablar, API açarları və bulud işləri server tələb edir; onun operatoru saytı qurarkən <code>{api_variable}</code> və <code>{auth_variable}</code> dəyişənlərini təyin edir.",
+        "not_configured_convert": "Yenə də <link>faylları brauzerinizdə çevirə bilərsiniz</link>.",
+        "nav_label": "Hesab",
+        "nav": {
+          "account": "Hesab",
+          "api_keys": "API açarları",
+          "jobs": "İşlər"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Daxil olan istifadəçi: <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Sessiyanız yoxlanılır…",
+        "error_title": "Sessiyanız yoxlana bilmir",
+        "signed_out": "Daxil olmamısınız."
+      },
+      "actions": {
+        "sign_in": "Daxil ol",
+        "try_again": "Yenidən cəhd et",
+        "cancel": "Ləğv et",
+        "done": "Hazırdır",
+        "continue": "Davam et",
+        "revoke": "Ləğv et",
+        "copied": "Kopyalandı"
+      },
+      "fields": {
+        "name": "Ad",
+        "email": "E-poçt",
+        "password": "Parol",
+        "authentication_code": "Autentifikasiya kodu",
+        "password_hint": "Ən azı {min} simvol."
+      },
+      "dates": {
+        "unknown": "naməlum tarix"
+      },
+      "errors": {
+        "auth_refused": "Autentifikasiya xidməti sorğunu rədd etdi.",
+        "service_unreachable": "Giriş xidmətinə qoşulmaq mümkün deyil. Bağlantınızı yoxlayın və yenidən cəhd edin.",
+        "session_ended": "Sessiyanız başa çatdı. Yenidən daxil olun.",
+        "rate_limited": "Çox sayda sorğu. Bir azdan yenidən cəhd edin.",
+        "rate_limited_after": "Çox sayda sorğu. {seconds} san. sonra yenidən cəhd edin.",
+        "sign_in_unverifiable": "Server hazırda girişinizi yoxlaya bilmir. Bir azdan yenidən cəhd edin.",
+        "token_invalid": "Giriş xidməti yanlış API tokeni qaytardı.",
+        "reauth_required": "Hesabınızı silməzdən əvvəl yenidən daxil olun.",
+        "delete_not_allowed": "Bu server hesabların veb tətbiqdən silinməsinə icazə vermir. Operatordan onu silməyi xahiş edin.",
+        "job_gone": "Bu iş artıq serverdə yoxdur.",
+        "file_deleted": "Bu fayl artıq silinib.",
+        "job_conflict": "İş hazır deyil və ya yüklənmiş faylı artıq serverdə yoxdur.",
+        "quota_exceeded": "Planınızın bulud çevirmələrini hələlik istifadə etmisiniz. Bu cihazda çevirin və ya sonra cəhd edin.",
+        "request_failed": "Server sorğunu tamamlaya bilmədi. Bir azdan yenidən cəhd edin.",
+        "network_unreachable": "Serverə qoşulmaq mümkün deyil. Bağlantınızı yoxlayın və yenidən cəhd edin.",
+        "transfer_incomplete": "Ötürmə tamamlanmadı. Yenidən cəhd edin."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Adı saxla",
+        "saved": "Ad saxlanıldı.",
+        "save_failed": "Ad saxlanıla bilmədi."
+      },
+      "password": {
+        "title": "Parol",
+        "current": "Cari parol",
+        "new": "Yeni parol",
+        "confirm": "Yeni parolu təsdiqləyin",
+        "revoke_others": "Digər sessiyalardan çıx",
+        "submit": "Parolu dəyiş",
+        "mismatch": "Yeni parollar uyğun gəlmir.",
+        "changed": "Parol dəyişdirildi.",
+        "changed_revoked": "Parol dəyişdirildi. Digər sessiyalardan çıxıldı.",
+        "failed": "Parol dəyişdirilə bilmədi."
+      },
+      "passkeys": {
+        "title": "Giriş açarları",
+        "description": "Parol əvəzinə cihazınızın ekran kilidi və ya təhlükəsizlik açarı ilə daxil olun.",
+        "load_failed": "Giriş açarlarınız yüklənə bilmədi.",
+        "loading": "Giriş açarları yüklənir…",
+        "empty": "Hələ giriş açarı yoxdur.",
+        "unnamed": "Adsız giriş açarı",
+        "default_name": "Giriş açarı",
+        "added_on": "Əlavə edilib: {date}",
+        "remove_label": "{name} giriş açarını sil",
+        "remove_button": "Sil<hidden> {name} giriş açarını</hidden>",
+        "add_button": "Giriş açarı əlavə et",
+        "add_title": "Giriş açarı əlavə et",
+        "add_description": "Ona cihazın və ya açarın adını verin, sonra brauzerinizin göstərişinə əməl edin.",
+        "name_label": "Giriş açarının adı",
+        "name_placeholder": "Məsələn: İş noutbuku",
+        "added": "Giriş açarı əlavə edildi.",
+        "add_failed": "Giriş açarı əlavə edilmədi.",
+        "remove_title": "{name} silinsin?",
+        "remove_title_unnamed": "Bu giriş açarı silinsin?",
+        "remove_description": "Artıq onunla daxil ola bilməyəcəksiniz. Digər giriş üsullarınız işləməyə davam edir.",
+        "remove_confirm": "Giriş açarını sil",
+        "removed": "{name} silindi.",
+        "remove_failed": "Giriş açarı silinə bilmədi."
+      },
+      "two_factor": {
+        "title": "İki faktorlu autentifikasiya",
+        "description": "Paroldan sonra autentifikator tətbiqindən kod istəyin.",
+        "status_on": "Status: <badge>Aktiv</badge>",
+        "status_off": "Status: <badge>Deaktiv</badge>",
+        "enable": "İki faktorlu autentifikasiyanı aktiv et",
+        "disable": "İki faktorlu autentifikasiyanı deaktiv et",
+        "regenerate": "Yeni ehtiyat kodları yarat",
+        "confirm_password": "Davam etmək üçün parolunuzu təsdiqləyin.",
+        "enable_failed": "İki faktorlu autentifikasiya quraşdırılması başladıla bilmədi. Parolunuzu yoxlayın.",
+        "disable_failed": "İki faktorlu autentifikasiya deaktiv edilə bilmədi. Parolunuzu yoxlayın.",
+        "regenerate_failed": "Yeni ehtiyat kodları yaradıla bilmədi. Parolunuzu yoxlayın.",
+        "verify_failed": "Bu kod qəbul edilmədi. Cihazınızın saatını yoxlayın və yenidən cəhd edin.",
+        "disabled": "İki faktorlu autentifikasiya deaktivdir.",
+        "enabled": "İki faktorlu autentifikasiya aktivdir.",
+        "regenerated": "Yeni ehtiyat kodları yaradıldı. Köhnələr artıq işləmir.",
+        "setup_title": "Autentifikatorunuzu quraşdırın",
+        "setup_description": "AriadShift-i autentifikator tətbiqinizə əlavə edin, sonra göstərdiyi kodu daxil edin.",
+        "setup_key_intro": "Bu quraşdırma açarını tətbiqə daxil edin:",
+        "setup_key_unavailable": "Əlçatan deyil",
+        "open_in_app": "Bu cihazdakı autentifikator tətbiqində aç",
+        "turn_on": "Aktiv et",
+        "codes_title": "Yeni ehtiyat kodları",
+        "backup_intro": "Bu ehtiyat kodlarını təhlükəsiz yerdə saxlayın. Autentifikatorunuzu itirsəniz, hər biri sizi bir dəfə daxil edir. Onlar bir daha göstərilmir.",
+        "copy_codes": "Ehtiyat kodlarını kopyala",
+        "copy_failed": "Kopyalama alınmadı; əvəzində kodları seçin"
+      },
+      "account_actions": {
+        "title": "Sessiya və hesab",
+        "sign_out": "Çıx",
+        "delete": "Hesabı sil",
+        "signed_out": "Çıxış edildi.",
+        "sign_out_failed": "Çıxış etmək mümkün olmadı. Yenidən cəhd edin.",
+        "deleted": "Hesabınız silindi.",
+        "delete_failed_password": "Hesab silinə bilmədi. Parolunuzu yoxlayın.",
+        "delete_failed_session": "Hesab silinə bilmədi. Yenidən daxil olun və təkrar cəhd edin.",
+        "delete_note": "Hesabınızı silmək <keys>API açarlarınızı</keys> avtomatik ləğv edir. Silməzdən əvvəl hələ də olan <jobs>bulud işlərini</jobs> silin. Saxladığınız işlərin faylları saxlama müddəti bitəndə silinir.",
+        "dialog_title": "Hesabınız silinsin?",
+        "dialog_description_password": "Bu geri qaytarıla bilməz. Hesabı silmək üçün parolunuzu təsdiqləyin.",
+        "dialog_description_session": "Bu geri qaytarıla bilməz. Cari giriş sessiyanızdan istifadə edərək hesabı silmək üçün aşağıda təsdiqləyin.",
+        "sign_in_again": "Yenidən daxil ol"
+      },
+      "connected_apps": {
+        "title": "Qoşulmuş tətbiqlər",
+        "description": "Hesabınızdan istifadə üçün icazə verdiyiniz tətbiqlər və MCP klientləri, həmçinin qeydiyyatdan keçirdiyiniz OAuth klientləri.",
+        "load_failed": "Qoşulmuş tətbiqləriniz yüklənə bilmədi.",
+        "loading": "Qoşulmuş tətbiqlər yüklənir…",
+        "empty": "Hələ qoşulmuş tətbiq və ya qeydiyyatdan keçmiş OAuth klienti yoxdur.",
+        "scopes_none": "yoxdur",
+        "consent_details": "İcazə verilmiş tətbiq · Əhatə dairələri: {scopes} · İcazə tarixi: {date}",
+        "client_details": "Qeydiyyatdan keçmiş OAuth klienti ({client_id})",
+        "client_details_dated": "Qeydiyyatdan keçmiş OAuth klienti ({client_id}) · Qeydiyyat tarixi: {date}",
+        "revoke_label": "{name} girişini ləğv et",
+        "revoked": "{name} ləğv edildi.",
+        "revoke_failed": "Giriş ləğv edilə bilmədi.",
+        "revoke_title": "{name} ləğv edilsin?",
+        "revoke_consent_description": "Ləğv etmə yeni tokenləri və tokenin yenilənməsini dərhal dayandırır. Artıq verilmiş imzalanmış giriş tokenləri (15 dəqiqəlik ömürlü) müddəti bitənə qədər işləməyə davam edir.",
+        "revoke_client_description": "Bu qeydiyyatdan keçmiş OAuth klientini silmək onun etibarnamələrini və razılıqlarını ləğv edir, yeni tokenləri və tokenin yenilənməsini dərhal dayandırır. Artıq verilmiş imzalanmış giriş tokenləri (15 dəqiqəlik ömürlü) müddəti bitənə qədər işləməyə davam edir."
+      },
+      "api_keys": {
+        "page_title": "API açarları",
+        "section_title": "Açarlarınız",
+        "section_description": "Skriptlər və inteqrasiyalar {host} ünvanına <code>x-api-key</code> başlığında açar göndərir. Açar hesabınız və planınızla fəaliyyət göstərir.",
+        "load_failed": "API açarlarınız yüklənə bilmədi.",
+        "loading": "API açarları yüklənir…",
+        "empty": "Hələ API açarı yoxdur.",
+        "unnamed": "Adsız açar",
+        "disabled": "Deaktiv",
+        "key_details": "Yaradılıb: {date} · {expiry}",
+        "never_expires": "Müddəti bitmir",
+        "expired_on": "Müddəti bitib: {date}",
+        "expires_on": "Bitmə tarixi: {date}",
+        "revoke_label": "{name} API açarını ləğv et",
+        "revoke_button": "Ləğv et<hidden> {name} API açarını</hidden>",
+        "create_button": "API açarı yarat",
+        "create_title": "API açarı yaradın",
+        "create_description": "Açara onu istifadə edəcək skriptin və ya xidmətin adını verin.",
+        "name_placeholder": "Məsələn: CI",
+        "expires_after": "Bitmə müddəti",
+        "lifetime_days": "{days, plural, one {# gün} other {# gün}}",
+        "lifetime_year": "1 il",
+        "lifetime_never": "Müddətsiz",
+        "create_submit": "Açar yarat",
+        "create_failed": "Açar yaradıla bilmədi.",
+        "created": "{name} API açarı yaradıldı.",
+        "secret_title": "Yeni API açarınız",
+        "secret_label": "API açarı",
+        "secret_notice": "Açarı indi kopyalayın. O yalnız heş kimi saxlanılır və bir daha göstərilmir.",
+        "copy_key": "Açarı kopyala",
+        "copy_failed": "Kopyalama alınmadı. Açarı seçib kopyalayın.",
+        "revoke_title": "{name} ləğv edilsin?",
+        "revoke_description": "Bu açardan istifadə edən sorğular dərhal rədd edilir. Bu geri qaytarıla bilməz.",
+        "revoke_confirm": "Açarı ləğv et",
+        "revoked": "{name} API açarı ləğv edildi. Ondan istifadə edən sorğular bundan sonra rədd edilir.",
+        "revoke_failed": "Açar ləğv edilə bilmədi."
+      },
+      "jobs": {
+        "title": "İşlər",
+        "intro_server": "Hesabınızın {host} üzərindəki bulud çevirmələri, istənilən cihazdan. Fayllar avtomatik silinənə və ya siz burada silənə qədər {host} üzərində qalır.",
+        "intro_account_browser": "Bu brauzerdə hesabınızla başladılmış bulud çevirmələri. Bu siyahı yalnız bu cihazda saxlanılır. Fayllar avtomatik silinənə və ya siz burada silənə qədər {host} üzərində qalır.",
+        "intro_anonymous_browser": "Bu brauzerdə hesabsız başladılmış bulud çevirmələri. Bu siyahı yalnız bu cihazda saxlanılır. Fayllar avtomatik silinənə və ya siz burada silənə qədər {host} üzərində qalır.",
+        "signed_out_notice": "İşlər hesabsız göstərilir. Hesabınızın işlərini görmək üçün <link>daxil olun</link>.",
+        "loading": "İşləriniz yüklənir…",
+        "list_unsupported": "{host} hələ hesabınızın işlərini siyahıya sala bilmir, ona görə bu səhifə bu brauzerdə başladılmış işləri göstərir.",
+        "list_error_title": "İşləriniz {host} ünvanından yüklənə bilmir",
+        "list_error_body": "{reason} Bu arada bu səhifə bu brauzerdə başladılmış işləri göstərir.",
+        "count": "{count, plural, one {# iş} other {# iş}}",
+        "empty": "Hələ bulud işi yoxdur. <link>Çeviricidən</link> birini başladın.",
+        "show_more": "Daha çox iş göstər",
+        "loading_more": "Daha çox iş yüklənir…",
+        "unnamed": "İş {id}",
+        "forgotten": "{filename} bu siyahıdan silindi. Serverdəki faylları dəyişməyib.",
+        "forgotten_unnamed": "İş bu siyahıdan silindi. Serverdəki faylları dəyişməyib.",
+        "status": {
+          "queued": "Növbədə",
+          "converting": "Çevrilir",
+          "converting_stage": "Çevrilir: {stage}",
+          "retrying": "Yenidən cəhd edilir (cəhd {attempt})",
+          "reconnecting": "{step} · Yenidən qoşulur…",
+          "ready": "Hazırdır",
+          "failed": "Uğursuz",
+          "canceled": "Ləğv edildi",
+          "deleted": "Silindi",
+          "deleted_expired": "Silindi (müddəti bitib)"
+        },
+        "until": {
+          "less_than_minute": "bir dəqiqədən az müddətdə",
+          "minutes": "{minutes} dəq. sonra",
+          "hours": "{hours} saat sonra",
+          "hours_minutes": "{hours} saat {minutes} dəq. sonra"
+        },
+        "expiry": {
+          "deleted_at": "{clock} vaxtında avtomatik silindi.",
+          "deleted_from_server": "Serverdən silindi. Giriş və çıxış faylları yoxdur.",
+          "being_deleted": "İndi silinir.",
+          "deletes_at": "{clock} vaxtında avtomatik silinəcək ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Bu sənəd planınızın icazə verdiyindən çoxunu tələb edir. Daha kiçik fayl sınayın və ya bu cihazda çevirin.",
+          "unsupported_route": "Bu server bu formatlar arasında çevirə bilmir. Çeviricidə başqa hədəf seçin.",
+          "input_io": "Yüklənmiş fayl oxuna bilmədi və ya artıq serverdə yoxdur. Yenidən yükləyin.",
+          "storage": "Server nəticəni saxlaya bilmədi. Bir azdan yenidən cəhd edin.",
+          "tool_missing": "Bu serverdə marşrutun tələb etdiyi mühərrik yoxdur. Operatordan soruşun və ya başqa hədəf seçin.",
+          "other": "Çevirmə uğursuz oldu. Yenidən cəhd edin və ya faylı bu cihazda çevirin."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Status yüklənir…",
+          "try_again": "Yenidən cəhd et<hidden> ({filename} yüklənməsi üçün)</hidden>",
+          "technical_details": "Texniki təfərrüatlar",
+          "warnings": "{count, plural, one {# xəbərdarlıq} other {# xəbərdarlıq}}",
+          "download": "{filename} faylını yüklə",
+          "retry_label": "{filename} faylını yenidən cəhd et",
+          "retry_button": "Yenidən cəhd et<hidden> {filename}</hidden>",
+          "delete_label": "{filename} faylını serverdən indi sil",
+          "delete_button": "İndi sil<hidden> {filename} faylını serverdən</hidden>",
+          "remove_label": "Bu siyahıdan sil ({filename})",
+          "remove_button": "Bu siyahıdan sil<hidden> ({filename})</hidden>",
+          "deleted_note": "{host} üzərindən silindi. Giriş və çıxış faylları yoxdur.",
+          "deleted_announce": "{filename} faylı {host} üzərindən silindi. Giriş və çıxış faylları yoxdur.",
+          "ready_announce": "{filename} çevrildi və yükləməyə hazırdır.",
+          "failed_announce": "{filename} faylının çevrilməsi uğursuz oldu. {reason}",
+          "canceled_announce": "{filename} faylının çevrilməsi ləğv edildi.",
+          "downloading": "{filename} yüklənir.",
+          "retrying": "{filename} yenidən cəhd edilir.",
+          "retry_conflict": "Yüklənmiş fayl artıq serverdə yoxdur. Çeviricidən yenidən yükləyin."
+        }
+      },
+      "sign_in": {
+        "title": "Daxil ol",
+        "create_title": "Hesab yaradın",
+        "two_factor_title": "İki faktorlu yoxlama",
+        "signed_in": "Daxil olundu.",
+        "go_to_account": "Hesabınıza keçin",
+        "passkey": "Giriş açarı ilə daxil ol",
+        "no_account": "Hələ hesabınız yoxdur? <switch>Hesab yaradın</switch>",
+        "have_account": "Artıq hesabınız var? <switch>Daxil olun</switch>",
+        "sign_in_failed": "Daxil olmaq mümkün olmadı. E-poçtunuzu və parolunuzu yoxlayın.",
+        "passkey_failed": "Giriş açarı ilə daxil olmaq mümkün olmadı.",
+        "code_rejected": "Bu kod qəbul edilmədi. Yenidən cəhd edin.",
+        "create_failed": "Hesab yaradıla bilmədi.",
+        "passwords_mismatch": "Parollar uyğun gəlmir.",
+        "bot_check": "Qeydiyyat zamanı bot yoxlamasını tamamlayın və yenidən cəhd edin.",
+        "confirm_password": "Parolu təsdiqləyin",
+        "create_account": "Hesab yarat",
+        "totp_help": "Autentifikator tətbiqinizdəki 6 rəqəmli kodu daxil edin.",
+        "backup_help": "İki faktorlu autentifikasiyanı aktiv edərkən saxladığınız ehtiyat kodlarından birini daxil edin. Hər kod yalnız bir dəfə işləyir.",
+        "backup_code": "Ehtiyat kodu",
+        "trust_device": "Bu brauzerə 30 gün etibar et",
+        "verify": "Yoxla",
+        "use_backup": "Əvəzində ehtiyat kodundan istifadə et",
+        "use_authenticator": "Əvəzində autentifikator kodundan istifadə et",
+        "signed_in_user": "<user>{email}</user> kimi daxil olmusunuz."
+      }
+    },
+    "app": {
+      "sections_label": "Tətbiq bölmələri",
+      "tab": {
+        "convert": "Çevir",
+        "tools": "Alətlər",
+        "workspace": "PDF iş sahəsi"
+      },
+      "tools_lede": "Bütün alətlər nə etdiyinə görə qruplaşdırılıb. PDF iş sahəsində açmaq üçün birini seçin.",
+      "workspace_loading": "PDF iş sahəsi yüklənir…",
+      "workspace_failed": "PDF iş sahəsini yükləmək mümkün olmadı.",
+      "retry": "Yenidən cəhd edin",
+      "tools_loading": "Alətlər yüklənir…",
+      "tools_failed": "Alətləri yükləmək mümkün olmadı."
+    },
+    "tools": {
+      "hub": {
+        "label": "Alətlər",
+        "search": "Alətləri axtarın…",
+        "open_palette": "Əmr panelini açın",
+        "command": "Əmr",
+        "zero_upload": "Bu cihazda · 0 bayt yüklənib",
+        "categories": "Kateqoriya",
+        "all": "Hamısı",
+        "runtimes": "Harada işləyir",
+        "count": "{count, plural, one {# alət} other {# alət}}",
+        "no_match": "Uyğun alət tapılmadı",
+        "try_recipe": "Əmr panelində sadə bir cümlə yazın, məsələn, “90 dərəcə döndür, sonra sıx”.",
+        "reset": "Axtarışı və filtrləri sıfırla",
+        "open_in_palette": "Əmr panelində sınayın"
+      },
+      "category": {
+        "organize": "Təşkil və birləşdirmə",
+        "convert": "Çevirmə",
+        "compress": "Sıxma və bərpa",
+        "edit": "Redaktə və qeydlər",
+        "forms_annotations": "Formalar və annotasiyalar",
+        "security": "Təhlükəsizlik və imza",
+        "ocr_scan": "OCR və skan",
+        "metadata_inspect": "Yoxlama və müqayisə",
+        "automation_ai": "Avtomatlaşdırma və AI"
+      },
+      "runtime": {
+        "browser": "Brauzer",
+        "desktop": "Masaüstü",
+        "cloud": "Bulud",
+        "list": "İşlədiyi yer"
+      },
+      "tier": {
+        "free": "Pulsuz",
+        "pro": "Pro"
+      },
+      "favorites": "Sevimlilər",
+      "recents": "Son alətlər",
+      "favorite": {
+        "add": "Sevimlilərə əlavə et",
+        "remove": "Sevimlilərdən çıxar"
+      },
+      "card": {
+        "open": "Aç"
+      },
+      "palette": {
+        "title": "Alət əmr paneli",
+        "description": "Alət axtarın və ya nə etmək istədiyinizi cümlə ilə yazın, sonra Enter basın.",
+        "placeholder": "Alət axtarın və ya resept təsvir edin…",
+        "search": "Alətləri axtarın",
+        "empty": "Uyğun alət tapılmadı. “90 döndür, sonra sıx” kimi cümlə sınayın.",
+        "recipe": "Resept",
+        "recipe_steps": "Resept addımları",
+        "step": "Addım",
+        "recipe_review": "İşə salmazdan əvvəl yoxlayın: bir addım masaüstü, bulud və ya AI tələb edir, yaxud faylı birdəfəlik dəyişir.",
+        "recipe_ready": "Bu resepti yükləmək üçün Enter basın.",
+        "confirm": "Əvvəl yoxlayın",
+        "results": "Alətlər",
+        "actions": "Əməliyyatlar",
+        "jump_convert": "Çevirməyə keç",
+        "switch_theme": "Mövzunu dəyiş",
+        "clear_recents": "Son alətləri təmizlə",
+        "hint": "Axtarış bu cihazda işləyir.",
+        "open": "Aç",
+        "close": "Bağla"
+      },
+      "title": {
+        "pdf": {
+          "info": "Məlumat",
+          "merge": "Birləşdir",
+          "split": "Böl",
+          "extract_pages": "Səhifələri çıxar",
+          "delete_pages": "Səhifələri sil",
+          "reorder": "Yenidən sırala",
+          "alternate_mix": "Növbəli birləşdirmə",
+          "insert_blank": "Boş səhifə əlavə et",
+          "rotate": "Döndər",
+          "crop": "Kəs",
+          "scale": "Miqyasla",
+          "single_page": "Tək səhifə",
+          "rotate_content": "Məzmunu döndər",
+          "decompress": "Sıxılmanı aç",
+          "nup": "N-up",
+          "booklet": "Kitabça",
+          "overlay": "Üst-üstə qoy",
+          "divide_pages": "Səhifələri böl",
+          "posterize": "Plakata böl",
+          "metadata": "Metadata",
+          "outline": "Struktur",
+          "attachments": "Qoşmalar",
+          "page_labels": "Səhifə etiketləri",
+          "viewer_prefs": "Göstərici ayarları",
+          "portfolio": "Portfolio",
+          "layers": "Qatlar",
+          "replace_color": "Rəngləri əvəz et",
+          "adjust_colors": "Rəngləri tənzimlə",
+          "watermark": "Su nişanı",
+          "stamp": "Möhür",
+          "add_image": "Şəkil əlavə et",
+          "add_text": "Mətn əlavə et",
+          "qr": "QR kod",
+          "page_numbers": "Səhifə nömrələri",
+          "header_footer": "Üst və alt məlumat",
+          "bates": "Bates nömrələmə",
+          "toc_page": "Mündəricat səhifəsi",
+          "background": "Fon",
+          "invert_colors": "Rəngləri tərsinə çevir",
+          "watermark_detect": "Su nişanlarını aşkar et",
+          "watermark_remove": "Su nişanlarını sil",
+          "watermark_remove_raster": "Raster su nişanlarını sil",
+          "render": "Səhifələri göstər",
+          "to_images": "PDF-dən şəkillərə",
+          "thumbnails": "Miniatürlər",
+          "extract_images": "Şəkilləri çıxar",
+          "text_layout": "Mətn düzülüşü",
+          "remove_blank": "Boş səhifələri sil",
+          "crop_whitespace": "Boş kənarları kəs",
+          "detect_scanned": "Skan edilmiş səhifələri aşkar et",
+          "compress": "Sıx",
+          "grayscale": "Boz tonlama",
+          "repair": "Bərpa et",
+          "linearize": "Xətti formata sal",
+          "encrypt": "Şifrələ",
+          "decrypt": "Şifrəni aç",
+          "permissions": "İcazələr",
+          "sanitize": "Təmizlə",
+          "unlock_forms": "Formaların kilidini aç",
+          "ocr": "OCR",
+          "auto_rotate": "Avtomatik döndər",
+          "deskew": "Əyriliyi düzəlt",
+          "scan_split": "Skanı böl",
+          "scanner_effect": "Skaner effekti",
+          "annotations": "Annotasiyalar",
+          "annotations_import": "Annotasiyaları idxal et",
+          "annotations_export": "Annotasiyaları ixrac et",
+          "forms_list": "Forma sahələrini sadala",
+          "forms_fill": "Formaları doldur",
+          "forms_create": "Formalar yarat",
+          "forms_flatten": "Formaları düzləşdir",
+          "forms_detect": "Forma sahələrini aşkar et",
+          "forms_import": "Forma dəyərlərini idxal et",
+          "forms_export": "Forma dəyərlərini ixrac et",
+          "redact": "Gizlət",
+          "redact_verify": "Gizlətməni yoxla",
+          "sign_visual": "Vizual imza",
+          "sign": "İmzala",
+          "sign_token": "Tokenlə imzala",
+          "timestamp": "Zaman möhürü",
+          "sign_verify": "İmzaları yoxla",
+          "sign_remove": "İmzaları sil",
+          "tables_to_csv": "Cədvəllər CSV-yə",
+          "to_cbz": "CBZ-yə",
+          "compare": "Müqayisə et",
+          "to_pdfa": "PDF/A-ya",
+          "to_pdfua": "PDF/UA-ya",
+          "accessibility_report": "Əlçatanlıq hesabatı",
+          "validate_pdfa": "PDF/A yoxla",
+          "validate_pdfua": "PDF/UA yoxla"
+        },
+        "image": {
+          "to_pdf": "Şəkildən PDF-ə",
+          "ocr": "Şəkil OCR"
+        },
+        "web": {
+          "to_pdf": "Vebdən PDF-ə"
+        },
+        "edit": {
+          "open_document": "Sənədi aç",
+          "export_document": "Sənədi ixrac et",
+          "page_objects": "Səhifə obyektləri",
+          "apply": "Tətbiq et"
+        },
+        "ai": {
+          "summarize": "AI ilə xülasə",
+          "ask": "AI-dan soruş",
+          "translate": "AI ilə tərcümə",
+          "extract_tables": "AI ilə cədvəl çıxar",
+          "recipe_from_text": "Mətndən AI resepti"
+        }
+      }
+    },
+    "workspace": {
+      "main": {
+        "title": "İş sahəsi",
+        "lede": "Hər şey bu brauzer sekməsində işləyir.",
+        "viewer": "Önizləmə",
+        "pages_tab": "Səhifələr",
+        "tools_tab": "Alət",
+        "no_pdf": "Səhifələrini önizləmək və təşkil etmək üçün PDF əlavə edin.",
+        "tools": "Alətlər",
+        "tool_picker": "Alət seçin",
+        "dismiss_error": "Bağla",
+        "working": "İşlənir…"
+      },
+      "file_tray": {
+        "privacy": "Bu cihazda · 0 bayt yüklənib",
+        "title": "Fayllar",
+        "empty": "Başlamaq üçün PDF və ya digər faylları bura buraxın. Heç nə yüklənmir.",
+        "choose": "Fayl seçin",
+        "add_more": "Fayl əlavə edin",
+        "drop_title": "Əlavə etmək üçün faylları buraxın",
+        "drop_description": "Onlar bu brauzerdə qalır.",
+        "pages": "{count, plural, one {# səhifə} other {# səhifə}}",
+        "remove": "{name} faylını çıxar",
+        "move_up": "{name} faylını yuxarı daşı",
+        "move_down": "{name} faylını aşağı daşı",
+        "use": "{name} üzərində işlə",
+        "active": "Açıq",
+        "storage_opfs": "Brauzerin fayl yaddaşında saxlanılır",
+        "storage_memory": "Yaddaşda saxlanılır",
+        "reading": "Fayllar oxunur…",
+        "list": "Bu iş sahəsindəki fayllar",
+        "problem": "{name} faylını oxumaq mümkün olmadı."
+      },
+      "insights": {
+        "title": "Bu PDF-də nə var",
+        "loading": "Sənəd bu cihazda oxunur…",
+        "failed": "Sənədi təhlil etmək mümkün olmadı.",
+        "pages": "{count, plural, one {# səhifə} other {# səhifə}}",
+        "scanned": "{count, plural, one {# skan edilmiş səhifə} other {# skan edilmiş səhifə}}",
+        "blank": "{count, plural, one {# boş səhifə} other {# boş səhifə}}",
+        "dpi_unknown": "Şəkil ayırdetməsi məlum deyil",
+        "dpi_single": "Şəkillər təxminən {dpi} DPI",
+        "dpi_range": "Şəkillər təxminən {min}–{max} DPI",
+        "low_dpi": "{count, plural, one {# səhifədə} other {# səhifədə}} aşağı ayırdetmə ({list})",
+        "form_fields": "{count, plural, one {# boş məcburi sahə} other {# boş məcburi sahə}}",
+        "signatures": "{count, plural, one {# imza} other {# imza}}",
+        "metadata": "Metadata var",
+        "edit_history": "Redaktə tarixçəsi var",
+        "encrypted": "Şifrələnib",
+        "linearized": "Xətti formatdadır",
+        "clean": "Heç nə tapılmadı",
+        "suggested": "Təklif olunan növbəti addımlar",
+        "no_suggestions": "Diqqət tələb edən heç nə yoxdur. Davam etmək üçün istənilən aləti seçin.",
+        "open": "{tool} aç"
+      },
+      "page_grid": {
+        "title": "Səhifələr",
+        "toolbar": "Səhifə dəyişiklikləri",
+        "undo": "Geri al",
+        "redo": "Yenidən et",
+        "reset": "Sıfırla",
+        "pending": "{count, plural, one {# gözləyən dəyişiklik} other {# gözləyən dəyişiklik}}",
+        "select_all": "Hamısını seç",
+        "clear_selection": "Seçimi təmizlə",
+        "select_range": "Səhifələri seç",
+        "range_placeholder": "məs. 3-7",
+        "rotate_left": "Sola döndər",
+        "rotate_right": "Sağa döndər",
+        "delete_selected": "Seçilənləri sil",
+        "restore_selected": "Seçilənləri bərpa et",
+        "apply": "Dəyişiklikləri tətbiq et",
+        "hint": "Yenidən sıralamaq üçün tutacağı sürüşdürün və ya fokuslayıb ox düymələrindən istifadə edin. Shift ilə klikləmək aralığı seçir.",
+        "drag_hint": "Yenidən sıralamaq üçün sürüşdürün və ya ox düymələrindən istifadə edin",
+        "moved": "{page} səhifəsi {position} mövqeyinə köçürüldü",
+        "cannot_delete_all": "Sənəddə ən azı bir səhifə olmalıdır.",
+        "card_page": "Səhifə {page}",
+        "card_select": "{page} səhifəsini seç",
+        "card_rotate": "{page} səhifəsini döndər",
+        "card_delete": "{page} səhifəsini sil",
+        "card_move": "{page} səhifəsini yenidən sırala",
+        "card_restore": "{page} səhifəsini bərpa et",
+        "blank": "Boş",
+        "scanned": "Skan edilib"
+      },
+      "inspector": {
+        "title": "Alət",
+        "empty": "Seçimlərini görmək üçün alət seçin.",
+        "runtime": {
+          "browser": "Brauzer",
+          "desktop": "Masaüstü",
+          "cloud": "Bulud"
+        },
+        "tier": {
+          "free": "Pulsuz",
+          "pro": "Pro"
+        },
+        "run_here": "Aləti bu cihazda işə sal",
+        "running": "İşləyir…",
+        "cancel": "Ləğv et",
+        "run_cloud": "Buludda işə sal",
+        "cloud_note": "Bu alət serverlərimizdə işləyir; faylınız bunun üçün yüklənir.",
+        "switch_desktop": "Əvəzinə kompüterinizdə işə salın",
+        "switch_browser": "Bu cihaza qayıt",
+        "needs_file": "Əvvəlcə fayl əlavə edin.",
+        "needs_pdf": "Bu alət üçün PDF lazımdır.",
+        "invalid": "Davam etmək üçün vurğulanmış seçimləri düzəldin.",
+        "failed": "Alət dayandı: {message}",
+        "progress": "Alətin gedişatı"
+      },
+      "handoff": {
+        "title": "Kompüterinizdə işə salın",
+        "why": "Bu alət brauzerdə işləyə bilmir. Onu AriadShift komanda sətri ilə işə salın; faylləriniz heç vaxt kompüterinizdən çıxmır.",
+        "command": "Əmr",
+        "copy": "Əmri kopyala",
+        "copied": "Əmr kopyalandı",
+        "copy_failed": "Kopyalamaq mümkün olmadı. Əmri seçib kopyalayın.",
+        "install": "AriadShift əldə edin",
+        "open_app": "Masaüstü tətbiqində aç",
+        "reveal_secrets": "Gizli dəyərləri göstər",
+        "mask_secrets": "Gizli dəyərləri gizlət",
+        "secret_note": "Gizli dəyərlər siz göstərənə qədər əmrdə gizlədilir."
+      },
+      "result": {
+        "title": "Nəticə",
+        "before": "Əvvəl",
+        "after": "Sonra",
+        "size": "Ölçü",
+        "pages": "Səhifələr",
+        "duration": "Vaxt",
+        "change_none": "dəyişiklik yoxdur",
+        "change_up": "+{percent}%",
+        "change_down": "−{percent}%",
+        "bytes": "{value} bayt",
+        "millis": "{value} ms",
+        "seconds": "{value} san",
+        "warnings": "Xəbərdarlıqlar",
+        "details": "Təfərrüatlar",
+        "download": "{name} faylını yüklə",
+        "open_in_editor": "Redaktorda aç",
+        "continue": "Başqa alətlə davam et",
+        "save_recipe": "Resept kimi saxla",
+        "undo": "Geri al",
+        "outputs": "Çıxış faylları",
+        "download_failed": "Faylı saxlamaq mümkün olmadı."
+      },
+      "thread": {
+        "label": "Addımlar",
+        "status": {
+          "pending": "Gözləyir",
+          "running": "İşləyir",
+          "completed": "Hazırdır",
+          "skipped": "Keçildi",
+          "failed": "Uğursuz oldu"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Yaxınlaşdır",
+        "zoom_out": "Uzaqlaşdır",
+        "fit_width": "Enə sığdır",
+        "fit_page": "Səhifəyə sığdır",
+        "zoom_level": "{percent}%",
+        "page": "Səhifə nömrəsi",
+        "page_of": "/ {count}",
+        "search": "Sənəddə axtar",
+        "search_placeholder": "Mətn axtarın",
+        "search_run": "Axtar",
+        "search_cancel": "Axtarışı ləğv et",
+        "search_clear": "Axtarışı təmizlə",
+        "search_next": "Növbəti nəticə",
+        "search_previous": "Əvvəlki nəticə",
+        "searching": "Axtarılır… {percent}%",
+        "matches": "{current} / {total}",
+        "no_matches": "Nəticə tapılmadı",
+        "dark_pages": "Tünd səhifələr",
+        "loading": "Sənəd bu cihazda açılır…",
+        "unavailable": "Göstərici WebAssembly tələb edir, bu brauzer isə onu dəstəkləmir.",
+        "document_error": "Bu sənədi göstərmək mümkün olmadı.",
+        "toolbar": "Sənəd göstəricisinin idarəetmə vasitələri"
+      }
+    }
+  }
+}

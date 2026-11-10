@@ -206,7 +206,7 @@ test("converts a 12.5 MiB JPEG DOCX to Markdown when intermediate IR exceeds 16 
   expect(docx.byteLength).toBeGreaterThan(JPEG_BYTES);
   expect(docx.byteLength).toBeLessThan(16 * 1024 * 1024);
 
-  await page.goto("/app");
+  await page.goto("/en/app");
   await pick(page, "large-jpeg.docx", docx);
 
   await page.getByTestId("target-select").click();

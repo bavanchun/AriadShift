@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { type ComponentType, lazy } from "react";
 import type { CloudPanelProps } from "@/components/cloud/cloud-panel";
 import { ConverterApp } from "@/components/converter/converter-app";
 import { ConverterClient } from "@/converter/client";
 import type { RequestEnvelope, WorkerResponse } from "@/converter/protocol";
+import { renderIntl } from "./intl";
 
 // Cloud mode is configured at build time; these tests build it in.
 vi.mock("@/lib/cloud/config", () => ({
@@ -69,7 +70,7 @@ const RTF = {
 
 function renderApp(inspection: object = RTF, cloudPanel?: ComponentType<CloudPanelProps>) {
   const client = new ConverterClient(() => new FakeWorker(inspection) as unknown as Worker);
-  render(<ConverterApp client={client} cloudPanel={cloudPanel} />);
+  renderIntl(<ConverterApp client={client} cloudPanel={cloudPanel} />);
   const input = document.querySelector("input[type=file]") as HTMLInputElement;
   fireEvent.change(input, {
     target: { files: [new File(["{\\rtf1 Hello}"], "page.rtf", { type: "application/rtf" })] },

@@ -9,11 +9,13 @@ import {
   OutcomeMessage,
   Section,
   TextField,
+  useAccountText,
   useOutcome,
 } from "./account-ui";
 
 export function PasswordSection() {
   const { auth } = useAccount();
+  const { t } = useAccountText();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -25,7 +27,7 @@ export function PasswordSection() {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (next !== confirm) {
-      setConfirmError("The new passwords do not match.");
+      setConfirmError(t("password.mismatch"));
       return;
     }
     setConfirmError(null);
@@ -36,21 +38,19 @@ export function PasswordSection() {
       setCurrent("");
       setNext("");
       setConfirm("");
-      succeed(
-        revokeOthers ? "Password changed. Other sessions were signed out." : "Password changed.",
-      );
+      succeed(t(revokeOthers ? "password.changed_revoked" : "password.changed"));
     } catch (error) {
-      fail(errorMessage(error, "Could not change the password."));
+      fail(errorMessage(t, error, "password.failed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Section title="Password">
+    <Section title={t("password.title")}>
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <TextField
-          label="Current password"
+          label={t("password.current")}
           type="password"
           autoComplete="current-password"
           required
@@ -58,17 +58,17 @@ export function PasswordSection() {
           onValueChange={setCurrent}
         />
         <TextField
-          label="New password"
+          label={t("password.new")}
           type="password"
           autoComplete="new-password"
           required
           minLength={MIN_PASSWORD_LENGTH}
-          hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+          hint={t("fields.password_hint", { min: MIN_PASSWORD_LENGTH })}
           value={next}
           onValueChange={setNext}
         />
         <TextField
-          label="Confirm new password"
+          label={t("password.confirm")}
           type="password"
           autoComplete="new-password"
           required
@@ -82,11 +82,11 @@ export function PasswordSection() {
             checked={revokeOthers}
             onChange={(event) => setRevokeOthers(event.target.checked)}
           />
-          Sign out of other sessions
+          {t("password.revoke_others")}
         </label>
         <OutcomeMessage outcome={outcome} />
         <Button type="submit" className="self-start" disabled={busy}>
-          Change password
+          {t("password.submit")}
         </Button>
       </form>
     </Section>

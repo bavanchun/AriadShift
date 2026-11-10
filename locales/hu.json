@@ -1,0 +1,1062 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Szerkeszthető",
+        "description": "Valódi címsorok, listák és táblázatok, amelyeket tovább szerkeszthet."
+      },
+      "faithful": {
+        "label": "Hű",
+        "description": "A lehető legpontosabban megőrzi az elrendezést."
+      },
+      "fast": {
+        "label": "Gyors",
+        "description": "A leggyorsabb útvonalat részesíti előnyben."
+      },
+      "private": {
+        "label": "Privát",
+        "description": "Csak olyan motorok, amelyek soha nem hagyják el az eszközét."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift mag",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF-szövegolvasó"
+    },
+    "runtime": {
+      "wasm": "Böngésző",
+      "local": "CLI és asztali alkalmazás",
+      "cloud": "Felhő"
+    },
+    "score": {
+      "not_measured": "nincs mérve"
+    },
+    "duration": {
+      "under_1_ms": "kevesebb mint 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown-dokumentum",
+        "description": "CommonMark GitHub Flavored Markdown kiterjesztéssel: címsorok, listák, táblázatok, feladatlisták, lábjegyzetek és képletek. A legtöbb AI-eszköz ezt a formátumot olvassa a legjobban."
+      },
+      "html": {
+        "noun": "HTML-oldal",
+        "description": "Önálló HTML5-oldal. A bemenetben lévő nyers jelölést megtisztítja; a szkriptek és a nem biztonságos attribútumok soha nem kerülnek a kimenetbe."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR-dokumentum",
+        "description": "A strukturált dokumentummodell, amelyen minden AriadShift-útvonal áthalad: címsorok, blokkok, táblázatok, erőforrások és metaadatok verziózott JSON-ként."
+      },
+      "docx": {
+        "noun": "Word-dokumentum",
+        "description": "Office Open XML dokumentumok a Microsoft Wordből, a LibreOffice-ból és a Google Dokumentumokból, a Pandocon keresztül olvasva és írva."
+      },
+      "epub": {
+        "noun": "EPUB e-könyv",
+        "description": "EPUB 3 e-könyvek, a Pandocon keresztül olvasva és írva, reprodukálható metaadatokkal."
+      },
+      "pdf": {
+        "noun": "PDF-dokumentum",
+        "description": "A digitális PDF-ek szövegét ezen az eszközön olvassa be. A PDF-kimenet Typstot és beágyazott betűtípusokat használ. A beolvasott oldalakhoz OCR szükséges az asztali alkalmazásban."
+      },
+      "odt": {
+        "noun": "OpenDocument szöveges dokumentum",
+        "description": "Az OpenDocument szövegfájlok az asztali alkalmazásban a LibreOffice-t használják."
+      },
+      "rtf": {
+        "noun": "Rich Text dokumentum",
+        "description": "A Rich Text dokumentumok az asztali alkalmazásban a LibreOffice-t használják."
+      },
+      "pptx": {
+        "noun": "PowerPoint-bemutató",
+        "description": "A PowerPoint-bemutatók az asztali alkalmazásban a Doclinget vagy a LibreOffice-t használják."
+      },
+      "xlsx": {
+        "noun": "Excel-munkafüzet",
+        "description": "Az Excel-munkafüzetek az asztali alkalmazásban a Doclinget vagy a LibreOffice-t használják."
+      },
+      "doc": {
+        "noun": "régi Word-dokumentum",
+        "description": "A régi Word-dokumentumok az asztali alkalmazásban a LibreOffice-t használják."
+      },
+      "xls": {
+        "noun": "régi Excel-munkafüzet",
+        "description": "A régi Excel-munkafüzetek az asztali alkalmazásban a LibreOffice-t használják."
+      },
+      "ppt": {
+        "noun": "régi PowerPoint-bemutató",
+        "description": "A régi PowerPoint-bemutatók az asztali alkalmazásban a LibreOffice-t használják."
+      },
+      "ods": {
+        "noun": "OpenDocument munkafüzet",
+        "description": "Az OpenDocument munkafüzetek az asztali alkalmazásban a LibreOffice-t használják."
+      },
+      "odp": {
+        "noun": "OpenDocument bemutató",
+        "description": "Az OpenDocument bemutatók az asztali alkalmazásban a LibreOffice-t használják."
+      },
+      "png": {
+        "noun": "PNG-kép",
+        "description": "A képekből történő szövegkinyeréshez az asztali alkalmazásban a Docling motorcsomagra van szükség."
+      },
+      "jpeg": {
+        "noun": "JPEG-kép",
+        "description": "A képekből történő szövegkinyeréshez az asztali alkalmazásban a Docling motorcsomagra van szükség."
+      },
+      "webp": {
+        "noun": "WebP-kép",
+        "description": "A képekből történő szövegkinyeréshez az asztali alkalmazásban a Docling motorcsomagra van szükség."
+      },
+      "tiff": {
+        "noun": "TIFF-kép",
+        "description": "A képekből történő szövegkinyeréshez az asztali alkalmazásban a Docling motorcsomagra van szükség."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: privát dokumentumátalakítás a böngészőjében",
+      "site_description": "Alakítson át Markdown, HTML és strukturált JSON fájlokat a saját eszközén. Alapértelmezés szerint privát, minden útvonalon mért minőséggel, AI-ügynökök számára is használható.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Ugrás a tartalomhoz",
+      "home_link": "{site} kezdőlap",
+      "nav_label": "Főmenü",
+      "nav": {
+        "converter": "Átalakító",
+        "formats": "Formátumok",
+        "quality": "Minőség",
+        "download": "Letöltés",
+        "privacy": "Adatvédelem"
+      },
+      "footer": {
+        "license": "Az AriadShift nyílt forráskódú, Apache-2.0 licenc alatt.",
+        "privacy": "Adatvédelem",
+        "licenses": "Licencek",
+        "quality": "Minőség",
+        "source": "Forráskód"
+      },
+      "language": {
+        "label": "Nyelv",
+        "button": "Nyelv: {name}",
+        "list_label": "Válasszon nyelvet",
+        "community_badge": "Közösségi fordítás",
+        "community_note": "A közösségi fordítások gépi vázlatok, amelyeket az emberek továbbra is javíthatnak."
+      }
+    },
+    "not_found": {
+      "title": "Az oldal nem található",
+      "body": "Ez az oldal nem létezik.",
+      "home_link": "Ugrás a kezdőlapra"
+    },
+    "home": {
+      "meta_title": "Alakítson át dokumentumokat a saját eszközén",
+      "title": "Alakítson át dokumentumokat a saját eszközén",
+      "lede": "Az AriadShift közvetlenül a böngészőjében alakít át Markdown, HTML, Word, EPUB és strukturált JSON fájlokat. Beolvassa a digitális PDF-ek szövegét, és PDF-eket hoz létre az eszközén. Egyetlen mért tervező, feltöltés nélkül.",
+      "open_converter": "Az átalakító megnyitása",
+      "install_cli": "A CLI telepítése",
+      "why_heading": "Miért az AriadShift",
+      "why": {
+        "private": {
+          "title": "Alapértelmezés szerint privát",
+          "body": "Az átalakító a böngészőjében fut WebAssembly segítségével. A dokumentum a böngésző privát fájlrendszerében tárolódik, és soha nem kerül feltöltésre."
+        },
+        "quality": {
+          "title": "Mért minőség",
+          "body": "Minden útvonalhoz hűségi és szerkeszthetőségi pontszám tartozik egy nyilvános összehasonlító mérésből. A tervező kiválasztja a legjobbat, és elmondja, miért."
+        },
+        "agents": {
+          "title": "AI-ügynökök számára is használható",
+          "body": "Alakítsa a dokumentumokat tiszta Markdownná vagy strukturált JSON-ná LLM-kontextusnak. A CLI MCP-szervert tartalmaz, így az ügynökök maguk is átalakíthatnak fájlokat."
+        }
+      },
+      "how_heading": "Hogyan működik",
+      "how": {
+        "step_label": "{number}. lépés",
+        "step_1": "Kiválaszt egy fájlt. A böngésző átmásolja a saját privát fájlrendszerébe.",
+        "step_2": "Egy háttérszál betölti a WebAssemblyre lefordított AriadShift motort.",
+        "step_3": "A tervező a célja szempontjából legjobb mért pontszámú útvonalat választja.",
+        "step_4": "Letölti az eredményt. Az újrakezdés minden tárolt fájlt töröl."
+      },
+      "pairs_heading": "Átalakítás a böngészőben",
+      "pair_link": "{from} → {to}",
+      "see_more": "Tekintse meg az összes <formats>támogatott formátumot</formats>, és minden útvonal <quality>mért minőségét</quality>."
+    },
+    "formats": {
+      "meta_title": "Támogatott formátumok",
+      "meta_description": "Milyen dokumentumformátumokat olvas és ír az AriadShift, és mely átalakítások futnak a böngészőjében.",
+      "title": "Támogatott formátumok",
+      "lede": "Minden átalakítás az AriadShift dokumentummodelljén keresztül történik. A „böngésző” jelölésű formátumok teljes egészében ezen az eszközön alakulnak át; a többihez egyelőre a parancssori eszköz szükséges.",
+      "badge_browser": "Böngésző és CLI",
+      "badge_cli": "CLI",
+      "extensions": "Kiterjesztések: {list}",
+      "engines": "Olvassa: {readers}; írja: {writers}.",
+      "no_engine": "még nincs motor",
+      "convert_to": "Átalakítás erre: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Mért minőség",
+      "meta_description": "Az AriadShift minden átalakítási lépésének hűsége, szerkeszthetősége és sebessége, nyilvános összehasonlító mérésből előállítva.",
+      "title": "Mért minőség",
+      "lede": "Ezek a pontszámok nem kézzel készültek. Az összehasonlító mérés {count, plural, one {# nyilvános tesztdokumentumot} other {# nyilvános tesztdokumentumot}} alakít át minden lépésen, és az eredményt az ismert helyes eredményhez hasonlítja. A tervező ugyanezeket a számokat olvassa, amikor útvonalat választ.",
+      "generated": "{pandoc, select, none {Létrehozva: {date}.} other {Létrehozva: {date}, Pandoc {pandoc} használatával.}}",
+      "methodology": "<link>Olvassa el a módszertant</link>.",
+      "caption": "Az összehasonlító mérés pontszámai átalakítási lépésenként",
+      "column": {
+        "step": "Lépés",
+        "engine": "Motor",
+        "runs_in": "Itt fut",
+        "fidelity": "Hűség",
+        "editability": "Szerkeszthetőség",
+        "median_time": "Medián idő",
+        "samples": "Minták"
+      }
+    },
+    "route": {
+      "label": "Átalakítási útvonal",
+      "then": "majd",
+      "fidelity": "Hűség",
+      "editability": "Szerkeszthetőség",
+      "estimated_time": "Becsült idő",
+      "unmeasured": "Ennek az útvonalnak egy részét még nem mérték, ezért a tervező óvatosan pontozza."
+    },
+    "download": {
+      "meta_title": "Letöltés",
+      "meta_description": "Telepítse az AriadShift parancssori eszközt és MCP-szervert macOS, Linux és Windows rendszerre.",
+      "title": "Az AriadShift letöltése",
+      "lede": "Az <code>ashift</code> parancs a számítógépén alakít át Markdown, HTML, DOCX és EPUB fájlokat, és MCP-szervert futtat AI-ügynökök számára. A DOCX és EPUB útvonalak külön programként a <pandoc>Pandoc 3.12 vagy újabb</pandoc> verziót használják.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS és Linux)",
+          "note": "Akkor lesz elérhető, ha a formula megjelent. A Pandocot is telepíti, amelyre a DOCX és EPUB útvonalaknak szükségük van."
+        },
+        "shell": {
+          "title": "Shell-telepítő (macOS és Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell-telepítő (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Akkor lesz elérhető, ha a csomagbeküldést elfogadták."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Akkor lesz elérhető, ha a crate-ek megjelentek a crates.io-n."
+        }
+      },
+      "then_heading": "Ezután",
+      "releases": "Az összes platform archívumai a <link>GitHub Releases</link> oldalon találhatók.",
+      "desktop": {
+        "title": "Asztali alkalmazás",
+        "body": "Készül egy asztali alkalmazás macOS, Windows és Linux rendszerre, kötegelt átalakítással és mappafigyeléssel. Itt fog megjelenni, amint kijön az első kiadás."
+      }
+    },
+    "pair": {
+      "meta_title": "{from} átalakítása {to} formátumra",
+      "meta_description_browser": "Alakítson át a böngészőjében, privátan, az AriadShift segítségével: {noun} → {to}. Mért hűség, feltöltés nélkül.",
+      "meta_description_cli": "Alakítson át a saját számítógépén az AriadShift segítségével: {noun} → {to}. Mért hűség, feltöltés nélkül.",
+      "badge_browser": "A böngészőjében fut",
+      "badge_cli": "Az AriadShift CLI-vel fut",
+      "title": "{from} átalakítása {to} formátumra",
+      "lede_browser": "Alakítson át egy fájlt ({noun}) {to} formátumra feltöltés nélkül. Az AriadShift a böngészőjében olvassa be a fájlt, leképezi a saját dokumentummodelljére, és az eszközén írja ki az eredményt {to} formátumban.",
+      "lede_cli": "Alakítson át egy fájlt ({noun}) {to} formátumra a saját számítógépén az ingyenes AriadShift parancssori eszközzel. A böngészős változat ezt az útvonalat egyelőre nem futtatja.",
+      "convert_now": "{from} átalakítása {to} formátumra most",
+      "install_cli": "A CLI telepítése",
+      "route_heading": "Az AriadShift által választott útvonal",
+      "from_heading": "Forrás: {format}",
+      "to_heading": "Cél: {format}",
+      "cli_heading": "Parancssorból",
+      "related_heading": "Kapcsolódó átalakítások",
+      "related_link": "{from} → {to}"
+    },
+    "converter_page": {
+      "meta_title": "Átalakító",
+      "meta_description": "Alakítson át Markdown, HTML, DOCX, EPUB, digitális PDF és AriadShift IR JSON fájlokat a böngészőjében. A fájlok az eszközén maradnak.",
+      "title": "Dokumentum átalakítása",
+      "lede": "Válasszon fájlt, jelölje ki a célt, és töltse le az eredményt. Minden ezen a lapon történik{cloud, select, yes {, kivéve, ha úgy dönt, hogy ezt a fájlt a felhőben alakítja át.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licencek",
+      "meta_description": "Az AriadShift és böngészős motorjainak licencei és forráskódja."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "A felhőmód váratlanul leállt",
+        "stopped_body": "A felhőmódban hiba történt a feltöltés megkezdése után. A szerveren lévő másolatok a megőrzési idő lejártakor automatikusan törlődnek, vagy átalakíthatja a fájlt ezen az eszközön.",
+        "load_title": "A felhőmódot nem sikerült betölteni",
+        "load_body": "A felhőalapú átalakítót nem sikerült betölteni (például mert nincs internetkapcsolat). Ezen az eszközön továbbra is átalakíthat.",
+        "use_device": "Átalakítás ezen az eszközön"
+      },
+      "status": {
+        "deleted_from_server": "Törölve a szerverről: {name}.",
+        "reading": "Beolvasás ezen az eszközön: {name}.",
+        "detected": "{name}: {format}.",
+        "read_failed": "A fájlt nem sikerült beolvasni.",
+        "converting": "Átalakítás {format} formátumra ezen az eszközön.",
+        "ready": "Letölthető: {name}.",
+        "convert_failed": "Az átalakítás sikertelen volt.",
+        "saved": "Mentve: {name}.",
+        "reset": "{outcome, select, deleted {A fájlok törölve lettek erről az eszközről és a szerverről.} kept {A fájlok törölve lettek erről az eszközről. A szerveren még megvan: {name}.} other {A fájlok törölve lettek erről az eszközről.}}",
+        "cloud_selected": "Felhőalapú átalakítás kiválasztva: {name}. Még semmi sem lett feltöltve.",
+        "cloud_selected_unnamed": "Felhőalapú átalakítás kiválasztva ehhez a fájlhoz. Még semmi sem lett feltöltve."
+      },
+      "device": {
+        "cloud": "<strong>Felhőalapú átalakítás kiválasztva.</strong> Ez a fájl csak akkor hagyja el a böngészőt, ha a Feltöltés és átalakítás lehetőséget választja.",
+        "local": "<strong>Feldolgozás ezen az eszközön.</strong> A fájlok soha nem hagyják el a böngészőt, és nem kerülnek feltöltésre."
+      },
+      "storage_badge": "{storage, select, opfs {Privát böngészőtárhely} other {Memóriában}}",
+      "memory": {
+        "title": "Az eszközön lévő fájltárolás nem érhető el ebben a böngészőben",
+        "body": "A fájlokat ezért a memóriában tartja, így legfeljebb {limit} méretű bemenetek támogatottak. Mindkét esetben semmi sem kerül feltöltésre."
+      },
+      "error": {
+        "title": "{code, select, no_route {Itt nem érhető el} engine_integrity {A motor integritásellenőrzése sikertelen} other {Valami hiba történt}}"
+      },
+      "handoff": {
+        "title": "Folytatás az asztali alkalmazásban",
+        "reason": "{reason, select, ocr {Egyes oldalakhoz OCR szükséges a teljes szöveg kinyeréséhez.} other {Ehhez a dokumentumhoz olyan motor vagy több memória kell, mint amennyit a böngésző biztosít.}}",
+        "picker": "Az asztali alkalmazás fájlválasztót nyit meg. Válassza ki újra ezt a dokumentumot; a böngésző nem küldi el a fájlt.",
+        "open": "Megnyitás az asztali alkalmazásban",
+        "cloud_alternative": "Vagy alakítsa át a következő szerveren a feltöltés megerősítése után: {host}.",
+        "cloud_button": "Feldolgozás a felhőben"
+      },
+      "drop": {
+        "button": "Fájl kiválasztása",
+        "button_busy": "Beolvasás…",
+        "label": "Átalakítandó dokumentum",
+        "title": "Húzza ide a dokumentumot",
+        "hint": "Markdown, HTML, DOCX, EPUB, digitális PDF vagy IR JSON legfeljebb {limit} méretig. Az eszközön marad."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · „{title}”"
+      },
+      "count": {
+        "headings": "Címsorok",
+        "paragraphs": "Bekezdések",
+        "tables": "Táblázatok",
+        "images": "Képek",
+        "links": "Hivatkozások",
+        "footnotes": "Lábjegyzetek",
+        "words": "Szavak"
+      },
+      "unreachable": {
+        "cli": "A(z) {format} formátum egyelőre nem alakítható át a böngészőben. Az <link>AriadShift CLI</link> átalakítja a számítógépén.",
+        "none": "Az AriadShift a(z) {format} formátumot még nem tudja átalakítani."
+      },
+      "cloud": {
+        "loading": "Felhőmód betöltése…"
+      },
+      "convert": {
+        "title": "Átalakítás",
+        "hint": "A tervező a legjobb mért pontszámú útvonalat választja.",
+        "target_label": "Átalakítás erre",
+        "profile_label": "Profil",
+        "route_heading": "Miért ez az útvonal",
+        "elsewhere": "{formats} egyelőre az <link>AriadShift CLI</link> eszközt {count, plural, one {igényli} other {igénylik}}.",
+        "button": "Átalakítás",
+        "button_busy": "Átalakítás…",
+        "cancel": "Mégse"
+      },
+      "result": {
+        "title": "Kész",
+        "summary": "<output>{name}</output> · {size} · átalakítva {duration} alatt ezen az eszközön",
+        "download": "Letöltés: {name}"
+      },
+      "start_over": "Újrakezdés és a fájlok törlése"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Fiók",
+        "description": "Az AriadShift felhőfiókja: profil, jelszó, hozzáférési kulcsok és kétlépcsős bejelentkezés."
+      },
+      "sign_in": {
+        "title": "Bejelentkezés",
+        "description": "Jelentkezzen be az AriadShift felhőfiókjába, vagy hozzon létre egyet."
+      },
+      "jobs": {
+        "title": "Feladatok",
+        "description": "Az AriadShift felhőalapú átalakításainak állapota, letöltése és törlése."
+      },
+      "api_keys": {
+        "title": "API-kulcsok",
+        "description": "API-kulcsok létrehozása és visszavonása az AriadShift felhő API-jához."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Fiók"
+      },
+      "shell": {
+        "not_configured_title": "A felhő nincs beállítva",
+        "not_configured_body": "Az AriadShift ezen példánya csak az Ön eszközén fut. A fiókokhoz, API-kulcsokhoz és felhőfeladatokhoz szerver szükséges; annak üzemeltetője a webhely építésekor beállítja a következőket: <code>{api_variable}</code> és <code>{auth_variable}</code>.",
+        "not_configured_convert": "A fájlokat továbbra is <link>átalakíthatja a böngészőjében</link>.",
+        "nav_label": "Fiók",
+        "nav": {
+          "account": "Fiók",
+          "api_keys": "API-kulcsok",
+          "jobs": "Feladatok"
+        },
+        "server": "Szerver: {host}",
+        "signed_in_user": "Bejelentkezve mint <user>{email}</user>"
+      },
+      "session": {
+        "checking": "A munkamenet ellenőrzése…",
+        "error_title": "A munkamenet nem ellenőrizhető",
+        "signed_out": "Nincs bejelentkezve."
+      },
+      "actions": {
+        "sign_in": "Bejelentkezés",
+        "try_again": "Újrapróbálás",
+        "cancel": "Mégse",
+        "done": "Kész",
+        "continue": "Folytatás",
+        "revoke": "Visszavonás",
+        "copied": "Másolva"
+      },
+      "fields": {
+        "name": "Név",
+        "email": "E-mail",
+        "password": "Jelszó",
+        "authentication_code": "Hitelesítőkód",
+        "password_hint": "Legalább {min} karakter."
+      },
+      "dates": {
+        "unknown": "ismeretlen dátum"
+      },
+      "errors": {
+        "auth_refused": "A hitelesítési szolgáltatás elutasította a kérést.",
+        "service_unreachable": "A bejelentkezési szolgáltatás nem érhető el. Ellenőrizze a kapcsolatot, és próbálja újra.",
+        "session_ended": "A munkamenet véget ért. Jelentkezzen be újra.",
+        "rate_limited": "Túl sok kérés. Próbálja újra egy kis idő múlva.",
+        "rate_limited_after": "Túl sok kérés. Próbálja újra {seconds} másodperc múlva.",
+        "sign_in_unverifiable": "A szerver most nem tudja ellenőrizni a bejelentkezését. Próbálja újra egy kis idő múlva.",
+        "token_invalid": "A bejelentkezési szolgáltatás érvénytelen API-tokent adott vissza.",
+        "reauth_required": "A fiók törlése előtt jelentkezzen be újra.",
+        "delete_not_allowed": "Ez a szerver nem engedi a fiókok törlését a webalkalmazásból. Kérje meg az üzemeltetőt a törlésre.",
+        "job_gone": "Ez a feladat már nincs a szerveren.",
+        "file_deleted": "Ez a fájl már törölve lett.",
+        "job_conflict": "A feladat nem áll készen, vagy a feltöltött fájl már nincs a szerveren.",
+        "quota_exceeded": "Elhasználta a csomagja felhőalapú átalakításait. Alakítson át ezen az eszközön, vagy próbálja később.",
+        "request_failed": "A szerver nem tudta teljesíteni a kérést. Próbálja újra egy kis idő múlva.",
+        "network_unreachable": "A szerver nem érhető el. Ellenőrizze a kapcsolatot, és próbálja újra.",
+        "transfer_incomplete": "Az átvitel nem fejeződött be. Próbálja újra."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Név mentése",
+        "saved": "Név mentve.",
+        "save_failed": "A nevet nem sikerült menteni."
+      },
+      "password": {
+        "title": "Jelszó",
+        "current": "Jelenlegi jelszó",
+        "new": "Új jelszó",
+        "confirm": "Új jelszó megerősítése",
+        "revoke_others": "Kijelentkezés a többi munkamenetből",
+        "submit": "Jelszó módosítása",
+        "mismatch": "Az új jelszavak nem egyeznek.",
+        "changed": "A jelszó megváltozott.",
+        "changed_revoked": "A jelszó megváltozott. A többi munkamenetből kijelentkeztették.",
+        "failed": "A jelszót nem sikerült módosítani."
+      },
+      "passkeys": {
+        "title": "Hozzáférési kulcsok",
+        "description": "Jelentkezzen be az eszköz képernyőzárjával vagy egy biztonsági kulccsal jelszó helyett.",
+        "load_failed": "A hozzáférési kulcsokat nem sikerült betölteni.",
+        "loading": "Hozzáférési kulcsok betöltése…",
+        "empty": "Még nincs hozzáférési kulcs.",
+        "unnamed": "Névtelen hozzáférési kulcs",
+        "default_name": "Hozzáférési kulcs",
+        "added_on": "Hozzáadva: {date}",
+        "remove_label": "Hozzáférési kulcs eltávolítása: {name}",
+        "remove_button": "Eltávolítás<hidden>: hozzáférési kulcs {name}</hidden>",
+        "add_button": "Hozzáférési kulcs hozzáadása",
+        "add_title": "Hozzáférési kulcs hozzáadása",
+        "add_description": "Nevezze el az eszköz vagy a kulcs után, majd kövesse a böngésző utasításait.",
+        "name_label": "A hozzáférési kulcs neve",
+        "name_placeholder": "Például: Munkahelyi laptop",
+        "added": "A hozzáférési kulcs hozzáadva.",
+        "add_failed": "A hozzáférési kulcsot nem sikerült hozzáadni.",
+        "remove_title": "Eltávolítja ezt: {name}?",
+        "remove_title_unnamed": "Eltávolítja ezt a hozzáférési kulcsot?",
+        "remove_description": "Ezzel már nem tud bejelentkezni. A többi bejelentkezési módja továbbra is működik.",
+        "remove_confirm": "Hozzáférési kulcs eltávolítása",
+        "removed": "Eltávolítva: {name}.",
+        "remove_failed": "A hozzáférési kulcsot nem sikerült eltávolítani."
+      },
+      "two_factor": {
+        "title": "Kétlépcsős hitelesítés",
+        "description": "A jelszó után kérjen kódot egy hitelesítő alkalmazásból.",
+        "status_on": "Állapot: <badge>Be</badge>",
+        "status_off": "Állapot: <badge>Ki</badge>",
+        "enable": "Kétlépcsős hitelesítés bekapcsolása",
+        "disable": "Kétlépcsős hitelesítés kikapcsolása",
+        "regenerate": "Új biztonsági mentési kódok létrehozása",
+        "confirm_password": "A folytatáshoz erősítse meg a jelszavát.",
+        "enable_failed": "A kétlépcsős hitelesítés beállítását nem sikerült elindítani. Ellenőrizze a jelszavát.",
+        "disable_failed": "A kétlépcsős hitelesítést nem sikerült kikapcsolni. Ellenőrizze a jelszavát.",
+        "regenerate_failed": "Az új biztonsági mentési kódokat nem sikerült létrehozni. Ellenőrizze a jelszavát.",
+        "verify_failed": "A kódot nem fogadta el a rendszer. Ellenőrizze az eszköz idejét, és próbálja újra.",
+        "disabled": "A kétlépcsős hitelesítés ki van kapcsolva.",
+        "enabled": "A kétlépcsős hitelesítés be van kapcsolva.",
+        "regenerated": "Az új biztonsági mentési kódok létrejöttek. A régiek már nem működnek.",
+        "setup_title": "A hitelesítő alkalmazás beállítása",
+        "setup_description": "Adja hozzá az AriadShiftet a hitelesítő alkalmazásához, majd írja be az általa mutatott kódot.",
+        "setup_key_intro": "Írja be ezt a beállítási kulcsot az alkalmazásba:",
+        "setup_key_unavailable": "Nem elérhető",
+        "open_in_app": "Megnyitás egy hitelesítő alkalmazásban ezen az eszközön",
+        "turn_on": "Bekapcsolás",
+        "codes_title": "Új biztonsági mentési kódok",
+        "backup_intro": "Mentse el ezeket a biztonsági mentési kódokat biztonságos helyre. Mindegyikkel egyszer bejelentkezhet, ha elveszíti a hitelesítő alkalmazást. Nem jelennek meg újra.",
+        "copy_codes": "Biztonsági mentési kódok másolása",
+        "copy_failed": "A másolás nem sikerült; jelölje ki inkább a kódokat"
+      },
+      "account_actions": {
+        "title": "Munkamenet és fiók",
+        "sign_out": "Kijelentkezés",
+        "delete": "Fiók törlése",
+        "signed_out": "Kijelentkezve.",
+        "sign_out_failed": "A kijelentkezés nem sikerült. Próbálja újra.",
+        "deleted": "A fiókja törölve lett.",
+        "delete_failed_password": "A fiókot nem sikerült törölni. Ellenőrizze a jelszavát.",
+        "delete_failed_session": "A fiókot nem sikerült törölni. Jelentkezzen be újra, és próbálja meg ismét.",
+        "delete_note": "A fiók törlése automatikusan visszavonja az <keys>API-kulcsokat</keys>. A törlés előtt törölje a még meglévő <jobs>felhőfeladatokat</jobs>. A meghagyott feladatok fájljai a megőrzési idő lejártakor törlődnek.",
+        "dialog_title": "Törli a fiókját?",
+        "dialog_description_password": "Ez nem vonható vissza. A fiók törléséhez erősítse meg a jelszavát.",
+        "dialog_description_session": "Ez nem vonható vissza. Az alábbi megerősítéssel a jelenlegi bejelentkezett munkamenetével törölheti a fiókot.",
+        "sign_in_again": "Bejelentkezés újra"
+      },
+      "connected_apps": {
+        "title": "Csatlakoztatott alkalmazások",
+        "description": "Azok az alkalmazások és MCP-kliensek, amelyeknek engedélyezte a fiókja használatát, valamint az Ön által regisztrált OAuth-kliensek.",
+        "load_failed": "A csatlakoztatott alkalmazásokat nem sikerült betölteni.",
+        "loading": "Csatlakoztatott alkalmazások betöltése…",
+        "empty": "Még nincs csatlakoztatott alkalmazás vagy regisztrált OAuth-kliens.",
+        "scopes_none": "nincs",
+        "consent_details": "Engedélyezett alkalmazás · Hatókörök: {scopes} · Engedélyezve: {date}",
+        "client_details": "Regisztrált OAuth-kliens ({client_id})",
+        "client_details_dated": "Regisztrált OAuth-kliens ({client_id}) · Regisztrálva: {date}",
+        "revoke_label": "Visszavonás: {name}",
+        "revoked": "Visszavonva: {name}.",
+        "revoke_failed": "A hozzáférést nem sikerült visszavonni.",
+        "revoke_title": "Visszavonja ezt: {name}?",
+        "revoke_consent_description": "A visszavonás azonnal leállítja az új tokenek kiadását és a tokenek frissítését. A már kiadott, aláírt hozzáférési tokenek (15 perces élettartam) lejáratukig tovább működnek.",
+        "revoke_client_description": "Ennek a regisztrált OAuth-kliensnek a törlése visszavonja a hitelesítő adatait és a hozzájárulásait, és azonnal leállítja az új tokenek kiadását és a tokenek frissítését. A már kiadott, aláírt hozzáférési tokenek (15 perces élettartam) lejáratukig tovább működnek."
+      },
+      "api_keys": {
+        "page_title": "API-kulcsok",
+        "section_title": "Az Ön kulcsai",
+        "section_description": "A szkriptek és integrációk a kulcsot az <code>x-api-key</code> fejlécben küldik a következő szervernek: {host}. A kulcs az Ön fiókjával és csomagjával jár el.",
+        "load_failed": "Az API-kulcsokat nem sikerült betölteni.",
+        "loading": "API-kulcsok betöltése…",
+        "empty": "Még nincs API-kulcs.",
+        "unnamed": "Névtelen kulcs",
+        "disabled": "Letiltva",
+        "key_details": "Létrehozva: {date} · {expiry}",
+        "never_expires": "Soha nem jár le",
+        "expired_on": "Lejárt: {date}",
+        "expires_on": "Lejár: {date}",
+        "revoke_label": "API-kulcs visszavonása: {name}",
+        "revoke_button": "Visszavonás<hidden>: API-kulcs {name}</hidden>",
+        "create_button": "API-kulcs létrehozása",
+        "create_title": "API-kulcs létrehozása",
+        "create_description": "Nevezze el a kulcsot a használó szkript vagy szolgáltatás után.",
+        "name_placeholder": "Például: CI",
+        "expires_after": "Lejár ennyi idő után",
+        "lifetime_days": "{days, plural, one {# nap} other {# nap}}",
+        "lifetime_year": "1 év",
+        "lifetime_never": "Nem jár le",
+        "create_submit": "Kulcs létrehozása",
+        "create_failed": "A kulcsot nem sikerült létrehozni.",
+        "created": "Az API-kulcs létrejött: {name}.",
+        "secret_title": "Az új API-kulcsa",
+        "secret_label": "API-kulcs",
+        "secret_notice": "Másolja ki most a kulcsot. Csak hashként tároljuk, és soha nem jelenik meg újra.",
+        "copy_key": "Kulcs másolása",
+        "copy_failed": "A másolás nem sikerült. Jelölje ki a kulcsot, és másolja ki.",
+        "revoke_title": "Visszavonja ezt: {name}?",
+        "revoke_description": "Az ezt a kulcsot használó kéréseket azonnal elutasítjuk. Ez nem vonható vissza.",
+        "revoke_confirm": "Kulcs visszavonása",
+        "revoked": "Az API-kulcs visszavonva: {name}. Az ezt használó kéréseket mostantól elutasítjuk.",
+        "revoke_failed": "A kulcsot nem sikerült visszavonni."
+      },
+      "jobs": {
+        "title": "Feladatok",
+        "intro_server": "A fiókja felhőalapú átalakításai a következő szerveren: {host}, bármely eszközről. A fájlok a következő szerveren maradnak: {host}, amíg automatikusan törlődnek, vagy amíg itt nem törli őket.",
+        "intro_account_browser": "Ebben a böngészőben, a fiókjával indított felhőalapú átalakítások. Ez a lista csak ezen az eszközön van tárolva. A fájlok a következő szerveren maradnak: {host}, amíg automatikusan törlődnek, vagy amíg itt nem törli őket.",
+        "intro_anonymous_browser": "Ebben a böngészőben, fiók nélkül indított felhőalapú átalakítások. Ez a lista csak ezen az eszközön van tárolva. A fájlok a következő szerveren maradnak: {host}, amíg automatikusan törlődnek, vagy amíg itt nem törli őket.",
+        "signed_out_notice": "A feladatok fiók nélkül jelennek meg. <link>Jelentkezzen be</link>, hogy lássa a fiókja feladatait.",
+        "loading": "A feladatok betöltése…",
+        "list_unsupported": "A következő szerver még nem tudja kilistázni a fiókja feladatait: {host}, ezért ez az oldal az ebben a böngészőben indított feladatokat mutatja.",
+        "list_error_title": "A feladatokat nem sikerült betölteni innen: {host}",
+        "list_error_body": "{reason} Addig ez az oldal az ebben a böngészőben indított feladatokat mutatja.",
+        "count": "{count, plural, one {# feladat} other {# feladat}}",
+        "empty": "Még nincs felhőfeladat. Indítson egyet az <link>átalakítóból</link>.",
+        "show_more": "További feladatok megjelenítése",
+        "loading_more": "További feladatok betöltése…",
+        "unnamed": "Feladat: {id}",
+        "forgotten": "Eltávolítva a listáról: {filename}. A szerveren lévő fájljai változatlanok.",
+        "forgotten_unnamed": "A feladat el lett távolítva a listáról. A szerveren lévő fájljai változatlanok.",
+        "status": {
+          "queued": "Sorban áll",
+          "converting": "Átalakítás",
+          "converting_stage": "Átalakítás: {stage}",
+          "retrying": "Újrapróbálás ({attempt}. kísérlet)",
+          "reconnecting": "{step} · Újracsatlakozás…",
+          "ready": "Kész",
+          "failed": "Sikertelen",
+          "canceled": "Megszakítva",
+          "deleted": "Törölve",
+          "deleted_expired": "Törölve (lejárt)"
+        },
+        "until": {
+          "less_than_minute": "egy percen belül",
+          "minutes": "{minutes} perc múlva",
+          "hours": "{hours} óra múlva",
+          "hours_minutes": "{hours} óra {minutes} perc múlva"
+        },
+        "expiry": {
+          "deleted_at": "Automatikusan törölve: {clock}.",
+          "deleted_from_server": "Törölve a szerverről. A bemeneti és kimeneti fájlok eltűntek.",
+          "being_deleted": "A törlés folyamatban.",
+          "deletes_at": "Automatikus törlés: {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Ehhez a dokumentumhoz több kell, mint amennyit a csomagja lehetővé tesz. Próbáljon kisebb fájlt, vagy alakítsa át ezen az eszközön.",
+          "unsupported_route": "Ez a szerver nem tud átalakítani ezek között a formátumok között. Válasszon másik célt az átalakítóban.",
+          "input_io": "A feltöltött fájlt nem sikerült beolvasni, vagy már nincs a szerveren. Töltse fel újra.",
+          "storage": "A szerver nem tudta eltárolni az eredményt. Próbálja újra egy kis idő múlva.",
+          "tool_missing": "Ebből a szerverből hiányzik az útvonalhoz szükséges motor. Kérdezze meg az üzemeltetőt, vagy válasszon másik célt.",
+          "other": "Az átalakítás sikertelen volt. Próbálja újra, vagy alakítsa át a fájlt ezen az eszközön."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Állapot betöltése…",
+          "try_again": "Újrapróbálás<hidden>: {filename} betöltése</hidden>",
+          "technical_details": "Műszaki részletek",
+          "warnings": "{count, plural, one {# figyelmeztetés} other {# figyelmeztetés}}",
+          "download": "Letöltés: {filename}",
+          "retry_label": "Újrapróbálás: {filename}",
+          "retry_button": "Újrapróbálás<hidden>: {filename}</hidden>",
+          "delete_label": "Azonnali törlés a szerverről: {filename}",
+          "delete_button": "Törlés most<hidden>: {filename} a szerverről</hidden>",
+          "remove_label": "Eltávolítás a listáról ({filename})",
+          "remove_button": "Eltávolítás a listáról<hidden> ({filename})</hidden>",
+          "deleted_note": "Törölve innen: {host}. A bemeneti és kimeneti fájlok eltűntek.",
+          "deleted_announce": "Törölve innen: {host}, fájl: {filename}. A bemeneti és kimeneti fájlok eltűntek.",
+          "ready_announce": "Átalakítva és letölthető: {filename}.",
+          "failed_announce": "A(z) {filename} átalakítása sikertelen volt. {reason}",
+          "canceled_announce": "A(z) {filename} átalakítása megszakítva.",
+          "downloading": "Letöltés: {filename}.",
+          "retrying": "Újrapróbálás: {filename}.",
+          "retry_conflict": "A feltöltött fájl már nincs a szerveren. Töltse fel újra az átalakítóból."
+        }
+      },
+      "sign_in": {
+        "title": "Bejelentkezés",
+        "create_title": "Fiók létrehozása",
+        "two_factor_title": "Kétlépcsős ellenőrzés",
+        "signed_in": "Bejelentkezve.",
+        "go_to_account": "Ugrás a fiókhoz",
+        "passkey": "Bejelentkezés hozzáférési kulccsal",
+        "no_account": "Még nincs fiókja? <switch>Hozzon létre egyet</switch>",
+        "have_account": "Már van fiókja? <switch>Jelentkezzen be</switch>",
+        "sign_in_failed": "A bejelentkezés nem sikerült. Ellenőrizze az e-mail-címet és a jelszót.",
+        "passkey_failed": "A bejelentkezés hozzáférési kulccsal nem sikerült.",
+        "code_rejected": "A kódot nem fogadta el a rendszer. Próbálja újra.",
+        "create_failed": "A fiókot nem sikerült létrehozni.",
+        "passwords_mismatch": "A jelszavak nem egyeznek.",
+        "bot_check": "Végezze el a regisztrációs robotellenőrzést, és próbálja újra.",
+        "confirm_password": "Jelszó megerősítése",
+        "create_account": "Fiók létrehozása",
+        "totp_help": "Írja be a hitelesítő alkalmazásban látható 6 számjegyű kódot.",
+        "backup_help": "Írja be az egyik biztonsági mentési kódot, amelyet a kétlépcsős hitelesítés bekapcsolásakor mentett el. Minden kód csak egyszer használható.",
+        "backup_code": "Biztonsági mentési kód",
+        "trust_device": "Ennek a böngészőnek a megbízhatónak jelölése 30 napra",
+        "verify": "Ellenőrzés",
+        "use_backup": "Biztonsági mentési kód használata helyette",
+        "use_authenticator": "Hitelesítő alkalmazás kódjának használata helyette",
+        "signed_in_user": "Bejelentkezve mint <user>{email}</user>."
+      }
+    },
+    "app": {
+      "sections_label": "Az alkalmazás részei",
+      "tab": {
+        "convert": "Átalakítás",
+        "tools": "Eszközök",
+        "workspace": "PDF-munkaterület"
+      },
+      "tools_lede": "Minden eszköz, funkció szerint csoportosítva. Válasszon egyet, és megnyílik a PDF-munkaterületen.",
+      "workspace_loading": "A PDF-munkaterület betöltése…",
+      "workspace_failed": "A PDF-munkaterületet nem sikerült betölteni.",
+      "retry": "Próbálja újra",
+      "tools_loading": "Az eszközök betöltése…",
+      "tools_failed": "Az eszközöket nem sikerült betölteni."
+    },
+    "tools": {
+      "hub": {
+        "label": "Eszközök",
+        "search": "Eszközök keresése…",
+        "open_palette": "Parancspaletta megnyitása",
+        "command": "Parancs",
+        "zero_upload": "Ezen az eszközön · 0 bájt feltöltve",
+        "categories": "Kategória",
+        "all": "Mind",
+        "runtimes": "Hol fut",
+        "count": "{count, plural, one {# eszköz} other {# eszköz}}",
+        "no_match": "Nincs találat az eszközök között",
+        "try_recipe": "Próbáljon ki egy egyszerű mondatot a parancspalettán, például „forgatás 90 fokkal, majd tömörítés”.",
+        "reset": "Keresés és szűrők visszaállítása",
+        "open_in_palette": "Kipróbálás a parancspalettán"
+      },
+      "category": {
+        "organize": "Rendezés és összeállítás",
+        "convert": "Átalakítás",
+        "compress": "Tömörítés és javítás",
+        "edit": "Szerkesztés és jelölés",
+        "forms_annotations": "Űrlapok és jegyzetek",
+        "security": "Biztonság és aláírás",
+        "ocr_scan": "OCR és beolvasás",
+        "metadata_inspect": "Vizsgálat és összehasonlítás",
+        "automation_ai": "Automatizálás és AI"
+      },
+      "runtime": {
+        "browser": "Böngésző",
+        "desktop": "Asztali gép",
+        "cloud": "Felhő",
+        "list": "Itt fut"
+      },
+      "tier": {
+        "free": "Ingyenes",
+        "pro": "Pro"
+      },
+      "favorites": "Kedvencek",
+      "recents": "Legutóbbi eszközök",
+      "favorite": {
+        "add": "Hozzáadás a kedvencekhez",
+        "remove": "Eltávolítás a kedvencek közül"
+      },
+      "card": {
+        "open": "Megnyitás"
+      },
+      "palette": {
+        "title": "Eszköz-parancspaletta",
+        "description": "Keressen eszközt, vagy írja le egy mondatban, mit szeretne tenni, majd nyomja meg az Entert.",
+        "placeholder": "Eszköz keresése vagy recept leírása…",
+        "search": "Eszközök keresése",
+        "empty": "Nincs találat. Próbáljon ki egy ilyen mondatot: „forgatás 90 fokkal, majd tömörítés”.",
+        "recipe": "Recept",
+        "recipe_steps": "A recept lépései",
+        "step": "Lépés",
+        "recipe_review": "Futtatás előtt nézze át: valamelyik lépéshez asztali gép, felhő vagy AI kell, vagy véglegesen módosítja a fájlt.",
+        "recipe_ready": "A recept betöltéséhez nyomja meg az Entert.",
+        "confirm": "Előbb nézze át",
+        "results": "Eszközök",
+        "actions": "Műveletek",
+        "jump_convert": "Ugrás az Átalakításhoz",
+        "switch_theme": "Téma váltása",
+        "clear_recents": "Legutóbbi eszközök törlése",
+        "hint": "A keresés ezen az eszközön fut.",
+        "open": "Megnyitás",
+        "close": "Bezárás"
+      },
+      "title": {
+        "pdf": {
+          "info": "Információ",
+          "merge": "Egyesítés",
+          "split": "Felosztás",
+          "extract_pages": "Oldalak kinyerése",
+          "delete_pages": "Oldalak törlése",
+          "reorder": "Átrendezés",
+          "alternate_mix": "Váltakozó keverés",
+          "insert_blank": "Üres oldal beszúrása",
+          "rotate": "Forgatás",
+          "crop": "Vágás",
+          "scale": "Átméretezés",
+          "single_page": "Egyetlen oldal",
+          "rotate_content": "Tartalom forgatása",
+          "decompress": "Kibontás",
+          "nup": "N-up",
+          "booklet": "Füzet",
+          "overlay": "Átfedés",
+          "divide_pages": "Oldalak osztása",
+          "posterize": "Poszterizálás",
+          "metadata": "Metaadatok",
+          "outline": "Vázlat",
+          "attachments": "Mellékletek",
+          "page_labels": "Oldalcímkék",
+          "viewer_prefs": "Megjelenítő beállításai",
+          "portfolio": "Portfólió",
+          "layers": "Rétegek",
+          "replace_color": "Színek cseréje",
+          "adjust_colors": "Színek beállítása",
+          "watermark": "Vízjel",
+          "stamp": "Bélyegző",
+          "add_image": "Kép hozzáadása",
+          "add_text": "Szöveg hozzáadása",
+          "qr": "QR-kód",
+          "page_numbers": "Oldalszámok",
+          "header_footer": "Élőfej és élőláb",
+          "bates": "Bates-számozás",
+          "toc_page": "Tartalomjegyzék-oldal",
+          "background": "Háttér",
+          "invert_colors": "Színek invertálása",
+          "watermark_detect": "Vízjelek felismerése",
+          "watermark_remove": "Vízjelek eltávolítása",
+          "watermark_remove_raster": "Raszteres vízjelek eltávolítása",
+          "render": "Oldalak renderelése",
+          "to_images": "PDF képekké",
+          "thumbnails": "Miniatűrök",
+          "extract_images": "Képek kinyerése",
+          "text_layout": "Szövegelrendezés",
+          "remove_blank": "Üres oldalak eltávolítása",
+          "crop_whitespace": "Üres szegély levágása",
+          "detect_scanned": "Beolvasott oldalak felismerése",
+          "compress": "Tömörítés",
+          "grayscale": "Szürkeárnyalat",
+          "repair": "Javítás",
+          "linearize": "Linearizálás",
+          "encrypt": "Titkosítás",
+          "decrypt": "Visszafejtés",
+          "permissions": "Engedélyek",
+          "sanitize": "Tisztítás",
+          "unlock_forms": "Űrlapok feloldása",
+          "ocr": "OCR",
+          "auto_rotate": "Automatikus forgatás",
+          "deskew": "Ferdeség javítása",
+          "scan_split": "Beolvasás felosztása",
+          "scanner_effect": "Szkennerhatás",
+          "annotations": "Jegyzetek",
+          "annotations_import": "Jegyzetek importálása",
+          "annotations_export": "Jegyzetek exportálása",
+          "forms_list": "Űrlapmezők listázása",
+          "forms_fill": "Űrlapok kitöltése",
+          "forms_create": "Űrlapok létrehozása",
+          "forms_flatten": "Űrlapok lapítása",
+          "forms_detect": "Űrlapmezők felismerése",
+          "forms_import": "Űrlapértékek importálása",
+          "forms_export": "Űrlapértékek exportálása",
+          "redact": "Kitakarás",
+          "redact_verify": "Kitakarás ellenőrzése",
+          "sign_visual": "Látható aláírás",
+          "sign": "Aláírás",
+          "sign_token": "Aláírás tokennel",
+          "timestamp": "Időbélyeg",
+          "sign_verify": "Aláírások ellenőrzése",
+          "sign_remove": "Aláírások eltávolítása",
+          "tables_to_csv": "Táblázatok CSV-be",
+          "to_cbz": "CBZ-be",
+          "compare": "Összehasonlítás",
+          "to_pdfa": "PDF/A-vá",
+          "to_pdfua": "PDF/UA-vá",
+          "accessibility_report": "Akadálymentességi jelentés",
+          "validate_pdfa": "PDF/A ellenőrzése",
+          "validate_pdfua": "PDF/UA ellenőrzése"
+        },
+        "image": {
+          "to_pdf": "Kép PDF-be",
+          "ocr": "Kép OCR"
+        },
+        "web": {
+          "to_pdf": "Weboldal PDF-be"
+        },
+        "edit": {
+          "open_document": "Dokumentum megnyitása",
+          "export_document": "Dokumentum exportálása",
+          "page_objects": "Oldalobjektumok",
+          "apply": "Alkalmazás"
+        },
+        "ai": {
+          "summarize": "AI-összefoglaló",
+          "ask": "AI-kérdés",
+          "translate": "AI-fordítás",
+          "extract_tables": "AI-táblázatkinyerés",
+          "recipe_from_text": "AI-recept szövegből"
+        }
+      }
+    },
+    "workspace": {
+      "main": {
+        "title": "Munkaterület",
+        "lede": "Minden ebben a böngészőlapon fut.",
+        "viewer": "Előnézet",
+        "pages_tab": "Oldalak",
+        "tools_tab": "Eszköz",
+        "no_pdf": "Adjon hozzá egy PDF-et az oldalak előnézetéhez és rendezéséhez.",
+        "tools": "Eszközök",
+        "tool_picker": "Válasszon eszközt",
+        "dismiss_error": "Bezárás",
+        "working": "Folyamatban…"
+      },
+      "file_tray": {
+        "privacy": "Ezen az eszközön · 0 bájt feltöltve",
+        "title": "Fájlok",
+        "empty": "A kezdéshez húzzon ide PDF-eket vagy más fájlokat. Semmi nem kerül feltöltésre.",
+        "choose": "Fájlok kiválasztása",
+        "add_more": "Fájlok hozzáadása",
+        "drop_title": "Engedje el a fájlokat a hozzáadáshoz",
+        "drop_description": "Ebben a böngészőben maradnak.",
+        "pages": "{count, plural, one {# oldal} other {# oldal}}",
+        "remove": "{name} eltávolítása",
+        "move_up": "{name} feljebb",
+        "move_down": "{name} lejjebb",
+        "use": "Munka a következővel: {name}",
+        "active": "Megnyitva",
+        "storage_opfs": "A böngésző fájltárolójában",
+        "storage_memory": "A memóriában",
+        "reading": "Fájlok olvasása…",
+        "list": "A munkaterület fájljai",
+        "problem": "A(z) {name} nem olvasható."
+      },
+      "insights": {
+        "title": "Mi van ebben a PDF-ben",
+        "loading": "A dokumentum olvasása ezen az eszközön…",
+        "failed": "A dokumentumot nem sikerült elemezni.",
+        "pages": "{count, plural, one {# oldal} other {# oldal}}",
+        "scanned": "{count, plural, one {# beolvasott oldal} other {# beolvasott oldal}}",
+        "blank": "{count, plural, one {# üres oldal} other {# üres oldal}}",
+        "dpi_unknown": "A képfelbontás ismeretlen",
+        "dpi_single": "A képek kb. {dpi} DPI",
+        "dpi_range": "A képek kb. {min}–{max} DPI",
+        "low_dpi": "Alacsony felbontás {count, plural, one {# oldalon} other {# oldalon}} ({list})",
+        "form_fields": "{count, plural, one {# üres kötelező mező} other {# üres kötelező mező}}",
+        "signatures": "{count, plural, one {# aláírás} other {# aláírás}}",
+        "metadata": "Metaadatokat tartalmaz",
+        "edit_history": "Van szerkesztési előzménye",
+        "encrypted": "Titkosított",
+        "linearized": "Linearizált",
+        "clean": "Nem található",
+        "suggested": "Javasolt következő lépések",
+        "no_suggestions": "Semmi nem igényel figyelmet. A folytatáshoz válasszon bármelyik eszközt.",
+        "open": "{tool} megnyitása"
+      },
+      "page_grid": {
+        "title": "Oldalak",
+        "toolbar": "Oldalszerkesztés",
+        "undo": "Visszavonás",
+        "redo": "Újra",
+        "reset": "Visszaállítás",
+        "pending": "{count, plural, one {# függőben lévő módosítás} other {# függőben lévő módosítás}}",
+        "select_all": "Összes kijelölése",
+        "clear_selection": "Kijelölés törlése",
+        "select_range": "Oldalak kijelölése",
+        "range_placeholder": "pl. 3-7",
+        "rotate_left": "Forgatás balra",
+        "rotate_right": "Forgatás jobbra",
+        "delete_selected": "Kijelöltek törlése",
+        "restore_selected": "Kijelöltek visszaállítása",
+        "apply": "Módosítások alkalmazása",
+        "hint": "Az átrendezéshez húzza a fogantyút, vagy fókuszálja, és használja a nyílbillentyűket. Shift-kattintással tartomány jelölhető ki.",
+        "drag_hint": "Húzással vagy a nyílbillentyűkkel rendezhet át",
+        "moved": "A(z) {page}. oldal a(z) {position}. helyre került",
+        "cannot_delete_all": "A dokumentumnak legalább egy oldalt tartalmaznia kell.",
+        "card_page": "{page}. oldal",
+        "card_select": "{page}. oldal kijelölése",
+        "card_rotate": "{page}. oldal forgatása",
+        "card_delete": "{page}. oldal törlése",
+        "card_move": "{page}. oldal átrendezése",
+        "card_restore": "{page}. oldal visszaállítása",
+        "blank": "Üres",
+        "scanned": "Beolvasott"
+      },
+      "inspector": {
+        "title": "Eszköz",
+        "empty": "Válasszon eszközt a beállításainak megtekintéséhez.",
+        "runtime": {
+          "browser": "Böngésző",
+          "desktop": "Asztali gép",
+          "cloud": "Felhő"
+        },
+        "tier": {
+          "free": "Ingyenes",
+          "pro": "Pro"
+        },
+        "run_here": "Eszköz futtatása ezen az eszközön",
+        "running": "Fut…",
+        "cancel": "Mégse",
+        "run_cloud": "Futtatás a felhőben",
+        "cloud_note": "Ez az eszköz a szervereinken fut; a fájlja feltöltésre kerül hozzá.",
+        "switch_desktop": "Futtatás inkább a számítógépén",
+        "switch_browser": "Vissza erre az eszközre",
+        "needs_file": "Előbb adjon hozzá egy fájlt.",
+        "needs_pdf": "Ehhez az eszközhöz PDF kell.",
+        "invalid": "A folytatáshoz javítsa a kiemelt beállításokat.",
+        "failed": "Az eszköz leállt: {message}",
+        "progress": "Az eszköz előrehaladása"
+      },
+      "handoff": {
+        "title": "Futtatás a számítógépén",
+        "why": "Ez az eszköz nem futtatható a böngészőben. Futtassa az AriadShift parancssorával; a fájljai soha nem hagyják el a számítógépét.",
+        "command": "Parancs",
+        "copy": "Parancs másolása",
+        "copied": "Parancs átmásolva",
+        "copy_failed": "A másolás nem sikerült. Jelölje ki a parancsot, és másolja át.",
+        "install": "AriadShift letöltése",
+        "open_app": "Megnyitás az asztali alkalmazásban",
+        "reveal_secrets": "Titkos értékek megjelenítése",
+        "mask_secrets": "Titkos értékek elrejtése",
+        "secret_note": "A parancsban a titkos értékek rejtve maradnak, amíg meg nem jeleníti őket."
+      },
+      "result": {
+        "title": "Eredmény",
+        "before": "Előtte",
+        "after": "Utána",
+        "size": "Méret",
+        "pages": "Oldalak",
+        "duration": "Idő",
+        "change_none": "nincs változás",
+        "change_up": "+{percent}%",
+        "change_down": "−{percent}%",
+        "bytes": "{value} bájt",
+        "millis": "{value} ms",
+        "seconds": "{value} s",
+        "warnings": "Figyelmeztetések",
+        "details": "Részletek",
+        "download": "{name} letöltése",
+        "open_in_editor": "Megnyitás a szerkesztőben",
+        "continue": "Folytatás másik eszközzel",
+        "save_recipe": "Mentés receptként",
+        "undo": "Visszavonás",
+        "outputs": "Kimeneti fájlok",
+        "download_failed": "A fájlt nem sikerült menteni."
+      },
+      "thread": {
+        "label": "Lépések",
+        "status": {
+          "pending": "Várakozik",
+          "running": "Fut",
+          "completed": "Kész",
+          "skipped": "Kihagyva",
+          "failed": "Sikertelen"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Nagyítás",
+        "zoom_out": "Kicsinyítés",
+        "fit_width": "Szélességhez igazítás",
+        "fit_page": "Oldalhoz igazítás",
+        "zoom_level": "{percent}%",
+        "page": "Oldalszám",
+        "page_of": "/ {count}",
+        "search": "Keresés a dokumentumban",
+        "search_placeholder": "Szöveg keresése",
+        "search_run": "Keresés",
+        "search_cancel": "Keresés megszakítása",
+        "search_clear": "Keresés törlése",
+        "search_next": "Következő találat",
+        "search_previous": "Előző találat",
+        "searching": "Keresés… {percent}%",
+        "matches": "{current} / {total}",
+        "no_matches": "Nincs találat",
+        "dark_pages": "Sötét oldalak",
+        "loading": "A dokumentum megnyitása ezen az eszközön…",
+        "unavailable": "A megjelenítőnek WebAssembly kell, amelyet ez a böngésző nem támogat.",
+        "document_error": "Ezt a dokumentumot nem sikerült megjeleníteni.",
+        "toolbar": "Dokumentummegjelenítő vezérlői"
+      }
+    }
+  }
+}

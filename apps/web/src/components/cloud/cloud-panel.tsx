@@ -4,6 +4,7 @@ import type { ProfileId } from "@ariadshift/ariad-wasm";
 import { AriadApiError, type Capabilities } from "@ariadshift/sdk";
 import { Button } from "@ariadshift/ui/components/button";
 import { CloudUploadIcon, UserIcon, WifiOffIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import {
   type RefObject,
   useCallback,
@@ -14,6 +15,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useLocalePath } from "@/i18n/use-locale-path";
 import {
   type CloudApiOptions,
   cloudTargets,
@@ -153,6 +155,8 @@ export default function CloudPanel({
   apiOptions,
   transfer,
 }: CloudPanelProps) {
+  const path = useLocalePath();
+  const common = useTranslations("common");
   const testFetch = apiOptions?.fetch;
   const testOperations = apiOptions?.operations;
   const auth = useMemo(
@@ -637,7 +641,7 @@ export default function CloudPanel({
               >
                 {CLOUD_PROFILES.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label}
+                    {common(`profile.${item.id}.label`)}
                   </option>
                 ))}
               </select>
@@ -667,7 +671,7 @@ export default function CloudPanel({
               The file name is stored with the job and never logged. Files are not used for anything
               other than this conversion.{" "}
               {config.operator ? `Operated by ${config.operator}. ` : ""}
-              <a className="underline" href="/privacy">
+              <a className="underline" href={path("/privacy")}>
                 Privacy
               </a>
             </p>
@@ -803,7 +807,7 @@ export default function CloudPanel({
       )}
 
       {state.job && config.authUrl && (
-        <a href="/jobs" className="text-sm underline">
+        <a href={path("/jobs")} className="text-sm underline">
           View cloud jobs
         </a>
       )}

@@ -1,6 +1,8 @@
 import path from "node:path";
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 import { routeHeaders } from "./route-headers.mjs";
+import { REDIRECT_STATUS, routeRedirects } from "./route-redirects.mjs";
 
 const repositoryRoot = path.join(import.meta.dirname, "../..");
 const staticExport = process.env.ARIADSHIFT_WEB_OUTPUT === "export";
@@ -14,8 +16,21 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   turbopack: { root: repositoryRoot },
   outputFileTracingRoot: repositoryRoot,
-  // Static exports cannot send headers; scripts/write-static-headers.mjs writes out/_headers.
-  ...(staticExport ? {} : { headers: async () => routeHeaders }),
+  // Static exports cannot send headers or redirects; scripts/write-static-headers.mjs
+  // writes out/_headers and out/_redirects.
+  ...(staticExport
+    ? {}
+    : {
+        headers: async () => routeHeaders,
+        redirects: async () =>
+          routeRedirects.map(({ source, destination }) => ({
+            source,
+            destination,
+            statusCode: REDIRECT_STATUS,
+          })),
+      }),
 };
 
-export default nextConfig;
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
+
+export default withNextIntl(nextConfig);

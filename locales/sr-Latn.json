@@ -1,0 +1,1062 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Za uređivanje",
+        "description": "Pravi naslovi, liste i tabele koje možete nastaviti da uređujete."
+      },
+      "faithful": {
+        "label": "Verno originalu",
+        "description": "Što bliže originalnom rasporedu."
+      },
+      "fast": {
+        "label": "Brzo",
+        "description": "Daje prednost najbržoj ruti."
+      },
+      "private": {
+        "label": "Privatno",
+        "description": "Samo mehanizmi koji nikada ne napuštaju vaš uređaj."
+      }
+    },
+    "engine": {
+      "ariad_core": "Jezgro AriadShift-a",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Čitač teksta iz PDF-a"
+    },
+    "runtime": {
+      "wasm": "Pregledač",
+      "local": "CLI i desktop aplikacija",
+      "cloud": "Oblak"
+    },
+    "score": {
+      "not_measured": "nije izmereno"
+    },
+    "duration": {
+      "under_1_ms": "ispod 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown dokument",
+        "description": "CommonMark sa GitHub Flavored Markdown: naslovi, liste, tabele, liste zadataka, fusnote i matematika. Format koji AI alati najbolje čitaju."
+      },
+      "html": {
+        "noun": "HTML stranica",
+        "description": "Samostalna HTML5 stranica. Sirova oznaka u ulazu se čisti; skripte i nebezbedni atributi nikada ne dospevaju u izlaz."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR dokument",
+        "description": "Strukturirani model dokumenta kroz koji prolazi svaka AriadShift ruta: naslovi, blokovi, tabele, resursi i metapodaci kao JSON sa verzijama."
+      },
+      "docx": {
+        "noun": "Word dokument",
+        "description": "Office Open XML dokumenti iz programa Microsoft Word, LibreOffice i Google Docs, koji se čitaju i upisuju preko alata Pandoc."
+      },
+      "epub": {
+        "noun": "EPUB e-knjiga",
+        "description": "EPUB 3 e-knjige koje se čitaju i upisuju preko alata Pandoc sa ponovljivim metapodacima."
+      },
+      "pdf": {
+        "noun": "PDF dokument",
+        "description": "Tekst digitalnog PDF-a čita se na ovom uređaju. PDF izlaz koristi Typst i ugrađene fontove. Skenirane stranice zahtevaju OCR u desktop aplikaciji."
+      },
+      "odt": {
+        "noun": "OpenDocument tekstualni dokument",
+        "description": "OpenDocument tekstualni fajlovi koriste LibreOffice u desktop aplikaciji."
+      },
+      "rtf": {
+        "noun": "Rich Text dokument",
+        "description": "Rich Text dokumenti koriste LibreOffice u desktop aplikaciji."
+      },
+      "pptx": {
+        "noun": "PowerPoint prezentacija",
+        "description": "PowerPoint prezentacije koriste Docling ili LibreOffice u desktop aplikaciji."
+      },
+      "xlsx": {
+        "noun": "Excel radna sveska",
+        "description": "Excel radne sveske koriste Docling ili LibreOffice u desktop aplikaciji."
+      },
+      "doc": {
+        "noun": "stariji Word dokument",
+        "description": "Stariji Word dokumenti koriste LibreOffice u desktop aplikaciji."
+      },
+      "xls": {
+        "noun": "starija Excel radna sveska",
+        "description": "Starije Excel radne sveske koriste LibreOffice u desktop aplikaciji."
+      },
+      "ppt": {
+        "noun": "starija PowerPoint prezentacija",
+        "description": "Starije PowerPoint prezentacije koriste LibreOffice u desktop aplikaciji."
+      },
+      "ods": {
+        "noun": "OpenDocument tabela",
+        "description": "OpenDocument tabele koriste LibreOffice u desktop aplikaciji."
+      },
+      "odp": {
+        "noun": "OpenDocument prezentacija",
+        "description": "OpenDocument prezentacije koriste LibreOffice u desktop aplikaciji."
+      },
+      "png": {
+        "noun": "PNG slika",
+        "description": "Izdvajanje teksta iz slika zahteva paket mehanizma Docling u desktop aplikaciji."
+      },
+      "jpeg": {
+        "noun": "JPEG slika",
+        "description": "Izdvajanje teksta iz slika zahteva paket mehanizma Docling u desktop aplikaciji."
+      },
+      "webp": {
+        "noun": "WebP slika",
+        "description": "Izdvajanje teksta iz slika zahteva paket mehanizma Docling u desktop aplikaciji."
+      },
+      "tiff": {
+        "noun": "TIFF slika",
+        "description": "Izdvajanje teksta iz slika zahteva paket mehanizma Docling u desktop aplikaciji."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: privatna konverzija dokumenata u pregledaču",
+      "site_description": "Konvertujte Markdown, HTML i strukturirani JSON na sopstvenom uređaju. Privatno podrazumevano, sa izmerenim kvalitetom svake rute i spremno za AI agente.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Pređi na sadržaj",
+      "home_link": "{site}: početna",
+      "nav_label": "Glavni meni",
+      "nav": {
+        "converter": "Konvertor",
+        "formats": "Formati",
+        "quality": "Kvalitet",
+        "download": "Preuzimanje",
+        "privacy": "Privatnost"
+      },
+      "footer": {
+        "license": "AriadShift je otvorenog koda pod licencom Apache-2.0.",
+        "privacy": "Privatnost",
+        "licenses": "Licence",
+        "quality": "Kvalitet",
+        "source": "Izvorni kod"
+      },
+      "language": {
+        "label": "Jezik",
+        "button": "Jezik: {name}",
+        "list_label": "Izaberite jezik",
+        "community_badge": "Prevod zajednice",
+        "community_note": "Prevodi zajednice su mašinski nacrti koje ljudi i dalje mogu da ispravljaju."
+      }
+    },
+    "not_found": {
+      "title": "Stranica nije pronađena",
+      "body": "Ova stranica ne postoji.",
+      "home_link": "Idi na početnu stranicu"
+    },
+    "home": {
+      "meta_title": "Konvertujte dokumente na sopstvenom uređaju",
+      "title": "Konvertujte dokumente na sopstvenom uređaju",
+      "lede": "AriadShift konvertuje Markdown, HTML, Word, EPUB i strukturirani JSON direktno u vašem pregledaču. Čitajte tekst digitalnih PDF-ova i kreirajte PDF-ove na svom uređaju. Jedan planer sa izmerenim kvalitetom, bez otpremanja.",
+      "open_converter": "Otvori konvertor",
+      "install_cli": "Instaliraj CLI",
+      "why_heading": "Zašto AriadShift",
+      "why": {
+        "private": {
+          "title": "Privatno podrazumevano",
+          "body": "Konvertor radi unutar vašeg pregledača pomoću WebAssembly-ja. Dokument se čuva u privatnom fajl sistemu pregledača i nikada se ne otprema."
+        },
+        "quality": {
+          "title": "Izmeren kvalitet",
+          "body": "Svaka ruta ima ocene vernosti i mogućnosti izmene iz javnog benčmarka. Planer bira najbolju i objašnjava zašto."
+        },
+        "agents": {
+          "title": "Spremno za AI agente",
+          "body": "Pretvorite dokumente u čist Markdown ili strukturirani JSON za kontekst LLM-a. CLI sadrži MCP server, pa agenti mogu sami da konvertuju fajlove."
+        }
+      },
+      "how_heading": "Kako radi",
+      "how": {
+        "step_label": "Korak {number}",
+        "step_1": "Izaberete fajl. Pregledač ga kopira u svoj privatni fajl sistem.",
+        "step_2": "Pozadinski radnik učitava AriadShift mehanizam kompajliran u WebAssembly.",
+        "step_3": "Planer bira rutu sa najboljom izmerenom ocenom za vaš cilj.",
+        "step_4": "Preuzmete rezultat. Početak ispočetka briše sve sačuvane fajlove."
+      },
+      "pairs_heading": "Konvertujte u pregledaču",
+      "pair_link": "{from} u {to}",
+      "see_more": "Pogledajte sve <formats>podržane formate</formats> i <quality>izmeren kvalitet</quality> svake rute."
+    },
+    "formats": {
+      "meta_title": "Podržani formati",
+      "meta_description": "Koje formate dokumenata AriadShift čita i upisuje i koje se konverzije izvršavaju u vašem pregledaču.",
+      "title": "Podržani formati",
+      "lede": "Svaka konverzija prolazi kroz AriadShift model dokumenta. Formati označeni sa „Pregledač“ konvertuju se u potpunosti na ovom uređaju; za ostale je zasad potreban alat komandne linije.",
+      "badge_browser": "Pregledač i CLI",
+      "badge_cli": "CLI",
+      "extensions": "Ekstenzije: {list}",
+      "engines": "Čita: {readers}; upisuje: {writers}.",
+      "no_engine": "još nema mehanizma",
+      "convert_to": "Konvertuj u: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Izmeren kvalitet",
+      "meta_description": "Vernost, mogućnost izmene i brzina svakog koraka AriadShift konverzije, generisani iz javnog benčmarka.",
+      "title": "Izmeren kvalitet",
+      "lede": "Ove ocene nisu napisane ručno. Benčmark provlači {count, plural, one {# javni probni dokument} few {# javna probna dokumenta} other {# javnih probnih dokumenata}} kroz svaki korak i poredi rezultat sa poznatom tačnom vrednošću. Planer čita iste brojeve kada bira rutu.",
+      "generated": "{pandoc, select, none {Generisano {date}.} other {Generisano {date} pomoću alata Pandoc {pandoc}.}}",
+      "methodology": "<link>Pročitajte metodologiju</link>.",
+      "caption": "Ocene benčmarka po koracima konverzije",
+      "column": {
+        "step": "Korak",
+        "engine": "Mehanizam",
+        "runs_in": "Izvršava se u",
+        "fidelity": "Vernost",
+        "editability": "Mogućnost izmene",
+        "median_time": "Medijalno vreme",
+        "samples": "Uzorci"
+      }
+    },
+    "route": {
+      "label": "Ruta konverzije",
+      "then": "zatim",
+      "fidelity": "Vernost",
+      "editability": "Mogućnost izmene",
+      "estimated_time": "Procenjeno vreme",
+      "unmeasured": "Deo ove rute još nije prošao benčmark, pa ga planer ocenjuje oprezno."
+    },
+    "download": {
+      "meta_title": "Preuzimanje",
+      "meta_description": "Instalirajte AriadShift alat komandne linije i MCP server na macOS, Linux i Windows.",
+      "title": "Preuzmite AriadShift",
+      "lede": "Komanda <code>ashift</code> konvertuje Markdown, HTML, DOCX i EPUB na vašem računaru i pokreće MCP server za AI agente. DOCX i EPUB rute koriste <pandoc>Pandoc 3.12 ili noviji</pandoc> kao poseban program.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS i Linux)",
+          "note": "Dostupno kada se formula objavi. Instalira i Pandoc, koji je potreban za DOCX i EPUB rute."
+        },
+        "shell": {
+          "title": "Instalater za shell (macOS i Linux)"
+        },
+        "powershell": {
+          "title": "Instalater za PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Dostupno kada se prijava paketa prihvati."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Dostupno kada se paketi objave na crates.io."
+        }
+      },
+      "then_heading": "Zatim",
+      "releases": "Arhive za sve platforme nalaze se na <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Desktop aplikacija",
+        "body": "Desktop aplikacija za macOS, Windows i Linux sa grupnom konverzijom i praćenjem foldera je u izradi. Biće navedena ovde kada izađe prvo izdanje."
+      }
+    },
+    "pair": {
+      "meta_title": "Konvertuj {from} u {to}",
+      "meta_description_browser": "Konvertujte fajl ({noun}) u {to} u pregledaču, privatno, pomoću AriadShift-a. Izmerena vernost, bez otpremanja.",
+      "meta_description_cli": "Konvertujte fajl ({noun}) u {to} na sopstvenom računaru pomoću AriadShift-a. Izmerena vernost, bez otpremanja.",
+      "badge_browser": "Radi u vašem pregledaču",
+      "badge_cli": "Radi pomoću AriadShift CLI-ja",
+      "title": "Konvertuj {from} u {to}",
+      "lede_browser": "Pretvorite fajl ({noun}) u {to} bez otpremanja. AriadShift čita fajl u vašem pregledaču, preslikava ga u svoj model dokumenta i upisuje {to} na vašem uređaju.",
+      "lede_cli": "Pretvorite fajl ({noun}) u {to} na sopstvenom računaru pomoću besplatnog AriadShift alata komandne linije. Verzija za pregledač još ne podržava ovu rutu.",
+      "convert_now": "Konvertuj {from} u {to} odmah",
+      "install_cli": "Instaliraj CLI",
+      "route_heading": "Ruta koju AriadShift bira",
+      "from_heading": "Iz formata {format}",
+      "to_heading": "U format {format}",
+      "cli_heading": "Iz komandne linije",
+      "related_heading": "Srodne konverzije",
+      "related_link": "{from} u {to}"
+    },
+    "converter_page": {
+      "meta_title": "Konvertor",
+      "meta_description": "Konvertujte Markdown, HTML, DOCX, EPUB, digitalni PDF i AriadShift IR JSON u pregledaču. Fajlovi ostaju na vašem uređaju.",
+      "title": "Konvertujte dokument",
+      "lede": "Izaberite fajl, odaberite cilj i preuzmite rezultat. Sve se odvija u ovoj kartici{cloud, select, yes {, osim ako ne izaberete da ovaj fajl konvertujete u oblaku.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licence",
+      "meta_description": "Licence i izvorni kod za AriadShift i njegove mehanizme za pregledač."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Režim oblaka se neočekivano zaustavio",
+        "stopped_body": "Režim oblaka naišao je na grešku nakon početka otpremanja. Svaka kopija na serveru automatski se briše kada istekne period čuvanja, ili možete da konvertujete na ovom uređaju.",
+        "load_title": "Režim oblaka nije mogao da se učita",
+        "load_body": "Konvertor u oblaku nije mogao da se učita (na primer, jer ste van mreže). I dalje možete da konvertujete na ovom uređaju.",
+        "use_device": "Konvertuj na ovom uređaju"
+      },
+      "status": {
+        "deleted_from_server": "{name} je obrisan sa servera.",
+        "reading": "Čitanje fajla {name} na ovom uređaju.",
+        "detected": "{name} je {format}.",
+        "read_failed": "Fajl nije mogao da se pročita.",
+        "converting": "Konvertovanje u {format} na ovom uređaju.",
+        "ready": "{name} je spreman za preuzimanje.",
+        "convert_failed": "Konverzija nije uspela.",
+        "saved": "Sačuvano: {name}.",
+        "reset": "{outcome, select, deleted {Fajlovi su uklonjeni sa ovog uređaja i sa servera.} kept {Fajlovi su uklonjeni sa ovog uređaja. {name} je i dalje na serveru.} other {Fajlovi su uklonjeni sa ovog uređaja.}}",
+        "cloud_selected": "Za {name} izabrana je konverzija u oblaku. Ništa još nije otpremljeno.",
+        "cloud_selected_unnamed": "Za ovaj fajl izabrana je konverzija u oblaku. Ništa još nije otpremljeno."
+      },
+      "device": {
+        "cloud": "<strong>Izabrana je konverzija u oblaku.</strong> Ovaj fajl napušta vaš pregledač tek kada izaberete „Otpremi i konvertuj“.",
+        "local": "<strong>Obrađuje se na ovom uređaju.</strong> Fajlovi nikada ne napuštaju vaš pregledač i ne otpremaju se."
+      },
+      "storage_badge": "{storage, select, opfs {Privatni prostor pregledača} other {U memoriji}}",
+      "memory": {
+        "title": "Čuvanje fajlova na uređaju nije dostupno u ovom pregledaču",
+        "body": "Fajlovi se umesto toga čuvaju u memoriji, pa su podržani ulazi do {limit}. Ništa se ni u jednom slučaju ne otprema."
+      },
+      "error": {
+        "title": "{code, select, no_route {Nije dostupno ovde} engine_integrity {Provera integriteta mehanizma nije uspela} other {Nešto je pošlo naopako}}"
+      },
+      "handoff": {
+        "title": "Nastavite u desktop aplikaciji",
+        "reason": "{reason, select, ocr {Za neke stranice potreban je OCR da bi se izdvojio sav tekst.} other {Ovaj dokument zahteva mehanizam ili više memorije nego što pregledač pruža.}}",
+        "picker": "Desktop aplikacija otvara birač fajlova. Ponovo izaberite ovaj dokument; pregledač ne šalje fajl.",
+        "open": "Otvori u desktop aplikaciji",
+        "cloud_alternative": "Ili ga konvertujte na {host}, nakon što potvrdite otpremanje.",
+        "cloud_button": "Obradi u oblaku"
+      },
+      "drop": {
+        "button": "Izaberi fajl",
+        "button_busy": "Čitanje…",
+        "label": "Dokument za konverziju",
+        "title": "Prevucite dokument ovde",
+        "hint": "Markdown, HTML, DOCX, EPUB, digitalni PDF ili IR JSON do {limit}. Ostaje na ovom uređaju."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · „{title}“"
+      },
+      "count": {
+        "headings": "Naslovi",
+        "paragraphs": "Pasusi",
+        "tables": "Tabele",
+        "images": "Slike",
+        "links": "Veze",
+        "footnotes": "Fusnote",
+        "words": "Reči"
+      },
+      "unreachable": {
+        "cli": "Format {format} još ne može da se konvertuje u pregledaču. <link>AriadShift CLI</link> ga konvertuje na vašem računaru.",
+        "none": "AriadShift još ne može da konvertuje {format}."
+      },
+      "cloud": {
+        "loading": "Učitavanje režima oblaka…"
+      },
+      "convert": {
+        "title": "Konvertuj",
+        "hint": "Planer bira rutu sa najboljom izmerenom ocenom.",
+        "target_label": "Konvertuj u",
+        "profile_label": "Profil",
+        "route_heading": "Zašto ova ruta",
+        "elsewhere": "Za {formats} je zasad {count, plural, one {potreban} few {potreban} other {potreban}} <link>AriadShift CLI</link>.",
+        "button": "Konvertuj",
+        "button_busy": "Konvertovanje…",
+        "cancel": "Otkaži"
+      },
+      "result": {
+        "title": "Spremno",
+        "summary": "<output>{name}</output> · {size} · konvertovano za {duration} na ovom uređaju",
+        "download": "Preuzmi {name}"
+      },
+      "start_over": "Počni ispočetka i obriši fajlove"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Nalog",
+        "description": "Vaš AriadShift nalog u oblaku: profil, lozinka, pristupni ključevi i dvofaktorska prijava."
+      },
+      "sign_in": {
+        "title": "Prijava",
+        "description": "Prijavite se na svoj AriadShift nalog u oblaku ili ga napravite."
+      },
+      "jobs": {
+        "title": "Zadaci",
+        "description": "Status, preuzimanje i brisanje vaših AriadShift konverzija u oblaku."
+      },
+      "api_keys": {
+        "title": "API ključevi",
+        "description": "Napravite i opozovite API ključeve za AriadShift API u oblaku."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Nalog"
+      },
+      "shell": {
+        "not_configured_title": "Oblak nije podešen",
+        "not_configured_body": "Ova kopija AriadShift-a radi samo na vašem uređaju. Nalozi, API ključevi i zadaci u oblaku zahtevaju server; njegov operater postavlja <code>{api_variable}</code> i <code>{auth_variable}</code> prilikom izrade sajta.",
+        "not_configured_convert": "I dalje možete da <link>konvertujete fajlove u pregledaču</link>.",
+        "nav_label": "Nalog",
+        "nav": {
+          "account": "Nalog",
+          "api_keys": "API ključevi",
+          "jobs": "Zadaci"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Prijavljeni ste kao <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Provera vaše sesije…",
+        "error_title": "Sesija ne može da se proveri",
+        "signed_out": "Niste prijavljeni."
+      },
+      "actions": {
+        "sign_in": "Prijavi se",
+        "try_again": "Pokušaj ponovo",
+        "cancel": "Otkaži",
+        "done": "Gotovo",
+        "continue": "Nastavi",
+        "revoke": "Opozovi",
+        "copied": "Kopirano"
+      },
+      "fields": {
+        "name": "Ime",
+        "email": "Imejl",
+        "password": "Lozinka",
+        "authentication_code": "Kôd za autentifikaciju",
+        "password_hint": "Najmanje {min} znakova."
+      },
+      "dates": {
+        "unknown": "nepoznat datum"
+      },
+      "errors": {
+        "auth_refused": "Usluga autentifikacije je odbila zahtev.",
+        "service_unreachable": "Usluga prijave nije dostupna. Proverite vezu i pokušajte ponovo.",
+        "session_ended": "Vaša sesija je istekla. Prijavite se ponovo.",
+        "rate_limited": "Previše zahteva. Pokušajte ponovo uskoro.",
+        "rate_limited_after": "Previše zahteva. Pokušajte ponovo za {seconds} s.",
+        "sign_in_unverifiable": "Server trenutno ne može da potvrdi vašu prijavu. Pokušajte ponovo uskoro.",
+        "token_invalid": "Usluga prijave je vratila nevažeći API token.",
+        "reauth_required": "Prijavite se ponovo pre brisanja naloga.",
+        "delete_not_allowed": "Ovaj server ne dozvoljava brisanje naloga iz veb aplikacije. Zamolite njegovog operatera da ga obriše.",
+        "job_gone": "Ovaj zadatak više nije na serveru.",
+        "file_deleted": "Ovaj fajl je već obrisan.",
+        "job_conflict": "Zadatak nije spreman ili njegov otpremljeni fajl više nije na serveru.",
+        "quota_exceeded": "Iskoristili ste konverzije u oblaku koje vam dozvoljava vaš plan za sada. Konvertujte na ovom uređaju ili pokušajte kasnije.",
+        "request_failed": "Server nije mogao da izvrši zahtev. Pokušajte ponovo uskoro.",
+        "network_unreachable": "Server nije dostupan. Proverite vezu i pokušajte ponovo.",
+        "transfer_incomplete": "Prenos nije završen. Pokušajte ponovo."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Sačuvaj ime",
+        "saved": "Ime je sačuvano.",
+        "save_failed": "Ime nije moglo da se sačuva."
+      },
+      "password": {
+        "title": "Lozinka",
+        "current": "Trenutna lozinka",
+        "new": "Nova lozinka",
+        "confirm": "Potvrdite novu lozinku",
+        "revoke_others": "Odjavi me sa drugih sesija",
+        "submit": "Promeni lozinku",
+        "mismatch": "Nove lozinke se ne podudaraju.",
+        "changed": "Lozinka je promenjena.",
+        "changed_revoked": "Lozinka je promenjena. Odjavljeni ste sa drugih sesija.",
+        "failed": "Lozinka nije mogla da se promeni."
+      },
+      "passkeys": {
+        "title": "Pristupni ključevi",
+        "description": "Prijavite se pomoću zaključavanja ekrana uređaja ili sigurnosnog ključa umesto lozinke.",
+        "load_failed": "Vaši pristupni ključevi nisu mogli da se učitaju.",
+        "loading": "Učitavanje pristupnih ključeva…",
+        "empty": "Još nema pristupnih ključeva.",
+        "unnamed": "Pristupni ključ bez imena",
+        "default_name": "Pristupni ključ",
+        "added_on": "Dodato {date}",
+        "remove_label": "Ukloni pristupni ključ {name}",
+        "remove_button": "Ukloni<hidden> pristupni ključ {name}</hidden>",
+        "add_button": "Dodaj pristupni ključ",
+        "add_title": "Dodaj pristupni ključ",
+        "add_description": "Nazovite ga po uređaju ili ključu, a zatim pratite uputstva pregledača.",
+        "name_label": "Ime pristupnog ključa",
+        "name_placeholder": "Na primer: Poslovni laptop",
+        "added": "Pristupni ključ je dodat.",
+        "add_failed": "Pristupni ključ nije dodat.",
+        "remove_title": "Ukloniti {name}?",
+        "remove_title_unnamed": "Ukloniti ovaj pristupni ključ?",
+        "remove_description": "Više se ne možete prijavljivati pomoću njega. Vaši ostali načini prijave nastavljaju da rade.",
+        "remove_confirm": "Ukloni pristupni ključ",
+        "removed": "{name} je uklonjen.",
+        "remove_failed": "Pristupni ključ nije mogao da se ukloni."
+      },
+      "two_factor": {
+        "title": "Dvofaktorska autentifikacija",
+        "description": "Traži kôd iz aplikacije za autentifikaciju nakon lozinke.",
+        "status_on": "Status: <badge>uključeno</badge>",
+        "status_off": "Status: <badge>isključeno</badge>",
+        "enable": "Uključi dvofaktorsku autentifikaciju",
+        "disable": "Isključi dvofaktorsku autentifikaciju",
+        "regenerate": "Napravi nove rezervne kodove",
+        "confirm_password": "Potvrdite lozinku da biste nastavili.",
+        "enable_failed": "Podešavanje dvofaktorske autentifikacije nije moglo da počne. Proverite lozinku.",
+        "disable_failed": "Dvofaktorska autentifikacija nije mogla da se isključi. Proverite lozinku.",
+        "regenerate_failed": "Novi rezervni kodovi nisu mogli da se naprave. Proverite lozinku.",
+        "verify_failed": "Taj kôd nije prihvaćen. Proverite vreme na uređaju i pokušajte ponovo.",
+        "disabled": "Dvofaktorska autentifikacija je isključena.",
+        "enabled": "Dvofaktorska autentifikacija je uključena.",
+        "regenerated": "Napravljeni su novi rezervni kodovi. Stari više ne važe.",
+        "setup_title": "Podesite svoju aplikaciju za autentifikaciju",
+        "setup_description": "Dodajte AriadShift u aplikaciju za autentifikaciju, a zatim unesite kôd koji prikazuje.",
+        "setup_key_intro": "Unesite ovaj ključ za podešavanje u aplikaciju:",
+        "setup_key_unavailable": "Nedostupno",
+        "open_in_app": "Otvori u aplikaciji za autentifikaciju na ovom uređaju",
+        "turn_on": "Uključi",
+        "codes_title": "Novi rezervni kodovi",
+        "backup_intro": "Sačuvajte ove rezervne kodove na bezbednom mestu. Svaki od njih vas prijavljuje jednom ako izgubite aplikaciju za autentifikaciju. Neće se ponovo prikazati.",
+        "copy_codes": "Kopiraj rezervne kodove",
+        "copy_failed": "Kopiranje nije uspelo; umesto toga izaberite kodove"
+      },
+      "account_actions": {
+        "title": "Sesija i nalog",
+        "sign_out": "Odjavi se",
+        "delete": "Obriši nalog",
+        "signed_out": "Odjavljeni ste.",
+        "sign_out_failed": "Odjava nije uspela. Pokušajte ponovo.",
+        "deleted": "Vaš nalog je obrisan.",
+        "delete_failed_password": "Nalog nije mogao da se obriše. Proverite lozinku.",
+        "delete_failed_session": "Nalog nije mogao da se obriše. Prijavite se ponovo i pokušajte opet.",
+        "delete_note": "Brisanje naloga automatski opoziva vaše <keys>API ključeve</keys>. Pre brisanja obrišite <jobs>zadatke u oblaku</jobs> koje još imate. Fajlovi zadataka koje ostavite uklanjaju se kada istekne njihov period čuvanja.",
+        "dialog_title": "Obrisati vaš nalog?",
+        "dialog_description_password": "Ovo se ne može poništiti. Potvrdite lozinku da biste obrisali nalog.",
+        "dialog_description_session": "Ovo se ne može poništiti. Potvrdite ispod da biste obrisali nalog pomoću trenutne sesije prijave.",
+        "sign_in_again": "Prijavi se ponovo"
+      },
+      "connected_apps": {
+        "title": "Povezane aplikacije",
+        "description": "Aplikacije i MCP klijenti kojima ste dozvolili korišćenje naloga i OAuth klijenti koje ste registrovali.",
+        "load_failed": "Vaše povezane aplikacije nisu mogle da se učitaju.",
+        "loading": "Učitavanje povezanih aplikacija…",
+        "empty": "Još nema povezanih aplikacija ni registrovanih OAuth klijenata.",
+        "scopes_none": "nijedan",
+        "consent_details": "Ovlašćena aplikacija · Opsezi: {scopes} · Ovlašćeno {date}",
+        "client_details": "Registrovani OAuth klijent ({client_id})",
+        "client_details_dated": "Registrovani OAuth klijent ({client_id}) · Registrovano {date}",
+        "revoke_label": "Opozovi {name}",
+        "revoked": "{name} je opozvan.",
+        "revoke_failed": "Pristup nije mogao da se opozove.",
+        "revoke_title": "Opozvati {name}?",
+        "revoke_consent_description": "Opoziv odmah zaustavlja izdavanje novih tokena i osvežavanje tokena. Već izdati potpisani tokeni za pristup (važe 15 minuta) rade do isteka.",
+        "revoke_client_description": "Brisanje ovog registrovanog OAuth klijenta opoziva njegove akreditive i saglasnosti i odmah zaustavlja izdavanje novih tokena i osvežavanje tokena. Već izdati potpisani tokeni za pristup (važe 15 minuta) rade do isteka."
+      },
+      "api_keys": {
+        "page_title": "API ključevi",
+        "section_title": "Vaši ključevi",
+        "section_description": "Skripte i integracije šalju ključ u zaglavlju <code>x-api-key</code> na {host}. Ključ deluje sa vašim nalogom i njegovim planom.",
+        "load_failed": "Vaši API ključevi nisu mogli da se učitaju.",
+        "loading": "Učitavanje API ključeva…",
+        "empty": "Još nema API ključeva.",
+        "unnamed": "Ključ bez imena",
+        "disabled": "Onemogućen",
+        "key_details": "Napravljen {date} · {expiry}",
+        "never_expires": "Nikada ne ističe",
+        "expired_on": "Istekao {date}",
+        "expires_on": "Ističe {date}",
+        "revoke_label": "Opozovi API ključ {name}",
+        "revoke_button": "Opozovi<hidden> API ključ {name}</hidden>",
+        "create_button": "Napravi API ključ",
+        "create_title": "Napravite API ključ",
+        "create_description": "Nazovite ključ po skripti ili usluzi koja će ga koristiti.",
+        "name_placeholder": "Na primer: CI",
+        "expires_after": "Ističe nakon",
+        "lifetime_days": "{days, plural, one {# dan} few {# dana} other {# dana}}",
+        "lifetime_year": "1 godina",
+        "lifetime_never": "Bez isteka",
+        "create_submit": "Napravi ključ",
+        "create_failed": "Ključ nije mogao da se napravi.",
+        "created": "API ključ {name} je napravljen.",
+        "secret_title": "Vaš novi API ključ",
+        "secret_label": "API ključ",
+        "secret_notice": "Kopirajte ključ odmah. Čuva se samo kao heš i neće se ponovo prikazati.",
+        "copy_key": "Kopiraj ključ",
+        "copy_failed": "Kopiranje nije uspelo. Izaberite ključ i kopirajte ga.",
+        "revoke_title": "Opozvati {name}?",
+        "revoke_description": "Zahtevi koji koriste ovaj ključ odmah se odbijaju. Ovo se ne može poništiti.",
+        "revoke_confirm": "Opozovi ključ",
+        "revoked": "API ključ {name} je opozvan. Zahtevi koji ga koriste od sada se odbijaju.",
+        "revoke_failed": "Ključ nije mogao da se opozove."
+      },
+      "jobs": {
+        "title": "Zadaci",
+        "intro_server": "Konverzije u oblaku vašeg naloga na {host}, sa bilo kog uređaja. Fajlovi ostaju na {host} dok se ne obrišu automatski ili dok ih ovde ne obrišete.",
+        "intro_account_browser": "Konverzije u oblaku pokrenute u ovom pregledaču sa vašim nalogom. Ova lista se čuva samo na ovom uređaju. Fajlovi ostaju na {host} dok se ne obrišu automatski ili dok ih ovde ne obrišete.",
+        "intro_anonymous_browser": "Konverzije u oblaku pokrenute u ovom pregledaču bez naloga. Ova lista se čuva samo na ovom uređaju. Fajlovi ostaju na {host} dok se ne obrišu automatski ili dok ih ovde ne obrišete.",
+        "signed_out_notice": "Prikazani su zadaci bez naloga. <link>Prijavite se</link> da biste videli zadatke svog naloga.",
+        "loading": "Učitavanje vaših zadataka…",
+        "list_unsupported": "{host} još ne može da prikaže zadatke vašeg naloga, pa ova stranica prikazuje zadatke pokrenute u ovom pregledaču.",
+        "list_error_title": "Vaši zadaci ne mogu da se učitaju sa {host}",
+        "list_error_body": "{reason} U međuvremenu ova stranica prikazuje zadatke pokrenute u ovom pregledaču.",
+        "count": "{count, plural, one {# zadatak} few {# zadatka} other {# zadataka}}",
+        "empty": "Još nema zadataka u oblaku. Pokrenite jedan iz <link>konvertora</link>.",
+        "show_more": "Prikaži još zadataka",
+        "loading_more": "Učitavanje još zadataka…",
+        "unnamed": "Zadatak {id}",
+        "forgotten": "{filename} je uklonjen sa ove liste. Njegovi fajlovi na serveru nisu promenjeni.",
+        "forgotten_unnamed": "Zadatak je uklonjen sa ove liste. Njegovi fajlovi na serveru nisu promenjeni.",
+        "status": {
+          "queued": "U redu čekanja",
+          "converting": "Konvertovanje",
+          "converting_stage": "Konvertovanje: {stage}",
+          "retrying": "Ponovni pokušaj (pokušaj {attempt})",
+          "reconnecting": "{step} · Ponovno povezivanje…",
+          "ready": "Spremno",
+          "failed": "Neuspelo",
+          "canceled": "Otkazano",
+          "deleted": "Obrisano",
+          "deleted_expired": "Obrisano (isteklo)"
+        },
+        "until": {
+          "less_than_minute": "za manje od minuta",
+          "minutes": "za {minutes} min",
+          "hours": "za {hours} h",
+          "hours_minutes": "za {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Automatski obrisano u {clock}.",
+          "deleted_from_server": "Obrisano sa servera. Ulazni i izlazni fajlovi su nestali.",
+          "being_deleted": "Briše se upravo sada.",
+          "deletes_at": "Automatski se briše u {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Ovaj dokument zahteva više nego što vaš plan dozvoljava. Pokušajte sa manjim fajlom ili ga konvertujte na ovom uređaju.",
+          "unsupported_route": "Ovaj server ne može da konvertuje između ovih formata. Izaberite drugi cilj u konvertoru.",
+          "input_io": "Otpremljeni fajl nije mogao da se pročita ili više nije na serveru. Otpremite ga ponovo.",
+          "storage": "Server nije mogao da sačuva rezultat. Pokušajte ponovo za trenutak.",
+          "tool_missing": "Ovom serveru nedostaje mehanizam koji ruta zahteva. Pitajte njegovog operatera ili izaberite drugi cilj.",
+          "other": "Konverzija nije uspela. Pokušajte ponovo ili konvertujte fajl na ovom uređaju."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Učitavanje statusa…",
+          "try_again": "Pokušaj ponovo<hidden> da učitaš {filename}</hidden>",
+          "technical_details": "Tehnički detalji",
+          "warnings": "{count, plural, one {# upozorenje} few {# upozorenja} other {# upozorenja}}",
+          "download": "Preuzmi {filename}",
+          "retry_label": "Ponovi {filename}",
+          "retry_button": "Ponovi<hidden> {filename}</hidden>",
+          "delete_label": "Obriši odmah {filename} sa servera",
+          "delete_button": "Obriši odmah<hidden> {filename} sa servera</hidden>",
+          "remove_label": "Ukloni sa ove liste ({filename})",
+          "remove_button": "Ukloni sa ove liste<hidden> ({filename})</hidden>",
+          "deleted_note": "Obrisano sa {host}. Ulazni i izlazni fajlovi su nestali.",
+          "deleted_announce": "{filename} je obrisan sa {host}. Ulazni i izlazni fajlovi su nestali.",
+          "ready_announce": "{filename} je konvertovan i spreman za preuzimanje.",
+          "failed_announce": "Konverzija fajla {filename} nije uspela. {reason}",
+          "canceled_announce": "Konverzija fajla {filename} je otkazana.",
+          "downloading": "Preuzimanje fajla {filename}.",
+          "retrying": "Ponovni pokušaj za {filename}.",
+          "retry_conflict": "Otpremljeni fajl više nije na serveru. Otpremite ga ponovo iz konvertora."
+        }
+      },
+      "sign_in": {
+        "title": "Prijava",
+        "create_title": "Napravite nalog",
+        "two_factor_title": "Dvofaktorska provera",
+        "signed_in": "Prijavljeni ste.",
+        "go_to_account": "Idi na svoj nalog",
+        "passkey": "Prijavi se pristupnim ključem",
+        "no_account": "Još nemate nalog? <switch>Napravite ga</switch>",
+        "have_account": "Već imate nalog? <switch>Prijavite se</switch>",
+        "sign_in_failed": "Prijava nije uspela. Proverite imejl i lozinku.",
+        "passkey_failed": "Prijava pristupnim ključem nije uspela.",
+        "code_rejected": "Taj kôd nije prihvaćen. Pokušajte ponovo.",
+        "create_failed": "Nalog nije mogao da se napravi.",
+        "passwords_mismatch": "Lozinke se ne podudaraju.",
+        "bot_check": "Završite proveru protiv botova pri registraciji i pokušajte ponovo.",
+        "confirm_password": "Potvrdite lozinku",
+        "create_account": "Napravi nalog",
+        "totp_help": "Unesite šestocifreni kôd iz aplikacije za autentifikaciju.",
+        "backup_help": "Unesite jedan od rezervnih kodova koje ste sačuvali kada ste uključili dvofaktorsku autentifikaciju. Svaki kôd važi jednom.",
+        "backup_code": "Rezervni kôd",
+        "trust_device": "Veruj ovom pregledaču 30 dana",
+        "verify": "Potvrdi",
+        "use_backup": "Umesto toga koristi rezervni kôd",
+        "use_authenticator": "Umesto toga koristi kôd iz aplikacije za autentifikaciju",
+        "signed_in_user": "Prijavljeni ste kao <user>{email}</user>."
+      }
+    },
+    "app": {
+      "sections_label": "Odeljci aplikacije",
+      "tab": {
+        "convert": "Konvertuj",
+        "tools": "Alati",
+        "workspace": "PDF radni prostor"
+      },
+      "tools_lede": "Svi alati, grupisani prema tome šta rade. Izaberite jedan da biste ga otvorili u PDF radnom prostoru.",
+      "workspace_loading": "Učitavanje PDF radnog prostora…",
+      "workspace_failed": "PDF radni prostor nije mogao da se učita.",
+      "retry": "Pokušaj ponovo",
+      "tools_loading": "Učitavanje alata…",
+      "tools_failed": "Alati nisu mogli da se učitaju."
+    },
+    "tools": {
+      "hub": {
+        "label": "Alati",
+        "search": "Pretraži alate…",
+        "open_palette": "Otvori paletu komandi",
+        "command": "Komanda",
+        "zero_upload": "Na ovom uređaju · 0 bajtova otpremljeno",
+        "categories": "Kategorija",
+        "all": "Sve",
+        "runtimes": "Gde se izvršava",
+        "count": "{count, plural, one {# alat} few {# alata} other {# alata}}",
+        "no_match": "Nijedan alat ne odgovara",
+        "try_recipe": "Probajte običnu rečenicu u paleti komandi, na primer „rotiraj za 90 stepeni pa kompresuj“.",
+        "reset": "Poništi pretragu i filtere",
+        "open_in_palette": "Probaj u paleti komandi"
+      },
+      "category": {
+        "organize": "Organizovanje i sastavljanje",
+        "convert": "Konvertuj",
+        "compress": "Kompresija i popravka",
+        "edit": "Uređivanje i označavanje",
+        "forms_annotations": "Obrasci i anotacije",
+        "security": "Bezbednost i potpisivanje",
+        "ocr_scan": "OCR i skeniranje",
+        "metadata_inspect": "Pregled i poređenje",
+        "automation_ai": "Automatizacija i AI"
+      },
+      "runtime": {
+        "browser": "Pregledač",
+        "desktop": "Računar",
+        "cloud": "Oblak",
+        "list": "Izvršava se u"
+      },
+      "tier": {
+        "free": "Besplatno",
+        "pro": "Pro"
+      },
+      "favorites": "Omiljeno",
+      "recents": "Nedavni alati",
+      "favorite": {
+        "add": "Dodaj u omiljeno",
+        "remove": "Ukloni iz omiljenog"
+      },
+      "card": {
+        "open": "Otvori"
+      },
+      "palette": {
+        "title": "Paleta komandi za alate",
+        "description": "Pretražite alate ili rečenicom opišite šta želite da uradite, pa pritisnite Enter.",
+        "placeholder": "Pretraži alate ili opiši recept…",
+        "search": "Pretraži alate",
+        "empty": "Nijedan alat ne odgovara. Probajte rečenicu poput „rotiraj za 90 pa kompresuj“.",
+        "recipe": "Recept",
+        "recipe_steps": "Koraci recepta",
+        "step": "Korak",
+        "recipe_review": "Pregledajte pre pokretanja: neki korak zahteva računar, oblak ili AI, ili trajno menja datoteku.",
+        "recipe_ready": "Pritisnite Enter da učitate ovaj recept.",
+        "confirm": "Prvo pregledaj",
+        "results": "Alati",
+        "actions": "Radnje",
+        "jump_convert": "Idi na Konvertuj",
+        "switch_theme": "Promeni temu",
+        "clear_recents": "Obriši nedavne alate",
+        "hint": "Pretraga se izvršava na ovom uređaju.",
+        "open": "Otvori",
+        "close": "Zatvori"
+      },
+      "title": {
+        "pdf": {
+          "info": "Informacije",
+          "merge": "Spoji",
+          "split": "Podeli",
+          "extract_pages": "Izdvoji stranice",
+          "delete_pages": "Obriši stranice",
+          "reorder": "Promeni redosled",
+          "alternate_mix": "Naizmenično mešanje",
+          "insert_blank": "Umetni praznu",
+          "rotate": "Rotiraj",
+          "crop": "Iseci",
+          "scale": "Promeni razmeru",
+          "single_page": "Jedna stranica",
+          "rotate_content": "Rotiraj sadržaj",
+          "decompress": "Dekompresuj",
+          "nup": "N-up",
+          "booklet": "Brošura",
+          "overlay": "Preklapanje",
+          "divide_pages": "Podeli stranice",
+          "posterize": "Posterizuj",
+          "metadata": "Metapodaci",
+          "outline": "Obeleživači",
+          "attachments": "Prilozi",
+          "page_labels": "Oznake stranica",
+          "viewer_prefs": "Podešavanja prikaza",
+          "portfolio": "Portfolio",
+          "layers": "Slojevi",
+          "replace_color": "Zameni boje",
+          "adjust_colors": "Podesi boje",
+          "watermark": "Vodeni žig",
+          "stamp": "Pečat",
+          "add_image": "Dodaj sliku",
+          "add_text": "Dodaj tekst",
+          "qr": "QR kod",
+          "page_numbers": "Brojevi stranica",
+          "header_footer": "Zaglavlja i podnožja",
+          "bates": "Bates numerisanje",
+          "toc_page": "Stranica sa sadržajem",
+          "background": "Pozadina",
+          "invert_colors": "Invertuj boje",
+          "watermark_detect": "Otkrij vodene žigove",
+          "watermark_remove": "Ukloni vodene žigove",
+          "watermark_remove_raster": "Ukloni rasterske vodene žigove",
+          "render": "Iscrtaj stranice",
+          "to_images": "PDF u slike",
+          "thumbnails": "Sličice",
+          "extract_images": "Izdvoji slike",
+          "text_layout": "Raspored teksta",
+          "remove_blank": "Ukloni prazne stranice",
+          "crop_whitespace": "Iseci beline",
+          "detect_scanned": "Otkrij skenirane stranice",
+          "compress": "Kompresuj",
+          "grayscale": "Nijanse sive",
+          "repair": "Popravi",
+          "linearize": "Linearizuj",
+          "encrypt": "Šifruj",
+          "decrypt": "Dešifruj",
+          "permissions": "Dozvole",
+          "sanitize": "Očisti",
+          "unlock_forms": "Otključaj obrasce",
+          "ocr": "OCR",
+          "auto_rotate": "Automatska rotacija",
+          "deskew": "Ispravi nagib",
+          "scan_split": "Podela skena",
+          "scanner_effect": "Efekat skenera",
+          "annotations": "Anotacije",
+          "annotations_import": "Uvezi anotacije",
+          "annotations_export": "Izvezi anotacije",
+          "forms_list": "Prikaži polja obrasca",
+          "forms_fill": "Popuni obrasce",
+          "forms_create": "Napravi obrasce",
+          "forms_flatten": "Spljošti obrasce",
+          "forms_detect": "Otkrij polja obrasca",
+          "forms_import": "Uvezi vrednosti obrasca",
+          "forms_export": "Izvezi vrednosti obrasca",
+          "redact": "Zacrni",
+          "redact_verify": "Proveri zacrnjivanje",
+          "sign_visual": "Vidljiv potpis",
+          "sign": "Potpiši",
+          "sign_token": "Potpiši tokenom",
+          "timestamp": "Vremenski žig",
+          "sign_verify": "Proveri potpise",
+          "sign_remove": "Ukloni potpise",
+          "tables_to_csv": "Tabele u CSV",
+          "to_cbz": "U CBZ",
+          "compare": "Uporedi",
+          "to_pdfa": "U PDF/A",
+          "to_pdfua": "U PDF/UA",
+          "accessibility_report": "Izveštaj o pristupačnosti",
+          "validate_pdfa": "Validiraj PDF/A",
+          "validate_pdfua": "Validiraj PDF/UA"
+        },
+        "image": {
+          "to_pdf": "Slika u PDF",
+          "ocr": "OCR slike"
+        },
+        "web": {
+          "to_pdf": "Veb u PDF"
+        },
+        "edit": {
+          "open_document": "Otvori dokument",
+          "export_document": "Izvezi dokument",
+          "page_objects": "Objekti na stranici",
+          "apply": "Primeni"
+        },
+        "ai": {
+          "summarize": "AI sažetak",
+          "ask": "AI pitanje",
+          "translate": "AI prevod",
+          "extract_tables": "AI izdvajanje tabela",
+          "recipe_from_text": "AI recept iz teksta"
+        }
+      }
+    },
+    "workspace": {
+      "main": {
+        "title": "Radni prostor",
+        "lede": "Sve se izvršava u ovoj kartici pregledača.",
+        "viewer": "Pregled",
+        "pages_tab": "Stranice",
+        "tools_tab": "Alat",
+        "no_pdf": "Dodajte PDF da biste videli pregled i organizovali njegove stranice.",
+        "tools": "Alati",
+        "tool_picker": "Izaberite alat",
+        "dismiss_error": "Odbaci",
+        "working": "Radim…"
+      },
+      "file_tray": {
+        "privacy": "Na ovom uređaju · 0 bajtova otpremljeno",
+        "title": "Datoteke",
+        "empty": "Prevucite PDF datoteke ili druge datoteke ovde da biste počeli. Ništa se ne otprema.",
+        "choose": "Izaberi datoteke",
+        "add_more": "Dodaj datoteke",
+        "drop_title": "Otpustite datoteke da biste ih dodali",
+        "drop_description": "Ostaju u ovom pregledaču.",
+        "pages": "{count, plural, one {# stranica} few {# stranice} other {# stranica}}",
+        "remove": "Ukloni {name}",
+        "move_up": "Pomeri {name} naviše",
+        "move_down": "Pomeri {name} naniže",
+        "use": "Radi sa datotekom {name}",
+        "active": "Otvoreno",
+        "storage_opfs": "Sačuvano u skladištu datoteka pregledača",
+        "storage_memory": "Čuva se u memoriji",
+        "reading": "Čitanje datoteka…",
+        "list": "Datoteke u ovom radnom prostoru",
+        "problem": "Datoteka {name} nije mogla da se pročita."
+      },
+      "insights": {
+        "title": "Šta je u ovom PDF-u",
+        "loading": "Čitanje dokumenta na ovom uređaju…",
+        "failed": "Dokument nije mogao da se analizira.",
+        "pages": "{count, plural, one {# stranica} few {# stranice} other {# stranica}}",
+        "scanned": "{count, plural, one {# skenirana stranica} few {# skenirane stranice} other {# skeniranih stranica}}",
+        "blank": "{count, plural, one {# prazna stranica} few {# prazne stranice} other {# praznih stranica}}",
+        "dpi_unknown": "Rezolucija slika nije poznata",
+        "dpi_single": "Slike oko {dpi} DPI",
+        "dpi_range": "Slike oko {min}–{max} DPI",
+        "low_dpi": "Niska rezolucija na {count, plural, one {# stranici} few {# stranicama} other {# stranicama}} ({list})",
+        "form_fields": "{count, plural, one {# prazno obavezno polje} few {# prazna obavezna polja} other {# praznih obaveznih polja}}",
+        "signatures": "{count, plural, one {# potpis} few {# potpisa} other {# potpisa}}",
+        "metadata": "Sadrži metapodatke",
+        "edit_history": "Ima istoriju izmena",
+        "encrypted": "Šifrovano",
+        "linearized": "Linearizovano",
+        "clean": "Ništa nije pronađeno",
+        "suggested": "Predloženi sledeći koraci",
+        "no_suggestions": "Ništa ne zahteva pažnju. Izaberite bilo koji alat da nastavite.",
+        "open": "Otvori {tool}"
+      },
+      "page_grid": {
+        "title": "Stranice",
+        "toolbar": "Izmene stranica",
+        "undo": "Poništi",
+        "redo": "Ponovi",
+        "reset": "Resetuj",
+        "pending": "{count, plural, one {# promena na čekanju} few {# promene na čekanju} other {# promena na čekanju}}",
+        "select_all": "Izaberi sve",
+        "clear_selection": "Poništi izbor",
+        "select_range": "Izaberi stranice",
+        "range_placeholder": "npr. 3-7",
+        "rotate_left": "Rotiraj ulevo",
+        "rotate_right": "Rotiraj udesno",
+        "delete_selected": "Obriši izabrano",
+        "restore_selected": "Vrati izabrano",
+        "apply": "Primeni izmene",
+        "hint": "Prevucite ručicu, ili je fokusirajte i koristite strelice, da promenite redosled. Shift-klik bira raspon.",
+        "drag_hint": "Prevucite ili koristite strelice da promenite redosled",
+        "moved": "Stranica {page} premeštena na poziciju {position}",
+        "cannot_delete_all": "Dokument mora imati bar jednu stranicu.",
+        "card_page": "Stranica {page}",
+        "card_select": "Izaberi stranicu {page}",
+        "card_rotate": "Rotiraj stranicu {page}",
+        "card_delete": "Obriši stranicu {page}",
+        "card_move": "Promeni redosled stranice {page}",
+        "card_restore": "Vrati stranicu {page}",
+        "blank": "Prazna",
+        "scanned": "Skenirana"
+      },
+      "inspector": {
+        "title": "Alat",
+        "empty": "Izaberite alat da biste videli njegove opcije.",
+        "runtime": {
+          "browser": "Pregledač",
+          "desktop": "Računar",
+          "cloud": "Oblak"
+        },
+        "tier": {
+          "free": "Besplatno",
+          "pro": "Pro"
+        },
+        "run_here": "Pokreni alat na ovom uređaju",
+        "running": "Izvršavanje…",
+        "cancel": "Otkaži",
+        "run_cloud": "Pokreni u oblaku",
+        "cloud_note": "Ovaj alat radi na našim serverima; vaša datoteka se otprema za njega.",
+        "switch_desktop": "Radije pokreni na računaru",
+        "switch_browser": "Nazad na ovaj uređaj",
+        "needs_file": "Prvo dodajte datoteku.",
+        "needs_pdf": "Ovaj alat zahteva PDF.",
+        "invalid": "Ispravite istaknute opcije da biste nastavili.",
+        "failed": "Alat se zaustavio: {message}",
+        "progress": "Napredak alata"
+      },
+      "handoff": {
+        "title": "Pokreni na računaru",
+        "why": "Ovaj alat ne može da radi u pregledaču. Pokrenite ga pomoću komandne linije AriadShift; vaše datoteke nikada ne napuštaju vaš računar.",
+        "command": "Komanda",
+        "copy": "Kopiraj komandu",
+        "copied": "Komanda kopirana",
+        "copy_failed": "Kopiranje nije uspelo. Izaberite komandu i kopirajte je.",
+        "install": "Preuzmi AriadShift",
+        "open_app": "Otvori u desktop aplikaciji",
+        "reveal_secrets": "Prikaži tajne vrednosti",
+        "mask_secrets": "Sakrij tajne vrednosti",
+        "secret_note": "Tajne vrednosti su u komandi sakrivene dok ih ne prikažete."
+      },
+      "result": {
+        "title": "Rezultat",
+        "before": "Pre",
+        "after": "Posle",
+        "size": "Veličina",
+        "pages": "Stranice",
+        "duration": "Vreme",
+        "change_none": "bez promene",
+        "change_up": "+{percent}%",
+        "change_down": "−{percent}%",
+        "bytes": "{value} bajtova",
+        "millis": "{value} ms",
+        "seconds": "{value} s",
+        "warnings": "Upozorenja",
+        "details": "Detalji",
+        "download": "Preuzmi {name}",
+        "open_in_editor": "Otvori u uređivaču",
+        "continue": "Nastavi sa drugim alatom",
+        "save_recipe": "Sačuvaj kao recept",
+        "undo": "Poništi",
+        "outputs": "Izlazne datoteke",
+        "download_failed": "Datoteka nije mogla da se sačuva."
+      },
+      "thread": {
+        "label": "Koraci",
+        "status": {
+          "pending": "Čeka",
+          "running": "Izvršava se",
+          "completed": "Završeno",
+          "skipped": "Preskočeno",
+          "failed": "Neuspešno"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Uvećaj",
+        "zoom_out": "Umanji",
+        "fit_width": "Uklopi u širinu",
+        "fit_page": "Uklopi stranicu",
+        "zoom_level": "{percent}%",
+        "page": "Broj stranice",
+        "page_of": "od {count}",
+        "search": "Pretraži dokument",
+        "search_placeholder": "Pretraži tekst",
+        "search_run": "Pretraži",
+        "search_cancel": "Otkaži pretragu",
+        "search_clear": "Obriši pretragu",
+        "search_next": "Sledeće poklapanje",
+        "search_previous": "Prethodno poklapanje",
+        "searching": "Pretraga… {percent}%",
+        "matches": "{current} od {total}",
+        "no_matches": "Nema poklapanja",
+        "dark_pages": "Tamne stranice",
+        "loading": "Otvaranje dokumenta na ovom uređaju…",
+        "unavailable": "Pregledač dokumenata zahteva WebAssembly, koji ovaj pregledač ne podržava.",
+        "document_error": "Ovaj dokument nije mogao da se prikaže.",
+        "toolbar": "Kontrole pregledača dokumenata"
+      }
+    }
+  }
+}

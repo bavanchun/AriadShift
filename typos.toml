@@ -1,7 +1,13 @@
 [default]
 locale = "en"
 # Abbreviated Git commit hash referenced in review reports.
-extend-ignore-re = ["\\bc234afe\\b", 'b"ND"']
+extend-ignore-re = [
+    "\\bc234afe\\b",
+    'b"ND"',
+    # French interface text and a deliberately truncated fuzzy-search test query.
+    'Sur cet appareil',
+    '"rotat"',
+]
 
 [default.extend-words]
 # Correct names and acronyms in the public planning and research files.
@@ -61,6 +67,10 @@ extend-exclude = [
     # Engine output with JSON-escaped non-ASCII text, which the checker splits into fragments.
     "fixtures/docling/*.docling.json",
     "fuzz/seeds/**",
+    # Translations of the English catalogue; only locales/en.json is English prose.
+    "locales/[!e]*.json",
+    "locales/e[!n]*.json",
+    "locales/en-*.json",
 ]
 
 # Original wheel RECORD receipts contain URL-safe SHA-256 digests.

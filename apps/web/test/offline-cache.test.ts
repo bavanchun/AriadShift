@@ -12,7 +12,7 @@ const SENSITIVE = [
   `${ORIGIN}/v1/jobs/5f0e8d3a-2c4b-4e71-8b6a-9d1c3e2f4a57/outputs`,
   `${ORIGIN}/ariadshift/outputs/report.docx?X-Amz-Signature=abc&X-Amz-Expires=300`,
 ];
-const SHELL = [`${ORIGIN}/_next/static/chunks/a.js`, `${ORIGIN}/app`];
+const SHELL = [`${ORIGIN}/_next/static/chunks/a.js`, `${ORIGIN}/en/app`];
 
 type Key = string | { url: string };
 
@@ -93,7 +93,7 @@ async function serviceWorker() {
 describe("offline cache boundary", () => {
   it("collects only the app shell and static assets", () => {
     expect(
-      offlineUrls(`${ORIGIN}/app`, [...SENSITIVE, ...SHELL, `${ORIGIN}/app?_rsc=1`], []),
+      offlineUrls(`${ORIGIN}/en/app`, [...SENSITIVE, ...SHELL, `${ORIGIN}/en/app?_rsc=1`], []),
     ).toEqual(SHELL);
   });
 

@@ -13,7 +13,55 @@ export const MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 /** How long cleanup waits for a replaced worker to release its folder. */
 const RETIRE_TIMEOUT_MS = 10_000;
 
+export interface InputSlot {
+  id: string;
+  name: string;
+  size: number;
+}
+
+export interface StoredInput {
+  id: string;
+  name: string;
+  bytes: Uint8Array;
+}
+
+export interface StoredArtifact {
+  name: string;
+  bytes: Uint8Array;
+  mediaType: string;
+}
+
+/** Aggregate input limit, shared by the store and tool runner. */
+export const STORE_INPUT_LIMIT_BYTES = 16 * 1024 * 1024;
+
+function totalBytes(items: Array<{ bytes: Uint8Array }>): number {
+  return items.reduce((sum, item) => sum + item.bytes.byteLength, 0);
+}
+
+function checkSize(total: number, limit: number): void {
+  if (total > limit) {
+    throw storeError("storage_limit", "The files exceed the browser storage budget.", { limit });
+  }
+}
+
+function checkInputs(files: StoredInput[], limit: number): void {
+  if (
+    new Set(files.map((file) => file.id)).size !== files.length ||
+    files.some((file) => !file.id)
+  ) {
+    throw storeError("invalid_input", "Input slot IDs must be nonempty and unique.");
+  }
+  checkSize(totalBytes(files), limit);
+}
+
 export interface FileStore {
+  readonly inputLimitBytes: number;
+  putInputs(files: StoredInput[]): Promise<void>;
+  listInputs(): InputSlot[];
+  readInputSlot(id: string, maxBytes?: number): Promise<Uint8Array>;
+  readInputPrefix(maxBytes: number): Promise<Uint8Array>;
+  putOutputs(artifacts: StoredArtifact[]): Promise<OutputLocation[]>;
+  outputLocation(): OutputLocation | null;
   readonly kind: StorageKind;
   /** Stores the input, replacing any previous one, and returns its size. */
   putInput(file: Blob): Promise<number>;
@@ -38,7 +86,52 @@ const noInput = () => storeError("no_input", "Choose a file first.");
 
 export class MemoryStore implements FileStore {
   readonly kind = "memory";
-  #input: Blob | null = null;
+  #inputs = new Map<string, { slot: InputSlot; blob: Blob }>();
+  #outputs: OutputLocation[] = [];
+
+  get inputLimitBytes(): number {
+    return Math.min(this.limitBytes, STORE_INPUT_LIMIT_BYTES);
+  }
+
+  async putInputs(files: StoredInput[]): Promise<void> {
+    checkInputs(files, this.inputLimitBytes);
+    this.#inputs = new Map(
+      files.map((file) => [
+        file.id,
+        {
+          slot: { id: file.id, name: file.name, size: file.bytes.byteLength },
+          blob: new Blob([file.bytes as Uint8Array<ArrayBuffer>]),
+        },
+      ]),
+    );
+  }
+
+  listInputs(): InputSlot[] {
+    return [...this.#inputs.values()].map(({ slot }) => ({ ...slot }));
+  }
+
+  async readInputSlot(id: string, maxBytes?: number): Promise<Uint8Array> {
+    const input = this.#inputs.get(id);
+    if (!input) throw noInput();
+    return new Uint8Array(await input.blob.slice(0, maxBytes).arrayBuffer());
+  }
+
+  readInputPrefix(maxBytes: number): Promise<Uint8Array> {
+    return this.readInput(maxBytes);
+  }
+
+  outputLocation(): OutputLocation | null {
+    return this.#outputs[0] ?? null;
+  }
+
+  async putOutputs(artifacts: StoredArtifact[]): Promise<OutputLocation[]> {
+    checkSize(totalBytes(artifacts), this.limitBytes);
+    this.#outputs = artifacts.map((artifact) => ({
+      kind: "memory",
+      blob: new Blob([artifact.bytes as Uint8Array<ArrayBuffer>], { type: artifact.mediaType }),
+    }));
+    return [...this.#outputs];
+  }
 
   constructor(readonly limitBytes = MEMORY_LIMIT_BYTES) {}
 
@@ -50,27 +143,36 @@ export class MemoryStore implements FileStore {
         { limit: this.limitBytes },
       );
     }
-    this.#input = file;
+    this.#inputs = new Map([
+      [
+        INPUT_NAME,
+        {
+          slot: {
+            id: INPUT_NAME,
+            name: file instanceof File ? file.name : INPUT_NAME,
+            size: file.size,
+          },
+          blob: file,
+        },
+      ],
+    ]);
     return file.size;
   }
 
   async readInput(maxBytes?: number): Promise<Uint8Array> {
-    if (!this.#input) {
-      throw noInput();
-    }
-    const blob = maxBytes === undefined ? this.#input : this.#input.slice(0, maxBytes);
-    return new Uint8Array(await blob.arrayBuffer());
+    const id = this.#inputs.keys().next().value;
+    if (!id) throw noInput();
+    return this.readInputSlot(id, maxBytes);
   }
 
   async putOutput(bytes: Uint8Array, mediaType: string): Promise<OutputLocation> {
-    return {
-      kind: "memory",
-      blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mediaType }),
-    };
+    const [location] = await this.putOutputs([{ name: OUTPUT_NAME, bytes, mediaType }]);
+    return location as OutputLocation;
   }
 
   async clear(): Promise<void> {
-    this.#input = null;
+    this.#inputs.clear();
+    this.#outputs = [];
   }
 
   async retire(): Promise<number> {
@@ -147,6 +249,125 @@ export function holdLock(locks: LockManager, session: string): Promise<void> {
 
 export class OpfsStore implements FileStore {
   readonly kind = "opfs";
+  readonly inputLimitBytes = STORE_INPUT_LIMIT_BYTES;
+  #inputs = new Map<string, InputSlot & { file: string }>();
+  #outputs: OutputLocation[] = [];
+
+  listInputs(): InputSlot[] {
+    return [...this.#inputs.values()].map(({ id, name, size }) => ({ id, name, size }));
+  }
+
+  outputLocation(): OutputLocation | null {
+    return this.#outputs[0] ?? null;
+  }
+
+  readInputPrefix(maxBytes: number): Promise<Uint8Array> {
+    return this.readInput(maxBytes);
+  }
+
+  async putInputs(files: StoredInput[]): Promise<void> {
+    checkInputs(files, this.inputLimitBytes);
+    const staged = new Map<string, InputSlot & { file: string }>();
+    const directory = await this.directory("input");
+    try {
+      for (const input of files) {
+        const file = `input-${randomSessionId()}`;
+        staged.set(input.id, {
+          id: input.id,
+          name: input.name,
+          size: input.bytes.byteLength,
+          file,
+        });
+        await this.writeBytes("input", file, input.bytes);
+      }
+    } catch (error) {
+      for (const { file } of staged.values()) await removeEntry(directory, file);
+      throw error;
+    }
+    const previous = this.#inputs;
+    this.#inputs = staged;
+    for (const { file } of previous.values()) await removeEntry(directory, file);
+  }
+
+  private async writeBytes(
+    kind: "input" | "output",
+    file: string,
+    bytes: Uint8Array | Blob,
+  ): Promise<void> {
+    const access = await this.access(kind, file, true);
+    try {
+      access.truncate(0);
+      let offset = 0;
+      const write = (chunk: Uint8Array) => {
+        let consumed = 0;
+        while (consumed < chunk.byteLength) {
+          const written = access.write(chunk.subarray(consumed), { at: offset });
+          if (written <= 0)
+            throw storeError("storage_error", "The browser could not finish writing the file.");
+          consumed += written;
+          offset += written;
+        }
+      };
+      if (bytes instanceof Blob) {
+        const reader = bytes.stream().getReader();
+        try {
+          for (;;) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            write(chunk.value);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } else write(bytes);
+      access.flush();
+    } finally {
+      access.close();
+    }
+  }
+
+  async readInputSlot(id: string, maxBytes?: number): Promise<Uint8Array> {
+    const input = this.#inputs.get(id);
+    if (!input) throw noInput();
+    const access = await this.access("input", input.file, false);
+    try {
+      const size = access.getSize();
+      const buffer = new Uint8Array(maxBytes === undefined ? size : Math.min(size, maxBytes));
+      let offset = 0;
+      while (offset < buffer.byteLength) {
+        const read = access.read(buffer.subarray(offset), { at: offset });
+        if (read <= 0)
+          throw storeError("storage_error", "The browser could not finish reading the file.");
+        offset += read;
+      }
+      return buffer;
+    } finally {
+      access.close();
+    }
+  }
+
+  async putOutputs(artifacts: StoredArtifact[]): Promise<OutputLocation[]> {
+    checkSize(totalBytes(artifacts), this.inputLimitBytes);
+    const directory = await this.directory("output");
+    const staged: OutputLocation[] = [];
+    try {
+      for (const artifact of artifacts) {
+        // Engine names are download labels, never OPFS path components.
+        const name = `output-${randomSessionId()}`;
+        staged.push({ kind: "opfs", directory: [STORE_DIRECTORY, this.session, "output"], name });
+        await this.writeBytes("output", name, artifact.bytes);
+      }
+    } catch (error) {
+      for (const location of staged)
+        if (location.kind === "opfs") await removeEntry(directory, location.name);
+      throw error;
+    }
+    const previous = this.#outputs;
+    this.#outputs = staged;
+    for (const location of previous)
+      if (location.kind === "opfs") await removeEntry(directory, location.name);
+    return [...staged];
+  }
 
   private constructor(
     private readonly root: FileSystemDirectoryHandle,
@@ -217,64 +438,49 @@ export class OpfsStore implements FileStore {
   }
 
   async putInput(file: Blob): Promise<number> {
-    const access = await this.access("input", INPUT_NAME, true);
+    checkSize(file.size, this.inputLimitBytes);
+    const storedName = `input-${randomSessionId()}`;
+    const directory = await this.directory("input");
     try {
-      access.truncate(0);
-      let offset = 0;
-      const reader = file.stream().getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        offset += access.write(value, { at: offset });
-      }
-      access.flush();
-      return offset;
-    } finally {
-      access.close();
+      await this.writeBytes("input", storedName, file);
+    } catch (error) {
+      await removeEntry(directory, storedName);
+      throw error;
     }
+    const previous = this.#inputs;
+    this.#inputs = new Map([
+      [
+        INPUT_NAME,
+        {
+          id: INPUT_NAME,
+          name: file instanceof File ? file.name : INPUT_NAME,
+          size: file.size,
+          file: storedName,
+        },
+      ],
+    ]);
+    for (const { file: name } of previous.values()) await removeEntry(directory, name);
+    return file.size;
   }
 
   async readInput(maxBytes?: number): Promise<Uint8Array> {
-    let access: SyncAccessHandle;
-    try {
-      access = await this.access("input", INPUT_NAME, false);
-    } catch {
-      throw noInput();
-    }
-    try {
-      const size = access.getSize();
-      const buffer = new Uint8Array(maxBytes === undefined ? size : Math.min(size, maxBytes));
-      access.read(buffer, { at: 0 });
-      return buffer;
-    } finally {
-      access.close();
-    }
+    const id = this.#inputs.keys().next().value;
+    if (!id) throw noInput();
+    return this.readInputSlot(id, maxBytes);
   }
 
-  async putOutput(bytes: Uint8Array): Promise<OutputLocation> {
-    const directory = await this.directory("output");
-    for await (const entry of (directory as IterableDirectory).keys()) {
-      await removeEntry(directory, entry);
-    }
-    const access = await this.access("output", OUTPUT_NAME, true);
-    try {
-      access.truncate(0);
-      access.write(bytes, { at: 0 });
-      access.flush();
-    } finally {
-      access.close();
-    }
-    return {
-      kind: "opfs",
-      directory: [STORE_DIRECTORY, this.session, "output"],
-      name: OUTPUT_NAME,
-    };
+  async putOutput(
+    bytes: Uint8Array,
+    mediaType = "application/octet-stream",
+  ): Promise<OutputLocation> {
+    const [location] = await this.putOutputs([{ name: OUTPUT_NAME, bytes, mediaType }]);
+    return location as OutputLocation;
   }
 
   async clear(): Promise<void> {
     await removeEntry(await this.base(), this.session);
+    this.#inputs.clear();
+    this.#outputs = [];
   }
 
   async retire(sessions: string[]): Promise<number> {

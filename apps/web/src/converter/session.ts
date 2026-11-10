@@ -1,7 +1,8 @@
 // Worker-side converter state, independent of worker globals so tests can drive it.
-import type { FormatId, ProfileId } from "@ariadshift/ariad-wasm";
+import type { FormatId, InspectResult, ProfileId } from "@ariadshift/ariad-wasm";
 import { type Core, runRoute } from "./engines";
-import type { FileStore } from "./file-store";
+import { type FileStore, randomSessionId, STORE_INPUT_LIMIT_BYTES } from "./file-store";
+import { inspectPdfInsights } from "./insights";
 import {
   type ConvertedFile,
   type ConverterError,
@@ -9,15 +10,18 @@ import {
   isConverterError,
   type RequestEnvelope,
   type ResultMap,
+  type ToolExecutionResult,
+  type WorkerRequest,
   type WorkerResponse,
 } from "./protocol";
+import { toolCatalog } from "./tool-catalog";
 
 /**
  * Largest input the browser converter accepts. Reading a document expands it in wasm
  * memory by up to roughly 70 times (HTML), and that memory is only returned when the
  * worker is replaced; larger files belong to the CLI or the desktop app.
  */
-export const INPUT_LIMIT_BYTES = 16 * 1024 * 1024;
+export const INPUT_LIMIT_BYTES = STORE_INPUT_LIMIT_BYTES;
 /** Inputs up to this size are read in full for their structure counts. */
 export const ANALYSIS_LIMIT_BYTES = 4 * 1024 * 1024;
 /** Larger inputs are classified from this many leading bytes only. */
@@ -83,9 +87,172 @@ export class ConverterSession {
     const sample = await this.store.readInput(
       size > ANALYSIS_LIMIT_BYTES ? CLASSIFY_PREFIX_BYTES : undefined,
     );
-    const inspection = this.core.inspect(sample, file.name, size);
-    this.#input = { name: file.name, size, format: inspection.format };
-    return { name: file.name, size, inspection, recycle: this.#oversized() };
+    try {
+      const inspection = this.core.inspect(sample, file.name, size);
+      this.#input = { name: file.name, size, format: inspection.format };
+      return { name: file.name, size, inspection, recycle: this.#oversized() };
+    } catch (error) {
+      await this.store.clear();
+      throw error;
+    }
+  }
+
+  /** Replaces the current input set. Returned IDs determine tool input order. */
+  async ingestMany(files: File[]): Promise<ResultMap["ingestMany"]> {
+    const total = files.reduce((sum, file) => sum + file.size, 0);
+    const limit = Math.min(this.inputLimitBytes, this.store.inputLimitBytes);
+    if (total > limit)
+      throw {
+        code: "limit_exceeded",
+        limit: "browser_input_bytes",
+        message: `The input files exceed the ${limit} byte browser budget.`,
+      } satisfies ConverterError;
+    const inputs = [];
+    const results: ResultMap["ingestMany"] = [];
+    for (const file of files) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const id = randomSessionId();
+      let inspection: InspectResult | null = null;
+      let inspectionError: ConverterError | undefined;
+      try {
+        inspection = this.core.inspect(
+          bytes.byteLength > ANALYSIS_LIMIT_BYTES
+            ? bytes.subarray(0, CLASSIFY_PREFIX_BYTES)
+            : bytes,
+          file.name,
+          file.size,
+        );
+      } catch (error) {
+        if (!isConverterError(error) || error.fatal) throw error;
+        inspectionError = error;
+      }
+      inputs.push({ id, name: file.name, bytes });
+      results.push({
+        id,
+        name: file.name,
+        size: file.size,
+        inspection,
+        ...(inspectionError ? { inspectionError } : {}),
+        recycle: this.#oversized(),
+      });
+    }
+    await this.store.putInputs(inputs);
+    const first = results[0];
+    this.#input = first?.inspection
+      ? { name: first.name, size: first.size, format: first.inspection.format }
+      : null;
+    return results;
+  }
+
+  listTools() {
+    let runtime: ReturnType<NonNullable<Core["listTools"]>> | undefined;
+    try {
+      runtime = this.core.listTools?.();
+    } catch (cause) {
+      // A failing tool listing is a failed request, not a broken module: keep the worker alive.
+      throw {
+        code: "tools_unavailable",
+        message: `The tool list could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+      } satisfies ConverterError;
+    }
+    return toolCatalog(runtime);
+  }
+
+  async runTool(
+    request: Extract<WorkerRequest, { type: "runTool" }>,
+  ): Promise<ToolExecutionResult> {
+    const tool = this.listTools().find((candidate) => candidate.id === request.toolId);
+    if (!tool)
+      throw {
+        code: "unknown_tool",
+        message: `Unknown tool: ${request.toolId}`,
+      } satisfies ConverterError;
+    if (!tool.runtimes.includes("wasm") || !this.core.runTool)
+      throw {
+        code: "engine_unavailable",
+        message: "Run this tool on your computer or through its supported cloud service.",
+      } satisfies ConverterError;
+    const ids = request.inputIds ?? this.store.listInputs().map((slot) => slot.id);
+    const slots = new Map(this.store.listInputs().map((slot) => [slot.id, slot]));
+    const selected = ids.map((id) => {
+      const slot = slots.get(id);
+      if (!slot)
+        throw { code: "no_input", message: `Unknown input slot: ${id}` } satisfies ConverterError;
+      return slot;
+    });
+    const budget =
+      request.budgetBytes ?? Math.min(this.inputLimitBytes, this.store.inputLimitBytes);
+    if (!Number.isSafeInteger(budget) || budget <= 0)
+      throw {
+        code: "invalid_params",
+        message: "The input byte budget must be a positive safe integer.",
+      } satisfies ConverterError;
+    if (selected.reduce((sum, slot) => sum + slot.size, 0) > budget)
+      throw {
+        code: "limit_exceeded",
+        message: "The selected inputs exceed the tool byte budget.",
+      } satisfies ConverterError;
+    const inputs = [];
+    for (const slot of selected) inputs.push(await this.store.readInputSlot(slot.id));
+    const started = performance.now();
+    const result = this.core.runTool(
+      inputs,
+      selected.map((slot) => slot.name),
+      tool.id,
+      JSON.stringify(request.params),
+      budget,
+      request.entitled,
+    );
+    const artifacts = result.artifacts.length
+      ? result.artifacts
+      : [
+          {
+            name: `${fileStem(selected[0]?.name ?? "document")}.${result.extension}`,
+            bytes: result.bytes,
+            format: result.format,
+            media_type: result.media_type,
+            extension: result.extension,
+          },
+        ];
+    const locations = await this.store.putOutputs(
+      artifacts.map((artifact) => ({
+        name: artifact.name,
+        bytes: artifact.bytes,
+        mediaType: artifact.media_type,
+      })),
+    );
+    return {
+      tool: result.tool,
+      format: result.format,
+      mediaType: result.media_type,
+      extension: result.extension,
+      primaryLocation: locations[0] as ResultMap["runTool"]["primaryLocation"],
+      artifacts: artifacts.map((artifact, index) => ({
+        name: artifact.name,
+        size: artifact.bytes.byteLength,
+        format: artifact.format,
+        mediaType: artifact.media_type,
+        extension: artifact.extension,
+        location: locations[index] as ResultMap["runTool"]["primaryLocation"],
+      })),
+      data: result.data,
+      warnings: result.warnings,
+      metrics: result.metrics,
+      elapsedMs: performance.now() - started,
+      recycle: this.#oversized(),
+    };
+  }
+
+  async inspectInsights(inputId?: string): Promise<ResultMap["inspectInsights"]> {
+    const slot = this.store.listInputs().find((candidate) => !inputId || candidate.id === inputId);
+    if (!slot) throw { code: "no_input", message: "Choose a PDF first." } satisfies ConverterError;
+    return inspectPdfInsights(
+      this.core,
+      await this.store.readInputSlot(slot.id),
+      slot.name,
+      Math.min(this.inputLimitBytes, this.store.inputLimitBytes),
+      this.listTools(),
+    );
   }
 
   plan(to: FormatId, profile: ProfileId) {
@@ -191,6 +358,18 @@ export async function handleRequest(
         break;
       case "ingest":
         result = await session.ingest(request.file);
+        break;
+      case "ingestMany":
+        result = await session.ingestMany(request.files);
+        break;
+      case "listTools":
+        result = session.listTools();
+        break;
+      case "runTool":
+        result = await session.runTool(request);
+        break;
+      case "inspectInsights":
+        result = await session.inspectInsights(request.inputId);
         break;
       case "plan":
         result = session.plan(request.to, request.profile);

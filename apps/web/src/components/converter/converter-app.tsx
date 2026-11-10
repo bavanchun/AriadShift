@@ -29,6 +29,7 @@ import {
   ShieldCheckIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Component,
   type ComponentType,
@@ -55,6 +56,7 @@ import type {
   InitResult,
   OutputLocation,
 } from "@/converter/protocol";
+import { useLocalePath } from "@/i18n/use-locale-path";
 import type { DiscardOutcome, ServerCopy } from "@/lib/cloud/cloud-job";
 import { CLOUD } from "@/lib/cloud/config";
 import { formatBytes } from "@/lib/format-bytes";
@@ -86,28 +88,39 @@ class CloudErrorBoundary extends Component<CloudErrorBoundaryProps, CloudErrorBo
 
   override render() {
     if (this.state.hasError) {
-      const transferred = this.props.transferred.current;
       return (
-        <Alert variant="destructive" data-testid="cloud-load-error">
-          <TriangleAlertIcon aria-hidden="true" />
-          <AlertTitle>
-            {transferred ? "Cloud mode stopped unexpectedly" : "Cloud mode could not load"}
-          </AlertTitle>
-          <AlertDescription className="flex flex-col items-start gap-3">
-            <p>
-              {transferred
-                ? "Cloud mode encountered an error after the upload started. Any server copy is deleted automatically when its retention period ends, or you can convert on this device."
-                : "The cloud converter could not be loaded (for example, because you are offline). You can still convert on this device."}
-            </p>
-            <Button variant="outline" onClick={this.props.onUseDevice}>
-              Convert on this device
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <CloudLoadError
+          transferred={this.props.transferred.current}
+          onUseDevice={this.props.onUseDevice}
+        />
       );
     }
     return this.props.children;
   }
+}
+
+function CloudLoadError({
+  transferred,
+  onUseDevice,
+}: {
+  transferred: boolean;
+  onUseDevice: () => void;
+}) {
+  const t = useTranslations("web.converter");
+  return (
+    <Alert variant="destructive" data-testid="cloud-load-error">
+      <TriangleAlertIcon aria-hidden="true" />
+      <AlertTitle>
+        {t(transferred ? "cloud_error.stopped_title" : "cloud_error.load_title")}
+      </AlertTitle>
+      <AlertDescription className="flex flex-col items-start gap-3">
+        <p>{t(transferred ? "cloud_error.stopped_body" : "cloud_error.load_body")}</p>
+        <Button variant="outline" onClick={onUseDevice}>
+          {t("cloud_error.use_device")}
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 type ConvertedSummary = Omit<ConvertedFile, "location">;
@@ -128,14 +141,22 @@ function whenIdle(run: () => void): () => void {
   return () => clearTimeout(handle);
 }
 
-const COUNT_LABELS: Array<[keyof NonNullable<IngestResult["inspection"]["counts"]>, string]> = [
-  ["paragraphs", "Paragraphs"],
-  ["tables", "Tables"],
-  ["images", "Images"],
-  ["links", "Links"],
-  ["footnotes", "Footnotes"],
-  ["words", "Words"],
-];
+const COUNT_KEYS = ["paragraphs", "tables", "images", "links", "footnotes", "words"] as const;
+
+function formatMilliseconds(ms: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: "millisecond",
+    unitDisplay: "short",
+    maximumFractionDigits: 0,
+  }).format(Math.max(1, Math.round(ms)));
+}
+
+function listFormats(formats: string[], locale: string): string {
+  return new Intl.ListFormat(locale, { style: "short", type: "unit" }).format(
+    formats.map(formatLabel),
+  );
+}
 
 export interface ConverterAppProps {
   client?: ConverterClient;
@@ -146,6 +167,10 @@ export function ConverterApp({
   client: customClient,
   cloudPanel: CloudPanelComponent = CloudPanel,
 }: ConverterAppProps = {}) {
+  const t = useTranslations("web.converter");
+  const tc = useTranslations("common");
+  const locale = useLocale();
+  const path = useLocalePath();
   const clientRef = useRef<ConverterClient | null>(customClient ?? null);
   const outputRef = useRef<OutputLocation | null>(null);
   const initRef = useRef<Promise<InitResult> | null>(null);
@@ -184,10 +209,10 @@ export function ConverterApp({
       if (outcome.status === "kept") {
         keepServerCopy(outcome);
       } else {
-        setStatus(`${copy.fileName} was deleted from the server.`);
+        setStatus(t("status.deleted_from_server", { name: copy.fileName }));
       }
     },
-    [keepServerCopy],
+    [keepServerCopy, t],
   );
 
   const targetLabelId = useId();
@@ -277,7 +302,7 @@ export function ConverterApp({
       setStaged(CLOUD ? file : null);
       setDestination("device");
       setPhase("ingesting");
-      setStatus(`Reading ${file.name} on this device.`);
+      setStatus(t("status.reading", { name: file.name }));
       try {
         await start();
         const result = await client().request({ type: "ingest", file });
@@ -295,16 +320,18 @@ export function ConverterApp({
               : (reachable.find((format) => format !== "ariad-ir+json") ?? reachable[0] ?? null),
         );
         setPhase("ready");
-        setStatus(`${file.name} is ${formatLabel(result.inspection.format)}.`);
+        setStatus(
+          t("status.detected", { name: file.name, format: formatLabel(result.inspection.format) }),
+        );
       } catch (cause) {
         setInput(null);
         setTarget(null);
         setError(asError(cause));
         setPhase("idle");
-        setStatus("The file could not be read.");
+        setStatus(t("status.read_failed"));
       }
     },
-    [client, start],
+    [client, start, t],
   );
 
   useEffect(() => {
@@ -337,7 +364,7 @@ export function ConverterApp({
     setOutput(null);
     outputRef.current = null;
     setPhase("converting");
-    setStatus(`Converting to ${formatLabel(target)} on this device.`);
+    setStatus(t("status.converting", { format: formatLabel(target) }));
     try {
       const { location, ...summary } = await client().request({
         type: "convert",
@@ -348,7 +375,7 @@ export function ConverterApp({
       setOutput(summary);
       void enableOffline(summary.resources ?? []);
       setPhase("done");
-      setStatus(`${summary.name} is ready to download.`);
+      setStatus(t("status.ready", { name: summary.name }));
     } catch (cause) {
       if (asError(cause).code === "cancelled") return;
       const failure = {
@@ -362,9 +389,9 @@ export function ConverterApp({
         setInput(null);
         initRef.current = null;
       }
-      setStatus("The conversion failed.");
+      setStatus(t("status.convert_failed"));
     }
-  }, [client, input, profile, target]);
+  }, [client, input, profile, target, t]);
 
   const download = useCallback(async () => {
     if (!output || !outputRef.current) {
@@ -372,11 +399,11 @@ export function ConverterApp({
     }
     try {
       await downloadOutput(outputRef.current, output.name);
-      setStatus(`Saved ${output.name}.`);
+      setStatus(t("status.saved", { name: output.name }));
     } catch (cause) {
       setError(asError(cause));
     }
-  }, [output]);
+  }, [output, t]);
 
   const reset = useCallback(async () => {
     if (phase === "converting") {
@@ -406,16 +433,15 @@ export function ConverterApp({
         client().request({ type: "reset" }),
       ]);
       setStatus(
-        fromServer.status === "deleted"
-          ? "Files were removed from this device and from the server."
-          : fromServer.status === "kept"
-            ? `Files were removed from this device. ${fromServer.fileName} is still on the server.`
-            : "Files were removed from this device.",
+        t("status.reset", {
+          outcome: fromServer.status,
+          name: fromServer.status === "kept" ? fromServer.fileName : "",
+        }),
       );
     } catch (cause) {
       setError(asError(cause));
     }
-  }, [client, keepServerCopy, phase]);
+  }, [client, keepServerCopy, phase, t]);
 
   const busy = phase === "ingesting" || phase === "converting";
   const inspection = input?.inspection;
@@ -443,12 +469,14 @@ export function ConverterApp({
   const desktopUrl =
     handoffFormat && desktopTarget
       ? desktopLink(handoffFormat, desktopTarget, profile)
-      : "/download";
+      : path("/download");
   const onCloud = destination === "cloud" && !!CLOUD && !!staged;
   const chooseCloud = () => {
     setDestination("cloud");
     setStatus(
-      `Cloud conversion selected for ${staged?.name ?? "this file"}. Nothing is uploaded yet.`,
+      staged
+        ? t("status.cloud_selected", { name: staged.name })
+        : t("status.cloud_selected_unnamed"),
     );
     queueMicrotask(() => cloudPanelRef.current?.scrollIntoView({ block: "nearest" }));
   };
@@ -470,23 +498,25 @@ export function ConverterApp({
           <>
             <CloudIcon aria-hidden="true" className="size-5 shrink-0" />
             <p className="text-sm">
-              <strong className="font-semibold">Cloud conversion selected.</strong> This file leaves
-              your browser only when you choose Upload and convert.
+              {t.rich("device.cloud", {
+                strong: (chunks) => <strong className="font-semibold">{chunks}</strong>,
+              })}
             </p>
           </>
         ) : (
           <>
             <ShieldCheckIcon aria-hidden="true" className="size-5 shrink-0" />
             <p className="text-sm">
-              <strong className="font-semibold">Processed on this device.</strong> Files never leave
-              your browser and are not uploaded.
+              {t.rich("device.local", {
+                strong: (chunks) => <strong className="font-semibold">{chunks}</strong>,
+              })}
             </p>
           </>
         )}
         {engine && (
           <Badge variant="outline" className="ml-auto">
             <HardDriveIcon aria-hidden="true" />
-            {engine.storage === "opfs" ? "Private browser storage" : "In memory"}
+            {t("storage_badge", { storage: engine.storage })}
           </Badge>
         )}
       </div>
@@ -494,11 +524,11 @@ export function ConverterApp({
       {engine?.storage === "memory" && (
         <Alert>
           <TriangleAlertIcon aria-hidden="true" />
-          <AlertTitle>On-device file storage is not available in this browser</AlertTitle>
+          <AlertTitle>{t("memory.title")}</AlertTitle>
           <AlertDescription>
-            Files are kept in memory instead, so inputs up to{" "}
-            {formatBytes(Math.min(engine.memoryLimitBytes, engine.inputLimitBytes))} are supported.
-            Nothing is uploaded either way.
+            {t("memory.body", {
+              limit: formatBytes(Math.min(engine.memoryLimitBytes, engine.inputLimitBytes), locale),
+            })}
           </AlertDescription>
         </Alert>
       )}
@@ -516,13 +546,7 @@ export function ConverterApp({
       {error && !onCloud && (
         <Alert variant="destructive" data-testid="converter-error">
           <TriangleAlertIcon aria-hidden="true" />
-          <AlertTitle>
-            {error.code === "no_route"
-              ? "Not available here"
-              : error.code === "engine_integrity"
-                ? "Engine integrity check failed"
-                : "Something went wrong"}
-          </AlertTitle>
+          <AlertTitle>{t("error.title", { code: error.code })}</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
         </Alert>
       )}
@@ -530,27 +554,27 @@ export function ConverterApp({
       {needsDesktop && !onCloud && (
         <Alert data-testid="desktop-handoff">
           <HardDriveIcon aria-hidden="true" />
-          <AlertTitle>Continue in the desktop app</AlertTitle>
+          <AlertTitle>{t("handoff.title")}</AlertTitle>
           <AlertDescription>
             <p>
-              {inspection?.warnings.some((warning) => warning.code === "ocr_required") ||
-              output?.warnings.some((warning) => warning.code === "ocr_required")
-                ? "Some pages need OCR to extract all their text."
-                : "This document needs an engine or more memory than the browser provides."}
+              {t("handoff.reason", {
+                reason:
+                  inspection?.warnings.some((warning) => warning.code === "ocr_required") ||
+                  output?.warnings.some((warning) => warning.code === "ocr_required")
+                    ? "ocr"
+                    : "engine",
+              })}
             </p>
-            <p>
-              The desktop app opens a file picker. Choose this document again; your browser does not
-              send the file.
-            </p>
+            <p>{t("handoff.picker")}</p>
             <a className="underline font-semibold" href={desktopUrl}>
-              Open in Desktop
+              {t("handoff.open")}
             </a>
             {CLOUD && staged && (
               <p>
-                Or convert it on {CLOUD.apiHost}, after you confirm the upload.{" "}
+                {t("handoff.cloud_alternative", { host: CLOUD.apiHost })}{" "}
                 <Button variant="outline" size="lg" className="mt-2" onClick={chooseCloud}>
                   <CloudIcon aria-hidden="true" />
-                  Process in Cloud
+                  {t("handoff.cloud_button")}
                 </Button>
               </p>
             )}
@@ -563,14 +587,15 @@ export function ConverterApp({
           onFiles={handleFiles}
           accept={ACCEPT}
           disabled={busy}
-          buttonLabel={busy ? "Reading…" : "Choose a file"}
-          label="Document to convert"
+          buttonLabel={t(busy ? "drop.button_busy" : "drop.button")}
+          label={t("drop.label")}
         >
           <div className="flex flex-col gap-1">
-            <p className="text-lg font-semibold">Drop a document here</p>
+            <p className="text-lg font-semibold">{t("drop.title")}</p>
             <p className="text-sm text-muted-foreground">
-              Markdown, HTML, DOCX, EPUB, digital PDF or IR JSON up to{" "}
-              {formatBytes(engine?.inputLimitBytes ?? 16 * 1024 * 1024)}. It stays on this device.
+              {t("drop.hint", {
+                limit: formatBytes(engine?.inputLimitBytes ?? 16 * 1024 * 1024, locale),
+              })}
             </p>
           </div>
         </FileDropZone>
@@ -583,21 +608,24 @@ export function ConverterApp({
               </h2>
             </CardTitle>
             <CardDescription>
-              {formatBytes(input.size)} ·{" "}
-              <span data-testid="detected-format">{formatLabel(inspection?.format ?? "")}</span>
-              {inspection?.meta?.title ? ` · “${inspection.meta.title}”` : ""}
+              {t.rich(inspection?.meta?.title ? "input.summary_titled" : "input.summary", {
+                size: formatBytes(input.size, locale),
+                format: formatLabel(inspection?.format ?? ""),
+                title: inspection?.meta?.title ?? "",
+                detected: (chunks) => <span data-testid="detected-format">{chunks}</span>,
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {inspection?.counts && (
               <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4" data-testid="counts">
                 <div>
-                  <dt className="text-muted-foreground">Headings</dt>
+                  <dt className="text-muted-foreground">{t("count.headings")}</dt>
                   <dd className="font-semibold">{headingCount}</dd>
                 </div>
-                {COUNT_LABELS.map(([key, label]) => (
+                {COUNT_KEYS.map((key) => (
                   <div key={key}>
-                    <dt className="text-muted-foreground">{label}</dt>
+                    <dt className="text-muted-foreground">{t(`count.${key}`)}</dt>
                     <dd className="font-semibold">{String(inspection.counts?.[key] ?? 0)}</dd>
                   </div>
                 ))}
@@ -612,17 +640,16 @@ export function ConverterApp({
             )}
             {inspection && inspection.reachable.length === 0 && (
               <p className="text-sm">
-                {(inspection.reachable_elsewhere?.length ?? 0) > 0 ? (
-                  <>
-                    {formatLabel(inspection.format)} cannot be converted in the browser yet.{" "}
-                    <a className="underline" href="/download">
-                      The AriadShift CLI
-                    </a>{" "}
-                    converts it on your computer.
-                  </>
-                ) : (
-                  <>AriadShift cannot convert {formatLabel(inspection.format)} yet.</>
-                )}
+                {(inspection.reachable_elsewhere?.length ?? 0) > 0
+                  ? t.rich("unreachable.cli", {
+                      format: formatLabel(inspection.format),
+                      link: (chunks) => (
+                        <a className="underline" href={path("/download")}>
+                          {chunks}
+                        </a>
+                      ),
+                    })
+                  : t("unreachable.none", { format: formatLabel(inspection.format) })}
               </p>
             )}
           </CardContent>
@@ -645,7 +672,7 @@ export function ConverterApp({
             onUseDevice={() => setDestination("device")}
           >
             <Suspense
-              fallback={<p className="text-sm text-muted-foreground">Loading cloud mode…</p>}
+              fallback={<p className="text-sm text-muted-foreground">{t("cloud.loading")}</p>}
             >
               <CloudPanelComponent
                 config={CLOUD}
@@ -669,16 +696,14 @@ export function ConverterApp({
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2 className="text-lg">Convert</h2>
+              <h2 className="text-lg">{t("convert.title")}</h2>
             </CardTitle>
-            <CardDescription>
-              The planner picks the route with the best measured score.
-            </CardDescription>
+            <CardDescription>{t("convert.hint")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
-                <Label id={targetLabelId}>Convert to</Label>
+                <Label id={targetLabelId}>{t("convert.target_label")}</Label>
                 <Select
                   value={target}
                   onValueChange={(value) => setTarget(value as FormatId)}
@@ -705,11 +730,14 @@ export function ConverterApp({
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label id={profileLabelId}>Profile</Label>
+                <Label id={profileLabelId}>{t("convert.profile_label")}</Label>
                 <Select
                   value={profile}
                   onValueChange={(value) => setProfile(value as ProfileId)}
-                  items={PROFILES.map((item) => ({ value: item.id, label: item.label }))}
+                  items={PROFILES.map((item) => ({
+                    value: item.id,
+                    label: tc(`profile.${item.id}.label`),
+                  }))}
                   disabled={busy}
                 >
                   <SelectTrigger
@@ -722,13 +750,13 @@ export function ConverterApp({
                   <SelectContent>
                     {PROFILES.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
-                        {item.label}
+                        {tc(`profile.${item.id}.label`)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-muted-foreground">
-                  {PROFILES.find((item) => item.id === profile)?.description}
+                  {tc(`profile.${profile}.description`)}
                 </p>
               </div>
             </div>
@@ -736,7 +764,7 @@ export function ConverterApp({
             {route && (
               <section aria-labelledby="route-heading" data-testid="route">
                 <h3 id="route-heading" className="mb-2 text-sm font-semibold">
-                  Why this route
+                  {t("convert.route_heading")}
                 </h3>
                 <RouteSummary route={route} />
               </section>
@@ -745,12 +773,15 @@ export function ConverterApp({
 
             {inspection.reachable_elsewhere.length > 0 && (
               <p className="text-sm text-muted-foreground">
-                {inspection.reachable_elsewhere.map(formatLabel).join(", ")}{" "}
-                {inspection.reachable_elsewhere.length === 1 ? "needs" : "need"} the{" "}
-                <a className="underline" href="/download">
-                  AriadShift CLI
-                </a>{" "}
-                for now.
+                {t.rich("convert.elsewhere", {
+                  formats: listFormats(inspection.reachable_elsewhere, locale),
+                  count: inspection.reachable_elsewhere.length,
+                  link: (chunks) => (
+                    <a className="underline" href={path("/download")}>
+                      {chunks}
+                    </a>
+                  ),
+                })}
               </p>
             )}
 
@@ -759,11 +790,11 @@ export function ConverterApp({
                 {phase === "converting" && (
                   <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
                 )}
-                {phase === "converting" ? "Converting…" : "Convert"}
+                {t(phase === "converting" ? "convert.button_busy" : "convert.button")}
               </Button>
               {phase === "converting" && (
                 <Button variant="outline" onClick={reset}>
-                  Cancel
+                  {t("convert.cancel")}
                 </Button>
               )}
             </div>
@@ -781,11 +812,15 @@ export function ConverterApp({
         <Card data-testid="result">
           <CardHeader>
             <CardTitle>
-              <h2 className="text-lg">Ready</h2>
+              <h2 className="text-lg">{t("result.title")}</h2>
             </CardTitle>
             <CardDescription>
-              <span data-testid="output-name">{output.name}</span> · {formatBytes(output.size)} ·
-              converted in {Math.max(1, Math.round(output.elapsedMs))} ms on this device
+              {t.rich("result.summary", {
+                name: output.name,
+                size: formatBytes(output.size, locale),
+                duration: formatMilliseconds(output.elapsedMs, locale),
+                output: (chunks) => <span data-testid="output-name">{chunks}</span>,
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -799,7 +834,7 @@ export function ConverterApp({
             <div className="flex flex-wrap gap-3">
               <Button size="lg" onClick={download}>
                 <DownloadIcon aria-hidden="true" />
-                Download {output.name}
+                {t("result.download", { name: output.name })}
               </Button>
             </div>
           </CardContent>
@@ -810,7 +845,7 @@ export function ConverterApp({
         <div>
           <Button variant="outline" onClick={reset} disabled={phase === "ingesting"}>
             <RotateCcwIcon aria-hidden="true" />
-            Start over and delete files
+            {t("start_over")}
           </Button>
         </div>
       )}

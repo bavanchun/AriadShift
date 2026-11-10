@@ -37,7 +37,10 @@ export class ConverterClient {
   request<K extends WorkerRequest["type"]>(
     message: Extract<WorkerRequest, { type: K }>,
   ): Promise<ResultMap[K]> {
-    if (this.#recycle && (message.type === "ingest" || message.type === "reset")) {
+    if (
+      this.#recycle &&
+      (message.type === "ingest" || message.type === "ingestMany" || message.type === "reset")
+    ) {
       this.#retire();
     }
     const fresh = this.#worker === null;
@@ -52,11 +55,34 @@ export class ConverterClient {
       );
     }
     return this.#send(worker, message).then((result) => {
+      if (Array.isArray(result) && result.some((item) => "recycle" in item && item.recycle))
+        this.#recycle = true;
       if (typeof result === "object" && result !== null && "recycle" in result && result.recycle) {
         this.#recycle = true;
       }
       return result;
     });
+  }
+
+  ingestMany(files: File[]) {
+    return this.request({ type: "ingestMany", files });
+  }
+  listTools() {
+    return this.request({ type: "listTools" });
+  }
+  runTool(
+    toolId: string,
+    params: Record<string, unknown>,
+    options: {
+      inputIds?: string[];
+      budgetBytes?: number;
+      entitled?: boolean;
+    } = {},
+  ) {
+    return this.request({ type: "runTool", toolId, params, ...options });
+  }
+  inspectInsights(inputId?: string) {
+    return this.request({ type: "inspectInsights", inputId });
   }
 
   /** Stop the current conversion; the next worker cleans up its storage. */

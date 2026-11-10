@@ -37,6 +37,18 @@ describe("FileDropZone", () => {
     expect(onFiles).toHaveBeenCalledWith([file]);
   });
 
+  it("picks one file unless it is told to accept several", () => {
+    const single = render(<FileDropZone onFiles={vi.fn()} />);
+    expect((single.container.querySelector("input[type=file]") as HTMLInputElement).multiple).toBe(
+      false,
+    );
+    single.unmount();
+    const several = render(<FileDropZone onFiles={vi.fn()} multiple />);
+    expect((several.container.querySelector("input[type=file]") as HTMLInputElement).multiple).toBe(
+      true,
+    );
+  });
+
   it("ignores drops while disabled", () => {
     const onFiles = vi.fn();
     render(
