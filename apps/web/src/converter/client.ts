@@ -85,6 +85,10 @@ export class ConverterClient {
     return this.request({ type: "inspectInsights", inputId });
   }
 
+  reset() {
+    return this.request({ type: "reset" });
+  }
+
   /** Stop the current conversion; the next worker cleans up its storage. */
   cancel() {
     this.#retire({ code: "cancelled", message: "The conversion was cancelled.", fatal: false });
