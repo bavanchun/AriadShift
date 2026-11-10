@@ -44,6 +44,19 @@ function choices(schema: Schema, root: Schema, depth = 0): unknown[] {
     : [];
 }
 
+/**
+ * Tests a schema `pattern`. A pattern the browser cannot compile is a schema defect, not
+ * something the user can fix by editing the value, so it constrains nothing here; the
+ * engine still validates the parameters when the tool runs.
+ */
+function matchesPattern(pattern: string, value: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return true;
+  }
+}
+
 /** Mirrors the shared PageRange grammar without expanding a potentially huge selection. */
 export function validatePageRange(value: string, pageCount?: number): string | null {
   if (!value.trim()) return "Enter a page range.";
@@ -147,7 +160,7 @@ function validateValue(
       return `Minimum length: ${schema.minLength}`;
     if (typeof schema.maxLength === "number" && value.length > schema.maxLength)
       return `Maximum length: ${schema.maxLength}`;
-    if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value))
+    if (typeof schema.pattern === "string" && !matchesPattern(schema.pattern, value))
       return "Enter a value in the required format.";
     if (pageRange(name, original)) return validatePageRange(value, pageCount);
   }
@@ -284,7 +297,7 @@ function ParamsDraft({
   }
 
   return (
-    <div className="grid gap-4">
+    <div data-slot="params-form" className="grid gap-4">
       {Object.entries(properties).map(([key, raw]) => {
         const original = object(raw);
         const schema = resolve(original, tool.params_schema);
@@ -308,31 +321,41 @@ function ParamsDraft({
           (type === "array" && object(schema.items).type !== "string") ||
           (!type && !closedEnum && !isPaper);
         const value = params[key];
+        const inputType = secret
+          ? "password"
+          : numeric
+            ? "number"
+            : /(?:color|colour)/i.test(key) || schema.pattern === "^#[0-9A-Fa-f]{6}$"
+              ? "color"
+              : "text";
         const common = {
           id,
           disabled,
           "aria-invalid": !!error,
           "aria-describedby": error ? `${id}-error` : undefined,
-          className: "w-full rounded border bg-transparent p-2",
         };
+        const control =
+          "min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20";
         const enumOptions = isPaper
           ? [...new Set(["A4", "Letter", "A3", "Legal", "A5", ...options])]
           : options;
         return (
-          <div key={key} className="grid gap-1">
-            <label htmlFor={id}>
+          <div key={key} className="grid gap-1.5">
+            <label htmlFor={id} className="text-sm font-medium">
               {labels[key] ?? String(schema.title ?? key.replaceAll("_", " "))}
             </label>
             {type === "boolean" && !secret ? (
               <input
                 {...common}
                 type="checkbox"
+                className="size-4 cursor-pointer rounded-sm border border-input accent-primary outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                 checked={value === true}
                 onChange={(event) => update(key, event.target.checked)}
               />
             ) : !secret && (closedEnum || isPaper || file) ? (
               <select
                 {...common}
+                className={`${control} h-9 w-full`}
                 value={value === undefined || value === null ? "" : String(value)}
                 onChange={(event) => {
                   const selected = enumOptions.find(
@@ -357,6 +380,8 @@ function ParamsDraft({
             ) : json && !secret ? (
               <textarea
                 {...common}
+                className={`${control} min-h-24 w-full py-2 font-mono text-xs`}
+                spellCheck={false}
                 value={drafts[key] ?? (value === undefined ? "" : JSON.stringify(value, null, 2))}
                 onChange={(event) => {
                   const text = event.target.value;
@@ -373,15 +398,8 @@ function ParamsDraft({
             ) : (
               <input
                 {...common}
-                type={
-                  secret
-                    ? "password"
-                    : numeric
-                      ? "number"
-                      : /(?:color|colour)/i.test(key) || schema.pattern === "^#[0-9A-Fa-f]{6}$"
-                        ? "color"
-                        : "text"
-                }
+                className={`${control} ${inputType === "color" ? "h-9 w-16 cursor-pointer p-1" : "h-9 w-full"}`}
+                type={inputType}
                 autoComplete={secret ? "new-password" : "off"}
                 spellCheck={false}
                 min={typeof schema.minimum === "number" ? schema.minimum : undefined}
@@ -411,7 +429,7 @@ function ParamsDraft({
               />
             )}
             {error ? (
-              <p id={`${id}-error`} role="alert">
+              <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
                 {translateError(error)}
               </p>
             ) : null}
