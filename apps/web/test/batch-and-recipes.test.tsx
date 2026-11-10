@@ -184,6 +184,43 @@ describe("recipe URL fragments", () => {
     expect(codeOf(() => parseRecipe(step({ $secret: "sec_01J" })))).toBe("literal_secret");
     expect(codeOf(() => parseRecipe(step({ $secret: "prompt" })))).toBeUndefined();
   });
+
+  it("treats a $secret object as a secret reference wherever it appears", () => {
+    const params = (value: unknown) => ({
+      version: "ariad-recipe/1",
+      steps: [{ tool: "pdf.metadata", params: { title: value, nested: { list: [value] } } }],
+    });
+    expect(codeOf(() => parseRecipe(params({ $secret: "sec_01J" })))).toBe("literal_secret");
+    expect(codeOf(() => parseRecipe(params({ $secret: "prompt", extra: 1 })))).toBe(
+      "literal_secret",
+    );
+    const recipe = parseRecipe(params({ $secret: "prompt" }));
+    expect(hasPromptSecrets(recipe)).toEqual(["0:title", "0:nested.list[0]"]);
+    // It is redacted in the exported form, even when a handle sits in an ordinary field.
+    const exported = serializeRecipe({
+      ...recipe,
+      steps: [{ tool: "pdf.metadata", params: { title: { $secret: "sec_01J" } } }],
+    });
+    expect(exported).not.toContain("sec_01J");
+    expect(exported).toContain('"$secret": "prompt"');
+  });
+
+  it("refuses every tool of the watch domain in an imported recipe", () => {
+    const wrap = (id: string) => ({ version: "ariad-recipe/1", steps: [{ tool: id, params: {} }] });
+    expect(codeOf(() => parseRecipe(wrap("watch.folder")))).toBe("forbidden");
+    expect(codeOf(() => parseRecipe(wrap("automation.watch")))).toBe("forbidden");
+    expect(codeOf(() => parseRecipe(wrap("watch.folder"), "trusted"))).toBeUndefined();
+  });
+
+  it("lists prompt secrets that a tool declares through its registry entry", () => {
+    const recipe: AriadRecipe = {
+      version: "ariad-recipe/1",
+      steps: [{ tool: "x.sign", params: { credential: { $secret: "prompt" } } }],
+    };
+    expect(
+      hasPromptSecrets(recipe, { tools: [{ id: "x.sign", secret_params: ["credential"] }] }),
+    ).toEqual(["0:credential"]);
+  });
 });
 
 describe("recipe grammars", () => {
@@ -586,5 +623,22 @@ describe("<RecipeConfirmDialog />", () => {
     expect(onConfirm).toHaveBeenCalledOnce();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("lists the prompts a registry tool declares as secret", () => {
+    const recipe: AriadRecipe = {
+      version: "ariad-recipe/1",
+      steps: [{ tool: "x.sign", params: { credential: { $secret: "prompt" } } }],
+    };
+    render(
+      <RecipeConfirmDialog
+        recipe={recipe}
+        origin="untrusted"
+        tools={[{ id: "x.sign", secret_params: ["credential"] }]}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/credential: you will be asked/)).toBeTruthy();
   });
 });

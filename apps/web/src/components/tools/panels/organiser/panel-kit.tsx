@@ -16,7 +16,7 @@ export function useEmitParams(
   params: Record<string, unknown>,
   options: {
     pageCount?: number;
-    extraErrors?: Record<string, string>;
+    extraErrors?: Record<string, string | undefined>;
     onChange: (params: Record<string, unknown>, validation: ParamsValidation) => void;
   },
 ): ParamsValidation {

@@ -56,8 +56,13 @@ export function validateRegex(pattern: string): string | null {
   if (!pattern) return null;
   if (utf8Length(pattern) > MAX_PATTERN_BYTES)
     return `Use at most ${MAX_PATTERN_BYTES} bytes per pattern.`;
+  // The engine uses Rust regex syntax: leading inline flags such as `(?i)` are valid there but
+  // not in JavaScript, so they are stripped before the syntax check.
+  const body = pattern
+    .replace(/^(?:\(\?[imsUux]+(?:-[imsUux]+)?\))+/, "")
+    .replace(/\(\?[imsUux]*(?:-[imsUux]+)?:/g, "(?:");
   try {
-    new RegExp(pattern, "u");
+    new RegExp(body, "u");
   } catch (error) {
     return `Invalid regular expression: ${error instanceof Error ? error.message : "syntax error"}`;
   }

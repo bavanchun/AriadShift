@@ -191,16 +191,19 @@ export function sampleDate(format: DateFormat): string {
   return SAMPLE_DATES[format];
 }
 
-/** Expands `{n}`, `{total}`, `{label}` and `{date}` the way the preview page would show them. */
+/**
+ * Expands `{n}`, `{total}` and `{label}`, and `{date}` only when `date` is given, the way the
+ * preview page would show them. `pdf.page_numbers` accepts no `{date}`, so it passes none.
+ */
 export function expandTemplate(
   template: string,
-  values: { n: number; total: number | string; date: string },
+  values: { n: number; total: number | string; date?: string },
 ): string {
-  return template
+  const expanded = template
     .replaceAll("{n}", String(values.n))
     .replaceAll("{total}", String(values.total))
-    .replaceAll("{label}", String(values.n))
-    .replaceAll("{date}", values.date);
+    .replaceAll("{label}", String(values.n));
+  return values.date === undefined ? expanded : expanded.replaceAll("{date}", values.date);
 }
 
 export function batesLabel(
@@ -342,7 +345,7 @@ export function overlayItems(
   }
 
   if (tool === "pdf.page_numbers") {
-    const text = expandTemplate(settings.format, { n: settings.start, total, date });
+    const text = expandTemplate(settings.format, { n: settings.start, total });
     return text
       ? [
           {

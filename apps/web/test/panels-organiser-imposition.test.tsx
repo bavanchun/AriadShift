@@ -655,6 +655,24 @@ describe("<ImpositionPanel /> pdf.crop", () => {
     fireEvent.pointerLeave(svg);
   });
 
+  it("captures the pointer so a fast drag that leaves the preview keeps moving the edge", () => {
+    const { lastChecked } = imposition("pdf.crop");
+    const svg = screen.getByRole("group", { name: "Crop box preview" });
+    svg.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 220, height: 312.6, right: 220, bottom: 312.6 }) as DOMRect;
+    const capture = vi.fn();
+    (svg as unknown as { setPointerCapture: typeof capture }).setPointerCapture = capture;
+    fireEvent.pointerDown(slider("Left"), { clientX: 0, clientY: 100, pointerId: 7 });
+    expect(capture).toHaveBeenCalledWith(7);
+    // Leaving the canvas does not end the drag; only release or a lost capture does.
+    fireEvent.pointerLeave(svg);
+    fireEvent.pointerMove(svg, { clientX: 22, clientY: 100 });
+    expect((lastChecked()[0].box as Record<string, number>).left).toBe(60);
+    fireEvent.lostPointerCapture(svg);
+    fireEvent.pointerMove(svg, { clientX: 110, clientY: 100 });
+    expect((lastChecked()[0].box as Record<string, number>).left).toBe(60);
+  });
+
   it("keeps dragged edges inside the page and rejects empty or negative boxes", () => {
     const { last } = imposition("pdf.crop");
     const svg = screen.getByRole("group", { name: "Crop box preview" });

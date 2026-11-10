@@ -69,6 +69,9 @@ const FORBIDDEN_IMPORTED_TOOLS: readonly string[] = [
   "web.to_pdf",
   "automation.watch",
 ];
+/** Any tool in the `watch` domain is forbidden in an imported recipe, as in Rust. */
+const isForbiddenImportedTool = (tool: string) =>
+  FORBIDDEN_IMPORTED_TOOLS.includes(tool) || tool.startsWith("watch.");
 const NAMING_TOKENS: readonly string[] = ["stem", "n", "date", "title"];
 const TOOL_ID = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/;
 
@@ -133,6 +136,8 @@ export const isPromptSecret = (value: unknown): value is SecretRef =>
 function redactValue(value: unknown, names: Set<string>): unknown {
   if (Array.isArray(value)) return value.map((item) => redactValue(item, names));
   if (!isObject(value)) return value;
+  // Any object that carries a `$secret` key is a secret reference, wherever it appears.
+  if ("$secret" in value) return { ...SECRET_PROMPT };
   return Object.fromEntries(
     Object.keys(value)
       .sort()
@@ -172,7 +177,10 @@ export function redactParams(
   );
 }
 
-/** Walks `params` and calls `visit` with the dotted path of each secret field. */
+/**
+ * Walks `params` and calls `visit` with the dotted path of each secret field and of each
+ * object that carries a `$secret` key, whatever the field is called (as `secret.rs` does).
+ */
 function visitSecrets(
   value: unknown,
   names: Set<string>,
@@ -186,6 +194,10 @@ function visitSecrets(
     return;
   }
   if (!isObject(value)) return;
+  if ("$secret" in value) {
+    visit(path, value);
+    return;
+  }
   for (const [key, child] of Object.entries(value)) {
     const here = path ? `${path}.${key}` : key;
     if (names.has(key.toLowerCase())) visit(here, child);
@@ -323,7 +335,7 @@ function checkStep(
     return fail("invalid_step", "needs a tool id such as pdf.merge.");
   if (raw.params !== undefined && !isObject(raw.params))
     return fail("invalid_step", `params of ${raw.tool} must be an object.`);
-  if (origin === "untrusted" && FORBIDDEN_IMPORTED_TOOLS.includes(raw.tool))
+  if (origin === "untrusted" && isForbiddenImportedTool(raw.tool))
     return fail("forbidden", `an imported recipe may not run ${raw.tool}.`);
   const step: RecipeToolStep = {
     tool: raw.tool,

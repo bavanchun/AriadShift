@@ -228,7 +228,7 @@ export function CropStudio({ tool, files, pageCount, disabled, onChange }: Custo
           onPointerMove={move}
           onPointerUp={() => setDragging(null)}
           onPointerCancel={() => setDragging(null)}
-          onPointerLeave={() => setDragging(null)}
+          onLostPointerCapture={() => setDragging(null)}
         >
           <title>{copy.preview}</title>
           <path
@@ -270,6 +270,8 @@ export function CropStudio({ tool, files, pageCount, disabled, onChange }: Custo
               onPointerDown={(event) => {
                 if (disabled) return;
                 event.preventDefault();
+                // Captured on the canvas, a fast drag that leaves it keeps moving the edge.
+                svg.current?.setPointerCapture?.(event.pointerId);
                 setDragging(side);
               }}
               onKeyDown={disabled ? undefined : key(side)}

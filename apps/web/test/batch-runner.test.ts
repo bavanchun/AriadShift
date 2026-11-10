@@ -65,6 +65,13 @@ function readZip(bytes: Uint8Array) {
 }
 
 describe("ZIP archives", () => {
+  it("keeps names that differ only by case apart, as macOS and Windows would collide", () => {
+    const zip = createZipArchive(
+      ["A.pdf", "a.pdf", "a.PDF"].map((name) => ({ name, bytes: new Uint8Array() })),
+    );
+    expect(readZip(zip).map((entry) => entry.name)).toEqual(["A.pdf", "a (2).pdf", "a (3).PDF"]);
+  });
+
   it("writes interoperable UTF-8 Store headers, the standard CRC-32 vector and an empty entry", async () => {
     const entries = [
       { name: "Tài liệu 📄.pdf", bytes: encoder.encode("123456789") },

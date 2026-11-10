@@ -42,8 +42,10 @@ function uniqueName(name: string, used: Set<string>): string {
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const extension = dot > 0 ? name.slice(dot) : "";
   let candidate = name;
-  for (let index = 2; used.has(candidate); index++) candidate = `${stem} (${index})${extension}`;
-  used.add(candidate);
+  // Names are compared case-folded: `A.pdf` and `a.pdf` collide on macOS and Windows.
+  for (let index = 2; used.has(candidate.toLowerCase()); index++)
+    candidate = `${stem} (${index})${extension}`;
+  used.add(candidate.toLowerCase());
   return candidate;
 }
 

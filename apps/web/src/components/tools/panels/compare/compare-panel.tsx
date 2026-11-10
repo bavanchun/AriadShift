@@ -53,14 +53,15 @@ const copy = {
   pagesHint: "Leave empty to compare every page. Examples: 1-5, odd, 2,4",
   view: "Comparison view",
   views: [
-    { value: "side-by-side", label: "Side-by-Side" },
-    { value: "overlay", label: "Visual Overlay" },
     { value: "text", label: "Text Diff List" },
+    { value: "side-by-side", label: "Side-by-Side (Desktop)" },
+    { value: "overlay", label: "Visual Overlay (Desktop)" },
   ] as const,
   viewHint: {
     "side-by-side":
-      "Shows both documents next to each other with the text and visual differences marked.",
-    overlay: "Lays the revised page over the baseline and highlights the pixels that changed.",
+      "Shows both documents next to each other with the text and visual differences marked. Page rendering needs the desktop engine, so run it with the ashift command.",
+    overlay:
+      "Lays the revised page over the baseline and highlights the pixels that changed. Page rendering needs the desktop engine, so run it with the ashift command.",
     text: "Lists every inserted and removed passage of text, page by page.",
   },
   highlight: "Highlight colour",
@@ -181,7 +182,7 @@ export function ComparePanel({
   const [baselineId, setBaselineId] = useState(files[0]?.id ?? "");
   const [revisedId, setRevisedId] = useState(files[1]?.id ?? "");
   const [pages, setPages] = useState("");
-  const [view, setView] = useState<CompareView>("side-by-side");
+  const [view, setView] = useState<CompareView>("text");
   const [highlight, setHighlight] = useState("#dc2626");
   const [threshold, setThreshold] = useState(10);
 

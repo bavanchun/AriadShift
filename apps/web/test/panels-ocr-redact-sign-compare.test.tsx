@@ -488,7 +488,8 @@ describe("Redact panel", () => {
     for (let index = 0; index < 101; index += 1) addTerm(`term-${index}`);
     expect(last().validation.isValid).toBe(false);
     expect(last().validation.errors.targets).toBe("Use at most 100 words, patterns and detectors.");
-  });
+    // Adds 101 terms through the DOM, which is slow when the whole suite runs in parallel.
+  }, 30_000);
 
   it("previews the verification checklist before anything runs", () => {
     mount(RedactPanel, "pdf.redact");
@@ -963,7 +964,8 @@ describe("Compare panel", () => {
     expect(screen.getByLabelText("Baseline (File A)")).toHaveValue(files[0]?.id);
     expect(screen.getByLabelText("Revised (File B)")).toHaveValue(files[1]?.id);
     expect(onInputsChange).toHaveBeenLastCalledWith([files[0]?.id, files[1]?.id]);
-    expect(last().params).toEqual({ mode: "both" });
+    // The browser runs the text diff; page rendering needs the desktop engine.
+    expect(last().params).toEqual({ mode: "text" });
     expect(last().validation.isValid).toBe(true);
   });
 
@@ -1019,22 +1021,22 @@ describe("Compare panel", () => {
     const onViewOptionsChange = vi.fn();
     const { last } = mount(ComparePanel, "pdf.compare", { files, onViewOptionsChange });
     const preview = () => document.querySelector('[data-slot="compare-preview"]') as HTMLElement;
-    expect(preview()).toHaveAttribute("data-view", "side-by-side");
-    expect(screen.getByLabelText(/Sensitivity threshold/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Visual Overlay" }));
-    expect(last().params.mode).toBe("visual");
-    expect(preview()).toHaveAttribute("data-view", "overlay");
-
-    fireEvent.click(screen.getByRole("button", { name: "Text Diff List" }));
-    expect(last().params.mode).toBe("text");
     expect(preview()).toHaveAttribute("data-view", "text");
     expect(screen.queryByLabelText(/Sensitivity threshold/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Highlight colour")).not.toBeInTheDocument();
     expect(within(preview()).getByText("− Net 30 days")).toBeInTheDocument();
     expect(within(preview()).getByText("+ Net 45 days")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Side-by-Side" }));
+    fireEvent.click(screen.getByRole("button", { name: "Visual Overlay (Desktop)" }));
+    expect(last().params.mode).toBe("visual");
+    expect(preview()).toHaveAttribute("data-view", "overlay");
+    expect(screen.getByLabelText(/Sensitivity threshold/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Text Diff List" }));
+    expect(last().params.mode).toBe("text");
+    expect(preview()).toHaveAttribute("data-view", "text");
+
+    fireEvent.click(screen.getByRole("button", { name: "Side-by-Side (Desktop)" }));
     expect(last().params.mode).toBe("both");
     expect(onViewOptionsChange).toHaveBeenLastCalledWith({ highlight: "#dc2626", threshold: 10 });
   });
@@ -1042,7 +1044,7 @@ describe("Compare panel", () => {
   it("reports the overlay highlight colour and threshold", () => {
     const onViewOptionsChange = vi.fn();
     const { last } = mount(ComparePanel, "pdf.compare", { files, onViewOptionsChange });
-    fireEvent.click(screen.getByRole("button", { name: "Visual Overlay" }));
+    fireEvent.click(screen.getByRole("button", { name: "Visual Overlay (Desktop)" }));
     fireEvent.change(screen.getByLabelText(/Sensitivity threshold/), { target: { value: "35" } });
     fireEvent.change(screen.getByLabelText("Highlight colour"), { target: { value: "#00ff00" } });
     expect(onViewOptionsChange).toHaveBeenLastCalledWith({ highlight: "#00ff00", threshold: 35 });

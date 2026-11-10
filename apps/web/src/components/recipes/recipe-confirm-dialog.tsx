@@ -10,7 +10,12 @@ import {
   DialogTitle,
 } from "@ariadshift/ui/components/dialog";
 import { ShieldAlertIcon } from "lucide-react";
-import { type AriadRecipe, hasPromptSecrets, isConvertStep } from "@/lib/recipe";
+import {
+  type AriadRecipe,
+  hasPromptSecrets,
+  isConvertStep,
+  type SecretAwareTool,
+} from "@/lib/recipe";
 import { toolTitle } from "@/lib/tools";
 
 export interface RecipeConfirmCopy {
@@ -48,6 +53,8 @@ export interface RecipeConfirmDialogProps {
   recipe: AriadRecipe | null;
   /** Always `untrusted` for a link or an imported file (AD-18). */
   origin: "untrusted";
+  /** Registry tools, so a tool's declared `secret_params` are listed as prompts. */
+  tools?: readonly SecretAwareTool[];
   copy?: Partial<RecipeConfirmCopy>;
   onConfirm: () => void;
   onCancel: () => void;
@@ -57,12 +64,13 @@ export interface RecipeConfirmDialogProps {
 export function RecipeConfirmDialog({
   recipe,
   origin,
+  tools,
   copy: copyOverrides,
   onConfirm,
   onCancel,
 }: RecipeConfirmDialogProps) {
   const copy = { ...DEFAULT_RECIPE_CONFIRM_COPY, ...copyOverrides };
-  const secrets = recipe ? hasPromptSecrets(recipe) : [];
+  const secrets = recipe ? hasPromptSecrets(recipe, { tools }) : [];
   return (
     <Dialog open={recipe !== null} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent closeLabel={copy.close} className="w-[min(40rem,calc(100%-2rem))]">
