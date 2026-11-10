@@ -30,6 +30,9 @@ fn command() -> Command {
         cmd.env_remove(name);
     }
     cmd.env("ASHIFT_PANDOC", root().join(".tools/pandoc/bin/pandoc"));
+    if cfg!(windows) {
+        Command::env(&mut cmd, "ASHIFT_SANDBOX", "off");
+    }
     cmd
 }
 fn success(output: Output) -> Value {
