@@ -2,12 +2,51 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
-## 0.4.0 (unreleased)
+## 0.5.0 (2026-11-10)
 
-Overlay, watermark, OCR, scan, annotation and form tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools, plus local OCR and scan operations and AcroForm and annotation editing. (#206, #212, #216)
+Document styles, measured fidelity and two PDF editing modes. `ashift` and the local MCP server can open documents into editable IR, export edited documents and apply stateless page-object edits through the shared tool registry. This release includes the Office PDF font-fidelity repair and platform stability fixes. (#251, #252, #254, #255, #256, #257, #258)
+
+### Upgrade notes
+
+- **IR JSON now defaults to `ariad-ir/2`.** The [versioned schema](../schemas/ir.v2.json) adds a `StyleSheet` with `ParagraphStyle`, `CharacterStyle` and `TableStyle`, stable `BlockId` identities, page sections and ID-keyed layout and source maps. Readers still accept `ariad-ir/0` and `ariad-ir/1`. Consumers that need the frozen legacy representation can use `--to json --ir-version 1`; dropping the new fields emits `ir_version_loss`. See [the IR contract](../ARCHITECTURE.md#62-document-ir). (#251)
+- **Document editing is Free; Page editing is Pro.** Both `edit.open_document` and `edit.export_document` are Free. Both `edit.page_objects` and `edit.apply` require Pro access. See [the editing tool contracts](tools.md#document-and-page-editing-edit-group). (#254)
 
 ### Added
 
+- **Document reflow tools.** `edit.open_document` imports PDF, DOCX, HTML or Markdown into `ariad-ir/2`, retaining block identities, supported styles, available layout and source-map entries, with export fidelity previews. `edit.export_document` writes edited IR to PDF, DOCX, HTML or Markdown and reports measured read-back fidelity plus added, removed and modified block IDs. An optional original document supplies the change-list baseline. PDF export uses the shared Typst compiler; DOCX uses out-of-process Pandoc. (#254)
+- **Stateless Page editing tools.** The isolated PDFium pack exposes `edit.page_objects` for text, image and vector-path inspection and `edit.apply` for ordered edits. Revision-bound object IDs use `p{page}_obj{index}`. Operations are `replace_text`, `set_text_style`, `move_object`, `delete_object`, `add_text`, `add_image` and `replace_image`; full and incremental saves are supported. (#254)
+- **Vietnamese text fallback for Page edits.** Replacement text retains an embedded font when it can encode the requested characters; otherwise a matching bundled Liberation Sans, Serif or Mono font is embedded and a `font_substituted` warning identifies the substitution. Uncovered characters fail without publishing a partial PDF. (#254)
+- **Authored style and layout evidence.** The paired Vietnamese DOCX/PDF fixtures retain their original text and style expectations and now include measured reference geometry from the authored PDF in their [truth companions](../fixtures/editor/). The [competitive measurements](../bench/results/competitors/stirling-v3.3.0.json) record three repetitions per product and direction against Stirling-PDF 3.3.0. (#258)
+
+### Changed
+
+- **Shared style handling.** PDF and DOCX imports recover evidenced formatting; HTML reads supported inline CSS. Typst, HTML and DOCX exports use the shared named/direct style cascade, while Markdown reports unsupported style loss. The editor preservation contract uses stable block identities to carry side payloads across reordering. See [editor preservation](editor-roundtrip.md). (#251)
+- **Measured `fidelity/2` reports.** Conversion JSON and Document-mode export report actual read-back text, structure, style and layout metrics, with explicit unavailable results when measurement cannot run. Planner estimates do not stand in for measured fidelity. See [benchmark methodology](bench.md#measured-fidelity-fidelity2). (#251, #254)
+- **Release metadata.** Workspace and desktop versions, OpenAPI metadata and the SDK generator lock are aligned to 0.5.0. (#252)
+
+### Fixed
+
+- **Office PDF font and style fidelity.** Builds with Typst provision its bundled fonts into LibreOffice's isolated per-job profile; PDF import restores display family names from the bundled fonts' PostScript spellings. On the unchanged authored pair, style accuracy is `1.00` (`25/25`) for DOCX to PDF versus Stirling-PDF 3.3.0's `0.64`, and `1.00` for PDF to DOCX versus Stirling's `0.00`. These are corpus measurements, not a guarantee for arbitrary documents. (#258)
+- **qpdf musl package receipts.** Alpine package indexes are refreshed before the pack workflow records and fetches build dependencies. (#255)
+- **Desktop polish queue assertions.** The cancel test waits for the asynchronous queue state before asserting, preventing intermittent runner failures. (#256)
+- **Windows pack locks and smoke transports.** Pack installation and removal retry transient `AccessDenied` and `DirectoryNotEmpty` failures. MCP stdio concurrent-request handling is bounded, and the desktop smoke script retries transient WebDriver transport failures. (#257)
+
+### Known limitations
+
+- **Editing interfaces and browser execution.** These are engine and CLI/MCP editing contracts; the web and desktop apps do not yet provide the two-mode editor. WASM lists the edit tools and enforces Page-mode entitlement, but PDFium execution and Document-mode host orchestration are not available through the browser tool runner. (#254)
+- **Deletion is not verified redaction.** Page-mode `delete_object` removes a drawing object; incremental saves retain earlier revisions. Use the separate `pdf.redact` pipeline when content must be removed and independently verified. (#254)
+- **Style accuracy does not establish layout or table preservation.** Both products score Layout IoU `0` and native table F1 `0` on the paired comparison. Image-only PDFs need OCR before Document-mode text editing, and unsupported formatting remains subject to explicit loss notices. (#251, #254, #258)
+
+## 0.4.0 (2026-11-10)
+
+Overlay, watermark, OCR, scan, annotation, form, redaction and signing tools for the PDF suite, plus expanded conversion, compliance and comparison routes. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools, local OCR and scan operations, AcroForm and annotation editing, and conversion-parity coverage. (#206, #212, #216, #217, #221, #239)
+
+### Added
+
+- **Expanded conversion routes.** Native TXT, CSV, SVG, EML and MSG handling joins ODT/RTF and XLSX exports, PDF to PPTX through LibreOffice, CBZ input, and additional legacy Office/ODF imports. Available routes depend on the installed engines; see [CLI conversion support](cli.md#ashift-convert) and [the parity matrix](parity-matrix.md#convert-tools-and-routes). (#239)
+- **PDF tables, comic archives and web pages.** `pdf.tables_to_csv` extracts tables through the local Docling engine, `pdf.to_cbz` packages rendered pages through PDFium, and `web.to_pdf` fetches through the host's SSRF-safe client before offline rendering. Web-page JavaScript is not executed. (#239)
+- **Validated PDF/A and PDF/UA.** `pdf.to_pdfa`, `pdf.to_pdfua`, `pdf.accessibility_report`, `pdf.validate_pdfa` and `pdf.validate_pdfua` add compliance conversion, inspection and validation. The opt-in `verapdf` pack runs unmodified veraPDF 1.30.3 out of process using system Java >=11. Conformance is claimed only after validation passes; a failed candidate is never published. Typst conversion routes also accept `--pdf-standard`. See [compliance tools](tools.md#pdfa-and-pdfua-compliance). (#239)
+- **PDF comparison.** `pdf.compare` supports text, visual and combined comparisons with structured differences and an annotated PDF report; visual comparisons use the local PDFium pack. (#239)
 - **PAdES digital signatures, verification, visual appearances, and timestamps.** Six tools deliver digital signature operations: `pdf.sign`, `pdf.sign_verify`, `pdf.sign_remove`, `pdf.sign_visual`, `pdf.sign_token`, and `pdf.timestamp`. Features include PAdES levels B-B, B-T, B-LT, and B-LTA (without silent downgrade), pure-Rust visual signature stamping with drawn, typed, or image marks (`pdf.sign_visual`), hardware/software token signing backend interface (`pdf.sign_token`), standalone RFC 3161 timestamping (`pdf.timestamp`), comprehensive signature verification reporting (`pdf.sign_verify`) with offline evidence and modification analysis, and clean signature removal (`pdf.sign_remove`) with explicit confirmation (`confirm_invalidation: true`). Out-of-process signature operations run through the network-isolated `sign` engine pack with pyHanko 0.38.0; revocation verification relies on offline evidence or deferred validation, timestamping is brokered through the host network client, and PKCS#11 / OS Keychain integration is deferred.
 - **SSRF-safe network client (`ariad_host::net`).** Host-level network client with DNS pinning (all-address public IP validation, refusal of private, loopback, link-local, multicast, and cloud metadata ranges), redirect protections, and response size and timeout limits, used for trusted external timestamp fetching.
 - **True PDF redaction and independent verification.** `pdf.redact` and `pdf.redact_verify` deliver true content removal across covered carriers (text show operators, decoded image pixels and masks, annotations/form fields, metadata streams and Info, thumbnails, embedded file attachments), backed by a host-managed composite pipeline and multi-engine verification.
@@ -37,6 +76,7 @@ Overlay, watermark, OCR, scan, annotation and form tools for the PDF suite. `ash
 
 ### Known limitations
 
+- **Conversion and accessibility coverage.** Pages-family formats and CBR remain [Not adopted](parity-matrix.md#not-adopted); WPD/WPS/PUB/VSD depend on the manual sample gate recorded in the parity matrix. Existing-PDF `pdf.to_pdfua` validates existing tags and accessibility metadata rather than inventing tags or alternative text. (#239)
 - **Sign pack and token signing availability.** The `sign` engine pack is not yet published as a pre-built binary release; it can be used via development builds or by pointing `ASHIFT_SIGN_ENGINE` or `ASHIFT_PACK_SIGN` to a built engine directory. Hardware token signing via PKCS#11 and OS Keychain integration are deferred and not available in 0.4.0; `pdf.sign_token` returns `error[tool_missing]` when invoked for PKCS#11 modules.
 - **Tesseract pack availability.** The pack is not yet published; Windows and musl systems are deferred. See [packs.md](packs.md#the-tesseract-pack). (#202, #212)
 - **Form actions and signatures.** Embedded form and annotation JavaScript is never executed, calculations are not run, and XFA is reported but not edited. Rewriting a signed PDF invalidates its signatures and emits a warning. Form detection is local-only until PDFium WASM integration. CSV export prefixes spreadsheet formula-like cells with an apostrophe. (#216)
