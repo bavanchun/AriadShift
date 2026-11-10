@@ -207,7 +207,11 @@ export function JobRow({
     const controller = new AbortController();
     api
       .outputs(entry.id, controller.signal)
-      .then((result) => setOutputs(result.outputs))
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setOutputs(result.outputs);
+        }
+      })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
           setRowError(apiErrorCopy(error));
@@ -425,7 +429,7 @@ export function JobRow({
           <p className="text-xs text-muted-foreground">{expiryLine(current, now)}</p>
         )}
 
-        {outputs && outputs.length > 0 ? (
+        {!deleted && current.status === "succeeded" && outputs && outputs.length > 0 ? (
           <ul className="flex flex-col gap-2">
             {outputs.map((output) => (
               <li key={output.id} className="flex flex-wrap items-center gap-2 text-sm">
