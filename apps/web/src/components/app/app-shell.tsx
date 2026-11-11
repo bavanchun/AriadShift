@@ -64,6 +64,8 @@ export function AppShell() {
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft | null>(null);
   const [recipeFragment, setRecipeFragment] = useState<string | null>(null);
   const draftNonce = useRef(0);
+  // A recipe drafted by the AI panel: untrusted, so it waits behind the same gate as a link.
+  const [recipeImport, setRecipeImport] = useState<string | null>(null);
 
   const show = useCallback((next: View, toolId: string | null = null) => {
     setView(next);
@@ -77,6 +79,15 @@ export function AppShell() {
     (steps: RecipeDraftStep[]) => {
       draftNonce.current += 1;
       setRecipeDraft({ steps, nonce: draftNonce.current });
+      show("recipes");
+    },
+    [show],
+  );
+
+  const openImportedRecipe = useCallback(
+    (recipe: { steps: Array<{ tool: string; params: Record<string, unknown> }> }) => {
+      // `name` is a display field the recipe format does not carry, so only the steps travel.
+      setRecipeImport(JSON.stringify({ version: "ariad-recipe/1", steps: recipe.steps }));
       show("recipes");
     },
     [show],
@@ -96,6 +107,7 @@ export function AppShell() {
 
   const recipeResolved = useCallback(() => {
     setRecipeFragment(null);
+    setRecipeImport(null);
     const url = new URL(window.location.href);
     if (!url.hash.startsWith(`#${FRAGMENT_KEY}=`)) return;
     url.hash = "";
@@ -173,7 +185,11 @@ export function AppShell() {
             state={workspace.state}
             retry={workspace.retry}
             render={(module) => (
-              <module.default requestedTool={requested} onSaveRecipe={openRecipe} />
+              <module.default
+                requestedTool={requested}
+                onSaveRecipe={openRecipe}
+                onOpenRecipeDraft={openImportedRecipe}
+              />
             )}
           />
         )}
@@ -190,6 +206,7 @@ export function AppShell() {
                 <module.default
                   draft={recipeDraft}
                   fragment={recipeFragment}
+                  imported={recipeImport}
                   onResolved={recipeResolved}
                 />
               )}

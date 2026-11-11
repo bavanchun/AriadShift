@@ -1,6 +1,8 @@
 // Main-thread side of the converter worker: promise-based requests and downloads.
+import type { ProfileId } from "@ariadshift/ariad-wasm";
 import type {
   ConverterError,
+  ConvertSource,
   OutputLocation,
   RequestEnvelope,
   ResultMap,
@@ -83,6 +85,10 @@ export class ConverterClient {
   }
   inspectInsights(inputId?: string) {
     return this.request({ type: "inspectInsights", inputId });
+  }
+  /** Converts the first input, another input slot, or a loose file, without changing the input set. */
+  convert(to: string, profile: ProfileId, source?: ConvertSource) {
+    return this.request({ type: "convert", to, profile, ...(source ? { source } : {}) });
   }
 
   reset() {

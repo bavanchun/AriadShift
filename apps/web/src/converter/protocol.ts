@@ -13,6 +13,12 @@ import type { ToolDescriptor } from "./tool-catalog";
 
 export type StorageKind = "opfs" | "memory";
 
+/**
+ * What `convert` reads. Without a source it converts the first input slot. `inputId` picks
+ * another slot; `file` converts a document that is not in the input set, such as an edited IR.
+ */
+export type ConvertSource = { inputId: string } | { file: File };
+
 export type WorkerRequest =
   | { type: "init" }
   | { type: "ingest"; file: File }
@@ -28,7 +34,7 @@ export type WorkerRequest =
     }
   | { type: "inspectInsights"; inputId?: string }
   | { type: "plan"; to: FormatId; profile: ProfileId }
-  | { type: "convert"; to: FormatId; profile: ProfileId }
+  | { type: "convert"; to: FormatId; profile: ProfileId; source?: ConvertSource }
   | { type: "reset" }
   | { type: "retire"; sessions: string[] };
 

@@ -64,6 +64,8 @@ export interface NewImage {
 }
 
 export const MAX_EDIT_OPS = 1000;
+/** The font a new text box starts with in the editor; it is not sent, so the engine picks its own. */
+export const DEFAULT_NEW_TEXT_FONT = "Noto Sans";
 const MIN_OBJECT_PT = 1;
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 const EPSILON = 1e-6;
@@ -224,7 +226,7 @@ export class PageEditSession {
         box.y + fontSize * 1.2,
       ],
       text,
-      fontName: box.fontName ?? "Noto Sans",
+      fontName: box.fontName ?? DEFAULT_NEW_TEXT_FONT,
       fontSize,
       color: box.color && HEX_COLOR.test(box.color) ? box.color : "#000000",
     };
@@ -356,6 +358,7 @@ export class PageEditSession {
         text: object.text,
         x_pt: round(object.bbox[0]),
         y_pt: round(object.bbox[1]),
+        ...(object.fontName === DEFAULT_NEW_TEXT_FONT ? {} : { font_name: object.fontName }),
         font_size: object.fontSize,
         color: object.color,
       };

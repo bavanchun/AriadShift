@@ -6,6 +6,7 @@ import { inspectPdfInsights } from "./insights";
 import {
   type ConvertedFile,
   type ConverterError,
+  type ConvertSource,
   type IngestResult,
   isConverterError,
   type RequestEnvelope,
@@ -260,12 +261,13 @@ export class ConverterSession {
     return this.core.plan(input.format, to, profile, "browser");
   }
 
-  async convert(to: FormatId, profile: ProfileId): Promise<ConvertedFile> {
-    const input = this.#requireInput();
-    const route = this.core.plan(input.format, to, profile, "browser");
-    const bytes = await this.store.readInput();
+  async convert(to: FormatId, profile: ProfileId, source?: ConvertSource): Promise<ConvertedFile> {
+    const input = source ? await this.#resolveSource(source) : null;
+    const current = input ?? this.#requireInput();
+    const route = this.core.plan(current.format, to, profile, "browser");
+    const bytes = input?.bytes ?? (await this.store.readInput());
     const started = performance.now();
-    const stem = fileStem(input.name);
+    const stem = fileStem(current.name);
     const output = await runRoute(this.core, bytes, route.steps, {
       profile,
       title: stem,
@@ -285,6 +287,34 @@ export class ConverterSession {
       location,
       recycle: this.#oversized(),
     };
+  }
+
+  /** Reads a named input slot, or a loose file, for a conversion. */
+  async #resolveSource(source: ConvertSource): Promise<CurrentInput & { bytes: Uint8Array }> {
+    let name: string;
+    let bytes: Uint8Array;
+    if ("file" in source) {
+      if (source.file.size > this.inputLimitBytes)
+        throw {
+          code: "limit_exceeded",
+          limit: "browser_input_bytes",
+          message: `${source.file.name} exceeds the ${this.inputLimitBytes} byte browser budget.`,
+        } satisfies ConverterError;
+      name = source.file.name;
+      bytes = new Uint8Array(await source.file.arrayBuffer());
+    } else {
+      const slot = this.store.listInputs().find((candidate) => candidate.id === source.inputId);
+      if (!slot)
+        throw { code: "no_input", message: "Choose a file first." } satisfies ConverterError;
+      name = slot.name;
+      bytes = await this.store.readInputSlot(slot.id);
+    }
+    const inspection = this.core.inspect(
+      bytes.byteLength > ANALYSIS_LIMIT_BYTES ? bytes.subarray(0, CLASSIFY_PREFIX_BYTES) : bytes,
+      name,
+      bytes.byteLength,
+    );
+    return { name, size: bytes.byteLength, format: inspection.format, bytes };
   }
 
   async reset(): Promise<null> {
@@ -376,7 +406,7 @@ export async function handleRequest(
         break;
       case "convert":
         result = {
-          ...(await session.convert(request.to, request.profile)),
+          ...(await session.convert(request.to, request.profile, request.source)),
           resources: resources(),
         };
         break;

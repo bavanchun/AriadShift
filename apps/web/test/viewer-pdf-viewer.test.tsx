@@ -97,6 +97,46 @@ describe("<PdfViewer />", () => {
     expect((screen.getByLabelText("Page number") as HTMLInputElement).value).toBe("5");
   });
 
+  it("scrolls to the page the host asks for, and reports pages only once it has landed", async () => {
+    const fake = fakeBackend(readySnapshot({ page: 1 }));
+    const onPageChange = vi.fn();
+    const view = render(
+      <PdfViewer
+        source={source()}
+        loadBackend={fake.load}
+        initialPage={4}
+        onPageChange={onPageChange}
+      />,
+    );
+    await screen.findByTestId("engine");
+    await waitFor(() => expect(fake.commands.goToPage).toHaveBeenCalledWith(4));
+    // Page 1 is where the engine starts; it must not overwrite the page the host asked for.
+    expect(onPageChange).not.toHaveBeenCalled();
+    act(() => fake.controls.emit(readySnapshot({ page: 4 })));
+    await waitFor(() => expect(onPageChange).toHaveBeenLastCalledWith(4));
+
+    // A new request with a new nonce scrolls again; the same nonce does not.
+    view.rerender(
+      <PdfViewer
+        source={source()}
+        loadBackend={fake.load}
+        pageRequest={{ page: 7, nonce: 1 }}
+        onPageChange={onPageChange}
+      />,
+    );
+    await waitFor(() => expect(fake.commands.goToPage).toHaveBeenLastCalledWith(7));
+    const calls = vi.mocked(fake.commands.goToPage).mock.calls.length;
+    view.rerender(
+      <PdfViewer
+        source={source()}
+        loadBackend={fake.load}
+        pageRequest={{ page: 7, nonce: 1 }}
+        onPageChange={onPageChange}
+      />,
+    );
+    expect(vi.mocked(fake.commands.goToPage).mock.calls.length).toBe(calls);
+  });
+
   it("searches with progress, a cancel button, a match counter and navigation", async () => {
     const fake = await ready();
     const box = screen.getByLabelText("Search in document");

@@ -1,3 +1,10 @@
+export {
+  mapEnginePageObjects,
+  normalizeColor,
+  type PageObjectsModel,
+  pageObjectsFromIr,
+  withEmbeddedGlyphs,
+} from "./engine-page-objects";
 export { FontSubstitutionAlert, type FontSubstitutionAlertProps } from "./font-substitution-alert";
 export {
   canResize,

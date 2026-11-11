@@ -57,11 +57,21 @@ export interface PageModeEditorProps {
    * mount; remount it (change its `key`) to start a new document.
    */
   objects: readonly PageObject[];
+  /**
+   * Supply a session to keep unapplied edits when the editor unmounts, for example while the host
+   * shows another mode. Without one the editor makes its own from `objects`.
+   */
+  session?: PageEditSession;
   initialPage?: number;
   /** Screen pixels per PDF point. */
   scale?: number;
   /** Receives the `edit.apply` parameters when the user applies their edits. */
   onApply?: (params: EditApplyParams) => void;
+  /**
+   * Reports the page in view and, when an object is selected, its top-left corner in page points
+   * with the origin at the top left (the IR layout's convention), so another mode can open there.
+   */
+  onLocationChange?: (location: { page: number; xPt?: number; yPt?: number }) => void;
   /** Draws the rendered page underneath the object overlay. */
   renderPageBackground?: (page: PageInfo) => ReactNode;
   /** Decodes a chosen image file; defaults to the browser's FileReader and Image. */
@@ -112,16 +122,18 @@ function isTypingTarget(target: EventTarget): boolean {
 export function PageModeEditor({
   pages,
   objects,
+  session: sessionProp,
   initialPage,
   scale = 1,
   onApply,
+  onLocationChange,
   renderPageBackground,
   readImage = readImageInBrowser,
   labels,
   className,
 }: PageModeEditorProps) {
   const copy = { ...DEFAULT_PAGE_MODE_LABELS, ...labels };
-  const [session] = useState(() => new PageEditSession(objects));
+  const [session] = useState(() => sessionProp ?? new PageEditSession(objects));
   const current = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
 
   const [tool, setTool] = useState<PageTool>("select");
@@ -140,6 +152,23 @@ export function PageModeEditor({
   const info = pages[pageIndex];
   const pageObjects = current.filter((object) => object.page === info?.page);
   const selected = selectedId ? session.get(selectedId) : undefined;
+  const reportLocation = useRef(onLocationChange);
+  reportLocation.current = onLocationChange;
+  const reportedPage = info?.page;
+  const reportedHeight = info?.heightPt;
+  const reportedBox = selected?.bbox;
+  useEffect(() => {
+    if (reportedPage === undefined) return;
+    if (!(reportedBox && reportedHeight !== undefined)) {
+      reportLocation.current?.({ page: reportedPage });
+      return;
+    }
+    reportLocation.current?.({
+      page: reportedPage,
+      xPt: reportedBox[0],
+      yPt: reportedHeight - reportedBox[3],
+    });
+  }, [reportedPage, reportedHeight, reportedBox]);
   const params = session.toEditPageParams();
   const tooMany = params.ops.length > MAX_EDIT_OPS;
 

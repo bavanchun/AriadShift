@@ -2,7 +2,15 @@
 
 import { Button } from "@ariadshift/ui/components/button";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useStore } from "zustand";
 import { AnnotationCanvas, type PageSize } from "./annotation-canvas";
 import { AnnotationList } from "./annotation-list";
@@ -51,6 +59,10 @@ export interface AnnotateFormsSurfaceProps {
   formFields?: readonly FormFieldInfo[];
   /** Annotations already stored in the PDF, which can be marked for deletion. Re-read them after an apply. */
   existingAnnotations?: readonly ExistingAnnotation[];
+  /** One-based page to open on. */
+  initialPage?: number;
+  /** Reports the page in view, so another mode can open on it. */
+  onPageChange?: (page: number) => void;
   mode?: SurfaceMode;
   onModeChange?: (mode: SurfaceMode) => void;
   /** Runs the planned `pdf.*` calls, in order, through the tool runner. */
@@ -69,6 +81,8 @@ export function AnnotateFormsSurface({
   renderPage,
   formFields = NO_FIELDS,
   existingAnnotations = NO_ANNOTATIONS,
+  initialPage,
+  onPageChange,
   mode: controlledMode,
   onModeChange,
   onApply,
@@ -81,7 +95,7 @@ export function AnnotateFormsSurface({
   const idPrefix = useId();
   const [ownMode, setOwnMode] = useState<SurfaceMode>("annotate");
   const mode = controlledMode ?? ownMode;
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initialPage ?? 1);
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
 
@@ -100,6 +114,11 @@ export function AnnotateFormsSurface({
   const fillState = useStore(filling);
   const designState = useStore(designing);
   const current = Math.min(Math.max(page, 1), Math.max(pageCount, 1));
+  const reportPage = useRef(onPageChange);
+  reportPage.current = onPageChange;
+  useEffect(() => {
+    reportPage.current?.(current);
+  }, [current]);
 
   function switchMode(next: SurfaceMode) {
     setOwnMode(next);

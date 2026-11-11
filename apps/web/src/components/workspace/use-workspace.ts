@@ -41,6 +41,9 @@ const cancelled = (error: unknown) =>
 
 type Busy = "ingest" | "run" | null;
 
+/** How a chain of tool steps ended; a failed one carries the message that was also shown. */
+export type ChainOutcome = { ok: true } | { ok: false; message: string };
+
 export function useWorkspace({
   client,
   onProgress,
@@ -225,7 +228,7 @@ export function useWorkspace({
     async (
       steps: Array<{ tool: ToolDescriptor; params: Record<string, unknown> }>,
       options: { inputIds?: string[] } = {},
-    ): Promise<void> => {
+    ): Promise<ChainOutcome> => {
       const original = live.current.files;
       const originalActive = original.find((entry) => entry.id === live.current.activeId);
       const started = steps.map((step, index) => ({
@@ -243,7 +246,7 @@ export function useWorkspace({
         setThread([...completed, ...started]);
       };
       const first = steps[0];
-      if (!first) return;
+      if (!first) return { ok: false, message: "There is nothing to run." };
       setError(null);
       setRun(null);
       setBusy("run");
@@ -266,7 +269,13 @@ export function useWorkspace({
             budgetBytes,
           });
           setStatus(index, "completed");
-          last = { tool: step.tool, params: step.params, result, input };
+          last = {
+            tool: step.tool,
+            params: step.params,
+            result,
+            input,
+            sourceKey: originalActive?.key,
+          };
           if (index < steps.length - 1) {
             // The next step reads this step's output, which must become an input slot.
             const primary = result.artifacts[0];
@@ -282,6 +291,7 @@ export function useWorkspace({
         setRun(last);
         setBusy(null);
         setProgress(null);
+        return { ok: true };
       } catch (reason) {
         const index = started.findIndex((entry) => entry.status === "running");
         if (cancelled(reason)) {
@@ -297,6 +307,7 @@ export function useWorkspace({
           setBusy(null);
         }
         setProgress(null);
+        return { ok: false, message: message(reason) };
       }
     },
     [chain, client, budgetBytes, inputIdsFor, restore, toolLabel],
@@ -311,18 +322,28 @@ export function useWorkspace({
     [executeChain],
   );
 
-  /** Runs the page grid's planned calls on the active PDF, one result at the end. */
-  const applyPageEdits = useCallback(
-    async (calls: PageToolCall[]) => {
+  /** Runs planned tool calls on the active PDF in order, with one result at the end. */
+  const applyCalls = useCallback(
+    async (
+      calls: Array<{ toolId: string; params: Record<string, unknown> }>,
+    ): Promise<ChainOutcome> => {
       const steps = calls.flatMap((call) => {
         const descriptor = tools.find((entry) => entry.id === call.toolId);
         return descriptor ? [{ tool: descriptor, params: call.params }] : [];
       });
       if (steps.length !== calls.length)
         throw new Error("A page tool is missing from the catalogue.");
-      await executeChain(steps);
+      return executeChain(steps);
     },
     [tools, executeChain],
+  );
+
+  /** Runs the page grid's planned calls on the active PDF, one result at the end. */
+  const applyPageEdits = useCallback(
+    async (calls: PageToolCall[]) => {
+      await applyCalls(calls);
+    },
+    [applyCalls],
   );
 
   const cancel = useCallback(() => client.cancel(), [client]);
@@ -386,6 +407,7 @@ export function useWorkspace({
     selectFile: setActiveId,
     openTool: setToolId,
     runTool,
+    applyCalls,
     applyPageEdits,
     cancel,
     promote,

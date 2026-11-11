@@ -290,6 +290,8 @@ export function AiPanel({
   }
 
   function accept(key: TabKey, output: AiOutput | undefined) {
+    // A host that delivers the result itself, such as a cloud job that reports elsewhere, returns none.
+    if (output === undefined) return;
     const mismatch = () => setFailure(labels.failed);
     if (key === "summarize") return isSummarizeOutput(output) ? setSummary(output) : mismatch();
     if (key === "ask")

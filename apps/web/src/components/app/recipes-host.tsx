@@ -8,6 +8,7 @@ import { toolCatalog } from "@/converter/tool-catalog";
 import {
   type AriadRecipe,
   decodeRecipeFragment,
+  importRecipeJson,
   RECIPE_VERSION,
   RecipeFormatError,
   redactParams,
@@ -30,10 +31,20 @@ export interface RecipesHostProps {
   draft: RecipeDraft | null;
   /** The page address fragment (`#recipe=…`); it waits behind the confirmation gate. */
   fragment: string | null;
+  /**
+   * `ariad-recipe/1` JSON drafted elsewhere in the app, for example by the AI panel. It is as
+   * untrusted as a link: it waits behind the same confirmation gate and never runs by itself.
+   */
+  imported?: string | null;
   onResolved: () => void;
 }
 
-export default function RecipesHost({ draft, fragment, onResolved }: RecipesHostProps) {
+export default function RecipesHost({
+  draft,
+  fragment,
+  imported = null,
+  onResolved,
+}: RecipesHostProps) {
   const tools = useMemo(() => toolCatalog(), []);
   const initial = useMemo<AriadRecipe | undefined>(
     () =>
@@ -53,16 +64,21 @@ export default function RecipesHost({ draft, fragment, onResolved }: RecipesHost
     [draft, tools],
   );
   const link = useMemo(() => {
-    if (!fragment) return { incoming: null, problem: null };
+    if (!(fragment || imported)) return { incoming: null, problem: null };
     try {
-      return { incoming: decodeRecipeFragment(fragment, { tools }), problem: null };
+      return {
+        incoming: fragment
+          ? decodeRecipeFragment(fragment, { tools })
+          : importRecipeJson(imported ?? "", { tools }),
+        problem: null,
+      };
     } catch (error) {
       return {
         incoming: null,
         problem: error instanceof RecipeFormatError ? error.message : String(error),
       };
     }
-  }, [fragment, tools]);
+  }, [fragment, imported, tools]);
   return (
     <div className="flex flex-col gap-4">
       {link.problem && (

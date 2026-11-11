@@ -1,6 +1,12 @@
 // Shared shapes of the document workspace.
+import type { ProfileId } from "@ariadshift/ariad-wasm";
 import type { PdfFileInsights } from "@/converter/insights";
-import type { InputIngestResult, ToolExecutionResult } from "@/converter/protocol";
+import type {
+  ConvertedFile,
+  ConvertSource,
+  InputIngestResult,
+  ToolExecutionResult,
+} from "@/converter/protocol";
 import type { ToolDescriptor } from "@/converter/tool-catalog";
 
 /** The slice of `ConverterClient` the workspace uses; tests supply a stub. */
@@ -13,6 +19,8 @@ export interface WorkspaceClient {
     options?: { inputIds?: string[]; budgetBytes?: number; entitled?: boolean },
   ): Promise<ToolExecutionResult>;
   inspectInsights(inputId?: string): Promise<PdfFileInsights>;
+  /** Converts an input slot or a loose file; the editor modes read and write IR through it. */
+  convert(to: string, profile: ProfileId, source: ConvertSource): Promise<ConvertedFile>;
   cancel(): void;
 }
 
@@ -53,6 +61,8 @@ export interface WorkspaceRun {
   tool: ToolDescriptor;
   params: Record<string, unknown>;
   result: ToolExecutionResult;
+  /** `WorkspaceFile.key` of the document the tool ran on. */
+  sourceKey?: string;
   /** Bytes and pages of the input the tool received. */
   input: { size: number; pageCount: number | null; names: string[] };
 }

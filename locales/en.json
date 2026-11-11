@@ -1034,6 +1034,25 @@
       }
     },
     "workspace": {
+      "editor": {
+        "mode_switch": "Editing mode",
+        "mode_view": "View",
+        "mode_annotate": "Annotate",
+        "mode_document": "Document",
+        "mode_page": "Page",
+        "preparing": "Reading the document into the editor on this device…",
+        "failed": "The editor could not open this document. {message}",
+        "retry": "Try again",
+        "panel_tabs": "Side panel",
+        "tab_tools": "Tools",
+        "tab_ai": "AI assistant",
+        "exported": "Exported {name}.",
+        "download": "Download {name}",
+        "export_failed": "The export failed. {message}",
+        "page_estimated": "These objects are estimated from the document layout. Applying page edits needs the PDFium engine in the desktop app.",
+        "apply_failed": "The edit could not run in this browser. {message}",
+        "purge_failed": "Saved versions of the redacted document could not be removed. {message}"
+      },
       "main": {
         "title": "Workspace",
         "lede": "Everything runs in this browser tab.",

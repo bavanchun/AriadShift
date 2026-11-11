@@ -114,6 +114,9 @@ export function fakeClient(overrides: Partial<WorkspaceClient> = {}): FakeClient
     listTools: vi.fn(async () => catalog),
     runTool: vi.fn(async () => runResult()),
     inspectInsights: vi.fn(async () => insights()),
+    convert: vi.fn(async () => {
+      throw { code: "no_input", message: "convert is not stubbed" };
+    }),
     cancel: vi.fn(),
     ...overrides,
   };
