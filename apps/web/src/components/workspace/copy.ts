@@ -174,7 +174,7 @@ export const DEFAULT_WORKSPACE_COPY = {
     download: (name: string) => `Download ${name}`,
     exportFailed: (message: string) => `The export failed. ${message}`,
     pageEstimated:
-      "These objects are estimated from the document layout. Applying page edits needs the PDFium engine in the desktop app.",
+      "These objects are estimated from the document layout, so their ids are placeholders the PDFium engine does not recognize. To apply page edits, open this document in the AriadShift desktop app. Do not pass these ids to ashift tool run edit.apply.",
     applyFailed: (message: string) => `The edit could not run in this browser. ${message}`,
     purgeFailed: (message: string) =>
       `Saved versions of the redacted document could not be removed. ${message}`,

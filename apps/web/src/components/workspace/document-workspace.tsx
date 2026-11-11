@@ -159,6 +159,9 @@ function WorkspaceBody({
     [],
   );
   const editor = useEditorWorkspace({ client, active, mode, run, budgetBytes });
+  // Estimated objects carry `ir:<blockId>` ids that `edit.apply` cannot take, so no CLI hand-off.
+  const pageObjectsEstimated =
+    editor.objects.entry?.status === "ready" && editor.objects.entry.value.source === "ir";
 
   const exportDocument = async ({ format, irJson }: ExportRequest) => {
     if (!active) return;
@@ -259,6 +262,11 @@ function WorkspaceBody({
         {source ? (
           <>
             <WorkspaceModeSwitch mode={mode} onChange={setMode} />
+            {editor.purgeError && (
+              <p role="alert" className="text-sm text-destructive">
+                {copy.editor.purgeFailed(editor.purgeError)}
+              </p>
+            )}
             {mode === "view" && (
               <Tabs defaultValue="preview">
                 <TabsList>
@@ -327,18 +335,13 @@ function WorkspaceBody({
                 fallbackPages={
                   editor.data.entry?.status === "ready" ? editor.data.entry.value.pages : []
                 }
-                fallbackPending={editor.data.entry?.status !== "ready"}
+                fallbackPending={!editor.data.entry || editor.data.entry.status === "loading"}
                 objects={editor.objects}
                 pageSession={(model) => editor.pageSession(active.key, model)}
                 location={location}
                 onLocationChange={reportLocation}
                 onApply={applyPage}
               />
-            )}
-            {mode !== "view" && editor.purgeError && (
-              <p role="alert" className="text-sm text-destructive">
-                {copy.editor.purgeFailed(editor.purgeError)}
-              </p>
             )}
             {exported && mode === "document" && (
               <div
@@ -367,12 +370,14 @@ function WorkspaceBody({
                 <p role="alert" className="text-sm text-destructive">
                   {copy.editor.applyFailed(workspace.error)}
                 </p>
-                <HandoffPanel
-                  tool={editorCall.tool}
-                  params={editorCall.params}
-                  inputNames={active ? [active.name] : []}
-                  locale={locale}
-                />
+                {!pageObjectsEstimated && (
+                  <HandoffPanel
+                    tool={editorCall.tool}
+                    params={editorCall.params}
+                    inputNames={active ? [active.name] : []}
+                    locale={locale}
+                  />
+                )}
               </div>
             )}
           </>

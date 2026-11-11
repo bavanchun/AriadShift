@@ -167,16 +167,17 @@ export function useEditorWorkspace({
   // the text that was redacted. The history goes away at once, with or without the editor open.
   const [redacted, setRedacted] = useState<ReadonlySet<string>>(() => new Set());
   const [purgeError, setPurgeError] = useState<string | null>(null);
-  const redactedRun = run?.tool.id === "pdf.redact" ? run : null;
-  const redactedKey = redactedRun?.sourceKey;
+  // Keyed by the run itself, so a second redaction of the same file purges again.
+  const redactedRun = run?.redacts || run?.tool.id === "pdf.redact" ? run : null;
   useEffect(() => {
+    const redactedKey = redactedRun?.sourceKey;
     if (!redactedKey) return;
     setRedacted((previous) => new Set(previous).add(redactedKey));
     setPurgeError(null);
     ensureStore()
       .purgeDocumentHistory(redactedKey, "redaction")
       .catch((reason) => setPurgeError(messageOf(reason)));
-  }, [redactedKey, ensureStore]);
+  }, [redactedRun, ensureStore]);
 
   return {
     ir,

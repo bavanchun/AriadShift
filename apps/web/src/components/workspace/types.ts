@@ -63,6 +63,8 @@ export interface WorkspaceRun {
   result: ToolExecutionResult;
   /** `WorkspaceFile.key` of the document the tool ran on. */
   sourceKey?: string;
+  /** Some step of the chain was a redaction, not only the last one this run reports. */
+  redacts?: boolean;
   /** Bytes and pages of the input the tool received. */
   input: { size: number; pageCount: number | null; names: string[] };
 }

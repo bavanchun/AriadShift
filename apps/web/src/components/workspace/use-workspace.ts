@@ -275,6 +275,7 @@ export function useWorkspace({
             result,
             input,
             sourceKey: originalActive?.key,
+            redacts: steps.some((entry) => entry.tool.id === "pdf.redact"),
           };
           if (index < steps.length - 1) {
             // The next step reads this step's output, which must become an input slot.

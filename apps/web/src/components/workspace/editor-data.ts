@@ -132,26 +132,27 @@ export interface ActiveDocumentData {
   annotations: ExistingAnnotation[];
 }
 
-/** Reads the active document's pages, fields and annotations; a tool that fails reads as empty. */
+/**
+ * Reads the active document's pages, fields and annotations. Without `pdf.info` there is no page
+ * to draw, so that failure is thrown; a form or annotation list that fails reads as empty.
+ */
 export async function readDocumentData(
   client: WorkspaceClient,
   inputId: string,
   budgetBytes?: number,
 ): Promise<ActiveDocumentData> {
-  const call = async (toolId: string, params: Record<string, unknown>) => {
-    try {
-      const result = await client.runTool(toolId, params, {
+  const call = async (toolId: string, params: Record<string, unknown>) =>
+    (
+      await client.runTool(toolId, params, {
         inputIds: [inputId],
         ...(budgetBytes === undefined ? {} : { budgetBytes }),
-      });
-      return result.data;
-    } catch {
-      return null;
-    }
-  };
+      })
+    ).data;
+  const optional = (toolId: string, params: Record<string, unknown>) =>
+    call(toolId, params).catch(() => null);
   const pages = pagesFromInfo(await call("pdf.info", {}));
-  const fields = fieldsFromList(await call("pdf.forms_list", {}));
-  const annotations = annotationsFromList(await call("pdf.annotations", { action: "list" }));
+  const fields = fieldsFromList(await optional("pdf.forms_list", {}));
+  const annotations = annotationsFromList(await optional("pdf.annotations", { action: "list" }));
   return { pages, fields, annotations };
 }
 

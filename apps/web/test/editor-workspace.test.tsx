@@ -22,7 +22,7 @@ import {
 } from "@/editor/page";
 import mixedDocument from "../../../fixtures/editor/mixed-document.ir.json";
 import { fakeBackend } from "./viewer-fixtures";
-import { fakeClient, pdfFile } from "./workspace-fixtures";
+import { fakeClient, pdfFile, runResult } from "./workspace-fixtures";
 
 afterEach(cleanup);
 
@@ -320,6 +320,31 @@ describe("<DocumentWorkspace /> editor modes", () => {
       expect.objectContaining({ inputIds: ["slot-1"] }),
     );
     expect(runTool).toHaveBeenCalledWith("pdf.annotations", { action: "list" }, expect.anything());
+  });
+
+  it("says so when pdf.info fails instead of leaving Annotate blank, and tries again", async () => {
+    const { client } = await openWorkspace();
+    client.runTool.mockImplementation((async (toolId: string) => {
+      if (toolId === "pdf.info") throw { code: "bad_pdf", message: "info broke" };
+      return runResult({ tool: toolId, data: { fields: [], annotations: [] } });
+    }) as never);
+    fireEvent.click(screen.getByTestId("workspace-mode-annotate"));
+    expect(await screen.findByText(/could not open this document\. info broke/)).toBeTruthy();
+    expect(document.querySelector('[data-slot="annotate-forms-surface"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("offers no CLI hand-off for estimated page objects, which carry ir ids", async () => {
+    const { client } = await openWorkspace();
+    client.runTool.mockImplementation((async () => {
+      throw { code: "tool_missing", message: "needs the PDFium engine" };
+    }) as never);
+    fireEvent.click(screen.getByTestId("workspace-mode-page"));
+    await screen.findByTestId("page-objects-estimated");
+    expect(screen.getByTestId("page-objects-estimated").textContent).toMatch(
+      /Do not pass these ids to ashift tool run edit\.apply/,
+    );
+    expect(document.querySelector('[data-slot="handoff-panel"]')).toBeNull();
   });
 
   it("shows the AI panel offline-first behind its own tab, without running anything", async () => {

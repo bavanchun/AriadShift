@@ -1012,7 +1012,7 @@
         "exported": "Đã xuất {name}.",
         "download": "Tải {name}",
         "export_failed": "Xuất tệp không thành công. {message}",
-        "page_estimated": "Các đối tượng này được ước tính từ bố cục tài liệu. Muốn áp dụng chỉnh sửa trang cần công cụ PDFium trong ứng dụng máy tính.",
+        "page_estimated": "Các đối tượng này được ước tính từ bố cục tài liệu nên mã định danh chỉ là giá trị giữ chỗ mà công cụ PDFium không nhận ra. Để áp dụng chỉnh sửa trang, hãy mở tài liệu trong ứng dụng AriadShift trên máy tính. Không truyền các mã này cho ashift tool run edit.apply.",
         "apply_failed": "Không chạy được chỉnh sửa này trong trình duyệt. {message}",
         "purge_failed": "Không xóa được các phiên bản đã lưu của tài liệu đã che. {message}"
       },

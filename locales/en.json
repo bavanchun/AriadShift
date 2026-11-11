@@ -1049,7 +1049,7 @@
         "exported": "Exported {name}.",
         "download": "Download {name}",
         "export_failed": "The export failed. {message}",
-        "page_estimated": "These objects are estimated from the document layout. Applying page edits needs the PDFium engine in the desktop app.",
+        "page_estimated": "These objects are estimated from the document layout, so their ids are placeholders the PDFium engine does not recognize. To apply page edits, open this document in the AriadShift desktop app. Do not pass these ids to ashift tool run edit.apply.",
         "apply_failed": "The edit could not run in this browser. {message}",
         "purge_failed": "Saved versions of the redacted document could not be removed. {message}"
       },
