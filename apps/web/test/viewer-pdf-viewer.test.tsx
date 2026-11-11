@@ -137,6 +137,20 @@ describe("<PdfViewer />", () => {
     expect(vi.mocked(fake.commands.goToPage).mock.calls.length).toBe(calls);
   });
 
+  it("does not report a page the reader never moved to, only one reached by interacting", async () => {
+    const fake = fakeBackend(readySnapshot({ page: 1 }));
+    const onPageChange = vi.fn();
+    render(<PdfViewer source={source()} loadBackend={fake.load} onPageChange={onPageChange} />);
+    await screen.findByTestId("engine");
+    // A layout settling on page 3 before anyone scrolled is not the reader's position.
+    act(() => fake.controls.emit(readySnapshot({ page: 3 })));
+    expect(onPageChange).not.toHaveBeenCalled();
+    fireEvent.wheel(screen.getByTestId("engine"));
+    await waitFor(() => expect(onPageChange).toHaveBeenLastCalledWith(3));
+    act(() => fake.controls.emit(readySnapshot({ page: 2 })));
+    await waitFor(() => expect(onPageChange).toHaveBeenLastCalledWith(2));
+  });
+
   it("searches with progress, a cancel button, a match counter and navigation", async () => {
     const fake = await ready();
     const box = screen.getByLabelText("Search in document");

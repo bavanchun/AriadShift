@@ -92,15 +92,19 @@ function LoadGate<T>({
 
 type Backend = ReturnType<typeof useViewerBackend>;
 
-/** Renders PDFium page previews for the panes that draw a page under their own layer. */
-function WithPagePreviews({
+/**
+ * Renders the PDFium preview of one page inside its own provider slot. Because the slot sits
+ * inside the canvas backdrop rather than around the editor pane, loading the viewer backend never
+ * unmounts the pane or resets its state, and the preview stays inside the provider's context.
+ */
+function PageBackdrop({
   source,
   backend,
-  children,
+  page,
 }: {
   source: PdfViewerSource;
   backend: Backend;
-  children: (renderPreview: ((page: number) => ReactNode) | undefined) => ReactNode;
+  page: number;
 }) {
   const wasmUrl = useMemo(() => {
     try {
@@ -109,11 +113,11 @@ function WithPagePreviews({
       return null;
     }
   }, []);
-  if (backend.status !== "ready" || !wasmUrl) return <>{children(undefined)}</>;
+  if (backend.status !== "ready" || !wasmUrl) return null;
   const { PagePreviewProvider } = backend.backend;
   return (
     <PagePreviewProvider source={source} wasmUrl={wasmUrl}>
-      {(renderPreview) => children(renderPreview)}
+      {(renderPreview) => renderPreview(page)}
     </PagePreviewProvider>
   );
 }
@@ -238,23 +242,19 @@ export function PagePane({
                 {copy.pageEstimated}
               </p>
             )}
-            <WithPagePreviews source={source} backend={backend}>
-              {(renderPreview) => (
-                <PageModeEditor
-                  key={docKey}
-                  pages={pages}
-                  objects={model.objects}
-                  session={pageSession(model)}
-                  initialPage={Math.min(initialPage, pages.length)}
-                  scale={scale}
-                  onApply={onApply}
-                  onLocationChange={(next) => onLocationChange({ ...next })}
-                  renderPageBackground={
-                    renderPreview ? (page) => renderPreview(page.page) : undefined
-                  }
-                />
+            <PageModeEditor
+              key={docKey}
+              pages={pages}
+              objects={model.objects}
+              session={pageSession(model)}
+              initialPage={Math.min(initialPage, pages.length)}
+              scale={scale}
+              onApply={onApply}
+              onLocationChange={(next) => onLocationChange({ ...next })}
+              renderPageBackground={(page) => (
+                <PageBackdrop source={source} backend={backend} page={page.page} />
               )}
-            </WithPagePreviews>
+            />
           </div>
         );
       }}
@@ -291,22 +291,18 @@ export function AnnotatePane({
         const first = value.pages[0];
         if (!first) return null;
         return (
-          <WithPagePreviews source={source} backend={backend}>
-            {(renderPreview) => (
-              <AnnotateFormsSurface
-                key={docKey}
-                pageCount={value.pages.length}
-                pageSize={{ width: first.widthPt, height: first.heightPt }}
-                renderPage={renderPreview}
-                formFields={value.fields}
-                existingAnnotations={value.annotations}
-                initialPage={initialPage}
-                onPageChange={(page) => onLocationChange({ page })}
-                busy={busy}
-                onApply={onApply}
-              />
-            )}
-          </WithPagePreviews>
+          <AnnotateFormsSurface
+            key={docKey}
+            pageCount={value.pages.length}
+            pageSize={{ width: first.widthPt, height: first.heightPt }}
+            renderPage={(page) => <PageBackdrop source={source} backend={backend} page={page} />}
+            formFields={value.fields}
+            existingAnnotations={value.annotations}
+            initialPage={initialPage}
+            onPageChange={(page) => onLocationChange({ page })}
+            busy={busy}
+            onApply={onApply}
+          />
         );
       }}
     </LoadGate>

@@ -63,6 +63,22 @@ async function savedVersionFiles(page: Page): Promise<number> {
   });
 }
 
+/**
+ * Whether this engine can open the origin-private file system at all. Playwright's WebKit build
+ * rejects `getDirectory()` with an UnknownError, so the editor's OPFS-backed history cannot exist
+ * there and says so instead of pretending to save.
+ */
+async function opfsAvailable(page: Page): Promise<boolean> {
+  return page.evaluate(async () => {
+    try {
+      await navigator.storage.getDirectory();
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 test("switches between View, Annotate, Document and Page and keeps the page", async ({ page }) => {
   await openWorkspace(page);
   await addPdf(page, "report.pdf", makePdf(3, "Report"));
@@ -115,12 +131,18 @@ test("edits in Document mode, shows fidelity, exports, and a redaction purges hi
   await page.keyboard.type(" edited on device");
   await expect(editor.getByText("Notes-1 edited on device")).toBeVisible();
 
-  // A manual checkpoint lands in the OPFS-backed version history.
+  // A manual checkpoint lands in the OPFS-backed version history. Where the engine has no OPFS,
+  // the drawer says history is unavailable rather than keeping versions it could not purge.
+  const historyStored = await opfsAvailable(page);
   await editor.getByRole("button", { name: "Version history" }).click();
-  await editor.getByLabel("Checkpoint label").fill("before export");
-  await editor.getByRole("button", { name: "Save checkpoint" }).last().click();
-  await expect(editor.locator('[data-kind="manual"]')).toHaveCount(1);
-  await expect.poll(() => savedVersionFiles(page)).toBeGreaterThan(0);
+  if (historyStored) {
+    await editor.getByLabel("Checkpoint label").fill("before export");
+    await editor.getByRole("button", { name: "Save checkpoint" }).last().click();
+    await expect(editor.locator('[data-kind="manual"]')).toHaveCount(1);
+    await expect.poll(() => savedVersionFiles(page)).toBeGreaterThan(0);
+  } else {
+    await expect(editor.getByRole("alert").first()).toContainText("Version history is unavailable");
+  }
 
   // The fidelity review comes before anything is exported.
   await editor.getByRole("button", { name: "Export", exact: true }).click();
@@ -148,6 +170,7 @@ test("edits in Document mode, shows fidelity, exports, and a redaction purges hi
   }
 
   // Redaction purges the saved history, says so, and leaves nothing in OPFS.
+  if (!historyStored) return;
   await editor.getByRole("button", { name: "Purge history after redaction" }).click();
   await expect(page.getByTestId("redaction-purge-banner")).toBeVisible();
   await expect(page.getByTestId("redaction-purge-banner")).toContainText(/purged/i);

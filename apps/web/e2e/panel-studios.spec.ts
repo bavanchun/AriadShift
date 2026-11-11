@@ -82,7 +82,7 @@ test("runs N-up through its studio and downloads the combined PDF", async ({ pag
   // The studio starts at two pages per sheet, so four pages fit on two sheets.
   await page.getByRole("button", { name: "Run tool on this device" }).click();
   await expect(result(page)).toBeVisible(ENGINE_BOOT);
-  expect(await resultPages(page)).toBe(2);
+  await expect.poll(() => resultPages(page)).toBe(2);
   const output = await downloadResult(page);
   expect(output.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   expect(declaredPageCount(output)).toBe(2);
@@ -97,7 +97,7 @@ test("stamps a watermark through its studio and keeps every page", async ({ page
   await expect(run).toBeEnabled();
   await run.click();
   await expect(result(page)).toBeVisible(ENGINE_BOOT);
-  expect(await resultPages(page)).toBe(3);
+  await expect.poll(() => resultPages(page)).toBe(3);
   const output = await downloadResult(page);
   expect(output.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   expect(declaredPageCount(output)).toBe(3);

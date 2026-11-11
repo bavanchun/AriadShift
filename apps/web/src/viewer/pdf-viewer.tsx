@@ -135,13 +135,31 @@ function ViewerSession({
   const waiting = request !== null && landed !== request.nonce;
   const reportedPage = useRef(onPageChange);
   reportedPage.current = onPageChange;
+  // While a page is laid out the engine can briefly settle on a page nobody scrolled to (a
+  // fit-width zoom measured before the pane has its width shows every page at once). That is not
+  // the reader's position, so a page is reported only once the reader has moved or the host has
+  // asked for a page and the jump has landed.
+  const surface = useRef<HTMLElement>(null);
+  const [moved, setMoved] = useState(false);
   useEffect(() => {
-    if (snapshot.status === "ready" && !waiting) reportedPage.current?.(snapshot.page);
-  }, [snapshot.status, snapshot.page, waiting]);
+    const node = surface.current;
+    if (!node) return;
+    const markMoved = () => setMoved(true);
+    const events = ["pointerdown", "wheel", "keydown", "touchstart"] as const;
+    for (const name of events) node.addEventListener(name, markMoved, { capture: true });
+    return () => {
+      for (const name of events) node.removeEventListener(name, markMoved, { capture: true });
+    };
+  }, []);
+  const reporting = moved || request !== null;
+  useEffect(() => {
+    if (snapshot.status === "ready" && !waiting && reporting) reportedPage.current?.(snapshot.page);
+  }, [snapshot.status, snapshot.page, waiting, reporting]);
 
   const failed = backend.status === "unavailable" || snapshot.status === "error" || !url;
   return (
     <section
+      ref={surface}
       data-slot="pdf-viewer"
       aria-label={source.name}
       className={cn("flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card", className)}
