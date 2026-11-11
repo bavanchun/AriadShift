@@ -7,16 +7,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ariadshift/ui/compone
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { FRAGMENT_KEY } from "@/lib/recipe";
 import { ConverterApp } from "../converter/converter-app";
+import type { RecipeDraft, RecipeDraftStep } from "./recipes-host";
 import { useLazyModule } from "./use-lazy-module";
 
-type View = "convert" | "tools" | "workspace";
+type View = "convert" | "tools" | "workspace" | "recipes";
 
 const loadWorkspace = () => import("./workspace-host");
 const loadTools = () => import("./tools-host");
+const loadRecipes = () => import("./recipes-host");
 
 const isView = (value: string | null): value is View =>
-  value === "convert" || value === "tools" || value === "workspace";
+  value === "convert" || value === "tools" || value === "workspace" || value === "recipes";
 
 function isPaletteShortcut(event: KeyboardEvent) {
   return (
@@ -53,14 +56,50 @@ export function AppShell() {
   const [toolsWanted, setToolsWanted] = useState(view === "tools");
   const [paletteOnLoad, setPaletteOnLoad] = useState(false);
   const [workspaceWanted, setWorkspaceWanted] = useState(view === "workspace");
+  const [recipesWanted, setRecipesWanted] = useState(view === "recipes");
   const tools = useLazyModule(loadTools, toolsWanted);
   const workspace = useLazyModule(loadWorkspace, workspaceWanted);
+  const recipes = useLazyModule(loadRecipes, recipesWanted);
+  // Steps handed to the builder, and a `#recipe=` link waiting for its confirmation (AD-18).
+  const [recipeDraft, setRecipeDraft] = useState<RecipeDraft | null>(null);
+  const [recipeFragment, setRecipeFragment] = useState<string | null>(null);
+  const draftNonce = useRef(0);
 
   const show = useCallback((next: View, toolId: string | null = null) => {
     setView(next);
     if (next === "tools") setToolsWanted(true);
     if (next === "workspace") setWorkspaceWanted(true);
+    if (next === "recipes") setRecipesWanted(true);
     writeLocation(next, toolId);
+  }, []);
+
+  const openRecipe = useCallback(
+    (steps: RecipeDraftStep[]) => {
+      draftNonce.current += 1;
+      setRecipeDraft({ steps, nonce: draftNonce.current });
+      show("recipes");
+    },
+    [show],
+  );
+
+  // A shared recipe link opens the builder; the recipe loads only after the user confirms it.
+  useEffect(() => {
+    const read = () => {
+      if (!window.location.hash.startsWith(`#${FRAGMENT_KEY}=`)) return;
+      setRecipeFragment(window.location.hash);
+      show("recipes");
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, [show]);
+
+  const recipeResolved = useCallback(() => {
+    setRecipeFragment(null);
+    const url = new URL(window.location.href);
+    if (!url.hash.startsWith(`#${FRAGMENT_KEY}=`)) return;
+    url.hash = "";
+    window.history.replaceState(window.history.state, "", url);
   }, []);
 
   const openTool = useCallback(
@@ -98,6 +137,9 @@ export function AppShell() {
         <TabsTrigger value="workspace" data-testid="tab-workspace">
           {t("tab.workspace")}
         </TabsTrigger>
+        <TabsTrigger value="recipes" data-testid="tab-recipes">
+          {t("tab.recipes")}
+        </TabsTrigger>
       </TabsList>
       <TabsContent value="convert" keepMounted className="text-base">
         <ConverterApp />
@@ -113,6 +155,9 @@ export function AppShell() {
               render={(module) => (
                 <module.default
                   onSelectTool={openTool}
+                  onRunRecipe={(steps) =>
+                    openRecipe(steps.map(({ toolId, params }) => ({ toolId, params })))
+                  }
                   defaultPaletteOpen={paletteOnLoad}
                   onOpenPalette={() => setPaletteOnLoad(false)}
                 />
@@ -127,8 +172,29 @@ export function AppShell() {
             kind="workspace"
             state={workspace.state}
             retry={workspace.retry}
-            render={(module) => <module.default requestedTool={requested} />}
+            render={(module) => (
+              <module.default requestedTool={requested} onSaveRecipe={openRecipe} />
+            )}
           />
+        )}
+      </TabsContent>
+      <TabsContent value="recipes" keepMounted className="text-base">
+        {recipesWanted && (
+          <div className="flex flex-col gap-4">
+            <p className="text-muted-foreground">{t("recipes_lede")}</p>
+            <Lazy
+              kind="recipes"
+              state={recipes.state}
+              retry={recipes.retry}
+              render={(module) => (
+                <module.default
+                  draft={recipeDraft}
+                  fragment={recipeFragment}
+                  onResolved={recipeResolved}
+                />
+              )}
+            />
+          </div>
         )}
       </TabsContent>
     </Tabs>
@@ -141,7 +207,7 @@ function Lazy<T>({
   retry,
   render,
 }: {
-  kind: "tools" | "workspace";
+  kind: "tools" | "workspace" | "recipes";
   state: { status: "idle" | "loading" | "failed" } | { status: "ready"; module: T };
   retry: () => void;
   render: (module: T) => ReactNode;

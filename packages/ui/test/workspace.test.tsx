@@ -152,14 +152,14 @@ describe("DropOverlay", () => {
 
   it("animates the dashed border with a reduced-motion fallback and allows custom text", () => {
     const { container } = render(
-      <DropOverlay active title="Lâche ici" privacyLabel="Sur cet appareil" />,
+      <DropOverlay active title="Lâche ici" privacyLabel="Données locales" />,
     );
     expect(container.querySelector("rect")?.getAttribute("class")).toContain(
       "motion-reduce:animate-none",
     );
     expect(container.querySelector("rect")?.getAttribute("stroke-dasharray")).toBe("8 4");
     expect(screen.getByText("Lâche ici")).toBeTruthy();
-    expect(screen.getByText("Sur cet appareil")).toBeTruthy();
+    expect(screen.getByText("Données locales")).toBeTruthy();
   });
 });
 

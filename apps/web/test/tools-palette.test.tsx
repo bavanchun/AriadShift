@@ -179,7 +179,7 @@ describe("tools", () => {
     type("combine");
     expect(optionIds()[0]).toBe("pdf.merge");
 
-    type("rotat");
+    type("rota");
     expect(optionIds()[0]).toBe("pdf.rotate");
 
     type("mrg");

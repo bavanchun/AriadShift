@@ -687,14 +687,18 @@
       "tab": {
         "convert": "Chuyển đổi",
         "tools": "Công cụ",
-        "workspace": "Không gian làm việc PDF"
+        "workspace": "Không gian làm việc PDF",
+        "recipes": "Công thức"
       },
       "tools_lede": "Mọi công cụ, được nhóm theo chức năng. Chọn một công cụ để mở trong không gian làm việc PDF.",
       "workspace_loading": "Đang tải không gian làm việc PDF…",
       "workspace_failed": "Không tải được không gian làm việc PDF.",
       "retry": "Thử lại",
       "tools_loading": "Đang tải các công cụ…",
-      "tools_failed": "Không tải được các công cụ."
+      "tools_failed": "Không tải được các công cụ.",
+      "recipes_lede": "Tạo chuỗi các bước công cụ, chia sẻ dưới dạng liên kết hoặc chạy trên máy của bạn.",
+      "recipes_loading": "Đang tải trình tạo công thức…",
+      "recipes_failed": "Không thể tải trình tạo công thức."
     },
     "tools": {
       "hub": {
@@ -1100,6 +1104,34 @@
         "invalid": "Hãy sửa các tùy chọn được đánh dấu để tiếp tục.",
         "failed": "Công cụ đã dừng: {message}",
         "progress": "Tiến trình của công cụ"
+      },
+      "batch": {
+        "title": "Hàng đợi hàng loạt",
+        "empty": "Thêm tệp để chạy công cụ này trên tất cả cùng lúc.",
+        "overall": "Đã xong {completed} trên {total}",
+        "sizes": "vào {input} · ra {output}",
+        "status": {
+          "queued": "Đang chờ",
+          "running": "Đang chạy",
+          "done": "Xong",
+          "failed": "Lỗi",
+          "cancelled": "Đã hủy"
+        },
+        "run_batch": "Chạy hàng loạt",
+        "cancel_batch": "Hủy hàng loạt",
+        "retry_failed": "Thử lại tệp lỗi",
+        "download_zip": "Tải tất cả (.zip)",
+        "clear_completed": "Xóa tệp đã xong",
+        "list": "Các tệp trong lô",
+        "download": "Tải {name}",
+        "cancel_item": "Hủy {name}",
+        "remove_item": "Xóa {name}",
+        "guard_title": "Một số tệp quá lớn cho trình duyệt này",
+        "guard_body": "Tệp trên {limit} không thể xử lý trong trình duyệt: {names}. Hãy xóa chúng hoặc chạy bằng lệnh ashift trên máy của bạn.",
+        "toggle": "Chạy trên mọi tệp (hàng loạt)",
+        "invalid": "Hãy sửa các tùy chọn được đánh dấu trước khi chạy hàng loạt.",
+        "failed": "Lô đã dừng: {message}",
+        "failed@note": "{message} là nội dung lỗi do công cụ báo, bằng tiếng Anh."
       },
       "handoff": {
         "title": "Chạy trên máy tính của bạn",

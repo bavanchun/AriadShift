@@ -715,14 +715,18 @@
       "tab": {
         "convert": "Convert",
         "tools": "Tools",
-        "workspace": "PDF workspace"
+        "workspace": "PDF workspace",
+        "recipes": "Recipes"
       },
       "tools_lede": "Every tool, grouped by what it does. Pick one to open it in the PDF workspace.",
       "workspace_loading": "Loading the PDF workspace…",
       "workspace_failed": "The PDF workspace could not be loaded.",
       "retry": "Try again",
       "tools_loading": "Loading the tools…",
-      "tools_failed": "The tools could not be loaded."
+      "tools_failed": "The tools could not be loaded.",
+      "recipes_lede": "Build a sequence of tool steps, share it as a link or run it on your computer.",
+      "recipes_loading": "Loading the recipe builder…",
+      "recipes_failed": "The recipe builder could not be loaded."
     },
     "tools": {
       "hub": {
@@ -1152,6 +1156,34 @@
         "failed": "The tool stopped: {message}",
         "failed@note": "{message} is the error text reported by the tool, in English.",
         "progress": "Tool progress"
+      },
+      "batch": {
+        "title": "Batch queue",
+        "empty": "Add files to run this tool on all of them at once.",
+        "overall": "{completed} of {total} done",
+        "sizes": "{input} in · {output} out",
+        "status": {
+          "queued": "Queued",
+          "running": "Running",
+          "done": "Done",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "run_batch": "Run batch",
+        "cancel_batch": "Cancel batch",
+        "retry_failed": "Retry failed",
+        "download_zip": "Download all (.zip)",
+        "clear_completed": "Clear completed",
+        "list": "Files in the batch",
+        "download": "Download {name}",
+        "cancel_item": "Cancel {name}",
+        "remove_item": "Remove {name}",
+        "guard_title": "Some files are too large for this browser",
+        "guard_body": "Files over {limit} cannot be processed in the browser: {names}. Remove them or run them with the ashift command on your computer.",
+        "toggle": "Run on every file (batch)",
+        "invalid": "Fix the highlighted options before running the batch.",
+        "failed": "The batch stopped: {message}",
+        "failed@note": "{message} is the error text reported by the tool, in English."
       },
       "handoff": {
         "title": "Run on your computer",

@@ -27,10 +27,9 @@ describe("<ToolInspector />", () => {
     const run = screen.getByRole("button", {
       name: "Run tool on this device",
     }) as HTMLButtonElement;
-    // The angle is required and has no default.
-    expect(run.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("angle"), { target: { value: "90" } });
+    // The rotation studio starts from a valid 90° turn of every page.
     expect(run.disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "90° CW" }));
     fireEvent.click(run);
     expect(onRun).toHaveBeenCalledWith({ angle: 90, pages: "all" });
     expect(screen.queryByText("Run on your computer")).toBeNull();
@@ -76,7 +75,7 @@ describe("<ToolInspector />", () => {
         onCancel={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText("angle"), { target: { value: "180" } });
+    fireEvent.click(screen.getByRole("button", { name: "180°" }));
     fireEvent.click(screen.getByRole("button", { name: "Run on your computer instead" }));
     expect(document.querySelector('[data-slot="runtime-badge"]')?.textContent).toBe("Desktop");
     expect(screen.getByText("Run on your computer")).toBeTruthy();

@@ -11,8 +11,9 @@ import {
 } from "@ariadshift/ui/components/card";
 import { Progress } from "@ariadshift/ui/components/progress";
 import { CloudIcon, MonitorIcon, PlayIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { ParamsForm, type ParamsValidation } from "@/components/tools/params-form";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ToolPanel } from "@/components/tools/panels";
+import type { ParamsValidation } from "@/components/tools/params-form";
 import { toolHandoff } from "@/converter/handoff";
 import type { ToolDescriptor } from "@/converter/tool-catalog";
 import { useWorkspaceCopy } from "./copy";
@@ -28,8 +29,16 @@ export interface ToolInspectorProps {
   /** The configured cloud API; "Run in Cloud" appears only when this is set. */
   cloudApiUrl?: string;
   locale?: string;
-  /** Runs the tool in the browser worker. */
-  onRun: (params: Record<string, unknown>) => void | Promise<void>;
+  /**
+   * Runs the tool in the browser worker. `inputIds` is passed only when a panel reordered the
+   * inputs (the compare swap); otherwise the workspace picks them.
+   */
+  onRun: (
+    params: Record<string, unknown>,
+    options?: { inputIds: string[] },
+  ) => void | Promise<void>;
+  /** Mirrors the current parameters, for a host that runs them elsewhere (the batch queue). */
+  onParamsChange?: (params: Record<string, unknown>, validation: ParamsValidation) => void;
   onCancel: () => void;
   /** Runs the tool in the cloud. Without it the cloud path is never offered. */
   onRunCloud?: (params: Record<string, unknown>) => void | Promise<void>;
@@ -49,6 +58,7 @@ export function ToolInspector({
   cloudApiUrl,
   locale,
   onRun,
+  onParamsChange,
   onCancel,
   onRunCloud,
   copyText,
@@ -62,13 +72,22 @@ export function ToolInspector({
   const [params, setParams] = useState<Record<string, unknown>>({});
   const [validation, setValidation] = useState<ParamsValidation>({ isValid: true, errors: {} });
   const [forceDesktop, setForceDesktop] = useState(false);
+  // Tagged with its tool, so an order reported while a tool mounts is never read for another.
+  const [order, setOrder] = useState<{ toolId: string; ids: string[] } | null>(null);
   const toolId = tool?.id;
   // A different tool starts from the browser path again.
   useEffect(() => setForceDesktop(false), [toolId]);
+  const paramsListener = useRef(onParamsChange);
+  paramsListener.current = onParamsChange;
   const onChange = useCallback((next: Record<string, unknown>, checked: ParamsValidation) => {
     setParams(next);
     setValidation(checked);
+    paramsListener.current?.(next, checked);
   }, []);
+  const onInputsChange = useCallback(
+    (ids: string[]) => setOrder(toolId ? { toolId, ids } : null),
+    [toolId],
+  );
 
   if (!tool)
     return (
@@ -83,6 +102,7 @@ export function ToolInspector({
   const mode = handoff.executionMode === "cloud" && !onRunCloud ? "desktop" : handoff.executionMode;
   const shown = forceDesktop ? "desktop" : mode;
   const ready = files.length > 0 && validation.isValid && !busy;
+  const inputIds = order?.toolId === tool.id ? order.ids : null;
 
   return (
     <Card data-slot="tool-inspector" className={className}>
@@ -99,12 +119,14 @@ export function ToolInspector({
         <CardDescription>{tool.summary}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <ParamsForm
+        <ToolPanel
           tool={tool}
+          files={files}
           pageCount={pageCount}
-          inputs={files.map((file) => ({ id: file.id, name: file.name }))}
+          locale={locale}
           disabled={busy}
           onChange={onChange}
+          onInputsChange={onInputsChange}
         />
 
         {shown === "desktop" ? (
@@ -131,7 +153,10 @@ export function ToolInspector({
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               {shown === "browser" ? (
-                <Button disabled={!ready} onClick={() => onRun(params)}>
+                <Button
+                  disabled={!ready}
+                  onClick={() => (inputIds ? onRun(params, { inputIds }) : onRun(params))}
+                >
                   <PlayIcon aria-hidden="true" />
                   {busy ? copy.running : copy.runHere}
                 </Button>

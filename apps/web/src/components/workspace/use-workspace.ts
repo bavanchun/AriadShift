@@ -224,6 +224,7 @@ export function useWorkspace({
   const executeChain = useCallback(
     async (
       steps: Array<{ tool: ToolDescriptor; params: Record<string, unknown> }>,
+      options: { inputIds?: string[] } = {},
     ): Promise<void> => {
       const original = live.current.files;
       const originalActive = original.find((entry) => entry.id === live.current.activeId);
@@ -248,7 +249,7 @@ export function useWorkspace({
       setBusy("run");
       setProgress(null);
       setThread([...completed, ...started]);
-      const inputs = inputIdsFor(first.tool);
+      const inputs = options.inputIds?.length ? options.inputIds : inputIdsFor(first.tool);
       const sources = inputs.map((id) => original.find((entry) => entry.id === id));
       const input = {
         size: sources.reduce((sum, entry) => sum + (entry?.size ?? 0), 0),
@@ -302,8 +303,11 @@ export function useWorkspace({
   );
 
   const runTool = useCallback(
-    (descriptor: ToolDescriptor, params: Record<string, unknown>) =>
-      executeChain([{ tool: descriptor, params }]),
+    (
+      descriptor: ToolDescriptor,
+      params: Record<string, unknown>,
+      options?: { inputIds?: string[] },
+    ) => executeChain([{ tool: descriptor, params }], options),
     [executeChain],
   );
 

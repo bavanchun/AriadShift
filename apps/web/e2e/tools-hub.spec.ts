@@ -92,10 +92,10 @@ test("Ctrl+K opens the palette, and a plain sentence finds the rotate tool", asy
   const input = page.getByRole("combobox", { name: /search tools/i });
   await expect(input).toBeVisible();
   await input.fill("rotate 90");
-  const first = page.getByRole("option").first();
-  await expect(first).toContainText("Rotate");
-  await expect(first).toContainText("pdf.rotate");
-  await page.keyboard.press("Enter");
+  // The sentence is also offered as a recipe, above the tool; the tool option opens the tool.
+  const rotate = page.getByRole("option").filter({ hasText: "pdf.rotate" });
+  await expect(rotate.first()).toContainText("Rotate");
+  await rotate.first().click();
 
   // The chosen tool opens in the PDF workspace.
   await expect(page.getByRole("tab", { name: "PDF workspace" })).toHaveAttribute(
