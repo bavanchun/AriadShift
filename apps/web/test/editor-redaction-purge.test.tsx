@@ -95,6 +95,24 @@ describe("redaction purges the editor's saved history", () => {
     await waitFor(() => expect(hook.result.current.purgeError).toBe("OPFS locked"));
   });
 
+  it("shows a failed purge only for the document it was for", async () => {
+    purge.mockRejectedValueOnce(new Error("OPFS locked"));
+    const fileA = workspaceFile("a.pdf");
+    const fileB = workspaceFile("b.pdf");
+    const client = fakeClient();
+    const run = finished("pdf.redact", "key-a.pdf");
+    const hook = renderHook(
+      ({ active }: { active: typeof fileA }) =>
+        useEditorWorkspace({ client, active, mode: "view", run }),
+      { initialProps: { active: fileA } },
+    );
+    await waitFor(() => expect(hook.result.current.purgeError).toBe("OPFS locked"));
+    hook.rerender({ active: fileB });
+    expect(hook.result.current.purgeError).toBeNull();
+    hook.rerender({ active: fileA });
+    expect(hook.result.current.purgeError).toBe("OPFS locked");
+  });
+
   it("purges again when the same document is redacted a second time", async () => {
     const hook = mount(finished("pdf.redact", "key-a.pdf"));
     await waitFor(() => expect(purge).toHaveBeenCalledTimes(1));

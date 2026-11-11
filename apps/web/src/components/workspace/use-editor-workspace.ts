@@ -166,18 +166,20 @@ export function useEditorWorkspace({
   // A redaction run makes the earlier states of that document unsafe to keep: they still hold
   // the text that was redacted. The history goes away at once, with or without the editor open.
   const [redacted, setRedacted] = useState<ReadonlySet<string>>(() => new Set());
-  const [purgeError, setPurgeError] = useState<string | null>(null);
+  // A failed purge belongs to the document it was for, so another document never shows it.
+  const [purgeFailure, setPurgeFailure] = useState<{ key: string; message: string } | null>(null);
   // Keyed by the run itself, so a second redaction of the same file purges again.
   const redactedRun = run?.redacts || run?.tool.id === "pdf.redact" ? run : null;
   useEffect(() => {
     const redactedKey = redactedRun?.sourceKey;
     if (!redactedKey) return;
     setRedacted((previous) => new Set(previous).add(redactedKey));
-    setPurgeError(null);
+    setPurgeFailure(null);
     ensureStore()
       .purgeDocumentHistory(redactedKey, "redaction")
-      .catch((reason) => setPurgeError(messageOf(reason)));
+      .catch((reason) => setPurgeFailure({ key: redactedKey, message: messageOf(reason) }));
   }, [redactedRun, ensureStore]);
+  const purgeError = purgeFailure && purgeFailure.key === active?.key ? purgeFailure.message : null;
 
   return {
     ir,

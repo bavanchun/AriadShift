@@ -9,7 +9,6 @@ import { DocumentModeEditor, type ExportRequest } from "@/editor/document";
 import {
   type EditApplyParams,
   type PageEditSession,
-  type PageInfo,
   PageModeEditor,
   type PageObjectsModel,
 } from "@/editor/page";
@@ -171,10 +170,8 @@ export interface PagePaneProps {
   docKey: string;
   source: PdfViewerSource;
   backend: Backend;
-  /** Page sizes from `pdf.info`, for a document whose objects carry no layout. */
-  fallbackPages: readonly PageInfo[];
-  /** The page sizes are still being read. */
-  fallbackPending: boolean;
+  /** The `pdf.info` read; its page sizes stand in for a document whose objects carry no layout. */
+  data: { entry: Loaded<ActiveDocumentData> | undefined; retry: () => void };
   objects: { entry: Loaded<PageObjectsModel> | undefined; retry: () => void };
   /** The file's edit session, kept by the workspace so edits outlive this pane. */
   pageSession: (model: PageObjectsModel) => PageEditSession;
@@ -191,8 +188,7 @@ export function PagePane({
   docKey,
   source,
   backend,
-  fallbackPages,
-  fallbackPending,
+  data,
   objects,
   pageSession,
   location,
@@ -204,16 +200,29 @@ export function PagePane({
   return (
     <LoadGate entry={objects.entry} retry={objects.retry}>
       {(model) => {
-        const pages = model.pages.length > 0 ? model.pages : [...fallbackPages];
+        const fallback = data.entry;
+        const pages =
+          model.pages.length > 0
+            ? model.pages
+            : fallback?.status === "ready"
+              ? [...fallback.value.pages]
+              : [];
         const first = pages[0];
         if (!first) {
-          return fallbackPending ? (
+          // The sizes come from the same read as Annotate, so a failure reads and retries the same way.
+          if (fallback?.status === "failed") {
+            return (
+              <div role="alert" className="flex flex-col items-start gap-2 p-6 text-sm">
+                <p>{copy.failed(fallback.message)}</p>
+                <Button type="button" variant="outline" size="sm" onClick={data.retry}>
+                  {copy.retry}
+                </Button>
+              </div>
+            );
+          }
+          return (
             <p role="status" className="p-6 text-center text-sm text-muted-foreground">
               {copy.preparing}
-            </p>
-          ) : (
-            <p role="alert" className="p-6 text-sm">
-              {copy.failed("")}
             </p>
           );
         }

@@ -332,10 +332,7 @@ function WorkspaceBody({
                 docKey={active.key}
                 source={source}
                 backend={backend}
-                fallbackPages={
-                  editor.data.entry?.status === "ready" ? editor.data.entry.value.pages : []
-                }
-                fallbackPending={!editor.data.entry || editor.data.entry.status === "loading"}
+                data={editor.data}
                 objects={editor.objects}
                 pageSession={(model) => editor.pageSession(active.key, model)}
                 location={location}

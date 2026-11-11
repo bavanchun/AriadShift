@@ -349,10 +349,10 @@ describe("<FontSubstitutionAlert />", () => {
     render(
       <FontSubstitutionAlert
         resolution={resolveFontForEdit(heading, VIETNAMESE)}
-        labels={{ substitutionTitle: "Đã thay phông chữ" }}
+        labels={{ substitutionTitle: "Đã đổi phông chữ" }}
       />,
     );
-    expect(screen.getByText("Đã thay phông chữ")).toBeTruthy();
+    expect(screen.getByText("Đã đổi phông chữ")).toBeTruthy();
   });
 });
 

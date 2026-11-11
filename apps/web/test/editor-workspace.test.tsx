@@ -334,6 +334,27 @@ describe("<DocumentWorkspace /> editor modes", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
+  it("tells Page mode why the page sizes could not be read, and tries again", async () => {
+    const { client, convert } = await openWorkspace();
+    // No engine report and no IR leave the objects without pages, so only `pdf.info` can size them.
+    convert.mockRejectedValue({ code: "bad_pdf", message: "no ir" });
+    let infoFails = true;
+    client.runTool.mockImplementation((async (toolId: string) => {
+      if (toolId === "edit.page_objects") throw { code: "tool_missing", message: "no engine" };
+      if (toolId === "pdf.info" && infoFails) throw { code: "bad_pdf", message: "info broke" };
+      return runResult({
+        tool: toolId,
+        data: { pages: [{ page: 1, width_pt: 612, height_pt: 792 }], fields: [], annotations: [] },
+      });
+    }) as never);
+    fireEvent.click(screen.getByTestId("workspace-mode-page"));
+    expect(await screen.findByText(/could not open this document\. info broke/)).toBeTruthy();
+    infoFails = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.queryByText(/could not open this document/)).toBeNull();
+  });
+
   it("offers no CLI hand-off for estimated page objects, which carry ir ids", async () => {
     const { client } = await openWorkspace();
     client.runTool.mockImplementation((async () => {
