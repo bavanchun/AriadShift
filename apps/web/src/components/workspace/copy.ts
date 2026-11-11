@@ -158,6 +158,27 @@ export const DEFAULT_WORKSPACE_COPY = {
     invalid: "Fix the highlighted options before running the batch.",
     failed: (message: string) => `The batch stopped: ${message}`,
   },
+  editor: {
+    modeSwitch: "Editing mode",
+    view: "View",
+    annotate: "Annotate",
+    document: "Document",
+    page: "Page",
+    preparing: "Reading the document into the editor on this device…",
+    failed: (message: string) => `The editor could not open this document. ${message}`,
+    retry: "Try again",
+    panelTabs: "Side panel",
+    tabTools: "Tools",
+    tabAi: "AI assistant",
+    exported: (name: string) => `Exported ${name}.`,
+    download: (name: string) => `Download ${name}`,
+    exportFailed: (message: string) => `The export failed. ${message}`,
+    pageEstimated:
+      "These objects are estimated from the document layout, so their ids are placeholders the PDFium engine does not recognize. To apply page edits, open this document in the AriadShift desktop app. Do not pass these ids to ashift tool run edit.apply.",
+    applyFailed: (message: string) => `The edit could not run in this browser. ${message}`,
+    purgeFailed: (message: string) =>
+      `Saved versions of the redacted document could not be removed. ${message}`,
+  },
   workspace: {
     title: "Workspace",
     lede: "Everything runs in this browser tab.",

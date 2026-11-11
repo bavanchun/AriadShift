@@ -14,7 +14,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useId, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { resolveWasmUrl, webAssemblySupported } from "./engine";
 import {
   DEFAULT_VIEWER_LABELS,
@@ -38,6 +38,12 @@ export interface PdfViewerProps {
   /** Overrides the PDFium URL; it must be absolute and same-origin. */
   wasmUrl?: string;
   labels?: Partial<ViewerLabels>;
+  /** One-based page to scroll to once the document is ready. */
+  initialPage?: number;
+  /** Scrolls to this page whenever `nonce` changes, for example to follow an AI citation. */
+  pageRequest?: { page: number; nonce: number };
+  /** Reports the page in view, so another mode can open on it. */
+  onPageChange?: (page: number) => void;
   className?: string;
 }
 
@@ -81,6 +87,9 @@ function ViewerSession({
   loadBackend = loadEmbedPdfBackend,
   wasmUrl,
   labels: overrides,
+  initialPage,
+  pageRequest,
+  onPageChange,
   className,
   invert,
   onInvertChange,
@@ -100,9 +109,57 @@ function ViewerSession({
   const onSnapshot = useCallback((next: ViewerSnapshot) => setSnapshot(next), []);
   const onCommands = useCallback((next: ViewerCommands | null) => setCommands(next), []);
 
+  // Scroll to a requested page (at open, or when the host asks again), then report page changes.
+  // Reports wait until the jump lands, so the page the host asked for is not overwritten by 1.
+  const request = useMemo(
+    () =>
+      pageRequest ??
+      (initialPage !== undefined && initialPage > 1 ? { page: initialPage, nonce: 0 } : null),
+    [pageRequest, initialPage],
+  );
+  const handled = useRef<number | null>(null);
+  const [landed, setLanded] = useState<number | null>(null);
+  const ready = snapshot.status === "ready" && commands !== null;
+  const goal = request ? Math.min(request.page, Math.max(snapshot.pageCount, 1)) : null;
+  useEffect(() => {
+    if (!(ready && request) || handled.current === request.nonce) return;
+    handled.current = request.nonce;
+    setLanded(null);
+    commands?.goToPage(Math.min(request.page, Math.max(snapshot.pageCount, 1)));
+  }, [ready, request, commands, snapshot.pageCount]);
+  useEffect(() => {
+    if (ready && request && handled.current === request.nonce && snapshot.page === goal) {
+      setLanded(request.nonce);
+    }
+  }, [ready, request, goal, snapshot.page]);
+  const waiting = request !== null && landed !== request.nonce;
+  const reportedPage = useRef(onPageChange);
+  reportedPage.current = onPageChange;
+  // While a page is laid out the engine can briefly settle on a page nobody scrolled to (a
+  // fit-width zoom measured before the pane has its width shows every page at once). That is not
+  // the reader's position, so a page is reported only once the reader has moved or the host has
+  // asked for a page and the jump has landed.
+  const surface = useRef<HTMLElement>(null);
+  const [moved, setMoved] = useState(false);
+  useEffect(() => {
+    const node = surface.current;
+    if (!node) return;
+    const markMoved = () => setMoved(true);
+    const events = ["pointerdown", "wheel", "keydown", "touchstart"] as const;
+    for (const name of events) node.addEventListener(name, markMoved, { capture: true });
+    return () => {
+      for (const name of events) node.removeEventListener(name, markMoved, { capture: true });
+    };
+  }, []);
+  const reporting = moved || request !== null;
+  useEffect(() => {
+    if (snapshot.status === "ready" && !waiting && reporting) reportedPage.current?.(snapshot.page);
+  }, [snapshot.status, snapshot.page, waiting, reporting]);
+
   const failed = backend.status === "unavailable" || snapshot.status === "error" || !url;
   return (
     <section
+      ref={surface}
       data-slot="pdf-viewer"
       aria-label={source.name}
       className={cn("flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card", className)}

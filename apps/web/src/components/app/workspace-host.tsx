@@ -9,10 +9,15 @@ import { useWorkspaceIntl } from "../workspace/use-workspace-copy";
 export default function WorkspaceHost({
   requestedTool,
   onSaveRecipe,
+  onOpenRecipeDraft,
 }: {
   requestedTool: { id: string; nonce: number } | null;
   /** Opens the recipe builder with the steps run in this workspace. */
   onSaveRecipe?: (steps: Array<{ toolId: string; params: Record<string, unknown> }>) => void;
+  /** Opens a recipe drafted by the AI panel in the recipe builder, behind its confirmation. */
+  onOpenRecipeDraft?: (recipe: {
+    steps: Array<{ tool: string; params: Record<string, unknown> }>;
+  }) => void;
 }) {
   // The workspace owns its converter worker, apart from the converter tab's.
   const client = useMemo(() => new ConverterClient(), []);
@@ -26,6 +31,7 @@ export default function WorkspaceHost({
       viewerLabels={viewerLabels}
       requestedTool={requestedTool}
       onSaveRecipe={onSaveRecipe}
+      onOpenRecipeDraft={onOpenRecipeDraft}
     />
   );
 }

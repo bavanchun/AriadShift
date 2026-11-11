@@ -204,6 +204,25 @@ export function useWorkspaceIntl(): { copy: WorkspaceCopy; viewerLabels: ViewerL
         failed: s("thread.status.failed"),
       },
     };
+    const editor: WorkspaceCopy["editor"] = {
+      modeSwitch: s("editor.mode_switch"),
+      view: s("editor.mode_view"),
+      annotate: s("editor.mode_annotate"),
+      document: s("editor.mode_document"),
+      page: s("editor.mode_page"),
+      preparing: s("editor.preparing"),
+      failed: (message) => s("editor.failed", { message }),
+      retry: s("editor.retry"),
+      panelTabs: s("editor.panel_tabs"),
+      tabTools: s("editor.tab_tools"),
+      tabAi: s("editor.tab_ai"),
+      exported: (name) => s("editor.exported", { name }),
+      download: (name) => s("editor.download", { name }),
+      exportFailed: (message) => s("editor.export_failed", { message }),
+      pageEstimated: s("editor.page_estimated"),
+      applyFailed: (message) => s("editor.apply_failed", { message }),
+      purgeFailed: (message) => s("editor.purge_failed", { message }),
+    };
     const main: WorkspaceCopy["workspace"] = {
       title: s("main.title"),
       lede: s("main.lede"),
@@ -257,6 +276,7 @@ export function useWorkspaceIntl(): { copy: WorkspaceCopy; viewerLabels: ViewerL
         handoff,
         result,
         thread,
+        editor,
         workspace: main,
         tools,
       }),
