@@ -112,6 +112,32 @@ The Rust cache is written only by pushes to `dev` and `main` (the web job shares
   - To purge the cache after a suspected poisoning event or when clearing stale objects, bump the prefix string (e.g. `ariadshift-sccache-v3/`) across `.github/workflows/ci.yml`, `scripts/ci-sccache.sh`, `scripts/r2-cache-prune.py`, and `scripts/test-r2-cache-prune.py` (`EXPECTED_PREFIX` constant, which enforces prefix consistency across the codebase).
   - Stale objects under older prefixes (such as the initial `ariadshift-sccache/` prefix) can be pruned directly by repository maintainers via the Cloudflare dashboard or AWS S3 CLI.
 
+## Docling pack native caches
+
+The pack's native wheel cache uses source pins, build scripts, the tool lock and
+target in its key. Restored wheels still pass hash, native-library and execution
+checks. Successful cold builds save these wheels immediately after packaging,
+before reproducibility and conformance checks. Warm wheel-cache hits neither
+restore nor save compiler checkpoints. Failed or cancelled cold builds save
+compiler work only after cleanup succeeds, so warm runs do not create duplicate
+compiler archives competing with the completed wheels for Actions cache space.
+
+The initial build step allows 310 minutes within the 350-minute pack job. Cleanup
+stops only that job's named Linux torch container, then its local sccache server,
+before cache archiving. Superseded PR runs and manual feature-branch runs cancel
+older runs in their concurrency group; manual `dev`, `main` and tag builds are
+preserved.
+
+Actions caches are evictable and branch-scoped. A branch-dispatched pack can
+restore its current branch or the default branch (`main`), but cannot inherit a
+sibling branch's cache or automatically use `dev` as a PR base. A cache miss can
+therefore still require a multi-hour native build while the reviewed release
+toolchain pins in `engines/docling/pack/pins.toml` remain empty. Publishing and
+pinning those audited wheels is the durable way to avoid source bootstrap;
+changing to the ordinary locked x86 wheels would bypass the pack's native
+licence and runtime requirements. See GitHub's
+[cache access and eviction rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching).
+
 ## Cloud E2E pack dependency
 
 Pushes and pull requests use the single cloud path list in

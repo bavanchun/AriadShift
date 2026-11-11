@@ -7,13 +7,17 @@ import importlib
 import io
 import json
 import os
+import runpy
 import shlex
+import subprocess
 import sys
 import tarfile
 import tomllib
 from dataclasses import asdict
+from types import SimpleNamespace
 
 import pytest
+import yaml
 from conftest import REPOSITORY
 
 sys.path.insert(0, str(REPOSITORY / "engines/docling/pack"))
@@ -24,6 +28,132 @@ import native_build
 
 LINUX = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 MACOS = "aarch64-apple-darwin"
+
+
+@pytest.fixture
+def pack_workflow():
+    return yaml.safe_load((REPOSITORY / ".github/workflows/pack-docling.yml").read_text("utf-8"))
+
+
+def workflow_condition(expression, **context):
+    """Evaluate the workflow's boolean conditions with explicit Actions contexts."""
+    expression = expression.removeprefix("${{").removesuffix("}}").strip()
+    expression = expression.replace("&&", " and ").replace("||", " or ")
+    # The only input is the checked-in workflow, already executable repository code.
+    return eval(  # noqa: S307
+        f"({expression})",
+        {"__builtins__": {}},
+        {"always": lambda: True, "startsWith": str.startswith, **context},
+    )
+
+
+@pytest.mark.parametrize(
+    "event,ref,expected",
+    [
+        ("pull_request", "refs/pull/271/merge", True),
+        ("workflow_dispatch", "refs/heads/feat/web-tool-suite", True),
+        ("workflow_dispatch", "refs/heads/dev", False),
+        ("workflow_dispatch", "refs/heads/main", False),
+        ("workflow_dispatch", "refs/tags/pack-docling-v0.2.0", False),
+        ("push", "refs/tags/pack-docling-v0.2.0", False),
+    ],
+)
+def test_pack_supersession_preserves_trusted_branches_and_tags(pack_workflow, event, ref, expected):
+    condition = pack_workflow["concurrency"]["cancel-in-progress"]
+    github = SimpleNamespace(event_name=event, ref=ref)
+    assert workflow_condition(condition, github=github) is expected
+
+
+@pytest.mark.parametrize(
+    "hit,outcome,cleanup,restore_compiler,save_compiler,save_native",
+    [
+        ("true", "success", "success", False, False, False),
+        ("true", "failure", "success", False, False, False),
+        ("false", "success", "success", True, False, True),
+        ("false", "failure", "success", True, True, False),
+        ("false", "cancelled", "success", True, True, False),
+        ("false", "cancelled", "failure", True, False, False),
+        ("false", "skipped", "skipped", True, False, False),
+        ("false", "", "skipped", True, False, False),
+    ],
+)
+@pytest.mark.parametrize("target", [*LINUX, "x86_64-pc-windows-msvc"])
+def test_pack_caches_wheels_or_stopped_compiler_checkpoints(
+    pack_workflow, hit, outcome, cleanup, restore_compiler, save_compiler, save_native, target
+):
+    steps = {step["name"]: step for step in pack_workflow["jobs"]["pack"]["steps"]}
+    context = {
+        "matrix": SimpleNamespace(target=target),
+        "steps": SimpleNamespace(
+            native=SimpleNamespace(outputs={"cache-hit": hit}),
+            build=SimpleNamespace(outcome=outcome),
+            cleanup=SimpleNamespace(outcome=cleanup),
+        ),
+    }
+    for name, expected in (
+        ("Restore native compiler work", restore_compiler),
+        ("Save native compiler work", save_compiler),
+        ("Save native source builds", save_native),
+    ):
+        # Actions permits hyphens in property names; Python uses subscription here.
+        condition = steps[name]["if"].replace("outputs.cache-hit", "outputs['cache-hit']")
+        assert bool(workflow_condition(condition, **context)) is (
+            expected and target.startswith("x86_64-")
+        ), name
+
+
+def test_pack_checkpoints_follow_bounded_build_and_cleanup(pack_workflow):
+    pack = pack_workflow["jobs"]["pack"]
+    steps = {step["name"]: step for step in pack["steps"]}
+    names = list(steps)
+    assert steps["Build the pack"]["timeout-minutes"] == 310 < pack["timeout-minutes"]
+    cleanup = names.index("Stop compiler processes before saving their cache")
+    assert names.index("Build the pack") < cleanup
+    assert cleanup < names.index("Save native source builds")
+    assert cleanup < names.index("Save native compiler work")
+    assert names.index("Save native source builds") < names.index(
+        "Rebuild and compare component hashes"
+    )
+    assert "cache/restore@" in steps["Cache native source builds"]["uses"]
+    assert steps["Save native source builds"]["with"]["key"] == (
+        "${{ steps.native.outputs.cache-primary-key }}"
+    )
+    assert "TORCH_BUILD_CONTAINER" in pack["env"]
+
+
+@pytest.mark.parametrize("present,stop_fails", [(True, False), (False, False), (True, True)])
+def test_pack_cleanup_stops_only_its_named_container(
+    pack_workflow, monkeypatch, tmp_path, present, stop_fails
+):
+    step = next(
+        step for step in pack_workflow["jobs"]["pack"]["steps"] if step.get("id") == "cleanup"
+    )
+    monkeypatch.setenv("TORCH_BUILD_CONTAINER", "ashift-pack-torch-test")
+    monkeypatch.setenv("TARGET", LINUX[0])
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs["timeout"] <= 60
+        if command[:3] == ["docker", "container", "inspect"]:
+            return subprocess.CompletedProcess(command, 0 if present else 1)
+        if command[:2] == ["docker", "stop"] and stop_fails:
+            raise subprocess.CalledProcessError(1, command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    script = tmp_path / "cleanup.py"
+    script.write_text(step["run"], "utf-8")
+    if stop_fails:
+        with pytest.raises(subprocess.CalledProcessError):
+            runpy.run_path(str(script))
+    else:
+        runpy.run_path(str(script))
+    assert calls[0] == ["docker", "container", "inspect", "ashift-pack-torch-test"]
+    if present:
+        assert calls[1] == ["docker", "stop", "--time", "30", "ashift-pack-torch-test"]
+    if not stop_fails:
+        assert calls[-1] == ["sccache", "--stop-server"]
 
 
 @pytest.fixture
