@@ -2,6 +2,48 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
+## 0.6.0 (2026-11-11)
+
+Conditional recipes, watch-folder automation and cloud tool jobs join a browser workspace with localised tool discovery, visual studios, batch processing and three editing modes. Opt-in offline AI and raster watermark removal share the existing tool contracts. (#266, #271, #273, #275)
+
+### Upgrade notes
+
+- **AI tools default to offline execution.** `provider = "local"` keeps document processing on the device through the opt-in engine packs. Sending document content to a remote AI provider requires explicit per-session cloud consent in the web UI; consent is never stored between sessions. The host also requires `cloud_consent: true` before reading content for a cloud AI request. See [offline AI](tools.md#offline-ai-and-raster-watermark-removal) and [the AI panel](web.md#ai-panel). (#266, #275)
+- **OPFS access failures remain visible.** In WebKit contexts where the advertised Origin Private File System (OPFS) is unavailable, such as ephemeral or private WebKit sessions that refuse access, the editor displays **"Version history is unavailable"**. Access errors do not fall back to in-memory checkpoint storage, by design: a redaction-triggered purge must not silently miss on-disk versions or imply that unavailable history is durable or has been purged. (#275)
+
+### Added
+
+- **Conditional recipes and settled watch folders.** Recipes support `when` predicates and references to earlier step outputs. `ariad-host` runs watch-folder recipes after inputs have settled, through the shared execution and publication pipeline. (#266)
+- **Cloud document tool jobs and remote MCP execution.** `ariad-server` queues typed document tool jobs and exposes tool and recipe execution through remote MCP, with tool access and job admission enforced by the shared contracts. (#266)
+- **Offline AI and inpainting packs.** The optional `engines/ai` and `engines/inpaint` packs run out of process without network access. The registry adds `ai.summarize`, `ai.ask`, `ai.translate`, `ai.extract_tables`, `ai.recipe_from_text` and `pdf.watermark_remove_raster`, including page citations, validated recipe drafts and before/after inpainting previews. (#266)
+- **Web Foundation 2.** A 42-locale catalogue has reviewed English and Vietnamese plus 40 community-seeded locales; `en-XA` and `ar-XB` pseudo-locales are generated for tests. `scripts/i18n-check.mjs` checks catalogue completeness and message parity. The localised `/<locale>/app` shell exposes the shared registry, now 102 tools, with reloadable `?tool=<id>` links, a command palette, schema-driven parameter forms and a multi-file browser workspace. See [i18n](i18n.md) and [the tool hub](web.md#tool-hub). (#271)
+- **Virtualised PDF viewer.** The workspace uses an isolated EmbedPDF adapter for virtualised pages and thumbnails, search and zoom, with the PDFium worker and WASM served from the same origin. The [isolation proof of concept](../plans/reports/poc-embedpdf-isolation.md) records the licence and browser checks. (#271)
+- **Interactive web studios.** Page/Organize, Redact, Sign, Compare, Compress and OCR/Convert panels provide visual controls over the shared tools, with runtime availability and Desktop hand-offs shown in the workspace. (#273)
+- **Browser batch runner and visual recipe builder.** A client-side queue adds per-file progress, cancel, retry and ZIP export. The recipe builder supports conditions, JSON export and share links; imported or shared recipes require confirmation before they can run. (#273)
+- **Document reflow editor.** Bidirectional `ariad-ir/2` and Tiptap/ProseMirror mapping supports editing and export, with OPFS autosave, restorable version history and checkpoint purging after redaction. (#275)
+- **Page in-place editor.** A stateless interface to `edit.page_objects` and `edit.apply` exposes text, image and path edits with font substitution alerts and explicit errors when the execution runtime cannot apply them. (#275)
+- **Annotations, forms and the AI side panel.** The annotation canvas and AcroForm filler/designer use `pdf.annotations*` and `pdf.forms_*`. The offline-first `ai.*` panel offers Desktop commands, citation navigation and recipe drafts behind the recipe confirmation gate. See [editor modes](web.md#editor-modes). (#275)
+
+### Changed
+
+- **Private document AI provider interface.** `ariad_host::tools::ai` keeps a strict local/offline default and brokers explicitly consented remote-provider requests through the trusted host; engine packs remain network-isolated. (#266)
+- **Bounded Docling builds and compiler checkpoints.** The `Docling pack` build step has a 310-minute timeout within its 350-minute job. Native compiler checkpoint cache saves use `always()` after cleanup, preserving completed build work on cancellation or failure, with Docker and sccache cleanup before cache publication. (#274)
+- **Python build tooling.** The pinned `uv-build` backend moves to 0.13.6. (#232)
+
+### Fixed
+
+- **Docker Cargo cache isolation.** BuildKit Cargo cache mounts are isolated to avoid conflicting builds sharing incompatible state. (#265)
+- **Turnstile test synchronisation.** Signup tests wait for asynchronous Turnstile reset effects before asserting. (#267)
+- **Watch-folder test portability.** Watch tests canonicalise output paths before comparing them, and the Windows CLI test disables the unsupported sandbox mode. (#268)
+- **Benchmark process cleanup.** Timeout cleanup tolerates an already-reaped process instead of failing with `NoSuchProcess`; the regression test covers that race. (#270)
+
+### Known limitations
+
+- **Browser runtime availability.** The web studios and editors expose the shared tools, but operations requiring native packs still need a supported host or Desktop hand-off. Page mode can estimate objects from IR layout when PDFium page tools are unavailable; those estimates cannot be passed to `edit.apply`, and failed applies retain pending edits. Scanned PDFs need OCR before Document-mode text editing. (#273, #275)
+- **Tool routes and Page fallback.** Tool links use the localised app's query parameters; separate `/[locale]/tools/[slug]` static pages are not shipped. Page mode has no integrated rasterize fallback. (#271, #275)
+- **AI execution requires a configured runtime.** The browser does not load a local AI model and currently offers Desktop commands. Cloud AI execution needs a host-provided API and handler, which the standalone web app does not yet configure; granting consent alone sends no request. AI and raster inpainting remain local-runtime tools rather than cloud queue jobs. (#266, #275)
+- **Community translations and editor labels.** The 40 community locales are seeded drafts, not reviewed translations; missing strings fall back to English. Some editor and AI component labels still use English defaults. (#271, #275)
+
 ## 0.5.0 (2026-11-10)
 
 Document styles, measured fidelity and two PDF editing modes. `ashift` and the local MCP server can open documents into editable IR, export edited documents and apply stateless page-object edits through the shared tool registry. This release includes the Office PDF font-fidelity repair and platform stability fixes. (#251, #252, #254, #255, #256, #257, #258)
