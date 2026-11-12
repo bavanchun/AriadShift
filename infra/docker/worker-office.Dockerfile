@@ -12,23 +12,27 @@ ARG UBUNTU=ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc4
 ARG SERVER_IMAGE=ariadshift-server
 
 FROM ${UBUNTU} AS libreoffice
-ARG LIBREOFFICE_VERSION=26.8.1
+ARG LIBREOFFICE_VERSION=26.8.2
+ARG LIBREOFFICE_ARCHIVE_VERSION=26.8.2.2
+ARG LIBREOFFICE_STABLE_URL=https://download.documentfoundation.org/libreoffice/stable
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
     case "$(uname -m)" in \
-        x86_64) dir=x86_64; arch=x86-64; sum=30903df3b9f61360d9660cd707de48cd2831469114492a5008ed58a0ac77d044 ;; \
-        aarch64) dir=aarch64; arch=aarch64; sum=1b069c20dd237f6decad3ea02cb02f39fdf458b03d09c2a9facb7b9b71e6a27a ;; \
+        x86_64) dir=x86_64; arch=x86-64; sum=8290c8f46cb33d6df8f681cb796e0697461ea070f86ec55b63c94d7eb9d9a476 ;; \
+        aarch64) dir=aarch64; arch=aarch64; sum=54a780b666fcda7510c2eebe85265b71dd209db280fc16882fca5589015ca505 ;; \
         *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    archive="LibreOffice_${LIBREOFFICE_VERSION}_Linux_${arch}_deb.tar.gz"; \
-    curl -fsSL --retry 3 -o "/tmp/${archive}" \
-        "https://download.documentfoundation.org/libreoffice/stable/${LIBREOFFICE_VERSION}/deb/${dir}/${archive}"; \
-    echo "${sum}  /tmp/${archive}" | sha256sum -c -; \
+    primary_url="${LIBREOFFICE_STABLE_URL}/${LIBREOFFICE_VERSION}/deb/${dir}/LibreOffice_${LIBREOFFICE_VERSION}_Linux_${arch}_deb.tar.gz"; \
+    archive_url="https://downloadarchive.documentfoundation.org/libreoffice/old/${LIBREOFFICE_ARCHIVE_VERSION}/deb/${dir}/LibreOffice_${LIBREOFFICE_ARCHIVE_VERSION}_Linux_${arch}_deb.tar.gz"; \
+    curl -fsSL --retry 3 -o /tmp/libreoffice.tar.gz "${primary_url}" \
+        || curl -fsSL --retry 3 -o /tmp/libreoffice.tar.gz "${archive_url}"; \
+    echo "${sum}  /tmp/libreoffice.tar.gz" | sha256sum -c -; \
     mkdir -p /debs; \
-    tar -xzf "/tmp/${archive}" -C /tmp; \
+    tar -xzf /tmp/libreoffice.tar.gz -C /tmp; \
     find /tmp -path '*/DEBS/*.deb' -exec mv {} /debs/ \; ; \
+    rm -f /tmp/libreoffice.tar.gz; \
     ls /debs/*.deb >/dev/null
 
 FROM ${SERVER_IMAGE}
