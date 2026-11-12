@@ -37,6 +37,8 @@ IzPack = "IzPack"
 Iz = "Iz"
 # Vietnamese accent-folded compression-level keyword in the NL recipe parser.
 muc = "muc"
+# Name of the SAIS suffix-array library bundled in Sparkle's notices.
+sais = "sais"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".
@@ -71,6 +73,8 @@ extend-exclude = [
     "locales/[!e]*.json",
     "locales/e[!n]*.json",
     "locales/en-*.json",
+    # Generated from locales/*.json; it holds the translated text of every locale.
+    "apps/macos/AriadShift/Localizable.xcstrings",
 ]
 
 # Original wheel RECORD receipts contain URL-safe SHA-256 digests.

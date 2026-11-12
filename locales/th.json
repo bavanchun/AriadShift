@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "นำเข้า…",
+      "print": "พิมพ์…",
+      "tools": "เครื่องมือ",
+      "zoom": "{action, select, in {ซูมเข้า} out {ซูมออก} actual {ขนาดจริง} other {ซูม}}",
+      "check_updates": "ตรวจหาการอัปเดต…",
+      "show_welcome": "แสดงหน้าต้อนรับ"
+    },
+    "tools": {
+      "group": "{group, select, organize {จัดระเบียบ} convert {แปลง} optimize {ปรับให้เหมาะสม} security {ความปลอดภัย} overlay {วางซ้อน} ocr {OCR และการสแกน} annotate {ใส่หมายเหตุ} forms {แบบฟอร์ม} sign {ลงนาม} redact {ปกปิดข้อมูล} compare {เปรียบเทียบและตรวจสอบ} edit {แก้ไข} ai {AI} automation {ระบบอัตโนมัติ} other {เครื่องมืออื่น ๆ}}",
+      "disabled": "{reason, select, later {จะมีให้ใช้ในรุ่นถัดไป} format {ใช้ได้กับรูปแบบอื่น ใช้ ไฟล์ > นำเข้า} paid {ต้องใช้แพ็กเกจแบบชำระเงิน} info {อ่านรายละเอียดเครื่องมือไม่ได้ เครื่องมือจึงยังคงปิดอยู่} other {ไม่พร้อมใช้งาน}}",
+      "loading": "กำลังโหลดเครื่องมือ…"
+    },
+    "sidebar": {
+      "title": "หน้า",
+      "placeholder": "ภาพตัวอย่างของหน้าจะปรากฏที่นี่"
+    },
+    "viewer": {
+      "placeholder": "ตัวดูหน้าจะปรากฏที่นี่"
+    },
+    "toolbar": {
+      "inspector": "ข้อมูลเอกสาร"
+    },
+    "inspector": {
+      "title": "เอกสาร",
+      "field": "{field, select, name {ชื่อ} format {รูปแบบ} size {ขนาด} pages {หน้า} words {คำ} title {ชื่อเรื่อง} author {ผู้เขียน} routes {แปลงเป็นรูปแบบต่อไปนี้ได้} other {ช่อง}}",
+      "loading": "กำลังอ่านเอกสาร…",
+      "warnings": "{count, plural, other {คำเตือน # รายการ}}"
+    },
+    "run": {
+      "title": "เรียกใช้ {tool}",
+      "run": "เรียกใช้",
+      "cancel": "ยกเลิก",
+      "close": "เสร็จสิ้น",
+      "working": "กำลังเรียกใช้…",
+      "parameters": "การตั้งค่า",
+      "no_parameters": "เครื่องมือนี้ไม่มีการตั้งค่า",
+      "extra_documents": "เอกสารเพิ่มเติม",
+      "add_documents": "เพิ่ม…",
+      "remove": "ลบ",
+      "need_documents": "{count, plural, other {เพิ่มเอกสารอีก # รายการเพื่อเรียกใช้เครื่องมือนี้}}",
+      "failed": "เครื่องมือทำงานไม่เสร็จสมบูรณ์",
+      "open": "เปิด",
+      "reveal": "แสดงใน Finder",
+      "result_files": "{count, plural, other {สร้างไฟล์แล้ว # ไฟล์}}",
+      "field_error": "{kind, select, missing {ต้องระบุ {field}} other {{field} ไม่ถูกต้อง}}",
+      "result": "ผลลัพธ์",
+      "presets": "ค่าที่ตั้งไว้ล่วงหน้า"
+    },
+    "settings": {
+      "output_folder": "บันทึกผลลัพธ์ไว้ใน",
+      "output_same": "ข้างเอกสารต้นฉบับ",
+      "output_choose": "เลือกโฟลเดอร์…",
+      "open_result": "เปิดผลลัพธ์เมื่อเครื่องมือทำงานเสร็จ",
+      "updates": "การอัปเดต",
+      "updates_auto": "ตรวจหาการอัปเดตโดยอัตโนมัติ",
+      "updates_disabled": "ยังไม่ได้ตั้งค่าการอัปเดตในบิลด์นี้"
+    },
+    "onboarding": {
+      "title": "ยินดีต้อนรับสู่ AriadShift",
+      "about": "เปิด ตรวจสอบ และประมวลผลเอกสาร PDF ด้วยเอนจินเดียวกับบรรทัดคำสั่งของ AriadShift แปลง Markdown, HTML, Word, EPUB และรูปภาพเป็น PDF ได้ด้วย ไฟล์ > นำเข้า",
+      "packs": "แพ็กเอนจินเสริม (OCR, การลงนาม, การตรวจสอบ) จัดเก็บอยู่ใน {path}",
+      "privacy": "AriadShift ทำงานบน Mac ของคุณ และจะไม่เชื่อมต่อเครือข่ายเว้นแต่คุณจะเปิดใช้ฟีเจอร์ที่ต้องใช้เครือข่าย",
+      "start": "เริ่มต้นใช้งาน"
+    },
+    "import": {
+      "message": "เลือกเอกสารที่จะแปลงเป็น PDF",
+      "running": "กำลังนำเข้า {name}…",
+      "failed": "ไม่สามารถนำเข้า {name}"
+    },
+    "document": {
+      "invalid": "ไฟล์นี้ไม่ใช่ PDF ที่ถูกต้อง"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: แปลงเอกสารแบบส่วนตัวในเบราว์เซอร์ของคุณ",

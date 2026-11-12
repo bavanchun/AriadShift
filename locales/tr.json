@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "İçe Aktar…",
+      "print": "Yazdır…",
+      "tools": "Araçlar",
+      "zoom": "{action, select, in {Yakınlaştır} out {Uzaklaştır} actual {Gerçek Boyut} other {Yakınlaştırma}}",
+      "check_updates": "Güncellemeleri Denetle…",
+      "show_welcome": "Karşılama Ekranını Göster"
+    },
+    "tools": {
+      "group": "{group, select, organize {Düzenle} convert {Dönüştür} optimize {Optimize et} security {Güvenlik} overlay {Bindirme} ocr {OCR ve taramalar} annotate {Not ekle} forms {Formlar} sign {İmzala} redact {Karart} compare {Karşılaştır ve doğrula} edit {Değiştir} ai {Yapay zeka} automation {Otomasyon} other {Diğer araçlar}}",
+      "disabled": "{reason, select, later {Daha sonraki bir sürümde kullanılabilir olacak} format {Diğer biçimlerle çalışır. Dosya > İçe Aktar’ı kullanın.} paid {Ücretli bir plan gerektirir} info {Araç ayrıntıları okunamadı, bu nedenle araçlar kapalı kalıyor.} other {Kullanılamıyor}}",
+      "loading": "Araçlar yükleniyor…"
+    },
+    "sidebar": {
+      "title": "Sayfalar",
+      "placeholder": "Sayfa küçük resimleri burada görünecek."
+    },
+    "viewer": {
+      "placeholder": "Sayfa görüntüleyici burada görünecek."
+    },
+    "toolbar": {
+      "inspector": "Belge Bilgileri"
+    },
+    "inspector": {
+      "title": "Belge",
+      "field": "{field, select, name {Ad} format {Biçim} size {Boyut} pages {Sayfalar} words {Kelimeler} title {Başlık} author {Yazar} routes {Şuna dönüştürülebilir} other {Alan}}",
+      "loading": "Belge okunuyor…",
+      "warnings": "{count, plural, one {# uyarı} other {# uyarı}}"
+    },
+    "run": {
+      "title": "{tool} aracını çalıştır",
+      "run": "Çalıştır",
+      "cancel": "İptal",
+      "close": "Bitti",
+      "working": "Çalışıyor…",
+      "parameters": "Ayarlar",
+      "no_parameters": "Bu aracın ayarı yok.",
+      "extra_documents": "Ek belgeler",
+      "add_documents": "Ekle…",
+      "remove": "Kaldır",
+      "need_documents": "{count, plural, one {Bu aracı çalıştırmak için # belge daha ekleyin.} other {Bu aracı çalıştırmak için # belge daha ekleyin.}}",
+      "failed": "Araç tamamlanmadı.",
+      "open": "Aç",
+      "reveal": "Finder’da Göster",
+      "result_files": "{count, plural, one {# dosya oluşturuldu} other {# dosya oluşturuldu}}",
+      "field_error": "{kind, select, missing {{field} gerekli.} other {{field} geçerli değil.}}",
+      "result": "Sonuç",
+      "presets": "Ön ayarlar"
+    },
+    "settings": {
+      "output_folder": "Sonuçları şuraya kaydet",
+      "output_same": "Özgün belgenin yanına",
+      "output_choose": "Klasör Seç…",
+      "open_result": "Bir araç bittiğinde sonucu aç",
+      "updates": "Güncellemeler",
+      "updates_auto": "Güncellemeleri otomatik denetle",
+      "updates_disabled": "Güncellemeler bu derlemede ayarlanmamış."
+    },
+    "onboarding": {
+      "title": "AriadShift’e hoş geldiniz",
+      "about": "PDF belgelerini AriadShift komut satırıyla aynı motorla açın, inceleyin ve işleyin. Dosya > İçe Aktar ile Markdown, HTML, Word, EPUB ve görüntüleri PDF’ye dönüştürün.",
+      "packs": "İsteğe bağlı motor paketleri (OCR, imzalama, doğrulama) {path} konumunda saklanır.",
+      "privacy": "AriadShift Mac’inizde çalışır. Ağ bağlantısı gerektiren bir özelliği açmadığınız sürece hiçbir ağ bağlantısı kurmaz.",
+      "start": "Başla"
+    },
+    "import": {
+      "message": "PDF’ye dönüştürmek için bir belge seçin",
+      "running": "{name} içe aktarılıyor…",
+      "failed": "{name} içe aktarılamadı"
+    },
+    "document": {
+      "invalid": "Bu dosya geçerli bir PDF değil."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: tarayıcınızda gizli belge dönüştürme",

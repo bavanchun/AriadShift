@@ -243,8 +243,10 @@ test("a select key lists the same branches in every locale that translates it", 
   for (const key of ["mac.tools.group", "mac.inspector.field", "mac.menu.zoom", "mac.tools.disabled"]) {
     const branches = Object.keys(catalog).filter((name) => name.startsWith(`${key}.`));
     assert.ok(branches.length >= 3, `${key} has branches`);
+    const expected = Object.keys(catalog[branches[0]].localizations).sort();
+    assert.ok(expected.includes("en") && expected.includes("vi"), `${key} is translated in en and vi`);
     for (const branch of branches) {
-      assert.deepEqual(Object.keys(catalog[branch].localizations).sort(), ["en", "vi"], branch);
+      assert.deepEqual(Object.keys(catalog[branch].localizations).sort(), expected, branch);
     }
   }
 });

@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "导入…",
+      "print": "打印…",
+      "tools": "工具",
+      "zoom": "{action, select, in {放大} out {缩小} actual {实际大小} other {缩放}}",
+      "check_updates": "检查更新…",
+      "show_welcome": "显示欢迎页"
+    },
+    "tools": {
+      "group": "{group, select, organize {整理} convert {转换} optimize {优化} security {安全} overlay {叠加} ocr {OCR 与扫描件} annotate {批注} forms {表单} sign {签名} redact {涂黑} compare {比较与验证} edit {编辑} ai {AI} automation {自动化} other {其他工具}}",
+      "disabled": "{reason, select, later {将在后续版本中提供} format {适用于其他格式。请使用“文件”>“导入”。} paid {需要付费方案} info {无法读取工具详情，因此工具保持关闭。} other {不可用}}",
+      "loading": "正在载入工具…"
+    },
+    "sidebar": {
+      "title": "页面",
+      "placeholder": "页面缩略图将显示在这里。"
+    },
+    "viewer": {
+      "placeholder": "页面查看器将显示在这里。"
+    },
+    "toolbar": {
+      "inspector": "文稿信息"
+    },
+    "inspector": {
+      "title": "文稿",
+      "field": "{field, select, name {名称} format {格式} size {大小} pages {页数} words {字数} title {标题} author {作者} routes {可转换为} other {字段}}",
+      "loading": "正在读取文稿…",
+      "warnings": "{count, plural, other {# 条警告}}"
+    },
+    "run": {
+      "title": "运行 {tool}",
+      "run": "运行",
+      "cancel": "取消",
+      "close": "完成",
+      "working": "正在运行…",
+      "parameters": "设置",
+      "no_parameters": "此工具没有设置。",
+      "extra_documents": "其他文稿",
+      "add_documents": "添加…",
+      "remove": "移除",
+      "need_documents": "{count, plural, other {再添加 # 个文稿即可运行此工具。}}",
+      "failed": "工具未完成。",
+      "open": "打开",
+      "reveal": "在访达中显示",
+      "result_files": "{count, plural, other {已创建 # 个文件}}",
+      "field_error": "{kind, select, missing {{field}为必填项。} other {{field}无效。}}",
+      "result": "结果",
+      "presets": "预设"
+    },
+    "settings": {
+      "output_folder": "将结果存储到",
+      "output_same": "原始文稿旁边",
+      "output_choose": "选取文件夹…",
+      "open_result": "工具完成后打开结果",
+      "updates": "更新",
+      "updates_auto": "自动检查更新",
+      "updates_disabled": "此版本未设置更新。"
+    },
+    "onboarding": {
+      "title": "欢迎使用 AriadShift",
+      "about": "使用与 AriadShift 命令行相同的引擎来打开、检查和处理 PDF 文稿。通过“文件”>“导入”将 Markdown、HTML、Word、EPUB 和图像转换为 PDF。",
+      "packs": "可选的引擎包（OCR、签名、验证）存储在 {path}。",
+      "privacy": "AriadShift 在你的 Mac 上运行。除非你开启需要联网的功能，否则它不会建立任何网络连接。",
+      "start": "开始使用"
+    },
+    "import": {
+      "message": "选择要转换为 PDF 的文稿",
+      "running": "正在导入 {name}…",
+      "failed": "无法导入 {name}"
+    },
+    "document": {
+      "invalid": "此文件不是有效的 PDF。"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}：在浏览器中私密转换文档",

@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "درون‌ریزی…",
+      "print": "چاپ…",
+      "tools": "ابزارها",
+      "zoom": "{action, select, in {بزرگ‌نمایی} out {کوچک‌نمایی} actual {اندازه واقعی} other {بزرگ‌نمایی}}",
+      "check_updates": "بررسی به‌روزرسانی‌ها…",
+      "show_welcome": "نمایش خوش‌آمدگویی"
+    },
+    "tools": {
+      "group": "{group, select, organize {سازمان‌دهی} convert {تبدیل} optimize {بهینه‌سازی} security {امنیت} overlay {همپوشانی} ocr {OCR و اسکن‌ها} annotate {افزودن حاشیه‌نویسی} forms {فرم‌ها} sign {امضا} redact {سیاه‌سازی} compare {مقایسه و اعتبارسنجی} edit {ویرایش} ai {هوش مصنوعی} automation {خودکارسازی} other {ابزارهای دیگر}}",
+      "disabled": "{reason, select, later {در نسخه‌ای بعدی در دسترس خواهد بود} format {با قالب‌های دیگر کار می‌کند. از پرونده > درون‌ریزی استفاده کنید.} paid {به طرح پولی نیاز دارد} info {جزئیات ابزار خوانده نشد، بنابراین ابزارها غیرفعال می‌مانند.} other {در دسترس نیست}}",
+      "loading": "در حال بارگیری ابزارها…"
+    },
+    "sidebar": {
+      "title": "صفحه‌ها",
+      "placeholder": "تصاویر بندانگشتی صفحه‌ها اینجا نمایش داده می‌شوند."
+    },
+    "viewer": {
+      "placeholder": "نمایشگر صفحه‌ها اینجا نمایش داده می‌شود."
+    },
+    "toolbar": {
+      "inspector": "اطلاعات سند"
+    },
+    "inspector": {
+      "title": "سند",
+      "field": "{field, select, name {نام} format {قالب} size {اندازه} pages {صفحه‌ها} words {واژه‌ها} title {عنوان} author {نویسنده} routes {قابل تبدیل به} other {فیلد}}",
+      "loading": "در حال خواندن سند…",
+      "warnings": "{count, plural, one {# هشدار} other {# هشدار}}"
+    },
+    "run": {
+      "title": "اجرای {tool}",
+      "run": "اجرا",
+      "cancel": "لغو",
+      "close": "تمام",
+      "working": "در حال اجرا…",
+      "parameters": "تنظیمات",
+      "no_parameters": "این ابزار تنظیماتی ندارد.",
+      "extra_documents": "سندهای بیشتر",
+      "add_documents": "افزودن…",
+      "remove": "حذف",
+      "need_documents": "{count, plural, one {برای اجرای این ابزار # سند دیگر اضافه کنید.} other {برای اجرای این ابزار # سند دیگر اضافه کنید.}}",
+      "failed": "ابزار کارش را کامل نکرد.",
+      "open": "باز کردن",
+      "reveal": "نمایش در Finder",
+      "result_files": "{count, plural, one {# پرونده ایجاد شد} other {# پرونده ایجاد شد}}",
+      "field_error": "{kind, select, missing {{field} الزامی است.} other {{field} معتبر نیست.}}",
+      "result": "نتیجه",
+      "presets": "پیش‌تنظیم‌ها"
+    },
+    "settings": {
+      "output_folder": "ذخیره نتایج در",
+      "output_same": "کنار سند اصلی",
+      "output_choose": "انتخاب پوشه…",
+      "open_result": "باز کردن نتیجه پس از پایان ابزار",
+      "updates": "به‌روزرسانی‌ها",
+      "updates_auto": "بررسی خودکار به‌روزرسانی‌ها",
+      "updates_disabled": "به‌روزرسانی‌ها در این ساخت راه‌اندازی نشده‌اند."
+    },
+    "onboarding": {
+      "title": "به AriadShift خوش آمدید",
+      "about": "سندهای PDF را با همان موتوری که خط فرمان AriadShift دارد باز کنید، بررسی کنید و پردازش کنید. Markdown، HTML، Word، EPUB و تصاویر را با پرونده > درون‌ریزی به PDF تبدیل کنید.",
+      "packs": "بسته‌های اختیاری موتور (OCR، امضا، اعتبارسنجی) در {path} ذخیره می‌شوند.",
+      "privacy": "AriadShift روی Mac شما کار می‌کند. تا وقتی ویژگی‌ای را که به اتصال شبکه نیاز دارد روشن نکنید، هیچ اتصال شبکه‌ای برقرار نمی‌کند.",
+      "start": "شروع"
+    },
+    "import": {
+      "message": "سندی را برای تبدیل به PDF انتخاب کنید",
+      "running": "در حال درون‌ریزی {name}…",
+      "failed": "درون‌ریزی {name} انجام نشد"
+    },
+    "document": {
+      "invalid": "این پرونده یک PDF معتبر نیست."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: تبدیل خصوصی اسناد در مرورگر شما",

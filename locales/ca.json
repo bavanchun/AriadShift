@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importa…",
+      "print": "Imprimeix…",
+      "tools": "Eines",
+      "zoom": "{action, select, in {Amplia} out {Redueix} actual {Mida real} other {Zoom}}",
+      "check_updates": "Cerca actualitzacions…",
+      "show_welcome": "Mostra la benvinguda"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organitza} convert {Converteix} optimize {Optimitza} security {Seguretat} overlay {Superposa} ocr {OCR i escanejos} annotate {Anota} forms {Formularis} sign {Signa} redact {Censura} compare {Compara i valida} edit {Edita} ai {IA} automation {Automatització} other {Altres eines}}",
+      "disabled": "{reason, select, later {Disponible en una versió posterior} format {Funciona amb altres formats. Utilitza Fitxer > Importa.} paid {Requereix un pla de pagament} info {No s’han pogut llegir els detalls de l’eina, per això les eines continuen desactivades.} other {No disponible}}",
+      "loading": "Carregant les eines…"
+    },
+    "sidebar": {
+      "title": "Pàgines",
+      "placeholder": "Les miniatures de les pàgines apareixeran aquí."
+    },
+    "viewer": {
+      "placeholder": "El visualitzador de pàgines apareixerà aquí."
+    },
+    "toolbar": {
+      "inspector": "Informació del document"
+    },
+    "inspector": {
+      "title": "Document",
+      "field": "{field, select, name {Nom} format {Format} size {Mida} pages {Pàgines} words {Paraules} title {Títol} author {Autor} routes {Es pot convertir a} other {Camp}}",
+      "loading": "Llegint el document…",
+      "warnings": "{count, plural, one {# advertència} many {# d’advertències} other {# advertències}}"
+    },
+    "run": {
+      "title": "Executa {tool}",
+      "run": "Executa",
+      "cancel": "Cancel·la",
+      "close": "Fet",
+      "working": "Executant…",
+      "parameters": "Ajustos",
+      "no_parameters": "Aquesta eina no té ajustos.",
+      "extra_documents": "Documents addicionals",
+      "add_documents": "Afegeix…",
+      "remove": "Elimina",
+      "need_documents": "{count, plural, one {Afegeix # document més per executar aquesta eina.} many {Afegeix # de documents més per executar aquesta eina.} other {Afegeix # documents més per executar aquesta eina.}}",
+      "failed": "L’eina no ha acabat.",
+      "open": "Obre",
+      "reveal": "Mostra al Finder",
+      "result_files": "{count, plural, one {# fitxer creat} many {# de fitxers creats} other {# fitxers creats}}",
+      "field_error": "{kind, select, missing {{field} és obligatori.} other {{field} no és vàlid.}}",
+      "result": "Resultat",
+      "presets": "Predefinits"
+    },
+    "settings": {
+      "output_folder": "Desa els resultats a",
+      "output_same": "Al costat del document original",
+      "output_choose": "Tria una carpeta…",
+      "open_result": "Obre el resultat quan acabi una eina",
+      "updates": "Actualitzacions",
+      "updates_auto": "Cerca actualitzacions automàticament",
+      "updates_disabled": "Les actualitzacions no estan configurades en aquesta compilació."
+    },
+    "onboarding": {
+      "title": "Et donem la benvinguda a AriadShift",
+      "about": "Obre, inspecciona i processa documents PDF amb el mateix motor que la línia d’ordres d’AriadShift. Converteix Markdown, HTML, Word, EPUB i imatges a PDF amb Fitxer > Importa.",
+      "packs": "Els paquets de motor opcionals (OCR, signatura, validació) es desen a {path}.",
+      "privacy": "AriadShift funciona al teu Mac. No fa cap connexió de xarxa tret que activis una funció que en necessiti.",
+      "start": "Comença"
+    },
+    "import": {
+      "message": "Tria un document per convertir-lo a PDF",
+      "running": "Important {name}…",
+      "failed": "No s’ha pogut importar {name}"
+    },
+    "document": {
+      "invalid": "Aquest fitxer no és un PDF vàlid."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: conversió privada de documents al teu navegador",

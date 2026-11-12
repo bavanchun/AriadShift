@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importovat…",
+      "print": "Tisknout…",
+      "tools": "Nástroje",
+      "zoom": "{action, select, in {Přiblížit} out {Oddálit} actual {Skutečná velikost} other {Zoom}}",
+      "check_updates": "Zkontrolovat aktualizace…",
+      "show_welcome": "Zobrazit uvítání"
+    },
+    "tools": {
+      "group": "{group, select, organize {Uspořádat} convert {Převést} optimize {Optimalizovat} security {Zabezpečení} overlay {Překrytí} ocr {OCR a skeny} annotate {Anotovat} forms {Formuláře} sign {Podepsat} redact {Začernit} compare {Porovnat a ověřit} edit {Upravit} ai {AI} automation {Automatizace} other {Další nástroje}}",
+      "disabled": "{reason, select, later {Dostupné v pozdější verzi} format {Funguje s jinými formáty. Použijte Soubor > Importovat.} paid {Vyžaduje placený tarif} info {Podrobnosti o nástroji se nepodařilo načíst, proto zůstávají nástroje vypnuté.} other {Nedostupné}}",
+      "loading": "Načítání nástrojů…"
+    },
+    "sidebar": {
+      "title": "Stránky",
+      "placeholder": "Zde se zobrazí náhledy stránek."
+    },
+    "viewer": {
+      "placeholder": "Zde se zobrazí prohlížeč stránek."
+    },
+    "toolbar": {
+      "inspector": "Informace o dokumentu"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Jméno} format {Formát} size {Velikost} pages {Stránky} words {Slova} title {Název} author {Autor} routes {Lze převést na} other {Pole}}",
+      "loading": "Čtení dokumentu…",
+      "warnings": "{count, plural, one {# upozornění} few {# upozornění} many {# upozornění} other {# upozornění}}"
+    },
+    "run": {
+      "title": "Spustit {tool}",
+      "run": "Spustit",
+      "cancel": "Zrušit",
+      "close": "Hotovo",
+      "working": "Probíhá spuštění…",
+      "parameters": "Nastavení",
+      "no_parameters": "Tento nástroj nemá žádná nastavení.",
+      "extra_documents": "Další dokumenty",
+      "add_documents": "Přidat…",
+      "remove": "Odebrat",
+      "need_documents": "{count, plural, one {Přidejte ještě # dokument, abyste mohli tento nástroj spustit.} few {Přidejte ještě # dokumenty, abyste mohli tento nástroj spustit.} many {Přidejte ještě # dokumentu, abyste mohli tento nástroj spustit.} other {Přidejte ještě # dokumentů, abyste mohli tento nástroj spustit.}}",
+      "failed": "Nástroj nedokončil práci.",
+      "open": "Otevřít",
+      "reveal": "Zobrazit ve Finderu",
+      "result_files": "{count, plural, one {Vytvořen # soubor} few {Vytvořeny # soubory} many {Vytvořeno # souboru} other {Vytvořeno # souborů}}",
+      "field_error": "{kind, select, missing {Položka {field} je povinná.} other {Položka {field} není platná.}}",
+      "result": "Výsledek",
+      "presets": "Předvolby"
+    },
+    "settings": {
+      "output_folder": "Ukládat výsledky do",
+      "output_same": "Vedle původního dokumentu",
+      "output_choose": "Vybrat složku…",
+      "open_result": "Po dokončení nástroje otevřít výsledek",
+      "updates": "Aktualizace",
+      "updates_auto": "Kontrolovat aktualizace automaticky",
+      "updates_disabled": "Aktualizace nejsou v tomto sestavení nastaveny."
+    },
+    "onboarding": {
+      "title": "Vítejte v AriadShift",
+      "about": "Otevírejte, kontrolujte a zpracovávejte dokumenty PDF stejným jádrem jako příkazový řádek AriadShift. Převádějte Markdown, HTML, Word, EPUB a obrázky do PDF přes Soubor > Importovat.",
+      "packs": "Volitelné balíčky jádra (OCR, podepisování, ověřování) se ukládají do {path}.",
+      "privacy": "AriadShift funguje na vašem Macu. Nenavazuje žádná síťová spojení, dokud nezapnete funkci, která je potřebuje.",
+      "start": "Začít"
+    },
+    "import": {
+      "message": "Vyberte dokument, který chcete převést do PDF",
+      "running": "Importuje se {name}…",
+      "failed": "Položku {name} se nepodařilo importovat"
+    },
+    "document": {
+      "invalid": "Tento soubor není platný PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: soukromý převod dokumentů ve vašem prohlížeči",

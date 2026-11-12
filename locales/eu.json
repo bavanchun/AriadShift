@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Inportatu…",
+      "print": "Inprimatu…",
+      "tools": "Tresnak",
+      "zoom": "{action, select, in {Handitu} out {Txikitu} actual {Benetako tamaina} other {Zooma}}",
+      "check_updates": "Bilatu eguneratzeak…",
+      "show_welcome": "Erakutsi ongietorria"
+    },
+    "tools": {
+      "group": "{group, select, organize {Antolatu} convert {Bihurtu} optimize {Optimizatu} security {Segurtasuna} overlay {Gainjarri} ocr {OCR eta eskaneatzeak} annotate {Oharpenak} forms {Inprimakiak} sign {Sinatu} redact {Ezkutatu} compare {Konparatu eta balioztatu} edit {Editatu} ai {AA} automation {Automatizazioa} other {Beste tresna batzuk}}",
+      "disabled": "{reason, select, later {Geroko bertsio batean egongo da erabilgarri} format {Beste formatu batzuekin funtzionatzen du. Erabili Fitxategia > Inportatu.} paid {Ordainpeko plana behar du} info {Ezin izan dira tresnaren xehetasunak irakurri, beraz tresnak desgaituta daude.} other {Ez dago erabilgarri}}",
+      "loading": "Tresnak kargatzen…"
+    },
+    "sidebar": {
+      "title": "Orriak",
+      "placeholder": "Orrien miniaturak hemen agertuko dira."
+    },
+    "viewer": {
+      "placeholder": "Orrien ikustailea hemen agertuko da."
+    },
+    "toolbar": {
+      "inspector": "Dokumentuaren informazioa"
+    },
+    "inspector": {
+      "title": "Dokumentua",
+      "field": "{field, select, name {Izena} format {Formatua} size {Tamaina} pages {Orriak} words {Hitzak} title {Izenburua} author {Egilea} routes {Honetara bihur daiteke} other {Eremua}}",
+      "loading": "Dokumentua irakurtzen…",
+      "warnings": "{count, plural, one {# abisu} other {# abisu}}"
+    },
+    "run": {
+      "title": "Exekutatu {tool}",
+      "run": "Exekutatu",
+      "cancel": "Utzi",
+      "close": "Eginda",
+      "working": "Exekutatzen…",
+      "parameters": "Ezarpenak",
+      "no_parameters": "Tresna honek ez du ezarpenik.",
+      "extra_documents": "Dokumentu gehigarriak",
+      "add_documents": "Gehitu…",
+      "remove": "Kendu",
+      "need_documents": "{count, plural, one {Gehitu dokumentu # gehiago tresna hau exekutatzeko.} other {Gehitu # dokumentu gehiago tresna hau exekutatzeko.}}",
+      "failed": "Tresna ez da amaitu.",
+      "open": "Ireki",
+      "reveal": "Erakutsi Finder-en",
+      "result_files": "{count, plural, one {Fitxategi # sortu da} other {# fitxategi sortu dira}}",
+      "field_error": "{kind, select, missing {{field} beharrezkoa da.} other {{field} ez da baliozkoa.}}",
+      "result": "Emaitza",
+      "presets": "Aurrezarpenak"
+    },
+    "settings": {
+      "output_folder": "Gorde emaitzak hemen",
+      "output_same": "Jatorrizko dokumentuaren ondoan",
+      "output_choose": "Aukeratu karpeta…",
+      "open_result": "Ireki emaitza tresna bat amaitzen denean",
+      "updates": "Eguneratzeak",
+      "updates_auto": "Bilatu eguneratzeak automatikoki",
+      "updates_disabled": "Eguneratzeak ez daude konfiguratuta bertsio honetan."
+    },
+    "onboarding": {
+      "title": "Ongi etorri AriadShift-era",
+      "about": "Ireki, aztertu eta prozesatu PDF dokumentuak AriadShift komando-lerroak erabiltzen duen motor berarekin. Bihurtu Markdown, HTML, Word, EPUB eta irudiak PDF formatura Fitxategia > Inportatu erabiliz.",
+      "packs": "Aukerako motor-paketeak (OCR, sinadura, balidazioa) hemen gordetzen dira: {path}.",
+      "privacy": "AriadShift zure Mac-ean funtzionatzen du. Ez du sareko konexiorik egiten, konexioa behar duen eginbide bat aktibatzen ez baduzu.",
+      "start": "Hasi"
+    },
+    "import": {
+      "message": "Aukeratu PDF formatura bihurtzeko dokumentu bat",
+      "running": "{name} inportatzen…",
+      "failed": "Ezin izan da {name} inportatu"
+    },
+    "document": {
+      "invalid": "Fitxategi hau ez da baliozko PDF bat."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: dokumentuen bihurketa pribatua zure nabigatzailean",

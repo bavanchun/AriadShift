@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "가져오기…",
+      "print": "프린트…",
+      "tools": "도구",
+      "zoom": "{action, select, in {확대} out {축소} actual {실제 크기} other {확대/축소}}",
+      "check_updates": "업데이트 확인…",
+      "show_welcome": "환영 화면 보기"
+    },
+    "tools": {
+      "group": "{group, select, organize {정리} convert {변환} optimize {최적화} security {보안} overlay {오버레이} ocr {OCR 및 스캔} annotate {주석} forms {양식} sign {서명} redact {가리기} compare {비교 및 검증} edit {편집} ai {AI} automation {자동화} other {기타 도구}}",
+      "disabled": "{reason, select, later {이후 릴리스에서 사용할 수 있습니다} format {다른 형식에서 작동합니다. 파일 > 가져오기를 사용하세요.} paid {유료 요금제가 필요합니다} info {도구 세부 정보를 읽을 수 없어 도구가 꺼진 상태로 유지됩니다.} other {사용할 수 없음}}",
+      "loading": "도구 불러오는 중…"
+    },
+    "sidebar": {
+      "title": "페이지",
+      "placeholder": "페이지 썸네일이 여기에 표시됩니다."
+    },
+    "viewer": {
+      "placeholder": "페이지 뷰어가 여기에 표시됩니다."
+    },
+    "toolbar": {
+      "inspector": "문서 정보"
+    },
+    "inspector": {
+      "title": "문서",
+      "field": "{field, select, name {이름} format {형식} size {크기} pages {페이지} words {단어 수} title {제목} author {작성자} routes {변환 가능한 형식} other {항목}}",
+      "loading": "문서 읽는 중…",
+      "warnings": "{count, plural, other {경고 #개}}"
+    },
+    "run": {
+      "title": "{tool} 실행",
+      "run": "실행",
+      "cancel": "취소",
+      "close": "완료",
+      "working": "실행 중…",
+      "parameters": "설정",
+      "no_parameters": "이 도구에는 설정이 없습니다.",
+      "extra_documents": "추가 문서",
+      "add_documents": "추가…",
+      "remove": "제거",
+      "need_documents": "{count, plural, other {이 도구를 실행하려면 문서를 #개 더 추가하세요.}}",
+      "failed": "도구가 완료되지 않았습니다.",
+      "open": "열기",
+      "reveal": "Finder에서 보기",
+      "result_files": "{count, plural, other {파일 #개를 만들었습니다}}",
+      "field_error": "{kind, select, missing {{field}은(는) 필수입니다.} other {{field}이(가) 올바르지 않습니다.}}",
+      "result": "결과",
+      "presets": "프리셋"
+    },
+    "settings": {
+      "output_folder": "결과 저장 위치",
+      "output_same": "원본 문서 옆",
+      "output_choose": "폴더 선택…",
+      "open_result": "도구가 끝나면 결과 열기",
+      "updates": "업데이트",
+      "updates_auto": "업데이트 자동 확인",
+      "updates_disabled": "이 빌드에서는 업데이트가 설정되어 있지 않습니다."
+    },
+    "onboarding": {
+      "title": "AriadShift에 오신 것을 환영합니다",
+      "about": "AriadShift 명령줄과 동일한 엔진으로 PDF 문서를 열고, 검사하고, 처리하세요. 파일 > 가져오기로 Markdown, HTML, Word, EPUB 및 이미지를 PDF로 변환할 수 있습니다.",
+      "packs": "선택 사항인 엔진 팩(OCR, 서명, 검증)은 {path}에 저장됩니다.",
+      "privacy": "AriadShift는 사용자의 Mac에서 실행됩니다. 네트워크가 필요한 기능을 켜지 않는 한 네트워크에 연결하지 않습니다.",
+      "start": "시작하기"
+    },
+    "import": {
+      "message": "PDF로 변환할 문서를 선택하세요",
+      "running": "{name} 가져오는 중…",
+      "failed": "{name}을(를) 가져올 수 없습니다"
+    },
+    "document": {
+      "invalid": "이 파일은 올바른 PDF가 아닙니다."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: 브라우저에서 비공개로 문서 변환",

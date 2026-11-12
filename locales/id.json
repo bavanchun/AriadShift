@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Impor…",
+      "print": "Cetak…",
+      "tools": "Alat",
+      "zoom": "{action, select, in {Perbesar} out {Perkecil} actual {Ukuran Sebenarnya} other {Zoom}}",
+      "check_updates": "Periksa Pembaruan…",
+      "show_welcome": "Tampilkan Selamat Datang"
+    },
+    "tools": {
+      "group": "{group, select, organize {Atur} convert {Konversi} optimize {Optimalkan} security {Keamanan} overlay {Tumpang Tindih} ocr {OCR dan pindaian} annotate {Anotasi} forms {Formulir} sign {Tanda Tangani} redact {Sensor} compare {Bandingkan dan validasi} edit {Edit} ai {AI} automation {Otomatisasi} other {Alat lainnya}}",
+      "disabled": "{reason, select, later {Tersedia di rilis berikutnya} format {Berfungsi dengan format lain. Gunakan File > Impor.} paid {Memerlukan paket berbayar} info {Detail alat tidak dapat dibaca, jadi alat tetap nonaktif.} other {Tidak tersedia}}",
+      "loading": "Memuat alat…"
+    },
+    "sidebar": {
+      "title": "Halaman",
+      "placeholder": "Gambar mini halaman akan muncul di sini."
+    },
+    "viewer": {
+      "placeholder": "Penampil halaman akan muncul di sini."
+    },
+    "toolbar": {
+      "inspector": "Info Dokumen"
+    },
+    "inspector": {
+      "title": "Dokumen",
+      "field": "{field, select, name {Nama} format {Format} size {Ukuran} pages {Halaman} words {Kata} title {Judul} author {Penulis} routes {Dapat dikonversi ke} other {Bidang}}",
+      "loading": "Membaca dokumen…",
+      "warnings": "{count, plural, other {# peringatan}}"
+    },
+    "run": {
+      "title": "Jalankan {tool}",
+      "run": "Jalankan",
+      "cancel": "Batal",
+      "close": "Selesai",
+      "working": "Menjalankan…",
+      "parameters": "Pengaturan",
+      "no_parameters": "Alat ini tidak memiliki pengaturan.",
+      "extra_documents": "Dokumen tambahan",
+      "add_documents": "Tambah…",
+      "remove": "Hapus",
+      "need_documents": "{count, plural, other {Tambahkan # dokumen lagi untuk menjalankan alat ini.}}",
+      "failed": "Alat tidak selesai.",
+      "open": "Buka",
+      "reveal": "Tampilkan di Finder",
+      "result_files": "{count, plural, other {# file dibuat}}",
+      "field_error": "{kind, select, missing {{field} wajib diisi.} other {{field} tidak valid.}}",
+      "result": "Hasil",
+      "presets": "Preset"
+    },
+    "settings": {
+      "output_folder": "Simpan hasil di",
+      "output_same": "Di samping dokumen asli",
+      "output_choose": "Pilih Folder…",
+      "open_result": "Buka hasil saat alat selesai",
+      "updates": "Pembaruan",
+      "updates_auto": "Periksa pembaruan secara otomatis",
+      "updates_disabled": "Pembaruan belum disiapkan di build ini."
+    },
+    "onboarding": {
+      "title": "Selamat datang di AriadShift",
+      "about": "Buka, periksa, dan proses dokumen PDF dengan mesin yang sama seperti baris perintah AriadShift. Konversi Markdown, HTML, Word, EPUB, dan gambar ke PDF dengan File > Impor.",
+      "packs": "Paket mesin opsional (OCR, penandatanganan, validasi) disimpan di {path}.",
+      "privacy": "AriadShift berjalan di Mac Anda. Aplikasi ini tidak membuat koneksi jaringan kecuali Anda mengaktifkan fitur yang memerlukannya.",
+      "start": "Mulai"
+    },
+    "import": {
+      "message": "Pilih dokumen untuk dikonversi ke PDF",
+      "running": "Mengimpor {name}…",
+      "failed": "Tidak dapat mengimpor {name}"
+    },
+    "document": {
+      "invalid": "File ini bukan PDF yang valid."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: konversi dokumen secara privat di peramban Anda",

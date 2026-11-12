@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importieren…",
+      "print": "Drucken…",
+      "tools": "Werkzeuge",
+      "zoom": "{action, select, in {Vergrößern} out {Verkleinern} actual {Originalgröße} other {Zoom}}",
+      "check_updates": "Nach Updates suchen…",
+      "show_welcome": "Willkommen anzeigen"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organisieren} convert {Konvertieren} optimize {Optimieren} security {Sicherheit} overlay {Überlagern} ocr {OCR und Scans} annotate {Kommentieren} forms {Formulare} sign {Signieren} redact {Schwärzen} compare {Vergleichen und prüfen} edit {Bearbeiten} ai {KI} automation {Automatisierung} other {Weitere Werkzeuge}}",
+      "disabled": "{reason, select, later {In einer späteren Version verfügbar} format {Funktioniert mit anderen Formaten. Verwenden Sie Ablage > Importieren.} paid {Erfordert einen kostenpflichtigen Tarif} info {Die Werkzeugdetails konnten nicht gelesen werden, daher bleiben die Werkzeuge deaktiviert.} other {Nicht verfügbar}}",
+      "loading": "Werkzeuge werden geladen…"
+    },
+    "sidebar": {
+      "title": "Seiten",
+      "placeholder": "Seitenminiaturen werden hier angezeigt."
+    },
+    "viewer": {
+      "placeholder": "Die Seitenansicht wird hier angezeigt."
+    },
+    "toolbar": {
+      "inspector": "Dokumentinfo"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Name} format {Format} size {Größe} pages {Seiten} words {Wörter} title {Titel} author {Autor} routes {Konvertierbar in} other {Feld}}",
+      "loading": "Dokument wird gelesen…",
+      "warnings": "{count, plural, one {# Warnung} other {# Warnungen}}"
+    },
+    "run": {
+      "title": "{tool} ausführen",
+      "run": "Ausführen",
+      "cancel": "Abbrechen",
+      "close": "Fertig",
+      "working": "Wird ausgeführt…",
+      "parameters": "Einstellungen",
+      "no_parameters": "Dieses Werkzeug hat keine Einstellungen.",
+      "extra_documents": "Weitere Dokumente",
+      "add_documents": "Hinzufügen…",
+      "remove": "Entfernen",
+      "need_documents": "{count, plural, one {Fügen Sie # weiteres Dokument hinzu, um dieses Werkzeug auszuführen.} other {Fügen Sie # weitere Dokumente hinzu, um dieses Werkzeug auszuführen.}}",
+      "failed": "Das Werkzeug wurde nicht abgeschlossen.",
+      "open": "Öffnen",
+      "reveal": "Im Finder anzeigen",
+      "result_files": "{count, plural, one {# Datei erstellt} other {# Dateien erstellt}}",
+      "field_error": "{kind, select, missing {{field} ist erforderlich.} other {{field} ist ungültig.}}",
+      "result": "Ergebnis",
+      "presets": "Voreinstellungen"
+    },
+    "settings": {
+      "output_folder": "Ergebnisse speichern in",
+      "output_same": "Neben dem Originaldokument",
+      "output_choose": "Ordner wählen…",
+      "open_result": "Ergebnis öffnen, wenn ein Werkzeug fertig ist",
+      "updates": "Updates",
+      "updates_auto": "Automatisch nach Updates suchen",
+      "updates_disabled": "Updates sind in diesem Build nicht eingerichtet."
+    },
+    "onboarding": {
+      "title": "Willkommen bei AriadShift",
+      "about": "Öffnen, prüfen und verarbeiten Sie PDF-Dokumente mit derselben Engine wie die AriadShift-Befehlszeile. Konvertieren Sie Markdown, HTML, Word, EPUB und Bilder mit Ablage > Importieren in PDF.",
+      "packs": "Optionale Engine-Pakete (OCR, Signieren, Prüfen) werden in {path} gespeichert.",
+      "privacy": "AriadShift arbeitet auf Ihrem Mac. Es baut keine Netzwerkverbindungen auf, es sei denn, Sie aktivieren eine Funktion, die eine benötigt.",
+      "start": "Los geht’s"
+    },
+    "import": {
+      "message": "Wählen Sie ein Dokument zum Konvertieren in PDF",
+      "running": "{name} wird importiert…",
+      "failed": "{name} konnte nicht importiert werden"
+    },
+    "document": {
+      "invalid": "Diese Datei ist kein gültiges PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: private Dokumentkonvertierung in Ihrem Browser",

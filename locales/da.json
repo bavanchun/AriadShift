@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importer…",
+      "print": "Udskriv…",
+      "tools": "Værktøjer",
+      "zoom": "{action, select, in {Zoom ind} out {Zoom ud} actual {Faktisk størrelse} other {Zoom}}",
+      "check_updates": "Søg efter opdateringer…",
+      "show_welcome": "Vis velkomst"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organiser} convert {Konverter} optimize {Optimer} security {Sikkerhed} overlay {Overlejring} ocr {OCR og scanninger} annotate {Kommenter} forms {Formularer} sign {Underskriv} redact {Sort ud} compare {Sammenlign og valider} edit {Rediger} ai {AI} automation {Automatisering} other {Andre værktøjer}}",
+      "disabled": "{reason, select, later {Tilgængelig i en senere version} format {Virker med andre formater. Brug Arkiv > Importer.} paid {Kræver en betalt plan} info {Værktøjsoplysningerne kunne ikke læses, så værktøjerne forbliver slået fra.} other {Ikke tilgængelig}}",
+      "loading": "Indlæser værktøjer…"
+    },
+    "sidebar": {
+      "title": "Sider",
+      "placeholder": "Miniaturer af sider vises her."
+    },
+    "viewer": {
+      "placeholder": "Sidevisningen vises her."
+    },
+    "toolbar": {
+      "inspector": "Dokumentoplysninger"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Navn} format {Format} size {Størrelse} pages {Sider} words {Ord} title {Titel} author {Forfatter} routes {Kan konverteres til} other {Felt}}",
+      "loading": "Læser dokument…",
+      "warnings": "{count, plural, one {# advarsel} other {# advarsler}}"
+    },
+    "run": {
+      "title": "Kør {tool}",
+      "run": "Kør",
+      "cancel": "Annuller",
+      "close": "Færdig",
+      "working": "Kører…",
+      "parameters": "Indstillinger",
+      "no_parameters": "Dette værktøj har ingen indstillinger.",
+      "extra_documents": "Yderligere dokumenter",
+      "add_documents": "Tilføj…",
+      "remove": "Fjern",
+      "need_documents": "{count, plural, one {Tilføj # dokument mere for at køre dette værktøj.} other {Tilføj # dokumenter mere for at køre dette værktøj.}}",
+      "failed": "Værktøjet blev ikke færdigt.",
+      "open": "Åbn",
+      "reveal": "Vis i Finder",
+      "result_files": "{count, plural, one {# fil oprettet} other {# filer oprettet}}",
+      "field_error": "{kind, select, missing {{field} er påkrævet.} other {{field} er ikke gyldigt.}}",
+      "result": "Resultat",
+      "presets": "Forudindstillinger"
+    },
+    "settings": {
+      "output_folder": "Gem resultater i",
+      "output_same": "Ved siden af det oprindelige dokument",
+      "output_choose": "Vælg mappe…",
+      "open_result": "Åbn resultatet, når et værktøj er færdigt",
+      "updates": "Opdateringer",
+      "updates_auto": "Søg automatisk efter opdateringer",
+      "updates_disabled": "Opdateringer er ikke sat op i denne version."
+    },
+    "onboarding": {
+      "title": "Velkommen til AriadShift",
+      "about": "Åbn, undersøg og behandl PDF-dokumenter med den samme motor som AriadShift-kommandolinjen. Konverter Markdown, HTML, Word, EPUB og billeder til PDF med Arkiv > Importer.",
+      "packs": "Valgfrie motorpakker (OCR, signering, validering) gemmes i {path}.",
+      "privacy": "AriadShift virker på din Mac. Det opretter ingen netværksforbindelser, medmindre du slår en funktion til, der kræver det.",
+      "start": "Kom i gang"
+    },
+    "import": {
+      "message": "Vælg et dokument, der skal konverteres til PDF",
+      "running": "Importerer {name}…",
+      "failed": "{name} kunne ikke importeres"
+    },
+    "document": {
+      "invalid": "Denne fil er ikke en gyldig PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: privat dokumentkonvertering i din browser",

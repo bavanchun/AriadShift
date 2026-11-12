@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importar…",
+      "print": "Imprimir…",
+      "tools": "Ferramentas",
+      "zoom": "{action, select, in {Aumentar} out {Reduzir} actual {Tamanho real} other {Zoom}}",
+      "check_updates": "Procurar atualizações…",
+      "show_welcome": "Mostrar boas-vindas"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organizar} convert {Converter} optimize {Otimizar} security {Segurança} overlay {Sobrepor} ocr {OCR e digitalizações} annotate {Anotar} forms {Formulários} sign {Assinar} redact {Ocultar} compare {Comparar e validar} edit {Editar} ai {IA} automation {Automatização} other {Outras ferramentas}}",
+      "disabled": "{reason, select, later {Disponível numa versão futura} format {Funciona com outros formatos. Utilize Ficheiro > Importar.} paid {Requer um plano pago} info {Não foi possível ler os detalhes da ferramenta, pelo que as ferramentas permanecem desativadas.} other {Indisponível}}",
+      "loading": "A carregar ferramentas…"
+    },
+    "sidebar": {
+      "title": "Páginas",
+      "placeholder": "As miniaturas das páginas vão aparecer aqui."
+    },
+    "viewer": {
+      "placeholder": "O visualizador de páginas vai aparecer aqui."
+    },
+    "toolbar": {
+      "inspector": "Informações do documento"
+    },
+    "inspector": {
+      "title": "Documento",
+      "field": "{field, select, name {Nome} format {Formato} size {Tamanho} pages {Páginas} words {Palavras} title {Título} author {Autor} routes {Pode ser convertido em} other {Campo}}",
+      "loading": "A ler o documento…",
+      "warnings": "{count, plural, one {# aviso} many {# de avisos} other {# avisos}}"
+    },
+    "run": {
+      "title": "Executar {tool}",
+      "run": "Executar",
+      "cancel": "Cancelar",
+      "close": "Concluído",
+      "working": "A executar…",
+      "parameters": "Definições",
+      "no_parameters": "Esta ferramenta não tem definições.",
+      "extra_documents": "Documentos adicionais",
+      "add_documents": "Adicionar…",
+      "remove": "Remover",
+      "need_documents": "{count, plural, one {Adicione mais # documento para executar esta ferramenta.} many {Adicione mais # de documentos para executar esta ferramenta.} other {Adicione mais # documentos para executar esta ferramenta.}}",
+      "failed": "A ferramenta não terminou.",
+      "open": "Abrir",
+      "reveal": "Mostrar no Finder",
+      "result_files": "{count, plural, one {# ficheiro criado} many {# de ficheiros criados} other {# ficheiros criados}}",
+      "field_error": "{kind, select, missing {{field} é obrigatório.} other {{field} não é válido.}}",
+      "result": "Resultado",
+      "presets": "Predefinições"
+    },
+    "settings": {
+      "output_folder": "Guardar os resultados em",
+      "output_same": "Junto ao documento original",
+      "output_choose": "Escolher pasta…",
+      "open_result": "Abrir o resultado quando uma ferramenta terminar",
+      "updates": "Atualizações",
+      "updates_auto": "Procurar atualizações automaticamente",
+      "updates_disabled": "As atualizações não estão configuradas nesta versão."
+    },
+    "onboarding": {
+      "title": "Boas-vindas ao AriadShift",
+      "about": "Abra, inspecione e processe documentos PDF com o mesmo motor da linha de comandos do AriadShift. Converta Markdown, HTML, Word, EPUB e imagens em PDF com Ficheiro > Importar.",
+      "packs": "Os pacotes de motor opcionais (OCR, assinatura, validação) ficam guardados em {path}.",
+      "privacy": "O AriadShift funciona no seu Mac. Não faz ligações de rede, a menos que ative uma funcionalidade que precise de uma.",
+      "start": "Começar"
+    },
+    "import": {
+      "message": "Escolha um documento para converter em PDF",
+      "running": "A importar {name}…",
+      "failed": "Não foi possível importar {name}"
+    },
+    "document": {
+      "invalid": "Este ficheiro não é um PDF válido."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: conversão privada de documentos no seu navegador",

@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importar…",
+      "print": "Imprimir…",
+      "tools": "Ferramentas",
+      "zoom": "{action, select, in {Ampliar} out {Reducir} actual {Tamaño real} other {Zoom}}",
+      "check_updates": "Buscar actualizacións…",
+      "show_welcome": "Amosar a benvida"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organizar} convert {Converter} optimize {Optimizar} security {Seguridade} overlay {Superpoñer} ocr {OCR e dixitalizacións} annotate {Anotar} forms {Formularios} sign {Asinar} redact {Censurar} compare {Comparar e validar} edit {Editar} ai {IA} automation {Automatización} other {Outras ferramentas}}",
+      "disabled": "{reason, select, later {Dispoñible nunha versión posterior} format {Funciona con outros formatos. Usa Ficheiro > Importar.} paid {Require un plan de pagamento} info {Non se puideron ler os detalles da ferramenta, así que as ferramentas seguen desactivadas.} other {Non dispoñible}}",
+      "loading": "Cargando as ferramentas…"
+    },
+    "sidebar": {
+      "title": "Páxinas",
+      "placeholder": "As miniaturas das páxinas aparecerán aquí."
+    },
+    "viewer": {
+      "placeholder": "O visor de páxinas aparecerá aquí."
+    },
+    "toolbar": {
+      "inspector": "Información do documento"
+    },
+    "inspector": {
+      "title": "Documento",
+      "field": "{field, select, name {Nome} format {Formato} size {Tamaño} pages {Páxinas} words {Palabras} title {Título} author {Autor} routes {Pódese converter a} other {Campo}}",
+      "loading": "Lendo o documento…",
+      "warnings": "{count, plural, one {# advertencia} other {# advertencias}}"
+    },
+    "run": {
+      "title": "Executar {tool}",
+      "run": "Executar",
+      "cancel": "Cancelar",
+      "close": "Feito",
+      "working": "Executando…",
+      "parameters": "Axustes",
+      "no_parameters": "Esta ferramenta non ten axustes.",
+      "extra_documents": "Documentos adicionais",
+      "add_documents": "Engadir…",
+      "remove": "Quitar",
+      "need_documents": "{count, plural, one {Engade # documento máis para executar esta ferramenta.} other {Engade # documentos máis para executar esta ferramenta.}}",
+      "failed": "A ferramenta non rematou.",
+      "open": "Abrir",
+      "reveal": "Amosar no Finder",
+      "result_files": "{count, plural, one {# ficheiro creado} other {# ficheiros creados}}",
+      "field_error": "{kind, select, missing {{field} é obrigatorio.} other {{field} non é válido.}}",
+      "result": "Resultado",
+      "presets": "Predefinicións"
+    },
+    "settings": {
+      "output_folder": "Gardar os resultados en",
+      "output_same": "Xunto ao documento orixinal",
+      "output_choose": "Escoller cartafol…",
+      "open_result": "Abrir o resultado cando remate unha ferramenta",
+      "updates": "Actualizacións",
+      "updates_auto": "Buscar actualizacións automaticamente",
+      "updates_disabled": "As actualizacións non están configuradas nesta compilación."
+    },
+    "onboarding": {
+      "title": "Dámoste a benvida a AriadShift",
+      "about": "Abre, inspecciona e procesa documentos PDF co mesmo motor que a liña de comandos de AriadShift. Converte Markdown, HTML, Word, EPUB e imaxes a PDF con Ficheiro > Importar.",
+      "packs": "Os paquetes de motor opcionais (OCR, sinatura, validación) gárdanse en {path}.",
+      "privacy": "AriadShift funciona no teu Mac. Non fai ningunha conexión de rede a non ser que actives unha función que a precise.",
+      "start": "Comezar"
+    },
+    "import": {
+      "message": "Escolle un documento para convertelo a PDF",
+      "running": "Importando {name}…",
+      "failed": "Non se puido importar {name}"
+    },
+    "document": {
+      "invalid": "Este ficheiro non é un PDF válido."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: conversión privada de documentos no teu navegador",

@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "İdxal et…",
+      "print": "Çap et…",
+      "tools": "Alətlər",
+      "zoom": "{action, select, in {Yaxınlaşdır} out {Uzaqlaşdır} actual {Faktiki ölçü} other {Miqyas}}",
+      "check_updates": "Yenilikləri yoxla…",
+      "show_welcome": "Salamlama ekranını göstər"
+    },
+    "tools": {
+      "group": "{group, select, organize {Təşkil et} convert {Çevir} optimize {Optimallaşdır} security {Təhlükəsizlik} overlay {Üstə qoyma} ocr {OCR və skanlar} annotate {Qeyd əlavə et} forms {Formalar} sign {İmzala} redact {Gizlət} compare {Müqayisə et və yoxla} edit {Redaktə et} ai {Süni intellekt} automation {Avtomatlaşdırma} other {Digər alətlər}}",
+      "disabled": "{reason, select, later {Növbəti buraxılışda əlçatan olacaq} format {Digər formatlarla işləyir. Fayl > İdxal et seçimindən istifadə edin.} paid {Ödənişli plan tələb edir} info {Alət məlumatlarını oxumaq mümkün olmadı, ona görə alətlər söndürülü qalır.} other {Əlçatan deyil}}",
+      "loading": "Alətlər yüklənir…"
+    },
+    "sidebar": {
+      "title": "Səhifələr",
+      "placeholder": "Səhifələrin miniatürləri burada görünəcək."
+    },
+    "viewer": {
+      "placeholder": "Səhifə görüntüləyicisi burada görünəcək."
+    },
+    "toolbar": {
+      "inspector": "Sənəd məlumatı"
+    },
+    "inspector": {
+      "title": "Sənəd",
+      "field": "{field, select, name {Ad} format {Format} size {Ölçü} pages {Səhifələr} words {Sözlər} title {Başlıq} author {Müəllif} routes {Buna çevrilə bilər} other {Sahə}}",
+      "loading": "Sənəd oxunur…",
+      "warnings": "{count, plural, one {# xəbərdarlıq} other {# xəbərdarlıq}}"
+    },
+    "run": {
+      "title": "{tool} alətini işə sal",
+      "run": "İşə sal",
+      "cancel": "Ləğv et",
+      "close": "Hazırdır",
+      "working": "İşləyir…",
+      "parameters": "Parametrlər",
+      "no_parameters": "Bu alətin parametri yoxdur.",
+      "extra_documents": "Əlavə sənədlər",
+      "add_documents": "Əlavə et…",
+      "remove": "Sil",
+      "need_documents": "{count, plural, one {Bu aləti işə salmaq üçün daha # sənəd əlavə edin.} other {Bu aləti işə salmaq üçün daha # sənəd əlavə edin.}}",
+      "failed": "Alət tamamlanmadı.",
+      "open": "Aç",
+      "reveal": "Finder-də göstər",
+      "result_files": "{count, plural, one {# fayl yaradıldı} other {# fayl yaradıldı}}",
+      "field_error": "{kind, select, missing {{field} tələb olunur.} other {{field} etibarlı deyil.}}",
+      "result": "Nəticə",
+      "presets": "Hazır parametrlər"
+    },
+    "settings": {
+      "output_folder": "Nəticələri bura yadda saxla",
+      "output_same": "Orijinal sənədin yanında",
+      "output_choose": "Qovluq seç…",
+      "open_result": "Alət bitəndə nəticəni aç",
+      "updates": "Yeniləmələr",
+      "updates_auto": "Yeniləmələri avtomatik yoxla",
+      "updates_disabled": "Yeniləmələr bu buraxılışda qurulmayıb."
+    },
+    "onboarding": {
+      "title": "AriadShift-ə xoş gəlmisiniz",
+      "about": "PDF sənədlərini AriadShift əmr sətri ilə eyni mühərrikdən istifadə edərək açın, yoxlayın və işləyin. Fayl > İdxal et vasitəsilə Markdown, HTML, Word, EPUB və şəkilləri PDF formatına çevirin.",
+      "packs": "İstəyə bağlı mühərrik paketləri (OCR, imzalama, doğrulama) {path} ünvanında saxlanılır.",
+      "privacy": "AriadShift Mac-inizdə işləyir. Şəbəkə bağlantısı tələb edən funksiyanı aktivləşdirmədikcə heç bir şəbəkə bağlantısı qurmur.",
+      "start": "Başla"
+    },
+    "import": {
+      "message": "PDF formatına çevirmək üçün sənəd seçin",
+      "running": "{name} idxal olunur…",
+      "failed": "{name} idxal edilə bilmədi"
+    },
+    "document": {
+      "invalid": "Bu fayl etibarlı PDF deyil."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: brauzerinizdə məxfi sənəd çevrilməsi",
