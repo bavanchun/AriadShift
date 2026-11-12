@@ -27,7 +27,10 @@ real helper (`ASHIFT_HELPER_PATH`, else `target/release/ashift`, else `target/de
 
 UI tests (`AriadShiftUITests`, scheme `AriadShiftUI`) drive the built app on fixture copies; they need Automation Mode
 (`sudo DevToolsSecurity -enable`, approve once) and an unlocked screen, and `ASHIFT_DEFAULTS_SUITE` (Debug only, unsandboxed app)
-names their preferences suite. Never run yet: triage the strict accessibility audit first. `PerformanceUITests` hold the metrics.
+names the preferences file they seed. Last run (macOS 27.2, Xcode 27.2): 15 tests, 13 pass, 2 skip, 0 fail, twice in a row. The cancel-a-longer-run
+test skips because every free tool finishes 1,000 pages in about 0.1 s and no engine pack is installed. The accessibility audit
+test skips because the audit service times out (error -56), even on Calculator; it stays strict and fails on any reported issue.
+`PerformanceUITests` hold the metrics and assert no budget.
 
 ## EngineClient
 `EngineClient()` points the engine at `<App.app>/Contents/Helpers/ashift`; it throws `EngineError.helperMissing` unless that is an
@@ -57,15 +60,17 @@ when a row scrolls away, LRU) with multi-selection. Fit Width tracks the window 
 `pdf.reorder`, `pdf.rotate` and `pdf.delete_pages` run through `EngineClient` and the run sheet, write a new file next to the
 original and open it. A window never changes its own pages. Cancel ends with no output: a result landing as it is pressed is removed.
 
-Apple M5, macOS 27.2, 120 Hz. `ViewerPerformanceTests` (in process; Release with `ENABLE_TESTABILITY=YES ENABLE_HARDENED_RUNTIME=NO`);
-launch is timed from `NSWorkspace.open` to a 700 pt window (not `XCTApplicationLaunchMetric`, not yet run) and misses 400 ms by 3-6%.
+Apple M5, macOS 27.2, Xcode 27.2, 120 Hz, Release (`ENABLE_TESTABILITY=YES ENABLE_HARDENED_RUNTIME=NO`), measured by
+`PerformanceUITests` on the launched app with XCTest metrics. Launch times vary 30% or more between iterations. No startup
+optimisation was applied.
 
-| Budget | Debug | Release |
-|---|---|---|
-| Open 1,000 pages to page 1: 300 ms | median 34 ms, max 42 | median 34 ms, max 37 |
-| Scroll 10 s at 3,000 pt/s: at most 1 frame over 16 ms per 1,000 | 0 of 1,197, max hitch 0 ms | 0 of 1,199, max 0 ms |
-| Idle memory, 100-page document: 150 MB | 120.5 MB | 108.3 MB |
-| Launch to first window: 400 ms | median 411 ms (first run 1,343) | median 425 ms (first run 1,310) |
+| Budget | Result |
+|---|---|
+| Cold launch, `XCTApplicationLaunchMetric`: 400 ms (budget metric: median) | median 367 ms, passes |
+| Launch, informational | mean 409 ms; responsive (`waitUntilResponsive`) median 693 ms |
+| Open 1,000 pages to page 1: 300 ms | median 159 ms, passes |
+| Scroll hitches over 16 ms (`XCTHitchMetric`) | 0 |
+| Idle memory, 100-page document: 150 MB | 103-115 MB, passes |
 
 ## Updates (Sparkle 2.10.1)
 Sparkle 2.10.1 (MIT, pinned in `project.yml`; the SwiftPM binary target is pinned by checksum). Its LICENSE bundles notices for
