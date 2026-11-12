@@ -120,7 +120,13 @@
       "tools": "เครื่องมือ",
       "zoom": "{action, select, in {ซูมเข้า} out {ซูมออก} actual {ขนาดจริง} other {ซูม}}",
       "check_updates": "ตรวจหาการอัปเดต…",
-      "show_welcome": "แสดงหน้าต้อนรับ"
+      "show_welcome": "แสดงหน้าต้อนรับ",
+      "fit_width": "พอดีความกว้าง",
+      "display_mode": "{mode, select, single {หน้าเดียว} continuous {เลื่อนต่อเนื่อง} twoUp {สองหน้า} other {การแสดงหน้า}}",
+      "go_to_page": "ไปที่หน้า…",
+      "find": "ค้นหา…",
+      "find_next": "ค้นหาถัดไป",
+      "find_previous": "ค้นหาก่อนหน้า"
     },
     "tools": {
       "group": "{group, select, organize {จัดระเบียบ} convert {แปลง} optimize {ปรับให้เหมาะสม} security {ความปลอดภัย} overlay {วางซ้อน} ocr {OCR และการสแกน} annotate {ใส่หมายเหตุ} forms {แบบฟอร์ม} sign {ลงนาม} redact {ปกปิดข้อมูล} compare {เปรียบเทียบและตรวจสอบ} edit {แก้ไข} ai {AI} automation {ระบบอัตโนมัติ} other {เครื่องมืออื่น ๆ}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "หน้า",
-      "placeholder": "ภาพตัวอย่างของหน้าจะปรากฏที่นี่"
+      "placeholder": "ภาพตัวอย่างของหน้าจะปรากฏที่นี่",
+      "page": "หน้า {number} จาก {total}"
     },
     "viewer": {
-      "placeholder": "ตัวดูหน้าจะปรากฏที่นี่"
+      "placeholder": "ตัวดูหน้าจะปรากฏที่นี่",
+      "title": "ตัวดูหน้า",
+      "loading": "กำลังเปิดเอกสาร…"
     },
     "toolbar": {
-      "inspector": "ข้อมูลเอกสาร"
+      "inspector": "ข้อมูลเอกสาร",
+      "page_grid": "ตารางหน้า",
+      "previous_page": "หน้าก่อนหน้า",
+      "next_page": "หน้าถัดไป",
+      "page_field": "หมายเลขหน้า",
+      "page_of": "จาก {total}"
     },
     "inspector": {
       "title": "เอกสาร",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "ไฟล์นี้ไม่ใช่ PDF ที่ถูกต้อง"
+    },
+    "find": {
+      "prompt": "ค้นหาในเอกสาร",
+      "count": "{current} จาก {total}",
+      "none": "ไม่พบรายการที่ตรงกัน",
+      "searching": "กำลังค้นหา…",
+      "done": "เสร็จสิ้น"
+    },
+    "grid": {
+      "hint": "ลากหน้าเพื่อจัดลำดับใหม่ ทุกการเปลี่ยนแปลงจะบันทึกเป็นไฟล์ใหม่ไว้ข้างไฟล์ต้นฉบับ",
+      "unavailable": "ยังแก้ไขหน้าไม่ได้จนกว่าเอนจินจะพร้อม",
+      "rotate": "หมุนหน้าที่เลือก",
+      "delete": "ลบหน้าที่เลือก",
+      "move_earlier": "ย้ายไปไว้ด้านหน้าของหน้าก่อนหน้า",
+      "move_later": "ย้ายไปไว้ด้านหลังของหน้าถัดไป",
+      "drop_end": "วางที่นี่เพื่อย้ายไปท้ายสุด"
     }
   },
   "web": {

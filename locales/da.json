@@ -120,7 +120,13 @@
       "tools": "Værktøjer",
       "zoom": "{action, select, in {Zoom ind} out {Zoom ud} actual {Faktisk størrelse} other {Zoom}}",
       "check_updates": "Søg efter opdateringer…",
-      "show_welcome": "Vis velkomst"
+      "show_welcome": "Vis velkomst",
+      "fit_width": "Tilpas til bredde",
+      "display_mode": "{mode, select, single {Enkelt side} continuous {Kontinuerlig rulning} twoUp {To sider} other {Sidevisning}}",
+      "go_to_page": "Gå til side…",
+      "find": "Find…",
+      "find_next": "Find næste",
+      "find_previous": "Find forrige"
     },
     "tools": {
       "group": "{group, select, organize {Organiser} convert {Konverter} optimize {Optimer} security {Sikkerhed} overlay {Overlejring} ocr {OCR og scanninger} annotate {Kommenter} forms {Formularer} sign {Underskriv} redact {Sort ud} compare {Sammenlign og valider} edit {Rediger} ai {AI} automation {Automatisering} other {Andre værktøjer}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Sider",
-      "placeholder": "Miniaturer af sider vises her."
+      "placeholder": "Miniaturer af sider vises her.",
+      "page": "Side {number} af {total}"
     },
     "viewer": {
-      "placeholder": "Sidevisningen vises her."
+      "placeholder": "Sidevisningen vises her.",
+      "title": "Sidevisning",
+      "loading": "Åbner dokumentet…"
     },
     "toolbar": {
-      "inspector": "Dokumentoplysninger"
+      "inspector": "Dokumentoplysninger",
+      "page_grid": "Sideoversigt",
+      "previous_page": "Forrige side",
+      "next_page": "Næste side",
+      "page_field": "Sidetal",
+      "page_of": "af {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Denne fil er ikke en gyldig PDF."
+    },
+    "find": {
+      "prompt": "Find i dokument",
+      "count": "{current} af {total}",
+      "none": "Ingen resultater",
+      "searching": "Søger…",
+      "done": "Færdig"
+    },
+    "grid": {
+      "hint": "Træk siderne for at ændre rækkefølgen. Hver ændring gemmes som en ny fil ved siden af originalen.",
+      "unavailable": "Sideredigering er ikke tilgængelig, før motoren er klar.",
+      "rotate": "Roter valgte sider",
+      "delete": "Slet valgte sider",
+      "move_earlier": "Flyt før forrige side",
+      "move_later": "Flyt efter næste side",
+      "drop_end": "Slip her for at flytte til slutningen"
     }
   },
   "web": {

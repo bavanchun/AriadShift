@@ -120,7 +120,13 @@
       "tools": "Tresnak",
       "zoom": "{action, select, in {Handitu} out {Txikitu} actual {Benetako tamaina} other {Zooma}}",
       "check_updates": "Bilatu eguneratzeak…",
-      "show_welcome": "Erakutsi ongietorria"
+      "show_welcome": "Erakutsi ongietorria",
+      "fit_width": "Doitu zabalerara",
+      "display_mode": "{mode, select, single {Orri bakarra} continuous {Korritze jarraitua} twoUp {Bi orri} other {Orrien bistaratzea}}",
+      "go_to_page": "Joan orrira…",
+      "find": "Bilatu…",
+      "find_next": "Bilatu hurrengoa",
+      "find_previous": "Bilatu aurrekoa"
     },
     "tools": {
       "group": "{group, select, organize {Antolatu} convert {Bihurtu} optimize {Optimizatu} security {Segurtasuna} overlay {Gainjarri} ocr {OCR eta eskaneatzeak} annotate {Oharpenak} forms {Inprimakiak} sign {Sinatu} redact {Ezkutatu} compare {Konparatu eta balioztatu} edit {Editatu} ai {AA} automation {Automatizazioa} other {Beste tresna batzuk}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Orriak",
-      "placeholder": "Orrien miniaturak hemen agertuko dira."
+      "placeholder": "Orrien miniaturak hemen agertuko dira.",
+      "page": "{number}. orria, guztira {total}"
     },
     "viewer": {
-      "placeholder": "Orrien ikustailea hemen agertuko da."
+      "placeholder": "Orrien ikustailea hemen agertuko da.",
+      "title": "Orrien ikuskatzailea",
+      "loading": "Dokumentua irekitzen…"
     },
     "toolbar": {
-      "inspector": "Dokumentuaren informazioa"
+      "inspector": "Dokumentuaren informazioa",
+      "page_grid": "Orrien saretak",
+      "previous_page": "Aurreko orria",
+      "next_page": "Hurrengo orria",
+      "page_field": "Orri zenbakia",
+      "page_of": "guztira {total}"
     },
     "inspector": {
       "title": "Dokumentua",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Fitxategi hau ez da baliozko PDF bat."
+    },
+    "find": {
+      "prompt": "Bilatu dokumentuan",
+      "count": "{current} / {total}",
+      "none": "Ez dago emaitzarik",
+      "searching": "Bilatzen…",
+      "done": "Eginda"
+    },
+    "grid": {
+      "hint": "Arrastatu orriak berrordenatzeko. Aldaketa bakoitza fitxategi berri gisa gordetzen da jatorrizkoaren ondoan.",
+      "unavailable": "Orrien edizioa ez dago erabilgarri motorra prest egon arte.",
+      "rotate": "Biratu hautatutako orriak",
+      "delete": "Ezabatu hautatutako orriak",
+      "move_earlier": "Eraman aurreko orriaren aurrera",
+      "move_later": "Eraman hurrengo orriaren atzera",
+      "drop_end": "Jaregin hemen amaierara eramateko"
     }
   },
   "web": {

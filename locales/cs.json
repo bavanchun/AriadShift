@@ -120,7 +120,13 @@
       "tools": "Nástroje",
       "zoom": "{action, select, in {Přiblížit} out {Oddálit} actual {Skutečná velikost} other {Zoom}}",
       "check_updates": "Zkontrolovat aktualizace…",
-      "show_welcome": "Zobrazit uvítání"
+      "show_welcome": "Zobrazit uvítání",
+      "fit_width": "Přizpůsobit šířce",
+      "display_mode": "{mode, select, single {Jedna stránka} continuous {Souvislé posouvání} twoUp {Dvě stránky} other {Zobrazení stránek}}",
+      "go_to_page": "Přejít na stránku…",
+      "find": "Najít…",
+      "find_next": "Najít další",
+      "find_previous": "Najít předchozí"
     },
     "tools": {
       "group": "{group, select, organize {Uspořádat} convert {Převést} optimize {Optimalizovat} security {Zabezpečení} overlay {Překrytí} ocr {OCR a skeny} annotate {Anotovat} forms {Formuláře} sign {Podepsat} redact {Začernit} compare {Porovnat a ověřit} edit {Upravit} ai {AI} automation {Automatizace} other {Další nástroje}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Stránky",
-      "placeholder": "Zde se zobrazí náhledy stránek."
+      "placeholder": "Zde se zobrazí náhledy stránek.",
+      "page": "Stránka {number} z {total}"
     },
     "viewer": {
-      "placeholder": "Zde se zobrazí prohlížeč stránek."
+      "placeholder": "Zde se zobrazí prohlížeč stránek.",
+      "title": "Prohlížeč stránek",
+      "loading": "Otevírání dokumentu…"
     },
     "toolbar": {
-      "inspector": "Informace o dokumentu"
+      "inspector": "Informace o dokumentu",
+      "page_grid": "Mřížka stránek",
+      "previous_page": "Předchozí stránka",
+      "next_page": "Další stránka",
+      "page_field": "Číslo stránky",
+      "page_of": "z {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Tento soubor není platný PDF."
+    },
+    "find": {
+      "prompt": "Hledat v dokumentu",
+      "count": "{current} z {total}",
+      "none": "Žádné shody",
+      "searching": "Hledání…",
+      "done": "Hotovo"
+    },
+    "grid": {
+      "hint": "Přetažením stránek změníte jejich pořadí. Každá změna se uloží jako nový soubor vedle originálu.",
+      "unavailable": "Úpravy stránek nejsou dostupné, dokud není modul připraven.",
+      "rotate": "Otočit vybrané stránky",
+      "delete": "Smazat vybrané stránky",
+      "move_earlier": "Přesunout před předchozí stránku",
+      "move_later": "Přesunout za další stránku",
+      "drop_end": "Pusťte zde pro přesun na konec"
     }
   },
   "web": {

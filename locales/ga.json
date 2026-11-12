@@ -120,7 +120,13 @@
       "tools": "Uirlisí",
       "zoom": "{action, select, in {Zúmáil Isteach} out {Zúmáil Amach} actual {Fíormhéid} other {Zúmáil}}",
       "check_updates": "Seiceáil le haghaidh nuashonruithe…",
-      "show_welcome": "Taispeáin an fáilte"
+      "show_welcome": "Taispeáin an fáilte",
+      "fit_width": "Oiriúnaigh don leithead",
+      "display_mode": "{mode, select, single {Leathanach Amháin} continuous {Scrollú Leanúnach} twoUp {Dhá Leathanach} other {Taispeáint Leathanach}}",
+      "go_to_page": "Téigh go Leathanach…",
+      "find": "Aimsigh…",
+      "find_next": "Aimsigh an Chéad Cheann Eile",
+      "find_previous": "Aimsigh an Ceann Roimhe Seo"
     },
     "tools": {
       "group": "{group, select, organize {Eagraigh} convert {Tiontaigh} optimize {Barrfheabhsaigh} security {Slándáil} overlay {Forleagan} ocr {OCR agus scanadh} annotate {Anótáil} forms {Foirmeacha} sign {Sínigh} redact {Dubh amach} compare {Cuir i gcomparáid agus bailíochtaigh} edit {Cuir in eagar} ai {AI} automation {Uathoibriú} other {Uirlisí eile}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Leathanaigh",
-      "placeholder": "Beidh mionsamhlacha na leathanach le feiceáil anseo."
+      "placeholder": "Beidh mionsamhlacha na leathanach le feiceáil anseo.",
+      "page": "Leathanach {number} as {total}"
     },
     "viewer": {
-      "placeholder": "Beidh amharcóir na leathanach le feiceáil anseo."
+      "placeholder": "Beidh amharcóir na leathanach le feiceáil anseo.",
+      "title": "Amharcóir leathanach",
+      "loading": "Ag oscailt na cáipéise…"
     },
     "toolbar": {
-      "inspector": "Eolas na Cáipéise"
+      "inspector": "Eolas na Cáipéise",
+      "page_grid": "Greille Leathanach",
+      "previous_page": "An Leathanach Roimhe Seo",
+      "next_page": "An Chéad Leathanach Eile",
+      "page_field": "Uimhir leathanaigh",
+      "page_of": "as {total}"
     },
     "inspector": {
       "title": "Cáipéis",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Ní PDF bailí é an comhad seo."
+    },
+    "find": {
+      "prompt": "Aimsigh sa cháipéis",
+      "count": "{current} as {total}",
+      "none": "Gan aon mheaitseanna",
+      "searching": "Ag cuardach…",
+      "done": "Déanta"
+    },
+    "grid": {
+      "hint": "Tarraing leathanaigh chun iad a athordú. Sábháiltear gach athrú mar chomhad nua cois an bhunaidh.",
+      "unavailable": "Níl eagarthóireacht leathanach ar fáil go dtí go mbeidh an t-inneall réidh.",
+      "rotate": "Rothlaigh na Leathanaigh Roghnaithe",
+      "delete": "Scrios na Leathanaigh Roghnaithe",
+      "move_earlier": "Bog roimh an leathanach roimhe seo",
+      "move_later": "Bog tar éis an chéad leathanaigh eile",
+      "drop_end": "Scaoil anseo chun bogadh go dtí an deireadh"
     }
   },
   "web": {

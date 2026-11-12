@@ -120,7 +120,13 @@
       "tools": "工具",
       "zoom": "{action, select, in {放大} out {縮小} actual {實際大小} other {縮放}}",
       "check_updates": "檢查更新…",
-      "show_welcome": "顯示歡迎畫面"
+      "show_welcome": "顯示歡迎畫面",
+      "fit_width": "符合寬度",
+      "display_mode": "{mode, select, single {單頁} continuous {連續捲動} twoUp {雙頁} other {頁面顯示}}",
+      "go_to_page": "前往頁面…",
+      "find": "尋找…",
+      "find_next": "尋找下一個",
+      "find_previous": "尋找上一個"
     },
     "tools": {
       "group": "{group, select, organize {整理} convert {轉換} optimize {最佳化} security {安全性} overlay {疊加} ocr {OCR 與掃描檔} annotate {註解} forms {表單} sign {簽名} redact {塗黑} compare {比較與驗證} edit {編輯} ai {AI} automation {自動化} other {其他工具}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "頁面",
-      "placeholder": "頁面縮圖將顯示在這裡。"
+      "placeholder": "頁面縮圖將顯示在這裡。",
+      "page": "第 {number} 頁，共 {total} 頁"
     },
     "viewer": {
-      "placeholder": "頁面檢視器將顯示在這裡。"
+      "placeholder": "頁面檢視器將顯示在這裡。",
+      "title": "頁面檢視器",
+      "loading": "正在開啟文件…"
     },
     "toolbar": {
-      "inspector": "文件資訊"
+      "inspector": "文件資訊",
+      "page_grid": "頁面格狀檢視",
+      "previous_page": "上一頁",
+      "next_page": "下一頁",
+      "page_field": "頁碼",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "文件",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "此檔案不是有效的 PDF。"
+    },
+    "find": {
+      "prompt": "在文件中尋找",
+      "count": "{current} / {total}",
+      "none": "沒有相符項目",
+      "searching": "正在搜尋…",
+      "done": "完成"
+    },
+    "grid": {
+      "hint": "拖移頁面即可重新排序。每次變更都會另存為原始檔案旁的新檔案。",
+      "unavailable": "引擎準備就緒前，無法編輯頁面。",
+      "rotate": "旋轉所選頁面",
+      "delete": "刪除所選頁面",
+      "move_earlier": "移到上一頁之前",
+      "move_later": "移到下一頁之後",
+      "drop_end": "拖放到此處即可移到結尾"
     }
   },
   "web": {

@@ -120,7 +120,13 @@
       "tools": "Gereedschappen",
       "zoom": "{action, select, in {Inzoomen} out {Uitzoomen} actual {Ware grootte} other {Zoom}}",
       "check_updates": "Zoek naar updates…",
-      "show_welcome": "Toon welkomstscherm"
+      "show_welcome": "Toon welkomstscherm",
+      "fit_width": "Aanpassen aan breedte",
+      "display_mode": "{mode, select, single {Eén pagina} continuous {Doorlopend scrollen} twoUp {Twee pagina’s} other {Paginaweergave}}",
+      "go_to_page": "Ga naar pagina…",
+      "find": "Zoek…",
+      "find_next": "Zoek volgende",
+      "find_previous": "Zoek vorige"
     },
     "tools": {
       "group": "{group, select, organize {Ordenen} convert {Converteren} optimize {Optimaliseren} security {Beveiliging} overlay {Overlay} ocr {OCR en scans} annotate {Annoteren} forms {Formulieren} sign {Ondertekenen} redact {Censureren} compare {Vergelijken en valideren} edit {Bewerken} ai {AI} automation {Automatisering} other {Overige gereedschappen}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Pagina’s",
-      "placeholder": "Paginaminiaturen verschijnen hier."
+      "placeholder": "Paginaminiaturen verschijnen hier.",
+      "page": "Pagina {number} van {total}"
     },
     "viewer": {
-      "placeholder": "De paginaweergave verschijnt hier."
+      "placeholder": "De paginaweergave verschijnt hier.",
+      "title": "Paginaviewer",
+      "loading": "Document openen…"
     },
     "toolbar": {
-      "inspector": "Documentinfo"
+      "inspector": "Documentinfo",
+      "page_grid": "Paginaraster",
+      "previous_page": "Vorige pagina",
+      "next_page": "Volgende pagina",
+      "page_field": "Paginanummer",
+      "page_of": "van {total}"
     },
     "inspector": {
       "title": "Document",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Dit bestand is geen geldige PDF."
+    },
+    "find": {
+      "prompt": "Zoek in document",
+      "count": "{current} van {total}",
+      "none": "Geen resultaten",
+      "searching": "Zoeken…",
+      "done": "Gereed"
+    },
+    "grid": {
+      "hint": "Sleep pagina’s om ze opnieuw te ordenen. Elke wijziging wordt opgeslagen als nieuw bestand naast het origineel.",
+      "unavailable": "Paginabewerking is pas beschikbaar als de engine gereed is.",
+      "rotate": "Geselecteerde pagina’s roteren",
+      "delete": "Geselecteerde pagina’s verwijderen",
+      "move_earlier": "Verplaats vóór de vorige pagina",
+      "move_later": "Verplaats na de volgende pagina",
+      "drop_end": "Laat hier los om naar het einde te verplaatsen"
     }
   },
   "web": {

@@ -120,7 +120,13 @@
       "tools": "Nástroje",
       "zoom": "{action, select, in {Priblížiť} out {Oddialiť} actual {Skutočná veľkosť} other {Zoom}}",
       "check_updates": "Skontrolovať aktualizácie…",
-      "show_welcome": "Zobraziť uvítanie"
+      "show_welcome": "Zobraziť uvítanie",
+      "fit_width": "Prispôsobiť šírke",
+      "display_mode": "{mode, select, single {Jedna strana} continuous {Súvislé posúvanie} twoUp {Dve strany} other {Zobrazenie strán}}",
+      "go_to_page": "Prejsť na stranu…",
+      "find": "Nájsť…",
+      "find_next": "Nájsť ďalšie",
+      "find_previous": "Nájsť predchádzajúce"
     },
     "tools": {
       "group": "{group, select, organize {Usporiadať} convert {Previesť} optimize {Optimalizovať} security {Zabezpečenie} overlay {Prekrytie} ocr {OCR a skeny} annotate {Anotovať} forms {Formuláre} sign {Podpísať} redact {Začierniť} compare {Porovnať a overiť} edit {Upraviť} ai {AI} automation {Automatizácia} other {Ďalšie nástroje}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Strany",
-      "placeholder": "Tu sa zobrazia miniatúry strán."
+      "placeholder": "Tu sa zobrazia miniatúry strán.",
+      "page": "Strana {number} z {total}"
     },
     "viewer": {
-      "placeholder": "Tu sa zobrazí prehliadač strán."
+      "placeholder": "Tu sa zobrazí prehliadač strán.",
+      "title": "Prehliadač strán",
+      "loading": "Otvára sa dokument…"
     },
     "toolbar": {
-      "inspector": "Informácie o dokumente"
+      "inspector": "Informácie o dokumente",
+      "page_grid": "Mriežka strán",
+      "previous_page": "Predchádzajúca strana",
+      "next_page": "Ďalšia strana",
+      "page_field": "Číslo strany",
+      "page_of": "z {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Tento súbor nie je platný PDF."
+    },
+    "find": {
+      "prompt": "Hľadať v dokumente",
+      "count": "{current} z {total}",
+      "none": "Žiadne zhody",
+      "searching": "Hľadá sa…",
+      "done": "Hotovo"
+    },
+    "grid": {
+      "hint": "Presunutím strán zmeníte ich poradie. Každá zmena sa uloží ako nový súbor vedľa originálu.",
+      "unavailable": "Úpravy strán nie sú dostupné, kým nie je modul pripravený.",
+      "rotate": "Otočiť vybrané strany",
+      "delete": "Odstrániť vybrané strany",
+      "move_earlier": "Presunúť pred predchádzajúcu stranu",
+      "move_later": "Presunúť za ďalšiu stranu",
+      "drop_end": "Pustite tu a presuňte na koniec"
     }
   },
   "web": {

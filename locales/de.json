@@ -120,7 +120,13 @@
       "tools": "Werkzeuge",
       "zoom": "{action, select, in {Vergrößern} out {Verkleinern} actual {Originalgröße} other {Zoom}}",
       "check_updates": "Nach Updates suchen…",
-      "show_welcome": "Willkommen anzeigen"
+      "show_welcome": "Willkommen anzeigen",
+      "fit_width": "Breite anpassen",
+      "display_mode": "{mode, select, single {Einzelne Seite} continuous {Fortlaufendes Scrollen} twoUp {Zwei Seiten} other {Seitenanzeige}}",
+      "go_to_page": "Gehe zu Seite…",
+      "find": "Suchen…",
+      "find_next": "Weitersuchen",
+      "find_previous": "Rückwärts suchen"
     },
     "tools": {
       "group": "{group, select, organize {Organisieren} convert {Konvertieren} optimize {Optimieren} security {Sicherheit} overlay {Überlagern} ocr {OCR und Scans} annotate {Kommentieren} forms {Formulare} sign {Signieren} redact {Schwärzen} compare {Vergleichen und prüfen} edit {Bearbeiten} ai {KI} automation {Automatisierung} other {Weitere Werkzeuge}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Seiten",
-      "placeholder": "Seitenminiaturen werden hier angezeigt."
+      "placeholder": "Seitenminiaturen werden hier angezeigt.",
+      "page": "Seite {number} von {total}"
     },
     "viewer": {
-      "placeholder": "Die Seitenansicht wird hier angezeigt."
+      "placeholder": "Die Seitenansicht wird hier angezeigt.",
+      "title": "Seitenansicht",
+      "loading": "Dokument wird geöffnet…"
     },
     "toolbar": {
-      "inspector": "Dokumentinfo"
+      "inspector": "Dokumentinfo",
+      "page_grid": "Seitenraster",
+      "previous_page": "Vorherige Seite",
+      "next_page": "Nächste Seite",
+      "page_field": "Seitenzahl",
+      "page_of": "von {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Diese Datei ist kein gültiges PDF."
+    },
+    "find": {
+      "prompt": "Im Dokument suchen",
+      "count": "{current} von {total}",
+      "none": "Keine Treffer",
+      "searching": "Suche läuft…",
+      "done": "Fertig"
+    },
+    "grid": {
+      "hint": "Ziehen Sie Seiten, um sie neu anzuordnen. Jede Änderung wird als neue Datei neben dem Original gespeichert.",
+      "unavailable": "Die Seitenbearbeitung ist erst verfügbar, wenn die Engine bereit ist.",
+      "rotate": "Ausgewählte Seiten drehen",
+      "delete": "Ausgewählte Seiten löschen",
+      "move_earlier": "Vor die vorherige Seite verschieben",
+      "move_later": "Hinter die nächste Seite verschieben",
+      "drop_end": "Hier ablegen, um ans Ende zu verschieben"
     }
   },
   "web": {

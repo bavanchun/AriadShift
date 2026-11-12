@@ -120,7 +120,13 @@
       "tools": "Alat",
       "zoom": "{action, select, in {Perbesar} out {Perkecil} actual {Ukuran Sebenarnya} other {Zoom}}",
       "check_updates": "Periksa Pembaruan…",
-      "show_welcome": "Tampilkan Selamat Datang"
+      "show_welcome": "Tampilkan Selamat Datang",
+      "fit_width": "Sesuaikan Lebar",
+      "display_mode": "{mode, select, single {Satu Halaman} continuous {Gulir Berkelanjutan} twoUp {Dua Halaman} other {Tampilan Halaman}}",
+      "go_to_page": "Buka Halaman…",
+      "find": "Cari…",
+      "find_next": "Cari Berikutnya",
+      "find_previous": "Cari Sebelumnya"
     },
     "tools": {
       "group": "{group, select, organize {Atur} convert {Konversi} optimize {Optimalkan} security {Keamanan} overlay {Tumpang Tindih} ocr {OCR dan pindaian} annotate {Anotasi} forms {Formulir} sign {Tanda Tangani} redact {Sensor} compare {Bandingkan dan validasi} edit {Edit} ai {AI} automation {Otomatisasi} other {Alat lainnya}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Halaman",
-      "placeholder": "Gambar mini halaman akan muncul di sini."
+      "placeholder": "Gambar mini halaman akan muncul di sini.",
+      "page": "Halaman {number} dari {total}"
     },
     "viewer": {
-      "placeholder": "Penampil halaman akan muncul di sini."
+      "placeholder": "Penampil halaman akan muncul di sini.",
+      "title": "Penampil halaman",
+      "loading": "Membuka dokumen…"
     },
     "toolbar": {
-      "inspector": "Info Dokumen"
+      "inspector": "Info Dokumen",
+      "page_grid": "Kisi Halaman",
+      "previous_page": "Halaman Sebelumnya",
+      "next_page": "Halaman Berikutnya",
+      "page_field": "Nomor halaman",
+      "page_of": "dari {total}"
     },
     "inspector": {
       "title": "Dokumen",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "File ini bukan PDF yang valid."
+    },
+    "find": {
+      "prompt": "Cari di dokumen",
+      "count": "{current} dari {total}",
+      "none": "Tidak ada yang cocok",
+      "searching": "Mencari…",
+      "done": "Selesai"
+    },
+    "grid": {
+      "hint": "Seret halaman untuk mengurutkan ulang. Setiap perubahan disimpan sebagai file baru di samping file asli.",
+      "unavailable": "Pengeditan halaman belum tersedia sampai mesin siap.",
+      "rotate": "Putar Halaman yang Dipilih",
+      "delete": "Hapus Halaman yang Dipilih",
+      "move_earlier": "Pindahkan sebelum halaman sebelumnya",
+      "move_later": "Pindahkan setelah halaman berikutnya",
+      "drop_end": "Lepas di sini untuk memindahkan ke akhir"
     }
   },
   "web": {

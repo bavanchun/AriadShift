@@ -120,7 +120,13 @@
       "tools": "Alati",
       "zoom": "{action, select, in {Povećaj} out {Smanji} actual {Stvarna veličina} other {Zumiraj}}",
       "check_updates": "Provjeri ažuriranja…",
-      "show_welcome": "Prikaži dobrodošlicu"
+      "show_welcome": "Prikaži dobrodošlicu",
+      "fit_width": "Prilagodi širini",
+      "display_mode": "{mode, select, single {Jedna stranica} continuous {Neprekidno pomicanje} twoUp {Dvije stranice} other {Prikaz stranica}}",
+      "go_to_page": "Idi na stranicu…",
+      "find": "Pronađi…",
+      "find_next": "Pronađi sljedeće",
+      "find_previous": "Pronađi prethodno"
     },
     "tools": {
       "group": "{group, select, organize {Organiziraj} convert {Pretvori} optimize {Optimiziraj} security {Sigurnost} overlay {Preklapanje} ocr {OCR i skeniranja} annotate {Dodaj bilješke} forms {Obrasci} sign {Potpiši} redact {Zacrni} compare {Usporedi i provjeri} edit {Uredi} ai {UI} automation {Automatizacija} other {Ostali alati}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Stranice",
-      "placeholder": "Minijature stranica pojavit će se ovdje."
+      "placeholder": "Minijature stranica pojavit će se ovdje.",
+      "page": "Stranica {number} od {total}"
     },
     "viewer": {
-      "placeholder": "Preglednik stranica pojavit će se ovdje."
+      "placeholder": "Preglednik stranica pojavit će se ovdje.",
+      "title": "Preglednik stranica",
+      "loading": "Otvaranje dokumenta…"
     },
     "toolbar": {
-      "inspector": "Podaci o dokumentu"
+      "inspector": "Podaci o dokumentu",
+      "page_grid": "Mreža stranica",
+      "previous_page": "Prethodna stranica",
+      "next_page": "Sljedeća stranica",
+      "page_field": "Broj stranice",
+      "page_of": "od {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Ova datoteka nije valjan PDF."
+    },
+    "find": {
+      "prompt": "Pronađi u dokumentu",
+      "count": "{current} od {total}",
+      "none": "Nema podudaranja",
+      "searching": "Pretraživanje…",
+      "done": "Gotovo"
+    },
+    "grid": {
+      "hint": "Povucite stranice da ih preslažete. Svaka se promjena sprema kao nova datoteka pokraj izvornika.",
+      "unavailable": "Uređivanje stranica nije dostupno dok mehanizam nije spreman.",
+      "rotate": "Zakreni odabrane stranice",
+      "delete": "Izbriši odabrane stranice",
+      "move_earlier": "Premjesti prije prethodne stranice",
+      "move_later": "Premjesti nakon sljedeće stranice",
+      "drop_end": "Ispustite ovdje za premještanje na kraj"
     }
   },
   "web": {
