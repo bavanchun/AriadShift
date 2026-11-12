@@ -52,7 +52,8 @@ jobs:
     name: macOS build & test
     # The preview image label `xcode-27` ships Xcode 27.2; `macos-26` stops at Xcode 26.6. See docs/ci.md.
     runs-on: xcode-27
-    timeout-minutes: 60
+    # The universal Release build alone takes 50-60 minutes without a compiler cache; tests need about 5 more.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
