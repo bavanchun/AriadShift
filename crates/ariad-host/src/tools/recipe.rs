@@ -14,6 +14,7 @@ use std::{
 };
 
 use ariad_core::{
+    format::Format,
     limits::Limits,
     planner::Profile,
     tools::recipe::{ConditionContext, StepErrorPolicy, eval_step_condition},
@@ -531,16 +532,71 @@ fn run_recipe_inner(
             }
             Step::Convert { to, profile, .. } => {
                 let target_ext = to.user_name();
-                let engine_prog = request
-                    .engine_program
-                    .clone()
-                    .or_else(|| std::env::current_exe().ok())
-                    .unwrap_or_else(|| PathBuf::from("ashift"));
+                let resolved_prog =
+                    crate::engines::resolve_engine_program(request.engine_program.as_deref());
                 for idx in selected {
                     let item = &current_items[idx];
                     let out_path = step_dir.join(format!("{idx:03}-{}.{target_ext}", item.stem));
+                    let conv_req_prog = match resolved_prog {
+                        Some(ref engine_prog) => engine_prog.clone(),
+                        None => {
+                            let from_fmt = Format::from_user_name(&item.format)
+                                .or_else(|| {
+                                    item.path
+                                        .extension()
+                                        .and_then(|s| s.to_str())
+                                        .and_then(Format::from_extension)
+                                })
+                                .unwrap_or(Format::AriadIrJson);
+                            let to_fmt = *to;
+                            let caps = crate::engines::builtin_capabilities();
+                            let registered = caps.registered_engines();
+                            let prof = profile.unwrap_or(Profile::Editable);
+                            match ariad_core::planner::plan(
+                                &caps,
+                                from_fmt,
+                                to_fmt,
+                                prof,
+                                &registered,
+                            ) {
+                                Ok(plan) => {
+                                    if let Some(step) = plan
+                                        .steps
+                                        .iter()
+                                        .find(|s| s.engine != crate::engines::IN_PROCESS_ENGINE)
+                                    {
+                                        let err = ToolError::from_missing_engine(&step.engine);
+                                        handle_step_error(
+                                            policy,
+                                            err,
+                                            step_idx,
+                                            std::slice::from_ref(item),
+                                            &mut slots[idx],
+                                            &mut warnings,
+                                        )?;
+                                        continue;
+                                    }
+                                    PathBuf::new()
+                                }
+                                Err(err) => {
+                                    let conv_err =
+                                        crate::convert::routing::plan_error(err, from_fmt);
+                                    let err = map_convert_error(conv_err);
+                                    handle_step_error(
+                                        policy,
+                                        err,
+                                        step_idx,
+                                        std::slice::from_ref(item),
+                                        &mut slots[idx],
+                                        &mut warnings,
+                                    )?;
+                                    continue;
+                                }
+                            }
+                        }
+                    };
                     let mut conv_req =
-                        ConvertRequest::new(&item.path, &out_path, target_ext, &engine_prog);
+                        ConvertRequest::new(&item.path, &out_path, target_ext, conv_req_prog);
                     conv_req.profile = profile.unwrap_or(Profile::Editable);
                     conv_req.overwrite = true;
                     let result = convert_with_limits(
