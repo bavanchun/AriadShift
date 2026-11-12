@@ -806,12 +806,16 @@ mod tests {
 
     #[test]
     fn test_engine_program_configuration_and_request_reachability() {
-        let test_path = "/tmp/test_helpers/ashift";
-        set_engine_program(test_path.to_string()).expect("set_engine_program should succeed");
+        // Built from the platform temp dir so the path is absolute on every OS
+        // (a bare "/tmp/..." has no drive prefix and is relative on Windows).
+        let temp = tempfile::tempdir().expect("tempdir");
+        let test_path = temp.path().join("test_helpers").join("ashift");
+        set_engine_program(test_path.display().to_string())
+            .expect("set_engine_program should succeed");
 
         assert_eq!(
             current_engine_program(),
-            Some(PathBuf::from(test_path)),
+            Some(test_path.clone()),
             "engine_program() must return the configured path"
         );
 
@@ -819,7 +823,7 @@ mod tests {
         let tool_req = build_tool_request(
             &ToolRunRequest {
                 tool: "pdf.info".to_string(),
-                inputs: vec!["/dummy/input.pdf".to_string()],
+                inputs: vec![temp.path().join("input.pdf").display().to_string()],
                 output_dir: None,
                 output_path: None,
                 params_json: None,
@@ -832,13 +836,13 @@ mod tests {
 
         assert_eq!(
             tool_req.engine_program,
-            Some(PathBuf::from(test_path)),
+            Some(test_path.clone()),
             "configured engine program must reach ToolRequest.engine_program"
         );
 
         let (conv_req, _) = build_convert_request(&ConvertRunRequest {
-            input: "/dummy/input.md".to_string(),
-            output: Some("/dummy/out.html".to_string()),
+            input: temp.path().join("input.md").display().to_string(),
+            output: Some(temp.path().join("out.html").display().to_string()),
             target_format: None,
             profile: None,
             overwrite: None,
@@ -847,8 +851,7 @@ mod tests {
         .expect("build_convert_request");
 
         assert_eq!(
-            conv_req.engine_program,
-            PathBuf::from(test_path),
+            conv_req.engine_program, test_path,
             "configured engine program must reach ConvertRequest.engine_program"
         );
     }
@@ -925,10 +928,10 @@ mod tests {
         );
 
         // 3. Configured path takes precedence over fallback.
-        let custom = Path::new("/custom/configured/ashift");
+        let custom = temp.path().join("custom").join("configured").join("ashift");
         assert_eq!(
-            resolve_engine_program(Some(custom), Some(&app_exe)),
-            Some(custom.to_path_buf()),
+            resolve_engine_program(Some(&custom), Some(&app_exe)),
+            Some(custom.clone()),
             "configured path must take precedence"
         );
 
