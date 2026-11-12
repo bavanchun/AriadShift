@@ -45,7 +45,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -58,7 +58,7 @@ jobs:
           df -h .
 
       - name: Install compiler cache
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: sccache@0.19.0,just@1.58.0
 
@@ -245,7 +245,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -278,7 +278,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -349,7 +349,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
