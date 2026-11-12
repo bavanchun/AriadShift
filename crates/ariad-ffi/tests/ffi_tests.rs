@@ -8,7 +8,7 @@ use std::{
 
 use ariad_ffi::{
     CancelToken, ConvertRunRequest, FfiError, ProgressListener, ToolRunRequest, cancel,
-    catch_panics, convert, inspect, list_tools, plan, run_tool, set_engine_program,
+    catch_panics, convert, inspect, list_tools, plan, run_tool,
 };
 
 fn fixture_path(rel: &str) -> PathBuf {
@@ -68,6 +68,7 @@ impl ProgressListener for CancellingConvertListener {
 #[derive(Debug)]
 struct DropSignalListener {
     started_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release_rx: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     thread_exited: Arc<AtomicBool>,
 }
 
@@ -75,6 +76,9 @@ impl ProgressListener for DropSignalListener {
     fn on_progress(&self, _stage: String, _done: u64, _total: u64) {
         if let Some(tx) = self.started_tx.lock().unwrap().take() {
             let _ = tx.send(());
+            if let Some(rx) = self.release_rx.lock().unwrap().take() {
+                let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
+            }
         }
     }
 }
@@ -283,9 +287,11 @@ async fn test_run_tool_dropped_future_cancels_worker() {
     let output_pdf = temp_dir.path().join("dropped_tool_out.pdf");
 
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
     let thread_exited = Arc::new(AtomicBool::new(false));
     let listener = Box::new(DropSignalListener {
         started_tx: Mutex::new(Some(started_tx)),
+        release_rx: Mutex::new(Some(release_rx)),
         thread_exited: thread_exited.clone(),
     });
 
@@ -300,11 +306,14 @@ async fn test_run_tool_dropped_future_cancels_worker() {
     };
 
     tokio::select! {
+        biased;
+        _ = started_rx => {}
         _ = run_tool(req, Some(listener)) => {
             panic!("run_tool should not have completed normally");
         }
-        _ = started_rx => {}
     }
+
+    let _ = release_tx.send(());
 
     let start_wait = std::time::Instant::now();
     while !thread_exited.load(Ordering::SeqCst)
@@ -445,9 +454,11 @@ async fn test_convert_dropped_future_cancels_worker() {
     let output_html = temp_dir.path().join("dropped_convert_out.html");
 
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
     let thread_exited = Arc::new(AtomicBool::new(false));
     let listener = Box::new(DropSignalListener {
         started_tx: Mutex::new(Some(started_tx)),
+        release_rx: Mutex::new(Some(release_rx)),
         thread_exited: thread_exited.clone(),
     });
 
@@ -461,11 +472,14 @@ async fn test_convert_dropped_future_cancels_worker() {
     };
 
     tokio::select! {
+        biased;
+        _ = started_rx => {}
         _ = convert(req, Some(listener)) => {
             panic!("convert should not have completed normally");
         }
-        _ = started_rx => {}
     }
+
+    let _ = release_tx.send(());
 
     let start_wait = std::time::Instant::now();
     while !thread_exited.load(Ordering::SeqCst)
@@ -504,11 +518,4 @@ fn test_plan_returns_route() {
     assert_eq!(report.target_format, "md");
     assert!(!report.route.is_empty(), "plan route must not be empty");
     assert_eq!(report.route.first().unwrap().from, "pdf");
-}
-
-#[test]
-fn test_set_engine_program_exported() {
-    let res =
-        set_engine_program("/Applications/AriadShift.app/Contents/Helpers/ashift".to_string());
-    assert_eq!(res, Ok(()));
 }
