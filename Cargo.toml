@@ -15,6 +15,7 @@ publish = false
 ammonia = "4.2.1"
 ariad-core = { path = "crates/ariad-core", version = "0.6.0", default-features = false }
 ariad-engine-io = { path = "crates/ariad-engine-io", version = "0.6.0" }
+ariad-ffi = { path = "crates/ariad-ffi", version = "0.6.0" }
 ariad-pdf = { path = "crates/ariad-pdf", version = "0.6.0" }
 ariad-typst = { path = "crates/ariad-typst", version = "0.6.0" }
 ariad-host = { path = "crates/ariad-host", version = "0.6.0", default-features = false }
@@ -88,6 +89,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false }
 typst = "0.15.1"
 typst-pdf = "0.15.1"
 unicode-normalization = "0.1.26"
+uniffi = "=0.32.2"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls-no-provider"] }
 url = "2.5.8"
 utoipa = "6.0.0"
