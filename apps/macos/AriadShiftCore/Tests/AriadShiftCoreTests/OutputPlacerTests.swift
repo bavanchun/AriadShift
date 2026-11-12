@@ -147,6 +147,120 @@ final class OutputPlacerTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), ["out.pdf"])
     }
 
+    // MARK: - Volumes without an exclusive rename
+
+    /// A volume that answers `RENAME_EXCL` with `ENOTSUP`, as the real syscall would.
+    private let withoutExclusiveRename = ExclusiveRename { _, _ in ENOTSUP }
+
+    /// A source on another volume (`EXDEV`) whose destination also lacks exclusive rename.
+    private let crossVolumeWithoutExclusiveRename = ExclusiveRename { source, _ in
+        URL(fileURLWithPath: source).lastPathComponent.hasPrefix(".ashift-") ? ENOTSUP : EXDEV
+    }
+
+    private func stage(_ count: Int, in staging: URL) throws -> [URL] {
+        try (0..<count).map { index in
+            let folder = staging.appendingPathComponent("s\(index)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent("out.pdf")
+            try Data("file-\(index)".utf8).write(to: file)
+            return file
+        }
+    }
+
+    private func assertEveryFileKept(_ renamer: ExclusiveRename, reservations: NameReservations? = nil) throws {
+        let staging = try temporaryDirectory()
+        let destination = try temporaryDirectory()
+        let count = 64
+        let sources = try stage(count, in: staging)
+        let results = Mutex<[Result<URL, Error>]>([])
+        DispatchQueue.concurrentPerform(iterations: count) { index in
+            let outcome = Result {
+                try OutputPlacer.place(
+                    [sources[index]], into: destination, names: nil, reservations: reservations,
+                    fileManager: .default, renamer: renamer
+                )[0]
+            }
+            results.withLock { $0.append(outcome) }
+        }
+        let placed = try results.withLock { $0 }.map { try $0.get() }
+        XCTAssertEqual(Set(placed.map(\.path)).count, count, "every file got its own name")
+        let contents = try placed.map { try String(contentsOf: $0, encoding: .utf8) }
+        XCTAssertEqual(Set(contents), Set((0..<count).map { "file-\($0)" }), "no file was replaced")
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: destination.path).count, count,
+            "no placeholder or scratch file is left"
+        )
+        for source in sources { XCTAssertFalse(FileManager.default.fileExists(atPath: source.path)) }
+    }
+
+    func testConcurrentPlacementsKeepEveryFileWithoutExclusiveRename() throws {
+        try assertEveryFileKept(withoutExclusiveRename)
+    }
+
+    func testConcurrentPlacementsKeepEveryFileAcrossVolumesWithoutExclusiveRename() throws {
+        try assertEveryFileKept(crossVolumeWithoutExclusiveRename)
+    }
+
+    func testConcurrentPlacementsWithReservationsKeepEveryFileWithoutExclusiveRename() throws {
+        try assertEveryFileKept(withoutExclusiveRename, reservations: NameReservations())
+    }
+
+    func testFallbackRefusesAnExistingTargetAndKeepsBothFiles() throws {
+        let staging = try temporaryDirectory()
+        let destination = try temporaryDirectory()
+        let source = staging.appendingPathComponent("out.pdf")
+        try Data("new".utf8).write(to: source)
+        let target = destination.appendingPathComponent("out.pdf")
+        try Data("original".utf8).write(to: target)
+
+        for renamer in [withoutExclusiveRename, crossVolumeWithoutExclusiveRename] {
+            XCTAssertThrowsError(try OutputPlacer.moveExclusively(source, to: target, renamer: renamer)) { error in
+                XCTAssertEqual((error as? CocoaError)?.code, .fileWriteFileExists)
+            }
+            XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "original")
+            XCTAssertEqual(try String(contentsOf: source, encoding: .utf8), "new", "the source stays")
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), ["out.pdf"])
+        }
+    }
+
+    func testFallbackRefusesADanglingSymbolicLink() throws {
+        let staging = try temporaryDirectory()
+        let destination = try temporaryDirectory()
+        let source = staging.appendingPathComponent("out.pdf")
+        try Data("new".utf8).write(to: source)
+        let link = destination.appendingPathComponent("out.pdf")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "/nonexistent/ashift-target")
+
+        XCTAssertThrowsError(try OutputPlacer.moveExclusively(source, to: link, renamer: withoutExclusiveRename)) { error in
+            XCTAssertEqual((error as? CocoaError)?.code, .fileWriteFileExists)
+        }
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), "/nonexistent/ashift-target")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "/nonexistent/ashift-target"), "nothing was created through the link")
+    }
+
+    func testFallbackRemovesItsPlaceholderWhenTheRenameFails() throws {
+        let destination = try temporaryDirectory()
+        let missing = destination.appendingPathComponent("not-there.pdf")
+        let target = destination.appendingPathComponent("out.pdf")
+
+        XCTAssertThrowsError(try OutputPlacer.moveExclusively(missing, to: target, renamer: withoutExclusiveRename))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), [], "no empty file is left behind")
+    }
+
+    func testFailedCopyLeavesNoScratchFile() throws {
+        let destination = try temporaryDirectory()
+        let missing = destination.appendingPathComponent("not-there.pdf")
+        XCTAssertThrowsError(try OutputPlacer.copyExclusively(missing, to: destination.appendingPathComponent("out.pdf")))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), [])
+    }
+
+    func testAVolumeWithoutAnyExclusivePrimitiveGetsATypedError() {
+        XCTAssertEqual(OutputPlacer.placementError(forCreateErrno: ENOTSUP) as? PlacementError, .exclusivePlacementUnsupported)
+        XCTAssertEqual(OutputPlacer.placementError(forCreateErrno: EOPNOTSUPP) as? PlacementError, .exclusivePlacementUnsupported)
+        XCTAssertEqual((OutputPlacer.placementError(forCreateErrno: EEXIST) as? CocoaError)?.code, .fileWriteFileExists)
+        XCTAssertEqual((OutputPlacer.placementError(forCreateErrno: EACCES) as? CocoaError)?.code, .fileWriteUnknown)
+    }
+
     // MARK: - Only the staging folder is moved
 
     func testStagedFilesAcceptsFilesInsideStaging() throws {

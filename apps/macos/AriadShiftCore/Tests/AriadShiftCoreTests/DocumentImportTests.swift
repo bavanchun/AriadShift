@@ -85,6 +85,39 @@ final class DocumentImportTests: XCTestCase {
         }
     }
 
+    func testMarkdownAndImageWithTheSameStemImportedTogetherGetDistinctNames() async throws {
+        let client = try makeClient()
+        let directory = try temporaryDirectory()
+        let markdown = directory.appendingPathComponent("x.md")
+        let image = directory.appendingPathComponent("x.png")
+        try FileManager.default.copyItem(atPath: try fixturePath("md/vi-links-autolinks.md"), toPath: markdown.path)
+        try FileManager.default.copyItem(atPath: try fixturePath("image/en-repair-receipt.png"), toPath: image.path)
+        let reservations = NameReservations()
+
+        // The image run finishes first and wants x.pdf while the markdown run holds that name.
+        let outputs = try await withThrowingTaskGroup(of: URL.self) { group in
+            for source in [markdown, image] {
+                group.addTask {
+                    try await DocumentImporter.importDocument(
+                        at: source, destination: directory, client: client, reservations: reservations
+                    )
+                }
+            }
+            var urls: [URL] = []
+            for try await url in group { urls.append(url) }
+            return urls
+        }
+
+        XCTAssertEqual(Set(outputs.map(\.lastPathComponent)), ["x.pdf", "x 2.pdf"])
+        for output in outputs {
+            XCTAssertEqual(try Data(contentsOf: output).prefix(5), Data("%PDF-".utf8), output.lastPathComponent)
+        }
+        XCTAssertEqual(
+            Set(try FileManager.default.contentsOfDirectory(atPath: directory.path)),
+            ["x.md", "x.png", "x.pdf", "x 2.pdf"], "nothing else is left behind"
+        )
+    }
+
     func testImageImportWrapsTheImageIntoAPDF() async throws {
         let client = try makeClient()
         let directory = try temporaryDirectory()

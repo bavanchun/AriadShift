@@ -17,7 +17,7 @@ operation goes through `crates/ariad-ffi` via the `AriadShiftCore` Swift package
 brew install xcodegen          # dev tool only
 just macos-ffi && apps/macos/scripts/sync-ffi.sh && just macos-project
 cd apps/macos && xcodebuild -scheme AriadShift -destination 'platform=macOS' build test
-swift test --package-path apps/macos/AriadShiftCore   # real FFI and /fixtures
+swift test --package-path apps/macos/AriadShiftCore   # real FFI and fixtures
 ```
 The helper phase copies `ASHIFT_HELPER_PATH` (which must contain every arch in `ARCHS`) or,
 without it, builds `ariad-cli` per arch with cargo and merges with `lipo` (a universal
@@ -40,8 +40,10 @@ if that read fails every tool that needs them stays disabled and the menu says s
 guess could show a password in a plain text field. An engine that fails to start shows its error
 in the inspector and the Tools menu. A window runs one tool at a time and closing it cancels the run.
 `EngineClient.run` writes into a staging folder, then moves only files found there next to the
-input (or the folder from Settings) with an exclusive rename under a name that never replaces
-a file, and opens a single PDF result.
+input (or the folder from Settings) and opens a single PDF result. A name is claimed atomically:
+`renamex_np(RENAME_EXCL)`, else an exclusive create plus a rename over that empty file. Exclusive
+creators (the app, the engine) never replace a result; a blind overwrite in that instant could,
+and a volume with neither primitive fails with `PlacementError`. Imports share `NameReservations`.
 
 ## Updates (Sparkle 2.10.1)
 Sparkle 2.10.1 (MIT, pinned in `project.yml`; the SwiftPM binary target is pinned by checksum).

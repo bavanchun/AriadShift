@@ -65,6 +65,8 @@ public enum DocumentImporter {
                 tool: "image.to_pdf",
                 inputs: [url],
                 destination: destination,
+                outputName: url.deletingPathExtension().lastPathComponent + ".pdf",
+                reservations: reservations,
                 onProgress: onProgress
             )
             guard let file = result.files.first else { throw ImportError.noOutput }
