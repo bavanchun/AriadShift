@@ -87,6 +87,14 @@ jobs:
         run: just macos-build
       - name: Run macOS tests
         run: just macos-test
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AriadShift-test-results
+          path: target/derived-data/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Compress application bundle
         run: |
           APP_PATH="target/derived-data/Build/Products/Release/AriadShift.app"
