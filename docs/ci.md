@@ -17,6 +17,7 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
 | [`release.yml`](../.github/workflows/release.yml) | Tag push `'**[0-9]+.[0-9]+.[0-9]+*'`, pull requests touching release paths (build-only rehearsal) | Builds 5 targets on 3 OSes, one CycloneDX SBOM per crate, Homebrew formula, and invokes `publish-crates.yml` (pull requests scoped via `paths:` filter) |
 | [`desktop.yml`](../.github/workflows/desktop.yml) | Desktop/shared/Rust changes in pull requests, `v*` tags, manual | Builds installers on three OSes, checks generated bindings and runs the real Linux WebDriver conversion; tag jobs attach signed updates to the CLI-owned release (see [desktop.md](desktop.md)) |
+| [`macos.yml`](../.github/workflows/macos.yml) | macOS/FFI/Swift changes in pull requests and pushes, `v*` tags, manual | Builds the universal XCFramework and Release app on the `xcode-27` runner image, runs Core and app tests; tag jobs sign and notarize under `environment: release`, then publish the signed DMG and Sparkle appcast from a separate small job. Without Apple credentials the tag run produces an unsigned DMG as a workflow artifact only (see [macOS workflow runner](#macos-workflow-runner)) |
 | [`cloud-e2e.yml`](../.github/workflows/cloud-e2e.yml) | Daily at 04:00 UTC on `dev`, manual, path-matched pushes and pull requests, or the `cloud-e2e` PR label | Builds all three Compose profiles, proves image-only Vietnamese PDF OCR through the completed Docling route, then checks DOCX content, deletion and quotas |
 | [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
 | [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
@@ -266,6 +267,19 @@ flow. Both E2E scripts explicitly enable signup in
 their private generated environment; deployments retain the default-off setting.
 OAuth request credentials use private temporary files, and reset/cleanup refuses
 foreign project volumes.
+
+## macOS workflow runner
+
+[`macos.yml`](../.github/workflows/macos.yml) needs Xcode 27 (the `apps/macos/AriadShiftCore` package declares `swift-tools-version` 6.4). The GA label `macos-26` stops at Xcode 26.6, so the build and release-sign jobs run on the preview label `xcode-27`, which ships Xcode 27.2 (build 27B52) at `/Applications/Xcode_27.2.app`.
+
+- [`scripts/macos-select-xcode.sh`](../scripts/macos-select-xcode.sh) selects exactly that path and fails the job when the app is missing or `xcodebuild -version` reports anything but `Xcode 27.2` and `Build version 27B52`. There is no fallback to another installed Xcode.
+- Risk: `xcode-27` is a preview image label. Jobs may queue longer than on GA images, and the label or its Xcode set can change without notice. The label has not been exercised on this repository yet.
+- Fallback: switch `runs-on` to `macos-26` (or a GA `macos-27`) once that image ships Xcode 27.2 or newer, and keep the exact `Xcode_27.2.app` pin check in `macos-select-xcode.sh` (change the pinned path, version and build together when the pin moves).
+- Before the first release tag, the `build` job of this workflow must be green on a pull request run. A tag run cannot prove the runner label or the Xcode pin; only a real run on the runner can.
+- `actionlint` only knows hosted labels listed in its version or in [`actionlint.yaml`](../.github/actionlint.yaml). `xcode-27` has to be listed there as a custom label until actionlint knows it.
+- Path filters include `crates/**`, `Cargo.lock` and `justfile`, so a core change that breaks the FFI or helper build runs macOS CI on its pull request.
+- On a `v*` tag, `release-sign` first requires the tagged commit to be an ancestor of `origin/main`, then decides the signing mode before the build. A partial Apple credential set fails the run; an unsigned run builds without the Sparkle public key and asserts the built app ships with the updater disabled (`SUPublicEDKey` empty).
+- The release flow, secrets and the unsigned fallback are described in [releasing.md](releasing.md#macos-release-signing-and-updates).
 
 ## Commit rules
 

@@ -1,0 +1,393 @@
+name: macOS
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "apps/macos/**"
+      - "crates/ariad-ffi/**"
+      - "crates/**"
+      - "Cargo.lock"
+      - "justfile"
+      - "scripts/*xcframework*"
+      - "scripts/macos-*"
+      - "locales/**"
+      - ".github/workflows/macos.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "apps/macos/**"
+      - "crates/ariad-ffi/**"
+      - "crates/**"
+      - "Cargo.lock"
+      - "justfile"
+      - "scripts/*xcframework*"
+      - "scripts/macos-*"
+      - "locales/**"
+      - ".github/workflows/macos.yml"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_BUILD_JOBS: "4"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+  MACOSX_DEPLOYMENT_TARGET: "15.0"
+
+jobs:
+  build:
+    name: macOS build & test
+    # The preview image label `xcode-27` ships Xcode 27.2; `macos-26` stops at Xcode 26.6. See docs/ci.md.
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+          cache: false
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: just@1.58.0
+      - name: Select Xcode 27.2
+        run: bash scripts/macos-select-xcode.sh
+      - name: Install pinned XcodeGen
+        run: |
+          XCODEGEN_VER="2.46.0"
+          XCODEGEN_SHA256="4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+          XCODEGEN_URL="https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VER}/xcodegen.zip"
+          TMP_DIR="$(mktemp -d)"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "${TMP_DIR}/xcodegen.zip" "${XCODEGEN_URL}"
+          echo "${XCODEGEN_SHA256}  ${TMP_DIR}/xcodegen.zip" | shasum -a 256 --check
+          unzip -q "${TMP_DIR}/xcodegen.zip" -d "${TMP_DIR}/extracted"
+          sudo "${TMP_DIR}/extracted/xcodegen/install.sh" /usr/local
+          rm -rf "${TMP_DIR}"
+          xcodegen --version
+      - name: Test release helper scripts
+        run: |
+          bash scripts/macos-check-secrets.test.sh
+          bash scripts/macos-check-secrets-workflow.test.sh
+      - name: Build macOS application bundle
+        run: just macos-build
+      - name: Run macOS tests
+        run: just macos-test
+      - name: Compress application bundle
+        run: |
+          APP_PATH="target/derived-data/Build/Products/Release/AriadShift.app"
+          ZIP_PATH="target/derived-data/Build/Products/Release/AriadShift-unsigned.zip"
+          ditto -c -k --keepParent "${APP_PATH}" "${ZIP_PATH}"
+      - name: Upload unsigned application bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AriadShift-app-unsigned
+          path: target/derived-data/Build/Products/Release/AriadShift-unsigned.zip
+          if-no-files-found: error
+
+  release-sign:
+    name: macOS release (sign and notarize)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    environment: release
+    permissions:
+      contents: read
+    runs-on: xcode-27
+    # Cargo universal build and Xcode build, then two notarizations of at most 20 minutes each.
+    timeout-minutes: 120
+    outputs:
+      signed: ${{ steps.mode.outputs.mode == 'signed' }}
+      dmg_sha256: ${{ steps.digests.outputs.dmg_sha256 }}
+      appcast_sha256: ${{ steps.digests.outputs.appcast_sha256 }}
+    steps:
+      # The ancestry check is the first step so that no step holding a secret runs for a tag outside main.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require stable branch ancestry
+        run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+      - name: Check Apple signing credentials
+        id: mode
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          mode="$(bash scripts/macos-check-secrets.sh)"
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+      - name: Require a known release mode
+        if: steps.mode.outputs.mode != 'signed' && steps.mode.outputs.mode != 'unsigned'
+        run: |
+          echo "::error::The credential check produced no release mode (expected signed or unsigned)."
+          exit 1
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+          cache: false
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: just@1.58.0
+      - name: Select Xcode 27.2
+        run: bash scripts/macos-select-xcode.sh
+      - name: Install pinned XcodeGen
+        run: |
+          XCODEGEN_VER="2.46.0"
+          XCODEGEN_SHA256="4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+          XCODEGEN_URL="https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VER}/xcodegen.zip"
+          TMP_DIR="$(mktemp -d)"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "${TMP_DIR}/xcodegen.zip" "${XCODEGEN_URL}"
+          echo "${XCODEGEN_SHA256}  ${TMP_DIR}/xcodegen.zip" | shasum -a 256 --check
+          unzip -q "${TMP_DIR}/xcodegen.zip" -d "${TMP_DIR}/extracted"
+          sudo "${TMP_DIR}/extracted/xcodegen/install.sh" /usr/local
+          rm -rf "${TMP_DIR}"
+          xcodegen --version
+      - name: Validate release inputs
+        env:
+          RELEASE_MODE: ${{ steps.mode.outputs.mode }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Release tag '$RELEASE_TAG' is not a semantic version tag (vMAJOR.MINOR.PATCH[-suffix])."
+            exit 1
+          fi
+          # The Sparkle public key is required only for a signed release. An unsigned build ships with the updater disabled.
+          if [[ "$RELEASE_MODE" == "signed" && ! "$SPARKLE_PUBLIC_ED_KEY" =~ ^[A-Za-z0-9+/=]{44}$ ]]; then
+            echo "::error::vars.SPARKLE_PUBLIC_ED_KEY must be the 44-character base64 Sparkle public key for a signed release."
+            exit 1
+          fi
+      - name: Build release macOS application bundle
+        env:
+          RELEASE_MODE: ${{ steps.mode.outputs.mode }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+        run: |
+          MARKETING_VER="${RELEASE_TAG#v}"
+          echo "==> Building Release AriadShift version $MARKETING_VER ($BUILD_NUMBER), mode $RELEASE_MODE..."
+          # CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO keeps Xcode from adding com.apple.security.get-task-allow to the
+          # ad-hoc build. The signing step also replaces the app entitlements and gates on the result.
+          build_args=(
+            "MARKETING_VERSION=${MARKETING_VER}"
+            "CURRENT_PROJECT_VERSION=${BUILD_NUMBER}"
+            "CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO"
+          )
+          # Only a signed release carries the Sparkle public key; the project default (empty) keeps the updater disabled.
+          if [[ "$RELEASE_MODE" == "signed" ]]; then
+            build_args+=("SPARKLE_PUBLIC_ED_KEY=${SPARKLE_PUBLIC_ED_KEY}")
+          fi
+          just macos-build "${build_args[@]}"
+      - name: Verify built Info.plist version, build number and updater key
+        env:
+          RELEASE_MODE: ${{ steps.mode.outputs.mode }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+        run: |
+          PLIST_PATH="target/derived-data/Build/Products/Release/AriadShift.app/Contents/Info.plist"
+          plist_value() { /usr/libexec/PlistBuddy -c "Print :$1" "${PLIST_PATH}"; }
+          [[ "$(plist_value CFBundleShortVersionString)" == "${RELEASE_TAG#v}" ]] || { echo "::error::CFBundleShortVersionString does not match the tag."; exit 1; }
+          [[ "$(plist_value CFBundleVersion)" == "${BUILD_NUMBER}" ]] || { echo "::error::CFBundleVersion does not match the build number."; exit 1; }
+          if [[ "$RELEASE_MODE" == "signed" ]]; then
+            [[ "$(plist_value SUPublicEDKey)" == "${SPARKLE_PUBLIC_ED_KEY}" ]] || { echo "::error::SUPublicEDKey does not match vars.SPARKLE_PUBLIC_ED_KEY."; exit 1; }
+            echo "Info.plist carries version ${RELEASE_TAG#v}, build ${BUILD_NUMBER} and the configured Sparkle public key."
+          else
+            # A missing key also leaves the updater disabled; only a non-empty key is a failure.
+            if sparkle_key="$(plist_value SUPublicEDKey 2>/dev/null)" && [[ -n "$sparkle_key" ]]; then
+              echo "::error::The unsigned build must ship with the updater disabled, but SUPublicEDKey is not empty."
+              exit 1
+            fi
+            echo "Info.plist carries version ${RELEASE_TAG#v}, build ${BUILD_NUMBER} and no Sparkle public key (updater disabled)."
+          fi
+      - name: Build unsigned DMG (workflow artifact only)
+        if: steps.mode.outputs.mode == 'unsigned'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p target/release
+          bash scripts/macos-dmg.sh target/derived-data/Build/Products/Release/AriadShift.app "target/release/AriadShift-${RELEASE_TAG}-universal-unsigned.dmg"
+          {
+            echo "### Unsigned build: not published"
+            echo "All six Apple signing credentials are absent from the release environment."
+            echo "AriadShift-${RELEASE_TAG}-universal-unsigned.dmg has no Developer ID signature and no notarization."
+            echo "It is kept only as the workflow artifact AriadShift-unsigned-dmg (7 days) and is never attached to a GitHub Release. No appcast was generated."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload unsigned DMG as workflow artifact
+        if: steps.mode.outputs.mode == 'unsigned'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AriadShift-unsigned-dmg
+          path: target/release/AriadShift-*-universal-unsigned.dmg
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error
+      - name: Sign, notarize and package release artifacts
+        if: steps.mode.outputs.mode == 'signed'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p target/release
+          APP_PATH="target/derived-data/Build/Products/Release/AriadShift.app"
+
+          echo "==> Configuring temporary keychain for Developer ID signing..."
+          KEYCHAIN_PATH="$RUNNER_TEMP/macos-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          (
+            umask 077
+            echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          )
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$CERT_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          export KEYCHAIN_PATH
+
+          echo "==> Phase 1: Signing and notarizing application bundle..."
+          bash scripts/macos-sign-notarize.sh app "$APP_PATH"
+
+          echo "==> Phase 2: Building DMG installer from stapled application..."
+          DMG_PATH="target/release/AriadShift-${RELEASE_TAG}-universal.dmg"
+          bash scripts/macos-dmg.sh "$APP_PATH" "$DMG_PATH"
+
+          echo "==> Phase 3: Signing and notarizing DMG installer..."
+          bash scripts/macos-sign-notarize.sh dmg "$DMG_PATH"
+
+          echo "==> Release packaging, signing, and notarization complete."
+      - name: Clean up temporary keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/macos-signing.keychain-db"
+          security delete-keychain "$KEYCHAIN_PATH" || true
+          rm -f "$RUNNER_TEMP/certificate.p12" || true
+      - name: Generate Sparkle release appcast
+        if: steps.mode.outputs.mode == 'signed'
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          DMG_PATH="target/release/AriadShift-${RELEASE_TAG}-universal.dmg"
+          if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+            echo "::warning::SPARKLE_ED_PRIVATE_KEY is not set; no appcast.xml is produced for this signed release."
+            echo "### Notice: no appcast" >> "$GITHUB_STEP_SUMMARY"
+            echo "SPARKLE_ED_PRIVATE_KEY is not set in the release environment, so the signed DMG is published without an appcast.xml." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "==> Generating Sparkle appcast for $DMG_PATH..."
+          bash scripts/macos-appcast.sh "$DMG_PATH" target/release/appcast.xml
+      - name: Record SHA-256 digests of the release assets
+        id: digests
+        if: steps.mode.outputs.mode == 'signed'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          dmg_sha256="$(shasum -a 256 "target/release/AriadShift-${RELEASE_TAG}-universal.dmg" | cut -d ' ' -f 1)"
+          appcast_sha256=""
+          if [[ -f target/release/appcast.xml ]]; then
+            appcast_sha256="$(shasum -a 256 target/release/appcast.xml | cut -d ' ' -f 1)"
+          fi
+          {
+            echo "dmg_sha256=${dmg_sha256}"
+            echo "appcast_sha256=${appcast_sha256}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Upload signed release assets as workflow artifact
+        if: steps.mode.outputs.mode == 'signed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AriadShift-release-assets
+          # Explicit names only. The unsigned DMG has a different name and is never uploaded under this artifact.
+          path: |
+            target/release/AriadShift-${{ github.ref_name }}-universal.dmg
+            target/release/appcast.xml
+          overwrite: true
+          if-no-files-found: error
+
+  release-publish:
+    name: macOS release (publish assets)
+    # Only a signed and notarized build reaches this job; the unsigned fallback never does.
+    if: needs.release-sign.outputs.signed == 'true'
+    needs: [release-sign]
+    permissions:
+      contents: write
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: AriadShift-release-assets
+          path: release-assets
+      - name: Verify the downloaded assets against the digests recorded by release-sign
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          DMG_SHA256: ${{ needs.release-sign.outputs.dmg_sha256 }}
+          APPCAST_SHA256: ${{ needs.release-sign.outputs.appcast_sha256 }}
+        run: |
+          [[ "$DMG_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::release-sign did not export a valid DMG digest."; exit 1; }
+          cd release-assets
+          printf '%s  %s\n' "$DMG_SHA256" "AriadShift-${RELEASE_TAG}-universal.dmg" | sha256sum -c -
+          if [[ -n "$APPCAST_SHA256" ]]; then
+            [[ "$APPCAST_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::release-sign exported an invalid appcast digest."; exit 1; }
+            printf '%s  %s\n' "$APPCAST_SHA256" appcast.xml | sha256sum -c -
+          elif [[ -e appcast.xml ]]; then
+            echo "::error::The artifact contains an appcast.xml that release-sign did not record."
+            exit 1
+          fi
+      - name: Wait for the CLI workflow to create the release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          for ((attempt = 0; attempt < 270; attempt++)); do
+            if release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.id' 2>/dev/null); then
+              [[ "$release_id" =~ ^[0-9]+$ ]] || exit 1
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'The CLI release was not created; macOS release assets will not be published.' >&2
+          exit 1
+      - name: Upload release assets to GitHub Release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Fixed asset names, no globs: only the signed DMG and the appcast can ever be attached.
+          dmg="release-assets/AriadShift-${RELEASE_TAG}-universal.dmg"
+          [[ -f "$dmg" ]] || { echo "::error::Signed DMG $dmg is missing from the artifact."; exit 1; }
+          assets=("$dmg")
+          if [[ -f release-assets/appcast.xml ]]; then
+            assets+=(release-assets/appcast.xml)
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
