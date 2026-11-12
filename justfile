@@ -444,6 +444,11 @@ fuzz target="" seconds="60":
 fuzz target="" seconds="60":
     @echo "fuzzing runs on Linux only" && exit 1
 
+# Build the ariad-ffi universal XCFramework and Swift bindings.
+[macos]
+macos-ffi *args:
+    bash scripts/build-xcframework.sh "$@"
+
 # Generated IPC types and wrappers come only from Rust.
 desktop-licenses:
     node scripts/generate-desktop-licenses.mjs > apps/desktop/THIRD_PARTY_JS_LICENSES

@@ -89,6 +89,39 @@ name = "cssparser-macros"
 allow = ["0BSD"]
 name = "roman-numerals-rs"
 
+# Unmodified UniFFI crates for macOS Swift bindings (ariad-ffi).
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_bindgen"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_core"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_internal_macros"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_macros"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_meta"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_pipeline"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_udl"
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"

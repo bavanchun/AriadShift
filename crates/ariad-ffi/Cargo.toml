@@ -1,0 +1,39 @@
+[package]
+name = "ariad-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "UniFFI Swift bindings to ariad-host and ariad-pdf for macOS"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+ariad-core = { workspace = true, features = ["pdf"] }
+ariad-host = { workspace = true, features = ["default"] }
+ariad-pdf.workspace = true
+futures-util.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tokio-util.workspace = true
+uniffi = { workspace = true, features = ["cli", "tokio"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints.rust]
+# UniFFI proc-macro scaffolding relies on unsafe code for foreign function interface boundaries.
+unsafe_code = "allow"
+linker_messages = "allow"
+
+[lints.clippy]
+all = "warn"
