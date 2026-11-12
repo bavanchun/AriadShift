@@ -54,14 +54,16 @@ struct FindBar: View {
                 .accessibilityLabel(statusText)
                 .accessibilityIdentifier("find.status")
             // A borderless icon button is only as large as its glyph (about 11 by 6 pt), too small to hit: give it a
-            // comfortable target that is clickable all over.
+            // comfortable target that is clickable all over. The size is fixed rather than a minimum: a min-only frame
+            // stays flexible, so the detail column's measured min and max size would depend on the proposal it is
+            // probed with, and the split view re-measures that size on every constraints pass.
             Button(String(localized: "mac.menu.find_previous"), systemImage: "chevron.up") { find.previous() }
-                .frame(minWidth: 24, minHeight: 24)
+                .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
                 .disabled(find.matchCount == 0)
                 .accessibilityIdentifier("find.previous")
             Button(String(localized: "mac.menu.find_next"), systemImage: "chevron.down") { find.next() }
-                .frame(minWidth: 24, minHeight: 24)
+                .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
                 .disabled(find.matchCount == 0)
                 .accessibilityIdentifier("find.next")
