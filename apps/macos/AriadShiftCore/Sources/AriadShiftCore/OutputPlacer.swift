@@ -124,10 +124,20 @@ public enum OutputPlacer {
             // Another volume: the file cannot be renamed, so copy it beside the target first.
             try copyExclusively(source, to: target, fileManager: fileManager, renamer: renamer)
         case ENOTSUP, EINVAL:
-            try renameOverClaimedName(source, to: target)
+            do {
+                try renameOverClaimedName(source, to: target)
+            } catch where isCrossVolume(error) {
+                // The first attempt could not tell that the source lives on another volume.
+                try copyExclusively(source, to: target, fileManager: fileManager, renamer: renamer)
+            }
         case let code:
             throw CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)])
         }
+    }
+
+    /// Whether `error` is the `EXDEV` that `rename(2)` reports across volumes.
+    private static func isCrossVolume(_ error: Error) -> Bool {
+        ((error as NSError).userInfo[NSUnderlyingErrorKey] as? POSIXError)?.code == .EXDEV
     }
 
     /// Copies `source` next to `target` under a private name, renames that copy to `target`

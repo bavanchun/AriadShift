@@ -9,36 +9,15 @@ import XCTest
 /// no screen-recording permission because the app draws its own windows.
 @MainActor
 final class WindowRenderTests: XCTestCase {
-    /// Pumps the main run loop until `condition` holds or `seconds` pass.
     private func wait(_ seconds: Double, until condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !condition(), Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(100))
-        }
+        await pump(seconds, until: condition)
     }
 
     private func snapshot(_ window: NSWindow, name: String) throws -> NSBitmapImageRep {
         let view = try XCTUnwrap(window.contentView?.superview ?? window.contentView)
-        let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: rep)
-        let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
-        let directory = ProcessInfo.processInfo.environment["ASHIFT_SNAPSHOT_DIR"].map(URL.init(fileURLWithPath:))
-            ?? FileManager.default.temporaryDirectory
-        try png.write(to: directory.appendingPathComponent("\(name).png"))
+        let rep = try bitmap(of: view)
+        try writeSnapshot(rep, name: name)
         return rep
-    }
-
-    /// True when the image holds more than one distinct colour, so it is not a blank render.
-    private func hasContent(_ rep: NSBitmapImageRep) -> Bool {
-        var seen = Set<UInt32>()
-        let step = max(rep.pixelsWide / 60, 1)
-        for x in stride(from: 0, to: rep.pixelsWide, by: step) {
-            for y in stride(from: 0, to: rep.pixelsHigh, by: step) {
-                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-                seen.insert(UInt32(color.redComponent * 255) << 16 | UInt32(color.greenComponent * 255) << 8 | UInt32(color.blueComponent * 255))
-            }
-        }
-        return seen.count > 3
     }
 
     func testDocumentWindowRendersSidebarViewerAndInspector() async throws {
@@ -135,6 +114,29 @@ final class WindowRenderTests: XCTestCase {
         let zoom = view.items.filter { ["Zoom In", "Zoom Out", "Actual Size"].contains($0.title) }
         XCTAssertEqual(zoom.count, 3, "\(view.items.map(\.title))")
         XCTAssertTrue(zoom.allSatisfy { !$0.isEnabled })
+        // The viewer commands exist with their standard shortcuts and stay off without a document window.
+        func item(_ menuTitle: String, _ title: String) -> NSMenuItem? {
+            menu.items.first { $0.title == menuTitle }?.submenu?.items.first { $0.title == title }
+        }
+        for (title, key, modifiers) in [
+            ("Fit Width", "9", NSEvent.ModifierFlags.command),
+            ("Single Page", "1", .command), ("Continuous Scroll", "2", .command), ("Two Pages", "3", .command),
+            ("Page Grid", "p", [.command, .option]),
+            ("Go to Page…", "g", [.command, .option]),
+        ] {
+            let found = try XCTUnwrap(item("View", title), "View menu lacks \(title): \(view.items.map(\.title))")
+            XCTAssertEqual(found.keyEquivalent, key, title)
+            XCTAssertEqual(found.keyEquivalentModifierMask, modifiers, title)
+            XCTAssertFalse(found.isEnabled, "\(title) needs a document")
+        }
+        for (title, key, modifiers) in [
+            ("Find…", "f", NSEvent.ModifierFlags.command), ("Find Next", "g", .command), ("Find Previous", "g", [.command, .shift]),
+        ] {
+            let found = try XCTUnwrap(item("Edit", title), "Edit menu lacks \(title)")
+            XCTAssertEqual(found.keyEquivalent, key, title)
+            XCTAssertEqual(found.keyEquivalentModifierMask, modifiers, title)
+            XCTAssertFalse(found.isEnabled, "\(title) needs a document")
+        }
         print("MENUBAR", titles, "FILE", file.items.map(\.title), "EDIT", menu.items.first { $0.title == "Edit" }?.submenu?.items.map(\.title) ?? [], "VIEW", view.items.map(\.title))
     }
 }

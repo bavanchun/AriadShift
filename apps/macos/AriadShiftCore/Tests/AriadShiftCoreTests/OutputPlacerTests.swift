@@ -223,6 +223,51 @@ final class OutputPlacerTests: XCTestCase {
         }
     }
 
+    /// A destination that lacks exclusive rename and a source on a real second volume: the claim and
+    /// rename route fails with `EXDEV`, and the move must fall back to copying beside the target.
+    func testNoExclusiveRenameWithASourceOnAnotherVolumeFallsBackToACopy() throws {
+        let otherVolume = try mountedScratchVolume()
+        let destination = try temporaryDirectory()
+        let source = otherVolume.appendingPathComponent("out.pdf")
+        try Data("new".utf8).write(to: source)
+        let target = destination.appendingPathComponent("out.pdf")
+
+        try OutputPlacer.moveExclusively(source, to: target, renamer: withoutExclusiveRename)
+
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "new")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), ["out.pdf"])
+    }
+
+    /// A small disk image mounted for the test: a second volume of its own, detached at teardown.
+    private func mountedScratchVolume() throws -> URL {
+        let image = try temporaryDirectory().appendingPathComponent("scratch.dmg")
+        let name = "ashift-\(UUID().uuidString.prefix(8))"
+        let create = Process()
+        create.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        create.arguments = ["create", "-size", "8m", "-fs", "APFS", "-volname", name, "-attach", image.path]
+        create.standardOutput = FileHandle.nullDevice
+        create.standardError = FileHandle.nullDevice
+        try create.run()
+        create.waitUntilExit()
+        let mountPoint = URL(fileURLWithPath: "/Volumes/\(name)", isDirectory: true)
+        guard create.terminationStatus == 0, FileManager.default.fileExists(atPath: mountPoint.path) else {
+            let message = "could not mount a scratch disk image at \(mountPoint.path)"
+            XCTFail(message)
+            throw TestSetupError(description: message)
+        }
+        addTeardownBlock {
+            let detach = Process()
+            detach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            detach.arguments = ["detach", "-force", mountPoint.path]
+            detach.standardOutput = FileHandle.nullDevice
+            detach.standardError = FileHandle.nullDevice
+            try? detach.run()
+            detach.waitUntilExit()
+        }
+        return mountPoint
+    }
+
     func testFallbackRefusesADanglingSymbolicLink() throws {
         let staging = try temporaryDirectory()
         let destination = try temporaryDirectory()
