@@ -1,7 +1,7 @@
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import PairPage from "@/app/convert/[pair]/page";
-import FormatsPage from "@/app/formats/page";
+import PairPage from "@/app/[locale]/convert/[pair]/page";
+import FormatsPage from "@/app/[locale]/formats/page";
 import sitemap from "@/app/sitemap";
 import { loadPairs } from "@/lib/catalog";
 
@@ -20,15 +20,23 @@ describe("public format pages", () => {
       ["markdown-to-ir-json", "ashift convert input.md --to json"],
     ] as const) {
       const html = renderToStaticMarkup(
-        await PairPage({ params: Promise.resolve({ pair }), searchParams: Promise.resolve({}) }),
+        await PairPage({
+          params: Promise.resolve({ locale: "en", pair }),
+          searchParams: Promise.resolve({}),
+        }),
       );
       expect(html).toContain(command);
       expect(html).not.toContain("does not offer IR JSON");
     }
   });
 
-  it("shows readable engine names and only public formats", () => {
-    const html = renderToStaticMarkup(<FormatsPage />);
+  it("shows readable engine names and only public formats", async () => {
+    const html = renderToStaticMarkup(
+      await FormatsPage({
+        params: Promise.resolve({ locale: "en" }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
     expect(html).toContain("Read by PDF text reader");
     expect(html).toContain("written by Typst");
     expect(html).toContain("LibreOffice");

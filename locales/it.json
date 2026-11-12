@@ -1,0 +1,1062 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Modificabile",
+        "description": "Titoli, elenchi e tabelle reali che puoi continuare a modificare."
+      },
+      "faithful": {
+        "label": "Fedele",
+        "description": "Restare il più vicino possibile all’impaginazione."
+      },
+      "fast": {
+        "label": "Veloce",
+        "description": "Preferire il percorso più rapido."
+      },
+      "private": {
+        "label": "Privato",
+        "description": "Solo motori che non lasciano mai il tuo dispositivo."
+      }
+    },
+    "engine": {
+      "ariad_core": "Nucleo di AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Lettore di testo PDF"
+    },
+    "runtime": {
+      "wasm": "Browser",
+      "local": "CLI e desktop",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "non misurato"
+    },
+    "duration": {
+      "under_1_ms": "meno di 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "documento Markdown",
+        "description": "CommonMark con GitHub Flavored Markdown: titoli, elenchi, tabelle, elenchi di attività, note a piè di pagina e formule. Il formato che gli strumenti di IA leggono meglio."
+      },
+      "html": {
+        "noun": "pagina HTML",
+        "description": "Una pagina HTML5 autonoma. Il markup grezzo in ingresso viene ripulito; script e attributi non sicuri non arrivano mai all’output."
+      },
+      "ir_json": {
+        "noun": "documento IR di AriadShift",
+        "description": "Il modello di documento strutturato attraverso cui passa ogni percorso di AriadShift: titoli, blocchi, tabelle, risorse e metadati come JSON con versione."
+      },
+      "docx": {
+        "noun": "documento Word",
+        "description": "Documenti Office Open XML di Microsoft Word, LibreOffice e Google Docs, letti e scritti tramite Pandoc."
+      },
+      "epub": {
+        "noun": "e-book EPUB",
+        "description": "E-book EPUB 3, letti e scritti tramite Pandoc con metadati riproducibili."
+      },
+      "pdf": {
+        "noun": "documento PDF",
+        "description": "Il testo dei PDF digitali viene letto su questo dispositivo. L’output PDF usa Typst e font incorporati. Le pagine scansionate richiedono l’OCR nell’app desktop."
+      },
+      "odt": {
+        "noun": "documento di testo OpenDocument",
+        "description": "I file di testo OpenDocument usano LibreOffice nell’app desktop."
+      },
+      "rtf": {
+        "noun": "documento Rich Text",
+        "description": "I documenti Rich Text usano LibreOffice nell’app desktop."
+      },
+      "pptx": {
+        "noun": "presentazione PowerPoint",
+        "description": "Le presentazioni PowerPoint usano Docling o LibreOffice nell’app desktop."
+      },
+      "xlsx": {
+        "noun": "cartella di lavoro Excel",
+        "description": "Le cartelle di lavoro Excel usano Docling o LibreOffice nell’app desktop."
+      },
+      "doc": {
+        "noun": "documento Word precedente",
+        "description": "I documenti Word precedenti usano LibreOffice nell’app desktop."
+      },
+      "xls": {
+        "noun": "cartella di lavoro Excel precedente",
+        "description": "Le cartelle di lavoro Excel precedenti usano LibreOffice nell’app desktop."
+      },
+      "ppt": {
+        "noun": "presentazione PowerPoint precedente",
+        "description": "Le presentazioni PowerPoint precedenti usano LibreOffice nell’app desktop."
+      },
+      "ods": {
+        "noun": "foglio di calcolo OpenDocument",
+        "description": "I fogli di calcolo OpenDocument usano LibreOffice nell’app desktop."
+      },
+      "odp": {
+        "noun": "presentazione OpenDocument",
+        "description": "Le presentazioni OpenDocument usano LibreOffice nell’app desktop."
+      },
+      "png": {
+        "noun": "immagine PNG",
+        "description": "L’estrazione del testo dalle immagini richiede il pacchetto motore Docling nell’app desktop."
+      },
+      "jpeg": {
+        "noun": "immagine JPEG",
+        "description": "L’estrazione del testo dalle immagini richiede il pacchetto motore Docling nell’app desktop."
+      },
+      "webp": {
+        "noun": "immagine WebP",
+        "description": "L’estrazione del testo dalle immagini richiede il pacchetto motore Docling nell’app desktop."
+      },
+      "tiff": {
+        "noun": "immagine TIFF",
+        "description": "L’estrazione del testo dalle immagini richiede il pacchetto motore Docling nell’app desktop."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: conversione privata dei documenti nel tuo browser",
+      "site_description": "Converti Markdown, HTML e JSON strutturato sul tuo dispositivo. Privato per impostazione predefinita, con qualità misurata su ogni percorso e pronto per gli agenti IA.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Vai al contenuto",
+      "home_link": "Home di {site}",
+      "nav_label": "Principale",
+      "nav": {
+        "converter": "Convertitore",
+        "formats": "Formati",
+        "quality": "Qualità",
+        "download": "Download",
+        "privacy": "Privacy"
+      },
+      "footer": {
+        "license": "AriadShift è open source con licenza Apache-2.0.",
+        "privacy": "Privacy",
+        "licenses": "Licenze",
+        "quality": "Qualità",
+        "source": "Codice sorgente"
+      },
+      "language": {
+        "label": "Lingua",
+        "button": "Lingua: {name}",
+        "list_label": "Scegli una lingua",
+        "community_badge": "Traduzione della community",
+        "community_note": "Le traduzioni della community sono bozze automatiche che le persone possono ancora correggere."
+      }
+    },
+    "not_found": {
+      "title": "Pagina non trovata",
+      "body": "Questa pagina non esiste.",
+      "home_link": "Vai alla home page"
+    },
+    "home": {
+      "meta_title": "Converti documenti sul tuo dispositivo",
+      "title": "Converti documenti sul tuo dispositivo",
+      "lede": "AriadShift converte Markdown, HTML, Word, EPUB e JSON strutturato direttamente nel tuo browser. Leggi il testo dei PDF digitali e crea PDF sul tuo dispositivo. Un unico planner misurato, nessun caricamento.",
+      "open_converter": "Apri il convertitore",
+      "install_cli": "Installa la CLI",
+      "why_heading": "Perché AriadShift",
+      "why": {
+        "private": {
+          "title": "Privato per impostazione predefinita",
+          "body": "Il convertitore funziona nel tuo browser con WebAssembly. Il documento viene archiviato nel file system privato del browser e non viene mai caricato."
+        },
+        "quality": {
+          "title": "Qualità misurata",
+          "body": "Ogni percorso ha punteggi di fedeltà e modificabilità tratti da un benchmark pubblico. Il planner sceglie il migliore e ti spiega perché."
+        },
+        "agents": {
+          "title": "Pronto per gli agenti IA",
+          "body": "Trasforma i documenti in Markdown pulito o JSON strutturato come contesto per gli LLM. La CLI include un server MCP, così gli agenti possono convertire i file da soli."
+        }
+      },
+      "how_heading": "Come funziona",
+      "how": {
+        "step_label": "Passaggio {number}",
+        "step_1": "Scegli un file. Il browser lo copia nel proprio file system privato.",
+        "step_2": "Un worker in background carica il motore di AriadShift compilato in WebAssembly.",
+        "step_3": "Il planner sceglie il percorso con il miglior punteggio misurato per il tuo obiettivo.",
+        "step_4": "Scarichi il risultato. Ricominciare elimina tutti i file archiviati."
+      },
+      "pairs_heading": "Converti nel tuo browser",
+      "pair_link": "Da {from} a {to}",
+      "see_more": "Scopri tutti i <formats>formati supportati</formats> e la <quality>qualità misurata</quality> di ogni percorso."
+    },
+    "formats": {
+      "meta_title": "Formati supportati",
+      "meta_description": "Quali formati di documento AriadShift legge e scrive, e quali conversioni vengono eseguite nel tuo browser.",
+      "title": "Formati supportati",
+      "lede": "Ogni conversione passa attraverso il modello di documento di AriadShift. I formati contrassegnati come «browser» vengono convertiti interamente su questo dispositivo; gli altri richiedono per ora lo strumento a riga di comando.",
+      "badge_browser": "Browser e CLI",
+      "badge_cli": "CLI",
+      "extensions": "Estensioni: {list}",
+      "engines": "Letto da {readers}; scritto da {writers}.",
+      "no_engine": "ancora nessun motore",
+      "convert_to": "Converti in: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Qualità misurata",
+      "meta_description": "Fedeltà, modificabilità e velocità di ogni passaggio di conversione di AriadShift, generate da un benchmark pubblico.",
+      "title": "Qualità misurata",
+      "lede": "Questi punteggi non sono scritti a mano. Il benchmark converte {count, plural, one {# documento di prova pubblico} many {# di documenti di prova pubblici} other {# documenti di prova pubblici}} a ogni passaggio e confronta il risultato con la verità nota. Il planner legge gli stessi numeri quando sceglie un percorso.",
+      "generated": "{pandoc, select, none {Generato il {date}.} other {Generato il {date} con Pandoc {pandoc}.}}",
+      "methodology": "<link>Leggi la metodologia</link>.",
+      "caption": "Punteggi del benchmark per passaggio di conversione",
+      "column": {
+        "step": "Passaggio",
+        "engine": "Motore",
+        "runs_in": "Eseguito in",
+        "fidelity": "Fedeltà",
+        "editability": "Modificabilità",
+        "median_time": "Tempo mediano",
+        "samples": "Campioni"
+      }
+    },
+    "route": {
+      "label": "Percorso di conversione",
+      "then": "poi",
+      "fidelity": "Fedeltà",
+      "editability": "Modificabilità",
+      "estimated_time": "Tempo stimato",
+      "unmeasured": "Una parte di questo percorso non è ancora stata misurata, quindi il planner la valuta con cautela."
+    },
+    "download": {
+      "meta_title": "Download",
+      "meta_description": "Installa lo strumento a riga di comando di AriadShift e il server MCP su macOS, Linux e Windows.",
+      "title": "Scarica AriadShift",
+      "lede": "Il comando <code>ashift</code> converte Markdown, HTML, DOCX ed EPUB sul tuo computer ed esegue un server MCP per gli agenti IA. I percorsi DOCX ed EPUB usano <pandoc>Pandoc 3.12 o successivo</pandoc> come programma separato.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS e Linux)",
+          "note": "Disponibile dopo la pubblicazione della formula. Installa anche Pandoc, necessario per i percorsi DOCX ed EPUB."
+        },
+        "shell": {
+          "title": "Programma di installazione shell (macOS e Linux)"
+        },
+        "powershell": {
+          "title": "Programma di installazione PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Disponibile dopo l’accettazione dell’invio del pacchetto."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Disponibile dopo la pubblicazione dei crate su crates.io."
+        }
+      },
+      "then_heading": "Poi",
+      "releases": "Gli archivi per ogni piattaforma sono su <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "App desktop",
+        "body": "Un’app desktop per macOS, Windows e Linux con conversione in blocco e monitoraggio delle cartelle è in arrivo. Sarà elencata qui quando uscirà la prima versione."
+      }
+    },
+    "pair": {
+      "meta_title": "Converti da {from} a {to}",
+      "meta_description_browser": "Converti {noun} in {to} nel tuo browser, in modo privato, con AriadShift. Fedeltà misurata, nessun caricamento.",
+      "meta_description_cli": "Converti {noun} in {to} sul tuo computer con AriadShift. Fedeltà misurata, nessun caricamento.",
+      "badge_browser": "Funziona nel tuo browser",
+      "badge_cli": "Funziona con la CLI di AriadShift",
+      "title": "Converti da {from} a {to}",
+      "lede_browser": "Trasforma {noun} in {to} senza caricarlo. AriadShift legge il file nel tuo browser, lo mappa sul proprio modello di documento e scrive {to} sul tuo dispositivo.",
+      "lede_cli": "Trasforma {noun} in {to} sul tuo computer con lo strumento a riga di comando gratuito di AriadShift. La versione per browser non esegue ancora questo percorso.",
+      "convert_now": "Converti subito da {from} a {to}",
+      "install_cli": "Installa la CLI",
+      "route_heading": "Il percorso scelto da AriadShift",
+      "from_heading": "Da {format}",
+      "to_heading": "A {format}",
+      "cli_heading": "Dalla riga di comando",
+      "related_heading": "Conversioni correlate",
+      "related_link": "Da {from} a {to}"
+    },
+    "converter_page": {
+      "meta_title": "Convertitore",
+      "meta_description": "Converti Markdown, HTML, DOCX, EPUB, PDF digitale e JSON IR di AriadShift nel tuo browser. I file restano sul tuo dispositivo.",
+      "title": "Converti un documento",
+      "lede": "Scegli un file, seleziona un formato di destinazione e scarica il risultato. Tutto avviene in questa scheda{cloud, select, yes {, a meno che tu non scelga di convertire questo file nel cloud.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licenze",
+      "meta_description": "Licenze e codice sorgente di AriadShift e dei suoi motori per browser."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "La modalità cloud si è interrotta in modo imprevisto",
+        "stopped_body": "La modalità cloud ha riscontrato un errore dopo l’avvio del caricamento. Qualsiasi copia sul server viene eliminata automaticamente al termine del periodo di conservazione, oppure puoi convertire su questo dispositivo.",
+        "load_title": "Impossibile caricare la modalità cloud",
+        "load_body": "Non è stato possibile caricare il convertitore cloud (ad esempio perché sei offline). Puoi comunque convertire su questo dispositivo.",
+        "use_device": "Converti su questo dispositivo"
+      },
+      "status": {
+        "deleted_from_server": "{name} è stato eliminato dal server.",
+        "reading": "Lettura di {name} su questo dispositivo.",
+        "detected": "{name} è {format}.",
+        "read_failed": "Impossibile leggere il file.",
+        "converting": "Conversione in {format} su questo dispositivo.",
+        "ready": "{name} è pronto per il download.",
+        "convert_failed": "La conversione non è riuscita.",
+        "saved": "{name} salvato.",
+        "reset": "{outcome, select, deleted {I file sono stati rimossi da questo dispositivo e dal server.} kept {I file sono stati rimossi da questo dispositivo. {name} è ancora sul server.} other {I file sono stati rimossi da questo dispositivo.}}",
+        "cloud_selected": "Conversione cloud selezionata per {name}. Non è ancora stato caricato nulla.",
+        "cloud_selected_unnamed": "Conversione cloud selezionata per questo file. Non è ancora stato caricato nulla."
+      },
+      "device": {
+        "cloud": "<strong>Conversione cloud selezionata.</strong> Questo file lascia il browser solo quando scegli Carica e converti.",
+        "local": "<strong>Elaborato su questo dispositivo.</strong> I file non lasciano mai il browser e non vengono caricati."
+      },
+      "storage_badge": "{storage, select, opfs {Archiviazione privata del browser} other {In memoria}}",
+      "memory": {
+        "title": "L’archiviazione dei file sul dispositivo non è disponibile in questo browser",
+        "body": "I file vengono invece tenuti in memoria, quindi sono supportati input fino a {limit}. In entrambi i casi non viene caricato nulla."
+      },
+      "error": {
+        "title": "{code, select, no_route {Non disponibile qui} engine_integrity {Verifica di integrità del motore non riuscita} other {Qualcosa è andato storto}}"
+      },
+      "handoff": {
+        "title": "Continua nell’app desktop",
+        "reason": "{reason, select, ocr {Alcune pagine richiedono l’OCR per estrarre tutto il testo.} other {Questo documento richiede un motore o più memoria di quella offerta dal browser.}}",
+        "picker": "L’app desktop apre un selettore di file. Scegli di nuovo questo documento; il browser non invia il file.",
+        "open": "Apri nel desktop",
+        "cloud_alternative": "Oppure convertilo su {host}, dopo aver confermato il caricamento.",
+        "cloud_button": "Elabora nel cloud"
+      },
+      "drop": {
+        "button": "Scegli un file",
+        "button_busy": "Lettura…",
+        "label": "Documento da convertire",
+        "title": "Trascina qui un documento",
+        "hint": "Markdown, HTML, DOCX, EPUB, PDF digitale o JSON IR fino a {limit}. Resta su questo dispositivo."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · «{title}»"
+      },
+      "count": {
+        "headings": "Titoli",
+        "paragraphs": "Paragrafi",
+        "tables": "Tabelle",
+        "images": "Immagini",
+        "links": "Link",
+        "footnotes": "Note a piè di pagina",
+        "words": "Parole"
+      },
+      "unreachable": {
+        "cli": "{format} non può ancora essere convertito nel browser. <link>La CLI di AriadShift</link> lo converte sul tuo computer.",
+        "none": "AriadShift non può ancora convertire {format}."
+      },
+      "cloud": {
+        "loading": "Caricamento della modalità cloud…"
+      },
+      "convert": {
+        "title": "Converti",
+        "hint": "Il planner sceglie il percorso con il miglior punteggio misurato.",
+        "target_label": "Converti in",
+        "profile_label": "Profilo",
+        "route_heading": "Perché questo percorso",
+        "elsewhere": "{formats} {count, plural, one {richiede} many {richiedono} other {richiedono}} per ora la <link>CLI di AriadShift</link>.",
+        "button": "Converti",
+        "button_busy": "Conversione…",
+        "cancel": "Annulla"
+      },
+      "result": {
+        "title": "Pronto",
+        "summary": "<output>{name}</output> · {size} · convertito in {duration} su questo dispositivo",
+        "download": "Scarica {name}"
+      },
+      "start_over": "Ricomincia ed elimina i file"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Account",
+        "description": "Il tuo account cloud di AriadShift: profilo, password, passkey e accesso in due passaggi."
+      },
+      "sign_in": {
+        "title": "Accedi",
+        "description": "Accedi al tuo account cloud di AriadShift o creane uno."
+      },
+      "jobs": {
+        "title": "Attività",
+        "description": "Stato, download ed eliminazione delle tue conversioni cloud di AriadShift."
+      },
+      "api_keys": {
+        "title": "Chiavi API",
+        "description": "Crea e revoca chiavi API per l’API cloud di AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Account"
+      },
+      "shell": {
+        "not_configured_title": "Il cloud non è configurato",
+        "not_configured_body": "Questa copia di AriadShift funziona solo sul tuo dispositivo. Account, chiavi API e attività cloud richiedono un server; il suo operatore imposta <code>{api_variable}</code> e <code>{auth_variable}</code> quando compila il sito.",
+        "not_configured_convert": "Puoi comunque <link>convertire i file nel tuo browser</link>.",
+        "nav_label": "Account",
+        "nav": {
+          "account": "Account",
+          "api_keys": "Chiavi API",
+          "jobs": "Attività"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Accesso eseguito come <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Verifica della sessione…",
+        "error_title": "Impossibile verificare la sessione",
+        "signed_out": "Non hai effettuato l’accesso."
+      },
+      "actions": {
+        "sign_in": "Accedi",
+        "try_again": "Riprova",
+        "cancel": "Annulla",
+        "done": "Fine",
+        "continue": "Continua",
+        "revoke": "Revoca",
+        "copied": "Copiato"
+      },
+      "fields": {
+        "name": "Nome",
+        "email": "E-mail",
+        "password": "Password",
+        "authentication_code": "Codice di autenticazione",
+        "password_hint": "Almeno {min} caratteri."
+      },
+      "dates": {
+        "unknown": "data sconosciuta"
+      },
+      "errors": {
+        "auth_refused": "Il servizio di autenticazione ha rifiutato la richiesta.",
+        "service_unreachable": "Impossibile raggiungere il servizio di accesso. Controlla la connessione e riprova.",
+        "session_ended": "La sessione è terminata. Accedi di nuovo.",
+        "rate_limited": "Troppe richieste. Riprova a breve.",
+        "rate_limited_after": "Troppe richieste. Riprova tra {seconds} s.",
+        "sign_in_unverifiable": "Al momento il server non riesce a verificare il tuo accesso. Riprova a breve.",
+        "token_invalid": "Il servizio di accesso ha restituito un token API non valido.",
+        "reauth_required": "Accedi di nuovo prima di eliminare l’account.",
+        "delete_not_allowed": "Questo server non consente di eliminare gli account dall’app web. Chiedi al suo operatore di eliminarlo.",
+        "job_gone": "Questa attività non è più sul server.",
+        "file_deleted": "Questo file è già stato eliminato.",
+        "job_conflict": "L’attività non è pronta, oppure il file caricato non è più sul server.",
+        "quota_exceeded": "Per ora hai esaurito le conversioni cloud del tuo piano. Converti su questo dispositivo oppure riprova più tardi.",
+        "request_failed": "Il server non ha potuto completare la richiesta. Riprova a breve.",
+        "network_unreachable": "Impossibile raggiungere il server. Controlla la connessione e riprova.",
+        "transfer_incomplete": "Il trasferimento non è stato completato. Riprova."
+      },
+      "profile": {
+        "title": "Profilo",
+        "save": "Salva nome",
+        "saved": "Nome salvato.",
+        "save_failed": "Impossibile salvare il nome."
+      },
+      "password": {
+        "title": "Password",
+        "current": "Password attuale",
+        "new": "Nuova password",
+        "confirm": "Conferma la nuova password",
+        "revoke_others": "Esci dalle altre sessioni",
+        "submit": "Cambia password",
+        "mismatch": "Le nuove password non corrispondono.",
+        "changed": "Password cambiata.",
+        "changed_revoked": "Password cambiata. Le altre sessioni sono state chiuse.",
+        "failed": "Impossibile cambiare la password."
+      },
+      "passkeys": {
+        "title": "Passkey",
+        "description": "Accedi con il blocco schermo del dispositivo o con una chiave di sicurezza invece della password.",
+        "load_failed": "Impossibile caricare le tue passkey.",
+        "loading": "Caricamento delle passkey…",
+        "empty": "Ancora nessuna passkey.",
+        "unnamed": "Passkey senza nome",
+        "default_name": "Passkey",
+        "added_on": "Aggiunta: {date}",
+        "remove_label": "Rimuovi la passkey {name}",
+        "remove_button": "Rimuovi<hidden> la passkey {name}</hidden>",
+        "add_button": "Aggiungi una passkey",
+        "add_title": "Aggiungi una passkey",
+        "add_description": "Dalle il nome del dispositivo o della chiave, poi segui le indicazioni del browser.",
+        "name_label": "Nome della passkey",
+        "name_placeholder": "Ad esempio: Portatile del lavoro",
+        "added": "Passkey aggiunta.",
+        "add_failed": "La passkey non è stata aggiunta.",
+        "remove_title": "Rimuovere {name}?",
+        "remove_title_unnamed": "Rimuovere questa passkey?",
+        "remove_description": "Non potrai più accedere con essa. Gli altri metodi di accesso continuano a funzionare.",
+        "remove_confirm": "Rimuovi passkey",
+        "removed": "{name} rimossa.",
+        "remove_failed": "Impossibile rimuovere la passkey."
+      },
+      "two_factor": {
+        "title": "Autenticazione a due fattori",
+        "description": "Richiedi un codice da un’app di autenticazione dopo la password.",
+        "status_on": "Stato: <badge>Attiva</badge>",
+        "status_off": "Stato: <badge>Disattivata</badge>",
+        "enable": "Attiva l’autenticazione a due fattori",
+        "disable": "Disattiva l’autenticazione a due fattori",
+        "regenerate": "Crea nuovi codici di backup",
+        "confirm_password": "Conferma la password per continuare.",
+        "enable_failed": "Impossibile avviare la configurazione dell’autenticazione a due fattori. Controlla la password.",
+        "disable_failed": "Impossibile disattivare l’autenticazione a due fattori. Controlla la password.",
+        "regenerate_failed": "Impossibile creare nuovi codici di backup. Controlla la password.",
+        "verify_failed": "Codice non accettato. Controlla l’ora del dispositivo e riprova.",
+        "disabled": "L’autenticazione a due fattori è disattivata.",
+        "enabled": "L’autenticazione a due fattori è attiva.",
+        "regenerated": "Nuovi codici di backup creati. I vecchi non funzionano più.",
+        "setup_title": "Configura la tua app di autenticazione",
+        "setup_description": "Aggiungi AriadShift alla tua app di autenticazione, poi inserisci il codice che mostra.",
+        "setup_key_intro": "Inserisci questa chiave di configurazione nell’app:",
+        "setup_key_unavailable": "Non disponibile",
+        "open_in_app": "Apri in un’app di autenticazione su questo dispositivo",
+        "turn_on": "Attiva",
+        "codes_title": "Nuovi codici di backup",
+        "backup_intro": "Conserva questi codici di backup in un posto sicuro. Ognuno ti fa accedere una sola volta se perdi l’app di autenticazione. Non verranno mostrati di nuovo.",
+        "copy_codes": "Copia i codici di backup",
+        "copy_failed": "Copia non riuscita; seleziona invece i codici"
+      },
+      "account_actions": {
+        "title": "Sessione e account",
+        "sign_out": "Esci",
+        "delete": "Elimina account",
+        "signed_out": "Disconnesso.",
+        "sign_out_failed": "Impossibile uscire. Riprova.",
+        "deleted": "Il tuo account è stato eliminato.",
+        "delete_failed_password": "Impossibile eliminare l’account. Controlla la password.",
+        "delete_failed_session": "Impossibile eliminare l’account. Accedi di nuovo e riprova.",
+        "delete_note": "L’eliminazione dell’account revoca automaticamente le tue <keys>chiavi API</keys>. Prima di eliminarlo, elimina le <jobs>attività cloud</jobs> che hai ancora. I file delle attività che lasci vengono rimossi al termine del periodo di conservazione.",
+        "dialog_title": "Eliminare il tuo account?",
+        "dialog_description_password": "L’operazione non può essere annullata. Conferma la password per eliminare l’account.",
+        "dialog_description_session": "L’operazione non può essere annullata. Conferma qui sotto per eliminare l’account con la tua sessione di accesso attuale.",
+        "sign_in_again": "Accedi di nuovo"
+      },
+      "connected_apps": {
+        "title": "App connesse",
+        "description": "App e client MCP che hai autorizzato a usare il tuo account e client OAuth che hai registrato.",
+        "load_failed": "Impossibile caricare le tue app connesse.",
+        "loading": "Caricamento delle app connesse…",
+        "empty": "Ancora nessuna app connessa né client OAuth registrato.",
+        "scopes_none": "nessuno",
+        "consent_details": "App autorizzata · Ambiti: {scopes} · Autorizzata: {date}",
+        "client_details": "Client OAuth registrato ({client_id})",
+        "client_details_dated": "Client OAuth registrato ({client_id}) · Registrato: {date}",
+        "revoke_label": "Revoca {name}",
+        "revoked": "{name} revocato.",
+        "revoke_failed": "Impossibile revocare l’accesso.",
+        "revoke_title": "Revocare {name}?",
+        "revoke_consent_description": "La revoca interrompe subito i nuovi token e il rinnovo dei token. I token di accesso firmati già emessi (durata di 15 minuti) continuano a funzionare fino alla scadenza.",
+        "revoke_client_description": "L’eliminazione di questo client OAuth registrato ne revoca le credenziali e i consensi e interrompe subito i nuovi token e il rinnovo dei token. I token di accesso firmati già emessi (durata di 15 minuti) continuano a funzionare fino alla scadenza."
+      },
+      "api_keys": {
+        "page_title": "Chiavi API",
+        "section_title": "Le tue chiavi",
+        "section_description": "Script e integrazioni inviano una chiave nell’header <code>x-api-key</code> a {host}. Una chiave agisce con il tuo account e il suo piano.",
+        "load_failed": "Impossibile caricare le tue chiavi API.",
+        "loading": "Caricamento delle chiavi API…",
+        "empty": "Ancora nessuna chiave API.",
+        "unnamed": "Chiave senza nome",
+        "disabled": "Disattivata",
+        "key_details": "Creata: {date} · {expiry}",
+        "never_expires": "Non scade mai",
+        "expired_on": "Scaduta: {date}",
+        "expires_on": "Scade: {date}",
+        "revoke_label": "Revoca la chiave API {name}",
+        "revoke_button": "Revoca<hidden> la chiave API {name}</hidden>",
+        "create_button": "Crea chiave API",
+        "create_title": "Crea una chiave API",
+        "create_description": "Dai alla chiave il nome dello script o del servizio che la userà.",
+        "name_placeholder": "Ad esempio: CI",
+        "expires_after": "Scade dopo",
+        "lifetime_days": "{days, plural, one {# giorno} many {# di giorni} other {# giorni}}",
+        "lifetime_year": "1 anno",
+        "lifetime_never": "Nessuna scadenza",
+        "create_submit": "Crea chiave",
+        "create_failed": "Impossibile creare la chiave.",
+        "created": "Chiave API {name} creata.",
+        "secret_title": "La tua nuova chiave API",
+        "secret_label": "Chiave API",
+        "secret_notice": "Copia subito la chiave. Viene archiviata solo come hash e non verrà mostrata di nuovo.",
+        "copy_key": "Copia chiave",
+        "copy_failed": "Copia non riuscita. Seleziona la chiave e copiala.",
+        "revoke_title": "Revocare {name}?",
+        "revoke_description": "Le richieste che usano questa chiave vengono rifiutate subito. L’operazione non può essere annullata.",
+        "revoke_confirm": "Revoca chiave",
+        "revoked": "Chiave API {name} revocata. Le richieste che la usano verranno rifiutate da ora in poi.",
+        "revoke_failed": "Impossibile revocare la chiave."
+      },
+      "jobs": {
+        "title": "Attività",
+        "intro_server": "Conversioni cloud del tuo account su {host}, da qualsiasi dispositivo. I file restano su {host} finché non vengono eliminati automaticamente o finché non li elimini qui.",
+        "intro_account_browser": "Conversioni cloud avviate in questo browser con il tuo account. Questo elenco è conservato solo su questo dispositivo. I file restano su {host} finché non vengono eliminati automaticamente o finché non li elimini qui.",
+        "intro_anonymous_browser": "Conversioni cloud avviate in questo browser senza un account. Questo elenco è conservato solo su questo dispositivo. I file restano su {host} finché non vengono eliminati automaticamente o finché non li elimini qui.",
+        "signed_out_notice": "Vengono mostrate le attività senza account. <link>Accedi</link> per vedere le attività del tuo account.",
+        "loading": "Caricamento delle tue attività…",
+        "list_unsupported": "{host} non può ancora elencare le attività del tuo account, quindi questa pagina mostra le attività avviate in questo browser.",
+        "list_error_title": "Impossibile caricare le tue attività da {host}",
+        "list_error_body": "{reason} Nel frattempo, questa pagina mostra le attività avviate in questo browser.",
+        "count": "{count, plural, one {# attività} many {# di attività} other {# attività}}",
+        "empty": "Ancora nessuna attività cloud. Avviane una dal <link>convertitore</link>.",
+        "show_more": "Mostra altre attività",
+        "loading_more": "Caricamento di altre attività…",
+        "unnamed": "Attività {id}",
+        "forgotten": "{filename} è stato rimosso da questo elenco. I suoi file sul server restano invariati.",
+        "forgotten_unnamed": "L’attività è stata rimossa da questo elenco. I suoi file sul server restano invariati.",
+        "status": {
+          "queued": "In coda",
+          "converting": "Conversione in corso",
+          "converting_stage": "Conversione in corso: {stage}",
+          "retrying": "Nuovo tentativo (tentativo {attempt})",
+          "reconnecting": "{step} · Riconnessione…",
+          "ready": "Pronta",
+          "failed": "Non riuscita",
+          "canceled": "Annullata",
+          "deleted": "Eliminata",
+          "deleted_expired": "Eliminata (scaduta)"
+        },
+        "until": {
+          "less_than_minute": "tra meno di un minuto",
+          "minutes": "tra {minutes} min",
+          "hours": "tra {hours} h",
+          "hours_minutes": "tra {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Eliminata automaticamente alle {clock}.",
+          "deleted_from_server": "Eliminata dal server. I file di input e di output non esistono più.",
+          "being_deleted": "Eliminazione in corso.",
+          "deletes_at": "Verrà eliminata automaticamente alle {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Questo documento richiede più di quanto consenta il tuo piano. Prova con un file più piccolo oppure convertilo su questo dispositivo.",
+          "unsupported_route": "Questo server non può convertire tra questi formati. Scegli un’altra destinazione nel convertitore.",
+          "input_io": "Il file caricato non può essere letto oppure non è più sul server. Caricalo di nuovo.",
+          "storage": "Il server non ha potuto archiviare il risultato. Riprova tra un momento.",
+          "tool_missing": "A questo server manca il motore necessario al percorso. Chiedi al suo operatore oppure scegli un’altra destinazione.",
+          "other": "La conversione non è riuscita. Riprova oppure converti il file su questo dispositivo."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Caricamento dello stato…",
+          "try_again": "Riprova<hidden> a caricare {filename}</hidden>",
+          "technical_details": "Dettagli tecnici",
+          "warnings": "{count, plural, one {# avviso} many {# di avvisi} other {# avvisi}}",
+          "download": "Scarica {filename}",
+          "retry_label": "Riprova {filename}",
+          "retry_button": "Riprova<hidden> {filename}</hidden>",
+          "delete_label": "Elimina subito {filename} dal server",
+          "delete_button": "Elimina subito<hidden> {filename} dal server</hidden>",
+          "remove_label": "Rimuovi da questo elenco ({filename})",
+          "remove_button": "Rimuovi da questo elenco<hidden> ({filename})</hidden>",
+          "deleted_note": "Eliminata da {host}. I file di input e di output non esistono più.",
+          "deleted_announce": "{filename} eliminato da {host}. I file di input e di output non esistono più.",
+          "ready_announce": "{filename} è convertito e pronto per il download.",
+          "failed_announce": "La conversione di {filename} non è riuscita. {reason}",
+          "canceled_announce": "La conversione di {filename} è stata annullata.",
+          "downloading": "Download di {filename} in corso.",
+          "retrying": "Nuovo tentativo per {filename}.",
+          "retry_conflict": "Il file caricato non è più sul server. Caricalo di nuovo dal convertitore."
+        }
+      },
+      "sign_in": {
+        "title": "Accedi",
+        "create_title": "Crea un account",
+        "two_factor_title": "Verifica in due passaggi",
+        "signed_in": "Accesso eseguito.",
+        "go_to_account": "Vai al tuo account",
+        "passkey": "Accedi con una passkey",
+        "no_account": "Non hai ancora un account? <switch>Creane uno</switch>",
+        "have_account": "Hai già un account? <switch>Accedi</switch>",
+        "sign_in_failed": "Impossibile accedere. Controlla l’e-mail e la password.",
+        "passkey_failed": "Impossibile accedere con una passkey.",
+        "code_rejected": "Codice non accettato. Riprova.",
+        "create_failed": "Impossibile creare l’account.",
+        "passwords_mismatch": "Le password non corrispondono.",
+        "bot_check": "Completa il controllo anti-bot della registrazione e riprova.",
+        "confirm_password": "Conferma password",
+        "create_account": "Crea account",
+        "totp_help": "Inserisci il codice a 6 cifre della tua app di autenticazione.",
+        "backup_help": "Inserisci uno dei codici di backup che hai salvato quando hai attivato l’autenticazione a due fattori. Ogni codice funziona una sola volta.",
+        "backup_code": "Codice di backup",
+        "trust_device": "Considera attendibile questo browser per 30 giorni",
+        "verify": "Verifica",
+        "use_backup": "Usa invece un codice di backup",
+        "use_authenticator": "Usa invece un codice dell’app di autenticazione",
+        "signed_in_user": "Hai effettuato l’accesso come <user>{email}</user>."
+      }
+    },
+    "app": {
+      "sections_label": "Sezioni dell’app",
+      "tab": {
+        "convert": "Converti",
+        "tools": "Strumenti",
+        "workspace": "Area di lavoro PDF"
+      },
+      "tools_lede": "Tutti gli strumenti, raggruppati per funzione. Sceglierne uno per aprirlo nell’area di lavoro PDF.",
+      "workspace_loading": "Caricamento dell’area di lavoro PDF…",
+      "workspace_failed": "Impossibile caricare l’area di lavoro PDF.",
+      "retry": "Riprova",
+      "tools_loading": "Caricamento degli strumenti…",
+      "tools_failed": "Impossibile caricare gli strumenti."
+    },
+    "tools": {
+      "hub": {
+        "label": "Strumenti",
+        "search": "Cerca strumenti…",
+        "open_palette": "Apri la palette dei comandi",
+        "command": "Comando",
+        "zero_upload": "Su questo dispositivo · 0 byte caricati",
+        "categories": "Categoria",
+        "all": "Tutti",
+        "runtimes": "Dove viene eseguito",
+        "count": "{count, plural, one {# strumento} many {# di strumenti} other {# strumenti}}",
+        "no_match": "Nessuno strumento corrisponde",
+        "try_recipe": "Prova una frase semplice nella palette dei comandi, ad esempio «ruota di 90 gradi e poi comprimi».",
+        "reset": "Reimposta ricerca e filtri",
+        "open_in_palette": "Prova nella palette dei comandi"
+      },
+      "category": {
+        "organize": "Organizza e assembla",
+        "convert": "Converti",
+        "compress": "Comprimi e ripara",
+        "edit": "Modifica e annota",
+        "forms_annotations": "Moduli e annotazioni",
+        "security": "Sicurezza e firma",
+        "ocr_scan": "OCR e scansione",
+        "metadata_inspect": "Ispeziona e confronta",
+        "automation_ai": "Automazione e AI"
+      },
+      "runtime": {
+        "browser": "Browser",
+        "desktop": "Desktop",
+        "cloud": "Cloud",
+        "list": "Eseguito in"
+      },
+      "tier": {
+        "free": "Gratis",
+        "pro": "Pro"
+      },
+      "favorites": "Preferiti",
+      "recents": "Strumenti recenti",
+      "favorite": {
+        "add": "Aggiungi ai preferiti",
+        "remove": "Rimuovi dai preferiti"
+      },
+      "card": {
+        "open": "Apri"
+      },
+      "palette": {
+        "title": "Palette dei comandi degli strumenti",
+        "description": "Cerca uno strumento oppure descrivi in una frase cosa fare, poi premi Invio.",
+        "placeholder": "Cerca strumenti o descrivi una ricetta…",
+        "search": "Cerca strumenti",
+        "empty": "Nessuno strumento corrisponde. Prova una frase come «ruota di 90 e poi comprimi».",
+        "recipe": "Ricetta",
+        "recipe_steps": "Passaggi della ricetta",
+        "step": "Passaggio",
+        "recipe_review": "Controlla prima di eseguire: un passaggio richiede il desktop, il cloud o l’AI, oppure modifica il file in modo definitivo.",
+        "recipe_ready": "Premi Invio per caricare questa ricetta.",
+        "confirm": "Controlla prima",
+        "results": "Strumenti",
+        "actions": "Azioni",
+        "jump_convert": "Vai a Converti",
+        "switch_theme": "Cambia tema",
+        "clear_recents": "Cancella strumenti recenti",
+        "hint": "La ricerca viene eseguita su questo dispositivo.",
+        "open": "Apri",
+        "close": "Chiudi"
+      },
+      "title": {
+        "pdf": {
+          "info": "Info",
+          "merge": "Unisci",
+          "split": "Dividi",
+          "extract_pages": "Estrai pagine",
+          "delete_pages": "Elimina pagine",
+          "reorder": "Riordina",
+          "alternate_mix": "Mix alternato",
+          "insert_blank": "Inserisci pagina vuota",
+          "rotate": "Ruota",
+          "crop": "Ritaglia",
+          "scale": "Ridimensiona",
+          "single_page": "Pagina singola",
+          "rotate_content": "Ruota contenuto",
+          "decompress": "Decomprimi",
+          "nup": "N-up",
+          "booklet": "Opuscolo",
+          "overlay": "Sovrapponi",
+          "divide_pages": "Dividi pagine",
+          "posterize": "Posterizza",
+          "metadata": "Metadati",
+          "outline": "Struttura",
+          "attachments": "Allegati",
+          "page_labels": "Etichette pagina",
+          "viewer_prefs": "Preferenze visualizzatore",
+          "portfolio": "Portfolio",
+          "layers": "Livelli",
+          "replace_color": "Sostituisci colori",
+          "adjust_colors": "Regola colori",
+          "watermark": "Filigrana",
+          "stamp": "Timbro",
+          "add_image": "Aggiungi immagine",
+          "add_text": "Aggiungi testo",
+          "qr": "Codice QR",
+          "page_numbers": "Numeri di pagina",
+          "header_footer": "Intestazioni e piè di pagina",
+          "bates": "Numerazione Bates",
+          "toc_page": "Pagina dell’indice",
+          "background": "Sfondo",
+          "invert_colors": "Inverti colori",
+          "watermark_detect": "Rileva filigrane",
+          "watermark_remove": "Rimuovi filigrane",
+          "watermark_remove_raster": "Rimuovi filigrane raster",
+          "render": "Renderizza pagine",
+          "to_images": "PDF in immagini",
+          "thumbnails": "Miniature",
+          "extract_images": "Estrai immagini",
+          "text_layout": "Layout del testo",
+          "remove_blank": "Rimuovi pagine vuote",
+          "crop_whitespace": "Ritaglia spazio bianco",
+          "detect_scanned": "Rileva pagine scansionate",
+          "compress": "Comprimi",
+          "grayscale": "Scala di grigi",
+          "repair": "Ripara",
+          "linearize": "Linearizza",
+          "encrypt": "Crittografa",
+          "decrypt": "Decrittografa",
+          "permissions": "Permessi",
+          "sanitize": "Ripulisci",
+          "unlock_forms": "Sblocca moduli",
+          "ocr": "OCR",
+          "auto_rotate": "Rotazione automatica",
+          "deskew": "Raddrizza",
+          "scan_split": "Dividi scansione",
+          "scanner_effect": "Effetto scanner",
+          "annotations": "Annotazioni",
+          "annotations_import": "Importa annotazioni",
+          "annotations_export": "Esporta annotazioni",
+          "forms_list": "Elenca campi modulo",
+          "forms_fill": "Compila moduli",
+          "forms_create": "Crea moduli",
+          "forms_flatten": "Appiattisci moduli",
+          "forms_detect": "Rileva campi modulo",
+          "forms_import": "Importa valori modulo",
+          "forms_export": "Esporta valori modulo",
+          "redact": "Oscura",
+          "redact_verify": "Verifica oscuramento",
+          "sign_visual": "Firma visiva",
+          "sign": "Firma",
+          "sign_token": "Firma con token",
+          "timestamp": "Marca temporale",
+          "sign_verify": "Verifica firme",
+          "sign_remove": "Rimuovi firme",
+          "tables_to_csv": "Tabelle in CSV",
+          "to_cbz": "In CBZ",
+          "compare": "Confronta",
+          "to_pdfa": "In PDF/A",
+          "to_pdfua": "In PDF/UA",
+          "accessibility_report": "Report di accessibilità",
+          "validate_pdfa": "Convalida PDF/A",
+          "validate_pdfua": "Convalida PDF/UA"
+        },
+        "image": {
+          "to_pdf": "Immagine in PDF",
+          "ocr": "OCR immagine"
+        },
+        "web": {
+          "to_pdf": "Web in PDF"
+        },
+        "edit": {
+          "open_document": "Apri documento",
+          "export_document": "Esporta documento",
+          "page_objects": "Oggetti pagina",
+          "apply": "Applica"
+        },
+        "ai": {
+          "summarize": "Riassunto AI",
+          "ask": "Chiedi all’AI",
+          "translate": "Traduzione AI",
+          "extract_tables": "Estrazione tabelle AI",
+          "recipe_from_text": "Ricetta AI da testo"
+        }
+      }
+    },
+    "workspace": {
+      "main": {
+        "title": "Area di lavoro",
+        "lede": "Tutto viene eseguito in questa scheda del browser.",
+        "viewer": "Anteprima",
+        "pages_tab": "Pagine",
+        "tools_tab": "Strumento",
+        "no_pdf": "Aggiungi un PDF per vederne l’anteprima e organizzarne le pagine.",
+        "tools": "Strumenti",
+        "tool_picker": "Scegli uno strumento",
+        "dismiss_error": "Chiudi",
+        "working": "Elaborazione in corso…"
+      },
+      "file_tray": {
+        "privacy": "Su questo dispositivo · 0 byte caricati",
+        "title": "File",
+        "empty": "Trascina qui PDF o altri file per iniziare. Non viene caricato nulla.",
+        "choose": "Scegli file",
+        "add_more": "Aggiungi file",
+        "drop_title": "Rilascia i file per aggiungerli",
+        "drop_description": "Restano in questo browser.",
+        "pages": "{count, plural, one {# pagina} many {# di pagine} other {# pagine}}",
+        "remove": "Rimuovi {name}",
+        "move_up": "Sposta {name} in su",
+        "move_down": "Sposta {name} in giù",
+        "use": "Lavora su {name}",
+        "active": "Aperto",
+        "storage_opfs": "Salvato nell’archivio file del browser",
+        "storage_memory": "Tenuto in memoria",
+        "reading": "Lettura dei file…",
+        "list": "File in questa area di lavoro",
+        "problem": "Impossibile leggere {name}."
+      },
+      "insights": {
+        "title": "Cosa contiene questo PDF",
+        "loading": "Lettura del documento su questo dispositivo…",
+        "failed": "Impossibile analizzare il documento.",
+        "pages": "{count, plural, one {# pagina} many {# di pagine} other {# pagine}}",
+        "scanned": "{count, plural, one {# pagina scansionata} many {# di pagine scansionate} other {# pagine scansionate}}",
+        "blank": "{count, plural, one {# pagina vuota} many {# di pagine vuote} other {# pagine vuote}}",
+        "dpi_unknown": "Risoluzione delle immagini sconosciuta",
+        "dpi_single": "Immagini a circa {dpi} DPI",
+        "dpi_range": "Immagini a circa {min}–{max} DPI",
+        "low_dpi": "Bassa risoluzione su {count, plural, one {# pagina} many {# di pagine} other {# pagine}} ({list})",
+        "form_fields": "{count, plural, one {# campo obbligatorio vuoto} many {# di campi obbligatori vuoti} other {# campi obbligatori vuoti}}",
+        "signatures": "{count, plural, one {# firma} many {# di firme} other {# firme}}",
+        "metadata": "Contiene metadati",
+        "edit_history": "Ha una cronologia delle modifiche",
+        "encrypted": "Crittografato",
+        "linearized": "Linearizzato",
+        "clean": "Nessuno trovato",
+        "suggested": "Passaggi successivi suggeriti",
+        "no_suggestions": "Niente richiede attenzione. Scegli uno strumento qualsiasi per continuare.",
+        "open": "Apri {tool}"
+      },
+      "page_grid": {
+        "title": "Pagine",
+        "toolbar": "Modifiche alle pagine",
+        "undo": "Annulla",
+        "redo": "Ripeti",
+        "reset": "Reimposta",
+        "pending": "{count, plural, one {# modifica in sospeso} many {# di modifiche in sospeso} other {# modifiche in sospeso}}",
+        "select_all": "Seleziona tutto",
+        "clear_selection": "Deseleziona",
+        "select_range": "Seleziona pagine",
+        "range_placeholder": "es. 3-7",
+        "rotate_left": "Ruota a sinistra",
+        "rotate_right": "Ruota a destra",
+        "delete_selected": "Elimina selezionate",
+        "restore_selected": "Ripristina selezionate",
+        "apply": "Applica modifiche",
+        "hint": "Trascina la maniglia, oppure attivala e usa i tasti freccia, per riordinare. Maiusc+clic seleziona un intervallo.",
+        "drag_hint": "Trascina per riordinare, oppure usa i tasti freccia",
+        "moved": "Pagina {page} spostata alla posizione {position}",
+        "cannot_delete_all": "Un documento deve avere almeno una pagina.",
+        "card_page": "Pagina {page}",
+        "card_select": "Seleziona pagina {page}",
+        "card_rotate": "Ruota pagina {page}",
+        "card_delete": "Elimina pagina {page}",
+        "card_move": "Riordina pagina {page}",
+        "card_restore": "Ripristina pagina {page}",
+        "blank": "Vuota",
+        "scanned": "Scansionata"
+      },
+      "inspector": {
+        "title": "Strumento",
+        "empty": "Scegli uno strumento per vederne le opzioni.",
+        "runtime": {
+          "browser": "Browser",
+          "desktop": "Desktop",
+          "cloud": "Cloud"
+        },
+        "tier": {
+          "free": "Gratis",
+          "pro": "Pro"
+        },
+        "run_here": "Esegui lo strumento su questo dispositivo",
+        "running": "In esecuzione…",
+        "cancel": "Annulla",
+        "run_cloud": "Esegui nel Cloud",
+        "cloud_note": "Questo strumento viene eseguito sui nostri server; il file viene caricato a questo scopo.",
+        "switch_desktop": "Esegui invece sul tuo computer",
+        "switch_browser": "Torna a questo dispositivo",
+        "needs_file": "Aggiungi prima un file.",
+        "needs_pdf": "Questo strumento richiede un PDF.",
+        "invalid": "Correggi le opzioni evidenziate per continuare.",
+        "failed": "Lo strumento si è interrotto: {message}",
+        "progress": "Avanzamento dello strumento"
+      },
+      "handoff": {
+        "title": "Esegui sul tuo computer",
+        "why": "Questo strumento non può essere eseguito nel browser. Eseguilo con la riga di comando di AriadShift; i tuoi file non lasciano mai il tuo computer.",
+        "command": "Comando",
+        "copy": "Copia comando",
+        "copied": "Comando copiato",
+        "copy_failed": "Impossibile copiare. Seleziona il comando e copialo.",
+        "install": "Ottieni AriadShift",
+        "open_app": "Apri nell’app desktop",
+        "reveal_secrets": "Mostra valori segreti",
+        "mask_secrets": "Nascondi valori segreti",
+        "secret_note": "I valori segreti restano nascosti nel comando finché non li mostri."
+      },
+      "result": {
+        "title": "Risultato",
+        "before": "Prima",
+        "after": "Dopo",
+        "size": "Dimensione",
+        "pages": "Pagine",
+        "duration": "Tempo",
+        "change_none": "nessuna modifica",
+        "change_up": "+{percent}%",
+        "change_down": "−{percent}%",
+        "bytes": "{value} byte",
+        "millis": "{value} ms",
+        "seconds": "{value} s",
+        "warnings": "Avvisi",
+        "details": "Dettagli",
+        "download": "Scarica {name}",
+        "open_in_editor": "Apri nell’editor",
+        "continue": "Continua con un altro strumento",
+        "save_recipe": "Salva come ricetta",
+        "undo": "Annulla",
+        "outputs": "File di output",
+        "download_failed": "Impossibile salvare il file."
+      },
+      "thread": {
+        "label": "Passaggi",
+        "status": {
+          "pending": "In attesa",
+          "running": "In esecuzione",
+          "completed": "Completato",
+          "skipped": "Saltato",
+          "failed": "Non riuscito"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Ingrandisci",
+        "zoom_out": "Riduci",
+        "fit_width": "Adatta alla larghezza",
+        "fit_page": "Adatta alla pagina",
+        "zoom_level": "{percent}%",
+        "page": "Numero di pagina",
+        "page_of": "di {count}",
+        "search": "Cerca nel documento",
+        "search_placeholder": "Cerca testo",
+        "search_run": "Cerca",
+        "search_cancel": "Annulla ricerca",
+        "search_clear": "Cancella ricerca",
+        "search_next": "Risultato successivo",
+        "search_previous": "Risultato precedente",
+        "searching": "Ricerca in corso… {percent}%",
+        "matches": "{current} di {total}",
+        "no_matches": "Nessun risultato",
+        "dark_pages": "Pagine scure",
+        "loading": "Apertura del documento su questo dispositivo…",
+        "unavailable": "Il visualizzatore richiede WebAssembly, che questo browser non supporta.",
+        "document_error": "Impossibile visualizzare questo documento.",
+        "toolbar": "Controlli del visualizzatore di documenti"
+      }
+    }
+  }
+}

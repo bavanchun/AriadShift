@@ -27,7 +27,10 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: >-
+    ${{ github.event_name == 'pull_request' ||
+        (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/') &&
+         github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/main') }}
 
 permissions:
   contents: read
@@ -178,6 +181,7 @@ jobs:
       SCCACHE_DIR: ${{ github.workspace }}/.tools/sccache
       SCCACHE_CACHE_SIZE: 3G
       SCCACHE_IDLE_TIMEOUT: 0
+      TORCH_BUILD_CONTAINER: ashift-pack-torch-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -211,14 +215,15 @@ jobs:
       # Source pins, target, tool lock and flags determine the cache namespace.
       # Restored files are rehashed, probed and inspected before packaging.
       - name: Cache native source builds
+        id: native
         if: startsWith(matrix.target, 'x86_64-')
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/native
           key: docling-native-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/torch_build.py', 'engines/docling/pack/torch-build.toml', 'engines/docling/pack/vcomp-*.cpp', 'engines/docling/pack/pins.toml', '.github/workflows/torch-docling.yml', 'uv.lock') }}
 
       - name: Restore native compiler work
-        if: startsWith(matrix.target, 'x86_64-')
+        if: startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: .tools/sccache
@@ -273,14 +278,48 @@ jobs:
 
       - name: Build the pack
         id: build
+        # Leave time for cleanup, cache checkpoints and pack verification in the job.
+        timeout-minutes: 310
         env:
           TARGET: ${{ matrix.target }}
         run: >-
           uv run --no-project --python 3.14 python engines/docling/pack/build.py build
           --target "$TARGET" --out "$PACK_OUT"
 
-      - name: Save native compiler work
+      # Canceling the docker client alone leaves compilers writing to the mounted cache.
+      - name: Stop compiler processes before saving their cache
+        id: cleanup
         if: always() && startsWith(matrix.target, 'x86_64-') && steps.build.outcome != 'skipped' && steps.build.outcome != ''
+        timeout-minutes: 3
+        shell: python
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          import os
+          import subprocess
+          if os.environ["TARGET"] == "x86_64-unknown-linux-gnu":
+              name = os.environ["TORCH_BUILD_CONTAINER"]
+              found = subprocess.run(
+                  ["docker", "container", "inspect", name],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30,
+              )
+              if found.returncode == 0:
+                  subprocess.run(["docker", "stop", "--time", "30", name], check=True, timeout=60)
+          # Configuration can fail before a server starts; no server is harmless.
+          subprocess.run(["sccache", "--stop-server"], check=False, timeout=30)
+
+      # Persist finished wheels before later checks; warm builds need no compiler snapshot.
+      - name: Save native source builds
+        if: always() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome == 'success' && steps.cleanup.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling/native
+          key: ${{ steps.native.outputs.cache-primary-key }}
+
+      # Only interrupted cold builds need resumable compiler work. Archiving a warm
+      # cache under a new run ID every time needlessly competes with finished wheels.
+      - name: Save native compiler work
+        if: always() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome != 'success' && steps.build.outcome != 'skipped' && steps.build.outcome != '' && steps.cleanup.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: .tools/sccache

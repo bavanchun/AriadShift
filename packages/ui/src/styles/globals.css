@@ -33,6 +33,31 @@
   --gold: #d8912c;
   --gold-soft: #f2c063;
   --sage: #4f8c62;
+
+  /* Web UI/UX v2 tokens. Surfaces mirror the Figma "Color" collection code syntax. */
+  --bg-canvas: #faf7f2; /* Parchment */
+  --bg-surface: #ffffff;
+  --bg-sunken: #f1ede4;
+  --fg-strong: #1a1814;
+  --fg-muted: #5c564c;
+  --crimson: #c8322b; /* Ariad Crimson */
+  --crimson-foreground: #ffffff;
+  --thread: #d4940a; /* Golden Thread: multi-step progress, recipes, batches */
+  --thread-soft: #f6dfa4;
+  --warning: #8a5300;
+  --warning-soft: #fff1d6;
+  --info: #1d5f8f;
+  --info-soft: #e2eef8;
+  --success-soft: #e0f1e5;
+  --destructive-soft: #fde7e4;
+  --focus-ring: #2f5b43;
+  --shadow-color: 26 24 20;
+  --elevation-1: 0 1px 2px rgb(var(--shadow-color) / 0.08);
+  --elevation-2:
+    0 4px 12px rgb(var(--shadow-color) / 0.12), 0 1px 3px rgb(var(--shadow-color) / 0.08);
+  --elevation-3:
+    0 16px 40px rgb(var(--shadow-color) / 0.2), 0 2px 8px rgb(var(--shadow-color) / 0.1);
+  --scrim: rgb(26 24 20 / 0.45);
 }
 
 .dark {
@@ -59,6 +84,30 @@
   --gold: #f2c063;
   --gold-soft: #fff1c4;
   --sage: #a8ce94;
+
+  --bg-canvas: #0f0e0d; /* Obsidian */
+  --bg-surface: #1a1816;
+  --bg-sunken: #0a0908;
+  --fg-strong: #faf7f2;
+  --fg-muted: #b8b2a6;
+  --crimson: #ef6a62;
+  --crimson-foreground: #1c0605;
+  --thread: #f0b43c;
+  --thread-soft: #4a3910;
+  --warning: #f2c063;
+  --warning-soft: #3b2c0b;
+  --info: #8cc4ee;
+  --info-soft: #14283a;
+  --success-soft: #16301f;
+  --destructive-soft: #3b1512;
+  --focus-ring: #a8ce94;
+  --shadow-color: 0 0 0;
+  --elevation-1: 0 1px 2px rgb(var(--shadow-color) / 0.4);
+  --elevation-2:
+    0 4px 12px rgb(var(--shadow-color) / 0.5), 0 1px 3px rgb(var(--shadow-color) / 0.4);
+  --elevation-3:
+    0 16px 40px rgb(var(--shadow-color) / 0.65), 0 2px 8px rgb(var(--shadow-color) / 0.5);
+  --scrim: rgb(0 0 0 / 0.6);
 }
 
 @theme inline {
@@ -87,10 +136,77 @@
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
   --color-sage: var(--sage);
+  --color-bg-canvas: var(--bg-canvas);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-fg-strong: var(--fg-strong);
+  --color-fg-muted: var(--fg-muted);
+  --color-crimson: var(--crimson);
+  --color-crimson-foreground: var(--crimson-foreground);
+  --color-thread: var(--thread);
+  --color-thread-soft: var(--thread-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-success-soft: var(--success-soft);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-focus-ring: var(--focus-ring);
+  --color-scrim: var(--scrim);
+  --shadow-elevation-1: var(--elevation-1);
+  --shadow-elevation-2: var(--elevation-2);
+  --shadow-elevation-3: var(--elevation-3);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Animation keyframes. Components pair every one with a `motion-reduce:` fallback. */
+@theme {
+  --animate-shimmer: ui-shimmer 1.6s ease-in-out infinite;
+  --animate-dash-march: ui-dash-march 1.2s linear infinite;
+  --animate-indeterminate: ui-indeterminate 1.4s ease-in-out infinite;
+  --animate-indeterminate-rtl: ui-indeterminate-rtl 1.4s ease-in-out infinite;
+  --animate-thread-drain: ui-thread-drain linear forwards;
+
+  @keyframes ui-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @keyframes ui-dash-march {
+    to {
+      stroke-dashoffset: -24;
+    }
+  }
+  @keyframes ui-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(300%);
+    }
+  }
+  @keyframes ui-indeterminate-rtl {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(-300%);
+    }
+  }
+  @keyframes ui-thread-drain {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
+    }
+  }
 }
 
 @layer base {

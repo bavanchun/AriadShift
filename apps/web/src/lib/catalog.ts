@@ -1,6 +1,6 @@
 // Build-time access to the real planner and capabilities through the same wasm module
 // the converter runs, so pages never restate routing rules in TypeScript.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   type Capabilities,
@@ -16,7 +16,10 @@ let initialized = false;
 
 function ready() {
   if (!initialized) {
-    const module = path.join(process.cwd(), "../../packages/ariad-wasm/pkg/ariad_wasm_bg.wasm");
+    const fromRoot = path.join(process.cwd(), "packages/ariad-wasm/pkg/ariad_wasm_bg.wasm");
+    const module = existsSync(fromRoot)
+      ? fromRoot
+      : path.join(process.cwd(), "../../packages/ariad-wasm/pkg/ariad_wasm_bg.wasm");
     initSync({ module: readFileSync(module) });
     initialized = true;
   }

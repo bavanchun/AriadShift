@@ -296,9 +296,12 @@ pub struct JobRow {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub subject: String,
-    pub upload_id: Uuid,
+    pub upload_id: Option<Uuid>,
     pub source_format: String,
-    pub target_format: String,
+    pub target_format: Option<String>,
+    pub tool_id: Option<String>,
+    pub params: Option<sqlx::types::Json<serde_json::Value>>,
+    pub tool_plan: String,
     pub profile: String,
     pub pack: String,
     pub status: String,
@@ -328,7 +331,7 @@ impl JobRow {
 macro_rules! job_columns {
     () => {
         "id, workspace_id, subject, upload_id, source_format, target_format, profile, pack, \
-         status, attempts, limits, warnings, error_code, error_message, created_at, started_at, \
+         tool_id, params, tool_plan, status, attempts, limits, warnings, error_code, error_message, created_at, started_at, \
          finished_at, expires_at"
     };
 }
@@ -337,9 +340,12 @@ pub struct NewJob<'a> {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub subject: &'a str,
-    pub upload_id: Uuid,
+    pub upload_id: Option<Uuid>,
     pub source_format: &'a str,
-    pub target_format: &'a str,
+    pub target_format: Option<&'a str>,
+    pub tool_id: Option<&'a str>,
+    pub params: Option<serde_json::Value>,
+    pub tool_plan: ariad_core::tools::Plan,
     pub profile: &'a str,
     pub pack: Pack,
     pub limits: serde_json::Value,
@@ -350,8 +356,8 @@ pub struct NewJob<'a> {
 pub async fn insert_job(conn: &mut PgConnection, job: &NewJob<'_>) -> Result<JobRow, sqlx::Error> {
     sqlx::query_as(concat!(
         "INSERT INTO jobs (id, workspace_id, subject, upload_id, source_format, target_format, \
-         profile, pack, status, limits, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, now() + make_interval(secs => $10)) RETURNING ",
+         profile, pack, status, limits, expires_at, tool_id, params, tool_plan) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, now() + make_interval(secs => $10), $11, $12, $13) RETURNING ",
         job_columns!()
     ))
     .bind(job.id)
@@ -364,8 +370,42 @@ pub async fn insert_job(conn: &mut PgConnection, job: &NewJob<'_>) -> Result<Job
     .bind(job.pack.as_str())
     .bind(sqlx::types::Json(&job.limits))
     .bind(job.retention_s as f64)
+    .bind(job.tool_id)
+    .bind(job.params.as_ref().map(sqlx::types::Json))
+    .bind(job.tool_plan.as_str())
     .fetch_one(conn)
     .await
+}
+
+/// Ordered input identities, with the legacy single-input fallback for conversions.
+pub async fn job_input_ids(pool: &PgPool, job: &JobRow) -> Result<Vec<Uuid>, sqlx::Error> {
+    if job.tool_id.is_none() {
+        return Ok(job.upload_id.into_iter().collect());
+    }
+    sqlx::query_scalar("SELECT upload_id FROM job_inputs WHERE job_id = $1 ORDER BY position")
+        .bind(job.id)
+        .fetch_all(pool)
+        .await
+}
+
+/// Input rows for a bounded page of jobs, retaining each job's declared order.
+pub async fn inputs_of_jobs(pool: &PgPool, ids: &[Uuid]) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT job_id, upload_id FROM job_inputs WHERE job_id = ANY($1) ORDER BY job_id, position",
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn set_job_inputs(
+    conn: &mut PgConnection,
+    id: Uuid,
+    inputs: &[Uuid],
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO job_inputs (job_id, position, upload_id) SELECT $1, (ordinality - 1)::integer, upload_id FROM unnest($2::uuid[]) WITH ORDINALITY AS inputs(upload_id, ordinality)")
+        .bind(id).bind(inputs).execute(conn).await?;
+    Ok(())
 }
 
 pub async fn get_job(pool: &PgPool, id: Uuid) -> Result<Option<JobRow>, sqlx::Error> {

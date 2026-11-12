@@ -1,0 +1,2 @@
+# Preserve the hash-verified upstream configuration byte for byte.
+pack/florence-config.json -whitespace

@@ -168,6 +168,12 @@ def test_competitor_timeout_cleans_owned_resources(tmp_path):
     """A real child and grandchild exit; an unrelated real process survives."""
     import subprocess
 
+    def is_running(pid):
+        try:
+            return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+
     pid_file = tmp_path / "grandchild.pid"
     script = (
         "import subprocess,sys,time; from pathlib import Path; "
@@ -180,13 +186,23 @@ def test_competitor_timeout_cleans_owned_resources(tmp_path):
             run.Runner(5).run([sys.executable, "-c", script, str(pid_file)], timeout=0.5)
         grandchild = int(pid_file.read_text(encoding="utf-8"))
         deadline = time.monotonic() + 2
-        while psutil.pid_exists(grandchild) and psutil.Process(grandchild).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+        while is_running(grandchild) and time.monotonic() < deadline:
             time.sleep(0.01)
-        assert not psutil.pid_exists(grandchild) or psutil.Process(grandchild).status() == psutil.STATUS_ZOMBIE
+        assert not is_running(grandchild)
         assert unrelated.poll() is None
     finally:
         unrelated.terminate()
         unrelated.wait(timeout=3)
+
+
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="Requires POSIX process groups")
+def test_competitor_cleanup_tolerates_exited_process_group():
+    import subprocess
+
+    with subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True) as process:
+        process.wait(timeout=3)
+        run.terminate_process_tree(process)
+        assert process.returncode == 0
 
 
 def test_competitor_rejects_invalid_output_and_unavailable_scorer(tmp_path):
@@ -215,6 +231,86 @@ def test_competitor_signal_interrupts_attempt_and_releases_owned_scope(tmp_path)
         finally:
             cleaned.touch()
     assert cleaned.exists()
+
+
+def test_competitor_cleanup_tolerates_macos_zombie_pgrp_eperm(monkeypatch, tmp_path):
+    """Reproduce #282: macOS killpg raises EPERM on zombie process group; ensure HarnessAbort is not masked."""
+    import errno
+    import signal
+    import subprocess
+
+    real_killpg = getattr(os, "killpg", None)
+    if real_killpg is not None:
+        def fake_killpg(pgid, sig):
+            if sig == getattr(signal, "SIGKILL", 9):
+                raise PermissionError(errno.EPERM, "Operation not permitted")
+            return real_killpg(pgid, sig)
+
+        monkeypatch.setattr(os, "killpg", fake_killpg)
+
+    original_wait = subprocess.Popen.wait
+    interrupted = False
+
+    def fake_wait(self, timeout=None):
+        nonlocal interrupted
+        if not interrupted:
+            interrupted = True
+            raise run.HarnessAbort("Interrupted by signal 14")
+        return original_wait(self, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "wait", fake_wait)
+
+    if os.name == "nt":
+        dummy = tmp_path / "dummy.cmd"
+        dummy.write_text("@exit /b 0\r\n", encoding="utf-8")
+    else:
+        dummy = tmp_path / "dummy"
+        dummy.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        dummy.chmod(0o700)
+
+    with pytest.raises(BaseException, match="Interrupted by signal"):
+        run.paired_attempt(run.Runner(5), None, dummy, ROOT / "fixtures/heavy/en-map.pdf", "docx", tmp_path / "out.docx")
+
+    if real_killpg is not None:
+        with subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True) as process:
+            process.wait(timeout=3)
+            run.terminate_process_tree(process)
+
+
+def test_competitor_runner_preserves_base_exception_when_cleanup_fails(monkeypatch, tmp_path):
+    """Ensure Runner.run never downgrades BaseException to an ordinary attempt failure if cleanup fails."""
+    import subprocess
+
+    def boom_cleanup(process):
+        raise RuntimeError("cleanup boom")
+
+    monkeypatch.setattr(run, "terminate_process_tree", boom_cleanup)
+
+    original_wait = subprocess.Popen.wait
+    interrupted = False
+
+    def fake_wait(self, timeout=None):
+        nonlocal interrupted
+        if not interrupted:
+            interrupted = True
+            raise run.HarnessAbort("Interrupted by signal 14")
+        return original_wait(self, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "wait", fake_wait)
+
+    if os.name == "nt":
+        dummy = tmp_path / "dummy.cmd"
+        dummy.write_text("@exit /b 0\r\n", encoding="utf-8")
+    else:
+        dummy = tmp_path / "dummy"
+        dummy.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        dummy.chmod(0o700)
+
+    with pytest.raises(BaseException, match="Interrupted by signal") as exc_info:
+        run.paired_attempt(run.Runner(5), None, dummy, ROOT / "fixtures/heavy/en-map.pdf", "docx", tmp_path / "out.docx")
+    assert isinstance(exc_info.value, run.HarnessAbort)
+    if hasattr(exc_info.value, "__notes__"):
+        assert any("cleanup boom" in note for note in exc_info.value.__notes__)
 
 
 def test_competitor_cannot_claim_pass_when_other_route_is_incomplete():

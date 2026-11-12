@@ -1,0 +1,13 @@
+AriadShift ai development engine pack
+
+Engine adapter: Apache-2.0 AND MIT (repository LICENSE and NOTICE).
+Development runtime: host Python, PSF-2.0. The release runtime is pinned to
+python-build-standalone 3.14.9+20261021 in pins.toml; development builds do not
+claim to contain that standalone archive.
+PDF parser: unmodified pypdf 7.0.0, BSD-3-Clause (pypdf-BSD-3-Clause.txt).
+No native wheels or model weights are included in the development pack.
+Optional local inference: llama.cpp b5210, MIT (llama-cpp-MIT.txt).
+Optional instruction model: Qwen2.5-1.5B-Instruct-GGUF, Apache-2.0
+(Qwen2.5-Apache-2.0.txt). Exact source and model hashes are in pins.toml.
+The built-in backend is extractive summarization, lexical passage ranking,
+EN/VI glossary translation and conservative workflow parsing.

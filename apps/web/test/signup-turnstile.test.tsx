@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountProvider } from "@/components/account/account-context";
 import { createBetterAuthApi } from "@/components/account/auth-api";
 import { SignInPanel } from "@/components/account/sign-in-panel";
 import { Turnstile } from "@/components/cloud/turnstile";
+import { renderIntl } from "./intl";
 
 const cloud = vi.hoisted(() => ({ turnstileSiteKey: "test-site-key" as string | null }));
 vi.mock("@/lib/cloud/config", async (original) => ({
@@ -43,7 +44,7 @@ function panel() {
       ? Response.json(null)
       : Response.json({ message: "Try again", code: "REFUSED" }, { status: 403 });
   }) as typeof fetch;
-  return render(
+  return renderIntl(
     <AccountProvider
       config={{ authUrl: "http://localhost:3901", apiUrl: "http://localhost:3902" }}
       auth={createBetterAuthApi("http://localhost:3901", fetchImpl)}
@@ -89,8 +90,10 @@ describe("signup Turnstile", () => {
     const signup = calls.find((c) => c.path.endsWith("sign-up/email"));
     expect(signup?.headers.get("x-captcha-response")).toBe("fresh-proof");
     expect(submit.disabled).toBe(true);
-    expect(remove).toHaveBeenCalled();
-    expect(window.turnstile?.render).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(remove).toHaveBeenCalled();
+      expect(window.turnstile?.render).toHaveBeenCalledTimes(2);
+    });
     act(() => previousWidget.callback("late-stale-proof"));
     expect(submit.disabled).toBe(true);
   });
@@ -107,7 +110,7 @@ describe("signup Turnstile", () => {
   );
 
   it("keeps the upload action as the shared widget default", async () => {
-    render(<Turnstile siteKey="upload-test-key" resetKey={0} onToken={vi.fn()} />);
+    renderIntl(<Turnstile siteKey="upload-test-key" resetKey={0} onToken={vi.fn()} />);
     await waitFor(() => expect(options.action).toBe("upload"));
   });
 

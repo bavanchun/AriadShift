@@ -17,40 +17,47 @@ import {
   OutcomeMessage,
   Section,
   TextField,
+  type Translate,
+  useAccountText,
   useOutcome,
 } from "./account-ui";
 import type { ApiKeyInfo, CreatedApiKey } from "./auth-api";
 import { SessionGate } from "./session-gate";
 
 /** Lifetimes offered when creating a key, in days; null never expires. */
-export const KEY_LIFETIMES: ReadonlyArray<{ days: number | null; label: string }> = [
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
-  { days: 365, label: "1 year" },
-  { days: null, label: "No expiry" },
+export const KEY_LIFETIMES: ReadonlyArray<{
+  days: number | null;
+  label: (t: Translate) => string;
+}> = [
+  { days: 30, label: (t) => t("api_keys.lifetime_days", { days: 30 }) },
+  { days: 90, label: (t) => t("api_keys.lifetime_days", { days: 90 }) },
+  { days: 365, label: (t) => t("api_keys.lifetime_year") },
+  { days: null, label: (t) => t("api_keys.lifetime_never") },
 ];
 
-export function keyExpiry(key: ApiKeyInfo, now = Date.now()): string {
+export function keyExpiry(key: ApiKeyInfo, t: Translate, locale: string, now = Date.now()): string {
   if (!key.expiresAt) {
-    return "Never expires";
+    return t("api_keys.never_expires");
   }
-  return Date.parse(key.expiresAt) <= now
-    ? `Expired ${formatDate(key.expiresAt)}`
-    : `Expires ${formatDate(key.expiresAt)}`;
+  const date = formatDate(key.expiresAt, t, locale);
+  return t(Date.parse(key.expiresAt) <= now ? "api_keys.expired_on" : "api_keys.expires_on", {
+    date,
+  });
 }
 
-function keyLabel(key: ApiKeyInfo): string {
-  return key.name ?? "Unnamed key";
+function keyLabel(key: ApiKeyInfo, t: Translate): string {
+  return key.name ?? t("api_keys.unnamed");
 }
 
 function NewKeySecret({ created, onDone }: { created: CreatedApiKey; onDone: () => void }) {
+  const { t } = useAccountText();
   const inputId = useId();
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <label htmlFor={inputId} className="text-sm font-medium">
-          API key
+          {t("api_keys.secret_label")}
         </label>
         <input
           id={inputId}
@@ -61,11 +68,9 @@ function NewKeySecret({ created, onDone }: { created: CreatedApiKey; onDone: () 
           className={`${INPUT_CLASS} font-mono`}
         />
       </div>
-      <p className="text-sm font-medium">
-        Copy the key now. It is stored only as a hash and is never shown again.
-      </p>
+      <p className="text-sm font-medium">{t("api_keys.secret_notice")}</p>
       {copied === "failed" ? (
-        <p className="text-sm text-destructive">Copying failed. Select the key and copy it.</p>
+        <p className="text-sm text-destructive">{t("api_keys.copy_failed")}</p>
       ) : null}
       <div className="flex justify-end gap-2">
         <Button
@@ -79,9 +84,9 @@ function NewKeySecret({ created, onDone }: { created: CreatedApiKey; onDone: () 
             }
           }}
         >
-          {copied === "copied" ? "Copied" : "Copy key"}
+          {copied === "copied" ? t("actions.copied") : t("api_keys.copy_key")}
         </Button>
-        <Button onClick={onDone}>Done</Button>
+        <Button onClick={onDone}>{t("actions.done")}</Button>
       </div>
     </div>
   );
@@ -89,6 +94,7 @@ function NewKeySecret({ created, onDone }: { created: CreatedApiKey; onDone: () 
 
 function ApiKeys() {
   const { auth, config } = useAccount();
+  const { t, locale } = useAccountText();
   const headingId = useId();
   const { outcome, succeed } = useOutcome();
   const [keys, setKeys] = useState<ApiKeyInfo[] | null>(null);
@@ -107,9 +113,9 @@ function ApiKeys() {
       setKeys(await auth.listApiKeys());
       setLoadError(null);
     } catch (error) {
-      setLoadError(errorMessage(error, "Could not load your API keys."));
+      setLoadError(errorMessage(t, error, "api_keys.load_failed"));
     }
-  }, [auth]);
+  }, [auth, t]);
 
   useEffect(() => {
     void load();
@@ -130,10 +136,10 @@ function ApiKeys() {
       const key = await auth.createApiKey(name.trim(), days);
       setCreated(key);
       setName("");
-      succeed(`API key ${keyLabel(key)} created.`);
+      succeed(t("api_keys.created", { name: keyLabel(key, t) }));
       await load();
     } catch (error) {
-      setDialogError(errorMessage(error, "Could not create the key."));
+      setDialogError(errorMessage(t, error, "api_keys.create_failed"));
     } finally {
       setBusy(false);
     }
@@ -150,11 +156,11 @@ function ApiKeys() {
       // Reload first: closing the dialog then sends focus to the heading, since the
       // row's Revoke button is gone.
       await load();
-      const label = keyLabel(revoking);
+      const label = keyLabel(revoking, t);
       setRevoking(null);
-      succeed(`API key ${label} revoked. Requests that use it are refused from now on.`);
+      succeed(t("api_keys.revoked", { name: label }));
     } catch (error) {
-      setDialogError(errorMessage(error, "Could not revoke the key."));
+      setDialogError(errorMessage(t, error, "api_keys.revoke_failed"));
     } finally {
       setBusy(false);
     }
@@ -162,45 +168,49 @@ function ApiKeys() {
 
   return (
     <Section
-      title="Your keys"
+      title={t("api_keys.section_title")}
       headingId={headingId}
-      description={
-        <>
-          Scripts and integrations send a key in the <code>x-api-key</code> header to{" "}
-          {displayHost(config.apiUrl)}. A key acts with your account and its plan.
-        </>
-      }
+      description={t.rich("api_keys.section_description", {
+        code: (chunks) => <code>{chunks}</code>,
+        host: displayHost(config.apiUrl),
+      })}
     >
       {loadError ? (
         <OutcomeMessage outcome={{ kind: "error", message: loadError }} />
       ) : keys === null ? (
-        <p className="text-sm text-muted-foreground">Loading API keys…</p>
+        <p className="text-sm text-muted-foreground">{t("api_keys.loading")}</p>
       ) : keys.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No API keys yet.</p>
+        <p className="text-sm text-muted-foreground">{t("api_keys.empty")}</p>
       ) : (
         <ul className="flex flex-col divide-y divide-border" aria-labelledby={headingId}>
           {keys.map((key) => (
             <li key={key.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
               <span className="flex flex-col gap-0.5">
                 <span className="flex items-center gap-2 font-medium">
-                  {keyLabel(key)}
-                  {key.enabled ? null : <Badge variant="outline">Disabled</Badge>}
+                  {keyLabel(key, t)}
+                  {key.enabled ? null : <Badge variant="outline">{t("api_keys.disabled")}</Badge>}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {key.start ? <code>{key.start}…</code> : null} Created {formatDate(key.createdAt)}{" "}
-                  · {keyExpiry(key)}
+                  {key.start ? <code>{key.start}…</code> : null}{" "}
+                  {t("api_keys.key_details", {
+                    date: formatDate(key.createdAt, t, locale),
+                    expiry: keyExpiry(key, t, locale),
+                  })}
                 </span>
               </span>
               <Button
                 variant="destructive"
                 size="sm"
-                aria-label={`Revoke API key ${keyLabel(key)}`}
+                aria-label={t("api_keys.revoke_label", { name: keyLabel(key, t) })}
                 onClick={() => {
                   setDialogError(null);
                   setRevoking(key);
                 }}
               >
-                Revoke<span className="sr-only"> API key {keyLabel(key)}</span>
+                {t.rich("api_keys.revoke_button", {
+                  name: keyLabel(key, t),
+                  hidden: (chunks) => <span className="sr-only">{chunks}</span>,
+                })}
               </Button>
             </li>
           ))}
@@ -215,16 +225,14 @@ function ApiKeys() {
         }}
       >
         <PlusIcon aria-hidden="true" />
-        Create API key
+        {t("api_keys.create_button")}
       </Button>
 
       {creating ? (
         <AccountDialog
           key={created ? "secret" : "form"}
-          title={created ? "Your new API key" : "Create an API key"}
-          description={
-            created ? undefined : "Name the key after the script or service that will use it."
-          }
+          title={created ? t("api_keys.secret_title") : t("api_keys.create_title")}
+          description={created ? undefined : t("api_keys.create_description")}
           onClose={closeCreate}
         >
           {created ? (
@@ -232,18 +240,18 @@ function ApiKeys() {
           ) : (
             <form onSubmit={onCreate} className="flex flex-col gap-4">
               <TextField
-                label="Name"
+                label={t("fields.name")}
                 data-autofocus
                 required
                 maxLength={64}
-                placeholder="For example: CI"
+                placeholder={t("api_keys.name_placeholder")}
                 value={name}
                 onValueChange={setName}
                 error={dialogError}
               />
               <div className="flex flex-col gap-1.5">
                 <label htmlFor={lifetimeId} className="text-sm font-medium">
-                  Expires after
+                  {t("api_keys.expires_after")}
                 </label>
                 <select
                   id={lifetimeId}
@@ -252,18 +260,18 @@ function ApiKeys() {
                   className={INPUT_CLASS}
                 >
                   {KEY_LIFETIMES.map((option) => (
-                    <option key={option.label} value={option.days ?? "never"}>
-                      {option.label}
+                    <option key={option.days ?? "never"} value={option.days ?? "never"}>
+                      {option.label(t)}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" onClick={closeCreate}>
-                  Cancel
+                  {t("actions.cancel")}
                 </Button>
                 <Button type="submit" disabled={busy}>
-                  Create key
+                  {t("api_keys.create_submit")}
                 </Button>
               </div>
             </form>
@@ -274,8 +282,8 @@ function ApiKeys() {
       {revoking ? (
         <AccountDialog
           role="alertdialog"
-          title={`Revoke ${keyLabel(revoking)}?`}
-          description="Requests that use this key are refused at once. This cannot be undone."
+          title={t("api_keys.revoke_title", { name: keyLabel(revoking, t) })}
+          description={t("api_keys.revoke_description")}
           onClose={() => setRevoking(null)}
           returnFocus={() => document.getElementById(headingId)}
         >
@@ -284,10 +292,10 @@ function ApiKeys() {
           ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" data-autofocus onClick={() => setRevoking(null)}>
-              Cancel
+              {t("actions.cancel")}
             </Button>
             <Button variant="destructive" disabled={busy} onClick={() => void onRevoke()}>
-              Revoke key
+              {t("api_keys.revoke_confirm")}
             </Button>
           </div>
         </AccountDialog>
@@ -297,9 +305,10 @@ function ApiKeys() {
 }
 
 export function ApiKeysPanel() {
+  const { t } = useAccountText();
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-3xl font-bold tracking-tight">API keys</h1>
+      <h1 className="text-3xl font-bold tracking-tight">{t("api_keys.page_title")}</h1>
       <SessionGate path="/api-keys">{() => <ApiKeys />}</SessionGate>
     </div>
   );

@@ -8,13 +8,33 @@ import type {
   ProfileId,
 } from "@ariadshift/ariad-wasm";
 
+import type { PdfFileInsights } from "./insights";
+import type { ToolDescriptor } from "./tool-catalog";
+
 export type StorageKind = "opfs" | "memory";
+
+/**
+ * What `convert` reads. Without a source it converts the first input slot. `inputId` picks
+ * another slot; `file` converts a document that is not in the input set, such as an edited IR.
+ */
+export type ConvertSource = { inputId: string } | { file: File };
 
 export type WorkerRequest =
   | { type: "init" }
   | { type: "ingest"; file: File }
+  | { type: "ingestMany"; files: File[] }
+  | { type: "listTools" }
+  | {
+      type: "runTool";
+      toolId: string;
+      inputIds?: string[];
+      params: Record<string, unknown>;
+      budgetBytes?: number;
+      entitled?: boolean;
+    }
+  | { type: "inspectInsights"; inputId?: string }
   | { type: "plan"; to: FormatId; profile: ProfileId }
-  | { type: "convert"; to: FormatId; profile: ProfileId }
+  | { type: "convert"; to: FormatId; profile: ProfileId; source?: ConvertSource }
   | { type: "reset" }
   | { type: "retire"; sessions: string[] };
 
@@ -39,6 +59,13 @@ export interface IngestResult {
   recycle: boolean;
 }
 
+/** Auxiliary files may be valid tool inputs without being convertible documents. */
+export interface InputIngestResult extends Omit<IngestResult, "inspection"> {
+  id: string;
+  inspection: InspectResult | null;
+  inspectionError?: ConverterError;
+}
+
 export type OutputLocation =
   | { kind: "opfs"; directory: string[]; name: string }
   | { kind: "memory"; blob: Blob };
@@ -58,7 +85,34 @@ export interface ConvertedFile {
   recycle: boolean;
 }
 
+export interface ToolExecutionArtifact {
+  name: string;
+  size: number;
+  format: string;
+  mediaType: string;
+  extension: string;
+  location: OutputLocation;
+}
+
+export interface ToolExecutionResult {
+  tool: string;
+  format: string;
+  mediaType: string;
+  extension: string;
+  primaryLocation: OutputLocation;
+  artifacts: ToolExecutionArtifact[];
+  data: Record<string, unknown> | null;
+  warnings: Notice[];
+  metrics: Record<string, unknown>;
+  elapsedMs: number;
+  recycle: boolean;
+}
+
 export interface ResultMap {
+  ingestMany: InputIngestResult[];
+  listTools: ToolDescriptor[];
+  runTool: ToolExecutionResult;
+  inspectInsights: PdfFileInsights;
   init: InitResult;
   ingest: IngestResult;
   plan: Plan;

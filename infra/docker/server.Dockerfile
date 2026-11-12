@@ -35,8 +35,8 @@ ENV PATH=/root/.cargo/bin:${PATH}
 WORKDIR /src
 COPY . .
 RUN sh scripts/install-pandoc.sh
-RUN --mount=type=cache,target=/root/.cargo/registry \
-    --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry-server,target=/root/.cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-target-server,target=/src/target,sharing=locked \
     cargo build --locked --release -p ariad-server -p ariad-cli \
     && mkdir -p /artifacts \
     && cp target/release/ariad-server target/release/ashift /artifacts/

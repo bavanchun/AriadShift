@@ -1,7 +1,7 @@
 ---
 phase: 13
 title: "Automation and AI: recipes at scale, watch folders, natural-language recipes, offline AI pack, watermark removal level 2"
-status: pending
+status: completed
 priority: P2
 effort: "6 tasks, ~12 worker-days"
 dependencies: [12, 6, 7]
@@ -32,14 +32,24 @@ Make AriadShift programmable and intelligent without giving up privacy: recipes 
 | T1 | Gemini 4 Argon high | Recipe v1 features + watcher `crates/ariad-core/src/tools/recipe.rs`, `crates/ariad-host/src/tools/recipe.rs`, `crates/ariad-host/src/watch.rs` |
 | T2 | Gemini 4 Argon high | Remote MCP tools (`crates/ariad-server/src/mcp/**`, `tests/mcp_remote.rs`) on top of T7; starts after T7 merges |
 | T3 | Gemini 4 Argon high | `ai` pack: `engines/ai/**` (adapter speaking `ariad-engine/2`), pack manifest, licence notices, model pinning |
-| T4 | Gemini 4 Argon high | `ai.*` tool specs + host wiring + cloud provider adapter behind consent `crates/ariad-host/src/ai/**` |
+| T4 | Gemini 4 Argon high | `ai.*` tool specs + host wiring + cloud provider adapter behind consent `crates/ariad-host/src/tools/ai.rs` |
 | T5 | Gemini 4 Argon high | `inpaint` pack + `pdf.watermark_remove_raster` `engines/inpaint/**` |
 | T7 | Gemini 4 Argon high | Cloud tool jobs (requirement 2): migration, server code, OpenAPI/SDK, worker images, access mapping, tests |
 | T6 | Gemini 4 Argon high | Tests/evals: recipe golden runs, NL→recipe eval set (50 prompts EN/VI, ≥ 90 % valid recipes), ai.ask citation accuracy eval, watermark L2 visual checks |
 
 ## Acceptance
 
-- [ ] Watch folder processes 100 files idempotently (re-run does nothing).
-- [ ] NL→recipe eval ≥ 90 % valid and correct on the 50-prompt set (EN + VI).
-- [ ] No network access by `ai`/`inpaint` engines (sandbox verified); cloud path only after consent.
+- [x] Watch folder processes 100 files idempotently (re-run does nothing).
+- [x] NL→recipe eval ≥ 90 % valid and correct on the 50-prompt set (EN + VI).
+- [x] No network access by `ai`/`inpaint` engines (sandbox verified); cloud path only after consent.
 - [ ] Engine preview 0.5.0 (owner GO).
+
+## Integration verification
+
+Implementation is complete. The engine preview publication checkbox remains an owner release gate; this integration does not grant release approval.
+
+- The CLI processes 100 PDFs in one watch batch, then skips all 100 reintroduced inputs without another recipe run. Ledger entries retain each input's artifact provenance and respect the selected output directory.
+- Local AI and inpaint development packs run through the shared sandboxed engine runner. Cloud requests are brokered by the host only after consent and Pro-or-higher access or a user key. Recipe drafts are checked against registered tools and parameter schemas before publication.
+- The 50-prompt English/Vietnamese semantic evaluation passes 50/50 cases. All 140 AI/inpaint Python tests pass.
+- Formatter, workspace Clippy, core/host/WASM tests (1,438 passed; five existing ignored tests), CLI/MCP tests (74 passed), standalone watcher tests (20 passed), and server/OpenAPI tests (110 passed) pass. Tool schema and CLI snapshots match the 102-tool registry.
+- Cargo checks use the coordinator's build lock with an explicit `ASHIFT_PANDOC`. The final tests use `RUST_TEST_THREADS=1` to avoid parallel executable-copy races in sandbox fixtures. Cloud provider tests use loopback HTTP; development pack tests do not download model weights or use a paid provider.

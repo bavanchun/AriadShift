@@ -30,7 +30,7 @@ fn spec<P: JsonSchema>(
         output_format: output_formats[0],
         output_formats,
         tier: Tier::Free,
-        runtimes: &[ToolRuntime::Local],
+        runtimes: &[ToolRuntime::Local, ToolRuntime::Cloud],
         engine,
         params_schema: schema,
         secret_params: &[],

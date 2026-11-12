@@ -95,7 +95,7 @@ describe("offline URL list", () => {
   it("keeps same-origin assets and drops the rest", () => {
     expect(
       offlineUrls(
-        "https://site.test/app?to=html#top",
+        "https://site.test/vi/app?to=html#top",
         [
           "https://site.test/_next/static/chunks/a.js",
           "https://cdn.test/other.js",
@@ -107,7 +107,7 @@ describe("offline URL list", () => {
     ).toEqual([
       "https://site.test/_next/static/chunks/a.js",
       "https://site.test/_next/static/chunks/turbopack-worker-1.js",
-      "https://site.test/app",
+      "https://site.test/vi/app",
     ]);
   });
 });
@@ -117,6 +117,11 @@ describe("route headers", () => {
     const opener = routeHeaders.filter(({ headers }) =>
       headers.some(({ key }) => key === "Cross-Origin-Opener-Policy"),
     );
-    expect(opener.map(({ source }) => source)).toEqual(["/app", "/app/:path*"]);
+    expect(opener.map(({ source }) => source)).toEqual([
+      "/:locale/app",
+      "/:locale/app/:path*",
+      "/app",
+      "/app/:path*",
+    ]);
   });
 });

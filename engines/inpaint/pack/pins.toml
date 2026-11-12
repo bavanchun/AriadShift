@@ -1,0 +1,58 @@
+# Pinned, hash-verified inputs for the offline engine pack.
+# Wheels are pinned by uv.lock.
+# Update a pin only together with its SHA-256 and size.
+
+schema = 1
+
+[python]
+# python-build-standalone, "install_only_stripped" archives.
+release = "20261021"
+version = "3.14.9"
+license = "PSF-2.0"
+source = "https://github.com/astral-sh/python-build-standalone"
+
+[python.targets.x86_64-unknown-linux-gnu]
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9+20261021-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+sha256 = "561e91c1cadf30e84aec94d1917384ae3267e5f3e6e135e51fd1578bb19f4064"
+size = 36657566
+
+[python.targets.aarch64-unknown-linux-gnu]
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9+20261021-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+sha256 = "6f77731d85a14ed848dd4041478cd3ed511523caa3d896b84b436a7edf13cf62"
+size = 30592562
+
+[python.targets.aarch64-apple-darwin]
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9+20261021-aarch64-apple-darwin-install_only_stripped.tar.gz"
+sha256 = "9f8c3480b8f0db553c270db548e8a21ae8e39df412e5661d66e8050c5c6ed2a8"
+size = 26705294
+
+[python.targets.x86_64-pc-windows-msvc]
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9+20261021-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+sha256 = "57cc230da61d897e8e593511c9dac781491675a036cb727b7de5cb7a62ceebea"
+size = 23250453
+
+[pypdf]
+version = "7.0.0"
+license = "BSD-3-Clause"
+url = "https://files.pythonhosted.org/packages/8a/21/e83122a25e334c718a4da67004fa94acd7215fe9f8e63a9d7c7f979eb52b/pypdf-7.0.0-py3-none-any.whl"
+sha256 = "112a2c7cbabefd8dfe498f7a13977e575e762d58cdb0d832acb8886922602c6f"
+size = 413949
+
+[florence]
+name = "Florence-2-base"
+revision = "5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac"
+license = "MIT"
+url = "https://huggingface.co/microsoft/Florence-2-base/resolve/5ca5edf5bd017b9919c05d08aebef5e4c7ac3bac/config.json"
+sha256 = "c666d0fe0172d46e115e8fba6cd93cd83714575b33a73005cab8d24ce2a3aa8f"
+size = 2430
+
+[opencv]
+version = "5.1.0"
+revision = "dd8d9c3833e6fbda076660cfbf2ae45611723481"
+license = "Apache-2.0"
+source = "https://github.com/opencv/opencv/tree/dd8d9c3833e6fbda076660cfbf2ae45611723481"
+algorithms = ["telea", "ns"]
+
+[policy]
+excluded_weights = ["big-lama", "Places365"]
+reason = "ARCHITECTURE.md section 20 item 10: no approved weight/dataset licence."

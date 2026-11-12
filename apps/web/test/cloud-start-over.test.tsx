@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { CloudPanelProps } from "@/components/cloud/cloud-panel";
 import { ConverterApp } from "@/components/converter/converter-app";
 import { ConverterClient } from "@/converter/client";
 import type { RequestEnvelope, WorkerResponse } from "@/converter/protocol";
 import type { DiscardOutcome, ServerCopy } from "@/lib/cloud/cloud-job";
+import { renderIntl } from "./intl";
 
 vi.mock("@/lib/cloud/config", () => ({
   CLOUD: {
@@ -100,7 +101,7 @@ function kept(reason: ServerCopy["reason"], retry: ServerCopy["retry"]): ServerC
 
 async function startOverFromCloud(failReset = false) {
   const client = new ConverterClient(() => new FakeWorker(failReset) as unknown as Worker);
-  render(<ConverterApp client={client} />);
+  renderIntl(<ConverterApp client={client} />);
   const input = document.querySelector("input[type=file]") as HTMLInputElement;
   fireEvent.change(input, {
     target: { files: [new File(["{\\rtf1 Hello}"], "page.rtf", { type: "application/rtf" })] },

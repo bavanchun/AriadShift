@@ -18,6 +18,20 @@ pub enum Pack {
     Office,
     /// The Office install plus the docling engine pack.
     Docling,
+    /// The pdfium tool engine pack.
+    Pdfium,
+    /// The qpdf tool engine pack.
+    Qpdf,
+    /// The tesseract tool engine pack.
+    Tesseract,
+    /// The sign tool engine pack.
+    Sign,
+    /// The verapdf tool engine pack.
+    Verapdf,
+    /// The ai tool engine pack.
+    Ai,
+    /// The inpaint tool engine pack.
+    Inpaint,
 }
 
 /// An engine that no worker pack is known to provide.
@@ -29,7 +43,18 @@ pub struct UnknownEngine {
 }
 
 impl Pack {
-    pub const ALL: [Self; 3] = [Self::Core, Self::Office, Self::Docling];
+    pub const ALL: [Self; 10] = [
+        Self::Core,
+        Self::Office,
+        Self::Docling,
+        Self::Pdfium,
+        Self::Qpdf,
+        Self::Tesseract,
+        Self::Sign,
+        Self::Verapdf,
+        Self::Ai,
+        Self::Inpaint,
+    ];
 
     /// Docling's PDF runtime needs room for loaded models and its 256 MiB
     /// allocation guard. See the real-pack measurement in docs/server.md.
@@ -37,7 +62,7 @@ impl Pack {
     pub const fn minimum_memory_mb(self) -> u32 {
         match self {
             Self::Docling => 2048,
-            Self::Core | Self::Office => 0,
+            _ => 0,
         }
     }
 
@@ -47,6 +72,13 @@ impl Pack {
             Self::Core => "core",
             Self::Office => "office",
             Self::Docling => "docling",
+            Self::Pdfium => "pdfium",
+            Self::Qpdf => "qpdf",
+            Self::Tesseract => "tesseract",
+            Self::Sign => "sign",
+            Self::Verapdf => "verapdf",
+            Self::Ai => "ai",
+            Self::Inpaint => "inpaint",
         }
     }
 
@@ -57,6 +89,13 @@ impl Pack {
             Self::Core => "jobs_core",
             Self::Office => "jobs_office",
             Self::Docling => "jobs_docling",
+            Self::Pdfium => "jobs_pdfium",
+            Self::Qpdf => "jobs_qpdf",
+            Self::Tesseract => "jobs_tesseract",
+            Self::Sign => "jobs_sign",
+            Self::Verapdf => "jobs_verapdf",
+            Self::Ai => "jobs_ai",
+            Self::Inpaint => "jobs_inpaint",
         }
     }
 
@@ -64,9 +103,18 @@ impl Pack {
     /// worker image is known to contain is an error, never the base install.
     pub fn for_engine(engine: &str) -> Result<Self, UnknownEngine> {
         match engine {
-            "ariad-core" | "pandoc" | "pdf" | "typst" => Ok(Self::Core),
+            "ariad-core" | "pandoc" | "pdf" | "typst" | "ariad-pdf" | "ariad-host"
+            | "ariad-typst" => Ok(Self::Core),
             "libreoffice" => Ok(Self::Office),
             "docling" => Ok(Self::Docling),
+            "pdfium" => Ok(Self::Pdfium),
+            "qpdf" => Ok(Self::Qpdf),
+            "tesseract" => Ok(Self::Tesseract),
+            "sign" => Ok(Self::Sign),
+            "verapdf" => Ok(Self::Verapdf),
+            "ai" => Ok(Self::Ai),
+            "inpaint" => Ok(Self::Inpaint),
+
             other => Err(UnknownEngine {
                 engine: other.to_owned(),
             }),
@@ -98,9 +146,15 @@ impl FromStr for Pack {
             "core" => Ok(Self::Core),
             "office" => Ok(Self::Office),
             "docling" => Ok(Self::Docling),
-            other => Err(format!(
-                "unknown pack '{other}'; expected core, office or docling"
-            )),
+            "pdfium" => Ok(Self::Pdfium),
+            "qpdf" => Ok(Self::Qpdf),
+            "tesseract" => Ok(Self::Tesseract),
+            "sign" => Ok(Self::Sign),
+            "verapdf" => Ok(Self::Verapdf),
+            "ai" => Ok(Self::Ai),
+            "inpaint" => Ok(Self::Inpaint),
+
+            other => Err(format!("unknown worker pack '{other}'")),
         }
     }
 }
@@ -152,8 +206,7 @@ mod tests {
 
     #[test]
     fn unknown_engines_fail_closed_instead_of_joining_the_base_install() {
-        // The pdfium pack has no cloud mapping yet, so it must not run on a core worker.
-        for engine in ["pdfium", "qpdf", "tesseract", "no-such-engine", ""] {
+        for engine in ["no-such-engine", ""] {
             assert_eq!(
                 Pack::for_engine(engine),
                 Err(UnknownEngine {
@@ -162,16 +215,24 @@ mod tests {
                 "{engine:?}"
             );
         }
-        let error = Pack::for_route(&[step("pandoc"), step("pdfium")]).unwrap_err();
-        assert_eq!(error.engine, "pdfium");
-        assert!(error.to_string().contains("'pdfium'"), "{error}");
+        let error = Pack::for_route(&[step("pandoc"), step("no-such-engine")]).unwrap_err();
+        assert_eq!(error.engine, "no-such-engine");
+        assert!(error.to_string().contains("'no-such-engine'"), "{error}");
     }
 
     #[test]
     fn queue_names_match_the_migration() {
         let queues: Vec<_> = Pack::ALL.iter().map(|p| p.queue()).collect();
-        assert_eq!(queues, ["jobs_core", "jobs_office", "jobs_docling"]);
-        let migration = include_str!("../migrations/20261022000001_cloud_schema.sql");
+        let migration = concat!(
+            include_str!("../migrations/20261022000001_cloud_schema.sql"),
+            include_str!("../migrations/20261110000001_cloud_tool_jobs.sql")
+        );
+        for pack in Pack::ALL {
+            assert_eq!(pack.as_str().parse::<Pack>(), Ok(pack));
+            if pack != Pack::Core && pack != Pack::Office && pack != Pack::Docling {
+                assert_eq!(Pack::for_engine(pack.as_str()), Ok(pack));
+            }
+        }
         for queue in queues {
             assert!(migration.contains(&format!("pgmq.create('{queue}')")));
         }

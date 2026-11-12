@@ -17,6 +17,8 @@ pub mod sandbox;
 pub mod storage;
 pub mod sweeper;
 pub mod telemetry;
+pub mod tool_jobs;
+pub mod tool_runner;
 pub mod worker;
 
 /// Selects ring as the process-wide TLS crypto provider. Safe to call more

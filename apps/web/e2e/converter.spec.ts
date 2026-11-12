@@ -22,7 +22,7 @@ const HTML = `<!doctype html>
 const ENGINE_BOOT = { timeout: 60_000 };
 
 async function openConverter(page: Page, query = "") {
-  await page.goto(`/app${query}`);
+  await page.goto(`/en/app${query}`);
   await expect(page.getByRole("heading", { name: "Convert a document" })).toBeVisible();
   await expect(page.getByTestId("device-indicator")).toContainText(
     /browser storage|In memory/,

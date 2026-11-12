@@ -1,0 +1,1244 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Dễ chỉnh sửa",
+        "description": "Tiêu đề, danh sách và bảng thực sự mà bạn có thể tiếp tục chỉnh sửa."
+      },
+      "faithful": {
+        "label": "Trung thực",
+        "description": "Giữ bố cục sát với bản gốc nhất có thể."
+      },
+      "fast": {
+        "label": "Nhanh",
+        "description": "Ưu tiên lộ trình nhanh nhất."
+      },
+      "private": {
+        "label": "Riêng tư",
+        "description": "Chỉ dùng các bộ máy không bao giờ rời khỏi thiết bị của bạn."
+      }
+    },
+    "engine": {
+      "ariad_core": "Lõi AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Trình đọc văn bản PDF"
+    },
+    "runtime": {
+      "wasm": "Trình duyệt",
+      "local": "CLI và ứng dụng máy tính",
+      "cloud": "Đám mây"
+    },
+    "score": {
+      "not_measured": "chưa đo"
+    },
+    "duration": {
+      "under_1_ms": "dưới 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "tài liệu Markdown",
+        "description": "CommonMark kèm GitHub Flavored Markdown: tiêu đề, danh sách, bảng, danh sách công việc, chú thích cuối trang và công thức toán. Đây là định dạng mà hầu hết công cụ AI đọc tốt nhất."
+      },
+      "html": {
+        "noun": "trang HTML",
+        "description": "Một trang HTML5 độc lập. Mã đánh dấu thô trong đầu vào được làm sạch; tập lệnh và thuộc tính không an toàn không bao giờ xuất hiện ở đầu ra."
+      },
+      "ir_json": {
+        "noun": "tài liệu AriadShift IR",
+        "description": "Mô hình tài liệu có cấu trúc mà mọi lộ trình của AriadShift đều đi qua: tiêu đề, khối nội dung, bảng, tài nguyên và siêu dữ liệu dưới dạng JSON có phiên bản."
+      },
+      "docx": {
+        "noun": "tài liệu Word",
+        "description": "Tài liệu Office Open XML từ Microsoft Word, LibreOffice và Google Docs, được đọc và ghi thông qua Pandoc."
+      },
+      "epub": {
+        "noun": "sách điện tử EPUB",
+        "description": "Sách điện tử EPUB 3, được đọc và ghi thông qua Pandoc với siêu dữ liệu có thể tái tạo."
+      },
+      "pdf": {
+        "noun": "tài liệu PDF",
+        "description": "Văn bản trong PDF kỹ thuật số được đọc ngay trên thiết bị này. Đầu ra PDF dùng Typst và phông chữ nhúng. Các trang quét cần OCR trong ứng dụng máy tính."
+      },
+      "odt": {
+        "noun": "tài liệu văn bản OpenDocument",
+        "description": "Tệp văn bản OpenDocument dùng LibreOffice trong ứng dụng máy tính."
+      },
+      "rtf": {
+        "noun": "tài liệu Rich Text",
+        "description": "Tài liệu Rich Text dùng LibreOffice trong ứng dụng máy tính."
+      },
+      "pptx": {
+        "noun": "bản trình bày PowerPoint",
+        "description": "Bản trình bày PowerPoint dùng Docling hoặc LibreOffice trong ứng dụng máy tính."
+      },
+      "xlsx": {
+        "noun": "sổ tính Excel",
+        "description": "Sổ tính Excel dùng Docling hoặc LibreOffice trong ứng dụng máy tính."
+      },
+      "doc": {
+        "noun": "tài liệu Word cũ",
+        "description": "Tài liệu Word cũ dùng LibreOffice trong ứng dụng máy tính."
+      },
+      "xls": {
+        "noun": "sổ tính Excel cũ",
+        "description": "Sổ tính Excel cũ dùng LibreOffice trong ứng dụng máy tính."
+      },
+      "ppt": {
+        "noun": "bản trình bày PowerPoint cũ",
+        "description": "Bản trình bày PowerPoint cũ dùng LibreOffice trong ứng dụng máy tính."
+      },
+      "ods": {
+        "noun": "bảng tính OpenDocument",
+        "description": "Bảng tính OpenDocument dùng LibreOffice trong ứng dụng máy tính."
+      },
+      "odp": {
+        "noun": "bản trình bày OpenDocument",
+        "description": "Bản trình bày OpenDocument dùng LibreOffice trong ứng dụng máy tính."
+      },
+      "png": {
+        "noun": "ảnh PNG",
+        "description": "Trích xuất văn bản từ ảnh cần gói bộ máy Docling trong ứng dụng máy tính."
+      },
+      "jpeg": {
+        "noun": "ảnh JPEG",
+        "description": "Trích xuất văn bản từ ảnh cần gói bộ máy Docling trong ứng dụng máy tính."
+      },
+      "webp": {
+        "noun": "ảnh WebP",
+        "description": "Trích xuất văn bản từ ảnh cần gói bộ máy Docling trong ứng dụng máy tính."
+      },
+      "tiff": {
+        "noun": "ảnh TIFF",
+        "description": "Trích xuất văn bản từ ảnh cần gói bộ máy Docling trong ứng dụng máy tính."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: chuyển đổi tài liệu riêng tư ngay trong trình duyệt",
+      "site_description": "Chuyển đổi Markdown, HTML và JSON có cấu trúc ngay trên thiết bị của bạn. Riêng tư theo mặc định, có chất lượng được đo trên từng lộ trình và sẵn sàng cho các tác tử AI.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Chuyển đến nội dung",
+      "home_link": "Trang chủ {site}",
+      "nav_label": "Chính",
+      "nav": {
+        "converter": "Trình chuyển đổi",
+        "formats": "Định dạng",
+        "quality": "Chất lượng",
+        "download": "Tải xuống",
+        "privacy": "Quyền riêng tư"
+      },
+      "footer": {
+        "license": "AriadShift là phần mềm mã nguồn mở theo giấy phép Apache-2.0.",
+        "privacy": "Quyền riêng tư",
+        "licenses": "Giấy phép",
+        "quality": "Chất lượng",
+        "source": "Mã nguồn"
+      },
+      "language": {
+        "label": "Ngôn ngữ",
+        "button": "Ngôn ngữ: {name}",
+        "list_label": "Chọn ngôn ngữ",
+        "community_badge": "Bản dịch cộng đồng",
+        "community_note": "Bản dịch cộng đồng là bản nháp do máy dịch mà mọi người vẫn có thể chỉnh sửa."
+      }
+    },
+    "not_found": {
+      "title": "Không tìm thấy trang",
+      "body": "Trang này không tồn tại.",
+      "home_link": "Về trang chủ"
+    },
+    "home": {
+      "meta_title": "Chuyển đổi tài liệu ngay trên thiết bị của bạn",
+      "title": "Chuyển đổi tài liệu ngay trên thiết bị của bạn",
+      "lede": "AriadShift chuyển đổi Markdown, HTML, Word, EPUB và JSON có cấu trúc ngay trong trình duyệt của bạn. Đọc văn bản trong PDF kỹ thuật số và tạo PDF ngay trên thiết bị. Một bộ lập kế hoạch có đo lường, không tải lên.",
+      "open_converter": "Mở trình chuyển đổi",
+      "install_cli": "Cài đặt CLI",
+      "why_heading": "Vì sao chọn AriadShift",
+      "why": {
+        "private": {
+          "title": "Riêng tư theo mặc định",
+          "body": "Trình chuyển đổi chạy ngay trong trình duyệt của bạn bằng WebAssembly. Tài liệu của bạn được lưu trong hệ thống tệp riêng của trình duyệt và không bao giờ được tải lên."
+        },
+        "quality": {
+          "title": "Chất lượng được đo lường",
+          "body": "Mỗi lộ trình đều có điểm độ trung thực và khả năng chỉnh sửa từ một bộ đánh giá công khai. Bộ lập kế hoạch chọn lộ trình tốt nhất và cho bạn biết lý do."
+        },
+        "agents": {
+          "title": "Sẵn sàng cho tác tử AI",
+          "body": "Biến tài liệu thành Markdown gọn gàng hoặc JSON có cấu trúc để làm ngữ cảnh cho LLM. CLI đi kèm một máy chủ MCP, nên các tác tử có thể tự chuyển đổi tệp."
+        }
+      },
+      "how_heading": "Cách hoạt động",
+      "how": {
+        "step_label": "Bước {number}",
+        "step_1": "Bạn chọn một tệp. Trình duyệt sao chép tệp vào hệ thống tệp riêng của nó.",
+        "step_2": "Một worker chạy nền tải bộ máy AriadShift đã được biên dịch sang WebAssembly.",
+        "step_3": "Bộ lập kế hoạch chọn lộ trình có điểm đo tốt nhất cho mục tiêu của bạn.",
+        "step_4": "Bạn tải xuống kết quả. Bắt đầu lại sẽ xóa mọi tệp đã lưu."
+      },
+      "pairs_heading": "Chuyển đổi trong trình duyệt của bạn",
+      "pair_link": "{from} sang {to}",
+      "see_more": "Xem mọi <formats>định dạng được hỗ trợ</formats> và <quality>chất lượng được đo</quality> của từng lộ trình."
+    },
+    "formats": {
+      "meta_title": "Định dạng được hỗ trợ",
+      "meta_description": "Những định dạng tài liệu mà AriadShift đọc và ghi, và những chuyển đổi nào chạy trong trình duyệt của bạn.",
+      "title": "Định dạng được hỗ trợ",
+      "lede": "Mọi chuyển đổi đều đi qua mô hình tài liệu của AriadShift. Các định dạng được đánh dấu “trình duyệt” được chuyển đổi hoàn toàn trên thiết bị này; các định dạng còn lại hiện cần công cụ dòng lệnh.",
+      "badge_browser": "Trình duyệt và CLI",
+      "badge_cli": "CLI",
+      "extensions": "Phần mở rộng: {list}",
+      "engines": "Được đọc bởi {readers}; được ghi bởi {writers}.",
+      "no_engine": "chưa có bộ máy",
+      "convert_to": "Chuyển đổi sang: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Chất lượng được đo lường",
+      "meta_description": "Độ trung thực, khả năng chỉnh sửa và tốc độ của từng bước chuyển đổi AriadShift, được tạo từ một bộ đánh giá công khai.",
+      "title": "Chất lượng được đo lường",
+      "lede": "Những điểm số này không được viết tay. Bộ đánh giá chuyển đổi {count, plural, other {# tài liệu mẫu công khai}} qua từng bước và so sánh kết quả với đáp án đã biết. Bộ lập kế hoạch đọc cùng những con số này khi chọn lộ trình.",
+      "generated": "{pandoc, select, none {Được tạo vào {date}.} other {Được tạo vào {date} với Pandoc {pandoc}.}}",
+      "methodology": "<link>Đọc phương pháp luận</link>.",
+      "caption": "Điểm đánh giá theo từng bước chuyển đổi",
+      "column": {
+        "step": "Bước",
+        "engine": "Bộ máy",
+        "runs_in": "Chạy trong",
+        "fidelity": "Độ trung thực",
+        "editability": "Khả năng chỉnh sửa",
+        "median_time": "Thời gian trung vị",
+        "samples": "Số mẫu"
+      }
+    },
+    "route": {
+      "label": "Lộ trình chuyển đổi",
+      "then": "rồi",
+      "fidelity": "Độ trung thực",
+      "editability": "Khả năng chỉnh sửa",
+      "estimated_time": "Thời gian ước tính",
+      "unmeasured": "Một phần của lộ trình này chưa được đo trong bộ đánh giá, nên bộ lập kế hoạch chấm điểm một cách thận trọng."
+    },
+    "download": {
+      "meta_title": "Tải xuống",
+      "meta_description": "Cài đặt công cụ dòng lệnh và máy chủ MCP của AriadShift trên macOS, Linux và Windows.",
+      "title": "Tải xuống AriadShift",
+      "lede": "Lệnh <code>ashift</code> chuyển đổi Markdown, HTML, DOCX và EPUB trên máy tính của bạn và chạy một máy chủ MCP cho các tác tử AI. Các lộ trình DOCX và EPUB dùng <pandoc>Pandoc 3.12 trở lên</pandoc> như một chương trình riêng biệt.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS và Linux)",
+          "note": "Sẽ có sau khi công thức được phát hành. Cũng cài đặt Pandoc, thứ mà các lộ trình DOCX và EPUB cần."
+        },
+        "shell": {
+          "title": "Trình cài đặt Shell (macOS và Linux)"
+        },
+        "powershell": {
+          "title": "Trình cài đặt PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Sẽ có sau khi bản gửi gói được chấp nhận."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Sẽ có sau khi các crate được phát hành lên crates.io."
+        }
+      },
+      "then_heading": "Sau đó",
+      "releases": "Các bản lưu trữ cho mọi nền tảng có trên <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Ứng dụng máy tính",
+        "body": "Ứng dụng máy tính cho macOS, Windows và Linux, có chuyển đổi hàng loạt và theo dõi thư mục, đang được phát triển. Ứng dụng sẽ được liệt kê tại đây khi bản phát hành đầu tiên ra mắt."
+      }
+    },
+    "pair": {
+      "meta_title": "Chuyển đổi {from} sang {to}",
+      "meta_description_browser": "Chuyển đổi {noun} sang {to} trong trình duyệt của bạn, riêng tư, với AriadShift. Độ trung thực được đo lường, không tải lên.",
+      "meta_description_cli": "Chuyển đổi {noun} sang {to} trên máy tính của bạn với AriadShift. Độ trung thực được đo lường, không tải lên.",
+      "badge_browser": "Chạy trong trình duyệt của bạn",
+      "badge_cli": "Chạy bằng CLI của AriadShift",
+      "title": "Chuyển đổi {from} sang {to}",
+      "lede_browser": "Biến {noun} thành {to} mà không cần tải lên. AriadShift đọc tệp trong trình duyệt của bạn, ánh xạ sang mô hình tài liệu của mình và ghi {to} ngay trên thiết bị của bạn.",
+      "lede_cli": "Biến {noun} thành {to} trên máy tính của bạn bằng công cụ dòng lệnh AriadShift miễn phí. Phiên bản trình duyệt hiện chưa chạy lộ trình này.",
+      "convert_now": "Chuyển đổi {from} sang {to} ngay",
+      "install_cli": "Cài đặt CLI",
+      "route_heading": "Lộ trình mà AriadShift sử dụng",
+      "from_heading": "Từ {format}",
+      "to_heading": "Sang {format}",
+      "cli_heading": "Từ dòng lệnh",
+      "related_heading": "Các chuyển đổi liên quan",
+      "related_link": "{from} sang {to}"
+    },
+    "converter_page": {
+      "meta_title": "Trình chuyển đổi",
+      "meta_description": "Chuyển đổi Markdown, HTML, DOCX, EPUB, PDF kỹ thuật số và AriadShift IR JSON trong trình duyệt của bạn. Tệp luôn ở trên thiết bị của bạn.",
+      "title": "Chuyển đổi một tài liệu",
+      "lede": "Chọn một tệp, chọn định dạng đích và tải xuống kết quả. Mọi thứ diễn ra ngay trong thẻ này{cloud, select, yes {, trừ khi bạn chọn chuyển đổi tệp này trên đám mây.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Giấy phép",
+      "meta_description": "Giấy phép và mã nguồn của AriadShift cùng các bộ máy chạy trong trình duyệt của nó."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Chế độ đám mây đã dừng đột ngột",
+        "stopped_body": "Chế độ đám mây gặp lỗi sau khi việc tải lên bắt đầu. Mọi bản sao trên máy chủ sẽ tự động bị xóa khi hết thời hạn lưu giữ, hoặc bạn có thể chuyển đổi trên thiết bị này.",
+        "load_title": "Không thể tải chế độ đám mây",
+        "load_body": "Không thể tải trình chuyển đổi đám mây (ví dụ do bạn đang ngoại tuyến). Bạn vẫn có thể chuyển đổi trên thiết bị này.",
+        "use_device": "Chuyển đổi trên thiết bị này"
+      },
+      "status": {
+        "deleted_from_server": "{name} đã được xóa khỏi máy chủ.",
+        "reading": "Đang đọc {name} trên thiết bị này.",
+        "detected": "{name} là {format}.",
+        "read_failed": "Không thể đọc tệp.",
+        "converting": "Đang chuyển đổi sang {format} trên thiết bị này.",
+        "ready": "{name} đã sẵn sàng để tải xuống.",
+        "convert_failed": "Chuyển đổi không thành công.",
+        "saved": "Đã lưu {name}.",
+        "reset": "{outcome, select, deleted {Các tệp đã được xóa khỏi thiết bị này và khỏi máy chủ.} kept {Các tệp đã được xóa khỏi thiết bị này. {name} vẫn còn trên máy chủ.} other {Các tệp đã được xóa khỏi thiết bị này.}}",
+        "cloud_selected": "Đã chọn chuyển đổi trên đám mây cho {name}. Chưa có gì được tải lên.",
+        "cloud_selected_unnamed": "Đã chọn chuyển đổi trên đám mây cho tệp này. Chưa có gì được tải lên."
+      },
+      "device": {
+        "cloud": "<strong>Đã chọn chuyển đổi trên đám mây.</strong> Tệp này chỉ rời khỏi trình duyệt của bạn khi bạn chọn Tải lên và chuyển đổi.",
+        "local": "<strong>Được xử lý trên thiết bị này.</strong> Tệp không bao giờ rời khỏi trình duyệt của bạn và không được tải lên."
+      },
+      "storage_badge": "{storage, select, opfs {Bộ nhớ riêng của trình duyệt} other {Trong bộ nhớ}}",
+      "memory": {
+        "title": "Trình duyệt này không hỗ trợ lưu tệp trên thiết bị",
+        "body": "Thay vào đó, tệp được giữ trong bộ nhớ, nên hỗ trợ đầu vào tối đa {limit}. Dù theo cách nào, cũng không có gì được tải lên."
+      },
+      "error": {
+        "title": "{code, select, no_route {Không khả dụng ở đây} engine_integrity {Kiểm tra tính toàn vẹn của bộ máy không thành công} other {Đã xảy ra sự cố}}"
+      },
+      "handoff": {
+        "title": "Tiếp tục trong ứng dụng máy tính",
+        "reason": "{reason, select, ocr {Một số trang cần OCR để trích xuất toàn bộ văn bản.} other {Tài liệu này cần một bộ máy hoặc nhiều bộ nhớ hơn mức trình duyệt cung cấp.}}",
+        "picker": "Ứng dụng máy tính sẽ mở hộp thoại chọn tệp. Hãy chọn lại tài liệu này; trình duyệt của bạn không gửi tệp đi.",
+        "open": "Mở trong ứng dụng máy tính",
+        "cloud_alternative": "Hoặc chuyển đổi trên {host}, sau khi bạn xác nhận việc tải lên.",
+        "cloud_button": "Xử lý trên đám mây"
+      },
+      "drop": {
+        "button": "Chọn tệp",
+        "button_busy": "Đang đọc…",
+        "label": "Tài liệu cần chuyển đổi",
+        "title": "Thả tài liệu vào đây",
+        "hint": "Markdown, HTML, DOCX, EPUB, PDF kỹ thuật số hoặc IR JSON, tối đa {limit}. Tệp ở lại trên thiết bị này."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Tiêu đề",
+        "paragraphs": "Đoạn văn",
+        "tables": "Bảng",
+        "images": "Hình ảnh",
+        "links": "Liên kết",
+        "footnotes": "Chú thích cuối trang",
+        "words": "Từ"
+      },
+      "unreachable": {
+        "cli": "Hiện chưa thể chuyển đổi {format} trong trình duyệt. <link>CLI của AriadShift</link> chuyển đổi định dạng này trên máy tính của bạn.",
+        "none": "AriadShift hiện chưa thể chuyển đổi {format}."
+      },
+      "cloud": {
+        "loading": "Đang tải chế độ đám mây…"
+      },
+      "convert": {
+        "title": "Chuyển đổi",
+        "hint": "Bộ lập kế hoạch chọn lộ trình có điểm đo tốt nhất.",
+        "target_label": "Chuyển đổi sang",
+        "profile_label": "Hồ sơ",
+        "route_heading": "Vì sao chọn lộ trình này",
+        "elsewhere": "{formats} hiện {count, plural, other {cần}} <link>CLI của AriadShift</link>.",
+        "button": "Chuyển đổi",
+        "button_busy": "Đang chuyển đổi…",
+        "cancel": "Hủy"
+      },
+      "result": {
+        "title": "Sẵn sàng",
+        "summary": "<output>{name}</output> · {size} · đã chuyển đổi trong {duration} trên thiết bị này",
+        "download": "Tải xuống {name}"
+      },
+      "start_over": "Bắt đầu lại và xóa tệp"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Tài khoản",
+        "description": "Tài khoản đám mây AriadShift của bạn: hồ sơ, mật khẩu, khóa truy cập và đăng nhập hai yếu tố."
+      },
+      "sign_in": {
+        "title": "Đăng nhập",
+        "description": "Đăng nhập vào tài khoản đám mây AriadShift của bạn hoặc tạo tài khoản mới."
+      },
+      "jobs": {
+        "title": "Tác vụ",
+        "description": "Trạng thái, tải xuống và xóa các chuyển đổi đám mây AriadShift của bạn."
+      },
+      "api_keys": {
+        "title": "Khóa API",
+        "description": "Tạo và thu hồi khóa API cho API đám mây của AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Tài khoản"
+      },
+      "shell": {
+        "not_configured_title": "Đám mây chưa được cấu hình",
+        "not_configured_body": "Bản AriadShift này chỉ chạy trên thiết bị của bạn. Tài khoản, khóa API và tác vụ đám mây cần một máy chủ; người vận hành máy chủ đặt <code>{api_variable}</code> và <code>{auth_variable}</code> khi xây dựng trang web.",
+        "not_configured_convert": "Bạn vẫn có thể <link>chuyển đổi tệp trong trình duyệt</link>.",
+        "nav_label": "Tài khoản",
+        "nav": {
+          "account": "Tài khoản",
+          "api_keys": "Khóa API",
+          "jobs": "Tác vụ"
+        },
+        "server": "Máy chủ: {host}",
+        "signed_in_user": "Đã đăng nhập với tư cách <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Đang kiểm tra phiên của bạn…",
+        "error_title": "Không thể kiểm tra phiên của bạn",
+        "signed_out": "Bạn chưa đăng nhập."
+      },
+      "actions": {
+        "sign_in": "Đăng nhập",
+        "try_again": "Thử lại",
+        "cancel": "Hủy",
+        "done": "Xong",
+        "continue": "Tiếp tục",
+        "revoke": "Thu hồi",
+        "copied": "Đã sao chép"
+      },
+      "fields": {
+        "name": "Tên",
+        "email": "Email",
+        "password": "Mật khẩu",
+        "authentication_code": "Mã xác thực",
+        "password_hint": "Tối thiểu {min} ký tự."
+      },
+      "dates": {
+        "unknown": "một ngày không xác định"
+      },
+      "errors": {
+        "auth_refused": "Dịch vụ xác thực đã từ chối yêu cầu.",
+        "service_unreachable": "Không thể kết nối tới dịch vụ đăng nhập. Hãy kiểm tra kết nối của bạn và thử lại.",
+        "session_ended": "Phiên của bạn đã kết thúc. Hãy đăng nhập lại.",
+        "rate_limited": "Quá nhiều yêu cầu. Hãy thử lại sau ít phút.",
+        "rate_limited_after": "Quá nhiều yêu cầu. Hãy thử lại sau {seconds} giây.",
+        "sign_in_unverifiable": "Máy chủ hiện không thể xác minh đăng nhập của bạn. Hãy thử lại sau ít phút.",
+        "token_invalid": "Dịch vụ đăng nhập đã trả về một mã thông báo API không hợp lệ.",
+        "reauth_required": "Hãy đăng nhập lại trước khi xóa tài khoản của bạn.",
+        "delete_not_allowed": "Máy chủ này không cho phép xóa tài khoản từ ứng dụng web. Hãy nhờ người vận hành xóa giúp.",
+        "job_gone": "Tác vụ này không còn trên máy chủ.",
+        "file_deleted": "Tệp này đã được xóa.",
+        "job_conflict": "Tác vụ chưa sẵn sàng, hoặc tệp đã tải lên của nó không còn trên máy chủ.",
+        "quota_exceeded": "Bạn đã dùng hết số lượt chuyển đổi đám mây của gói hiện tại. Hãy chuyển đổi trên thiết bị này, hoặc thử lại sau.",
+        "request_failed": "Máy chủ không thể hoàn tất yêu cầu. Hãy thử lại sau ít phút.",
+        "network_unreachable": "Không thể kết nối tới máy chủ. Hãy kiểm tra kết nối của bạn và thử lại.",
+        "transfer_incomplete": "Quá trình truyền chưa hoàn tất. Hãy thử lại."
+      },
+      "profile": {
+        "title": "Hồ sơ",
+        "save": "Lưu tên",
+        "saved": "Đã lưu tên.",
+        "save_failed": "Không thể lưu tên."
+      },
+      "password": {
+        "title": "Mật khẩu",
+        "current": "Mật khẩu hiện tại",
+        "new": "Mật khẩu mới",
+        "confirm": "Xác nhận mật khẩu mới",
+        "revoke_others": "Đăng xuất khỏi các phiên khác",
+        "submit": "Đổi mật khẩu",
+        "mismatch": "Mật khẩu mới không khớp.",
+        "changed": "Đã đổi mật khẩu.",
+        "changed_revoked": "Đã đổi mật khẩu. Các phiên khác đã bị đăng xuất.",
+        "failed": "Không thể đổi mật khẩu."
+      },
+      "passkeys": {
+        "title": "Khóa truy cập",
+        "description": "Đăng nhập bằng khóa màn hình của thiết bị hoặc khóa bảo mật thay cho mật khẩu.",
+        "load_failed": "Không thể tải các khóa truy cập của bạn.",
+        "loading": "Đang tải khóa truy cập…",
+        "empty": "Chưa có khóa truy cập nào.",
+        "unnamed": "Khóa truy cập chưa đặt tên",
+        "default_name": "Khóa truy cập",
+        "added_on": "Đã thêm {date}",
+        "remove_label": "Gỡ khóa truy cập {name}",
+        "remove_button": "Gỡ<hidden> khóa truy cập {name}</hidden>",
+        "add_button": "Thêm khóa truy cập",
+        "add_title": "Thêm khóa truy cập",
+        "add_description": "Đặt tên theo thiết bị hoặc khóa, rồi làm theo hướng dẫn của trình duyệt.",
+        "name_label": "Tên khóa truy cập",
+        "name_placeholder": "Ví dụ: Laptop công việc",
+        "added": "Đã thêm khóa truy cập.",
+        "add_failed": "Khóa truy cập chưa được thêm.",
+        "remove_title": "Gỡ {name}?",
+        "remove_title_unnamed": "Gỡ khóa truy cập này?",
+        "remove_description": "Bạn sẽ không thể dùng nó để đăng nhập nữa. Các cách đăng nhập khác của bạn vẫn hoạt động.",
+        "remove_confirm": "Gỡ khóa truy cập",
+        "removed": "Đã gỡ {name}.",
+        "remove_failed": "Không thể gỡ khóa truy cập."
+      },
+      "two_factor": {
+        "title": "Xác thực hai yếu tố",
+        "description": "Yêu cầu mã từ ứng dụng xác thực sau khi nhập mật khẩu.",
+        "status_on": "Trạng thái: <badge>Bật</badge>",
+        "status_off": "Trạng thái: <badge>Tắt</badge>",
+        "enable": "Bật xác thực hai yếu tố",
+        "disable": "Tắt xác thực hai yếu tố",
+        "regenerate": "Tạo mã dự phòng mới",
+        "confirm_password": "Hãy xác nhận mật khẩu của bạn để tiếp tục.",
+        "enable_failed": "Không thể bắt đầu thiết lập xác thực hai yếu tố. Hãy kiểm tra mật khẩu của bạn.",
+        "disable_failed": "Không thể tắt xác thực hai yếu tố. Hãy kiểm tra mật khẩu của bạn.",
+        "regenerate_failed": "Không thể tạo mã dự phòng mới. Hãy kiểm tra mật khẩu của bạn.",
+        "verify_failed": "Mã đó không được chấp nhận. Hãy kiểm tra giờ trên thiết bị của bạn và thử lại.",
+        "disabled": "Xác thực hai yếu tố đang tắt.",
+        "enabled": "Xác thực hai yếu tố đang bật.",
+        "regenerated": "Đã tạo mã dự phòng mới. Các mã cũ không còn dùng được.",
+        "setup_title": "Thiết lập ứng dụng xác thực của bạn",
+        "setup_description": "Thêm AriadShift vào ứng dụng xác thực của bạn, rồi nhập mã mà ứng dụng hiển thị.",
+        "setup_key_intro": "Nhập khóa thiết lập này vào ứng dụng:",
+        "setup_key_unavailable": "Không khả dụng",
+        "open_in_app": "Mở trong ứng dụng xác thực trên thiết bị này",
+        "turn_on": "Bật",
+        "codes_title": "Mã dự phòng mới",
+        "backup_intro": "Hãy lưu các mã dự phòng này ở nơi an toàn. Mỗi mã đăng nhập cho bạn một lần nếu bạn mất ứng dụng xác thực. Các mã sẽ không được hiển thị lại.",
+        "copy_codes": "Sao chép mã dự phòng",
+        "copy_failed": "Sao chép không thành công; hãy chọn các mã để sao chép thủ công"
+      },
+      "account_actions": {
+        "title": "Phiên và tài khoản",
+        "sign_out": "Đăng xuất",
+        "delete": "Xóa tài khoản",
+        "signed_out": "Đã đăng xuất.",
+        "sign_out_failed": "Không thể đăng xuất. Hãy thử lại.",
+        "deleted": "Tài khoản của bạn đã bị xóa.",
+        "delete_failed_password": "Không thể xóa tài khoản. Hãy kiểm tra mật khẩu của bạn.",
+        "delete_failed_session": "Không thể xóa tài khoản. Hãy đăng nhập lại và thử lại.",
+        "delete_note": "Xóa tài khoản sẽ tự động thu hồi các <keys>khóa API</keys> của bạn. Trước khi xóa, hãy xóa các <jobs>tác vụ đám mây</jobs> mà bạn còn. Tệp của những tác vụ bạn để lại sẽ bị xóa khi hết thời hạn lưu giữ.",
+        "dialog_title": "Xóa tài khoản của bạn?",
+        "dialog_description_password": "Không thể hoàn tác thao tác này. Hãy xác nhận mật khẩu của bạn để xóa tài khoản.",
+        "dialog_description_session": "Không thể hoàn tác thao tác này. Hãy xác nhận bên dưới để xóa tài khoản bằng phiên đăng nhập hiện tại của bạn.",
+        "sign_in_again": "Đăng nhập lại"
+      },
+      "connected_apps": {
+        "title": "Ứng dụng đã kết nối",
+        "description": "Các ứng dụng và máy khách MCP mà bạn đã cho phép dùng tài khoản của mình, và các máy khách OAuth mà bạn đã đăng ký.",
+        "load_failed": "Không thể tải các ứng dụng đã kết nối của bạn.",
+        "loading": "Đang tải ứng dụng đã kết nối…",
+        "empty": "Chưa có ứng dụng đã kết nối hoặc máy khách OAuth đã đăng ký nào.",
+        "scopes_none": "không có",
+        "consent_details": "Ứng dụng được cho phép · Phạm vi: {scopes} · Được cho phép {date}",
+        "client_details": "Máy khách OAuth đã đăng ký ({client_id})",
+        "client_details_dated": "Máy khách OAuth đã đăng ký ({client_id}) · Đã đăng ký {date}",
+        "revoke_label": "Thu hồi {name}",
+        "revoked": "Đã thu hồi {name}.",
+        "revoke_failed": "Không thể thu hồi quyền truy cập.",
+        "revoke_title": "Thu hồi {name}?",
+        "revoke_consent_description": "Thu hồi sẽ chặn ngay việc cấp mã thông báo mới và làm mới mã thông báo. Các mã thông báo truy cập đã ký đã được cấp (có hiệu lực 15 phút) vẫn dùng được cho đến khi hết hạn.",
+        "revoke_client_description": "Xóa máy khách OAuth đã đăng ký này sẽ thu hồi thông tin xác thực và các sự cho phép của nó, đồng thời chặn ngay việc cấp mã thông báo mới và làm mới mã thông báo. Các mã thông báo truy cập đã ký đã được cấp (có hiệu lực 15 phút) vẫn dùng được cho đến khi hết hạn."
+      },
+      "api_keys": {
+        "page_title": "Khóa API",
+        "section_title": "Các khóa của bạn",
+        "section_description": "Tập lệnh và các tích hợp gửi khóa trong tiêu đề <code>x-api-key</code> tới {host}. Khóa hoạt động với quyền của tài khoản và gói của bạn.",
+        "load_failed": "Không thể tải các khóa API của bạn.",
+        "loading": "Đang tải khóa API…",
+        "empty": "Chưa có khóa API nào.",
+        "unnamed": "Khóa chưa đặt tên",
+        "disabled": "Đã vô hiệu hóa",
+        "key_details": "Đã tạo {date} · {expiry}",
+        "never_expires": "Không bao giờ hết hạn",
+        "expired_on": "Đã hết hạn {date}",
+        "expires_on": "Hết hạn {date}",
+        "revoke_label": "Thu hồi khóa API {name}",
+        "revoke_button": "Thu hồi<hidden> khóa API {name}</hidden>",
+        "create_button": "Tạo khóa API",
+        "create_title": "Tạo khóa API",
+        "create_description": "Đặt tên khóa theo tập lệnh hoặc dịch vụ sẽ dùng nó.",
+        "name_placeholder": "Ví dụ: CI",
+        "expires_after": "Hết hạn sau",
+        "lifetime_days": "{days, plural, other {# ngày}}",
+        "lifetime_year": "1 năm",
+        "lifetime_never": "Không hết hạn",
+        "create_submit": "Tạo khóa",
+        "create_failed": "Không thể tạo khóa.",
+        "created": "Đã tạo khóa API {name}.",
+        "secret_title": "Khóa API mới của bạn",
+        "secret_label": "Khóa API",
+        "secret_notice": "Hãy sao chép khóa ngay bây giờ. Khóa chỉ được lưu dưới dạng băm và sẽ không bao giờ được hiển thị lại.",
+        "copy_key": "Sao chép khóa",
+        "copy_failed": "Sao chép không thành công. Hãy chọn khóa và sao chép thủ công.",
+        "revoke_title": "Thu hồi {name}?",
+        "revoke_description": "Các yêu cầu dùng khóa này sẽ bị từ chối ngay. Không thể hoàn tác thao tác này.",
+        "revoke_confirm": "Thu hồi khóa",
+        "revoked": "Đã thu hồi khóa API {name}. Từ nay các yêu cầu dùng khóa này sẽ bị từ chối.",
+        "revoke_failed": "Không thể thu hồi khóa."
+      },
+      "jobs": {
+        "title": "Tác vụ",
+        "intro_server": "Các chuyển đổi đám mây của tài khoản bạn trên {host}, từ mọi thiết bị. Tệp ở lại trên {host} cho đến khi bị xóa tự động, hoặc cho đến khi bạn xóa chúng tại đây.",
+        "intro_account_browser": "Các chuyển đổi đám mây được bắt đầu trong trình duyệt này bằng tài khoản của bạn. Danh sách này chỉ được lưu trên thiết bị này. Tệp ở lại trên {host} cho đến khi bị xóa tự động, hoặc cho đến khi bạn xóa chúng tại đây.",
+        "intro_anonymous_browser": "Các chuyển đổi đám mây được bắt đầu trong trình duyệt này mà không dùng tài khoản. Danh sách này chỉ được lưu trên thiết bị này. Tệp ở lại trên {host} cho đến khi bị xóa tự động, hoặc cho đến khi bạn xóa chúng tại đây.",
+        "signed_out_notice": "Đang hiển thị các tác vụ không dùng tài khoản. <link>Đăng nhập</link> để xem các tác vụ của tài khoản bạn.",
+        "loading": "Đang tải các tác vụ của bạn…",
+        "list_unsupported": "{host} hiện chưa thể liệt kê các tác vụ của tài khoản bạn, nên trang này hiển thị các tác vụ được bắt đầu trong trình duyệt này.",
+        "list_error_title": "Không thể tải các tác vụ của bạn từ {host}",
+        "list_error_body": "{reason} Trong lúc đó, trang này hiển thị các tác vụ được bắt đầu trong trình duyệt này.",
+        "count": "{count, plural, other {# tác vụ}}",
+        "empty": "Chưa có tác vụ đám mây nào. Hãy bắt đầu một tác vụ từ <link>trình chuyển đổi</link>.",
+        "show_more": "Hiển thị thêm tác vụ",
+        "loading_more": "Đang tải thêm tác vụ…",
+        "unnamed": "Tác vụ {id}",
+        "forgotten": "{filename} đã bị xóa khỏi danh sách này. Các tệp của nó trên máy chủ không thay đổi.",
+        "forgotten_unnamed": "Tác vụ đã bị xóa khỏi danh sách này. Các tệp của nó trên máy chủ không thay đổi.",
+        "status": {
+          "queued": "Đang chờ",
+          "converting": "Đang chuyển đổi",
+          "converting_stage": "Đang chuyển đổi: {stage}",
+          "retrying": "Đang thử lại (lần {attempt})",
+          "reconnecting": "{step} · Đang kết nối lại…",
+          "ready": "Sẵn sàng",
+          "failed": "Không thành công",
+          "canceled": "Đã hủy",
+          "deleted": "Đã xóa",
+          "deleted_expired": "Đã xóa (hết hạn)"
+        },
+        "until": {
+          "less_than_minute": "trong chưa đầy một phút",
+          "minutes": "sau {minutes} phút",
+          "hours": "sau {hours} giờ",
+          "hours_minutes": "sau {hours} giờ {minutes} phút"
+        },
+        "expiry": {
+          "deleted_at": "Đã tự động xóa lúc {clock}.",
+          "deleted_from_server": "Đã xóa khỏi máy chủ. Các tệp đầu vào và đầu ra không còn nữa.",
+          "being_deleted": "Đang được xóa.",
+          "deletes_at": "Sẽ tự động xóa lúc {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Tài liệu này cần nhiều hơn mức gói của bạn cho phép. Hãy thử một tệp nhỏ hơn, hoặc chuyển đổi trên thiết bị này.",
+          "unsupported_route": "Máy chủ này không thể chuyển đổi giữa các định dạng này. Hãy chọn định dạng đích khác trong trình chuyển đổi.",
+          "input_io": "Không thể đọc tệp đã tải lên hoặc tệp không còn trên máy chủ. Hãy tải lên lại.",
+          "storage": "Máy chủ không thể lưu kết quả. Hãy thử lại sau giây lát.",
+          "tool_missing": "Máy chủ này thiếu bộ máy mà lộ trình cần. Hãy hỏi người vận hành, hoặc chọn định dạng đích khác.",
+          "other": "Chuyển đổi không thành công. Hãy thử lại, hoặc chuyển đổi tệp trên thiết bị này."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Đang tải trạng thái…",
+          "try_again": "Thử lại<hidden> để tải {filename}</hidden>",
+          "technical_details": "Chi tiết kỹ thuật",
+          "warnings": "{count, plural, other {# cảnh báo}}",
+          "download": "Tải xuống {filename}",
+          "retry_label": "Thử lại {filename}",
+          "retry_button": "Thử lại<hidden> {filename}</hidden>",
+          "delete_label": "Xóa ngay {filename} khỏi máy chủ",
+          "delete_button": "Xóa ngay<hidden> {filename} khỏi máy chủ</hidden>",
+          "remove_label": "Xóa khỏi danh sách này ({filename})",
+          "remove_button": "Xóa khỏi danh sách này<hidden> ({filename})</hidden>",
+          "deleted_note": "Đã xóa khỏi {host}. Các tệp đầu vào và đầu ra không còn nữa.",
+          "deleted_announce": "Đã xóa {filename} khỏi {host}. Các tệp đầu vào và đầu ra không còn nữa.",
+          "ready_announce": "{filename} đã được chuyển đổi và sẵn sàng để tải xuống.",
+          "failed_announce": "Chuyển đổi {filename} không thành công. {reason}",
+          "canceled_announce": "Việc chuyển đổi {filename} đã bị hủy.",
+          "downloading": "Đang tải xuống {filename}.",
+          "retrying": "Đang thử lại {filename}.",
+          "retry_conflict": "Tệp đã tải lên không còn trên máy chủ. Hãy tải lên lại từ trình chuyển đổi."
+        }
+      },
+      "sign_in": {
+        "title": "Đăng nhập",
+        "create_title": "Tạo tài khoản",
+        "two_factor_title": "Kiểm tra hai yếu tố",
+        "signed_in": "Đã đăng nhập.",
+        "go_to_account": "Đến tài khoản của bạn",
+        "passkey": "Đăng nhập bằng khóa truy cập",
+        "no_account": "Chưa có tài khoản? <switch>Đăng ký</switch>",
+        "have_account": "Đã có tài khoản? <switch>Đăng nhập</switch>",
+        "sign_in_failed": "Không thể đăng nhập. Hãy kiểm tra email và mật khẩu của bạn.",
+        "passkey_failed": "Không thể đăng nhập bằng khóa truy cập.",
+        "code_rejected": "Mã đó không được chấp nhận. Hãy thử lại.",
+        "create_failed": "Không thể tạo tài khoản.",
+        "passwords_mismatch": "Mật khẩu không khớp.",
+        "bot_check": "Hãy hoàn tất bước kiểm tra chống bot khi đăng ký và thử lại.",
+        "confirm_password": "Xác nhận mật khẩu",
+        "create_account": "Đăng ký",
+        "totp_help": "Nhập mã gồm 6 chữ số từ ứng dụng xác thực của bạn.",
+        "backup_help": "Nhập một trong các mã dự phòng mà bạn đã lưu khi bật xác thực hai yếu tố. Mỗi mã chỉ dùng được một lần.",
+        "backup_code": "Mã dự phòng",
+        "trust_device": "Tin cậy trình duyệt này trong 30 ngày",
+        "verify": "Xác minh",
+        "use_backup": "Dùng mã dự phòng thay thế",
+        "use_authenticator": "Dùng mã từ ứng dụng xác thực thay thế",
+        "signed_in_user": "Bạn đã đăng nhập với tư cách <user>{email}</user>."
+      }
+    },
+    "app": {
+      "sections_label": "Các phần của ứng dụng",
+      "tab": {
+        "convert": "Chuyển đổi",
+        "tools": "Công cụ",
+        "workspace": "Không gian làm việc PDF",
+        "recipes": "Công thức"
+      },
+      "tools_lede": "Mọi công cụ, được nhóm theo chức năng. Chọn một công cụ để mở trong không gian làm việc PDF.",
+      "workspace_loading": "Đang tải không gian làm việc PDF…",
+      "workspace_failed": "Không tải được không gian làm việc PDF.",
+      "retry": "Thử lại",
+      "tools_loading": "Đang tải các công cụ…",
+      "tools_failed": "Không tải được các công cụ.",
+      "recipes_lede": "Tạo chuỗi các bước công cụ, chia sẻ dưới dạng liên kết hoặc chạy trên máy của bạn.",
+      "recipes_loading": "Đang tải trình tạo công thức…",
+      "recipes_failed": "Không thể tải trình tạo công thức."
+    },
+    "tools": {
+      "hub": {
+        "label": "Công cụ",
+        "search": "Tìm công cụ…",
+        "open_palette": "Mở bảng lệnh",
+        "command": "Lệnh",
+        "zero_upload": "Trên thiết bị này · 0 byte được tải lên",
+        "categories": "Danh mục",
+        "all": "Tất cả",
+        "runtimes": "Nơi chạy",
+        "count": "{count, plural, other {# công cụ}}",
+        "no_match": "Không có công cụ nào khớp",
+        "try_recipe": "Hãy thử một câu thông thường trong bảng lệnh, chẳng hạn “xoay 90 độ rồi nén”.",
+        "reset": "Đặt lại tìm kiếm và bộ lọc",
+        "open_in_palette": "Thử trong bảng lệnh"
+      },
+      "category": {
+        "organize": "Sắp xếp & lắp ghép",
+        "convert": "Chuyển đổi",
+        "compress": "Nén & sửa chữa",
+        "edit": "Chỉnh sửa & đánh dấu",
+        "forms_annotations": "Biểu mẫu & chú thích",
+        "security": "Bảo mật & ký",
+        "ocr_scan": "OCR & quét",
+        "metadata_inspect": "Kiểm tra & so sánh",
+        "automation_ai": "Tự động hóa & AI"
+      },
+      "runtime": {
+        "browser": "Trình duyệt",
+        "desktop": "Máy tính",
+        "cloud": "Đám mây",
+        "list": "Chạy trên"
+      },
+      "tier": {
+        "free": "Miễn phí",
+        "pro": "Pro"
+      },
+      "favorites": "Yêu thích",
+      "recents": "Công cụ gần đây",
+      "favorite": {
+        "add": "Thêm vào yêu thích",
+        "remove": "Xóa khỏi yêu thích"
+      },
+      "card": {
+        "open": "Mở"
+      },
+      "palette": {
+        "title": "Bảng lệnh công cụ",
+        "description": "Tìm công cụ, hoặc mô tả việc cần làm bằng một câu, rồi nhấn Enter.",
+        "placeholder": "Tìm công cụ hoặc mô tả một công thức…",
+        "search": "Tìm công cụ",
+        "empty": "Không có công cụ nào khớp. Hãy thử một câu như “xoay 90 rồi nén”.",
+        "recipe": "Công thức",
+        "recipe_steps": "Các bước của công thức",
+        "step": "Bước",
+        "recipe_review": "Hãy xem lại trước khi chạy: có bước cần máy tính, đám mây hoặc AI, hoặc thay đổi tệp vĩnh viễn.",
+        "recipe_ready": "Nhấn Enter để nạp công thức này.",
+        "confirm": "Xem lại trước",
+        "results": "Công cụ",
+        "actions": "Thao tác",
+        "jump_convert": "Chuyển đến Chuyển đổi",
+        "switch_theme": "Đổi giao diện sáng/tối",
+        "clear_recents": "Xóa công cụ gần đây",
+        "hint": "Việc tìm kiếm chạy ngay trên thiết bị này.",
+        "open": "Mở",
+        "close": "Đóng"
+      },
+      "title": {
+        "pdf": {
+          "info": "Thông tin",
+          "merge": "Gộp",
+          "split": "Tách",
+          "extract_pages": "Trích xuất trang",
+          "delete_pages": "Xóa trang",
+          "reorder": "Sắp xếp lại",
+          "alternate_mix": "Trộn xen kẽ",
+          "insert_blank": "Chèn trang trắng",
+          "rotate": "Xoay",
+          "crop": "Cắt",
+          "scale": "Đổi tỷ lệ",
+          "single_page": "Gộp thành một trang",
+          "rotate_content": "Xoay nội dung",
+          "decompress": "Giải nén",
+          "nup": "N-up",
+          "booklet": "Cuốn sách nhỏ",
+          "overlay": "Chồng lớp",
+          "divide_pages": "Chia trang",
+          "posterize": "Phóng thành áp phích",
+          "metadata": "Siêu dữ liệu",
+          "outline": "Dàn bài",
+          "attachments": "Tệp đính kèm",
+          "page_labels": "Nhãn trang",
+          "viewer_prefs": "Tùy chọn hiển thị",
+          "portfolio": "Hồ sơ PDF",
+          "layers": "Lớp",
+          "replace_color": "Thay màu",
+          "adjust_colors": "Chỉnh màu",
+          "watermark": "Hình mờ",
+          "stamp": "Đóng dấu",
+          "add_image": "Thêm ảnh",
+          "add_text": "Thêm văn bản",
+          "qr": "Mã QR",
+          "page_numbers": "Số trang",
+          "header_footer": "Đầu trang và chân trang",
+          "bates": "Đánh số Bates",
+          "toc_page": "Trang mục lục",
+          "background": "Nền trang",
+          "invert_colors": "Đảo màu",
+          "watermark_detect": "Phát hiện hình mờ",
+          "watermark_remove": "Gỡ hình mờ",
+          "watermark_remove_raster": "Gỡ hình mờ ảnh",
+          "render": "Kết xuất trang",
+          "to_images": "PDF sang ảnh",
+          "thumbnails": "Ảnh thu nhỏ",
+          "extract_images": "Trích xuất ảnh",
+          "text_layout": "Bố cục văn bản",
+          "remove_blank": "Xóa trang trắng",
+          "crop_whitespace": "Cắt vùng trắng",
+          "detect_scanned": "Phát hiện trang quét",
+          "compress": "Nén",
+          "grayscale": "Thang xám",
+          "repair": "Sửa chữa",
+          "linearize": "Tuyến tính hóa",
+          "encrypt": "Mã hóa",
+          "decrypt": "Giải mã",
+          "permissions": "Quyền hạn",
+          "sanitize": "Làm sạch",
+          "unlock_forms": "Mở khóa biểu mẫu",
+          "ocr": "OCR",
+          "auto_rotate": "Tự động xoay",
+          "deskew": "Nắn thẳng",
+          "scan_split": "Tách bản quét",
+          "scanner_effect": "Hiệu ứng máy quét",
+          "annotations": "Chú thích",
+          "annotations_import": "Nhập chú thích",
+          "annotations_export": "Xuất chú thích",
+          "forms_list": "Liệt kê trường biểu mẫu",
+          "forms_fill": "Điền biểu mẫu",
+          "forms_create": "Tạo biểu mẫu",
+          "forms_flatten": "Làm phẳng biểu mẫu",
+          "forms_detect": "Phát hiện trường biểu mẫu",
+          "forms_import": "Nhập giá trị biểu mẫu",
+          "forms_export": "Xuất giá trị biểu mẫu",
+          "redact": "Biên tập che",
+          "redact_verify": "Xác minh che",
+          "sign_visual": "Chữ ký hiển thị",
+          "sign": "Ký",
+          "sign_token": "Ký bằng token",
+          "timestamp": "Dấu thời gian",
+          "sign_verify": "Xác minh chữ ký",
+          "sign_remove": "Gỡ chữ ký",
+          "tables_to_csv": "Bảng sang CSV",
+          "to_cbz": "Sang CBZ",
+          "compare": "So sánh",
+          "to_pdfa": "Sang PDF/A",
+          "to_pdfua": "Sang PDF/UA",
+          "accessibility_report": "Báo cáo khả năng tiếp cận",
+          "validate_pdfa": "Kiểm tra PDF/A",
+          "validate_pdfua": "Kiểm tra PDF/UA"
+        },
+        "image": {
+          "to_pdf": "Ảnh sang PDF",
+          "ocr": "OCR ảnh"
+        },
+        "web": {
+          "to_pdf": "Trang web sang PDF"
+        },
+        "edit": {
+          "open_document": "Mở tài liệu",
+          "export_document": "Xuất tài liệu",
+          "page_objects": "Đối tượng trang",
+          "apply": "Áp dụng"
+        },
+        "ai": {
+          "summarize": "AI tóm tắt",
+          "ask": "AI hỏi đáp",
+          "translate": "AI dịch",
+          "extract_tables": "AI trích bảng",
+          "recipe_from_text": "AI tạo công thức từ văn bản"
+        }
+      },
+      "summary": {
+        "pdf": {
+          "info": "Xem phiên bản PDF, số trang, trạng thái mã hóa, kích thước trang, siêu dữ liệu và các đặc điểm cấu trúc.",
+          "merge": "Gộp hai hoặc nhiều tài liệu PDF thành một PDF duy nhất.",
+          "split": "Tách một tài liệu PDF thành nhiều phần theo dải trang, khoảng cách, dấu trang, dung lượng hoặc trang trắng ngăn cách.",
+          "extract_pages": "Trích các trang đã chọn từ tài liệu PDF sang một PDF mới.",
+          "delete_pages": "Xóa các trang đã chọn khỏi tài liệu PDF, luôn giữ lại ít nhất một trang.",
+          "reorder": "Sắp xếp lại các trang PDF theo dãy trang cụ thể hoặc theo mẫu có sẵn (đảo ngược, xen kẽ hai mặt, lẻ rồi chẵn).",
+          "alternate_mix": "Xen kẽ các trang của hai tài liệu PDF, có thể đảo ngược thứ tự tài liệu thứ hai.",
+          "insert_blank": "Chèn trang trắng có cùng khổ giấy hoặc khổ giấy tùy chọn sau các trang PDF đã chọn.",
+          "rotate": "Xoay các trang PDF đã chọn theo bội số của 90 độ mà không cần kết xuất lại.",
+          "crop": "Đặt CropBox hoặc MediaBox cho các trang PDF đã chọn, tính bằng điểm.",
+          "scale": "Co giãn các trang PDF đã chọn về khổ giấy đích bằng Form XObject.",
+          "single_page": "Nối tất cả các trang của tài liệu PDF theo chiều dọc thành một trang liên tục.",
+          "rotate_content": "Xoay nội dung trang PDF theo góc bất kỳ bằng Form XObject và ma trận biến đổi.",
+          "decompress": "Giải nén các luồng PDF và mở rộng luồng đối tượng trong giới hạn kích thước sau giải mã.",
+          "nup": "Đặt nhiều trang PDF lên mỗi tờ đầu ra theo lưới N-up.",
+          "booklet": "Dàn trang PDF thành các tờ gấp đóng ghim giữa, được đệm cho đủ bội số của 4.",
+          "overlay": "Chồng hoặc lót các trang từ PDF thứ hai lên những trang đã chọn của PDF gốc.",
+          "divide_pages": "Chia mỗi trang PDF đã chọn thành lưới cột × hàng các trang con đã cắt.",
+          "posterize": "Phóng to các trang PDF đã chọn ra nhiều tờ ghép, có phần chồng mép và dấu cắt.",
+          "metadata": "Đặt, xóa hoặc loại bỏ các trường từ từ điển /Info và siêu dữ liệu XMP của PDF.",
+          "outline": "Xuất, nhập, xóa hoặc tạo dấu trang dàn bài PDF từ các tiêu đề.",
+          "attachments": "Liệt kê, thêm, trích xuất hoặc xóa các tệp đính kèm nhúng trong PDF.",
+          "page_labels": "Viết lại cây số /PageLabels của PDF trên các dải trang tính từ 1.",
+          "viewer_prefs": "Cấu hình /ViewerPreferences, /PageLayout, /PageMode và /OpenAction trong danh mục PDF.",
+          "portfolio": "Tạo, liệt kê hoặc trích xuất hồ sơ PDF (/Collection) chứa các tệp nhúng.",
+          "layers": "Liệt kê, bật tắt hiển thị mặc định hoặc xóa các lớp Optional Content Group (OCG).",
+          "replace_color": "Thay màu chữ và màu đồ họa vector trên các trang đã chọn.",
+          "adjust_colors": "Điều chỉnh độ sáng, độ tương phản, độ bão hòa và gamma.",
+          "watermark": "Thêm hình mờ dạng chữ hoặc ảnh có thể gỡ bỏ.",
+          "stamp": "Thêm dấu chữ có thể gỡ bỏ.",
+          "add_image": "Đặt một ảnh lên các trang đã chọn.",
+          "add_text": "Đặt văn bản lên các trang đã chọn.",
+          "qr": "Đặt mã QR vector lên các trang đã chọn.",
+          "page_numbers": "Thêm số trang.",
+          "header_footer": "Thêm đầu trang và chân trang.",
+          "bates": "Thêm dãy số Bates.",
+          "toc_page": "Chèn các trang mục lục có liên kết từ dàn bài.",
+          "background": "Thêm nền cho trang.",
+          "invert_colors": "Đảo màu nội dung của trang.",
+          "watermark_detect": "Tìm các hình mờ có thể có để xem xét.",
+          "watermark_remove": "Gỡ các hình mờ ứng viên mà bạn đã chọn rõ ràng.",
+          "watermark_remove_raster": "Xem trước hoặc gỡ hình mờ dạng ảnh bằng cách tô bù (inpainting).",
+          "render": "Kết xuất các trang PDF thành ảnh PNG, JPEG, WebP, BMP hoặc TIFF ở độ phân giải đã chọn.",
+          "to_images": "Chuyển các trang PDF thành ảnh, có thể xếp chồng thành một ảnh dài (bí danh của pdf.render, mặc định 300 dpi).",
+          "thumbnails": "Kết xuất ảnh thu nhỏ của các trang cùng một chỉ mục JSON.",
+          "extract_images": "Trích các ảnh nhúng trong PDF, giữ nguyên kiểu mã hóa đã lưu khi có thể.",
+          "text_layout": "Báo cáo ký tự, từ và dòng cùng khung bao, tên phông, cỡ chữ và màu dưới dạng JSON.",
+          "remove_blank": "Xóa các trang trắng được phát hiện từ bản kết xuất độ phân giải thấp.",
+          "crop_whitespace": "Đặt khung cắt của mỗi trang theo khung bao nội dung, cộng thêm phần đệm tùy chọn.",
+          "detect_scanned": "Báo cáo theo từng trang xem có lớp văn bản hay không và ảnh phủ bao nhiêu phần trang.",
+          "compress": "Nén tài liệu PDF.",
+          "grayscale": "Chuyển tài liệu PDF sang thang xám.",
+          "repair": "Sửa tài liệu PDF bị hỏng.",
+          "linearize": "Tối ưu tài liệu PDF để tải dần từng phần.",
+          "encrypt": "Mã hóa tài liệu PDF.",
+          "decrypt": "Giải mã tài liệu PDF.",
+          "permissions": "Thay đổi quyền hạn của PDF.",
+          "sanitize": "Loại bỏ các nội dung chủ động đã chọn khỏi tài liệu PDF.",
+          "unlock_forms": "Mở khóa các trường biểu mẫu PDF.",
+          "ocr": "Nhận dạng văn bản trên các trang PDF.",
+          "auto_rotate": "Chỉnh lại hướng của trang.",
+          "deskew": "Chỉnh trang bị nghiêng.",
+          "scan_split": "Tách các vùng đã quét thành các trang riêng.",
+          "scanner_effect": "Áp dụng hiệu ứng giống bản quét từ máy quét.",
+          "annotations": "Liệt kê hoặc chỉnh sửa các chú thích PDF.",
+          "annotations_import": "Nhập các chú thích PDF từ XFDF hoặc JSON.",
+          "annotations_export": "Xuất các chú thích PDF sang XFDF hoặc JSON.",
+          "forms_list": "Liệt kê các trường biểu mẫu PDF và thuộc tính của chúng.",
+          "forms_fill": "Điền các trường biểu mẫu PDF.",
+          "forms_create": "Tạo các trường biểu mẫu PDF có thể điền.",
+          "forms_flatten": "Làm phẳng các trường biểu mẫu PDF vào nội dung trang.",
+          "forms_detect": "Đề xuất các trường biểu mẫu từ nội dung trang.",
+          "forms_import": "Nhập giá trị biểu mẫu PDF từ các tệp dữ liệu.",
+          "forms_export": "Xuất giá trị biểu mẫu PDF.",
+          "redact": "Che thật sự ở mức luồng đối tượng và ảnh, kèm báo cáo xác minh.",
+          "redact_verify": "Xác minh độc lập việc che tài liệu so với các mục tiêu đã yêu cầu.",
+          "sign_visual": "Thêm chữ ký hiển thị (nét vẽ tay, văn bản gõ hoặc dấu ảnh) lên trang PDF.",
+          "sign": "Ký tài liệu PDF bằng chữ ký số PAdES.",
+          "sign_token": "Ký tài liệu PDF bằng token phần cứng hoặc thẻ thông minh PKCS#11.",
+          "timestamp": "Thêm dấu thời gian tài liệu đáng tin cậy theo RFC 3161 vào tài liệu PDF.",
+          "sign_verify": "Xác minh các chữ ký số trong tài liệu PDF.",
+          "sign_remove": "Gỡ các chữ ký số khỏi tài liệu PDF.",
+          "tables_to_csv": "Trích các bảng từ tài liệu PDF thành từng tệp CSV riêng.",
+          "to_cbz": "Chuyển các trang PDF thành kho truyện tranh (CBZ).",
+          "compare": "So sánh hai tài liệu PDF theo ngữ nghĩa hoặc hình ảnh, kèm báo cáo khác biệt có chú thích.",
+          "to_pdfa": "Chuyển PDF sang PDF/A-2b, PDF/A-3b hoặc PDF/A-2u, bắt buộc kiểm tra bằng veraPDF.",
+          "to_pdfua": "Kiểm tra và chuyển PDF sang PDF/UA-1, kèm đánh giá khả năng tiếp cận và kiểm tra bằng veraPDF.",
+          "accessibility_report": "Kiểm tra PDF theo yêu cầu tiếp cận PDF/UA-1 và xuất báo cáo JSON có cấu trúc.",
+          "validate_pdfa": "Kiểm tra tài liệu PDF theo các hồ sơ PDF/A bằng veraPDF.",
+          "validate_pdfua": "Kiểm tra tài liệu PDF theo các hồ sơ khả năng tiếp cận PDF/UA bằng veraPDF."
+        },
+        "image": {
+          "to_pdf": "Gộp các ảnh PNG, JPEG, WebP, TIFF hoặc BMP thành một PDF, mỗi ảnh một trang.",
+          "ocr": "Nhận dạng văn bản trong ảnh."
+        },
+        "web": {
+          "to_pdf": "Tải một trang web một cách an toàn và chuyển nó sang PDF khi ngoại tuyến."
+        },
+        "edit": {
+          "open_document": "Mở tài liệu PDF, DOCX, HTML hoặc Markdown thành ariad-ir/2 với bố cục, bản đồ nguồn của khối và bản xem trước độ trung thực khi xuất.",
+          "export_document": "Xuất tài liệu ariad-ir/2 đã chỉnh sửa sang PDF, DOCX, HTML hoặc Markdown, kèm điểm độ trung thực đo được và danh sách khối đã đổi.",
+          "page_objects": "Xem các đoạn chữ, ảnh và đường vector trên từng trang PDF với mã đối tượng ổn định, khung bao, phông và màu để chỉnh sửa tại chỗ.",
+          "apply": "Áp dụng một chuỗi có thứ tự các chỉnh sửa tại chỗ không lưu trạng thái trên trang (replace_text, set_text_style, move_object, delete_object, add_text, add_image, replace_image), có phông dự phòng và tùy chọn lưu gia tăng."
+        },
+        "ai": {
+          "summarize": "Tóm tắt tài liệu bằng ngôn ngữ được yêu cầu.",
+          "ask": "Trả lời câu hỏi về tài liệu, kèm trích dẫn.",
+          "translate": "Dịch tài liệu sang ngôn ngữ khác.",
+          "extract_tables": "Trích các bảng trong tài liệu thành dữ liệu có cấu trúc.",
+          "recipe_from_text": "Soạn thảo một công thức nhập từ hướng dẫn bằng ngôn ngữ tự nhiên."
+        }
+      }
+    },
+    "workspace": {
+      "editor": {
+        "mode_switch": "Chế độ chỉnh sửa",
+        "mode_view": "Xem",
+        "mode_annotate": "Chú thích",
+        "mode_document": "Tài liệu",
+        "mode_page": "Trang",
+        "preparing": "Đang đọc tài liệu vào trình soạn thảo ngay trên thiết bị này…",
+        "failed": "Trình soạn thảo không mở được tài liệu này. {message}",
+        "retry": "Thử lại",
+        "panel_tabs": "Bảng bên",
+        "tab_tools": "Công cụ",
+        "tab_ai": "Trợ lý AI",
+        "exported": "Đã xuất {name}.",
+        "download": "Tải {name}",
+        "export_failed": "Xuất tệp không thành công. {message}",
+        "page_estimated": "Các đối tượng này được ước tính từ bố cục tài liệu nên mã định danh chỉ là giá trị giữ chỗ mà công cụ PDFium không nhận ra. Để áp dụng chỉnh sửa trang, hãy mở tài liệu trong ứng dụng AriadShift trên máy tính. Không truyền các mã này cho ashift tool run edit.apply.",
+        "apply_failed": "Không chạy được chỉnh sửa này trong trình duyệt. {message}",
+        "purge_failed": "Không xóa được các phiên bản đã lưu của tài liệu đã che. {message}"
+      },
+      "main": {
+        "title": "Không gian làm việc",
+        "lede": "Mọi thứ chạy ngay trong thẻ trình duyệt này.",
+        "viewer": "Xem trước",
+        "pages_tab": "Trang",
+        "tools_tab": "Công cụ",
+        "no_pdf": "Thêm một tệp PDF để xem trước và sắp xếp các trang của nó.",
+        "tools": "Công cụ",
+        "tool_picker": "Chọn công cụ",
+        "dismiss_error": "Bỏ qua",
+        "working": "Đang xử lý…"
+      },
+      "file_tray": {
+        "privacy": "Trên thiết bị này · 0 byte được tải lên",
+        "title": "Tệp",
+        "empty": "Thả tệp PDF hoặc tệp khác vào đây để bắt đầu. Không có gì được tải lên.",
+        "choose": "Chọn tệp",
+        "add_more": "Thêm tệp",
+        "drop_title": "Thả tệp để thêm",
+        "drop_description": "Chúng chỉ nằm trong trình duyệt này.",
+        "pages": "{count, plural, other {# trang}}",
+        "remove": "Xóa {name}",
+        "move_up": "Chuyển {name} lên",
+        "move_down": "Chuyển {name} xuống",
+        "use": "Làm việc với {name}",
+        "active": "Đang mở",
+        "storage_opfs": "Lưu trong bộ nhớ tệp của trình duyệt",
+        "storage_memory": "Giữ trong bộ nhớ",
+        "reading": "Đang đọc tệp…",
+        "list": "Các tệp trong không gian làm việc này",
+        "problem": "Không đọc được {name}."
+      },
+      "insights": {
+        "title": "Nội dung của tệp PDF này",
+        "loading": "Đang đọc tài liệu trên thiết bị này…",
+        "failed": "Không phân tích được tài liệu.",
+        "pages": "{count, plural, other {# trang}}",
+        "scanned": "{count, plural, other {# trang quét}}",
+        "blank": "{count, plural, other {# trang trắng}}",
+        "dpi_unknown": "Chưa rõ độ phân giải ảnh",
+        "dpi_single": "Ảnh khoảng {dpi} DPI",
+        "dpi_range": "Ảnh khoảng {min}–{max} DPI",
+        "low_dpi": "Độ phân giải thấp trên {count, plural, other {# trang}} ({list})",
+        "form_fields": "{count, plural, other {# trường bắt buộc còn trống}}",
+        "signatures": "{count, plural, other {# chữ ký}}",
+        "metadata": "Có siêu dữ liệu",
+        "edit_history": "Có lịch sử chỉnh sửa",
+        "encrypted": "Đã mã hóa",
+        "linearized": "Đã tuyến tính hóa",
+        "clean": "Không có",
+        "suggested": "Các bước tiếp theo gợi ý",
+        "no_suggestions": "Không có gì cần chú ý. Hãy chọn một công cụ bất kỳ để tiếp tục.",
+        "open": "Mở {tool}"
+      },
+      "page_grid": {
+        "title": "Trang",
+        "toolbar": "Chỉnh sửa trang",
+        "undo": "Hoàn tác",
+        "redo": "Làm lại",
+        "reset": "Đặt lại",
+        "pending": "{count, plural, other {# thay đổi đang chờ}}",
+        "select_all": "Chọn tất cả",
+        "clear_selection": "Bỏ chọn",
+        "select_range": "Chọn trang",
+        "range_placeholder": "ví dụ 3-7",
+        "rotate_left": "Xoay trái",
+        "rotate_right": "Xoay phải",
+        "delete_selected": "Xóa các trang đã chọn",
+        "restore_selected": "Khôi phục các trang đã chọn",
+        "apply": "Áp dụng thay đổi",
+        "hint": "Kéo tay nắm, hoặc đưa tiêu điểm vào đó rồi dùng phím mũi tên, để sắp xếp lại. Nhấn Shift và bấm để chọn một dải.",
+        "drag_hint": "Kéo để sắp xếp lại, hoặc dùng phím mũi tên",
+        "moved": "Trang {page} đã chuyển đến vị trí {position}",
+        "cannot_delete_all": "Tài liệu cần có ít nhất một trang.",
+        "card_page": "Trang {page}",
+        "card_select": "Chọn trang {page}",
+        "card_rotate": "Xoay trang {page}",
+        "card_delete": "Xóa trang {page}",
+        "card_move": "Sắp xếp lại trang {page}",
+        "card_restore": "Khôi phục trang {page}",
+        "blank": "Trắng",
+        "scanned": "Bản quét"
+      },
+      "inspector": {
+        "title": "Công cụ",
+        "empty": "Chọn một công cụ để xem các tùy chọn của nó.",
+        "runtime": {
+          "browser": "Trình duyệt",
+          "desktop": "Máy tính",
+          "cloud": "Đám mây"
+        },
+        "tier": {
+          "free": "Miễn phí",
+          "pro": "Pro"
+        },
+        "run_here": "Chạy công cụ trên thiết bị này",
+        "running": "Đang chạy…",
+        "cancel": "Hủy",
+        "run_cloud": "Chạy trên đám mây",
+        "cloud_note": "Công cụ này chạy trên máy chủ của chúng tôi; tệp của bạn sẽ được tải lên cho việc đó.",
+        "switch_desktop": "Chạy trên máy tính của bạn",
+        "switch_browser": "Quay lại thiết bị này",
+        "needs_file": "Hãy thêm một tệp trước.",
+        "needs_pdf": "Công cụ này cần một tệp PDF.",
+        "invalid": "Hãy sửa các tùy chọn được đánh dấu để tiếp tục.",
+        "failed": "Công cụ đã dừng: {message}",
+        "progress": "Tiến trình của công cụ"
+      },
+      "batch": {
+        "title": "Hàng đợi hàng loạt",
+        "empty": "Thêm tệp để chạy công cụ này trên tất cả cùng lúc.",
+        "overall": "Đã xong {completed} trên {total}",
+        "sizes": "vào {input} · ra {output}",
+        "status": {
+          "queued": "Đang chờ",
+          "running": "Đang chạy",
+          "done": "Xong",
+          "failed": "Lỗi",
+          "cancelled": "Đã hủy"
+        },
+        "run_batch": "Chạy hàng loạt",
+        "cancel_batch": "Hủy hàng loạt",
+        "retry_failed": "Thử lại tệp lỗi",
+        "download_zip": "Tải tất cả (.zip)",
+        "clear_completed": "Xóa tệp đã xong",
+        "list": "Các tệp trong lô",
+        "download": "Tải {name}",
+        "cancel_item": "Hủy {name}",
+        "remove_item": "Xóa {name}",
+        "guard_title": "Một số tệp quá lớn cho trình duyệt này",
+        "guard_body": "Tệp trên {limit} không thể xử lý trong trình duyệt: {names}. Hãy xóa chúng hoặc chạy bằng lệnh ashift trên máy của bạn.",
+        "toggle": "Chạy trên mọi tệp (hàng loạt)",
+        "invalid": "Hãy sửa các tùy chọn được đánh dấu trước khi chạy hàng loạt.",
+        "failed": "Lô đã dừng: {message}",
+        "failed@note": "{message} là nội dung lỗi do công cụ báo, bằng tiếng Anh."
+      },
+      "handoff": {
+        "title": "Chạy trên máy tính của bạn",
+        "why": "Công cụ này không chạy được trong trình duyệt. Hãy chạy nó bằng dòng lệnh AriadShift; tệp của bạn không bao giờ rời khỏi máy tính.",
+        "command": "Lệnh",
+        "copy": "Sao chép lệnh",
+        "copied": "Đã sao chép lệnh",
+        "copy_failed": "Không sao chép được. Hãy chọn lệnh rồi sao chép.",
+        "install": "Tải AriadShift",
+        "open_app": "Mở trong ứng dụng máy tính",
+        "reveal_secrets": "Hiện giá trị bí mật",
+        "mask_secrets": "Ẩn giá trị bí mật",
+        "secret_note": "Các giá trị bí mật được ẩn trong lệnh cho đến khi bạn hiện chúng."
+      },
+      "result": {
+        "title": "Kết quả",
+        "before": "Trước",
+        "after": "Sau",
+        "size": "Dung lượng",
+        "pages": "Số trang",
+        "duration": "Thời gian",
+        "change_none": "không đổi",
+        "change_up": "+{percent}%",
+        "change_down": "−{percent}%",
+        "bytes": "{value} byte",
+        "millis": "{value} ms",
+        "seconds": "{value} giây",
+        "warnings": "Cảnh báo",
+        "details": "Chi tiết",
+        "download": "Tải xuống {name}",
+        "open_in_editor": "Mở trong trình chỉnh sửa",
+        "continue": "Tiếp tục với công cụ khác",
+        "save_recipe": "Lưu thành công thức",
+        "undo": "Hoàn tác",
+        "outputs": "Các tệp kết quả",
+        "download_failed": "Không lưu được tệp."
+      },
+      "thread": {
+        "label": "Các bước",
+        "status": {
+          "pending": "Đang chờ",
+          "running": "Đang chạy",
+          "completed": "Xong",
+          "skipped": "Đã bỏ qua",
+          "failed": "Thất bại"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Phóng to",
+        "zoom_out": "Thu nhỏ",
+        "fit_width": "Vừa chiều rộng",
+        "fit_page": "Vừa trang",
+        "zoom_level": "{percent}%",
+        "page": "Số trang",
+        "page_of": "/ {count}",
+        "search": "Tìm trong tài liệu",
+        "search_placeholder": "Tìm văn bản",
+        "search_run": "Tìm",
+        "search_cancel": "Hủy tìm kiếm",
+        "search_clear": "Xóa tìm kiếm",
+        "search_next": "Kết quả tiếp theo",
+        "search_previous": "Kết quả trước",
+        "searching": "Đang tìm… {percent}%",
+        "matches": "{current} / {total}",
+        "no_matches": "Không có kết quả",
+        "dark_pages": "Trang nền tối",
+        "loading": "Đang mở tài liệu trên thiết bị này…",
+        "unavailable": "Trình xem cần WebAssembly, mà trình duyệt này không hỗ trợ.",
+        "document_error": "Không hiển thị được tài liệu này.",
+        "toolbar": "Các nút điều khiển trình xem tài liệu"
+      }
+    }
+  },
+  "legal": {
+    "privacy": {
+      "meta_title": "Quyền riêng tư",
+      "meta_description": "Trang web AriadShift làm gì với tài liệu của bạn: không có gì rời khỏi thiết bị của bạn.",
+      "title": "Quyền riêng tư",
+      "lede": "Trình chuyển đổi trên trang web này chạy hoàn toàn trong trình duyệt của bạn. Trang này giải thích điều đó có nghĩa là gì trong thực tế.",
+      "documents_heading": "Tài liệu của bạn ở lại trên thiết bị của bạn",
+      "documents_storage": "Khi bạn chọn một tệp, trình duyệt sao chép tệp đó vào hệ thống tệp riêng theo nguồn gốc (origin private file system) của nó, một vùng lưu trữ mà chỉ trang web này mới đọc được và không thuộc các tệp thông thường của bạn. Việc chuyển đổi chạy trong một worker nền bằng WebAssembly. Tệp không bao giờ được gửi đến máy chủ, và tệp đã chuyển đổi được ghi vào chính vùng lưu trữ riêng đó, từ đó bạn tải xuống. Mỗi thẻ đang mở giữ các tệp của mình trong một thư mục riêng tại đó.",
+      "documents_memory": "Nếu trình duyệt của bạn không thể cung cấp vùng lưu trữ đó, các tệp sẽ được giữ trong bộ nhớ của worker và biến mất khi bạn đóng thẻ.",
+      "deleting_heading": "Xóa tệp của bạn",
+      "deleting_body": "“Bắt đầu lại và xóa tệp” xóa ngay tệp đầu vào và đầu ra khỏi vùng lưu trữ riêng. Tệp của một thẻ mà bạn đóng mà không bắt đầu lại sẽ ở lại trong vùng lưu trữ đó cho đến lần tiếp theo bạn mở trình chuyển đổi, khi đó trình chuyển đổi sẽ xóa chúng lúc khởi động. Xóa dữ liệu của trang web này trong cài đặt trình duyệt cũng sẽ xóa chúng.",
+      "tracking_heading": "Không theo dõi",
+      "tracking_body": "Trang web không đặt cookie, không tải tập lệnh phân tích hay quảng cáo và không gửi yêu cầu tới các trang khác. Một service worker lưu đệm trình chuyển đổi để nó vẫn hoạt động khi ngoại tuyến; nó chỉ lưu mã của chính trang web. Lựa chọn giao diện của bạn được giữ trong bộ nhớ cục bộ (local storage).",
+      "hosting_heading": "Lưu trữ web",
+      "hosting_body": "Giống mọi trang web, máy chủ phân phối các trang này có thể giữ nhật ký truy cập tiêu chuẩn (địa chỉ IP, thời gian, URL được yêu cầu). Các yêu cầu đó không bao giờ chứa tài liệu của bạn."
+    }
+  }
+}

@@ -1,4 +1,6 @@
 import type { Job } from "@ariadshift/sdk";
+import { createTranslator } from "next-intl";
+import type { Translate } from "@/components/account/account-ui";
 import { keyExpiry } from "@/components/account/api-keys-panel";
 import {
   forgetJob,
@@ -20,8 +22,14 @@ import {
 } from "@/components/account/job-status";
 import { safeNextPath } from "@/components/account/sign-in-panel";
 import { totpSecret } from "@/components/account/two-factor-section";
+import { loadMessages } from "@/i18n/messages";
 import { displayHost, resolveCloudConfig } from "@/lib/cloud/config";
 
+const t = createTranslator({
+  locale: "en",
+  messages: loadMessages("en"),
+  namespace: "web.account",
+}) as unknown as Translate;
 const NOW = Date.parse("2026-10-25T12:00:00Z");
 
 function job(overrides: Partial<Job> = {}): Job {
@@ -98,29 +106,29 @@ describe("resolveCloudConfig", () => {
 
 describe("job step labels", () => {
   it("names each status once", () => {
-    expect(jobStepLabel(job({ status: "queued" }), {}, NOW)).toBe("Queued");
-    expect(jobStepLabel(job({ status: "running" }), {}, NOW)).toBe("Converting");
-    expect(jobStepLabel(job({ status: "running" }), { stage: "write" }, NOW)).toBe(
+    expect(jobStepLabel(job({ status: "queued" }), {}, t, NOW)).toBe("Queued");
+    expect(jobStepLabel(job({ status: "running" }), {}, t, NOW)).toBe("Converting");
+    expect(jobStepLabel(job({ status: "running" }), { stage: "write" }, t, NOW)).toBe(
       "Converting: write",
     );
-    expect(jobStepLabel(job({ status: "running" }), { retryAttempt: 2 }, NOW)).toBe(
+    expect(jobStepLabel(job({ status: "running" }), { retryAttempt: 2 }, t, NOW)).toBe(
       "Retrying (attempt 2)",
     );
-    expect(jobStepLabel(job({ status: "succeeded" }), {}, NOW)).toBe("Ready");
-    expect(jobStepLabel(job({ status: "failed" }), {}, NOW)).toBe("Failed");
-    expect(jobStepLabel(job({ status: "canceled" }), {}, NOW)).toBe("Canceled");
+    expect(jobStepLabel(job({ status: "succeeded" }), {}, t, NOW)).toBe("Ready");
+    expect(jobStepLabel(job({ status: "failed" }), {}, t, NOW)).toBe("Failed");
+    expect(jobStepLabel(job({ status: "canceled" }), {}, t, NOW)).toBe("Canceled");
   });
 
   it("says when the page is polling instead of streaming", () => {
-    expect(jobStepLabel(job({ status: "running" }), { reconnecting: true }, NOW)).toBe(
+    expect(jobStepLabel(job({ status: "running" }), { reconnecting: true }, t, NOW)).toBe(
       "Converting · Reconnecting…",
     );
   });
 
   it("tells a deletion from a retention expiry", () => {
-    expect(jobStepLabel(job({ status: "expired" }), {}, NOW)).toBe("Deleted");
+    expect(jobStepLabel(job({ status: "expired" }), {}, t, NOW)).toBe("Deleted");
     expect(
-      jobStepLabel(job({ status: "expired", expires_at: "2026-10-25T11:59:00Z" }), {}, NOW),
+      jobStepLabel(job({ status: "expired", expires_at: "2026-10-25T11:59:00Z" }), {}, t, NOW),
     ).toBe("Deleted (expired)");
   });
 
@@ -141,20 +149,22 @@ describe("time formatting", () => {
   });
 
   it("formats the time until expiry", () => {
-    expect(formatRelativeUntil(30_000)).toBe("in less than a minute");
-    expect(formatRelativeUntil(58 * 60_000)).toBe("in 58 min");
-    expect(formatRelativeUntil(120 * 60_000)).toBe("in 2 h");
-    expect(formatRelativeUntil(125 * 60_000)).toBe("in 2 h 5 min");
+    expect(formatRelativeUntil(30_000, t)).toBe("in less than a minute");
+    expect(formatRelativeUntil(58 * 60_000, t)).toBe("in 58 min");
+    expect(formatRelativeUntil(120 * 60_000, t)).toBe("in 2 h");
+    expect(formatRelativeUntil(125 * 60_000, t)).toBe("in 2 h 5 min");
   });
 
   it("states the expiry of a kept, deleted and expired job", () => {
-    expect(expiryLine(job(), NOW)).toMatch(/^Deletes automatically at .+ \(in 58 min\)\.$/);
-    expect(expiryLine(job({ status: "expired" }), NOW)).toBe(
+    expect(expiryLine(job(), t, "en", NOW)).toMatch(
+      /^Deletes automatically at .+ \(in 58 min\)\.$/,
+    );
+    expect(expiryLine(job({ status: "expired" }), t, "en", NOW)).toBe(
       "Deleted from the server. The input and output files are gone.",
     );
-    expect(expiryLine(job({ status: "expired", expires_at: "2026-10-25T11:00:00Z" }), NOW)).toMatch(
-      /^Deleted automatically at /,
-    );
+    expect(
+      expiryLine(job({ status: "expired", expires_at: "2026-10-25T11:00:00Z" }), t, "en", NOW),
+    ).toMatch(/^Deleted automatically at /);
   });
 });
 
@@ -180,25 +190,27 @@ describe("canRetry", () => {
 
 describe("error copy", () => {
   it("maps job error codes to plain language", () => {
-    expect(jobErrorCopy("limit_exceeded")).toContain("more than your plan allows");
-    expect(jobErrorCopy("unsupported_route")).toContain("cannot convert between these formats");
-    expect(jobErrorCopy("storage")).toContain("could not store the result");
-    expect(jobErrorCopy(undefined)).toContain("The conversion failed");
+    expect(jobErrorCopy("limit_exceeded", t)).toContain("more than your plan allows");
+    expect(jobErrorCopy("unsupported_route", t)).toContain("cannot convert between these formats");
+    expect(jobErrorCopy("storage", t)).toContain("could not store the result");
+    expect(jobErrorCopy(undefined, t)).toContain("The conversion failed");
   });
 
   it("maps API errors, including network failures", () => {
-    expect(apiErrorCopy({ status: 401, code: "unauthorized" })).toBe(
+    expect(apiErrorCopy({ status: 401, code: "unauthorized" }, t)).toBe(
       "Your session has ended. Sign in again.",
     );
-    expect(apiErrorCopy({ status: 410, code: "expired" })).toBe("This file was already deleted.");
-    expect(apiErrorCopy({ status: 429, code: "rate_limited", retryAfter: 7 })).toBe(
+    expect(apiErrorCopy({ status: 410, code: "expired" }, t)).toBe(
+      "This file was already deleted.",
+    );
+    expect(apiErrorCopy({ status: 429, code: "rate_limited", retryAfter: 7 }, t)).toBe(
       "Too many requests. Try again in 7 s.",
     );
-    expect(apiErrorCopy(new TypeError("Failed to fetch"))).toContain("cannot be reached");
-    expect(apiErrorCopy(new Error("downloaded 3 bytes, expected 4"))).toBe(
+    expect(apiErrorCopy(new TypeError("Failed to fetch"), t)).toContain("cannot be reached");
+    expect(apiErrorCopy(new Error("downloaded 3 bytes, expected 4"), t)).toBe(
       "The transfer did not complete. Try again.",
     );
-    expect(apiErrorCopy({ status: 500, code: "internal" })).toContain("could not complete");
+    expect(apiErrorCopy({ status: 500, code: "internal" }, t)).toContain("could not complete");
   });
 });
 
@@ -303,8 +315,12 @@ describe("sign-in helpers", () => {
       createdAt: "2026-10-01T00:00:00Z",
       enabled: true,
     };
-    expect(keyExpiry({ ...key, expiresAt: null }, NOW)).toBe("Never expires");
-    expect(keyExpiry({ ...key, expiresAt: "2026-12-01T00:00:00Z" }, NOW)).toMatch(/^Expires /);
-    expect(keyExpiry({ ...key, expiresAt: "2026-10-02T00:00:00Z" }, NOW)).toMatch(/^Expired /);
+    expect(keyExpiry({ ...key, expiresAt: null }, t, "en", NOW)).toBe("Never expires");
+    expect(keyExpiry({ ...key, expiresAt: "2026-12-01T00:00:00Z" }, t, "en", NOW)).toMatch(
+      /^Expires /,
+    );
+    expect(keyExpiry({ ...key, expiresAt: "2026-10-02T00:00:00Z" }, t, "en", NOW)).toMatch(
+      /^Expired /,
+    );
   });
 });

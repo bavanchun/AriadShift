@@ -49,6 +49,50 @@ pub(crate) fn preflight(tool: &str, params: &Value) -> Result<(), ToolError> {
     Ok(())
 }
 
+/// Shared bounded document reader for host-brokered tools.
+pub(super) fn read_for_tool(
+    input: &(PathBuf, String),
+    workspace: &Workspace,
+    limits: &Limits,
+    cancel: &CancellationToken,
+    engine_program: Option<&Path>,
+) -> Result<Document, ToolError> {
+    EditContext {
+        workspace,
+        limits,
+        cancel,
+        engine_program,
+        #[cfg(feature = "typst")]
+        clock: inprocess::capture_clock()?,
+        started: Instant::now(),
+        warnings: Vec::new(),
+    }
+    .read(input, false)
+}
+
+/// Shared document export using the same writers and out-of-process conversions.
+pub(super) fn write_for_tool(
+    document: &Document,
+    format: EditExportFormat,
+    workspace: &Workspace,
+    limits: &Limits,
+    cancel: &CancellationToken,
+    engine_program: Option<&Path>,
+) -> Result<(PathBuf, Vec<ConvertWarning>), ToolError> {
+    let mut context = EditContext {
+        workspace,
+        limits,
+        cancel,
+        engine_program,
+        #[cfg(feature = "typst")]
+        clock: inprocess::capture_clock()?,
+        started: Instant::now(),
+        warnings: Vec::new(),
+    };
+    let path = context.write(document, format)?;
+    Ok((path, context.warnings))
+}
+
 struct EditContext<'a> {
     workspace: &'a Workspace,
     limits: &'a Limits,

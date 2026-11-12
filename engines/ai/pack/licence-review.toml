@@ -1,0 +1,47 @@
+pack = "ai"
+
+allowed_licenses = ["MIT", "Apache-2.0", "BSD-3-Clause", "PSF-2.0"]
+
+[[component]]
+name = "python"
+version = "3.14.9+20261021"
+spdx = "PSF-2.0"
+bundled = true
+
+[[component]]
+name = "pypdf"
+version = "7.0.0"
+spdx = "BSD-3-Clause"
+bundled = true
+
+[[component]]
+name = "llama_cpp"
+version = "b5210"
+spdx = "MIT"
+bundled = false
+
+[[component]]
+name = "model"
+version = "91cad51170dc346986eccefdc2dd33a9da36ead9"
+spdx = "Apache-2.0"
+bundled = false
+
+[[notice]]
+path = "notices/AI-PACK.txt"
+sha256 = "4d1fb7dcfb114c3ca60a363a79833ea20965d7c21789535fcbb6d571eba20055"
+
+[[notice]]
+path = "notices/Python-LICENSE.txt"
+sha256 = "b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231"
+
+[[notice]]
+path = "notices/Qwen2.5-Apache-2.0.txt"
+sha256 = "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+
+[[notice]]
+path = "notices/llama-cpp-MIT.txt"
+sha256 = "e562a2ddfaf8280537795ac5ecd34e3012b6582a147ef69ba6a6a5c08c84757d"
+
+[[notice]]
+path = "notices/pypdf-BSD-3-Clause.txt"
+sha256 = "a97ac230e5f33ef10a5367a850eb01f91f1a0b064e34742c7794d2294557f524"

@@ -32,6 +32,8 @@ fn recipe_prompt_is_valid_but_literal_is_rejected() {
     use ariad_core::tools::{Recipe, RecipeOrigin, Step, ToolId};
     let make = |password| {
         Recipe::new(vec![Step::Tool {
+            r#if: None,
+            on_error: None,
             tool: ToolId::parse("pdf.decrypt").unwrap(),
             params: json!({"password": password}),
         }])

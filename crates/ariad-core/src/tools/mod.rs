@@ -20,9 +20,10 @@ pub use page_range::{
     DuplicatePolicy, PageRange, PageRangeError, PageRef, PageToken, PageTokenKind,
 };
 pub use recipe::{
-    ALLOWED_NAMING_TOKENS, ConvertTarget, NETWORK_FETCH_TOOLS, NamingTemplateError,
-    RECIPE_SCHEMA_ID, RECIPE_VERSION, Recipe, RecipeError, RecipeOrigin, Step,
-    generated_recipe_schema, validate_naming_template,
+    ALLOWED_NAMING_TOKENS, ConditionContext, ConvertTarget, NETWORK_FETCH_TOOLS,
+    NamingTemplateError, RECIPE_SCHEMA_ID, RECIPE_VERSION, Recipe, RecipeError, RecipeOrigin, Step,
+    StepErrorPolicy, eval_step_condition, generated_recipe_schema, validate_naming_template,
+    validate_step_condition,
 };
 pub use registry::{
     InputArity, RegistryError, TOOL_ID_PATTERN, TOOLS_SCHEMA_ID, Tier, ToolDescriptor, ToolGroup,

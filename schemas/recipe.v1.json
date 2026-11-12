@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "naming": {
-      "description": "Optional output naming template (`[A-Za-z0-9._ -]` plus `{stem}`, `{n}`, `{date}`).",
+      "description": "Optional output naming template (`[A-Za-z0-9._ -]` plus `{stem}`, `{n}`, `{date}`, `{title}`).",
       "type": [
         "string",
         "null"
@@ -134,6 +134,22 @@
         "convert": {
           "description": "Standard format conversion step.",
           "$ref": "#/$defs/ConvertTarget"
+        },
+        "if": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on_error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepErrorPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -144,6 +160,22 @@
     "RawToolStep": {
       "type": "object",
       "properties": {
+        "if": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on_error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepErrorPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "params": {
           "description": "Tool parameters object (defaults to `{}`).",
           "type": "object",
@@ -168,6 +200,26 @@
         },
         {
           "$ref": "#/$defs/RawConvertStep"
+        }
+      ]
+    },
+    "StepErrorPolicy": {
+      "description": "Behavior when a recipe step fails for an input item.",
+      "oneOf": [
+        {
+          "description": "Abort the recipe without publishing any artifacts.",
+          "type": "string",
+          "const": "stop"
+        },
+        {
+          "description": "Drop failed items and execute subsequent steps on the remainder.",
+          "type": "string",
+          "const": "skip"
+        },
+        {
+          "description": "Pass failed items unchanged to subsequent steps.",
+          "type": "string",
+          "const": "continue"
         }
       ]
     },

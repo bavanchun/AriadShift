@@ -10,6 +10,8 @@ export interface FileDropZoneProps {
   onFiles: (files: File[]) => void;
   /** Value for the file input's `accept` attribute. */
   accept?: string;
+  /** Lets the picker select several files at once; dropping several files always works. */
+  multiple?: boolean;
   disabled?: boolean;
   /** Label of the picker button. */
   buttonLabel?: string;
@@ -24,6 +26,7 @@ export interface FileDropZoneProps {
 export function FileDropZone({
   onFiles,
   accept,
+  multiple = false,
   disabled = false,
   buttonLabel = "Choose a file",
   children,
@@ -80,6 +83,7 @@ export function FileDropZone({
         id={inputId}
         type="file"
         accept={accept}
+        multiple={multiple}
         disabled={disabled}
         className="sr-only"
         tabIndex={-1}

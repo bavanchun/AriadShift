@@ -7,6 +7,8 @@ import { Button, buttonVariants } from "@ariadshift/ui/components/button";
 import { KeyRoundIcon } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Turnstile } from "@/components/cloud/turnstile";
+import { localePath } from "@/i18n/paths";
+import { useLocalePath } from "@/i18n/use-locale-path";
 import { CLOUD } from "@/lib/cloud/config";
 import { useAccount } from "./account-context";
 import {
@@ -15,9 +17,13 @@ import {
   type Outcome,
   OutcomeMessage,
   TextField,
+  useAccountText,
 } from "./account-ui";
 
-/** A same-origin path to return to after signing in; anything else goes to /account. */
+/**
+ * A same-origin path to return to after signing in; anything else goes to /account.
+ * The path has no locale prefix: the sign-in page adds the active locale again.
+ */
 export function safeNextPath(value: string | null): string {
   if (!value?.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
     return "/account";
@@ -52,6 +58,8 @@ export interface SignInPanelProps {
 
 export function SignInPanel({ navigate }: SignInPanelProps) {
   const { auth, session, refreshSession, announce } = useAccount();
+  const { t, locale } = useAccountText();
+  const toLocale = useLocalePath();
   const [mode, setMode] = useState<Mode>("sign-in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -79,18 +87,18 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
 
   const finish = async () => {
     await refreshSession();
-    announce("Signed in.");
+    announce(t("sign_in.signed_in"));
     const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
-    (navigate ?? ((path: string) => window.location.assign(path)))(next);
+    (navigate ?? ((path: string) => window.location.assign(path)))(localePath(locale, next));
   };
 
-  const run = async (action: () => Promise<void>, fallback: string) => {
+  const run = async (action: () => Promise<void>, fallbackKey: string) => {
     setBusy(true);
     setOutcome(null);
     try {
       await action();
     } catch (error) {
-      setOutcome({ kind: "error", message: errorMessage(error, fallback) });
+      setOutcome({ kind: "error", message: errorMessage(t, error, fallbackKey) });
     } finally {
       setBusy(false);
     }
@@ -106,14 +114,14 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
         return;
       }
       await finish();
-    }, "Could not sign in. Check your email and password.");
+    }, "sign_in.sign_in_failed");
   };
 
   const onPasskey = () => {
     void run(async () => {
       await auth.signInPasskey();
       await finish();
-    }, "Could not sign in with a passkey.");
+    }, "sign_in.passkey_failed");
   };
 
   const onTwoFactor = (event: FormEvent) => {
@@ -127,19 +135,19 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
       }
       setCode("");
       await finish();
-    }, "That code was not accepted. Try again.");
+    }, "sign_in.code_rejected");
   };
 
   const onSignUp = (event: FormEvent) => {
     event.preventDefault();
     if (password !== confirm) {
-      setConfirmError("The passwords do not match.");
+      setConfirmError(t("sign_in.passwords_mismatch"));
       return;
     }
     setConfirmError(null);
     if (busy) return;
     if (siteKey && !signupToken) {
-      setOutcome({ kind: "error", message: "Complete the signup bot check and try again." });
+      setOutcome({ kind: "error", message: t("sign_in.bot_check") });
       return;
     }
     void run(async () => {
@@ -157,24 +165,31 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
       setPassword("");
       setConfirm("");
       await finish();
-    }, "Could not create the account.");
+    }, "sign_in.create_failed");
   };
 
   if (session.status === "signed-in" && mode !== "two-factor") {
     return (
       <div className="flex flex-col items-start gap-3">
         <p>
-          You are signed in as <span className="font-medium">{session.user.email}</span>.
+          {t.rich("sign_in.signed_in_user", {
+            email: session.user.email,
+            user: (chunks) => <span className="font-medium">{chunks}</span>,
+          })}
         </p>
-        <a href="/account" className={buttonVariants()}>
-          Go to your account
+        <a href={toLocale("/account")} className={buttonVariants()}>
+          {t("sign_in.go_to_account")}
         </a>
       </div>
     );
   }
 
   const heading =
-    mode === "sign-in" ? "Sign in" : mode === "sign-up" ? "Create an account" : "Two-factor check";
+    mode === "sign-in"
+      ? t("sign_in.title")
+      : mode === "sign-up"
+        ? t("sign_in.create_title")
+        : t("sign_in.two_factor_title");
 
   return (
     <div className="flex max-w-md flex-col gap-6">
@@ -186,7 +201,7 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
         <>
           <form onSubmit={onSignIn} className="flex flex-col gap-4">
             <TextField
-              label="Email"
+              label={t("fields.email")}
               type="email"
               autoComplete="username webauthn"
               required
@@ -194,7 +209,7 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
               onValueChange={setEmail}
             />
             <TextField
-              label="Password"
+              label={t("fields.password")}
               type="password"
               autoComplete="current-password"
               required
@@ -203,25 +218,28 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
             />
             <OutcomeMessage outcome={outcome} />
             <Button type="submit" disabled={busy}>
-              Sign in
+              {t("actions.sign_in")}
             </Button>
           </form>
           <Button variant="outline" onClick={onPasskey} disabled={busy}>
             <KeyRoundIcon aria-hidden="true" />
-            Sign in with a passkey
+            {t("sign_in.passkey")}
           </Button>
           <p className="text-sm">
-            No account yet?{" "}
-            <button
-              type="button"
-              className="text-primary underline-offset-4 hover:underline"
-              onClick={() => {
-                setOutcome(null);
-                setMode("sign-up");
-              }}
-            >
-              Create one
-            </button>
+            {t.rich("sign_in.no_account", {
+              switch: (chunks) => (
+                <button
+                  type="button"
+                  className="text-primary underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setOutcome(null);
+                    setMode("sign-up");
+                  }}
+                >
+                  {chunks}
+                </button>
+              ),
+            })}
           </p>
         </>
       ) : null}
@@ -229,12 +247,10 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
       {mode === "two-factor" ? (
         <form onSubmit={onTwoFactor} className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            {useBackupCode
-              ? "Enter one of the backup codes you saved when you turned on two-factor authentication. Each code works once."
-              : "Enter the 6-digit code from your authenticator app."}
+            {t(useBackupCode ? "sign_in.backup_help" : "sign_in.totp_help")}
           </p>
           <TextField
-            label={useBackupCode ? "Backup code" : "Authentication code"}
+            label={useBackupCode ? t("sign_in.backup_code") : t("fields.authentication_code")}
             inputMode={useBackupCode ? "text" : "numeric"}
             autoComplete="one-time-code"
             required
@@ -248,12 +264,12 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
                 checked={trustDevice}
                 onChange={(event) => setTrustDevice(event.target.checked)}
               />
-              Trust this browser for 30 days
+              {t("sign_in.trust_device")}
             </label>
           )}
           <OutcomeMessage outcome={outcome} />
           <Button type="submit" disabled={busy}>
-            Verify
+            {t("sign_in.verify")}
           </Button>
           <button
             type="button"
@@ -264,7 +280,7 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
               setUseBackupCode((value) => !value);
             }}
           >
-            {useBackupCode ? "Use an authenticator code instead" : "Use a backup code instead"}
+            {t(useBackupCode ? "sign_in.use_authenticator" : "sign_in.use_backup")}
           </button>
         </form>
       ) : null}
@@ -273,14 +289,14 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
         <>
           <form onSubmit={onSignUp} className="flex flex-col gap-4">
             <TextField
-              label="Name"
+              label={t("fields.name")}
               autoComplete="name"
               required
               value={name}
               onValueChange={setName}
             />
             <TextField
-              label="Email"
+              label={t("fields.email")}
               type="email"
               autoComplete="email"
               required
@@ -288,17 +304,17 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
               onValueChange={setEmail}
             />
             <TextField
-              label="Password"
+              label={t("fields.password")}
               type="password"
               autoComplete="new-password"
               required
               minLength={MIN_PASSWORD_LENGTH}
-              hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+              hint={t("fields.password_hint", { min: MIN_PASSWORD_LENGTH })}
               value={password}
               onValueChange={setPassword}
             />
             <TextField
-              label="Confirm password"
+              label={t("sign_in.confirm_password")}
               type="password"
               autoComplete="new-password"
               required
@@ -316,21 +332,24 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
             ) : null}
             <OutcomeMessage outcome={outcome} />
             <Button type="submit" disabled={busy || Boolean(siteKey && !signupToken)}>
-              Create account
+              {t("sign_in.create_account")}
             </Button>
           </form>
           <p className="text-sm">
-            Already have an account?{" "}
-            <button
-              type="button"
-              className="text-primary underline-offset-4 hover:underline"
-              onClick={() => {
-                setOutcome(null);
-                setMode("sign-in");
-              }}
-            >
-              Sign in
-            </button>
+            {t.rich("sign_in.have_account", {
+              switch: (chunks) => (
+                <button
+                  type="button"
+                  className="text-primary underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setOutcome(null);
+                    setMode("sign-in");
+                  }}
+                >
+                  {chunks}
+                </button>
+              ),
+            })}
           </p>
         </>
       ) : null}

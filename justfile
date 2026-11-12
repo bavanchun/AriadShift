@@ -62,6 +62,11 @@ js:
 js-licenses:
     node scripts/check-js-licenses.mjs
 
+# Catalogue gate for locales/: ICU syntax, argument parity, completeness; see docs/i18n.md.
+i18n-check:
+    node --test scripts/i18n-lib.test.mjs
+    node scripts/i18n-check.mjs
+
 # Biome lint and format check of the JavaScript workspace.
 web-lint:
     pnpm exec biome check
@@ -192,7 +197,7 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope test-ci-sccache test-hardening-ci-wiring
+static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope test-ci-sccache test-hardening-ci-wiring
 
 test-ci-sccache:
     shellcheck -x scripts/ci-sccache.sh

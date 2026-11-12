@@ -1,0 +1,1304 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Editable",
+        "description": "Real headings, lists and tables you can keep editing."
+      },
+      "faithful": {
+        "label": "Faithful",
+        "description": "Stay as close as possible to the layout."
+      },
+      "fast": {
+        "label": "Fast",
+        "description": "Prefer the quickest route."
+      },
+      "private": {
+        "label": "Private",
+        "description": "Only engines that never leave your device."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift core",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF text reader"
+    },
+    "runtime": {
+      "wasm": "Browser",
+      "local": "CLI and desktop",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "not measured"
+    },
+    "duration": {
+      "under_1_ms": "under 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown document",
+        "description": "CommonMark with GitHub Flavored Markdown: headings, lists, tables, task lists, footnotes and math. The format most AI tools read best."
+      },
+      "html": {
+        "noun": "HTML page",
+        "description": "A standalone HTML5 page. Raw markup in the input is sanitized; scripts and unsafe attributes never reach the output."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR document",
+        "description": "The structured document model every AriadShift route passes through: headings, blocks, tables, assets and metadata as versioned JSON."
+      },
+      "docx": {
+        "noun": "Word document",
+        "description": "Office Open XML documents from Microsoft Word, LibreOffice and Google Docs, read and written through Pandoc."
+      },
+      "epub": {
+        "noun": "EPUB e-book",
+        "description": "EPUB 3 e-books, read and written through Pandoc with reproducible metadata."
+      },
+      "pdf": {
+        "noun": "PDF document",
+        "description": "Digital PDF text is read on this device. PDF output uses Typst and embedded fonts. Scanned pages need OCR in the desktop app."
+      },
+      "odt": {
+        "noun": "OpenDocument text document",
+        "description": "OpenDocument text files use LibreOffice in the desktop app."
+      },
+      "rtf": {
+        "noun": "Rich Text document",
+        "description": "Rich Text documents use LibreOffice in the desktop app."
+      },
+      "pptx": {
+        "noun": "PowerPoint presentation",
+        "description": "PowerPoint presentations use Docling or LibreOffice in the desktop app."
+      },
+      "xlsx": {
+        "noun": "Excel workbook",
+        "description": "Excel workbooks use Docling or LibreOffice in the desktop app."
+      },
+      "doc": {
+        "noun": "legacy Word document",
+        "description": "Legacy Word documents use LibreOffice in the desktop app."
+      },
+      "xls": {
+        "noun": "legacy Excel workbook",
+        "description": "Legacy Excel workbooks use LibreOffice in the desktop app."
+      },
+      "ppt": {
+        "noun": "legacy PowerPoint presentation",
+        "description": "Legacy PowerPoint presentations use LibreOffice in the desktop app."
+      },
+      "ods": {
+        "noun": "OpenDocument spreadsheet",
+        "description": "OpenDocument spreadsheets use LibreOffice in the desktop app."
+      },
+      "odp": {
+        "noun": "OpenDocument presentation",
+        "description": "OpenDocument presentations use LibreOffice in the desktop app."
+      },
+      "png": {
+        "noun": "PNG image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      },
+      "jpeg": {
+        "noun": "JPEG image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      },
+      "webp": {
+        "noun": "WebP image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      },
+      "tiff": {
+        "noun": "TIFF image",
+        "description": "Image text extraction needs the Docling engine pack in the desktop app."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: private document conversion in your browser",
+      "site_description": "Convert Markdown, HTML and structured JSON on your own device. Private by default, with measured quality on every route and ready for AI agents.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Skip to content",
+      "home_link": "{site} home",
+      "nav_label": "Main",
+      "nav": {
+        "converter": "Converter",
+        "formats": "Formats",
+        "quality": "Quality",
+        "download": "Download",
+        "privacy": "Privacy"
+      },
+      "footer": {
+        "license": "AriadShift is open source under the Apache-2.0 license.",
+        "privacy": "Privacy",
+        "licenses": "Licences",
+        "quality": "Quality",
+        "source": "Source code"
+      },
+      "language": {
+        "label": "Language",
+        "button": "Language: {name}",
+        "list_label": "Choose a language",
+        "community_badge": "Community translation",
+        "community_note": "Community translations are machine drafts that people can still correct."
+      }
+    },
+    "not_found": {
+      "title": "Page not found",
+      "body": "This page does not exist.",
+      "home_link": "Go to the home page"
+    },
+    "home": {
+      "meta_title": "Convert documents on your own device",
+      "title": "Convert documents on your own device",
+      "lede": "AriadShift converts Markdown, HTML, Word, EPUB and structured JSON right here in your browser. Read digital PDF text and create PDFs on your device. One measured planner, no uploads.",
+      "open_converter": "Open the converter",
+      "install_cli": "Install the CLI",
+      "why_heading": "Why AriadShift",
+      "why": {
+        "private": {
+          "title": "Private by default",
+          "body": "The converter runs inside your browser with WebAssembly. Your document is stored in the browser's private file system and never uploaded."
+        },
+        "quality": {
+          "title": "Measured quality",
+          "body": "Every route carries fidelity and editability scores from a public benchmark. The planner picks the best one and tells you why."
+        },
+        "agents": {
+          "title": "Ready for AI agents",
+          "body": "Turn documents into clean Markdown or structured JSON for LLM context. The CLI ships an MCP server, so agents can convert files themselves."
+        }
+      },
+      "how_heading": "How it works",
+      "how": {
+        "step_label": "Step {number}",
+        "step_1": "You pick a file. The browser copies it into its private file system.",
+        "step_2": "A background worker loads the AriadShift engine compiled to WebAssembly.",
+        "step_3": "The planner chooses the route with the best measured score for your goal.",
+        "step_4": "You download the result. Starting over deletes every stored file."
+      },
+      "pairs_heading": "Convert in your browser",
+      "pair_link": "{from} to {to}",
+      "see_more": "See every <formats>supported format</formats> and the <quality>measured quality</quality> of each route."
+    },
+    "formats": {
+      "meta_title": "Supported formats",
+      "meta_description": "Which document formats AriadShift reads and writes, and which conversions run in your browser.",
+      "title": "Supported formats",
+      "lede": "Every conversion passes through AriadShift's document model. Formats marked “browser” convert entirely on this device; the others need the command-line tool for now.",
+      "badge_browser": "Browser and CLI",
+      "badge_cli": "CLI",
+      "extensions": "Extensions: {list}",
+      "engines": "Read by {readers}; written by {writers}.",
+      "no_engine": "no engine yet",
+      "convert_to": "Convert to: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Measured quality",
+      "meta_description": "Fidelity, editability and speed of every AriadShift conversion step, generated from a public benchmark.",
+      "title": "Measured quality",
+      "lede": "These scores are not hand-written. The benchmark converts {count, plural, one {# public fixture document} other {# public fixture documents}} through every step and compares the result with known truth. The planner reads the same numbers when it picks a route.",
+      "generated": "{pandoc, select, none {Generated on {date}.} other {Generated on {date} with Pandoc {pandoc}.}}",
+      "methodology": "<link>Read the methodology</link>.",
+      "caption": "Benchmark scores per conversion step",
+      "column": {
+        "step": "Step",
+        "engine": "Engine",
+        "runs_in": "Runs in",
+        "fidelity": "Fidelity",
+        "editability": "Editability",
+        "median_time": "Median time",
+        "samples": "Samples"
+      }
+    },
+    "route": {
+      "label": "Conversion route",
+      "then": "then",
+      "fidelity": "Fidelity",
+      "editability": "Editability",
+      "estimated_time": "Estimated time",
+      "unmeasured": "Part of this route has not been benchmarked yet, so the planner scores it cautiously."
+    },
+    "download": {
+      "meta_title": "Download",
+      "meta_description": "Install the AriadShift command-line tool and MCP server on macOS, Linux and Windows.",
+      "title": "Download AriadShift",
+      "lede": "The <code>ashift</code> command converts Markdown, HTML, DOCX and EPUB on your computer and runs an MCP server for AI agents. DOCX and EPUB routes use <pandoc>Pandoc 3.12 or newer</pandoc> as a separate program.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS and Linux)",
+          "note": "Available once the formula is published. Installs Pandoc too, which DOCX and EPUB routes need."
+        },
+        "shell": {
+          "title": "Shell installer (macOS and Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell installer (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Available once the package submission is accepted."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Available once the crates are published to crates.io."
+        }
+      },
+      "then_heading": "Then",
+      "releases": "Archives for every platform are on <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Desktop app",
+        "body": "A desktop app for macOS, Windows and Linux with batch conversion and folder watching is on the way. It will be listed here when the first release is out."
+      }
+    },
+    "pair": {
+      "meta_title": "Convert {from} to {to}",
+      "meta_description_browser": "Convert a {noun} to {to} in your browser, privately, with AriadShift. Measured fidelity, no uploads.",
+      "meta_description_cli": "Convert a {noun} to {to} on your own computer with AriadShift. Measured fidelity, no uploads.",
+      "badge_browser": "Runs in your browser",
+      "badge_cli": "Runs with the AriadShift CLI",
+      "title": "Convert {from} to {to}",
+      "lede_browser": "Turn a {noun} into {to} without uploading it. AriadShift reads the file in your browser, maps it to its document model and writes {to} on your device.",
+      "lede_cli": "Turn a {noun} into {to} on your own computer with the free AriadShift command-line tool. The browser version does not run this route yet.",
+      "convert_now": "Convert {from} to {to} now",
+      "install_cli": "Install the CLI",
+      "route_heading": "The route AriadShift takes",
+      "from_heading": "From {format}",
+      "to_heading": "To {format}",
+      "cli_heading": "From the command line",
+      "related_heading": "Related conversions",
+      "related_link": "{from} to {to}"
+    },
+    "converter_page": {
+      "meta_title": "Converter",
+      "meta_description": "Convert Markdown, HTML, DOCX, EPUB, digital PDF and AriadShift IR JSON in your browser. Files stay on your device.",
+      "title": "Convert a document",
+      "lede": "Choose a file, pick a target and download the result. Everything happens in this tab{cloud, select, yes {, unless you choose to convert this file in the cloud.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licences",
+      "meta_description": "Licences and source for AriadShift and its browser engines."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Cloud mode stopped unexpectedly",
+        "stopped_body": "Cloud mode encountered an error after the upload started. Any server copy is deleted automatically when its retention period ends, or you can convert on this device.",
+        "load_title": "Cloud mode could not load",
+        "load_body": "The cloud converter could not be loaded (for example, because you are offline). You can still convert on this device.",
+        "use_device": "Convert on this device"
+      },
+      "status": {
+        "deleted_from_server": "{name} was deleted from the server.",
+        "deleted_from_server@note": "Live-region announcement. {name} is a file name.",
+        "reading": "Reading {name} on this device.",
+        "detected": "{name} is {format}.",
+        "detected@note": "Live-region announcement after a file is read. {name} is the file name, {format} the detected format name, for example Markdown.",
+        "read_failed": "The file could not be read.",
+        "converting": "Converting to {format} on this device.",
+        "ready": "{name} is ready to download.",
+        "convert_failed": "The conversion failed.",
+        "saved": "Saved {name}.",
+        "reset": "{outcome, select, deleted {Files were removed from this device and from the server.} kept {Files were removed from this device. {name} is still on the server.} other {Files were removed from this device.}}",
+        "reset@note": "Live-region announcement after Start over. {outcome} is the keyword deleted (server copy deleted), kept (server copy could not be deleted, {name} is its file name) or none. Keep the keywords untranslated.",
+        "cloud_selected": "Cloud conversion selected for {name}. Nothing is uploaded yet.",
+        "cloud_selected_unnamed": "Cloud conversion selected for this file. Nothing is uploaded yet."
+      },
+      "device": {
+        "cloud": "<strong>Cloud conversion selected.</strong> This file leaves your browser only when you choose Upload and convert.",
+        "cloud@note": "Upload and convert is the label of a button in the cloud panel.",
+        "local": "<strong>Processed on this device.</strong> Files never leave your browser and are not uploaded."
+      },
+      "storage_badge": "{storage, select, opfs {Private browser storage} other {In memory}}",
+      "storage_badge@note": "Badge showing where on-device files are kept. The keyword opfs means the browser's private origin file system; keep the keywords untranslated.",
+      "memory": {
+        "title": "On-device file storage is not available in this browser",
+        "body": "Files are kept in memory instead, so inputs up to {limit} are supported. Nothing is uploaded either way.",
+        "body@note": "{limit} is a formatted size, for example 16 MB."
+      },
+      "error": {
+        "title": "{code, select, no_route {Not available here} engine_integrity {Engine integrity check failed} other {Something went wrong}}",
+        "title@note": "Title of an error alert. {code} is an error keyword; keep no_route and engine_integrity untranslated."
+      },
+      "handoff": {
+        "title": "Continue in the desktop app",
+        "reason": "{reason, select, ocr {Some pages need OCR to extract all their text.} other {This document needs an engine or more memory than the browser provides.}}",
+        "reason@note": "{reason} is the keyword ocr or engine; keep the keywords untranslated. OCR means optical character recognition.",
+        "picker": "The desktop app opens a file picker. Choose this document again; your browser does not send the file.",
+        "open": "Open in Desktop",
+        "cloud_alternative": "Or convert it on {host}, after you confirm the upload.",
+        "cloud_alternative@note": "{host} is a server host name. A button labelled Process in Cloud follows this sentence.",
+        "cloud_button": "Process in Cloud"
+      },
+      "drop": {
+        "button": "Choose a file",
+        "button_busy": "Reading…",
+        "label": "Document to convert",
+        "title": "Drop a document here",
+        "hint": "Markdown, HTML, DOCX, EPUB, digital PDF or IR JSON up to {limit}. It stays on this device.",
+        "hint@note": "{limit} is a formatted size, for example 16 MB."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary@note": "File size and detected format under the file name. {format} is a format name such as Markdown.",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”",
+        "summary_titled@note": "Same as summary, plus the document title from its metadata in quotation marks."
+      },
+      "count": {
+        "headings": "Headings",
+        "paragraphs": "Paragraphs",
+        "tables": "Tables",
+        "images": "Images",
+        "links": "Links",
+        "footnotes": "Footnotes",
+        "words": "Words"
+      },
+      "unreachable": {
+        "cli": "{format} cannot be converted in the browser yet. <link>The AriadShift CLI</link> converts it on your computer.",
+        "cli@note": "{format} is a format name. The link goes to the download page.",
+        "none": "AriadShift cannot convert {format} yet."
+      },
+      "cloud": {
+        "loading": "Loading cloud mode…"
+      },
+      "convert": {
+        "title": "Convert",
+        "hint": "The planner picks the route with the best measured score.",
+        "target_label": "Convert to",
+        "profile_label": "Profile",
+        "profile_label@note": "Label of the conversion goal selector (Editable, Faithful, Fast, Private).",
+        "route_heading": "Why this route",
+        "elsewhere": "{formats} {count, plural, one {needs} other {need}} the <link>AriadShift CLI</link> for now.",
+        "elsewhere@note": "{formats} is a list of format names; {count} is how many there are. The link goes to the download page.",
+        "button": "Convert",
+        "button_busy": "Converting…",
+        "cancel": "Cancel"
+      },
+      "result": {
+        "title": "Ready",
+        "summary": "<output>{name}</output> · {size} · converted in {duration} on this device",
+        "summary@note": "{name} is the output file name, {size} a formatted size, {duration} a formatted duration such as 12 ms.",
+        "download": "Download {name}"
+      },
+      "start_over": "Start over and delete files"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Account",
+        "description": "Your AriadShift cloud account: profile, password, passkeys and two-factor sign-in."
+      },
+      "sign_in": {
+        "title": "Sign in",
+        "description": "Sign in to your AriadShift cloud account or create one."
+      },
+      "jobs": {
+        "title": "Jobs",
+        "description": "Status, downloads and deletion of your AriadShift cloud conversions."
+      },
+      "api_keys": {
+        "title": "API keys",
+        "description": "Create and revoke API keys for the AriadShift cloud API."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Account"
+      },
+      "shell": {
+        "not_configured_title": "Cloud is not configured",
+        "not_configured_body": "This copy of AriadShift runs on your device only. Accounts, API keys and cloud jobs need a server; its operator sets <code>{api_variable}</code> and <code>{auth_variable}</code> when building the site.",
+        "not_configured_body@note": "{api_variable} and {auth_variable} are environment variable names. Keep them exactly as given.",
+        "not_configured_convert": "You can still <link>convert files in your browser</link>.",
+        "nav_label": "Account",
+        "nav_label@note": "Accessible name of the navigation between the account, API keys and jobs pages.",
+        "nav": {
+          "account": "Account",
+          "api_keys": "API keys",
+          "jobs": "Jobs"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Signed in as <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Checking your session…",
+        "error_title": "Cannot check your session",
+        "signed_out": "You are not signed in."
+      },
+      "actions": {
+        "sign_in": "Sign in",
+        "try_again": "Try again",
+        "cancel": "Cancel",
+        "done": "Done",
+        "continue": "Continue",
+        "revoke": "Revoke",
+        "copied": "Copied"
+      },
+      "fields": {
+        "name": "Name",
+        "email": "Email",
+        "password": "Password",
+        "authentication_code": "Authentication code",
+        "password_hint": "At least {min} characters."
+      },
+      "dates": {
+        "unknown": "an unknown date",
+        "unknown@note": "Inserted in place of a date that cannot be read, for example in \"Added {date}\"."
+      },
+      "errors": {
+        "auth_refused": "The auth service refused the request.",
+        "service_unreachable": "The sign-in service cannot be reached. Check your connection and try again.",
+        "session_ended": "Your session has ended. Sign in again.",
+        "rate_limited": "Too many requests. Try again shortly.",
+        "rate_limited_after": "Too many requests. Try again in {seconds} s.",
+        "rate_limited_after@note": "{seconds} is a whole number of seconds; \"s\" is the unit symbol.",
+        "sign_in_unverifiable": "The server cannot verify your sign-in right now. Try again shortly.",
+        "token_invalid": "The sign-in service returned an invalid API token.",
+        "reauth_required": "Sign in again before deleting your account.",
+        "delete_not_allowed": "This server does not allow deleting accounts from the web app. Ask its operator to delete it.",
+        "job_gone": "This job is no longer on the server.",
+        "file_deleted": "This file was already deleted.",
+        "job_conflict": "The job is not ready, or its uploaded file is no longer on the server.",
+        "quota_exceeded": "You have used your plan's cloud conversions for now. Convert on this device, or try later.",
+        "request_failed": "The server could not complete the request. Try again shortly.",
+        "network_unreachable": "The server cannot be reached. Check your connection and try again.",
+        "transfer_incomplete": "The transfer did not complete. Try again."
+      },
+      "profile": {
+        "title": "Profile",
+        "save": "Save name",
+        "saved": "Name saved.",
+        "save_failed": "Could not save the name."
+      },
+      "password": {
+        "title": "Password",
+        "current": "Current password",
+        "new": "New password",
+        "confirm": "Confirm new password",
+        "revoke_others": "Sign out of other sessions",
+        "submit": "Change password",
+        "mismatch": "The new passwords do not match.",
+        "changed": "Password changed.",
+        "changed_revoked": "Password changed. Other sessions were signed out.",
+        "failed": "Could not change the password."
+      },
+      "passkeys": {
+        "title": "Passkeys",
+        "description": "Sign in with your device's screen lock or a security key instead of a password.",
+        "load_failed": "Could not load your passkeys.",
+        "loading": "Loading passkeys…",
+        "empty": "No passkeys yet.",
+        "unnamed": "Unnamed passkey",
+        "default_name": "Passkey",
+        "added_on": "Added {date}",
+        "remove_label": "Remove passkey {name}",
+        "remove_button": "Remove<hidden> passkey {name}</hidden>",
+        "remove_button@note": "The text inside <hidden> is read only by screen readers.",
+        "add_button": "Add a passkey",
+        "add_title": "Add a passkey",
+        "add_description": "Name it after the device or key, then follow your browser's prompt.",
+        "name_label": "Passkey name",
+        "name_placeholder": "For example: Work laptop",
+        "added": "Passkey added.",
+        "add_failed": "The passkey was not added.",
+        "remove_title": "Remove {name}?",
+        "remove_title_unnamed": "Remove this passkey?",
+        "remove_description": "You can no longer sign in with it. Your other sign-in methods keep working.",
+        "remove_confirm": "Remove passkey",
+        "removed": "{name} removed.",
+        "remove_failed": "Could not remove the passkey."
+      },
+      "two_factor": {
+        "title": "Two-factor authentication",
+        "description": "Ask for a code from an authenticator app after your password.",
+        "status_on": "Status: <badge>On</badge>",
+        "status_off": "Status: <badge>Off</badge>",
+        "enable": "Turn on two-factor authentication",
+        "disable": "Turn off two-factor authentication",
+        "regenerate": "Create new backup codes",
+        "confirm_password": "Confirm your password to continue.",
+        "enable_failed": "Could not start two-factor setup. Check your password.",
+        "disable_failed": "Could not turn off two-factor authentication. Check your password.",
+        "regenerate_failed": "Could not create new backup codes. Check your password.",
+        "verify_failed": "That code was not accepted. Check the time on your device and try again.",
+        "disabled": "Two-factor authentication is off.",
+        "enabled": "Two-factor authentication is on.",
+        "regenerated": "New backup codes created. The old ones no longer work.",
+        "setup_title": "Set up your authenticator",
+        "setup_description": "Add AriadShift to your authenticator app, then enter the code it shows.",
+        "setup_key_intro": "Enter this setup key in the app:",
+        "setup_key_unavailable": "Unavailable",
+        "open_in_app": "Open in an authenticator app on this device",
+        "turn_on": "Turn on",
+        "codes_title": "New backup codes",
+        "backup_intro": "Save these backup codes somewhere safe. Each one signs you in once if you lose your authenticator. They are not shown again.",
+        "copy_codes": "Copy backup codes",
+        "copy_failed": "Copy failed; select the codes instead"
+      },
+      "account_actions": {
+        "title": "Session and account",
+        "sign_out": "Sign out",
+        "delete": "Delete account",
+        "signed_out": "Signed out.",
+        "sign_out_failed": "Could not sign out. Try again.",
+        "deleted": "Your account was deleted.",
+        "delete_failed_password": "Could not delete the account. Check your password.",
+        "delete_failed_session": "Could not delete the account. Sign in again and retry.",
+        "delete_note": "Deleting your account revokes your <keys>API keys</keys> automatically. Before deleting it, delete the <jobs>cloud jobs</jobs> you still have. Files of jobs you leave are removed when their retention period ends.",
+        "dialog_title": "Delete your account?",
+        "dialog_description_password": "This cannot be undone. Confirm your password to delete the account.",
+        "dialog_description_session": "This cannot be undone. Confirm below to delete the account using your current sign-in session.",
+        "sign_in_again": "Sign in again"
+      },
+      "connected_apps": {
+        "title": "Connected apps",
+        "description": "Apps and MCP clients you have authorized to use your account, and OAuth clients you have registered.",
+        "load_failed": "Could not load your connected apps.",
+        "loading": "Loading connected apps…",
+        "empty": "No connected apps or registered OAuth clients yet.",
+        "scopes_none": "none",
+        "consent_details": "Authorized app · Scopes: {scopes} · Authorized {date}",
+        "client_details": "Registered OAuth client ({client_id})",
+        "client_details_dated": "Registered OAuth client ({client_id}) · Registered {date}",
+        "revoke_label": "Revoke {name}",
+        "revoked": "{name} revoked.",
+        "revoke_failed": "Could not revoke access.",
+        "revoke_title": "Revoke {name}?",
+        "revoke_consent_description": "Revoking stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire.",
+        "revoke_client_description": "Deleting this registered OAuth client revokes its credentials and consents and stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire."
+      },
+      "api_keys": {
+        "page_title": "API keys",
+        "section_title": "Your keys",
+        "section_description": "Scripts and integrations send a key in the <code>x-api-key</code> header to {host}. A key acts with your account and its plan.",
+        "section_description@note": "x-api-key is an HTTP header name; keep it exactly as written.",
+        "load_failed": "Could not load your API keys.",
+        "loading": "Loading API keys…",
+        "empty": "No API keys yet.",
+        "unnamed": "Unnamed key",
+        "disabled": "Disabled",
+        "key_details": "Created {date} · {expiry}",
+        "never_expires": "Never expires",
+        "expired_on": "Expired {date}",
+        "expires_on": "Expires {date}",
+        "revoke_label": "Revoke API key {name}",
+        "revoke_button": "Revoke<hidden> API key {name}</hidden>",
+        "revoke_button@note": "The text inside <hidden> is read only by screen readers.",
+        "create_button": "Create API key",
+        "create_title": "Create an API key",
+        "create_description": "Name the key after the script or service that will use it.",
+        "name_placeholder": "For example: CI",
+        "expires_after": "Expires after",
+        "lifetime_days": "{days, plural, one {# day} other {# days}}",
+        "lifetime_year": "1 year",
+        "lifetime_never": "No expiry",
+        "create_submit": "Create key",
+        "create_failed": "Could not create the key.",
+        "created": "API key {name} created.",
+        "secret_title": "Your new API key",
+        "secret_label": "API key",
+        "secret_notice": "Copy the key now. It is stored only as a hash and is never shown again.",
+        "copy_key": "Copy key",
+        "copy_failed": "Copying failed. Select the key and copy it.",
+        "revoke_title": "Revoke {name}?",
+        "revoke_description": "Requests that use this key are refused at once. This cannot be undone.",
+        "revoke_confirm": "Revoke key",
+        "revoked": "API key {name} revoked. Requests that use it are refused from now on.",
+        "revoke_failed": "Could not revoke the key."
+      },
+      "jobs": {
+        "title": "Jobs",
+        "intro_server": "Cloud conversions of your account on {host}, from any device. Files stay on {host} until they are deleted automatically, or until you delete them here.",
+        "intro_account_browser": "Cloud conversions started in this browser with your account. This list is kept on this device only. Files stay on {host} until they are deleted automatically, or until you delete them here.",
+        "intro_anonymous_browser": "Cloud conversions started in this browser without an account. This list is kept on this device only. Files stay on {host} until they are deleted automatically, or until you delete them here.",
+        "signed_out_notice": "Showing jobs without an account. <link>Sign in</link> to see the jobs of your account.",
+        "loading": "Loading your jobs…",
+        "list_unsupported": "{host} cannot list your account's jobs yet, so this page shows the jobs started in this browser.",
+        "list_error_title": "Cannot load your jobs from {host}",
+        "list_error_body": "{reason} Meanwhile, this page shows the jobs started in this browser.",
+        "count": "{count, plural, one {# job} other {# jobs}}",
+        "empty": "No cloud jobs yet. Start one from the <link>converter</link>.",
+        "show_more": "Show more jobs",
+        "loading_more": "Loading more jobs…",
+        "unnamed": "Job {id}",
+        "unnamed@note": "Name shown for a job whose file name is unknown; {id} is the first 8 characters of the job id.",
+        "forgotten": "{filename} was removed from this list. Its files on the server are unchanged.",
+        "forgotten_unnamed": "The job was removed from this list. Its files on the server are unchanged.",
+        "status": {
+          "queued": "Queued",
+          "converting": "Converting",
+          "converting_stage": "Converting: {stage}",
+          "retrying": "Retrying (attempt {attempt})",
+          "reconnecting": "{step} · Reconnecting…",
+          "reconnecting@note": "{step} is the job's current step, for example \"Queued\" or \"Converting\"; the page is polling because the live stream dropped.",
+          "ready": "Ready",
+          "failed": "Failed",
+          "canceled": "Canceled",
+          "deleted": "Deleted",
+          "deleted_expired": "Deleted (expired)"
+        },
+        "until": {
+          "less_than_minute": "in less than a minute",
+          "minutes": "in {minutes} min",
+          "hours": "in {hours} h",
+          "hours_minutes": "in {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Deleted automatically at {clock}.",
+          "deleted_from_server": "Deleted from the server. The input and output files are gone.",
+          "being_deleted": "Being deleted now.",
+          "deletes_at": "Deletes automatically at {clock} ({relative}).",
+          "deletes_at@note": "{clock} is a clock time or a date and time; {relative} is a phrase such as \"in 58 min\"."
+        },
+        "failure": {
+          "limit_exceeded": "This document needs more than your plan allows. Try a smaller file, or convert it on this device.",
+          "unsupported_route": "This server cannot convert between these formats. Pick another target in the converter.",
+          "input_io": "The uploaded file could not be read or is no longer on the server. Upload it again.",
+          "storage": "The server could not store the result. Try again in a moment.",
+          "tool_missing": "This server is missing the engine the route needs. Ask its operator, or pick another target.",
+          "other": "The conversion failed. Try again, or convert the file on this device."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "route@note": "Source and target format of a job; the arrow points from source to target.",
+          "loading_status": "Loading status…",
+          "try_again": "Try again<hidden> to load {filename}</hidden>",
+          "technical_details": "Technical details",
+          "warnings": "{count, plural, one {# warning} other {# warnings}}",
+          "download": "Download {filename}",
+          "retry_label": "Retry {filename}",
+          "retry_button": "Retry<hidden> {filename}</hidden>",
+          "delete_label": "Delete now {filename} from the server",
+          "delete_button": "Delete now<hidden> {filename} from the server</hidden>",
+          "remove_label": "Remove from this list ({filename})",
+          "remove_button": "Remove from this list<hidden> ({filename})</hidden>",
+          "deleted_note": "Deleted from {host}. The input and output files are gone.",
+          "deleted_announce": "Deleted {filename} from {host}. The input and output files are gone.",
+          "ready_announce": "{filename} is converted and ready to download.",
+          "failed_announce": "Conversion of {filename} failed. {reason}",
+          "canceled_announce": "The conversion of {filename} was canceled.",
+          "downloading": "Downloading {filename}.",
+          "retrying": "Retrying {filename}.",
+          "retry_conflict": "The uploaded file is no longer on the server. Upload it again from the converter."
+        }
+      },
+      "sign_in": {
+        "title": "Sign in",
+        "create_title": "Create an account",
+        "two_factor_title": "Two-factor check",
+        "signed_in": "Signed in.",
+        "go_to_account": "Go to your account",
+        "passkey": "Sign in with a passkey",
+        "no_account": "No account yet? <switch>Create one</switch>",
+        "have_account": "Already have an account? <switch>Sign in</switch>",
+        "sign_in_failed": "Could not sign in. Check your email and password.",
+        "passkey_failed": "Could not sign in with a passkey.",
+        "code_rejected": "That code was not accepted. Try again.",
+        "create_failed": "Could not create the account.",
+        "passwords_mismatch": "The passwords do not match.",
+        "bot_check": "Complete the signup bot check and try again.",
+        "confirm_password": "Confirm password",
+        "create_account": "Create account",
+        "totp_help": "Enter the 6-digit code from your authenticator app.",
+        "backup_help": "Enter one of the backup codes you saved when you turned on two-factor authentication. Each code works once.",
+        "backup_code": "Backup code",
+        "trust_device": "Trust this browser for 30 days",
+        "verify": "Verify",
+        "use_backup": "Use a backup code instead",
+        "use_authenticator": "Use an authenticator code instead",
+        "signed_in_user": "You are signed in as <user>{email}</user>."
+      }
+    },
+    "app": {
+      "sections_label": "App sections",
+      "sections_label@note": "Accessible name of the tab list that switches between converting a file, browsing tools and the PDF workspace.",
+      "tab": {
+        "convert": "Convert",
+        "tools": "Tools",
+        "workspace": "PDF workspace",
+        "recipes": "Recipes"
+      },
+      "tools_lede": "Every tool, grouped by what it does. Pick one to open it in the PDF workspace.",
+      "workspace_loading": "Loading the PDF workspace…",
+      "workspace_failed": "The PDF workspace could not be loaded.",
+      "retry": "Try again",
+      "tools_loading": "Loading the tools…",
+      "tools_failed": "The tools could not be loaded.",
+      "recipes_lede": "Build a sequence of tool steps, share it as a link or run it on your computer.",
+      "recipes_loading": "Loading the recipe builder…",
+      "recipes_failed": "The recipe builder could not be loaded."
+    },
+    "tools": {
+      "hub": {
+        "label": "Tools",
+        "search": "Search tools…",
+        "open_palette": "Open command palette",
+        "command": "Command",
+        "command@note": "Label of the button that opens the command palette, shown next to the keyboard shortcut.",
+        "zero_upload": "On this device · 0 bytes uploaded",
+        "categories": "Category",
+        "all": "All",
+        "runtimes": "Where it runs",
+        "runtimes@note": "Filter by where a tool runs: in the browser, on the desktop app or on a server.",
+        "count": "{count, plural, one {# tool} other {# tools}}",
+        "count@note": "Live-region announcement of how many tools match the search.",
+        "no_match": "No tool matches",
+        "no_match@note": "Followed by the search text in quotation marks.",
+        "try_recipe": "Try a plain sentence in the command palette, such as “rotate 90 degrees then compress”.",
+        "reset": "Reset search and filters",
+        "open_in_palette": "Try in command palette"
+      },
+      "category": {
+        "organize": "Organise & assemble",
+        "convert": "Convert",
+        "compress": "Compress & repair",
+        "edit": "Edit & mark up",
+        "forms_annotations": "Forms & annotations",
+        "security": "Security & signing",
+        "ocr_scan": "OCR & scan",
+        "metadata_inspect": "Inspect & compare",
+        "automation_ai": "Automation & AI"
+      },
+      "runtime": {
+        "browser": "Browser",
+        "browser@note": "Badge: the tool runs in this browser tab.",
+        "desktop": "Desktop",
+        "desktop@note": "Badge: the tool runs on the user's own computer through the AriadShift command line or desktop app.",
+        "cloud": "Cloud",
+        "cloud@note": "Badge: the tool runs on a server.",
+        "list": "Runs in",
+        "list@note": "Followed by a list of runtimes such as Browser, Desktop."
+      },
+      "tier": {
+        "free": "Free",
+        "pro": "Pro"
+      },
+      "favorites": "Favourites",
+      "recents": "Recent tools",
+      "favorite": {
+        "add": "Add to favourites",
+        "remove": "Remove from favourites"
+      },
+      "card": {
+        "open": "Open"
+      },
+      "palette": {
+        "title": "Tool command palette",
+        "description": "Search tools, or describe what to do in a sentence, then press Enter.",
+        "placeholder": "Search tools or describe a recipe…",
+        "search": "Search tools",
+        "empty": "No tool matches. Try a sentence like “rotate 90 then compress”.",
+        "recipe": "Recipe",
+        "recipe@note": "A recipe is a saved sequence of tool steps.",
+        "recipe_steps": "Recipe steps",
+        "step": "Step",
+        "recipe_review": "Review before running: a step needs the desktop, cloud, AI or changes the file for good.",
+        "recipe_ready": "Press Enter to load this recipe.",
+        "confirm": "Review first",
+        "results": "Tools",
+        "actions": "Actions",
+        "jump_convert": "Jump to Convert",
+        "switch_theme": "Switch theme",
+        "clear_recents": "Clear recent tools",
+        "hint": "Search runs on this device.",
+        "open": "Open",
+        "close": "Close"
+      },
+      "title": {
+        "pdf": {
+          "info": "Info",
+          "merge": "Merge",
+          "split": "Split",
+          "extract_pages": "Extract pages",
+          "delete_pages": "Delete pages",
+          "reorder": "Reorder",
+          "alternate_mix": "Alternate mix",
+          "insert_blank": "Insert blank",
+          "rotate": "Rotate",
+          "crop": "Crop",
+          "scale": "Scale",
+          "single_page": "Single page",
+          "rotate_content": "Rotate content",
+          "decompress": "Decompress",
+          "nup": "N-up",
+          "booklet": "Booklet",
+          "overlay": "Overlay",
+          "divide_pages": "Divide pages",
+          "posterize": "Posterize",
+          "metadata": "Metadata",
+          "outline": "Outline",
+          "attachments": "Attachments",
+          "page_labels": "Page labels",
+          "viewer_prefs": "Viewer prefs",
+          "portfolio": "Portfolio",
+          "layers": "Layers",
+          "replace_color": "Replace colours",
+          "adjust_colors": "Adjust colours",
+          "watermark": "Watermark",
+          "stamp": "Stamp",
+          "add_image": "Add image",
+          "add_text": "Add text",
+          "qr": "QR code",
+          "page_numbers": "Page numbers",
+          "header_footer": "Headers and footers",
+          "bates": "Bates numbering",
+          "toc_page": "Contents page",
+          "background": "Background",
+          "invert_colors": "Invert colours",
+          "watermark_detect": "Detect watermarks",
+          "watermark_remove": "Remove watermarks",
+          "watermark_remove_raster": "Remove raster watermarks",
+          "render": "Render pages",
+          "to_images": "PDF to images",
+          "thumbnails": "Thumbnails",
+          "extract_images": "Extract images",
+          "text_layout": "Text layout",
+          "remove_blank": "Remove blank pages",
+          "crop_whitespace": "Crop whitespace",
+          "detect_scanned": "Detect scanned pages",
+          "compress": "Compress",
+          "grayscale": "Grayscale",
+          "repair": "Repair",
+          "linearize": "Linearize",
+          "encrypt": "Encrypt",
+          "decrypt": "Decrypt",
+          "permissions": "Permissions",
+          "sanitize": "Sanitise",
+          "unlock_forms": "Unlock forms",
+          "ocr": "OCR",
+          "auto_rotate": "Auto rotate",
+          "deskew": "Deskew",
+          "scan_split": "Scan split",
+          "scanner_effect": "Scanner effect",
+          "annotations": "Annotations",
+          "annotations_import": "Import annotations",
+          "annotations_export": "Export annotations",
+          "forms_list": "List form fields",
+          "forms_fill": "Fill forms",
+          "forms_create": "Create forms",
+          "forms_flatten": "Flatten forms",
+          "forms_detect": "Detect form fields",
+          "forms_import": "Import form values",
+          "forms_export": "Export form values",
+          "redact": "Redact",
+          "redact_verify": "Verify redaction",
+          "sign_visual": "Visual signature",
+          "sign": "Sign",
+          "sign_token": "Sign with token",
+          "timestamp": "Timestamp",
+          "sign_verify": "Verify signatures",
+          "sign_remove": "Remove signatures",
+          "tables_to_csv": "Tables to CSV",
+          "to_cbz": "To CBZ",
+          "compare": "Compare",
+          "to_pdfa": "To PDF/A",
+          "to_pdfua": "To PDF/UA",
+          "accessibility_report": "Accessibility report",
+          "validate_pdfa": "Validate PDF/A",
+          "validate_pdfua": "Validate PDF/UA"
+        },
+        "image": {
+          "to_pdf": "Image to PDF",
+          "ocr": "Image OCR"
+        },
+        "web": {
+          "to_pdf": "Web to PDF"
+        },
+        "edit": {
+          "open_document": "Open document",
+          "export_document": "Export document",
+          "page_objects": "Page objects",
+          "apply": "Apply"
+        },
+        "ai": {
+          "summarize": "AI summarise",
+          "ask": "AI ask",
+          "translate": "AI translate",
+          "extract_tables": "AI extract tables",
+          "recipe_from_text": "AI recipe from text"
+        }
+      },
+      "summary": {
+        "pdf": {
+          "info": "Inspect PDF version, page count, encryption status, geometry, metadata, and structural features.",
+          "merge": "Merge two or more PDF documents into a single PDF.",
+          "split": "Split a PDF document into multiple part PDFs by page ranges, interval, bookmarks, size, or blank separators.",
+          "extract_pages": "Extract selected pages from a PDF document into a new PDF.",
+          "delete_pages": "Delete selected pages from a PDF document while keeping at least one remaining page.",
+          "reorder": "Reorder PDF pages using an explicit page range sequence or a named preset (reverse, duplex-interleave, odd-then-even).",
+          "alternate_mix": "Interleave pages alternately from two PDF documents, optionally reversing the second document.",
+          "insert_blank": "Insert blank pages of matching or specified paper size after selected PDF pages.",
+          "rotate": "Rotate selected PDF pages by a multiple of 90 degrees without re-rendering.",
+          "crop": "Set the CropBox or MediaBox of selected PDF pages in points.",
+          "scale": "Scale selected PDF pages to a target paper size using Form XObjects.",
+          "single_page": "Concatenate all pages of a PDF document vertically into a single continuous page.",
+          "rotate_content": "Rotate PDF page content by an arbitrary angle using a Form XObject and transform matrix.",
+          "decompress": "Decompress PDF streams and expand object streams within decoded-size limits.",
+          "nup": "Place multiple PDF pages onto each output sheet in an N-up grid layout.",
+          "booklet": "Impose PDF pages into saddle-stitch booklet spreads padded to a multiple of 4.",
+          "overlay": "Overlay or underlay pages from a second PDF onto selected pages of a base PDF.",
+          "divide_pages": "Subdivide each selected PDF page into a cols by rows grid of cropped cell pages.",
+          "posterize": "Enlarge selected PDF pages across multiple tiled output sheets with overlap and crop marks.",
+          "metadata": "Set, remove, or strip PDF /Info dictionary and XMP metadata fields.",
+          "outline": "Export, import, clear, or generate PDF outline bookmarks from headings.",
+          "attachments": "List, add, extract, or remove embedded file attachments in a PDF.",
+          "page_labels": "Rewrite the PDF /PageLabels number tree across 1-based page ranges.",
+          "viewer_prefs": "Configure PDF catalog /ViewerPreferences, /PageLayout, /PageMode, and /OpenAction.",
+          "portfolio": "Create, list, or extract a PDF portfolio (/Collection) with embedded files.",
+          "layers": "List, toggle default visibility, or remove Optional Content Group (OCG) layers.",
+          "replace_color": "Replace text and vector colours on selected pages.",
+          "adjust_colors": "Adjust brightness, contrast, saturation and gamma.",
+          "watermark": "Add a removable text or image watermark.",
+          "stamp": "Add a removable text stamp.",
+          "add_image": "Place an image on selected pages.",
+          "add_text": "Place text on selected pages.",
+          "qr": "Place a vector QR code on selected pages.",
+          "page_numbers": "Add page numbers.",
+          "header_footer": "Add headers and footers.",
+          "bates": "Add a Bates sequence.",
+          "toc_page": "Insert linked contents pages from the outline.",
+          "background": "Add a page background.",
+          "invert_colors": "Invert page content colours.",
+          "watermark_detect": "Find possible watermarks for review.",
+          "watermark_remove": "Remove explicitly selected watermark candidates.",
+          "watermark_remove_raster": "Preview or remove raster watermarks with inpainting.",
+          "render": "Render PDF pages to PNG, JPEG, WebP, BMP or TIFF images at a chosen resolution.",
+          "to_images": "Convert PDF pages to images, optionally stacked into one tall image (alias of pdf.render with 300 dpi default).",
+          "thumbnails": "Render small page thumbnails and a JSON index of them.",
+          "extract_images": "Extract the embedded images of a PDF, keeping their stored encoding where possible.",
+          "text_layout": "Report characters, words and lines with bounding boxes, font name, size and colour as JSON.",
+          "remove_blank": "Remove blank pages detected from low-resolution renders.",
+          "crop_whitespace": "Set each page's crop box to its content bounding box plus optional padding.",
+          "detect_scanned": "Report per page whether a text layer exists and how much of the page an image covers.",
+          "compress": "Compress a PDF document.",
+          "grayscale": "Convert a PDF document to grayscale.",
+          "repair": "Repair a damaged PDF document.",
+          "linearize": "Optimize a PDF document for progressive loading.",
+          "encrypt": "Encrypt a PDF document.",
+          "decrypt": "Decrypt a PDF document.",
+          "permissions": "Change PDF permissions.",
+          "sanitize": "Remove selected active content from a PDF document.",
+          "unlock_forms": "Unlock PDF form fields.",
+          "ocr": "Recognize text on PDF pages.",
+          "auto_rotate": "Correct page orientation.",
+          "deskew": "Correct page skew.",
+          "scan_split": "Split scanned regions into pages.",
+          "scanner_effect": "Apply a scanner effect.",
+          "annotations": "List or edit PDF annotations.",
+          "annotations_import": "Import PDF annotations from XFDF or JSON.",
+          "annotations_export": "Export PDF annotations as XFDF or JSON.",
+          "forms_list": "List PDF form fields and their properties.",
+          "forms_fill": "Fill PDF form fields.",
+          "forms_create": "Create fillable PDF form fields.",
+          "forms_flatten": "Flatten PDF form fields into page content.",
+          "forms_detect": "Propose form fields from page content.",
+          "forms_import": "Import PDF form values from data files.",
+          "forms_export": "Export PDF form values.",
+          "redact": "True object-stream and raster redaction with verification report.",
+          "redact_verify": "Independently verify document redaction against requested targets.",
+          "sign_visual": "Add a visual signature (drawn stroke, typed text, or image stamp) to a PDF page.",
+          "sign": "Sign a PDF document with a PAdES digital signature.",
+          "sign_token": "Sign a PDF document using a PKCS#11 hardware token or smart card.",
+          "timestamp": "Add a trusted RFC 3161 document timestamp to a PDF document.",
+          "sign_verify": "Verify digital signatures in a PDF document.",
+          "sign_remove": "Remove digital signatures from a PDF document.",
+          "tables_to_csv": "Extract tables from a PDF document to individual CSV files.",
+          "to_cbz": "Convert PDF pages into a comic book archive (CBZ).",
+          "compare": "Compare two PDF documents semantically or visually with annotated difference report.",
+          "to_pdfa": "Convert a PDF to PDF/A-2b, PDF/A-3b, or PDF/A-2u with mandatory veraPDF verification.",
+          "to_pdfua": "Verify and convert a PDF to PDF/UA-1 with accessibility inspection and veraPDF verification.",
+          "accessibility_report": "Inspect a PDF for PDF/UA-1 accessibility requirements and output a structured JSON report.",
+          "validate_pdfa": "Validate a PDF document against PDF/A profiles using veraPDF.",
+          "validate_pdfua": "Validate a PDF document against PDF/UA accessibility profiles using veraPDF."
+        },
+        "image": {
+          "to_pdf": "Combine PNG, JPEG, WebP, TIFF or BMP images into one PDF, one image per page.",
+          "ocr": "Recognize text in images."
+        },
+        "web": {
+          "to_pdf": "Fetch a web page securely and convert it offline to PDF."
+        },
+        "edit": {
+          "open_document": "Open a PDF, DOCX, HTML, or Markdown document into ariad-ir/2 with layout, block source map, and export fidelity preview.",
+          "export_document": "Export an edited ariad-ir/2 document to PDF, DOCX, HTML, or Markdown with measured fidelity score and block change list.",
+          "page_objects": "Inspect per-page PDF text runs, images, and vector paths with stable object IDs, bounding boxes, fonts, and colors for in-place editing.",
+          "apply": "Apply an ordered sequence of stateless in-place page edits (replace_text, set_text_style, move_object, delete_object, add_text, add_image, replace_image) with font fallback and optional incremental save."
+        },
+        "ai": {
+          "summarize": "Summarize a document in the requested language.",
+          "ask": "Answer a document question with citations.",
+          "translate": "Translate a document into another language.",
+          "extract_tables": "Extract document tables into structured data.",
+          "recipe_from_text": "Draft an imported recipe from a natural-language instruction."
+        }
+      }
+    },
+    "workspace": {
+      "editor": {
+        "mode_switch": "Editing mode",
+        "mode_view": "View",
+        "mode_annotate": "Annotate",
+        "mode_document": "Document",
+        "mode_page": "Page",
+        "preparing": "Reading the document into the editor on this device…",
+        "failed": "The editor could not open this document. {message}",
+        "retry": "Try again",
+        "panel_tabs": "Side panel",
+        "tab_tools": "Tools",
+        "tab_ai": "AI assistant",
+        "exported": "Exported {name}.",
+        "download": "Download {name}",
+        "export_failed": "The export failed. {message}",
+        "page_estimated": "These objects are estimated from the document layout, so their ids are placeholders the PDFium engine does not recognize. To apply page edits, open this document in the AriadShift desktop app. Do not pass these ids to ashift tool run edit.apply.",
+        "apply_failed": "The edit could not run in this browser. {message}",
+        "purge_failed": "Saved versions of the redacted document could not be removed. {message}"
+      },
+      "main": {
+        "title": "Workspace",
+        "lede": "Everything runs in this browser tab.",
+        "viewer": "Preview",
+        "pages_tab": "Pages",
+        "tools_tab": "Tool",
+        "no_pdf": "Add a PDF to preview and organise its pages.",
+        "tools": "Tools",
+        "tool_picker": "Choose a tool",
+        "dismiss_error": "Dismiss",
+        "working": "Working…"
+      },
+      "file_tray": {
+        "privacy": "On this device · 0 bytes uploaded",
+        "title": "Files",
+        "empty": "Drop PDFs or other files here to start. Nothing is uploaded.",
+        "choose": "Choose files",
+        "add_more": "Add files",
+        "drop_title": "Drop files to add them",
+        "drop_description": "They stay in this browser.",
+        "pages": "{count, plural, one {# page} other {# pages}}",
+        "remove": "Remove {name}",
+        "remove@note": "{name} is a file name.",
+        "move_up": "Move {name} up",
+        "move_up@note": "{name} is a file name.",
+        "move_down": "Move {name} down",
+        "move_down@note": "{name} is a file name.",
+        "use": "Work on {name}",
+        "use@note": "{name} is a file name.",
+        "active": "Open",
+        "active@note": "Badge on the file that is currently shown in the workspace.",
+        "storage_opfs": "Stored in browser file storage",
+        "storage_memory": "Held in memory",
+        "reading": "Reading files…",
+        "list": "Files in this workspace",
+        "problem": "{name} could not be read.",
+        "problem@note": "{name} is a file name."
+      },
+      "insights": {
+        "title": "What is in this PDF",
+        "loading": "Reading the document on this device…",
+        "failed": "The document could not be analysed.",
+        "pages": "{count, plural, one {# page} other {# pages}}",
+        "scanned": "{count, plural, one {# scanned page} other {# scanned pages}}",
+        "blank": "{count, plural, one {# blank page} other {# blank pages}}",
+        "dpi_unknown": "Image resolution unknown",
+        "dpi_single": "Images about {dpi} DPI",
+        "dpi_single@note": "DPI means dots per inch, an estimate of image resolution.",
+        "dpi_range": "Images about {min}–{max} DPI",
+        "dpi_range@note": "DPI means dots per inch, an estimate of image resolution.",
+        "low_dpi": "Low resolution on {count, plural, one {# page} other {# pages}} ({list})",
+        "low_dpi@note": "{list} is a comma-separated list of page numbers, possibly ending with an ellipsis.",
+        "form_fields": "{count, plural, one {# empty required field} other {# empty required fields}}",
+        "signatures": "{count, plural, one {# signature} other {# signatures}}",
+        "metadata": "Contains metadata",
+        "edit_history": "Has edit history",
+        "encrypted": "Encrypted",
+        "linearized": "Linearized",
+        "linearized@note": "Linearized PDFs are optimised to load page by page over the web.",
+        "clean": "None found",
+        "suggested": "Suggested next steps",
+        "no_suggestions": "Nothing needs attention. Pick any tool to continue.",
+        "open": "Open {tool}",
+        "open@note": "{tool} is the name of a tool."
+      },
+      "page_grid": {
+        "title": "Pages",
+        "toolbar": "Page edits",
+        "undo": "Undo",
+        "redo": "Redo",
+        "reset": "Reset",
+        "pending": "{count, plural, one {# pending change} other {# pending changes}}",
+        "select_all": "Select all",
+        "clear_selection": "Clear selection",
+        "select_range": "Select pages",
+        "range_placeholder": "e.g. 3-7",
+        "rotate_left": "Rotate left",
+        "rotate_right": "Rotate right",
+        "delete_selected": "Delete selected",
+        "restore_selected": "Restore selected",
+        "apply": "Apply changes",
+        "hint": "Drag the grip, or focus it and use the arrow keys, to reorder. Shift-click selects a range.",
+        "drag_hint": "Drag to reorder, or use the arrow keys",
+        "moved": "Page {page} moved to position {position}",
+        "moved@note": "Live-region announcement after a page is reordered.",
+        "cannot_delete_all": "A document needs at least one page.",
+        "card_page": "Page {page}",
+        "card_select": "Select page {page}",
+        "card_rotate": "Rotate page {page}",
+        "card_delete": "Delete page {page}",
+        "card_move": "Reorder page {page}",
+        "card_restore": "Restore page {page}",
+        "blank": "Blank",
+        "blank@note": "Badge on a page that holds no content.",
+        "scanned": "Scanned",
+        "scanned@note": "Badge on a page that is an image of paper rather than text."
+      },
+      "inspector": {
+        "title": "Tool",
+        "empty": "Choose a tool to see its options.",
+        "runtime": {
+          "browser": "Browser",
+          "desktop": "Desktop",
+          "cloud": "Cloud"
+        },
+        "tier": {
+          "free": "Free",
+          "pro": "Pro"
+        },
+        "run_here": "Run tool on this device",
+        "running": "Running…",
+        "cancel": "Cancel",
+        "run_cloud": "Run in Cloud",
+        "cloud_note": "This tool runs on our servers; your file is uploaded for it.",
+        "switch_desktop": "Run on your computer instead",
+        "switch_browser": "Back to this device",
+        "needs_file": "Add a file first.",
+        "needs_pdf": "This tool needs a PDF.",
+        "invalid": "Fix the highlighted options to continue.",
+        "failed": "The tool stopped: {message}",
+        "failed@note": "{message} is the error text reported by the tool, in English.",
+        "progress": "Tool progress"
+      },
+      "batch": {
+        "title": "Batch queue",
+        "empty": "Add files to run this tool on all of them at once.",
+        "overall": "{completed} of {total} done",
+        "sizes": "{input} in · {output} out",
+        "status": {
+          "queued": "Queued",
+          "running": "Running",
+          "done": "Done",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "run_batch": "Run batch",
+        "cancel_batch": "Cancel batch",
+        "retry_failed": "Retry failed",
+        "download_zip": "Download all (.zip)",
+        "clear_completed": "Clear completed",
+        "list": "Files in the batch",
+        "download": "Download {name}",
+        "cancel_item": "Cancel {name}",
+        "remove_item": "Remove {name}",
+        "guard_title": "Some files are too large for this browser",
+        "guard_body": "Files over {limit} cannot be processed in the browser: {names}. Remove them or run them with the ashift command on your computer.",
+        "toggle": "Run on every file (batch)",
+        "invalid": "Fix the highlighted options before running the batch.",
+        "failed": "The batch stopped: {message}",
+        "failed@note": "{message} is the error text reported by the tool, in English."
+      },
+      "handoff": {
+        "title": "Run on your computer",
+        "why": "This tool cannot run in the browser. Run it with the AriadShift command line; your files never leave your computer.",
+        "command": "Command",
+        "copy": "Copy command",
+        "copied": "Command copied",
+        "copy_failed": "Could not copy. Select the command and copy it.",
+        "install": "Get AriadShift",
+        "open_app": "Open in the desktop app",
+        "reveal_secrets": "Show secret values",
+        "mask_secrets": "Hide secret values",
+        "secret_note": "Secret values are hidden in the command until you reveal them."
+      },
+      "result": {
+        "title": "Result",
+        "before": "Before",
+        "after": "After",
+        "size": "Size",
+        "pages": "Pages",
+        "duration": "Time",
+        "change_none": "no change",
+        "change_up": "+{percent}%",
+        "change_up@note": "{percent} is an already formatted number.",
+        "change_down": "−{percent}%",
+        "change_down@note": "{percent} is an already formatted number. The sign is a true minus character.",
+        "bytes": "{value} bytes",
+        "bytes@note": "{value} is an already formatted number.",
+        "millis": "{value} ms",
+        "millis@note": "{value} is an already formatted number.",
+        "seconds": "{value} s",
+        "seconds@note": "{value} is an already formatted number.",
+        "warnings": "Warnings",
+        "details": "Details",
+        "download": "Download {name}",
+        "download@note": "{name} is a file name.",
+        "open_in_editor": "Open in editor",
+        "continue": "Continue with another tool",
+        "save_recipe": "Save as recipe",
+        "undo": "Undo",
+        "outputs": "Output files",
+        "download_failed": "The file could not be saved."
+      },
+      "thread": {
+        "label": "Steps",
+        "status": {
+          "pending": "Waiting",
+          "running": "Running",
+          "completed": "Done",
+          "skipped": "Skipped",
+          "failed": "Failed"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Zoom in",
+        "zoom_out": "Zoom out",
+        "fit_width": "Fit width",
+        "fit_page": "Fit page",
+        "zoom_level": "{percent}%",
+        "page": "Page number",
+        "page_of": "of {count}",
+        "page_of@note": "Shown after the current page number, for example “3 of 120”.",
+        "search": "Search in document",
+        "search_placeholder": "Search text",
+        "search_run": "Search",
+        "search_cancel": "Cancel search",
+        "search_clear": "Clear search",
+        "search_next": "Next match",
+        "search_previous": "Previous match",
+        "searching": "Searching… {percent}%",
+        "matches": "{current} of {total}",
+        "matches@note": "Position of the current search match, for example “2 of 14”.",
+        "no_matches": "No matches",
+        "dark_pages": "Dark pages",
+        "loading": "Opening the document on this device…",
+        "unavailable": "The viewer needs WebAssembly, which this browser does not provide.",
+        "document_error": "This document could not be displayed.",
+        "toolbar": "Document viewer controls"
+      }
+    }
+  },
+  "legal": {
+    "privacy": {
+      "meta_title": "Privacy",
+      "meta_description": "What the AriadShift website does with your documents: nothing leaves your device.",
+      "title": "Privacy",
+      "lede": "The converter on this website runs entirely in your browser. This page explains what that means in practice.",
+      "documents_heading": "Your documents stay on your device",
+      "documents_storage": "When you choose a file, the browser copies it into its origin private file system, a storage area that only this website can read and that is not part of your regular files. The conversion runs in a background worker using WebAssembly. The file is never sent to a server, and the converted file is written to the same private storage, from which you download it. Each open tab keeps its files in its own folder there.",
+      "documents_memory": "If your browser cannot provide that storage, the files are held in the worker's memory instead and disappear when you close the tab.",
+      "deleting_heading": "Deleting your files",
+      "deleting_body": "“Start over and delete files” removes the input and output from the private storage at once. Files of a tab you close without starting over stay in that storage until you next open the converter, which deletes them on start. Clearing this site's data in your browser settings removes them as well.",
+      "tracking_heading": "No tracking",
+      "tracking_body": "The website sets no cookies, loads no analytics or advertising scripts and makes no requests to other sites. A service worker caches the converter so it keeps working offline; it stores only the website's own code. Your theme choice is kept in local storage.",
+      "hosting_heading": "Hosting",
+      "hosting_body": "Like any website, the server that delivers these pages may keep standard access logs (IP address, time, requested URL). Those requests never include your documents."
+    }
+  }
+}

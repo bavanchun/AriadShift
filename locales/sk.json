@@ -1,0 +1,1062 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Upraviteľný",
+        "description": "Skutočné nadpisy, zoznamy a tabuľky, ktoré môžete ďalej upravovať."
+      },
+      "faithful": {
+        "label": "Verný",
+        "description": "Čo najvernejšie zachovanie rozloženia."
+      },
+      "fast": {
+        "label": "Rýchly",
+        "description": "Uprednostní najrýchlejšiu trasu."
+      },
+      "private": {
+        "label": "Súkromný",
+        "description": "Iba moduly, ktoré nikdy neopustia vaše zariadenie."
+      }
+    },
+    "engine": {
+      "ariad_core": "Jadro AriadShift",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "Čítačka textu PDF"
+    },
+    "runtime": {
+      "wasm": "Prehliadač",
+      "local": "CLI a desktopová aplikácia",
+      "cloud": "Cloud"
+    },
+    "score": {
+      "not_measured": "nemerané"
+    },
+    "duration": {
+      "under_1_ms": "menej ako 1 ms"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Dokument Markdown",
+        "description": "CommonMark s GitHub Flavored Markdown: nadpisy, zoznamy, tabuľky, zoznamy úloh, poznámky pod čiarou a matematika. Formát, ktorý väčšina nástrojov AI číta najlepšie."
+      },
+      "html": {
+        "noun": "Stránka HTML",
+        "description": "Samostatná stránka HTML5. Nespracovaný kód vo vstupe sa čistí; skripty a nebezpečné atribúty sa do výstupu nikdy nedostanú."
+      },
+      "ir_json": {
+        "noun": "Dokument AriadShift IR",
+        "description": "Štruktúrovaný model dokumentu, ktorým prechádza každá trasa AriadShift: nadpisy, bloky, tabuľky, zdroje a metadáta ako verzovaný JSON."
+      },
+      "docx": {
+        "noun": "Dokument Word",
+        "description": "Dokumenty Office Open XML z Microsoft Wordu, LibreOffice a Dokumentov Google, čítané a zapisované cez Pandoc."
+      },
+      "epub": {
+        "noun": "E-kniha EPUB",
+        "description": "E-knihy EPUB 3, čítané a zapisované cez Pandoc s reprodukovateľnými metadátami."
+      },
+      "pdf": {
+        "noun": "Dokument PDF",
+        "description": "Text digitálnych PDF sa číta na tomto zariadení. Výstup PDF využíva Typst a vložené písma. Naskenované stránky vyžadujú OCR v desktopovej aplikácii."
+      },
+      "odt": {
+        "noun": "Textový dokument OpenDocument",
+        "description": "Textové súbory OpenDocument využívajú v desktopovej aplikácii LibreOffice."
+      },
+      "rtf": {
+        "noun": "Dokument Rich Text",
+        "description": "Dokumenty Rich Text využívajú v desktopovej aplikácii LibreOffice."
+      },
+      "pptx": {
+        "noun": "Prezentácia PowerPoint",
+        "description": "Prezentácie PowerPoint využívajú v desktopovej aplikácii Docling alebo LibreOffice."
+      },
+      "xlsx": {
+        "noun": "Zošit Excel",
+        "description": "Zošity Excel využívajú v desktopovej aplikácii Docling alebo LibreOffice."
+      },
+      "doc": {
+        "noun": "starší dokument Word",
+        "description": "Staršie dokumenty Word využívajú v desktopovej aplikácii LibreOffice."
+      },
+      "xls": {
+        "noun": "starší zošit Excel",
+        "description": "Staršie zošity Excel využívajú v desktopovej aplikácii LibreOffice."
+      },
+      "ppt": {
+        "noun": "staršia prezentácia PowerPoint",
+        "description": "Staršie prezentácie PowerPoint využívajú v desktopovej aplikácii LibreOffice."
+      },
+      "ods": {
+        "noun": "Tabuľka OpenDocument",
+        "description": "Tabuľky OpenDocument využívajú v desktopovej aplikácii LibreOffice."
+      },
+      "odp": {
+        "noun": "Prezentácia OpenDocument",
+        "description": "Prezentácie OpenDocument využívajú v desktopovej aplikácii LibreOffice."
+      },
+      "png": {
+        "noun": "Obrázok PNG",
+        "description": "Extrakcia textu z obrázkov vyžaduje v desktopovej aplikácii balík modulu Docling."
+      },
+      "jpeg": {
+        "noun": "Obrázok JPEG",
+        "description": "Extrakcia textu z obrázkov vyžaduje v desktopovej aplikácii balík modulu Docling."
+      },
+      "webp": {
+        "noun": "Obrázok WebP",
+        "description": "Extrakcia textu z obrázkov vyžaduje v desktopovej aplikácii balík modulu Docling."
+      },
+      "tiff": {
+        "noun": "Obrázok TIFF",
+        "description": "Extrakcia textu z obrázkov vyžaduje v desktopovej aplikácii balík modulu Docling."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: súkromný prevod dokumentov vo vašom prehliadači",
+      "site_description": "Prevádzajte Markdown, HTML a štruktúrovaný JSON na vlastnom zariadení. Predvolene súkromne, s meranou kvalitou každej trasy a pripravené pre agentov AI.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Preskočiť na obsah",
+      "home_link": "Domovská stránka {site}",
+      "nav_label": "Hlavná",
+      "nav": {
+        "converter": "Prevodník",
+        "formats": "Formáty",
+        "quality": "Kvalita",
+        "download": "Stiahnutie",
+        "privacy": "Súkromie"
+      },
+      "footer": {
+        "license": "AriadShift je open source softvér pod licenciou Apache-2.0.",
+        "privacy": "Súkromie",
+        "licenses": "Licencie",
+        "quality": "Kvalita",
+        "source": "Zdrojový kód"
+      },
+      "language": {
+        "label": "Jazyk",
+        "button": "Jazyk: {name}",
+        "list_label": "Vyberte jazyk",
+        "community_badge": "Komunitný preklad",
+        "community_note": "Komunitné preklady sú strojové koncepty, ktoré ľudia môžu ďalej opravovať."
+      }
+    },
+    "not_found": {
+      "title": "Stránka sa nenašla",
+      "body": "Táto stránka neexistuje.",
+      "home_link": "Prejsť na domovskú stránku"
+    },
+    "home": {
+      "meta_title": "Prevádzajte dokumenty na vlastnom zariadení",
+      "title": "Prevádzajte dokumenty na vlastnom zariadení",
+      "lede": "AriadShift prevádza Markdown, HTML, Word, EPUB a štruktúrovaný JSON priamo vo vašom prehliadači. Číta text digitálnych PDF a vytvára PDF na vašom zariadení. Jeden meraný plánovač, žiadne nahrávanie.",
+      "open_converter": "Otvoriť prevodník",
+      "install_cli": "Nainštalovať CLI",
+      "why_heading": "Prečo AriadShift",
+      "why": {
+        "private": {
+          "title": "Predvolene súkromne",
+          "body": "Prevodník beží vo vašom prehliadači pomocou WebAssembly. Dokument sa ukladá do súkromného súborového systému prehliadača a nikdy sa nenahráva."
+        },
+        "quality": {
+          "title": "Meraná kvalita",
+          "body": "Každá trasa má hodnotenia vernosti a upraviteľnosti z verejného porovnávacieho testu. Plánovač vyberie tú najlepšiu a povie vám prečo."
+        },
+        "agents": {
+          "title": "Pripravené pre agentov AI",
+          "body": "Premeňte dokumenty na čistý Markdown alebo štruktúrovaný JSON ako kontext pre LLM. CLI obsahuje server MCP, takže agenti môžu súbory prevádzať sami."
+        }
+      },
+      "how_heading": "Ako to funguje",
+      "how": {
+        "step_label": "Krok {number}",
+        "step_1": "Vyberiete súbor. Prehliadač ho skopíruje do svojho súkromného súborového systému.",
+        "step_2": "Pracovné vlákno na pozadí načíta modul AriadShift skompilovaný do WebAssembly.",
+        "step_3": "Plánovač zvolí trasu s najlepším nameraným skóre pre váš cieľ.",
+        "step_4": "Stiahnete výsledok. Nový začiatok zmaže všetky uložené súbory."
+      },
+      "pairs_heading": "Prevádzajte vo svojom prehliadači",
+      "pair_link": "{from} na {to}",
+      "see_more": "Pozrite si všetky <formats>podporované formáty</formats> a <quality>meranú kvalitu</quality> každej trasy."
+    },
+    "formats": {
+      "meta_title": "Podporované formáty",
+      "meta_description": "Ktoré formáty dokumentov AriadShift číta a zapisuje a ktoré prevody bežia vo vašom prehliadači.",
+      "title": "Podporované formáty",
+      "lede": "Každý prevod prechádza modelom dokumentu AriadShift. Formáty označené ako „prehliadač“ sa prevádzajú celé na tomto zariadení; ostatné zatiaľ vyžadujú nástroj príkazového riadka.",
+      "badge_browser": "Prehliadač a CLI",
+      "badge_cli": "CLI",
+      "extensions": "Prípony: {list}",
+      "engines": "Číta: {readers}; zapisuje: {writers}.",
+      "no_engine": "zatiaľ žiadny modul",
+      "convert_to": "Previesť na: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Meraná kvalita",
+      "meta_description": "Vernosť, upraviteľnosť a rýchlosť každého kroku prevodu AriadShift, vygenerované z verejného porovnávacieho testu.",
+      "title": "Meraná kvalita",
+      "lede": "Tieto skóre nie sú písané ručne. Porovnávací test prevedie {count, plural, one {# verejný testovací dokument} few {# verejné testovacie dokumenty} many {# verejného testovacieho dokumentu} other {# verejných testovacích dokumentov}} každým krokom a porovná výsledok so známou predlohou. Plánovač pri výbere trasy číta tie isté čísla.",
+      "generated": "{pandoc, select, none {Vygenerované {date}.} other {Vygenerované {date} pomocou Pandoc {pandoc}.}}",
+      "methodology": "<link>Prečítajte si metodiku</link>.",
+      "caption": "Skóre porovnávacieho testu pre jednotlivé kroky prevodu",
+      "column": {
+        "step": "Krok",
+        "engine": "Modul",
+        "runs_in": "Beží v",
+        "fidelity": "Vernosť",
+        "editability": "Upraviteľnosť",
+        "median_time": "Medián času",
+        "samples": "Vzorky"
+      }
+    },
+    "route": {
+      "label": "Trasa prevodu",
+      "then": "potom",
+      "fidelity": "Vernosť",
+      "editability": "Upraviteľnosť",
+      "estimated_time": "Odhadovaný čas",
+      "unmeasured": "Časť tejto trasy zatiaľ nebola otestovaná, preto ju plánovač hodnotí opatrne."
+    },
+    "download": {
+      "meta_title": "Stiahnutie",
+      "meta_description": "Nainštalujte nástroj príkazového riadka AriadShift a server MCP v systémoch macOS, Linux a Windows.",
+      "title": "Stiahnuť AriadShift",
+      "lede": "Príkaz <code>ashift</code> prevádza Markdown, HTML, DOCX a EPUB na vašom počítači a spúšťa server MCP pre agentov AI. Trasy DOCX a EPUB používajú <pandoc>Pandoc 3.12 alebo novší</pandoc> ako samostatný program.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS a Linux)",
+          "note": "K dispozícii po zverejnení formuly. Nainštaluje aj Pandoc, ktorý trasy DOCX a EPUB potrebujú."
+        },
+        "shell": {
+          "title": "Inštalátor pre shell (macOS a Linux)"
+        },
+        "powershell": {
+          "title": "Inštalátor pre PowerShell (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "K dispozícii po prijatí odoslaného balíka."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "K dispozícii po zverejnení crates na crates.io."
+        }
+      },
+      "then_heading": "Potom",
+      "releases": "Archívy pre všetky platformy nájdete na <link>GitHub Releases</link>.",
+      "desktop": {
+        "title": "Desktopová aplikácia",
+        "body": "Desktopová aplikácia pre macOS, Windows a Linux s dávkovým prevodom a sledovaním priečinkov je na ceste. Zobrazí sa tu, keď vyjde prvé vydanie."
+      }
+    },
+    "pair": {
+      "meta_title": "Prevod {from} na {to}",
+      "meta_description_browser": "Previesť vo svojom prehliadači súkromne pomocou AriadShift: {noun} na {to}. Meraná vernosť, žiadne nahrávanie.",
+      "meta_description_cli": "Previesť na vlastnom počítači pomocou AriadShift: {noun} na {to}. Meraná vernosť, žiadne nahrávanie.",
+      "badge_browser": "Beží vo vašom prehliadači",
+      "badge_cli": "Beží s AriadShift CLI",
+      "title": "Prevod {from} na {to}",
+      "lede_browser": "Premeňte súbor ({noun}) na {to} bez nahrávania. AriadShift súbor prečíta vo vašom prehliadači, namapuje ho do svojho modelu dokumentu a zapíše {to} na vašom zariadení.",
+      "lede_cli": "Premeňte súbor ({noun}) na {to} na vlastnom počítači pomocou bezplatného nástroja príkazového riadka AriadShift. Verzia v prehliadači túto trasu zatiaľ nespúšťa.",
+      "convert_now": "Previesť {from} na {to} hneď",
+      "install_cli": "Nainštalovať CLI",
+      "route_heading": "Trasa, ktorú AriadShift zvolí",
+      "from_heading": "Z formátu {format}",
+      "to_heading": "Do formátu {format}",
+      "cli_heading": "Z príkazového riadka",
+      "related_heading": "Súvisiace prevody",
+      "related_link": "{from} na {to}"
+    },
+    "converter_page": {
+      "meta_title": "Prevodník",
+      "meta_description": "Prevádzajte Markdown, HTML, DOCX, EPUB, digitálne PDF a AriadShift IR JSON vo svojom prehliadači. Súbory zostávajú na vašom zariadení.",
+      "title": "Previesť dokument",
+      "lede": "Vyberte súbor, zvoľte cieľ a stiahnite výsledok. Všetko sa deje na tejto karte{cloud, select, yes {, pokiaľ sa nerozhodnete tento súbor previesť v cloude.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Licencie",
+      "meta_description": "Licencie a zdrojový kód AriadShift a jeho modulov pre prehliadač."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Režim cloudu sa neočakávane zastavil",
+        "stopped_body": "V režime cloudu nastala chyba po začatí nahrávania. Každá kópia na serveri sa po uplynutí doby uchovania automaticky zmaže, alebo môžete súbor previesť na tomto zariadení.",
+        "load_title": "Režim cloudu sa nepodarilo načítať",
+        "load_body": "Cloudový prevodník sa nepodarilo načítať (napríklad preto, že ste offline). Stále môžete prevádzať na tomto zariadení.",
+        "use_device": "Previesť na tomto zariadení"
+      },
+      "status": {
+        "deleted_from_server": "Súbor {name} bol zmazaný zo servera.",
+        "reading": "Číta sa súbor {name} na tomto zariadení.",
+        "detected": "{name}: {format}.",
+        "read_failed": "Súbor sa nepodarilo prečítať.",
+        "converting": "Prevod do formátu {format} na tomto zariadení.",
+        "ready": "Súbor {name} je pripravený na stiahnutie.",
+        "convert_failed": "Prevod zlyhal.",
+        "saved": "Uložené: {name}.",
+        "reset": "{outcome, select, deleted {Súbory boli odstránené z tohto zariadenia aj zo servera.} kept {Súbory boli odstránené z tohto zariadenia. Súbor {name} je stále na serveri.} other {Súbory boli odstránené z tohto zariadenia.}}",
+        "cloud_selected": "Pre súbor {name} bol vybraný prevod v cloude. Zatiaľ nebolo nič nahrané.",
+        "cloud_selected_unnamed": "Pre tento súbor bol vybraný prevod v cloude. Zatiaľ nebolo nič nahrané."
+      },
+      "device": {
+        "cloud": "<strong>Vybraný prevod v cloude.</strong> Tento súbor opustí váš prehliadač, až keď zvolíte Nahrať a previesť.",
+        "local": "<strong>Spracované na tomto zariadení.</strong> Súbory nikdy neopustia váš prehliadač a nenahrávajú sa."
+      },
+      "storage_badge": "{storage, select, opfs {Súkromné úložisko prehliadača} other {V pamäti}}",
+      "memory": {
+        "title": "Úložisko súborov na zariadení nie je v tomto prehliadači k dispozícii",
+        "body": "Súbory sa preto uchovávajú v pamäti, takže sú podporované vstupy do {limit}. V oboch prípadoch sa nič nenahráva."
+      },
+      "error": {
+        "title": "{code, select, no_route {Tu nie je k dispozícii} engine_integrity {Kontrola integrity modulu zlyhala} other {Niečo sa pokazilo}}"
+      },
+      "handoff": {
+        "title": "Pokračovať v desktopovej aplikácii",
+        "reason": "{reason, select, ocr {Niektoré stránky potrebujú na získanie všetkého textu OCR.} other {Tento dokument potrebuje modul alebo viac pamäte, než koľko poskytuje prehliadač.}}",
+        "picker": "Desktopová aplikácia otvorí výber súboru. Vyberte tento dokument znova; váš prehliadač súbor neodosiela.",
+        "open": "Otvoriť v desktopovej aplikácii",
+        "cloud_alternative": "Alebo ho previesť na {host} po potvrdení nahratia.",
+        "cloud_button": "Spracovať v cloude"
+      },
+      "drop": {
+        "button": "Vybrať súbor",
+        "button_busy": "Číta sa…",
+        "label": "Dokument na prevod",
+        "title": "Presuňte dokument sem",
+        "hint": "Markdown, HTML, DOCX, EPUB, digitálne PDF alebo IR JSON do {limit}. Zostáva na tomto zariadení."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · „{title}“"
+      },
+      "count": {
+        "headings": "Nadpisy",
+        "paragraphs": "Odseky",
+        "tables": "Tabuľky",
+        "images": "Obrázky",
+        "links": "Odkazy",
+        "footnotes": "Poznámky pod čiarou",
+        "words": "Slová"
+      },
+      "unreachable": {
+        "cli": "Formát {format} zatiaľ nie je možné previesť v prehliadači. <link>AriadShift CLI</link> ho prevedie na vašom počítači.",
+        "none": "AriadShift zatiaľ nevie previesť formát {format}."
+      },
+      "cloud": {
+        "loading": "Načítava sa režim cloudu…"
+      },
+      "convert": {
+        "title": "Prevod",
+        "hint": "Plánovač vyberie trasu s najlepším nameraným skóre.",
+        "target_label": "Previesť na",
+        "profile_label": "Profil",
+        "route_heading": "Prečo táto trasa",
+        "elsewhere": "{formats} {count, plural, one {vyžaduje} few {vyžadujú} many {vyžaduje} other {vyžadujú}} zatiaľ <link>AriadShift CLI</link>.",
+        "button": "Previesť",
+        "button_busy": "Prevádza sa…",
+        "cancel": "Zrušiť"
+      },
+      "result": {
+        "title": "Hotovo",
+        "summary": "<output>{name}</output> · {size} · prevedené za {duration} na tomto zariadení",
+        "download": "Stiahnuť {name}"
+      },
+      "start_over": "Začať odznova a zmazať súbory"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Účet",
+        "description": "Váš cloudový účet AriadShift: profil, heslo, prístupové kľúče a dvojfázové prihlásenie."
+      },
+      "sign_in": {
+        "title": "Prihlásenie",
+        "description": "Prihláste sa do svojho cloudového účtu AriadShift alebo si ho vytvorte."
+      },
+      "jobs": {
+        "title": "Úlohy",
+        "description": "Stav, sťahovanie a mazanie vašich cloudových prevodov AriadShift."
+      },
+      "api_keys": {
+        "title": "Kľúče API",
+        "description": "Vytváranie a odvolávanie kľúčov API pre cloudové API AriadShift."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Účet"
+      },
+      "shell": {
+        "not_configured_title": "Cloud nie je nakonfigurovaný",
+        "not_configured_body": "Táto kópia AriadShift beží iba na vašom zariadení. Účty, kľúče API a cloudové úlohy vyžadujú server; jeho prevádzkovateľ pri zostavovaní webu nastavuje <code>{api_variable}</code> a <code>{auth_variable}</code>.",
+        "not_configured_convert": "Stále môžete <link>prevádzať súbory vo svojom prehliadači</link>.",
+        "nav_label": "Účet",
+        "nav": {
+          "account": "Účet",
+          "api_keys": "Kľúče API",
+          "jobs": "Úlohy"
+        },
+        "server": "Server: {host}",
+        "signed_in_user": "Prihlásený ako <user>{email}</user>"
+      },
+      "session": {
+        "checking": "Kontrola vašej relácie…",
+        "error_title": "Reláciu sa nepodarilo overiť",
+        "signed_out": "Nie ste prihlásení."
+      },
+      "actions": {
+        "sign_in": "Prihlásiť sa",
+        "try_again": "Skúsiť znova",
+        "cancel": "Zrušiť",
+        "done": "Hotovo",
+        "continue": "Pokračovať",
+        "revoke": "Odvolať",
+        "copied": "Skopírované"
+      },
+      "fields": {
+        "name": "Meno",
+        "email": "E-mail",
+        "password": "Heslo",
+        "authentication_code": "Overovací kód",
+        "password_hint": "Aspoň {min} znakov."
+      },
+      "dates": {
+        "unknown": "neznámy dátum"
+      },
+      "errors": {
+        "auth_refused": "Overovacia služba požiadavku odmietla.",
+        "service_unreachable": "Prihlasovacia služba nie je dostupná. Skontrolujte pripojenie a skúste to znova.",
+        "session_ended": "Vaša relácia skončila. Prihláste sa znova.",
+        "rate_limited": "Príliš veľa požiadaviek. Skúste to o chvíľu znova.",
+        "rate_limited_after": "Príliš veľa požiadaviek. Skúste to znova o {seconds} s.",
+        "sign_in_unverifiable": "Server teraz nemôže overiť vaše prihlásenie. Skúste to o chvíľu znova.",
+        "token_invalid": "Prihlasovacia služba vrátila neplatný token API.",
+        "reauth_required": "Pred zmazaním účtu sa prihláste znova.",
+        "delete_not_allowed": "Tento server nedovoľuje mazať účty z webovej aplikácie. Požiadajte o to jeho prevádzkovateľa.",
+        "job_gone": "Táto úloha už na serveri nie je.",
+        "file_deleted": "Tento súbor už bol zmazaný.",
+        "job_conflict": "Úloha nie je pripravená, alebo nahraný súbor už na serveri nie je.",
+        "quota_exceeded": "Cloudové prevody vášho plánu ste zatiaľ vyčerpali. Prevádzajte na tomto zariadení, alebo to skúste neskôr.",
+        "request_failed": "Server nemohol požiadavku dokončiť. Skúste to o chvíľu znova.",
+        "network_unreachable": "Server nie je dostupný. Skontrolujte pripojenie a skúste to znova.",
+        "transfer_incomplete": "Prenos nebol dokončený. Skúste to znova."
+      },
+      "profile": {
+        "title": "Profil",
+        "save": "Uložiť meno",
+        "saved": "Meno uložené.",
+        "save_failed": "Meno sa nepodarilo uložiť."
+      },
+      "password": {
+        "title": "Heslo",
+        "current": "Aktuálne heslo",
+        "new": "Nové heslo",
+        "confirm": "Potvrďte nové heslo",
+        "revoke_others": "Odhlásiť z ostatných relácií",
+        "submit": "Zmeniť heslo",
+        "mismatch": "Nové heslá sa nezhodujú.",
+        "changed": "Heslo bolo zmenené.",
+        "changed_revoked": "Heslo bolo zmenené. Ostatné relácie boli odhlásené.",
+        "failed": "Heslo sa nepodarilo zmeniť."
+      },
+      "passkeys": {
+        "title": "Prístupové kľúče",
+        "description": "Prihlasujte sa zámkou obrazovky zariadenia alebo bezpečnostným kľúčom namiesto hesla.",
+        "load_failed": "Prístupové kľúče sa nepodarilo načítať.",
+        "loading": "Načítavajú sa prístupové kľúče…",
+        "empty": "Zatiaľ žiadne prístupové kľúče.",
+        "unnamed": "Nepomenovaný prístupový kľúč",
+        "default_name": "Prístupový kľúč",
+        "added_on": "Pridané {date}",
+        "remove_label": "Odstrániť prístupový kľúč {name}",
+        "remove_button": "Odstrániť<hidden> prístupový kľúč {name}</hidden>",
+        "add_button": "Pridať prístupový kľúč",
+        "add_title": "Pridať prístupový kľúč",
+        "add_description": "Pomenujte ho podľa zariadenia alebo kľúča a potom postupujte podľa pokynov prehliadača.",
+        "name_label": "Názov prístupového kľúča",
+        "name_placeholder": "Napríklad: Pracovný notebook",
+        "added": "Prístupový kľúč bol pridaný.",
+        "add_failed": "Prístupový kľúč nebol pridaný.",
+        "remove_title": "Odstrániť {name}?",
+        "remove_title_unnamed": "Odstrániť tento prístupový kľúč?",
+        "remove_description": "Už sa ním nebudete môcť prihlásiť. Vaše ostatné spôsoby prihlásenia fungujú ďalej.",
+        "remove_confirm": "Odstrániť prístupový kľúč",
+        "removed": "{name} bol odstránený.",
+        "remove_failed": "Prístupový kľúč sa nepodarilo odstrániť."
+      },
+      "two_factor": {
+        "title": "Dvojfázové overenie",
+        "description": "Po zadaní hesla vyžadovať kód z overovacej aplikácie.",
+        "status_on": "Stav: <badge>Zapnuté</badge>",
+        "status_off": "Stav: <badge>Vypnuté</badge>",
+        "enable": "Zapnúť dvojfázové overenie",
+        "disable": "Vypnúť dvojfázové overenie",
+        "regenerate": "Vytvoriť nové záložné kódy",
+        "confirm_password": "Na pokračovanie potvrďte svoje heslo.",
+        "enable_failed": "Nastavenie dvojfázového overenia sa nepodarilo spustiť. Skontrolujte svoje heslo.",
+        "disable_failed": "Dvojfázové overenie sa nepodarilo vypnúť. Skontrolujte svoje heslo.",
+        "regenerate_failed": "Nové záložné kódy sa nepodarilo vytvoriť. Skontrolujte svoje heslo.",
+        "verify_failed": "Tento kód nebol prijatý. Skontrolujte čas na svojom zariadení a skúste to znova.",
+        "disabled": "Dvojfázové overenie je vypnuté.",
+        "enabled": "Dvojfázové overenie je zapnuté.",
+        "regenerated": "Nové záložné kódy boli vytvorené. Tie staré už nefungujú.",
+        "setup_title": "Nastavte svoju overovaciu aplikáciu",
+        "setup_description": "Pridajte AriadShift do overovacej aplikácie a potom zadajte kód, ktorý zobrazí.",
+        "setup_key_intro": "Zadajte v aplikácii tento kľúč na nastavenie:",
+        "setup_key_unavailable": "Nedostupný",
+        "open_in_app": "Otvoriť v overovacej aplikácii na tomto zariadení",
+        "turn_on": "Zapnúť",
+        "codes_title": "Nové záložné kódy",
+        "backup_intro": "Uložte si tieto záložné kódy na bezpečné miesto. Každý z nich vás raz prihlási, ak stratíte overovaciu aplikáciu. Znova sa nezobrazia.",
+        "copy_codes": "Kopírovať záložné kódy",
+        "copy_failed": "Kopírovanie zlyhalo; kódy namiesto toho označte"
+      },
+      "account_actions": {
+        "title": "Relácia a účet",
+        "sign_out": "Odhlásiť sa",
+        "delete": "Zmazať účet",
+        "signed_out": "Odhlásené.",
+        "sign_out_failed": "Odhlásenie zlyhalo. Skúste to znova.",
+        "deleted": "Váš účet bol zmazaný.",
+        "delete_failed_password": "Účet sa nepodarilo zmazať. Skontrolujte svoje heslo.",
+        "delete_failed_session": "Účet sa nepodarilo zmazať. Prihláste sa znova a skúste to znova.",
+        "delete_note": "Zmazaním účtu sa automaticky odvolajú vaše <keys>kľúče API</keys>. Pred jeho zmazaním zmažte <jobs>cloudové úlohy</jobs>, ktoré ešte máte. Súbory úloh, ktoré ponecháte, sa odstránia po uplynutí doby uchovania.",
+        "dialog_title": "Zmazať váš účet?",
+        "dialog_description_password": "Túto akciu nie je možné vrátiť späť. Na zmazanie účtu potvrďte svoje heslo.",
+        "dialog_description_session": "Túto akciu nie je možné vrátiť späť. Nižšie potvrďte zmazanie účtu pomocou vašej aktuálnej prihlásenej relácie.",
+        "sign_in_again": "Prihlásiť sa znova"
+      },
+      "connected_apps": {
+        "title": "Pripojené aplikácie",
+        "description": "Aplikácie a klienti MCP, ktorým ste povolili používať váš účet, a klienti OAuth, ktorých ste zaregistrovali.",
+        "load_failed": "Pripojené aplikácie sa nepodarilo načítať.",
+        "loading": "Načítavajú sa pripojené aplikácie…",
+        "empty": "Zatiaľ žiadne pripojené aplikácie ani zaregistrovaní klienti OAuth.",
+        "scopes_none": "žiadne",
+        "consent_details": "Autorizovaná aplikácia · Oprávnenia: {scopes} · Autorizované {date}",
+        "client_details": "Zaregistrovaný klient OAuth ({client_id})",
+        "client_details_dated": "Zaregistrovaný klient OAuth ({client_id}) · Zaregistrované {date}",
+        "revoke_label": "Odvolať {name}",
+        "revoked": "{name} bol odvolaný.",
+        "revoke_failed": "Prístup sa nepodarilo odvolať.",
+        "revoke_title": "Odvolať {name}?",
+        "revoke_consent_description": "Odvolaním sa okamžite zastaví vydávanie nových tokenov a obnova tokenov. Už vydané podpísané prístupové tokeny (platnosť 15 minút) fungujú, kým nevypršia.",
+        "revoke_client_description": "Zmazaním tohto zaregistrovaného klienta OAuth sa odvolajú jeho prihlasovacie údaje a súhlasy a okamžite sa zastaví vydávanie nových tokenov a obnova tokenov. Už vydané podpísané prístupové tokeny (platnosť 15 minút) fungujú, kým nevypršia."
+      },
+      "api_keys": {
+        "page_title": "Kľúče API",
+        "section_title": "Vaše kľúče",
+        "section_description": "Skripty a integrácie posielajú kľúč v hlavičke <code>x-api-key</code> na {host}. Kľúč koná s oprávneniami vášho účtu a plánu.",
+        "load_failed": "Kľúče API sa nepodarilo načítať.",
+        "loading": "Načítavajú sa kľúče API…",
+        "empty": "Zatiaľ žiadne kľúče API.",
+        "unnamed": "Nepomenovaný kľúč",
+        "disabled": "Zakázané",
+        "key_details": "Vytvorené {date} · {expiry}",
+        "never_expires": "Nikdy nevyprší",
+        "expired_on": "Vypršalo {date}",
+        "expires_on": "Vyprší {date}",
+        "revoke_label": "Odvolať kľúč API {name}",
+        "revoke_button": "Odvolať<hidden> kľúč API {name}</hidden>",
+        "create_button": "Vytvoriť kľúč API",
+        "create_title": "Vytvoriť kľúč API",
+        "create_description": "Pomenujte kľúč podľa skriptu alebo služby, ktorá ho bude používať.",
+        "name_placeholder": "Napríklad: CI",
+        "expires_after": "Vyprší po",
+        "lifetime_days": "{days, plural, one {# dni} few {# dňoch} many {# dňa} other {# dňoch}}",
+        "lifetime_year": "1 roku",
+        "lifetime_never": "Bez vypršania",
+        "create_submit": "Vytvoriť kľúč",
+        "create_failed": "Kľúč sa nepodarilo vytvoriť.",
+        "created": "Kľúč API {name} bol vytvorený.",
+        "secret_title": "Váš nový kľúč API",
+        "secret_label": "Kľúč API",
+        "secret_notice": "Skopírujte si kľúč hneď. Ukladá sa iba ako hash a znova sa nezobrazí.",
+        "copy_key": "Kopírovať kľúč",
+        "copy_failed": "Kopírovanie zlyhalo. Označte kľúč a skopírujte ho ručne.",
+        "revoke_title": "Odvolať {name}?",
+        "revoke_description": "Požiadavky používajúce tento kľúč budú okamžite odmietané. Túto akciu nie je možné vrátiť späť.",
+        "revoke_confirm": "Odvolať kľúč",
+        "revoked": "Kľúč API {name} bol odvolaný. Požiadavky, ktoré ho používajú, sa odteraz odmietajú.",
+        "revoke_failed": "Kľúč sa nepodarilo odvolať."
+      },
+      "jobs": {
+        "title": "Úlohy",
+        "intro_server": "Cloudové prevody vášho účtu na {host} z ľubovoľného zariadenia. Súbory zostávajú na {host}, kým sa automaticky nezmažú alebo kým ich tu nezmažete.",
+        "intro_account_browser": "Cloudové prevody začaté v tomto prehliadači s vaším účtom. Tento zoznam sa uchováva iba na tomto zariadení. Súbory zostávajú na {host}, kým sa automaticky nezmažú alebo kým ich tu nezmažete.",
+        "intro_anonymous_browser": "Cloudové prevody začaté v tomto prehliadači bez účtu. Tento zoznam sa uchováva iba na tomto zariadení. Súbory zostávajú na {host}, kým sa automaticky nezmažú alebo kým ich tu nezmažete.",
+        "signed_out_notice": "Zobrazujú sa úlohy bez účtu. <link>Prihláste sa</link>, aby ste videli úlohy svojho účtu.",
+        "loading": "Načítavajú sa vaše úlohy…",
+        "list_unsupported": "{host} zatiaľ nevie vypísať úlohy vášho účtu, preto táto stránka zobrazuje úlohy začaté v tomto prehliadači.",
+        "list_error_title": "Úlohy z {host} sa nepodarilo načítať",
+        "list_error_body": "{reason} Medzitým táto stránka zobrazuje úlohy začaté v tomto prehliadači.",
+        "count": "{count, plural, one {# úloha} few {# úlohy} many {# úlohy} other {# úloh}}",
+        "empty": "Zatiaľ žiadne cloudové úlohy. Začnite jednu z <link>prevodníka</link>.",
+        "show_more": "Zobraziť ďalšie úlohy",
+        "loading_more": "Načítavajú sa ďalšie úlohy…",
+        "unnamed": "Úloha {id}",
+        "forgotten": "Úloha {filename} bola odstránená z tohto zoznamu. Jej súbory na serveri zostali nezmenené.",
+        "forgotten_unnamed": "Úloha bola odstránená z tohto zoznamu. Jej súbory na serveri zostali nezmenené.",
+        "status": {
+          "queued": "V rade",
+          "converting": "Prevádza sa",
+          "converting_stage": "Prevádza sa: {stage}",
+          "retrying": "Opakovanie (pokus {attempt})",
+          "reconnecting": "{step} · Opätovné pripájanie…",
+          "ready": "Pripravené",
+          "failed": "Zlyhalo",
+          "canceled": "Zrušené",
+          "deleted": "Zmazané",
+          "deleted_expired": "Zmazané (vypršalo)"
+        },
+        "until": {
+          "less_than_minute": "o menej ako minútu",
+          "minutes": "o {minutes} min",
+          "hours": "o {hours} h",
+          "hours_minutes": "o {hours} h {minutes} min"
+        },
+        "expiry": {
+          "deleted_at": "Automaticky zmazané o {clock}.",
+          "deleted_from_server": "Zmazané zo servera. Vstupné aj výstupné súbory sú preč.",
+          "being_deleted": "Práve sa maže.",
+          "deletes_at": "Automaticky sa zmaže o {clock} ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Tento dokument vyžaduje viac, než váš plán umožňuje. Skúste menší súbor, alebo ho preveďte na tomto zariadení.",
+          "unsupported_route": "Tento server nevie prevádzať medzi týmito formátmi. V prevodníku zvoľte iný cieľ.",
+          "input_io": "Nahraný súbor sa nepodarilo prečítať, alebo už na serveri nie je. Nahrajte ho znova.",
+          "storage": "Server nemohol výsledok uložiť. Skúste to o chvíľu znova.",
+          "tool_missing": "Tomuto serveru chýba modul, ktorý trasa potrebuje. Opýtajte sa jeho prevádzkovateľa, alebo zvoľte iný cieľ.",
+          "other": "Prevod zlyhal. Skúste to znova, alebo súbor preveďte na tomto zariadení."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Načítava sa stav…",
+          "try_again": "Skúsiť znova<hidden> načítať {filename}</hidden>",
+          "technical_details": "Technické podrobnosti",
+          "warnings": "{count, plural, one {# upozornenie} few {# upozornenia} many {# upozornenia} other {# upozornení}}",
+          "download": "Stiahnuť {filename}",
+          "retry_label": "Zopakovať {filename}",
+          "retry_button": "Zopakovať<hidden> {filename}</hidden>",
+          "delete_label": "Zmazať {filename} zo servera hneď",
+          "delete_button": "Zmazať hneď<hidden> {filename} zo servera</hidden>",
+          "remove_label": "Odstrániť z tohto zoznamu ({filename})",
+          "remove_button": "Odstrániť z tohto zoznamu<hidden> ({filename})</hidden>",
+          "deleted_note": "Zmazané z {host}. Vstupné aj výstupné súbory sú preč.",
+          "deleted_announce": "Súbor {filename} bol zmazaný z {host}. Vstupné aj výstupné súbory sú preč.",
+          "ready_announce": "Súbor {filename} je prevedený a pripravený na stiahnutie.",
+          "failed_announce": "Prevod súboru {filename} zlyhal. {reason}",
+          "canceled_announce": "Prevod súboru {filename} bol zrušený.",
+          "downloading": "Sťahuje sa súbor {filename}.",
+          "retrying": "Opakuje sa súbor {filename}.",
+          "retry_conflict": "Nahraný súbor už na serveri nie je. Nahrajte ho znova z prevodníka."
+        }
+      },
+      "sign_in": {
+        "title": "Prihlásenie",
+        "create_title": "Vytvoriť účet",
+        "two_factor_title": "Dvojfázové overenie",
+        "signed_in": "Prihlásené.",
+        "go_to_account": "Prejsť na váš účet",
+        "passkey": "Prihlásiť sa prístupovým kľúčom",
+        "no_account": "Ešte nemáte účet? <switch>Vytvorte si ho</switch>",
+        "have_account": "Už máte účet? <switch>Prihláste sa</switch>",
+        "sign_in_failed": "Prihlásenie zlyhalo. Skontrolujte e-mail a heslo.",
+        "passkey_failed": "Prihlásenie prístupovým kľúčom zlyhalo.",
+        "code_rejected": "Tento kód nebol prijatý. Skúste to znova.",
+        "create_failed": "Účet sa nepodarilo vytvoriť.",
+        "passwords_mismatch": "Heslá sa nezhodujú.",
+        "bot_check": "Dokončite kontrolu proti robotom pri registrácii a skúste to znova.",
+        "confirm_password": "Potvrďte heslo",
+        "create_account": "Vytvoriť účet",
+        "totp_help": "Zadajte 6-miestny kód z overovacej aplikácie.",
+        "backup_help": "Zadajte jeden zo záložných kódov, ktoré ste si uložili pri zapnutí dvojfázového overenia. Každý kód funguje len raz.",
+        "backup_code": "Záložný kód",
+        "trust_device": "Dôverovať tomuto prehliadaču 30 dní",
+        "verify": "Overiť",
+        "use_backup": "Použiť namiesto toho záložný kód",
+        "use_authenticator": "Použiť namiesto toho kód z overovacej aplikácie",
+        "signed_in_user": "Ste prihlásení ako <user>{email}</user>."
+      }
+    },
+    "app": {
+      "sections_label": "Sekcie aplikácie",
+      "tab": {
+        "convert": "Konvertovať",
+        "tools": "Nástroje",
+        "workspace": "Pracovný priestor PDF"
+      },
+      "tools_lede": "Každý nástroj, zoskupený podľa toho, čo robí. Vyberte jeden a otvorí sa v pracovnom priestore PDF.",
+      "workspace_loading": "Načítava sa pracovný priestor PDF…",
+      "workspace_failed": "Pracovný priestor PDF sa nepodarilo načítať.",
+      "retry": "Skúsiť znova",
+      "tools_loading": "Načítavajú sa nástroje…",
+      "tools_failed": "Nástroje sa nepodarilo načítať."
+    },
+    "tools": {
+      "hub": {
+        "label": "Nástroje",
+        "search": "Hľadať nástroje…",
+        "open_palette": "Otvoriť paletu príkazov",
+        "command": "Príkaz",
+        "zero_upload": "V tomto zariadení · 0 bajtov nahraných",
+        "categories": "Kategória",
+        "all": "Všetky",
+        "runtimes": "Kde beží",
+        "count": "{count, plural, one {# nástroj} few {# nástroje} many {# nástroja} other {# nástrojov}}",
+        "no_match": "Žiadny nástroj nezodpovedá",
+        "try_recipe": "Skúste v palete príkazov jednoduchú vetu, napríklad „otočiť o 90 stupňov a potom komprimovať“.",
+        "reset": "Obnoviť vyhľadávanie a filtre",
+        "open_in_palette": "Skúsiť v palete príkazov"
+      },
+      "category": {
+        "organize": "Usporiadanie a skladanie",
+        "convert": "Konvertovať",
+        "compress": "Kompresia a oprava",
+        "edit": "Úpravy a označovanie",
+        "forms_annotations": "Formuláre a anotácie",
+        "security": "Zabezpečenie a podpisy",
+        "ocr_scan": "OCR a skenovanie",
+        "metadata_inspect": "Kontrola a porovnanie",
+        "automation_ai": "Automatizácia a AI"
+      },
+      "runtime": {
+        "browser": "Prehliadač",
+        "desktop": "Počítač",
+        "cloud": "Cloud",
+        "list": "Beží v"
+      },
+      "tier": {
+        "free": "Zadarmo",
+        "pro": "Pro"
+      },
+      "favorites": "Obľúbené",
+      "recents": "Nedávne nástroje",
+      "favorite": {
+        "add": "Pridať do obľúbených",
+        "remove": "Odstrániť z obľúbených"
+      },
+      "card": {
+        "open": "Otvoriť"
+      },
+      "palette": {
+        "title": "Paleta príkazov nástrojov",
+        "description": "Hľadajte nástroje alebo vetou opíšte, čo chcete urobiť, a stlačte Enter.",
+        "placeholder": "Hľadať nástroje alebo opísať recept…",
+        "search": "Hľadať nástroje",
+        "empty": "Žiadny nástroj nezodpovedá. Skúste vetu ako „otočiť o 90 a potom komprimovať“.",
+        "recipe": "Recept",
+        "recipe_steps": "Kroky receptu",
+        "step": "Krok",
+        "recipe_review": "Pred spustením skontrolujte: niektorý krok vyžaduje počítač, cloud, AI alebo natrvalo zmení súbor.",
+        "recipe_ready": "Stlačením Enter načítate tento recept.",
+        "confirm": "Najprv skontrolovať",
+        "results": "Nástroje",
+        "actions": "Akcie",
+        "jump_convert": "Prejsť na Konvertovať",
+        "switch_theme": "Prepnúť vzhľad",
+        "clear_recents": "Vymazať nedávne nástroje",
+        "hint": "Vyhľadávanie prebieha v tomto zariadení.",
+        "open": "Otvoriť",
+        "close": "Zavrieť"
+      },
+      "title": {
+        "pdf": {
+          "info": "Informácie",
+          "merge": "Zlúčiť",
+          "split": "Rozdeliť",
+          "extract_pages": "Extrahovať stránky",
+          "delete_pages": "Odstrániť stránky",
+          "reorder": "Zmeniť poradie",
+          "alternate_mix": "Striedavé miešanie",
+          "insert_blank": "Vložiť prázdnu",
+          "rotate": "Otočiť",
+          "crop": "Orezať",
+          "scale": "Zmeniť mierku",
+          "single_page": "Jedna stránka",
+          "rotate_content": "Otočiť obsah",
+          "decompress": "Dekomprimovať",
+          "nup": "N-up",
+          "booklet": "Brožúra",
+          "overlay": "Prekrytie",
+          "divide_pages": "Rozdeliť stránky",
+          "posterize": "Posterizovať",
+          "metadata": "Metadáta",
+          "outline": "Osnova",
+          "attachments": "Prílohy",
+          "page_labels": "Označenia stránok",
+          "viewer_prefs": "Nastavenia zobrazenia",
+          "portfolio": "Portfólio",
+          "layers": "Vrstvy",
+          "replace_color": "Nahradiť farby",
+          "adjust_colors": "Upraviť farby",
+          "watermark": "Vodoznak",
+          "stamp": "Pečiatka",
+          "add_image": "Pridať obrázok",
+          "add_text": "Pridať text",
+          "qr": "QR kód",
+          "page_numbers": "Čísla stránok",
+          "header_footer": "Hlavičky a päty",
+          "bates": "Bates číslovanie",
+          "toc_page": "Stránka s obsahom",
+          "background": "Pozadie",
+          "invert_colors": "Invertovať farby",
+          "watermark_detect": "Zistiť vodoznaky",
+          "watermark_remove": "Odstrániť vodoznaky",
+          "watermark_remove_raster": "Odstrániť rastrové vodoznaky",
+          "render": "Vykresliť stránky",
+          "to_images": "PDF na obrázky",
+          "thumbnails": "Miniatúry",
+          "extract_images": "Extrahovať obrázky",
+          "text_layout": "Rozloženie textu",
+          "remove_blank": "Odstrániť prázdne stránky",
+          "crop_whitespace": "Orezať biele okraje",
+          "detect_scanned": "Zistiť skenované stránky",
+          "compress": "Komprimovať",
+          "grayscale": "Odtiene sivej",
+          "repair": "Opraviť",
+          "linearize": "Linearizovať",
+          "encrypt": "Zašifrovať",
+          "decrypt": "Dešifrovať",
+          "permissions": "Oprávnenia",
+          "sanitize": "Vyčistiť",
+          "unlock_forms": "Odomknúť formuláre",
+          "ocr": "OCR",
+          "auto_rotate": "Automatické otočenie",
+          "deskew": "Vyrovnať sklon",
+          "scan_split": "Rozdelenie skenu",
+          "scanner_effect": "Efekt skenera",
+          "annotations": "Anotácie",
+          "annotations_import": "Importovať anotácie",
+          "annotations_export": "Exportovať anotácie",
+          "forms_list": "Zobraziť polia formulára",
+          "forms_fill": "Vyplniť formuláre",
+          "forms_create": "Vytvoriť formuláre",
+          "forms_flatten": "Zploštiť formuláre",
+          "forms_detect": "Zistiť polia formulára",
+          "forms_import": "Importovať hodnoty formulára",
+          "forms_export": "Exportovať hodnoty formulára",
+          "redact": "Začierniť",
+          "redact_verify": "Overiť začiernenie",
+          "sign_visual": "Vizuálny podpis",
+          "sign": "Podpísať",
+          "sign_token": "Podpísať tokenom",
+          "timestamp": "Časová pečiatka",
+          "sign_verify": "Overiť podpisy",
+          "sign_remove": "Odstrániť podpisy",
+          "tables_to_csv": "Tabuľky do CSV",
+          "to_cbz": "Do CBZ",
+          "compare": "Porovnať",
+          "to_pdfa": "Do PDF/A",
+          "to_pdfua": "Do PDF/UA",
+          "accessibility_report": "Správa o prístupnosti",
+          "validate_pdfa": "Overiť PDF/A",
+          "validate_pdfua": "Overiť PDF/UA"
+        },
+        "image": {
+          "to_pdf": "Obrázok do PDF",
+          "ocr": "OCR obrázka"
+        },
+        "web": {
+          "to_pdf": "Web do PDF"
+        },
+        "edit": {
+          "open_document": "Otvoriť dokument",
+          "export_document": "Exportovať dokument",
+          "page_objects": "Objekty na stránke",
+          "apply": "Použiť"
+        },
+        "ai": {
+          "summarize": "AI zhrnutie",
+          "ask": "AI otázka",
+          "translate": "AI preklad",
+          "extract_tables": "AI extrakcia tabuliek",
+          "recipe_from_text": "AI recept z textu"
+        }
+      }
+    },
+    "workspace": {
+      "main": {
+        "title": "Pracovný priestor",
+        "lede": "Všetko beží v tejto karte prehliadača.",
+        "viewer": "Náhľad",
+        "pages_tab": "Stránky",
+        "tools_tab": "Nástroj",
+        "no_pdf": "Pridajte PDF, aby ste zobrazili náhľad a usporiadali jeho stránky.",
+        "tools": "Nástroje",
+        "tool_picker": "Vyberte nástroj",
+        "dismiss_error": "Zavrieť",
+        "working": "Pracuje sa…"
+      },
+      "file_tray": {
+        "privacy": "V tomto zariadení · 0 bajtov nahraných",
+        "title": "Súbory",
+        "empty": "Presuňte sem PDF alebo iné súbory a začnite. Nič sa nenahráva.",
+        "choose": "Vybrať súbory",
+        "add_more": "Pridať súbory",
+        "drop_title": "Pustením pridáte súbory",
+        "drop_description": "Zostanú v tomto prehliadači.",
+        "pages": "{count, plural, one {# stránka} few {# stránky} many {# stránky} other {# stránok}}",
+        "remove": "Odstrániť {name}",
+        "move_up": "Posunúť {name} vyššie",
+        "move_down": "Posunúť {name} nižšie",
+        "use": "Pracovať so súborom {name}",
+        "active": "Otvorený",
+        "storage_opfs": "Uložené v úložisku súborov prehliadača",
+        "storage_memory": "Držané v pamäti",
+        "reading": "Čítajú sa súbory…",
+        "list": "Súbory v tomto pracovnom priestore",
+        "problem": "Súbor {name} sa nepodarilo prečítať."
+      },
+      "insights": {
+        "title": "Čo je v tomto PDF",
+        "loading": "Dokument sa číta v tomto zariadení…",
+        "failed": "Dokument sa nepodarilo analyzovať.",
+        "pages": "{count, plural, one {# stránka} few {# stránky} many {# stránky} other {# stránok}}",
+        "scanned": "{count, plural, one {# skenovaná stránka} few {# skenované stránky} many {# skenovanej stránky} other {# skenovaných stránok}}",
+        "blank": "{count, plural, one {# prázdna stránka} few {# prázdne stránky} many {# prázdnej stránky} other {# prázdnych stránok}}",
+        "dpi_unknown": "Rozlíšenie obrázkov je neznáme",
+        "dpi_single": "Obrázky približne {dpi} DPI",
+        "dpi_range": "Obrázky približne {min}–{max} DPI",
+        "low_dpi": "Nízke rozlíšenie na {count, plural, one {# stránke} few {# stránkach} many {# stránky} other {# stránkach}} ({list})",
+        "form_fields": "{count, plural, one {# prázdne povinné pole} few {# prázdne povinné polia} many {# prázdneho povinného poľa} other {# prázdnych povinných polí}}",
+        "signatures": "{count, plural, one {# podpis} few {# podpisy} many {# podpisu} other {# podpisov}}",
+        "metadata": "Obsahuje metadáta",
+        "edit_history": "Má históriu úprav",
+        "encrypted": "Zašifrované",
+        "linearized": "Linearizované",
+        "clean": "Nič sa nenašlo",
+        "suggested": "Navrhované ďalšie kroky",
+        "no_suggestions": "Nič nevyžaduje pozornosť. Pokračujte ľubovoľným nástrojom.",
+        "open": "Otvoriť {tool}"
+      },
+      "page_grid": {
+        "title": "Stránky",
+        "toolbar": "Úpravy stránok",
+        "undo": "Späť",
+        "redo": "Znova",
+        "reset": "Obnoviť",
+        "pending": "{count, plural, one {# čakajúca zmena} few {# čakajúce zmeny} many {# čakajúcej zmeny} other {# čakajúcich zmien}}",
+        "select_all": "Vybrať všetko",
+        "clear_selection": "Zrušiť výber",
+        "select_range": "Vybrať stránky",
+        "range_placeholder": "napr. 3-7",
+        "rotate_left": "Otočiť vľavo",
+        "rotate_right": "Otočiť vpravo",
+        "delete_selected": "Odstrániť vybrané",
+        "restore_selected": "Obnoviť vybrané",
+        "apply": "Použiť zmeny",
+        "hint": "Na zmenu poradia potiahnite úchyt, alebo naň prejdite a použite šípky. Kliknutím so Shiftom vyberiete rozsah.",
+        "drag_hint": "Potiahnutím alebo šípkami zmeníte poradie",
+        "moved": "Stránka {page} presunutá na pozíciu {position}",
+        "cannot_delete_all": "Dokument musí mať aspoň jednu stránku.",
+        "card_page": "Stránka {page}",
+        "card_select": "Vybrať stránku {page}",
+        "card_rotate": "Otočiť stránku {page}",
+        "card_delete": "Odstrániť stránku {page}",
+        "card_move": "Zmeniť poradie stránky {page}",
+        "card_restore": "Obnoviť stránku {page}",
+        "blank": "Prázdna",
+        "scanned": "Skenovaná"
+      },
+      "inspector": {
+        "title": "Nástroj",
+        "empty": "Vyberte nástroj a zobrazia sa jeho možnosti.",
+        "runtime": {
+          "browser": "Prehliadač",
+          "desktop": "Počítač",
+          "cloud": "Cloud"
+        },
+        "tier": {
+          "free": "Zadarmo",
+          "pro": "Pro"
+        },
+        "run_here": "Spustiť nástroj v tomto zariadení",
+        "running": "Spúšťa sa…",
+        "cancel": "Zrušiť",
+        "run_cloud": "Spustiť v cloude",
+        "cloud_note": "Tento nástroj beží na našich serveroch; váš súbor sa preň nahrá.",
+        "switch_desktop": "Radšej spustiť na počítači",
+        "switch_browser": "Späť na toto zariadenie",
+        "needs_file": "Najprv pridajte súbor.",
+        "needs_pdf": "Tento nástroj vyžaduje PDF.",
+        "invalid": "Ak chcete pokračovať, opravte zvýraznené možnosti.",
+        "failed": "Nástroj sa zastavil: {message}",
+        "progress": "Priebeh nástroja"
+      },
+      "handoff": {
+        "title": "Spustiť na počítači",
+        "why": "Tento nástroj nemožno spustiť v prehliadači. Spustite ho príkazovým riadkom AriadShift; vaše súbory nikdy neopustia váš počítač.",
+        "command": "Príkaz",
+        "copy": "Kopírovať príkaz",
+        "copied": "Príkaz skopírovaný",
+        "copy_failed": "Kopírovanie zlyhalo. Označte príkaz a skopírujte ho.",
+        "install": "Získať AriadShift",
+        "open_app": "Otvoriť v desktopovej aplikácii",
+        "reveal_secrets": "Zobraziť tajné hodnoty",
+        "mask_secrets": "Skryť tajné hodnoty",
+        "secret_note": "Tajné hodnoty sú v príkaze skryté, kým ich nezobrazíte."
+      },
+      "result": {
+        "title": "Výsledok",
+        "before": "Pred",
+        "after": "Po",
+        "size": "Veľkosť",
+        "pages": "Stránky",
+        "duration": "Čas",
+        "change_none": "bez zmeny",
+        "change_up": "+{percent}%",
+        "change_down": "−{percent}%",
+        "bytes": "{value} bajtov",
+        "millis": "{value} ms",
+        "seconds": "{value} s",
+        "warnings": "Upozornenia",
+        "details": "Podrobnosti",
+        "download": "Stiahnuť {name}",
+        "open_in_editor": "Otvoriť v editore",
+        "continue": "Pokračovať iným nástrojom",
+        "save_recipe": "Uložiť ako recept",
+        "undo": "Späť",
+        "outputs": "Výstupné súbory",
+        "download_failed": "Súbor sa nepodarilo uložiť."
+      },
+      "thread": {
+        "label": "Kroky",
+        "status": {
+          "pending": "Čaká",
+          "running": "Beží",
+          "completed": "Hotovo",
+          "skipped": "Preskočené",
+          "failed": "Zlyhalo"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Priblížiť",
+        "zoom_out": "Oddialiť",
+        "fit_width": "Prispôsobiť šírke",
+        "fit_page": "Prispôsobiť stránke",
+        "zoom_level": "{percent}%",
+        "page": "Číslo stránky",
+        "page_of": "z {count}",
+        "search": "Hľadať v dokumente",
+        "search_placeholder": "Hľadať text",
+        "search_run": "Hľadať",
+        "search_cancel": "Zrušiť hľadanie",
+        "search_clear": "Vymazať hľadanie",
+        "search_next": "Ďalšia zhoda",
+        "search_previous": "Predchádzajúca zhoda",
+        "searching": "Hľadá sa… {percent}%",
+        "matches": "{current} z {total}",
+        "no_matches": "Žiadne zhody",
+        "dark_pages": "Tmavé stránky",
+        "loading": "Dokument sa otvára v tomto zariadení…",
+        "unavailable": "Zobrazovač potrebuje WebAssembly, ktorý tento prehliadač nepodporuje.",
+        "document_error": "Tento dokument sa nepodarilo zobraziť.",
+        "toolbar": "Ovládanie zobrazovača dokumentov"
+      }
+    }
+  }
+}

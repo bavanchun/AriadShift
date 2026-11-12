@@ -25,6 +25,7 @@ pub mod session;
 pub mod tools;
 #[cfg(feature = "typst")]
 pub mod typst_render;
+pub mod watch;
 pub mod watchdog;
 pub mod workspace;
 

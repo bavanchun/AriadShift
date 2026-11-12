@@ -1,7 +1,7 @@
 // Offline support for the in-browser converter. The converter page posts the URLs it
 // and its worker loaded; they are cached here and served when the network is gone.
 // The worker is registered for the whole origin so that the converter's own worker
-// script falls under it, but it only answers /app navigations and the static assets
+// script falls under it, but it only answers /<locale>/app navigations and the static assets
 // `isOfflineAsset` (offline-policy.mjs, inlined above) accepts; content-hashed assets
 // come from the cache first and the rest from the network first. Auth, API and document
 // requests pass straight to the network and are never stored.
@@ -80,7 +80,7 @@ self.addEventListener("message", (event) => {
 });
 
 function isConverterPage(url) {
-  return url.pathname === "/app" || url.pathname.startsWith("/app/");
+  return isConverterPath(url.pathname);
 }
 
 self.addEventListener("fetch", (event) => {
@@ -104,7 +104,7 @@ self.addEventListener("fetch", (event) => {
           const cache = await caches.open(CACHE);
           const cached =
             (await cache.match(request, { ignoreSearch: true })) ??
-            (await cache.match(`${self.location.origin}/app`));
+            (await cache.match(`${self.location.origin}${url.pathname}`));
           if (cached) {
             return cached;
           }

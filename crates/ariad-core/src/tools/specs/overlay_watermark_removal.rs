@@ -2,7 +2,10 @@
 
 use crate::tools::{
     InputArity, Tier, ToolGroup, ToolRuntime, ToolSpec,
-    params::{WatermarkDetectParams, WatermarkRemoveParams},
+    params::{
+        WatermarkDetectParams, WatermarkRemoveParams, WatermarkRemoveRasterParams,
+        schema_for_params,
+    },
 };
 use schemars::{Schema, generate::SchemaSettings};
 
@@ -40,7 +43,7 @@ pub fn specs() -> Vec<ToolSpec> {
             output_formats: &[],
             params_schema: detect_schema,
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
             secret_params: &[],
         },
@@ -55,8 +58,23 @@ pub fn specs() -> Vec<ToolSpec> {
             output_formats: &[],
             params_schema: remove_schema,
             tier: Tier::Free,
-            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud],
             engine: "ariad-pdf",
+            secret_params: &[],
+        },
+        ToolSpec {
+            id: "pdf.watermark_remove_raster",
+            version: "1",
+            group: ToolGroup::Overlay,
+            summary: "Preview or remove raster watermarks with inpainting.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "pdf",
+            output_formats: &["pdf", "png"],
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Local],
+            engine: "inpaint",
+            params_schema: schema_for_params::<WatermarkRemoveRasterParams>,
             secret_params: &[],
         },
     ]
@@ -68,8 +86,8 @@ mod tests {
     #[test]
     fn explicit_watermark_contracts_are_typed() {
         let specs = specs();
-        assert_eq!(specs.len(), 2);
-        for spec in &specs {
+        assert_eq!(specs.len(), 3);
+        for spec in &specs[..2] {
             assert_eq!(spec.group, ToolGroup::Overlay);
             assert_eq!(spec.engine, "ariad-pdf");
             assert_eq!(spec.input_formats, &["pdf"]);

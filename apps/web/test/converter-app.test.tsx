@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { ConverterApp } from "@/components/converter/converter-app";
 import { ConverterClient } from "@/converter/client";
 import type { RequestEnvelope, WorkerResponse } from "@/converter/protocol";
+import { renderIntl } from "./intl";
 
 class FakeWorker extends EventTarget {
   readonly session = "test-session";
@@ -73,7 +74,7 @@ describe("ConverterApp", () => {
     };
     const client = new ConverterClient(() => worker as unknown as Worker);
 
-    render(<ConverterApp client={client} />);
+    renderIntl(<ConverterApp client={client} />);
 
     const input = document.querySelector("input[type=file]") as HTMLInputElement;
     const file = new File(["# Hello"], "notes.md", { type: "text/markdown" });
@@ -147,7 +148,7 @@ describe("ConverterApp", () => {
     };
 
     const client = new ConverterClient(() => worker as unknown as Worker);
-    render(<ConverterApp client={client} />);
+    renderIntl(<ConverterApp client={client} />);
 
     const fileInput = document.querySelector("input[type=file]") as HTMLInputElement;
     const file = new File(["# Hello"], "notes.md", { type: "text/markdown" });
@@ -199,7 +200,7 @@ describe("ConverterApp", () => {
       return worker.ok(request);
     };
     const client = new ConverterClient(() => worker as unknown as Worker);
-    render(<ConverterApp client={client} />);
+    renderIntl(<ConverterApp client={client} />);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     const fileInput = document.querySelector("input[type=file]") as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [new File(["# Hello"], "notes.md")] } });
@@ -252,7 +253,7 @@ describe("ConverterApp", () => {
       return worker.ok(request);
     };
     const client = new ConverterClient(() => worker as unknown as Worker);
-    render(<ConverterApp client={client} />);
+    renderIntl(<ConverterApp client={client} />);
 
     const fileInput = document.querySelector("input[type=file]") as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [new File(["PK"], "notes.docx")] } });

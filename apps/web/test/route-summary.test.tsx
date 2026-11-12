@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { RouteSummary } from "@/components/route-summary";
+import { renderIntl } from "./intl";
 
 describe("RouteSummary", () => {
   it("lists the route and its scores", () => {
-    render(
+    renderIntl(
       <RouteSummary
         route={{
           steps: [
@@ -27,7 +28,7 @@ describe("RouteSummary", () => {
   });
 
   it("flags unmeasured routes", () => {
-    render(
+    renderIntl(
       <RouteSummary
         route={{
           steps: [{ from: "pdf", to: "ariad-ir+json", engine: "docling" }],

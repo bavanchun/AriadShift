@@ -1,0 +1,1062 @@
+{
+  "common": {
+    "profile": {
+      "editable": {
+        "label": "Editagarria",
+        "description": "Editatzen jarrai dezakezun benetako goiburuak, zerrendak eta taulak."
+      },
+      "faithful": {
+        "label": "Fidela",
+        "description": "Diseinuarengandik ahalik eta hurbilen mantendu."
+      },
+      "fast": {
+        "label": "Azkarra",
+        "description": "Bide azkarrena lehenetsi."
+      },
+      "private": {
+        "label": "Pribatua",
+        "description": "Zure gailutik inoiz ateratzen ez diren motorrak soilik."
+      }
+    },
+    "engine": {
+      "ariad_core": "AriadShift nukleoa",
+      "ariad_pdf": "AriadShift PDF",
+      "pdf": "PDF testu-irakurlea"
+    },
+    "runtime": {
+      "wasm": "Nabigatzailea",
+      "local": "CLI eta mahaigaineko aplikazioa",
+      "cloud": "Hodeia"
+    },
+    "score": {
+      "not_measured": "neurtu gabe"
+    },
+    "duration": {
+      "under_1_ms": "1 ms baino gutxiago"
+    },
+    "format": {
+      "markdown": {
+        "noun": "Markdown dokumentua",
+        "description": "CommonMark GitHub Flavored Markdown-ekin: goiburuak, zerrendak, taulak, zeregin-zerrendak, oin-oharrak eta matematika. IA tresna gehienek onen irakurtzen duten formatua."
+      },
+      "html": {
+        "noun": "HTML orria",
+        "description": "HTML5 orri autonomoa. Sarrerako markaketa gordina garbitu egiten da; script-ek eta atributu ez-seguruek ez dute inoiz irteerara iristen."
+      },
+      "ir_json": {
+        "noun": "AriadShift IR dokumentua",
+        "description": "AriadShift-en bide guztiek zeharkatzen duten dokumentu-eredu egituratua: goiburuak, blokeak, taulak, baliabideak eta metadatuak, JSON bertsiodun gisa."
+      },
+      "docx": {
+        "noun": "Word dokumentua",
+        "description": "Microsoft Word, LibreOffice eta Google Docs-en Office Open XML dokumentuak, Pandoc bidez irakurriak eta idatziak."
+      },
+      "epub": {
+        "noun": "EPUB e-liburua",
+        "description": "EPUB 3 e-liburuak, Pandoc bidez irakurriak eta idatziak, metadatu erreproduzigarriekin."
+      },
+      "pdf": {
+        "noun": "PDF dokumentua",
+        "description": "PDF digitalaren testua gailu honetan irakurtzen da. PDF irteerak Typst eta txertatutako letra-tipoak erabiltzen ditu. Eskaneatutako orriek OCR behar dute mahaigaineko aplikazioan."
+      },
+      "odt": {
+        "noun": "OpenDocument testu-dokumentua",
+        "description": "OpenDocument testu-fitxategiek LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "rtf": {
+        "noun": "Rich Text dokumentua",
+        "description": "Rich Text dokumentuek LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "pptx": {
+        "noun": "PowerPoint aurkezpena",
+        "description": "PowerPoint aurkezpenek Docling edo LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "xlsx": {
+        "noun": "Excel lan-liburua",
+        "description": "Excel lan-liburuek Docling edo LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "doc": {
+        "noun": "Word dokumentu zaharra",
+        "description": "Word dokumentu zaharrek LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "xls": {
+        "noun": "Excel lan-liburu zaharra",
+        "description": "Excel lan-liburu zaharrek LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "ppt": {
+        "noun": "PowerPoint aurkezpen zaharra",
+        "description": "PowerPoint aurkezpen zaharrek LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "ods": {
+        "noun": "OpenDocument kalkulu-orria",
+        "description": "OpenDocument kalkulu-orriek LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "odp": {
+        "noun": "OpenDocument aurkezpena",
+        "description": "OpenDocument aurkezpenek LibreOffice erabiltzen dute mahaigaineko aplikazioan."
+      },
+      "png": {
+        "noun": "PNG irudia",
+        "description": "Irudietako testua ateratzeko Docling motor-paketea behar da mahaigaineko aplikazioan."
+      },
+      "jpeg": {
+        "noun": "JPEG irudia",
+        "description": "Irudietako testua ateratzeko Docling motor-paketea behar da mahaigaineko aplikazioan."
+      },
+      "webp": {
+        "noun": "WebP irudia",
+        "description": "Irudietako testua ateratzeko Docling motor-paketea behar da mahaigaineko aplikazioan."
+      },
+      "tiff": {
+        "noun": "TIFF irudia",
+        "description": "Irudietako testua ateratzeko Docling motor-paketea behar da mahaigaineko aplikazioan."
+      }
+    }
+  },
+  "web": {
+    "meta": {
+      "site_title": "{site}: dokumentuen bihurketa pribatua zure nabigatzailean",
+      "site_description": "Bihurtu Markdown, HTML eta JSON egituratua zure gailuan bertan. Lehenespenez pribatua, bide guztietan kalitate neurtuarekin eta IA agenteentzat prest.",
+      "title_template": "{title} | {site}"
+    },
+    "shell": {
+      "skip_to_content": "Joan edukira",
+      "home_link": "{site} hasiera",
+      "nav_label": "Nagusia",
+      "nav": {
+        "converter": "Bihurgailua",
+        "formats": "Formatuak",
+        "quality": "Kalitatea",
+        "download": "Deskargatu",
+        "privacy": "Pribatutasuna"
+      },
+      "footer": {
+        "license": "AriadShift kode irekikoa da, Apache-2.0 lizentziapean.",
+        "privacy": "Pribatutasuna",
+        "licenses": "Lizentziak",
+        "quality": "Kalitatea",
+        "source": "Iturburu-kodea"
+      },
+      "language": {
+        "label": "Hizkuntza",
+        "button": "Hizkuntza: {name}",
+        "list_label": "Aukeratu hizkuntza bat",
+        "community_badge": "Komunitatearen itzulpena",
+        "community_note": "Komunitatearen itzulpenak makina-zirriborroak dira, eta jendeak zuzendu ditzake oraindik."
+      }
+    },
+    "not_found": {
+      "title": "Ez da orria aurkitu",
+      "body": "Orri hau ez da existitzen.",
+      "home_link": "Joan hasierako orrira"
+    },
+    "home": {
+      "meta_title": "Bihurtu dokumentuak zure gailuan",
+      "title": "Bihurtu dokumentuak zure gailuan",
+      "lede": "AriadShift-ek Markdown, HTML, Word, EPUB eta JSON egituratua bihurtzen ditu hemen bertan, zure nabigatzailean. Irakurri PDF digitalen testua eta sortu PDFak zure gailuan. Planifikatzaile neurtu bat, igoerarik gabe.",
+      "open_converter": "Ireki bihurgailua",
+      "install_cli": "Instalatu CLI",
+      "why_heading": "Zergatik AriadShift",
+      "why": {
+        "private": {
+          "title": "Lehenespenez pribatua",
+          "body": "Bihurgailuak zure nabigatzailean exekutatzen da, WebAssembly erabiliz. Zure dokumentua nabigatzailearen fitxategi-sistema pribatuan gordetzen da, eta ez da inoiz igotzen."
+        },
+        "quality": {
+          "title": "Kalitate neurtua",
+          "body": "Bide bakoitzak fideltasun- eta editagarritasun-puntuazioak ditu, erreferentziako proba publiko batetik. Planifikatzaileak onena aukeratzen du eta zergatik azaltzen dizu."
+        },
+        "agents": {
+          "title": "IA agenteentzat prest",
+          "body": "Bihurtu dokumentuak Markdown garbi edo JSON egituratu, LLM testuingururako. CLIak MCP zerbitzari bat dakar, agenteek berek fitxategiak bihur ditzaten."
+        }
+      },
+      "how_heading": "Nola funtzionatzen du",
+      "how": {
+        "step_label": "{number}. urratsa",
+        "step_1": "Fitxategi bat aukeratzen duzu. Nabigatzaileak bere fitxategi-sistema pribatura kopiatzen du.",
+        "step_2": "Atzeko planoko langile batek WebAssembly-ra konpilatutako AriadShift motorra kargatzen du.",
+        "step_3": "Planifikatzaileak zure helburuarentzat puntuazio neurturik onena duen bidea aukeratzen du.",
+        "step_4": "Emaitza deskargatzen duzu. Berriz hasteak gordetako fitxategi guztiak ezabatzen ditu."
+      },
+      "pairs_heading": "Bihurtu zure nabigatzailean",
+      "pair_link": "{from} formatutik {to} formatura",
+      "see_more": "Ikusi <formats>onartutako formatu guztiak</formats> eta bide bakoitzaren <quality>kalitate neurtua</quality>."
+    },
+    "formats": {
+      "meta_title": "Onartutako formatuak",
+      "meta_description": "AriadShift-ek zein dokumentu-formatu irakurtzen eta idazten dituen, eta zein bihurketa exekutatzen diren zure nabigatzailean.",
+      "title": "Onartutako formatuak",
+      "lede": "Bihurketa guztiak AriadShift-en dokumentu-ereduatik igarotzen dira. “Nabigatzailea” markatutako formatuak gailu honetan bihurtzen dira osoki; gainerakoek komando-lerroko tresna behar dute oraingoz.",
+      "badge_browser": "Nabigatzailea eta CLI",
+      "badge_cli": "CLI",
+      "extensions": "Luzapenak: {list}",
+      "engines": "Irakurtzailea: {readers}; idazlea: {writers}.",
+      "no_engine": "motorrik ez oraindik",
+      "convert_to": "Bihurtu honetara: <targets></targets>"
+    },
+    "quality": {
+      "meta_title": "Kalitate neurtua",
+      "meta_description": "AriadShift-en bihurketa-urrats bakoitzaren fideltasuna, editagarritasuna eta abiadura, erreferentziako proba publiko batetik sortuak.",
+      "title": "Kalitate neurtua",
+      "lede": "Puntuazio hauek ez dira eskuz idatziak. Erreferentziako probak {count, plural, one {proba-dokumentu publiko #} other {# proba-dokumentu publiko}} bihurtzen ditu urrats guztietatik eta emaitza egia ezagunarekin alderatzen du. Planifikatzaileak zenbaki berberak irakurtzen ditu bide bat aukeratzen duenean.",
+      "generated": "{pandoc, select, none {{date} datan sortua.} other {{date} datan sortua, Pandoc {pandoc} erabiliz.}}",
+      "methodology": "<link>Irakurri metodologia</link>.",
+      "caption": "Erreferentziako puntuazioak bihurketa-urratsko",
+      "column": {
+        "step": "Urratsa",
+        "engine": "Motorra",
+        "runs_in": "Non exekutatzen den",
+        "fidelity": "Fideltasuna",
+        "editability": "Editagarritasuna",
+        "median_time": "Denbora mediana",
+        "samples": "Laginak"
+      }
+    },
+    "route": {
+      "label": "Bihurketa-bidea",
+      "then": "gero",
+      "fidelity": "Fideltasuna",
+      "editability": "Editagarritasuna",
+      "estimated_time": "Aurreikusitako denbora",
+      "unmeasured": "Bide honen zati bat ez da oraindik probatu, beraz planifikatzaileak kontuz puntuatzen du."
+    },
+    "download": {
+      "meta_title": "Deskargatu",
+      "meta_description": "Instalatu AriadShift-en komando-lerroko tresna eta MCP zerbitzaria macOS, Linux eta Windows sistemetan.",
+      "title": "Deskargatu AriadShift",
+      "lede": "<code>ashift</code> komandoak Markdown, HTML, DOCX eta EPUB bihurtzen ditu zure ordenagailuan, eta MCP zerbitzari bat exekutatzen du IA agenteentzat. DOCX eta EPUB bideek <pandoc>Pandoc 3.12 edo berriagoa</pandoc> erabiltzen dute programa bereizi gisa.",
+      "channel": {
+        "homebrew": {
+          "title": "Homebrew (macOS eta Linux)",
+          "note": "Formula argitaratzen denean erabilgarri. Pandoc ere instalatzen du, DOCX eta EPUB bideek behar dutena."
+        },
+        "shell": {
+          "title": "Shell instalatzailea (macOS eta Linux)"
+        },
+        "powershell": {
+          "title": "PowerShell instalatzailea (Windows)"
+        },
+        "winget": {
+          "title": "WinGet (Windows)",
+          "note": "Paketearen bidalketa onartzen denean erabilgarri."
+        },
+        "cargo": {
+          "title": "Cargo",
+          "note": "Crate-ak crates.io-n argitaratzen direnean erabilgarri."
+        }
+      },
+      "then_heading": "Ondoren",
+      "releases": "Plataforma guztietarako artxiboak <link>GitHub Releases</link> orrian daude.",
+      "desktop": {
+        "title": "Mahaigaineko aplikazioa",
+        "body": "macOS, Windows eta Linux sistemetarako mahaigaineko aplikazio bat dator, lote-bihurketarekin eta karpeten jarraipenarekin. Lehen bertsioa kaleratzen denean hemen zerrendatuko da."
+      }
+    },
+    "pair": {
+      "meta_title": "Bihurtu {from} formatutik {to} formatura",
+      "meta_description_browser": "Bihurtu {noun} {to} formatura zure nabigatzailean, pribatuan, AriadShift-ekin. Fideltasun neurtua, igoerarik gabe.",
+      "meta_description_cli": "Bihurtu {noun} {to} formatura zure ordenagailuan AriadShift-ekin. Fideltasun neurtua, igoerarik gabe.",
+      "badge_browser": "Zure nabigatzailean exekutatzen da",
+      "badge_cli": "AriadShift CLIarekin exekutatzen da",
+      "title": "Bihurtu {from} formatutik {to} formatura",
+      "lede_browser": "Bihurtu {noun} {to} formatura igo gabe. AriadShift-ek fitxategia zure nabigatzailean irakurtzen du, bere dokumentu-ereduan mapatzen du eta {to} idazten du zure gailuan.",
+      "lede_cli": "Bihurtu {noun} {to} formatura zure ordenagailuan, AriadShift-en komando-lerroko tresna doakoarekin. Nabigatzaile-bertsioak ez du oraindik bide hau exekutatzen.",
+      "convert_now": "Bihurtu {from} formatutik {to} formatura orain",
+      "install_cli": "Instalatu CLI",
+      "route_heading": "AriadShift-ek hartzen duen bidea",
+      "from_heading": "{format} formatutik",
+      "to_heading": "{format} formatura",
+      "cli_heading": "Komando-lerrotik",
+      "related_heading": "Erlazionatutako bihurketak",
+      "related_link": "{from} formatutik {to} formatura"
+    },
+    "converter_page": {
+      "meta_title": "Bihurgailua",
+      "meta_description": "Bihurtu Markdown, HTML, DOCX, EPUB, PDF digitala eta AriadShift IR JSON zure nabigatzailean. Fitxategiak zure gailuan geratzen dira.",
+      "title": "Bihurtu dokumentu bat",
+      "lede": "Aukeratu fitxategi bat, hautatu helburu bat eta deskargatu emaitza. Dena fitxa honetan gertatzen da{cloud, select, yes {, fitxategi hau hodeian bihurtzea aukeratzen ez baduzu.} other {.}}"
+    },
+    "licenses": {
+      "meta_title": "Lizentziak",
+      "meta_description": "AriadShift-en eta bere nabigatzaileko motorren lizentziak eta iturburu-kodea."
+    },
+    "converter": {
+      "cloud_error": {
+        "stopped_title": "Hodei modua ustekabean gelditu da",
+        "stopped_body": "Hodei moduak errore bat aurkitu du igoera hasi ondoren. Zerbitzariko kopia oro automatikoki ezabatzen da atxikipen-epea amaitzean, edo gailu honetan bihur dezakezu.",
+        "load_title": "Ezin izan da hodei modua kargatu",
+        "load_body": "Ezin izan da hodeiko bihurgailua kargatu (adibidez, konexiorik ez duzulako). Gailu honetan bihurtzen jarrai dezakezu.",
+        "use_device": "Bihurtu gailu honetan"
+      },
+      "status": {
+        "deleted_from_server": "{name} zerbitzaritik ezabatu da.",
+        "reading": "{name} irakurtzen gailu honetan.",
+        "detected": "{name} {format} da.",
+        "read_failed": "Ezin izan da fitxategia irakurri.",
+        "converting": "{format} formatura bihurtzen gailu honetan.",
+        "ready": "{name} deskargatzeko prest dago.",
+        "convert_failed": "Bihurketak huts egin du.",
+        "saved": "{name} gorde da.",
+        "reset": "{outcome, select, deleted {Fitxategiak gailu honetatik eta zerbitzaritik kendu dira.} kept {Fitxategiak gailu honetatik kendu dira. {name} zerbitzarian dago oraindik.} other {Fitxategiak gailu honetatik kendu dira.}}",
+        "cloud_selected": "Hodeiko bihurketa hautatu da {name} fitxategirako. Oraindik ez da ezer igo.",
+        "cloud_selected_unnamed": "Hodeiko bihurketa hautatu da fitxategi honetarako. Oraindik ez da ezer igo."
+      },
+      "device": {
+        "cloud": "<strong>Hodeiko bihurketa hautatuta.</strong> Fitxategi hau zure nabigatzailetik ateratzen da bakarrik Igo eta bihurtu aukeratzen duzunean.",
+        "local": "<strong>Gailu honetan prozesatua.</strong> Fitxategiak ez dira zure nabigatzailetik ateratzen eta ez dira igotzen."
+      },
+      "storage_badge": "{storage, select, opfs {Nabigatzailearen biltegi pribatua} other {Memorian}}",
+      "memory": {
+        "title": "Gailuko fitxategi-biltegiratzea ez dago erabilgarri nabigatzaile honetan",
+        "body": "Fitxategiak memorian gordetzen dira, beraz {limit} arteko sarrerak onartzen dira. Bi kasuetan ez da ezer igotzen."
+      },
+      "error": {
+        "title": "{code, select, no_route {Ez dago erabilgarri hemen} engine_integrity {Motorraren osotasun-egiaztapenak huts egin du} other {Zerbait gaizki joan da}}"
+      },
+      "handoff": {
+        "title": "Jarraitu mahaigaineko aplikazioan",
+        "reason": "{reason, select, ocr {Orri batzuek OCR behar dute testu guztia ateratzeko.} other {Dokumentu honek nabigatzaileak eskaintzen duena baino motor edo memoria gehiago behar du.}}",
+        "picker": "Mahaigaineko aplikazioak fitxategi-hautatzaile bat irekitzen du. Aukeratu dokumentu hau berriro; zure nabigatzaileak ez du fitxategia bidaltzen.",
+        "open": "Ireki mahaigainean",
+        "cloud_alternative": "Edo bihurtu ezazu {host} zerbitzarian, igoera berretsi ondoren.",
+        "cloud_button": "Prozesatu hodeian"
+      },
+      "drop": {
+        "button": "Aukeratu fitxategi bat",
+        "button_busy": "Irakurtzen…",
+        "label": "Bihurtu beharreko dokumentua",
+        "title": "Jaregin dokumentu bat hemen",
+        "hint": "Markdown, HTML, DOCX, EPUB, PDF digitala edo IR JSON, {limit} arte. Gailu honetan geratzen da."
+      },
+      "input": {
+        "summary": "{size} · <detected>{format}</detected>",
+        "summary_titled": "{size} · <detected>{format}</detected> · “{title}”"
+      },
+      "count": {
+        "headings": "Goiburuak",
+        "paragraphs": "Paragrafoak",
+        "tables": "Taulak",
+        "images": "Irudiak",
+        "links": "Estekak",
+        "footnotes": "Oin-oharrak",
+        "words": "Hitzak"
+      },
+      "unreachable": {
+        "cli": "{format} ezin da oraindik nabigatzailean bihurtu. <link>AriadShift CLIak</link> zure ordenagailuan bihurtzen du.",
+        "none": "AriadShift-ek ezin du oraindik {format} bihurtu."
+      },
+      "cloud": {
+        "loading": "Hodei modua kargatzen…"
+      },
+      "convert": {
+        "title": "Bihurtu",
+        "hint": "Planifikatzaileak puntuazio neurturik onena duen bidea aukeratzen du.",
+        "target_label": "Bihurtu honetara",
+        "profile_label": "Profila",
+        "route_heading": "Zergatik bide hau",
+        "elsewhere": "Oraingoz, <link>AriadShift CLI</link> beharrezkoa da {count, plural, one {formatu honetarako} other {formatu hauetarako}}: {formats}.",
+        "button": "Bihurtu",
+        "button_busy": "Bihurtzen…",
+        "cancel": "Utzi"
+      },
+      "result": {
+        "title": "Prest",
+        "summary": "<output>{name}</output> · {size} · {duration} behar izan ditu gailu honetan bihurtzeko",
+        "download": "Deskargatu {name}"
+      },
+      "start_over": "Hasi berriro eta ezabatu fitxategiak"
+    },
+    "account_meta": {
+      "account": {
+        "title": "Kontua",
+        "description": "Zure AriadShift hodei-kontua: profila, pasahitza, sarbide-gakoak eta bi faktoreko saio-hasiera."
+      },
+      "sign_in": {
+        "title": "Hasi saioa",
+        "description": "Hasi saioa zure AriadShift hodei-kontuan edo sortu bat."
+      },
+      "jobs": {
+        "title": "Lanak",
+        "description": "Zure AriadShift hodei-bihurketen egoera, deskargak eta ezabaketa."
+      },
+      "api_keys": {
+        "title": "API gakoak",
+        "description": "Sortu eta ezeztatu AriadShift hodei APIrako API gakoak."
+      }
+    },
+    "account": {
+      "page": {
+        "title": "Kontua"
+      },
+      "shell": {
+        "not_configured_title": "Hodeia ez dago konfiguratuta",
+        "not_configured_body": "AriadShift-en kopia hau zure gailuan bakarrik exekutatzen da. Kontuek, API gakoek eta hodeiko lanek zerbitzari bat behar dute; operadoreak <code>{api_variable}</code> eta <code>{auth_variable}</code> ezartzen ditu gunea eraikitzean.",
+        "not_configured_convert": "Oraindik ere <link>fitxategiak bihur ditzakezu zure nabigatzailean</link>.",
+        "nav_label": "Kontua",
+        "nav": {
+          "account": "Kontua",
+          "api_keys": "API gakoak",
+          "jobs": "Lanak"
+        },
+        "server": "Zerbitzaria: {host}",
+        "signed_in_user": "<user>{email}</user> gisa hasi duzu saioa"
+      },
+      "session": {
+        "checking": "Zure saioa egiaztatzen…",
+        "error_title": "Ezin da zure saioa egiaztatu",
+        "signed_out": "Ez duzu saioa hasita."
+      },
+      "actions": {
+        "sign_in": "Hasi saioa",
+        "try_again": "Saiatu berriro",
+        "cancel": "Utzi",
+        "done": "Eginda",
+        "continue": "Jarraitu",
+        "revoke": "Ezeztatu",
+        "copied": "Kopiatuta"
+      },
+      "fields": {
+        "name": "Izena",
+        "email": "Posta elektronikoa",
+        "password": "Pasahitza",
+        "authentication_code": "Autentifikazio-kodea",
+        "password_hint": "Gutxienez {min} karaktere."
+      },
+      "dates": {
+        "unknown": "data ezezaguna"
+      },
+      "errors": {
+        "auth_refused": "Autentifikazio-zerbitzuak eskaera ukatu du.",
+        "service_unreachable": "Ezin da saio-hasierako zerbitzura iritsi. Egiaztatu konexioa eta saiatu berriro.",
+        "session_ended": "Zure saioa amaitu da. Hasi saioa berriro.",
+        "rate_limited": "Eskaera gehiegi. Saiatu berriro pixka batean.",
+        "rate_limited_after": "Eskaera gehiegi. Saiatu berriro {seconds} s barru.",
+        "sign_in_unverifiable": "Zerbitzariak ezin du orain zure saio-hasiera egiaztatu. Saiatu berriro pixka batean.",
+        "token_invalid": "Saio-hasierako zerbitzuak API token baliogabea itzuli du.",
+        "reauth_required": "Hasi saioa berriro kontua ezabatu aurretik.",
+        "delete_not_allowed": "Zerbitzari honek ez du uzten kontuak web aplikaziotik ezabatzea. Eskatu operadoreari ezabatzeko.",
+        "job_gone": "Lan hau jada ez dago zerbitzarian.",
+        "file_deleted": "Fitxategi hau jada ezabatu da.",
+        "job_conflict": "Lana ez dago prest, edo igotako fitxategia jada ez dago zerbitzarian.",
+        "quota_exceeded": "Zure planaren hodei-bihurketak erabili dituzu oraingoz. Bihurtu gailu honetan, edo saiatu geroago.",
+        "request_failed": "Zerbitzariak ezin izan du eskaera osatu. Saiatu berriro pixka batean.",
+        "network_unreachable": "Ezin da zerbitzarira iritsi. Egiaztatu konexioa eta saiatu berriro.",
+        "transfer_incomplete": "Transferentzia ez da osatu. Saiatu berriro."
+      },
+      "profile": {
+        "title": "Profila",
+        "save": "Gorde izena",
+        "saved": "Izena gorde da.",
+        "save_failed": "Ezin izan da izena gorde."
+      },
+      "password": {
+        "title": "Pasahitza",
+        "current": "Uneko pasahitza",
+        "new": "Pasahitz berria",
+        "confirm": "Berretsi pasahitz berria",
+        "revoke_others": "Amaitu gainerako saioak",
+        "submit": "Aldatu pasahitza",
+        "mismatch": "Pasahitz berriak ez datoz bat.",
+        "changed": "Pasahitza aldatu da.",
+        "changed_revoked": "Pasahitza aldatu da. Gainerako saioak amaitu dira.",
+        "failed": "Ezin izan da pasahitza aldatu."
+      },
+      "passkeys": {
+        "title": "Sarbide-gakoak",
+        "description": "Hasi saioa zure gailuaren pantaila-blokeoarekin edo segurtasun-gako batekin, pasahitz baten ordez.",
+        "load_failed": "Ezin izan dira zure sarbide-gakoak kargatu.",
+        "loading": "Sarbide-gakoak kargatzen…",
+        "empty": "Oraindik ez dago sarbide-gakorik.",
+        "unnamed": "Izenik gabeko sarbide-gakoa",
+        "default_name": "Sarbide-gakoa",
+        "added_on": "Gehitua: {date}",
+        "remove_label": "Kendu {name} sarbide-gakoa",
+        "remove_button": "Kendu<hidden> {name} sarbide-gakoa</hidden>",
+        "add_button": "Gehitu sarbide-gako bat",
+        "add_title": "Gehitu sarbide-gako bat",
+        "add_description": "Eman gailuaren edo gakoaren izena, eta jarraitu nabigatzailearen jarraibideei.",
+        "name_label": "Sarbide-gakoaren izena",
+        "name_placeholder": "Adibidez: lanerako ordenagailu eramangarria",
+        "added": "Sarbide-gakoa gehitu da.",
+        "add_failed": "Sarbide-gakoa ez da gehitu.",
+        "remove_title": "{name} kendu?",
+        "remove_title_unnamed": "Sarbide-gako hau kendu?",
+        "remove_description": "Ezin izango duzu gehiago horrekin saioa hasi. Gainerako saio-hasiera metodoek funtzionatzen jarraitzen dute.",
+        "remove_confirm": "Kendu sarbide-gakoa",
+        "removed": "{name} kendu da.",
+        "remove_failed": "Ezin izan da sarbide-gakoa kendu."
+      },
+      "two_factor": {
+        "title": "Bi faktoreko autentifikazioa",
+        "description": "Eskatu autentifikatzaile-aplikazio baten kodea pasahitzaren ondoren.",
+        "status_on": "Egoera: <badge>Aktibatuta</badge>",
+        "status_off": "Egoera: <badge>Desaktibatuta</badge>",
+        "enable": "Aktibatu bi faktoreko autentifikazioa",
+        "disable": "Desaktibatu bi faktoreko autentifikazioa",
+        "regenerate": "Sortu babeskopia-kode berriak",
+        "confirm_password": "Berretsi pasahitza jarraitzeko.",
+        "enable_failed": "Ezin izan da bi faktoreko konfigurazioa hasi. Egiaztatu pasahitza.",
+        "disable_failed": "Ezin izan da bi faktoreko autentifikazioa desaktibatu. Egiaztatu pasahitza.",
+        "regenerate_failed": "Ezin izan dira babeskopia-kode berriak sortu. Egiaztatu pasahitza.",
+        "verify_failed": "Kode hori ez da onartu. Egiaztatu gailuaren ordua eta saiatu berriro.",
+        "disabled": "Bi faktoreko autentifikazioa desaktibatuta dago.",
+        "enabled": "Bi faktoreko autentifikazioa aktibatuta dago.",
+        "regenerated": "Babeskopia-kode berriak sortu dira. Zaharrek ez dute gehiago balio.",
+        "setup_title": "Konfiguratu zure autentifikatzailea",
+        "setup_description": "Gehitu AriadShift zure autentifikatzaile-aplikazioan, eta sartu hark erakusten duen kodea.",
+        "setup_key_intro": "Sartu konfigurazio-gako hau aplikazioan:",
+        "setup_key_unavailable": "Ez dago erabilgarri",
+        "open_in_app": "Ireki gailu honetako autentifikatzaile-aplikazio batean",
+        "turn_on": "Aktibatu",
+        "codes_title": "Babeskopia-kode berriak",
+        "backup_intro": "Gorde babeskopia-kode hauek toki seguru batean. Bakoitzak behin hasten dizu saioa autentifikatzailea galtzen baduzu. Ez dira berriro erakusten.",
+        "copy_codes": "Kopiatu babeskopia-kodeak",
+        "copy_failed": "Kopiatzeak huts egin du; hautatu kodeak horren ordez"
+      },
+      "account_actions": {
+        "title": "Saioa eta kontua",
+        "sign_out": "Amaitu saioa",
+        "delete": "Ezabatu kontua",
+        "signed_out": "Saioa amaitu da.",
+        "sign_out_failed": "Ezin izan da saioa amaitu. Saiatu berriro.",
+        "deleted": "Zure kontua ezabatu da.",
+        "delete_failed_password": "Ezin izan da kontua ezabatu. Egiaztatu pasahitza.",
+        "delete_failed_session": "Ezin izan da kontua ezabatu. Hasi saioa berriro eta saiatu berriz.",
+        "delete_note": "Kontua ezabatzean zure <keys>API gakoak</keys> automatikoki ezeztatzen dira. Ezabatu aurretik, ezabatu oraindik dituzun <jobs>hodeiko lanak</jobs>. Utzitako lanen fitxategiak atxikipen-epea amaitzean kentzen dira.",
+        "dialog_title": "Zure kontua ezabatu?",
+        "dialog_description_password": "Ekintza hau ezin da desegin. Berretsi pasahitza kontua ezabatzeko.",
+        "dialog_description_session": "Ekintza hau ezin da desegin. Berretsi behean kontua ezabatzeko uneko saioa erabiliz.",
+        "sign_in_again": "Hasi saioa berriro"
+      },
+      "connected_apps": {
+        "title": "Konektatutako aplikazioak",
+        "description": "Zure kontua erabiltzeko baimena eman diezun aplikazioak eta MCP bezeroak, eta erregistratu dituzun OAuth bezeroak.",
+        "load_failed": "Ezin izan dira zure konektatutako aplikazioak kargatu.",
+        "loading": "Konektatutako aplikazioak kargatzen…",
+        "empty": "Oraindik ez dago konektatutako aplikaziorik edo erregistratutako OAuth bezerorik.",
+        "scopes_none": "bat ere ez",
+        "consent_details": "Baimendutako aplikazioa · Esparruak: {scopes} · Baimendua: {date}",
+        "client_details": "Erregistratutako OAuth bezeroa ({client_id})",
+        "client_details_dated": "Erregistratutako OAuth bezeroa ({client_id}) · Erregistratua: {date}",
+        "revoke_label": "Ezeztatu {name}",
+        "revoked": "{name} ezeztatu da.",
+        "revoke_failed": "Ezin izan da sarbidea ezeztatu.",
+        "revoke_title": "{name} ezeztatu?",
+        "revoke_consent_description": "Ezeztatzeak token berriak eta tokenen berritzea berehala geldiarazten ditu. Jada igorritako sinatutako sarbide-tokenek (15 minutuko iraupena) funtzionatzen jarraitzen dute iraungi arte.",
+        "revoke_client_description": "OAuth bezero erregistratu hau ezabatzeak bere kredentzialak eta baimenak ezeztatzen ditu, eta token berriak eta tokenen berritzea berehala geldiarazten ditu. Jada igorritako sinatutako sarbide-tokenek (15 minutuko iraupena) funtzionatzen jarraitzen dute iraungi arte."
+      },
+      "api_keys": {
+        "page_title": "API gakoak",
+        "section_title": "Zure gakoak",
+        "section_description": "Script-ek eta integrazioek gako bat bidaltzen dute <code>x-api-key</code> goiburuan {host} zerbitzarira. Gako batek zure kontuarekin eta bere planarekin jarduten du.",
+        "load_failed": "Ezin izan dira zure API gakoak kargatu.",
+        "loading": "API gakoak kargatzen…",
+        "empty": "Oraindik ez dago API gakorik.",
+        "unnamed": "Izenik gabeko gakoa",
+        "disabled": "Desaktibatuta",
+        "key_details": "Sortua: {date} · {expiry}",
+        "never_expires": "Ez da inoiz iraungitzen",
+        "expired_on": "Iraungita: {date}",
+        "expires_on": "Iraungitzea: {date}",
+        "revoke_label": "Ezeztatu {name} API gakoa",
+        "revoke_button": "Ezeztatu<hidden> {name} API gakoa</hidden>",
+        "create_button": "Sortu API gakoa",
+        "create_title": "Sortu API gako bat",
+        "create_description": "Eman gakoari erabiliko duen script-aren edo zerbitzuaren izena.",
+        "name_placeholder": "Adibidez: CI",
+        "expires_after": "Iraungitzen da",
+        "lifetime_days": "{days, plural, one {# egun} other {# egun}} barru",
+        "lifetime_year": "urtebete barru",
+        "lifetime_never": "Iraungitzerik gabe",
+        "create_submit": "Sortu gakoa",
+        "create_failed": "Ezin izan da gakoa sortu.",
+        "created": "{name} API gakoa sortu da.",
+        "secret_title": "Zure API gako berria",
+        "secret_label": "API gakoa",
+        "secret_notice": "Kopiatu gakoa orain. Hash gisa bakarrik gordetzen da eta ez da inoiz berriro erakusten.",
+        "copy_key": "Kopiatu gakoa",
+        "copy_failed": "Kopiatzeak huts egin du. Hautatu gakoa eta kopiatu.",
+        "revoke_title": "{name} ezeztatu?",
+        "revoke_description": "Gako hau erabiltzen duten eskaerak berehala ukatzen dira. Ekintza hau ezin da desegin.",
+        "revoke_confirm": "Ezeztatu gakoa",
+        "revoked": "{name} API gakoa ezeztatu da. Erabiltzen duten eskaerak ukatu egingo dira hemendik aurrera.",
+        "revoke_failed": "Ezin izan da gakoa ezeztatu."
+      },
+      "jobs": {
+        "title": "Lanak",
+        "intro_server": "Zure kontuaren hodei-bihurketak {host} zerbitzarian, edozein gailutatik. Fitxategiak {host} zerbitzarian geratzen dira automatikoki ezabatu arte, edo hemen ezabatzen dituzun arte.",
+        "intro_account_browser": "Nabigatzaile honetan zure kontuarekin hasitako hodei-bihurketak. Zerrenda hau gailu honetan bakarrik gordetzen da. Fitxategiak {host} zerbitzarian geratzen dira automatikoki ezabatu arte, edo hemen ezabatzen dituzun arte.",
+        "intro_anonymous_browser": "Nabigatzaile honetan konturik gabe hasitako hodei-bihurketak. Zerrenda hau gailu honetan bakarrik gordetzen da. Fitxategiak {host} zerbitzarian geratzen dira automatikoki ezabatu arte, edo hemen ezabatzen dituzun arte.",
+        "signed_out_notice": "Konturik gabeko lanak erakusten. <link>Hasi saioa</link> zure kontuko lanak ikusteko.",
+        "loading": "Zure lanak kargatzen…",
+        "list_unsupported": "{host} zerbitzariak ezin ditu oraindik zure kontuko lanak zerrendatu, beraz orri honek nabigatzaile honetan hasitako lanak erakusten ditu.",
+        "list_error_title": "Ezin dira zure lanak {host} zerbitzaritik kargatu",
+        "list_error_body": "{reason} Bitartean, orri honek nabigatzaile honetan hasitako lanak erakusten ditu.",
+        "count": "{count, plural, one {# lan} other {# lan}}",
+        "empty": "Oraindik ez dago hodeiko lanik. Hasi bat <link>bihurgailutik</link>.",
+        "show_more": "Erakutsi lan gehiago",
+        "loading_more": "Lan gehiago kargatzen…",
+        "unnamed": "{id} lana",
+        "forgotten": "{filename} zerrenda honetatik kendu da. Zerbitzariko bere fitxategiak ez dira aldatu.",
+        "forgotten_unnamed": "Lana zerrenda honetatik kendu da. Zerbitzariko bere fitxategiak ez dira aldatu.",
+        "status": {
+          "queued": "Ilaran",
+          "converting": "Bihurtzen",
+          "converting_stage": "Bihurtzen: {stage}",
+          "retrying": "Berriro saiatzen ({attempt}. saiakera)",
+          "reconnecting": "{step} · Berriro konektatzen…",
+          "ready": "Prest",
+          "failed": "Huts egin du",
+          "canceled": "Bertan behera utzia",
+          "deleted": "Ezabatua",
+          "deleted_expired": "Ezabatua (iraungita)"
+        },
+        "until": {
+          "less_than_minute": "minutu bat baino gutxiagoren buruan",
+          "minutes": "{minutes} min barru",
+          "hours": "{hours} h barru",
+          "hours_minutes": "{hours} h {minutes} min barru"
+        },
+        "expiry": {
+          "deleted_at": "Automatikoki ezabatu zen {clock} orduan.",
+          "deleted_from_server": "Zerbitzaritik ezabatu da. Sarrerako eta irteerako fitxategiak desagertu dira.",
+          "being_deleted": "Orain ezabatzen ari da.",
+          "deletes_at": "Automatikoki ezabatuko da {clock} orduan ({relative})."
+        },
+        "failure": {
+          "limit_exceeded": "Dokumentu honek zure planak baimentzen duena baino gehiago behar du. Saiatu fitxategi txikiago batekin, edo bihurtu gailu honetan.",
+          "unsupported_route": "Zerbitzari honek ezin du formatu hauen artean bihurtu. Aukeratu beste helburu bat bihurgailuan.",
+          "input_io": "Igotako fitxategia ezin izan da irakurri edo jada ez dago zerbitzarian. Igo berriro.",
+          "storage": "Zerbitzariak ezin izan du emaitza gorde. Saiatu berriro une batean.",
+          "tool_missing": "Zerbitzari honek ez du bideak behar duen motorra. Galdetu operadoreari, edo aukeratu beste helburu bat.",
+          "other": "Bihurketak huts egin du. Saiatu berriro, edo bihurtu fitxategia gailu honetan."
+        },
+        "row": {
+          "route": "{from} → {to}",
+          "loading_status": "Egoera kargatzen…",
+          "try_again": "Saiatu berriro<hidden> {filename} kargatzeko</hidden>",
+          "technical_details": "Xehetasun teknikoak",
+          "warnings": "{count, plural, one {# abisu} other {# abisu}}",
+          "download": "Deskargatu {filename}",
+          "retry_label": "Saiatu berriro {filename}",
+          "retry_button": "Saiatu berriro<hidden> {filename}</hidden>",
+          "delete_label": "Ezabatu orain {filename} zerbitzaritik",
+          "delete_button": "Ezabatu orain<hidden> {filename} zerbitzaritik</hidden>",
+          "remove_label": "Kendu zerrenda honetatik ({filename})",
+          "remove_button": "Kendu zerrenda honetatik<hidden> ({filename})</hidden>",
+          "deleted_note": "{host} zerbitzaritik ezabatu da. Sarrerako eta irteerako fitxategiak desagertu dira.",
+          "deleted_announce": "{filename} ezabatu da {host} zerbitzaritik. Sarrerako eta irteerako fitxategiak desagertu dira.",
+          "ready_announce": "{filename} bihurtuta dago eta deskargatzeko prest.",
+          "failed_announce": "{filename} fitxategiaren bihurketak huts egin du. {reason}",
+          "canceled_announce": "{filename} fitxategiaren bihurketa bertan behera utzi da.",
+          "downloading": "{filename} deskargatzen.",
+          "retrying": "{filename} berriro saiatzen.",
+          "retry_conflict": "Igotako fitxategia jada ez dago zerbitzarian. Igo berriro bihurgailutik."
+        }
+      },
+      "sign_in": {
+        "title": "Hasi saioa",
+        "create_title": "Sortu kontu bat",
+        "two_factor_title": "Bi faktoreko egiaztapena",
+        "signed_in": "Saioa hasi da.",
+        "go_to_account": "Joan zure kontura",
+        "passkey": "Hasi saioa sarbide-gako batekin",
+        "no_account": "Konturik ez oraindik? <switch>Sortu bat</switch>",
+        "have_account": "Konturik baduzu jada? <switch>Hasi saioa</switch>",
+        "sign_in_failed": "Ezin izan da saioa hasi. Egiaztatu posta elektronikoa eta pasahitza.",
+        "passkey_failed": "Ezin izan da sarbide-gako batekin saioa hasi.",
+        "code_rejected": "Kode hori ez da onartu. Saiatu berriro.",
+        "create_failed": "Ezin izan da kontua sortu.",
+        "passwords_mismatch": "Pasahitzak ez datoz bat.",
+        "bot_check": "Osatu izen-emateko bot-egiaztapena eta saiatu berriro.",
+        "confirm_password": "Berretsi pasahitza",
+        "create_account": "Sortu kontua",
+        "totp_help": "Sartu autentifikatzaile-aplikazioko 6 digituko kodea.",
+        "backup_help": "Sartu bi faktoreko autentifikazioa aktibatu zenuenean gorde zenituen babeskopia-kodeetako bat. Kode bakoitzak behin balio du.",
+        "backup_code": "Babeskopia-kodea",
+        "trust_device": "Fidatu nabigatzaile honetaz 30 egunez",
+        "verify": "Egiaztatu",
+        "use_backup": "Erabili babeskopia-kode bat horren ordez",
+        "use_authenticator": "Erabili autentifikatzaile-kode bat horren ordez",
+        "signed_in_user": "<user>{email}</user> gisa hasi duzu saioa."
+      }
+    },
+    "app": {
+      "sections_label": "Aplikazioaren atalak",
+      "tab": {
+        "convert": "Bihurtu",
+        "tools": "Tresnak",
+        "workspace": "PDF lan-eremua"
+      },
+      "tools_lede": "Tresna guztiak, egiten dutenaren arabera taldekatuta. Aukeratu bat PDF lan-eremuan irekitzeko.",
+      "workspace_loading": "PDF lan-eremua kargatzen…",
+      "workspace_failed": "Ezin izan da PDF lan-eremua kargatu.",
+      "retry": "Saiatu berriro",
+      "tools_loading": "Tresnak kargatzen…",
+      "tools_failed": "Ezin izan dira tresnak kargatu."
+    },
+    "tools": {
+      "hub": {
+        "label": "Tresnak",
+        "search": "Bilatu tresnak…",
+        "open_palette": "Ireki komando-paleta",
+        "command": "Komandoa",
+        "zero_upload": "Gailu honetan · 0 byte igota",
+        "categories": "Kategoria",
+        "all": "Guztiak",
+        "runtimes": "Non exekutatzen den",
+        "count": "{count, plural, one {# tresna} other {# tresna}}",
+        "no_match": "Ez dago bat datorren tresnarik",
+        "try_recipe": "Saiatu esaldi arrunt bat komando-paletan, adibidez “biratu 90 gradu eta gero konprimatu”.",
+        "reset": "Berrezarri bilaketa eta iragazkiak",
+        "open_in_palette": "Probatu komando-paletan"
+      },
+      "category": {
+        "organize": "Antolatu eta bildu",
+        "convert": "Bihurtu",
+        "compress": "Konprimatu eta konpondu",
+        "edit": "Editatu eta markatu",
+        "forms_annotations": "Inprimakiak eta oharrak",
+        "security": "Segurtasuna eta sinadura",
+        "ocr_scan": "OCR eta eskaneatzea",
+        "metadata_inspect": "Ikuskatu eta alderatu",
+        "automation_ai": "Automatizazioa eta AA"
+      },
+      "runtime": {
+        "browser": "Nabigatzailea",
+        "desktop": "Mahaigaina",
+        "cloud": "Hodeia",
+        "list": "Hemen exekutatzen da"
+      },
+      "tier": {
+        "free": "Doakoa",
+        "pro": "Pro"
+      },
+      "favorites": "Gogokoak",
+      "recents": "Azken tresnak",
+      "favorite": {
+        "add": "Gehitu gogokoetara",
+        "remove": "Kendu gogokoetatik"
+      },
+      "card": {
+        "open": "Ireki"
+      },
+      "palette": {
+        "title": "Tresnen komando-paleta",
+        "description": "Bilatu tresnak edo azaldu zer egin nahi duzun esaldi batean, eta sakatu Sartu.",
+        "placeholder": "Bilatu tresnak edo azaldu errezeta bat…",
+        "search": "Bilatu tresnak",
+        "empty": "Ez dago bat datorren tresnarik. Saiatu “biratu 90 eta gero konprimatu” bezalako esaldi bat.",
+        "recipe": "Errezeta",
+        "recipe_steps": "Errezetaren urratsak",
+        "step": "Urratsa",
+        "recipe_review": "Berrikusi exekutatu aurretik: urrats batek mahaigaina, hodeia edo AA behar du, edo fitxategia betiko aldatzen du.",
+        "recipe_ready": "Sakatu Sartu errezeta hau kargatzeko.",
+        "confirm": "Berrikusi lehenik",
+        "results": "Tresnak",
+        "actions": "Ekintzak",
+        "jump_convert": "Joan Bihurtu atalera",
+        "switch_theme": "Aldatu gaia",
+        "clear_recents": "Garbitu azken tresnak",
+        "hint": "Bilaketa gailu honetan exekutatzen da.",
+        "open": "Ireki",
+        "close": "Itxi"
+      },
+      "title": {
+        "pdf": {
+          "info": "Informazioa",
+          "merge": "Batu",
+          "split": "Zatitu",
+          "extract_pages": "Atera orriak",
+          "delete_pages": "Ezabatu orriak",
+          "reorder": "Berrantolatu",
+          "alternate_mix": "Txandakako nahasketa",
+          "insert_blank": "Txertatu orri zuria",
+          "rotate": "Biratu",
+          "crop": "Moztu",
+          "scale": "Eskalatu",
+          "single_page": "Orri bakarra",
+          "rotate_content": "Biratu edukia",
+          "decompress": "Deskonprimatu",
+          "nup": "N-up",
+          "booklet": "Liburuxka",
+          "overlay": "Gainjarri",
+          "divide_pages": "Zatitu orriak",
+          "posterize": "Posterra",
+          "metadata": "Metadatuak",
+          "outline": "Eskema",
+          "attachments": "Eranskinak",
+          "page_labels": "Orri-etiketak",
+          "viewer_prefs": "Ikustailearen hobespenak",
+          "portfolio": "Portfolioa",
+          "layers": "Geruzak",
+          "replace_color": "Ordezkatu koloreak",
+          "adjust_colors": "Doitu koloreak",
+          "watermark": "Ur-marka",
+          "stamp": "Zigilua",
+          "add_image": "Gehitu irudia",
+          "add_text": "Gehitu testua",
+          "qr": "QR kodea",
+          "page_numbers": "Orri-zenbakiak",
+          "header_footer": "Goiburuak eta orri-oinak",
+          "bates": "Bates zenbakitzea",
+          "toc_page": "Aurkibide-orria",
+          "background": "Atzeko planoa",
+          "invert_colors": "Alderantzikatu koloreak",
+          "watermark_detect": "Detektatu ur-markak",
+          "watermark_remove": "Kendu ur-markak",
+          "watermark_remove_raster": "Kendu raster ur-markak",
+          "render": "Errendatu orriak",
+          "to_images": "PDFa irudi bihurtu",
+          "thumbnails": "Miniaturak",
+          "extract_images": "Atera irudiak",
+          "text_layout": "Testuaren diseinua",
+          "remove_blank": "Kendu orri zuriak",
+          "crop_whitespace": "Moztu zuriuneak",
+          "detect_scanned": "Detektatu eskaneatutako orriak",
+          "compress": "Konprimatu",
+          "grayscale": "Gris-eskala",
+          "repair": "Konpondu",
+          "linearize": "Linealizatu",
+          "encrypt": "Enkriptatu",
+          "decrypt": "Desenkriptatu",
+          "permissions": "Baimenak",
+          "sanitize": "Garbitu",
+          "unlock_forms": "Desblokeatu inprimakiak",
+          "ocr": "OCR",
+          "auto_rotate": "Biratze automatikoa",
+          "deskew": "Zuzendu okertzea",
+          "scan_split": "Zatitu eskaneatzea",
+          "scanner_effect": "Eskanerraren efektua",
+          "annotations": "Oharrak",
+          "annotations_import": "Inportatu oharrak",
+          "annotations_export": "Esportatu oharrak",
+          "forms_list": "Zerrendatu inprimaki-eremuak",
+          "forms_fill": "Bete inprimakiak",
+          "forms_create": "Sortu inprimakiak",
+          "forms_flatten": "Lautu inprimakiak",
+          "forms_detect": "Detektatu inprimaki-eremuak",
+          "forms_import": "Inportatu inprimaki-balioak",
+          "forms_export": "Esportatu inprimaki-balioak",
+          "redact": "Zentsuratu",
+          "redact_verify": "Egiaztatu zentsura",
+          "sign_visual": "Sinadura ikusgarria",
+          "sign": "Sinatu",
+          "sign_token": "Sinatu tokenarekin",
+          "timestamp": "Denbora-zigilua",
+          "sign_verify": "Egiaztatu sinadurak",
+          "sign_remove": "Kendu sinadurak",
+          "tables_to_csv": "Taulak CSV bihurtu",
+          "to_cbz": "CBZ formatura",
+          "compare": "Alderatu",
+          "to_pdfa": "PDF/A formatura",
+          "to_pdfua": "PDF/UA formatura",
+          "accessibility_report": "Irisgarritasun-txostena",
+          "validate_pdfa": "Balidatu PDF/A",
+          "validate_pdfua": "Balidatu PDF/UA"
+        },
+        "image": {
+          "to_pdf": "Irudia PDF bihurtu",
+          "ocr": "Irudien OCR"
+        },
+        "web": {
+          "to_pdf": "Weba PDF bihurtu"
+        },
+        "edit": {
+          "open_document": "Ireki dokumentua",
+          "export_document": "Esportatu dokumentua",
+          "page_objects": "Orriko objektuak",
+          "apply": "Aplikatu"
+        },
+        "ai": {
+          "summarize": "AAren laburpena",
+          "ask": "Galdetu AAri",
+          "translate": "AA bidezko itzulpena",
+          "extract_tables": "AA bidezko taulen erauzketa",
+          "recipe_from_text": "AA bidezko errezeta testutik"
+        }
+      }
+    },
+    "workspace": {
+      "main": {
+        "title": "Lan-eremua",
+        "lede": "Dena nabigatzaile-fitxa honetan exekutatzen da.",
+        "viewer": "Aurrebista",
+        "pages_tab": "Orriak",
+        "tools_tab": "Tresna",
+        "no_pdf": "Gehitu PDF bat bere orriak aurreikusi eta antolatzeko.",
+        "tools": "Tresnak",
+        "tool_picker": "Aukeratu tresna bat",
+        "dismiss_error": "Baztertu",
+        "working": "Lanean…"
+      },
+      "file_tray": {
+        "privacy": "Gailu honetan · 0 byte igota",
+        "title": "Fitxategiak",
+        "empty": "Utzi hemen PDFak edo beste fitxategi batzuk hasteko. Ez da ezer igotzen.",
+        "choose": "Aukeratu fitxategiak",
+        "add_more": "Gehitu fitxategiak",
+        "drop_title": "Utzi fitxategiak gehitzeko",
+        "drop_description": "Nabigatzaile honetan geratzen dira.",
+        "pages": "{count, plural, one {# orri} other {# orri}}",
+        "remove": "Kendu: {name}",
+        "move_up": "Igo: {name}",
+        "move_down": "Jaitsi: {name}",
+        "use": "Lan egin honekin: {name}",
+        "active": "Irekita",
+        "storage_opfs": "Nabigatzailearen fitxategi-biltegian gordeta",
+        "storage_memory": "Memorian gordeta",
+        "reading": "Fitxategiak irakurtzen…",
+        "list": "Lan-eremu honetako fitxategiak",
+        "problem": "Ezin izan da {name} irakurri."
+      },
+      "insights": {
+        "title": "Zer dago PDF honetan",
+        "loading": "Dokumentua gailu honetan irakurtzen…",
+        "failed": "Ezin izan da dokumentua aztertu.",
+        "pages": "{count, plural, one {# orri} other {# orri}}",
+        "scanned": "{count, plural, one {# orri eskaneatu} other {# orri eskaneatu}}",
+        "blank": "{count, plural, one {# orri zuri} other {# orri zuri}}",
+        "dpi_unknown": "Irudien bereizmena ezezaguna",
+        "dpi_single": "Irudiak gutxi gorabehera {dpi} DPI",
+        "dpi_range": "Irudiak gutxi gorabehera {min}–{max} DPI",
+        "low_dpi": "Bereizmen baxua {count, plural, one {# orritan} other {# orritan}} ({list})",
+        "form_fields": "{count, plural, one {# derrigorrezko eremu huts} other {# derrigorrezko eremu huts}}",
+        "signatures": "{count, plural, one {# sinadura} other {# sinadura}}",
+        "metadata": "Metadatuak ditu",
+        "edit_history": "Edizio-historia du",
+        "encrypted": "Enkriptatuta",
+        "linearized": "Linealizatuta",
+        "clean": "Ez da ezer aurkitu",
+        "suggested": "Hurrengo urrats iradokiak",
+        "no_suggestions": "Ez dago arreta behar duen ezer. Aukeratu edozein tresna jarraitzeko.",
+        "open": "Ireki: {tool}"
+      },
+      "page_grid": {
+        "title": "Orriak",
+        "toolbar": "Orrien edizioak",
+        "undo": "Desegin",
+        "redo": "Berregin",
+        "reset": "Berrezarri",
+        "pending": "{count, plural, one {# aldaketa zain} other {# aldaketa zain}}",
+        "select_all": "Hautatu dena",
+        "clear_selection": "Garbitu hautapena",
+        "select_range": "Hautatu orriak",
+        "range_placeholder": "adib. 3-7",
+        "rotate_left": "Biratu ezkerrera",
+        "rotate_right": "Biratu eskuinera",
+        "delete_selected": "Ezabatu hautatutakoak",
+        "restore_selected": "Leheneratu hautatutakoak",
+        "apply": "Aplikatu aldaketak",
+        "hint": "Arrastatu heldulekua, edo jarri fokua gainean eta erabili geziak, berrordenatzeko. Maius + klik eginez tarte bat hautatzen da.",
+        "drag_hint": "Arrastatu berrordenatzeko, edo erabili geziak",
+        "moved": "{page}. orria {position}. posiziora mugitu da",
+        "cannot_delete_all": "Dokumentu batek orri bat gutxienez izan behar du.",
+        "card_page": "{page}. orria",
+        "card_select": "Hautatu {page}. orria",
+        "card_rotate": "Biratu {page}. orria",
+        "card_delete": "Ezabatu {page}. orria",
+        "card_move": "Berrordenatu {page}. orria",
+        "card_restore": "Leheneratu {page}. orria",
+        "blank": "Zuria",
+        "scanned": "Eskaneatua"
+      },
+      "inspector": {
+        "title": "Tresna",
+        "empty": "Aukeratu tresna bat bere aukerak ikusteko.",
+        "runtime": {
+          "browser": "Nabigatzailea",
+          "desktop": "Mahaigaina",
+          "cloud": "Hodeia"
+        },
+        "tier": {
+          "free": "Doakoa",
+          "pro": "Pro"
+        },
+        "run_here": "Exekutatu tresna gailu honetan",
+        "running": "Exekutatzen…",
+        "cancel": "Utzi",
+        "run_cloud": "Exekutatu hodeian",
+        "cloud_note": "Tresna honek gure zerbitzarietan exekutatzen da; zure fitxategia igo egiten da horretarako.",
+        "switch_desktop": "Exekutatu zure ordenagailuan",
+        "switch_browser": "Itzuli gailu honetara",
+        "needs_file": "Gehitu lehenik fitxategi bat.",
+        "needs_pdf": "Tresna honek PDF bat behar du.",
+        "invalid": "Zuzendu nabarmendutako aukerak jarraitzeko.",
+        "failed": "Tresna gelditu egin da: {message}",
+        "progress": "Tresnaren aurrerapena"
+      },
+      "handoff": {
+        "title": "Exekutatu zure ordenagailuan",
+        "why": "Tresna hau ezin da nabigatzailean exekutatu. Exekutatu AriadShift komando-lerroarekin; zure fitxategiak ez dira inoiz zure ordenagailutik ateratzen.",
+        "command": "Komandoa",
+        "copy": "Kopiatu komandoa",
+        "copied": "Komandoa kopiatu da",
+        "copy_failed": "Ezin izan da kopiatu. Hautatu komandoa eta kopiatu.",
+        "install": "Lortu AriadShift",
+        "open_app": "Ireki mahaigaineko aplikazioan",
+        "reveal_secrets": "Erakutsi balio sekretuak",
+        "mask_secrets": "Ezkutatu balio sekretuak",
+        "secret_note": "Balio sekretuak komandoan ezkutatuta daude erakutsi arte."
+      },
+      "result": {
+        "title": "Emaitza",
+        "before": "Aurretik",
+        "after": "Ondoren",
+        "size": "Tamaina",
+        "pages": "Orriak",
+        "duration": "Denbora",
+        "change_none": "aldaketarik ez",
+        "change_up": "+{percent}%",
+        "change_down": "−{percent}%",
+        "bytes": "{value} byte",
+        "millis": "{value} ms",
+        "seconds": "{value} s",
+        "warnings": "Abisuak",
+        "details": "Xehetasunak",
+        "download": "Deskargatu: {name}",
+        "open_in_editor": "Ireki editorean",
+        "continue": "Jarraitu beste tresna batekin",
+        "save_recipe": "Gorde errezeta gisa",
+        "undo": "Desegin",
+        "outputs": "Irteerako fitxategiak",
+        "download_failed": "Ezin izan da fitxategia gorde."
+      },
+      "thread": {
+        "label": "Urratsak",
+        "status": {
+          "pending": "Zain",
+          "running": "Exekutatzen",
+          "completed": "Eginda",
+          "skipped": "Saltatuta",
+          "failed": "Huts egin du"
+        }
+      },
+      "viewer": {
+        "zoom_in": "Handitu",
+        "zoom_out": "Txikitu",
+        "fit_width": "Doitu zabalerara",
+        "fit_page": "Doitu orrira",
+        "zoom_level": "{percent}%",
+        "page": "Orri-zenbakia",
+        "page_of": "/ {count}",
+        "search": "Bilatu dokumentuan",
+        "search_placeholder": "Bilatu testua",
+        "search_run": "Bilatu",
+        "search_cancel": "Utzi bilaketa",
+        "search_clear": "Garbitu bilaketa",
+        "search_next": "Hurrengo emaitza",
+        "search_previous": "Aurreko emaitza",
+        "searching": "Bilatzen… {percent}%",
+        "matches": "{current} / {total}",
+        "no_matches": "Ez dago emaitzarik",
+        "dark_pages": "Orri ilunak",
+        "loading": "Dokumentua gailu honetan irekitzen…",
+        "unavailable": "Ikustaileak WebAssembly behar du, eta nabigatzaile honek ez du eskaintzen.",
+        "document_error": "Ezin izan da dokumentu hau bistaratu.",
+        "toolbar": "Dokumentu-ikustailearen kontrolak"
+      }
+    }
+  }
+}
