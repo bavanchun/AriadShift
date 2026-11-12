@@ -449,6 +449,11 @@ fuzz target="" seconds="60":
 macos-ffi *args:
     bash scripts/build-xcframework.sh "$@"
 
+# Generate apps/macos/AriadShift.xcodeproj from project.yml (needs `brew install xcodegen`).
+[macos]
+macos-project:
+    cd apps/macos && xcodegen generate
+
 # Generated IPC types and wrappers come only from Rust.
 desktop-licenses:
     node scripts/generate-desktop-licenses.mjs > apps/desktop/THIRD_PARTY_JS_LICENSES
