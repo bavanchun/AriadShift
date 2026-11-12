@@ -19,13 +19,21 @@ uniffi::setup_scaffolding!("ariad_ffi");
 
 static CONFIGURED_ENGINE_PROGRAM: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-/// Sets the path to the `ashift` engine helper binary.
+/// Sets the absolute path to the `ashift` engine helper binary.
 ///
-/// In the macOS application bundle, this is called at launch with `Contents/Helpers/ashift`.
+/// In the macOS application bundle, this is typically called at launch with
+/// the absolute path to `Contents/Helpers/ashift`.
+///
+/// Rejects empty or non-absolute paths with [`FfiError::InvalidRequest`].
 #[uniffi::export]
 pub fn set_engine_program(path: String) -> Result<(), FfiError> {
     catch_panics(|| {
-        let p = PathBuf::from(path);
+        let p = PathBuf::from(&path);
+        if path.trim().is_empty() || !p.is_absolute() {
+            return Err(FfiError::InvalidRequest {
+                message: "engine program path must be a non-empty absolute path".to_string(),
+            });
+        }
         let mut lock = CONFIGURED_ENGINE_PROGRAM
             .write()
             .map_err(|e| FfiError::Internal {
@@ -36,14 +44,47 @@ pub fn set_engine_program(path: String) -> Result<(), FfiError> {
     })
 }
 
-/// Returns the configured engine program path, falling back to [`std::env::current_exe`].
-fn engine_program() -> Option<PathBuf> {
-    if let Ok(guard) = CONFIGURED_ENGINE_PROGRAM.read()
-        && let Some(ref p) = *guard
-    {
-        return Some(p.clone());
+/// Resolves the fallback engine helper path from an executable path.
+///
+/// In a macOS app bundle layout (`.../Contents/MacOS/<app>`), looks for
+/// `.../Contents/Helpers/ashift`. Returns `Some(path)` if that file exists,
+/// otherwise `None`. Never returns the executable itself.
+pub(crate) fn resolve_engine_fallback(exe_path: &Path) -> Option<PathBuf> {
+    let candidate = exe_path.parent()?.parent()?.join("Helpers").join("ashift");
+    if candidate.is_file() {
+        Some(candidate)
+    } else {
+        None
     }
-    std::env::current_exe().ok()
+}
+
+/// Resolves the engine helper binary path from an optional configured path and
+/// fallback executable path.
+///
+/// Fallback order:
+/// 1. Configured path (if provided)
+/// 2. `<current_exe>/../../Helpers/ashift` if that file exists
+/// 3. `None` (never returns the bare GUI binary)
+pub(crate) fn resolve_engine_program(
+    configured: Option<&Path>,
+    current_exe: Option<&Path>,
+) -> Option<PathBuf> {
+    if let Some(p) = configured {
+        return Some(p.to_path_buf());
+    }
+    let exe = current_exe?;
+    resolve_engine_fallback(exe)
+}
+
+/// Returns the configured engine program path, falling back to `<current_exe>/../../Helpers/ashift`
+/// if that file exists, or `None`.
+fn engine_program() -> Option<PathBuf> {
+    let configured = CONFIGURED_ENGINE_PROGRAM
+        .read()
+        .ok()
+        .and_then(|g| g.clone());
+    let current_exe = std::env::current_exe().ok();
+    resolve_engine_program(configured.as_deref(), current_exe.as_deref())
 }
 
 #[cfg(test)]
@@ -809,6 +850,95 @@ mod tests {
             conv_req.engine_program,
             PathBuf::from(test_path),
             "configured engine program must reach ConvertRequest.engine_program"
+        );
+    }
+
+    #[test]
+    fn test_set_engine_program_rejects_empty() {
+        let err_empty =
+            set_engine_program("".to_string()).expect_err("empty path must be rejected");
+        assert!(
+            matches!(err_empty, FfiError::InvalidRequest { .. }),
+            "expected InvalidRequest, got {err_empty:?}"
+        );
+
+        let err_whitespace =
+            set_engine_program("   ".to_string()).expect_err("whitespace path must be rejected");
+        assert!(
+            matches!(err_whitespace, FfiError::InvalidRequest { .. }),
+            "expected InvalidRequest, got {err_whitespace:?}"
+        );
+    }
+
+    #[test]
+    fn test_set_engine_program_rejects_relative() {
+        let err_rel = set_engine_program("relative/path/ashift".to_string())
+            .expect_err("relative path must be rejected");
+        assert!(
+            matches!(err_rel, FfiError::InvalidRequest { .. }),
+            "expected InvalidRequest, got {err_rel:?}"
+        );
+
+        let err_bare =
+            set_engine_program("ashift".to_string()).expect_err("bare name must be rejected");
+        assert!(
+            matches!(err_bare, FfiError::InvalidRequest { .. }),
+            "expected InvalidRequest, got {err_bare:?}"
+        );
+    }
+
+    #[test]
+    fn test_fallback_resolution_bundle_layout() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let macos_dir = temp.path().join("Contents").join("MacOS");
+        let helpers_dir = temp.path().join("Contents").join("Helpers");
+        std::fs::create_dir_all(&macos_dir).expect("create macos dir");
+        std::fs::create_dir_all(&helpers_dir).expect("create helpers dir");
+
+        let app_exe = macos_dir.join("AriadShift");
+        std::fs::write(&app_exe, b"dummy app binary").expect("write app binary");
+        let ashift_helper = helpers_dir.join("ashift");
+
+        // 1. Without ashift present in Helpers, fallback resolution must return None (never the app exe).
+        assert_eq!(
+            resolve_engine_fallback(&app_exe),
+            None,
+            "must return None when ashift helper is missing"
+        );
+        assert_eq!(
+            resolve_engine_program(None, Some(&app_exe)),
+            None,
+            "resolve_engine_program must return None when ashift helper is missing"
+        );
+
+        // 2. With ashift present in Contents/Helpers/ashift, resolution must succeed.
+        std::fs::write(&ashift_helper, b"dummy ashift helper").expect("write helper");
+        assert_eq!(
+            resolve_engine_fallback(&app_exe),
+            Some(ashift_helper.clone()),
+            "must resolve to Contents/Helpers/ashift"
+        );
+        assert_eq!(
+            resolve_engine_program(None, Some(&app_exe)),
+            Some(ashift_helper.clone()),
+            "resolve_engine_program must return helper path"
+        );
+
+        // 3. Configured path takes precedence over fallback.
+        let custom = Path::new("/custom/configured/ashift");
+        assert_eq!(
+            resolve_engine_program(Some(custom), Some(&app_exe)),
+            Some(custom.to_path_buf()),
+            "configured path must take precedence"
+        );
+
+        // 4. Executable outside of bundle layout returns None.
+        let bare_exe = temp.path().join("standalone_tool");
+        std::fs::write(&bare_exe, b"dummy tool").expect("write bare exe");
+        assert_eq!(
+            resolve_engine_fallback(&bare_exe),
+            None,
+            "bare exe outside bundle must return None"
         );
     }
 
