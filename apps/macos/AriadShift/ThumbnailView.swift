@@ -11,6 +11,8 @@ struct ThumbnailView: View {
     let width: CGFloat
     @Environment(\.displayScale) private var displayScale
     @State private var image: NSImage?
+    /// The cache that produced `image`; a different cache must never show the old one's image.
+    @State private var renderedBy: ObjectIdentifier?
 
     /// What the rendered image depends on; a change of any part loads the image again.
     private struct Request: Hashable {
@@ -34,8 +36,17 @@ struct ThumbnailView: View {
         .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
         .task(id: Request(cache: ObjectIdentifier(cache), index: index, pixels: Int(width * displayScale))) {
             let pixels = Int(width * displayScale)
+            let identity = ObjectIdentifier(cache)
+            if renderedBy != identity {
+                image = nil
+                renderedBy = identity
+            }
             image = cache.cachedImage(page: index, width: pixels)
-            if image == nil { image = await cache.image(page: index, width: pixels) }
+            if image == nil {
+                let rendered = await cache.image(page: index, width: pixels)
+                // A task that was replaced meanwhile must not put its image over the newer one.
+                if !Task.isCancelled { image = rendered }
+            }
         }
         .accessibilityHidden(true)
     }

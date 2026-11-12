@@ -26,8 +26,8 @@ with cargo and merges with `lipo` (a universal Release build needs `rustup targe
 real helper (`ASHIFT_HELPER_PATH`, else `target/release/ashift`, else `target/debug/ashift`).
 
 UI tests (`AriadShiftUITests`, scheme `AriadShiftUI`) drive the built app on fixture copies; they need Automation Mode
-(`sudo DevToolsSecurity -enable`, approve once) and an unlocked screen. `ASHIFT_DEFAULTS_SUITE` names the app's preferences suite.
-`PerformanceUITests` hold the launch, `OpenToFirstPage` signpost, hitch and memory metrics.
+(`sudo DevToolsSecurity -enable`, approve once) and an unlocked screen, and `ASHIFT_DEFAULTS_SUITE` (Debug only, unsandboxed app)
+names their preferences suite. Never run yet: triage the strict accessibility audit first. `PerformanceUITests` hold the metrics.
 
 ## EngineClient
 `EngineClient()` points the engine at `<App.app>/Contents/Helpers/ashift`; it throws `EngineError.helperMissing` unless that is an
@@ -52,7 +52,7 @@ The detail pane is a PDFKit `PDFView` that `ViewerModel` owns; the document open
 It offers continuous scroll, fit width, zoom (menu, toolbar, ⌘+ ⌘- ⌘0 ⌘9), single, continuous and two-page display (⌘1-3), a page
 field and Go to Page (⌥⌘G), find with a match count (⌘F, ⌘G, ⇧⌘G) and PDFKit text selection and copy. The sidebar is a lazy list
 of thumbnails (`ThumbnailCache`: rendered on demand from a second parse of the file on a background actor, dropped
-when a row scrolls away, LRU) with multi-selection. Fit Width is exact in every layout (single-page mode computes it once). The page grid
+when a row scrolls away, LRU) with multi-selection. Fit Width tracks the window when scrolling; single-page mode computes it once. The page grid
 (⌥⌘P) reorders by drag or ⌥ with the arrow keys; rotate and delete act on the selection. Swift only builds the request (`PageEdit`):
 `pdf.reorder`, `pdf.rotate` and `pdf.delete_pages` run through `EngineClient` and the run sheet, write a new file next to the
 original and open it. A window never changes its own pages. Cancel ends with no output: a result landing as it is pressed is removed.

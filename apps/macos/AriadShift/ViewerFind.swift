@@ -24,11 +24,6 @@ final class ViewerFind {
     }
     @ObservationIgnored private let view: PDFView
     @ObservationIgnored private let delegate = FindDelegate()
-    /// End notifications PDFKit has sent so far, and how many of a cancelled search are still to come.
-    /// PDFKit reports a cancelled search's end inside `cancelFindString()`; if a PDFKit version
-    /// reports it later, that late end must not close the search that replaced it.
-    @ObservationIgnored private var endsReceived = 0
-    @ObservationIgnored private var staleEnds = 0
 
     init(view: PDFView) {
         self.view = view
@@ -55,12 +50,12 @@ final class ViewerFind {
         clear()
     }
 
-    /// Stops a search that is still running.
+    /// Stops a search that is still running. PDFKit reports the end of a cancelled search inside
+    /// `cancelFindString()` (measured on macOS 27.2); an end that arrives with no search running
+    /// is ignored by `ended()`, so a PDFKit that never reports it cannot leave a later search waiting.
     func cancel() {
         guard isSearching else { return }
-        let before = endsReceived
         document?.cancelFindString()
-        if endsReceived == before { staleEnds += 1 }
         isSearching = false
     }
 
@@ -101,15 +96,7 @@ final class ViewerFind {
     }
 
     private func ended() {
-        endsReceived += 1
-        if staleEnds > 0 {
-            staleEnds -= 1
-            return
-        }
-        finished()
-    }
-
-    private func finished() {
+        guard isSearching else { return }
         isSearching = false
         view.highlightedSelections = matches.isEmpty ? nil : matches
     }

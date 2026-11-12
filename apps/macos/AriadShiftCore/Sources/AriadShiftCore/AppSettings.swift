@@ -10,16 +10,23 @@ public enum SettingsKey {
 
 /// The settings that change engine behaviour. Values persist in `UserDefaults`.
 public struct AppSettings: Sendable {
-    /// Names a `UserDefaults` suite to use instead of the standard defaults. UI tests set it so every
-    /// run starts from a fresh preferences domain and never touches the user's own settings.
+    /// Names a `UserDefaults` suite to use instead of the standard defaults, in Debug builds only. UI tests
+    /// set it so every run starts from a fresh preferences domain and never touches the user's own settings.
     public static let defaultsSuiteVariable = "ASHIFT_DEFAULTS_SUITE"
 
-    /// The defaults the app reads and writes: the suite named by `ASHIFT_DEFAULTS_SUITE`, else the standard ones.
+    /// The defaults the app reads and writes: in a Debug build the suite named by `ASHIFT_DEFAULTS_SUITE`,
+    /// otherwise (and always in a Release build) the standard ones.
     public nonisolated(unsafe) static let launchDefaults: UserDefaults = {
-        guard let suite = ProcessInfo.processInfo.environment[defaultsSuiteVariable], !suite.isEmpty,
+        #if DEBUG
+        // The test process seeds the suite before the app starts, which works across processes only
+        // because the app is not sandboxed (`ENABLE_APP_SANDBOX: NO`): a sandboxed app could not read it.
+        if let suite = ProcessInfo.processInfo.environment[defaultsSuiteVariable], !suite.isEmpty,
             let defaults = UserDefaults(suiteName: suite)
-        else { return .standard }
-        return defaults
+        {
+            return defaults
+        }
+        #endif
+        return .standard
     }()
 
     // UserDefaults is documented thread-safe but not declared Sendable in the SDK; removing this

@@ -43,14 +43,16 @@ final class LaunchAndWindowUITests: UITestCase {
 
         let window = waitForDocumentWindow(pages: 20)
 
-        XCTAssertTrue(element("viewer.pdf").isHittable, "the viewer is on screen")
+        let viewer = element("viewer.pdf")
+        XCTAssertTrue(viewer.waitForExistence(timeout: 10), "the PDF view is an accessibility element with its identifier")
+        XCTAssertTrue(viewer.isHittable, "the viewer is on screen")
         let firstThumbnail = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Page 1 of 20")).firstMatch
         XCTAssertTrue(firstThumbnail.waitForExistence(timeout: 20), "the sidebar lists page 1")
         XCTAssertEqual(element("inspector.value.name").label, "doc.pdf")
         XCTAssertEqual(element("inspector.value.format").label, "PDF")
         XCTAssertEqual(element("inspector.value.pages").label, "20")
         XCTAssertFalse(element("inspector.value.size").label.isEmpty, "the inspector shows the file size (\(size) bytes)")
-        XCTAssertEqual(element("toolbar.pageField").value as? String, "1")
+        XCTAssertEqual(pageFieldValue(), pageValue(1, of: 20))
         XCTAssertTrue(window.exists)
     }
 }

@@ -14,7 +14,8 @@ final class ViewerUITests: UITestCase {
 
         app.typeKey("0", modifierFlags: .command)
         waitUntil("actual size is 100%") { self.percent(zoom) == "100%" }
-        app.typeKey("+", modifierFlags: .command)
+        // Zooming in is clicked: the menu shortcut is Command and a shifted key, which depends on the keyboard layout.
+        element("toolbar.zoomIn").click()
         waitUntil("zooming in gives 125%") { self.percent(zoom) == "125%" }
         app.typeKey("-", modifierFlags: .command)
         waitUntil("zooming out gives 100%") { self.percent(zoom) == "100%" }
@@ -22,6 +23,20 @@ final class ViewerUITests: UITestCase {
         waitUntil("zooming out again gives 75%") { self.percent(zoom) == "75%" }
         app.typeKey("0", modifierFlags: .command)
         waitUntil("actual size is back to 100%") { self.percent(zoom) == "100%" }
+    }
+
+    /// The unshifted key of the Zoom In shortcut (⌘+) also zooms in, as it does in other Mac apps.
+    func testCommandEqualsZoomsIn() throws {
+        seedDefaults()
+        launchApp(opening: [try copyFixture("pdf-tools/multipage-20.pdf")])
+        waitForDocumentWindow()
+        let zoom = element("toolbar.zoom")
+        XCTAssertTrue(zoom.waitForExistence(timeout: 10))
+
+        app.typeKey("0", modifierFlags: .command)
+        waitUntil("actual size is 100%") { self.percent(zoom) == "100%" }
+        app.typeKey("=", modifierFlags: .command)
+        waitUntil("Command and = zoom in to 125%") { self.percent(zoom) == "125%" }
     }
 
     func testFindShowsAMatchCountAndStepsThroughMatches() throws {
@@ -90,12 +105,12 @@ final class ViewerUITests: UITestCase {
 
         app.typeKey("g", modifierFlags: [.command, .option])  // Go to Page focuses the field
         page.typeText("7\r")
-        waitUntil("the page field shows 7") { (page.value as? String) == "7" }
+        waitUntil("the page field reports page 7") { self.pageFieldValue() == self.pageValue(7) }
         app.typeKey(.downArrow, modifierFlags: [.command, .option])
-        waitUntil("Next Page goes to 8") { (page.value as? String) == "8" }
+        waitUntil("Next Page goes to 8") { self.pageFieldValue() == self.pageValue(8) }
         app.typeKey(.upArrow, modifierFlags: [.command, .option])
         app.typeKey(.upArrow, modifierFlags: [.command, .option])
-        waitUntil("Previous Page twice goes to 6") { (page.value as? String) == "6" }
+        waitUntil("Previous Page twice goes to 6") { self.pageFieldValue() == self.pageValue(6) }
 
         app.typeKey("p", modifierFlags: [.command, .option])
         XCTAssertTrue(element("grid").waitForExistence(timeout: 20), "the grid shortcut switches layout")
@@ -110,6 +125,11 @@ final class ViewerUITests: UITestCase {
     }
 
     /// Apple's accessibility audit on the document window; every issue it reports fails the test.
+    ///
+    /// Strict on purpose: no exclusion is justified from the code alone, and a guessed one would hide a real
+    /// finding. This test has never run (Automation Mode is off on the machine that wrote it), so it is the
+    /// first one to triage once the UI tests can run: fix each reported issue, or exclude it here with the
+    /// reason, through the issue handler of `performAccessibilityAudit`.
     func testAccessibilityAuditOfTheDocumentWindowFindsNothing() throws {
         seedDefaults()
         launchApp(opening: [try copyFixture("pdf-tools/multipage-20.pdf")])

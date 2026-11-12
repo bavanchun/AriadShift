@@ -77,6 +77,10 @@ final class ViewerModel {
         view.interpolationQuality = .high
         view.minScaleFactor = ZoomLevel.minimum
         view.maxScaleFactor = ZoomLevel.maximum
+        // A bare NSView is not an accessibility element, and its identifier would not reach the tree
+        // that UI tests and VoiceOver read; make the PDF view one, with a role, a label and an identifier.
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.group)
         view.setAccessibilityLabel(String(localized: "mac.viewer.title"))
         view.setAccessibilityIdentifier("viewer.pdf")
         let center = NotificationCenter.default
@@ -118,6 +122,15 @@ final class ViewerModel {
     /// thumbnails render off the main actor.
     func install(_ document: PDFDocument, source: Data? = nil) {
         guard document.pageCount > 0 else {
+            // A document without pages is not shown: drop whatever an earlier one left in the view.
+            find.cancel()
+            find.document = nil
+            thumbnails?.removeAll()
+            thumbnails = nil
+            pdfView.document = nil
+            pageCount = 0
+            currentPageIndex = 0
+            selection = PageSelection()
             loadState = .failed
             return
         }

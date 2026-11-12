@@ -73,27 +73,45 @@ class UITestCase: XCTestCase {
         app.windows.matching(NSPredicate(format: "title BEGINSWITH %@", titleStart)).firstMatch
     }
 
-    /// Opens the document window and waits for the viewer, the thumbnails and the inspector facts, which
-    /// means the engine is running and the Tools menu is ready.
+    /// Waits for the document window of a document with `pages` pages: its title, the page field that
+    /// the toolbar enables once the viewer has loaded the document, and the inspector facts, which
+    /// means the engine is running and the Tools menu is ready. It gates on SwiftUI elements with known
+    /// identifiers; the PDFKit view (`viewer.pdf`) is checked by the one test about it, so a PDFKit
+    /// accessibility quirk cannot fail every test.
     @discardableResult
     func waitForDocumentWindow(_ titleStart: String = "doc", pages: Int = 20, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
         let window = documentWindow(titleStart)
         XCTAssertTrue(window.waitForExistence(timeout: 30), "no document window", file: file, line: line)
-        XCTAssertTrue(element("viewer.pdf").waitForExistence(timeout: 30), "the viewer is missing", file: file, line: line)
+        let pageField = element("toolbar.pageField")
+        XCTAssertTrue(pageField.waitForExistence(timeout: 30), "the toolbar has no page field", file: file, line: line)
+        waitUntil("the viewer has loaded the document (the page field is enabled)", timeout: 30, file: file, line: line) { pageField.isEnabled }
         let pagesValue = element("inspector.value.pages")
         XCTAssertTrue(pagesValue.waitForExistence(timeout: 30), "the inspector has no page count", file: file, line: line)
         waitUntil("the inspector shows \(pages) pages", timeout: 30, file: file, line: line) { pagesValue.label == "\(pages)" }
         return window
     }
 
-    /// Waits until `condition` holds (polled by XCTest, never a fixed sleep).
+    /// The accessibility value of the page field: "Page N of M" (the contract of `ViewerToolbar`).
+    func pageFieldValue() -> String { (element("toolbar.pageField").value as? String) ?? "" }
+
+    /// The value the page field reports on page `page` of a `total`-page document.
+    func pageValue(_ page: Int, of total: Int = 20) -> String { "Page \(page) of \(total)" }
+
+    /// Waits until `condition` holds. It polls on the main actor until a deadline and runs the run loop
+    /// between polls, so nothing here depends on which thread XCTest evaluates a predicate on and no
+    /// fixed sleep is involved.
     func waitUntil(
         _ description: String, timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line,
-        _ condition: @escaping @MainActor () -> Bool
+        _ condition: () -> Bool
     ) {
-        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in MainActor.assumeIsolated { condition() } }, object: nil)
-        let result = XCTWaiter().wait(for: [expectation], timeout: timeout)
-        XCTAssertEqual(result, .completed, "timed out waiting until \(description)", file: file, line: line)
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail("timed out waiting until \(description)", file: file, line: line)
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
     }
 
     /// Pdf files in the scratch folder other than the original document.

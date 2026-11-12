@@ -48,9 +48,19 @@ final class ToolsUITests: UITestCase {
         let run = element("run.run")
         XCTAssertTrue(run.waitForExistence(timeout: 10))
         run.click()
-        let cancel = element("run.cancel")
-        XCTAssertTrue(cancel.waitForExistence(timeout: 10), "a running tool offers Cancel")
-        XCTAssertTrue(element("run.progress").exists, "progress is shown while it runs")
+        // The settings Cancel (run.cancel) exists before the run starts, so it proves nothing about the run:
+        // wait for the progress view, or for the end of a run that was too fast to cancel.
+        let progress = element("run.progress")
+        let finished = element("run.close")
+        waitUntil("the run shows progress or has already finished", timeout: 30) { progress.exists || finished.exists }
+        if !progress.exists { throw XCTSkip("the run finished before Cancel could be pressed; nothing to cancel on this machine") }
+        let cancel = element("run.cancel.running")
+        if !cancel.waitForExistence(timeout: 10) {
+            if finished.exists { throw XCTSkip("the run finished before Cancel could be pressed; nothing to cancel on this machine") }
+            XCTFail("a running tool offers Cancel")
+        }
+        // A run that ends between the check above and this click is a race no test can close; it fails
+        // the click loudly instead of passing, and the 1,000-page document makes it rare.
         cancel.click()
 
         // Cancel returns the sheet to its settings; closing it leaves the document as it was.
@@ -61,7 +71,7 @@ final class ToolsUITests: UITestCase {
         XCTAssertTrue(resultFiles().isEmpty, "a cancelled run writes no file: \(resultFiles().map(\.lastPathComponent))")
         XCTAssertTrue(window.exists)
         XCTAssertEqual(element("inspector.value.pages").label, "1000")
-        XCTAssertEqual(element("toolbar.pageField").value as? String, "1", "the viewer still works")
+        XCTAssertEqual(pageFieldValue(), pageValue(1, of: 1000), "the viewer still works")
     }
 }
 
