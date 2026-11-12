@@ -47,6 +47,21 @@ final class PageOrderTests: XCTestCase {
         XCTAssertNil(PageOrder.shifted([2], by: 2, pageCount: 5))
     }
 
+    /// Separate pages each move by one position; they are never gathered into a block.
+    func testShiftingANonContiguousSelectionMovesEveryRunByOne() {
+        XCTAssertEqual(PageOrder.shifted([1, 5], by: -1, pageCount: 8), [1, 0, 2, 3, 5, 4, 6, 7])
+        XCTAssertEqual(PageOrder.shifted([1, 5], by: 1, pageCount: 8), [0, 2, 1, 3, 4, 6, 5, 7])
+        XCTAssertEqual(PageOrder.shifted([1, 2, 5], by: 1, pageCount: 8), [0, 3, 1, 2, 4, 6, 5, 7])
+        // A run at the edge stays while the other run moves.
+        XCTAssertEqual(PageOrder.shifted([0, 3], by: -1, pageCount: 5), [0, 1, 3, 2, 4])
+        XCTAssertEqual(PageOrder.shifted([1, 4], by: 1, pageCount: 5), [0, 2, 1, 3, 4])
+        XCTAssertNil(PageOrder.shifted([0, 1], by: -1, pageCount: 5))
+        XCTAssertNil(PageOrder.shifted([], by: 1, pageCount: 5))
+        XCTAssertNil(PageOrder.shifted([9], by: 1, pageCount: 5), "out of range")
+        // Two runs with one page between them still use different neighbours.
+        XCTAssertEqual(PageOrder.shifted([1, 3], by: -1, pageCount: 5), [1, 0, 3, 2, 4])
+    }
+
     func testPageRangeTextCompressesAscendingRunsOnly() {
         XCTAssertEqual(PageOrder.pageRangeText([2, 0, 1, 3, 4, 5]), "3,1,2,4-6")
         XCTAssertEqual(PageOrder.pageRangeText([0, 1, 2]), "1-3")

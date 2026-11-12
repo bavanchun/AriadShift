@@ -46,18 +46,23 @@ struct FindBar: View {
                 .onSubmit { find.next() }
                 .frame(minWidth: 160, maxWidth: 320)
                 .accessibilityLabel(String(localized: "mac.find.prompt"))
+                .accessibilityIdentifier("find.field")
             Text(statusText)
                 .font(.callout)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(statusText)
+                .accessibilityIdentifier("find.status")
             Button(String(localized: "mac.menu.find_previous"), systemImage: "chevron.up") { find.previous() }
                 .disabled(find.matchCount == 0)
+                .accessibilityIdentifier("find.previous")
             Button(String(localized: "mac.menu.find_next"), systemImage: "chevron.down") { find.next() }
                 .disabled(find.matchCount == 0)
+                .accessibilityIdentifier("find.next")
             Spacer()
             Button(String(localized: "mac.find.done")) { find.hide() }
                 .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("find.done")
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)

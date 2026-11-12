@@ -19,6 +19,7 @@ struct InspectorView: View {
         .formStyle(.grouped)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String(localized: "mac.inspector.title"))
+        .accessibilityIdentifier("inspector")
     }
 
     @ViewBuilder
@@ -60,6 +61,6 @@ struct InspectorView: View {
     }
 
     private func row(_ field: String, @ViewBuilder value: () -> some View) -> some View {
-        LabeledContent(L10n.branch("mac.inspector.field", field)) { value() }
+        LabeledContent(L10n.branch("mac.inspector.field", field)) { value().accessibilityIdentifier("inspector.value.\(field)") }
     }
 }

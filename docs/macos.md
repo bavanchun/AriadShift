@@ -19,10 +19,15 @@ brew install xcodegen          # dev tool only
 just macos-ffi && apps/macos/scripts/sync-ffi.sh && just macos-project
 cd apps/macos && xcodebuild -scheme AriadShift -destination 'platform=macOS' build test
 swift test --package-path apps/macos/AriadShiftCore   # real FFI and fixtures
+cd apps/macos && xcodebuild -scheme AriadShiftUI -destination 'platform=macOS' test   # XCUITest
 ```
 The helper phase copies `ASHIFT_HELPER_PATH` (which must contain every arch in `ARCHS`) or, without it, builds `ariad-cli` per arch
 with cargo and merges with `lipo` (a universal Release build needs `rustup target add x86_64-apple-darwin`). `swift test` needs a
 real helper (`ASHIFT_HELPER_PATH`, else `target/release/ashift`, else `target/debug/ashift`).
+
+UI tests (`AriadShiftUITests`, scheme `AriadShiftUI`) drive the built app on fixture copies; they need Automation Mode
+(`sudo DevToolsSecurity -enable`, approve once) and an unlocked screen. `ASHIFT_DEFAULTS_SUITE` names the app's preferences suite.
+`PerformanceUITests` hold the launch, `OpenToFirstPage` signpost, hitch and memory metrics.
 
 ## EngineClient
 `EngineClient()` points the engine at `<App.app>/Contents/Helpers/ashift`; it throws `EngineError.helperMissing` unless that is an
@@ -46,16 +51,21 @@ visible, and a crash in that window leaves it. Imports share `NameReservations`.
 The detail pane is a PDFKit `PDFView` that `ViewerModel` owns; the document opens from the file bytes, parsed off the main actor.
 It offers continuous scroll, fit width, zoom (menu, toolbar, ⌘+ ⌘- ⌘0 ⌘9), single, continuous and two-page display (⌘1-3), a page
 field and Go to Page (⌥⌘G), find with a match count (⌘F, ⌘G, ⇧⌘G) and PDFKit text selection and copy. The sidebar is a lazy list
-of thumbnails (`ThumbnailCache`: rendered on demand, dropped when a row scrolls away, LRU) with multi-selection. The page grid
+of thumbnails (`ThumbnailCache`: rendered on demand from a second parse of the file on a background actor, dropped
+when a row scrolls away, LRU) with multi-selection. Fit Width is exact in every layout (single-page mode computes it once). The page grid
 (⌥⌘P) reorders by drag or ⌥ with the arrow keys; rotate and delete act on the selection. Swift only builds the request (`PageEdit`):
 `pdf.reorder`, `pdf.rotate` and `pdf.delete_pages` run through `EngineClient` and the run sheet, write a new file next to the
-original and open it. A window never changes its own pages.
+original and open it. A window never changes its own pages. Cancel ends with no output: a result landing as it is pressed is removed.
 
-| Budget (Debug build, 120 Hz display) | Measured by `ViewerPerformanceTests` |
-|---|---|
-| Open 1,000 pages to page 1 in the viewport: 300 ms | median 32 ms, max 37 ms (10 runs) |
-| Scroll 10 s at 3,000 pt/s, no hitch over 16 ms | 120 fps, max hitch 0 ms (display link frame times) |
-| Idle memory, launched app with a 100-page document: 150 MB | 121 MB footprint of the app process |
+Apple M5, macOS 27.2, 120 Hz. `ViewerPerformanceTests` (in process; Release with `ENABLE_TESTABILITY=YES ENABLE_HARDENED_RUNTIME=NO`);
+launch is timed from `NSWorkspace.open` to a 700 pt window (not `XCTApplicationLaunchMetric`, not yet run) and misses 400 ms by 3-6%.
+
+| Budget | Debug | Release |
+|---|---|---|
+| Open 1,000 pages to page 1: 300 ms | median 34 ms, max 42 | median 34 ms, max 37 |
+| Scroll 10 s at 3,000 pt/s: at most 1 frame over 16 ms per 1,000 | 0 of 1,197, max hitch 0 ms | 0 of 1,199, max 0 ms |
+| Idle memory, 100-page document: 150 MB | 120.5 MB | 108.3 MB |
+| Launch to first window: 400 ms | median 411 ms (first run 1,343) | median 425 ms (first run 1,310) |
 
 ## Updates (Sparkle 2.10.1)
 Sparkle 2.10.1 (MIT, pinned in `project.yml`; the SwiftPM binary target is pinned by checksum). Its LICENSE bundles notices for

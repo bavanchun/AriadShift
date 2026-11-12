@@ -12,6 +12,13 @@ struct ThumbnailView: View {
     @Environment(\.displayScale) private var displayScale
     @State private var image: NSImage?
 
+    /// What the rendered image depends on; a change of any part loads the image again.
+    private struct Request: Hashable {
+        let cache: ObjectIdentifier
+        let index: Int
+        let pixels: Int
+    }
+
     var body: some View {
         let size = cache.size(page: index, width: width) ?? CGSize(width: width, height: width * 1.3)
         ZStack {
@@ -25,7 +32,7 @@ struct ThumbnailView: View {
         }
         .frame(width: size.width, height: size.height)
         .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
-        .task(id: index) {
+        .task(id: Request(cache: ObjectIdentifier(cache), index: index, pixels: Int(width * displayScale))) {
             let pixels = Int(width * displayScale)
             image = cache.cachedImage(page: index, width: pixels)
             if image == nil { image = await cache.image(page: index, width: pixels) }

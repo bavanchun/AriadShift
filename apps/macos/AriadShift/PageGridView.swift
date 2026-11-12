@@ -37,6 +37,7 @@ struct PageGridView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String(localized: "mac.toolbar.page_grid"))
+        .accessibilityIdentifier("grid")
     }
 
     // MARK: - Actions
@@ -80,6 +81,7 @@ struct PageGridView: View {
             drop(items, before: index)
         } isTargeted: { dropTarget = $0 ? index : (dropTarget == index ? nil : dropTarget) }
         .pageAccessibility(index: index, total: viewer.pageCount)
+        .accessibilityIdentifier("grid.page.\(index + 1)")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityAction(named: String(localized: "mac.grid.move_earlier")) {
             move([index], by: -1)

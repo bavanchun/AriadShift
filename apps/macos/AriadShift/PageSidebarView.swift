@@ -20,6 +20,7 @@ struct PageSidebarView: View {
             }
         }
         .accessibilityLabel(String(localized: "mac.sidebar.title"))
+        .accessibilityIdentifier("sidebar")
     }
 
     private func list(_ cache: ThumbnailCache) -> some View {

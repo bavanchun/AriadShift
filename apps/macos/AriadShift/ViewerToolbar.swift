@@ -12,6 +12,7 @@ struct ViewerToolbar: ToolbarContent {
                 Label(String(localized: "mac.toolbar.page_grid"), systemImage: "square.grid.2x2")
             }
             .help(String(localized: "mac.toolbar.page_grid"))
+            .accessibilityIdentifier("toolbar.pageGrid")
             .keyboardShortcut("p", modifiers: [.command, .option])
             .disabled(viewer.loadState != .loaded)
         }
@@ -26,6 +27,7 @@ struct ViewerToolbar: ToolbarContent {
                 Label(String(localized: "mac.menu.find"), systemImage: "magnifyingglass")
             }
             .help(String(localized: "mac.menu.find"))
+            .accessibilityIdentifier("toolbar.find")
             .disabled(viewer.loadState != .loaded || viewer.layout != .reader)
         }
     }
@@ -45,6 +47,7 @@ private struct PageNavigation: View {
                 Label(String(localized: "mac.toolbar.previous_page"), systemImage: "chevron.up")
             }
             .help(String(localized: "mac.toolbar.previous_page"))
+            .accessibilityIdentifier("toolbar.previousPage")
             .disabled(!viewer.canGoPrevious || viewer.layout != .reader)
 
             TextField(String(localized: "mac.toolbar.page_field"), text: $text)
@@ -55,6 +58,7 @@ private struct PageNavigation: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .focused($focused)
                 .onSubmit(commit)
+                .accessibilityIdentifier("toolbar.pageField")
                 .accessibilityLabel(String(localized: "mac.toolbar.page_field"))
                 .accessibilityValue(
                     String(localized: "mac.sidebar.page", defaultValue: "Page \(viewer.currentPageNumber) of \(viewer.pageCount)")
@@ -70,6 +74,7 @@ private struct PageNavigation: View {
                 Label(String(localized: "mac.toolbar.next_page"), systemImage: "chevron.down")
             }
             .help(String(localized: "mac.toolbar.next_page"))
+            .accessibilityIdentifier("toolbar.nextPage")
             .disabled(!viewer.canGoNext || viewer.layout != .reader)
         }
         .labelStyle(.iconOnly)
@@ -100,6 +105,7 @@ private struct ZoomControls: View {
                 Label(L10n.branch("mac.menu.zoom", "out"), systemImage: "minus.magnifyingglass")
             }
             .help(L10n.branch("mac.menu.zoom", "out"))
+            .accessibilityIdentifier("toolbar.zoomOut")
             .disabled(!viewer.canZoomOut)
 
             Menu {
@@ -116,6 +122,8 @@ private struct ZoomControls: View {
             .fixedSize()
             .help(L10n.branch("mac.menu.zoom", "other"))
             .accessibilityLabel(L10n.branch("mac.menu.zoom", "other"))
+            .accessibilityValue(viewer.scaleFactor.formatted(.percent.precision(.fractionLength(0))))
+            .accessibilityIdentifier("toolbar.zoom")
 
             Button {
                 viewer.zoomIn()
@@ -123,6 +131,7 @@ private struct ZoomControls: View {
                 Label(L10n.branch("mac.menu.zoom", "in"), systemImage: "plus.magnifyingglass")
             }
             .help(L10n.branch("mac.menu.zoom", "in"))
+            .accessibilityIdentifier("toolbar.zoomIn")
             .disabled(!viewer.canZoomIn)
         }
         .labelStyle(.iconOnly)

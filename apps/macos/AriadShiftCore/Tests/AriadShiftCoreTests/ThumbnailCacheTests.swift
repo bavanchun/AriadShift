@@ -68,4 +68,50 @@ final class ThumbnailCacheTests: XCTestCase {
         XCTAssertNil(empty)
         XCTAssertEqual(cache.renderCount, 0)
     }
+
+    // MARK: - Rendering off the main actor (with the document's bytes)
+
+    private func backgroundCache(_ name: String = "pdf-tools/multipage-20.pdf", capacity: Int = 240) throws -> ThumbnailCache {
+        let data = try Data(contentsOf: URL(fileURLWithPath: try fixturePath(name)))
+        return ThumbnailCache(document: try XCTUnwrap(PDFDocument(data: data)), source: data, capacity: capacity)
+    }
+
+    func testBackgroundRenderingGivesTheSameThumbnailAsRenderingOnTheMainActor() async throws {
+        let background = try backgroundCache()
+        let main = ThumbnailCache(document: try document())
+
+        let backgroundImage = await background.image(page: 4, width: 120)
+        let mainImage = await main.image(page: 4, width: 120)
+        let fromBackground = try XCTUnwrap(backgroundImage)
+        let fromMain = try XCTUnwrap(mainImage)
+
+        XCTAssertEqual(fromBackground.size.width, fromMain.size.width, accuracy: 1)
+        XCTAssertEqual(fromBackground.size.height, fromMain.size.height, accuracy: 1)
+        XCTAssertEqual(background.renderCount, 1)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(fromBackground.tiffRepresentation)))
+        var colours = Set<UInt32>()
+        for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: 4) {
+                colours.insert(UInt32(truncatingIfNeeded: (bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)?.redComponent ?? 0).bitPattern))
+            }
+        }
+        XCTAssertGreaterThan(colours.count, 1, "the page has content, not one flat colour")
+    }
+
+    func testBackgroundRenderingKeepsTheCacheHitsEvictionAndCancellation() async throws {
+        let cache = try backgroundCache(capacity: 3)
+        for page in 0..<4 { _ = await cache.image(page: page, width: 60) }
+        XCTAssertEqual(cache.renderCount, 4)
+        XCTAssertEqual(cache.cachedCount, 3)
+        _ = await cache.image(page: 3, width: 60)
+        XCTAssertEqual(cache.renderCount, 4, "a repeat is a cache hit")
+
+        let task = Task { @MainActor in await cache.image(page: 9, width: 60) }
+        task.cancel()
+        let cancelled = await task.value
+        XCTAssertNil(cancelled)
+        XCTAssertEqual(cache.renderCount, 4, "a cancelled request renders nothing")
+        let missing = await cache.image(page: 99, width: 60)
+        XCTAssertNil(missing)
+    }
 }

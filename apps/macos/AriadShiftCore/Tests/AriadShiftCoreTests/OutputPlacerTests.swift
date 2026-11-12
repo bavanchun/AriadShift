@@ -240,32 +240,84 @@ final class OutputPlacerTests: XCTestCase {
     }
 
     /// A small disk image mounted for the test: a second volume of its own, detached at teardown.
+    /// The test is skipped when this machine cannot attach disk images (a sandboxed runner).
+    ///
+    /// The teardown is registered before anything is attached and finds the image by its path, so
+    /// a half-finished attach (hdiutil failed or timed out after mounting) is still detached, by
+    /// device node. Every hdiutil call is bounded by a timeout.
     private func mountedScratchVolume() throws -> URL {
-        let image = try temporaryDirectory().appendingPathComponent("scratch.dmg")
-        let name = "ashift-\(UUID().uuidString.prefix(8))"
-        let create = Process()
-        create.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        create.arguments = ["create", "-size", "8m", "-fs", "APFS", "-volname", name, "-attach", image.path]
-        create.standardOutput = FileHandle.nullDevice
-        create.standardError = FileHandle.nullDevice
-        try create.run()
-        create.waitUntilExit()
-        let mountPoint = URL(fileURLWithPath: "/Volumes/\(name)", isDirectory: true)
-        guard create.terminationStatus == 0, FileManager.default.fileExists(atPath: mountPoint.path) else {
-            let message = "could not mount a scratch disk image at \(mountPoint.path)"
-            XCTFail(message)
-            throw TestSetupError(description: message)
+        let directory = try temporaryDirectory()
+        let image = directory.appendingPathComponent("scratch.dmg")
+        let mountPoint = directory.appendingPathComponent("mount", isDirectory: true)
+        try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
+        addTeardownBlock { Self.detachImages(at: image) }
+
+        guard let create = try? Self.hdiutil(["create", "-size", "8m", "-fs", "APFS", "-volname", "ashift-scratch", image.path]),
+            create.status == 0
+        else { throw XCTSkip("hdiutil cannot create a disk image here") }
+        // -nobrowse keeps Finder and Spotlight away from the scratch volume.
+        guard let attach = try? Self.hdiutil(["attach", "-nobrowse", "-noverify", "-plist", "-mountpoint", mountPoint.path, image.path]),
+            attach.status == 0,
+            let mounted = Self.mountPoint(inAttachPlist: attach.output)
+        else { throw XCTSkip("hdiutil cannot attach a disk image here") }
+        return mounted
+    }
+
+    private struct HdiutilResult {
+        let status: Int32
+        let output: Data
+    }
+
+    /// Runs `hdiutil` and waits at most `timeout` seconds; a run that is still going is terminated
+    /// (then killed) and reported as a failure.
+    private static func hdiutil(_ arguments: [String], timeout: TimeInterval = 30) throws -> HdiutilResult {
+        let outputFile = FileManager.default.temporaryDirectory.appendingPathComponent("ashift-hdiutil-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: outputFile.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: outputFile) }
+        let sink = try FileHandle(forWritingTo: outputFile)
+        defer { try? sink.close() }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        process.arguments = arguments
+        process.standardOutput = sink
+        process.standardError = FileHandle.nullDevice
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
+        try process.run()
+        if finished.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            if finished.wait(timeout: .now() + 5) == .timedOut { kill(process.processIdentifier, SIGKILL) }
+            throw TestSetupError(description: "hdiutil \(arguments.first ?? "") timed out after \(Int(timeout)) s")
         }
-        addTeardownBlock {
-            let detach = Process()
-            detach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-            detach.arguments = ["detach", "-force", mountPoint.path]
-            detach.standardOutput = FileHandle.nullDevice
-            detach.standardError = FileHandle.nullDevice
-            try? detach.run()
-            detach.waitUntilExit()
+        return HdiutilResult(status: process.terminationStatus, output: try Data(contentsOf: outputFile))
+    }
+
+    private static func plist(_ data: Data) -> [String: Any]? {
+        (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any]
+    }
+
+    private static func mountPoint(inAttachPlist data: Data) -> URL? {
+        let entities = plist(data)?["system-entities"] as? [[String: Any]] ?? []
+        return entities.lazy.compactMap { $0["mount-point"] as? String }.first.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    /// Detaches every attached image whose file is `image`, by the device node of its whole disk.
+    private static func detachImages(at image: URL) {
+        let wanted = image.resolvingSymlinksInPath().path
+        guard let info = try? hdiutil(["info", "-plist"]), info.status == 0 else {
+            XCTFail("could not list attached disk images to detach \(wanted)")
+            return
         }
-        return mountPoint
+        let images = plist(info.output)?["images"] as? [[String: Any]] ?? []
+        for attached in images {
+            guard let path = attached["image-path"] as? String,
+                URL(fileURLWithPath: path).resolvingSymlinksInPath().path == wanted,
+                let device = (attached["system-entities"] as? [[String: Any]])?.lazy.compactMap({ $0["dev-entry"] as? String }).first
+            else { continue }
+            let detached = (try? hdiutil(["detach", device, "-force"]))?.status == 0
+            if !detached { XCTFail("could not detach \(device) of \(wanted)") }
+        }
     }
 
     func testFallbackRefusesADanglingSymbolicLink() throws {

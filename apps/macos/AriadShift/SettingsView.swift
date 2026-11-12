@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Settings that change real behaviour: where results go, whether a result opens, and updates.
 struct SettingsView: View {
-    @AppStorage(SettingsKey.outputFolder) private var outputFolder = ""
-    @AppStorage(SettingsKey.openResultAfterRun) private var openResult = true
+    @AppStorage(SettingsKey.outputFolder, store: AppSettings.launchDefaults) private var outputFolder = ""
+    @AppStorage(SettingsKey.openResultAfterRun, store: AppSettings.launchDefaults) private var openResult = true
     let updater: UpdaterModel
     @State private var automaticChecks = false
 
@@ -26,13 +26,17 @@ struct SettingsView: View {
                     }
                 }
                 Toggle(String(localized: "mac.settings.open_result"), isOn: $openResult)
+                    .accessibilityIdentifier("settings.openResult")
             }
             Section(String(localized: "mac.settings.updates")) {
                 Toggle(String(localized: "mac.settings.updates_auto"), isOn: $automaticChecks)
                     .disabled(!updater.configuration.isEnabled)
+                    .accessibilityIdentifier("settings.updatesAuto")
                     .onChange(of: automaticChecks) { _, value in updater.automaticallyChecks = value }
                 if !updater.configuration.isEnabled {
-                    Text("mac.settings.updates_disabled").foregroundStyle(.secondary)
+                    Text("mac.settings.updates_disabled")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.updatesDisabled")
                 }
             }
         }

@@ -3,6 +3,14 @@ import AppKit
 import Observation
 import PDFKit
 import SwiftUI
+import os
+
+/// Signposts of the viewer, read by the performance tests (`XCTOSSignpostMetric`) and Instruments.
+enum ViewerSignpost {
+    static let signposter = OSSignposter(subsystem: "com.ariadnev.ariadshift", category: "viewer")
+    /// From the start of opening a document to its first page laid out in the viewport.
+    static let openToFirstPage: StaticString = "OpenToFirstPage"
+}
 
 /// How the viewer lays pages out; the View menu offers all three.
 enum ViewerDisplayMode: String, CaseIterable, Identifiable {
@@ -70,6 +78,7 @@ final class ViewerModel {
         view.minScaleFactor = ZoomLevel.minimum
         view.maxScaleFactor = ZoomLevel.maximum
         view.setAccessibilityLabel(String(localized: "mac.viewer.title"))
+        view.setAccessibilityIdentifier("viewer.pdf")
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak self] _ in
@@ -91,21 +100,31 @@ final class ViewerModel {
     /// Opens a PDF from its bytes. Parsing runs off the main actor; the first page shows as soon
     /// as the view has the document.
     func open(data: Data) async {
+        let signposter = ViewerSignpost.signposter
+        let interval = signposter.beginInterval(ViewerSignpost.openToFirstPage, id: signposter.makeSignpostID())
+        defer { signposter.endInterval(ViewerSignpost.openToFirstPage, interval) }
         loadState = .loading
         let loaded = await Self.parse(data)
         guard let document = loaded else {
             loadState = .failed
             return
         }
-        install(document)
+        install(document, source: data)
+        // Page 1 counts as shown once PDFKit has laid it out in the viewport.
+        pdfView.layoutDocumentView()
     }
 
-    /// Opens an already parsed document (tests and callers that hold one).
-    func install(_ document: PDFDocument) {
+    /// Opens an already parsed document (tests and callers that hold one). With its `source` bytes the
+    /// thumbnails render off the main actor.
+    func install(_ document: PDFDocument, source: Data? = nil) {
+        guard document.pageCount > 0 else {
+            loadState = .failed
+            return
+        }
         find.cancel()
         find.document = document
         thumbnails?.removeAll()
-        thumbnails = ThumbnailCache(document: document)
+        thumbnails = ThumbnailCache(document: document, source: source)
         pdfView.document = document
         // PDFKit drops auto-scaling when the document changes; a new document opens fitted to the width.
         pdfView.autoScales = true
@@ -169,10 +188,21 @@ final class ViewerModel {
         scaleChanged()
     }
 
-    /// Fits the page width to the window and keeps it fitted as the window resizes.
+    /// Fits the page width to the window. In the scrolling layouts it stays fitted as the window
+    /// resizes; PDFKit's own fit in single-page mode fits the whole page, so there the scale is
+    /// computed from the width of the current page (and is fixed until the next zoom).
     func fitWidth() {
-        pdfView.autoScales = true
-        scaleChanged()
+        guard displayMode == .single, let page = pdfView.currentPage else {
+            pdfView.autoScales = true
+            scaleChanged()
+            return
+        }
+        let box = page.bounds(for: pdfView.displayBox)
+        let pageWidth = page.rotation % 180 == 0 ? box.width : box.height
+        let margins = pdfView.pageBreakMargins
+        let available = pdfView.bounds.width - margins.left - margins.right
+        guard pageWidth > 0, available > 0 else { return }
+        setScale(Double(available / pageWidth))
     }
 
     func setDisplayMode(_ mode: ViewerDisplayMode) {

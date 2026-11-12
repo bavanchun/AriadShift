@@ -29,6 +29,7 @@ struct OnboardingView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .controlSize(.large)
+                .accessibilityIdentifier("onboarding.start")
             }
         }
         .fixedSize(horizontal: false, vertical: true)
