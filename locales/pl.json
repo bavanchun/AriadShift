@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importuj…",
+      "print": "Drukuj…",
+      "tools": "Narzędzia",
+      "zoom": "{action, select, in {Powiększ} out {Pomniejsz} actual {Rozmiar rzeczywisty} other {Zoom}}",
+      "check_updates": "Sprawdź dostępność aktualizacji…",
+      "show_welcome": "Pokaż ekran powitalny"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organizuj} convert {Konwertuj} optimize {Optymalizuj} security {Zabezpieczenia} overlay {Nakładka} ocr {OCR i skany} annotate {Dodaj adnotacje} forms {Formularze} sign {Podpisz} redact {Zaczernij} compare {Porównaj i zweryfikuj} edit {Edytuj} ai {AI} automation {Automatyzacja} other {Inne narzędzia}}",
+      "disabled": "{reason, select, later {Dostępne w późniejszej wersji} format {Działa z innymi formatami. Użyj Plik > Importuj.} paid {Wymaga płatnego planu} info {Nie udało się odczytać szczegółów narzędzia, więc narzędzia pozostają wyłączone.} other {Niedostępne}}",
+      "loading": "Wczytywanie narzędzi…"
+    },
+    "sidebar": {
+      "title": "Strony",
+      "placeholder": "Miniatury stron pojawią się tutaj."
+    },
+    "viewer": {
+      "placeholder": "Przeglądarka stron pojawi się tutaj."
+    },
+    "toolbar": {
+      "inspector": "Informacje o dokumencie"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Nazwa} format {Format} size {Rozmiar} pages {Strony} words {Słowa} title {Tytuł} author {Autor} routes {Można przekonwertować na} other {Pole}}",
+      "loading": "Odczytywanie dokumentu…",
+      "warnings": "{count, plural, one {# ostrzeżenie} few {# ostrzeżenia} many {# ostrzeżeń} other {# ostrzeżenia}}"
+    },
+    "run": {
+      "title": "Uruchom: {tool}",
+      "run": "Uruchom",
+      "cancel": "Anuluj",
+      "close": "Gotowe",
+      "working": "Uruchamianie…",
+      "parameters": "Ustawienia",
+      "no_parameters": "To narzędzie nie ma ustawień.",
+      "extra_documents": "Dodatkowe dokumenty",
+      "add_documents": "Dodaj…",
+      "remove": "Usuń",
+      "need_documents": "{count, plural, one {Dodaj jeszcze # dokument, aby uruchomić to narzędzie.} few {Dodaj jeszcze # dokumenty, aby uruchomić to narzędzie.} many {Dodaj jeszcze # dokumentów, aby uruchomić to narzędzie.} other {Dodaj jeszcze # dokumentu, aby uruchomić to narzędzie.}}",
+      "failed": "Narzędzie nie zakończyło pracy.",
+      "open": "Otwórz",
+      "reveal": "Pokaż w Finderze",
+      "result_files": "{count, plural, one {Utworzono # plik} few {Utworzono # pliki} many {Utworzono # plików} other {Utworzono # pliku}}",
+      "field_error": "{kind, select, missing {Pole {field} jest wymagane.} other {Pole {field} jest nieprawidłowe.}}",
+      "result": "Wynik",
+      "presets": "Ustawienia predefiniowane"
+    },
+    "settings": {
+      "output_folder": "Zapisuj wyniki w",
+      "output_same": "Obok oryginalnego dokumentu",
+      "output_choose": "Wybierz folder…",
+      "open_result": "Otwórz wynik po zakończeniu narzędzia",
+      "updates": "Aktualizacje",
+      "updates_auto": "Automatycznie sprawdzaj aktualizacje",
+      "updates_disabled": "Aktualizacje nie są skonfigurowane w tej kompilacji."
+    },
+    "onboarding": {
+      "title": "Witamy w AriadShift",
+      "about": "Otwieraj, sprawdzaj i przetwarzaj dokumenty PDF tym samym silnikiem co wiersz poleceń AriadShift. Konwertuj Markdown, HTML, Word, EPUB i obrazy na PDF przez Plik > Importuj.",
+      "packs": "Opcjonalne pakiety silników (OCR, podpisywanie, walidacja) są przechowywane w {path}.",
+      "privacy": "AriadShift działa na Twoim Macu. Nie nawiązuje połączeń sieciowych, chyba że włączysz funkcję, która ich wymaga.",
+      "start": "Rozpocznij"
+    },
+    "import": {
+      "message": "Wybierz dokument do konwersji na PDF",
+      "running": "Importowanie {name}…",
+      "failed": "Nie udało się zaimportować {name}"
+    },
+    "document": {
+      "invalid": "Ten plik nie jest prawidłowym plikiem PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: prywatna konwersja dokumentów w przeglądarce",

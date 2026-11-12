@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importer…",
+      "print": "Imprimer…",
+      "tools": "Outils",
+      "zoom": "{action, select, in {Zoom avant} out {Zoom arrière} actual {Taille réelle} other {Zoom}}",
+      "check_updates": "Rechercher les mises à jour…",
+      "show_welcome": "Afficher la bienvenue"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organiser} convert {Convertir} optimize {Optimiser} security {Sécurité} overlay {Superposer} ocr {OCR et numérisations} annotate {Annoter} forms {Formulaires} sign {Signer} redact {Caviarder} compare {Comparer et valider} edit {Modifier} ai {IA} automation {Automatisation} other {Autres outils}}",
+      "disabled": "{reason, select, later {Disponible dans une prochaine version} format {Fonctionne avec d’autres formats. Utilisez Fichier > Importer.} paid {Nécessite une offre payante} info {Les détails de l’outil n’ont pas pu être lus, les outils restent donc désactivés.} other {Indisponible}}",
+      "loading": "Chargement des outils…"
+    },
+    "sidebar": {
+      "title": "Pages",
+      "placeholder": "Les miniatures des pages apparaîtront ici."
+    },
+    "viewer": {
+      "placeholder": "Le lecteur de pages apparaîtra ici."
+    },
+    "toolbar": {
+      "inspector": "Informations du document"
+    },
+    "inspector": {
+      "title": "Document",
+      "field": "{field, select, name {Nom} format {Format} size {Taille} pages {Pages} words {Mots} title {Titre} author {Auteur} routes {Peut être converti en} other {Champ}}",
+      "loading": "Lecture du document…",
+      "warnings": "{count, plural, one {# avertissement} many {# d’avertissements} other {# avertissements}}"
+    },
+    "run": {
+      "title": "Exécuter {tool}",
+      "run": "Exécuter",
+      "cancel": "Annuler",
+      "close": "Terminé",
+      "working": "Exécution…",
+      "parameters": "Réglages",
+      "no_parameters": "Cet outil n’a aucun réglage.",
+      "extra_documents": "Documents supplémentaires",
+      "add_documents": "Ajouter…",
+      "remove": "Retirer",
+      "need_documents": "{count, plural, one {Ajoutez # document de plus pour exécuter cet outil.} many {Ajoutez # de documents de plus pour exécuter cet outil.} other {Ajoutez # documents de plus pour exécuter cet outil.}}",
+      "failed": "L’outil ne s’est pas terminé.",
+      "open": "Ouvrir",
+      "reveal": "Afficher dans le Finder",
+      "result_files": "{count, plural, one {# fichier créé} many {# de fichiers créés} other {# fichiers créés}}",
+      "field_error": "{kind, select, missing {{field} est obligatoire.} other {{field} n’est pas valide.}}",
+      "result": "Résultat",
+      "presets": "Préréglages"
+    },
+    "settings": {
+      "output_folder": "Enregistrer les résultats dans",
+      "output_same": "À côté du document d’origine",
+      "output_choose": "Choisir un dossier…",
+      "open_result": "Ouvrir le résultat à la fin d’un outil",
+      "updates": "Mises à jour",
+      "updates_auto": "Rechercher les mises à jour automatiquement",
+      "updates_disabled": "Les mises à jour ne sont pas configurées dans cette version."
+    },
+    "onboarding": {
+      "title": "Bienvenue dans AriadShift",
+      "about": "Ouvrez, inspectez et traitez des documents PDF avec le même moteur que la ligne de commande AriadShift. Convertissez Markdown, HTML, Word, EPUB et des images en PDF avec Fichier > Importer.",
+      "packs": "Les packs de moteurs facultatifs (OCR, signature, validation) sont stockés dans {path}.",
+      "privacy": "AriadShift fonctionne sur votre Mac. Il n’établit aucune connexion réseau, sauf si vous activez une fonction qui en a besoin.",
+      "start": "Commencer"
+    },
+    "import": {
+      "message": "Choisissez un document à convertir en PDF",
+      "running": "Importation de {name}…",
+      "failed": "Impossible d’importer {name}"
+    },
+    "document": {
+      "invalid": "Ce fichier n’est pas un PDF valide."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site} : conversion de documents privée dans votre navigateur",

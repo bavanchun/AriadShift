@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importálás…",
+      "print": "Nyomtatás…",
+      "tools": "Eszközök",
+      "zoom": "{action, select, in {Nagyítás} out {Kicsinyítés} actual {Tényleges méret} other {Zoom}}",
+      "check_updates": "Frissítések keresése…",
+      "show_welcome": "Üdvözlőképernyő megjelenítése"
+    },
+    "tools": {
+      "group": "{group, select, organize {Rendezés} convert {Átalakítás} optimize {Optimalizálás} security {Biztonság} overlay {Rátét} ocr {OCR és szkennelések} annotate {Jegyzetelés} forms {Űrlapok} sign {Aláírás} redact {Kitakarás} compare {Összehasonlítás és ellenőrzés} edit {Szerkesztés} ai {MI} automation {Automatizálás} other {További eszközök}}",
+      "disabled": "{reason, select, later {Egy későbbi kiadásban lesz elérhető} format {Más formátumokkal működik. Használja a Fájl > Importálás parancsot.} paid {Fizetős csomagot igényel} info {Az eszköz adatait nem sikerült beolvasni, ezért az eszközök kikapcsolva maradnak.} other {Nem érhető el}}",
+      "loading": "Eszközök betöltése…"
+    },
+    "sidebar": {
+      "title": "Oldalak",
+      "placeholder": "Az oldalak miniatűrjei itt jelennek meg."
+    },
+    "viewer": {
+      "placeholder": "Az oldalmegjelenítő itt jelenik meg."
+    },
+    "toolbar": {
+      "inspector": "Dokumentuminformáció"
+    },
+    "inspector": {
+      "title": "Dokumentum",
+      "field": "{field, select, name {Név} format {Formátum} size {Méret} pages {Oldalak} words {Szavak} title {Cím} author {Szerző} routes {Átalakítható erre} other {Mező}}",
+      "loading": "Dokumentum beolvasása…",
+      "warnings": "{count, plural, one {# figyelmeztetés} other {# figyelmeztetés}}"
+    },
+    "run": {
+      "title": "{tool} futtatása",
+      "run": "Futtatás",
+      "cancel": "Mégse",
+      "close": "Kész",
+      "working": "Futtatás…",
+      "parameters": "Beállítások",
+      "no_parameters": "Ennek az eszköznek nincsenek beállításai.",
+      "extra_documents": "További dokumentumok",
+      "add_documents": "Hozzáadás…",
+      "remove": "Eltávolítás",
+      "need_documents": "{count, plural, one {Adjon hozzá még # dokumentumot az eszköz futtatásához.} other {Adjon hozzá még # dokumentumot az eszköz futtatásához.}}",
+      "failed": "Az eszköz nem fejeződött be.",
+      "open": "Megnyitás",
+      "reveal": "Megjelenítés a Finderben",
+      "result_files": "{count, plural, one {# fájl létrehozva} other {# fájl létrehozva}}",
+      "field_error": "{kind, select, missing {A(z) {field} megadása kötelező.} other {A(z) {field} érvénytelen.}}",
+      "result": "Eredmény",
+      "presets": "Előbeállítások"
+    },
+    "settings": {
+      "output_folder": "Az eredmények mentési helye",
+      "output_same": "Az eredeti dokumentum mellett",
+      "output_choose": "Mappa kiválasztása…",
+      "open_result": "Az eredmény megnyitása az eszköz befejezésekor",
+      "updates": "Frissítések",
+      "updates_auto": "Frissítések automatikus keresése",
+      "updates_disabled": "A frissítések ebben a buildben nincsenek beállítva."
+    },
+    "onboarding": {
+      "title": "Üdvözli az AriadShift",
+      "about": "Nyisson meg, vizsgáljon és dolgozzon fel PDF dokumentumokat ugyanazzal a motorral, mint az AriadShift parancssor. Alakítsa át a Markdown, HTML, Word, EPUB és képfájlokat PDF-be a Fájl > Importálás paranccsal.",
+      "packs": "Az opcionális motorcsomagok (OCR, aláírás, ellenőrzés) a következő helyen vannak tárolva: {path}.",
+      "privacy": "Az AriadShift az Ön Macjén működik. Nem létesít hálózati kapcsolatot, amíg be nem kapcsol egy olyan funkciót, amelynek erre szüksége van.",
+      "start": "Első lépések"
+    },
+    "import": {
+      "message": "Válasszon egy PDF-be alakítandó dokumentumot",
+      "running": "{name} importálása…",
+      "failed": "A(z) {name} importálása nem sikerült"
+    },
+    "document": {
+      "invalid": "Ez a fájl nem érvényes PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: privát dokumentumátalakítás a böngészőjében",

@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "輸入…",
+      "print": "列印…",
+      "tools": "工具",
+      "zoom": "{action, select, in {放大} out {縮小} actual {實際大小} other {縮放}}",
+      "check_updates": "檢查更新…",
+      "show_welcome": "顯示歡迎畫面"
+    },
+    "tools": {
+      "group": "{group, select, organize {整理} convert {轉換} optimize {最佳化} security {安全性} overlay {疊加} ocr {OCR 與掃描檔} annotate {註解} forms {表單} sign {簽名} redact {塗黑} compare {比較與驗證} edit {編輯} ai {AI} automation {自動化} other {其他工具}}",
+      "disabled": "{reason, select, later {將於後續版本提供} format {適用於其他格式。請使用「檔案」>「輸入」。} paid {需要付費方案} info {無法讀取工具詳細資訊，因此工具維持關閉。} other {無法使用}}",
+      "loading": "正在載入工具…"
+    },
+    "sidebar": {
+      "title": "頁面",
+      "placeholder": "頁面縮圖將顯示在這裡。"
+    },
+    "viewer": {
+      "placeholder": "頁面檢視器將顯示在這裡。"
+    },
+    "toolbar": {
+      "inspector": "文件資訊"
+    },
+    "inspector": {
+      "title": "文件",
+      "field": "{field, select, name {名稱} format {格式} size {大小} pages {頁數} words {字數} title {標題} author {作者} routes {可轉換為} other {欄位}}",
+      "loading": "正在讀取文件…",
+      "warnings": "{count, plural, other {# 則警告}}"
+    },
+    "run": {
+      "title": "執行 {tool}",
+      "run": "執行",
+      "cancel": "取消",
+      "close": "完成",
+      "working": "正在執行…",
+      "parameters": "設定",
+      "no_parameters": "此工具沒有設定。",
+      "extra_documents": "其他文件",
+      "add_documents": "加入…",
+      "remove": "移除",
+      "need_documents": "{count, plural, other {再加入 # 份文件即可執行此工具。}}",
+      "failed": "工具未完成。",
+      "open": "打開",
+      "reveal": "在 Finder 中顯示",
+      "result_files": "{count, plural, other {已建立 # 個檔案}}",
+      "field_error": "{kind, select, missing {{field}為必填。} other {{field}無效。}}",
+      "result": "結果",
+      "presets": "預設"
+    },
+    "settings": {
+      "output_folder": "將結果儲存到",
+      "output_same": "原始文件旁邊",
+      "output_choose": "選擇檔案夾…",
+      "open_result": "工具完成後打開結果",
+      "updates": "更新",
+      "updates_auto": "自動檢查更新",
+      "updates_disabled": "此版本未設定更新。"
+    },
+    "onboarding": {
+      "title": "歡迎使用 AriadShift",
+      "about": "使用與 AriadShift 命令列相同的引擎來打開、檢查和處理 PDF 文件。透過「檔案」>「輸入」將 Markdown、HTML、Word、EPUB 和影像轉換為 PDF。",
+      "packs": "選用的引擎套件（OCR、簽名、驗證）儲存在 {path}。",
+      "privacy": "AriadShift 在你的 Mac 上運作。除非你開啟需要網路的功能，否則它不會建立任何網路連線。",
+      "start": "開始使用"
+    },
+    "import": {
+      "message": "選擇要轉換為 PDF 的文件",
+      "running": "正在輸入 {name}…",
+      "failed": "無法輸入 {name}"
+    },
+    "document": {
+      "invalid": "此檔案不是有效的 PDF。"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}：在瀏覽器中私密轉換文件",

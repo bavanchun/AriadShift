@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importovať…",
+      "print": "Tlačiť…",
+      "tools": "Nástroje",
+      "zoom": "{action, select, in {Priblížiť} out {Oddialiť} actual {Skutočná veľkosť} other {Zoom}}",
+      "check_updates": "Skontrolovať aktualizácie…",
+      "show_welcome": "Zobraziť uvítanie"
+    },
+    "tools": {
+      "group": "{group, select, organize {Usporiadať} convert {Previesť} optimize {Optimalizovať} security {Zabezpečenie} overlay {Prekrytie} ocr {OCR a skeny} annotate {Anotovať} forms {Formuláre} sign {Podpísať} redact {Začierniť} compare {Porovnať a overiť} edit {Upraviť} ai {AI} automation {Automatizácia} other {Ďalšie nástroje}}",
+      "disabled": "{reason, select, later {Dostupné v neskoršej verzii} format {Funguje s inými formátmi. Použite Súbor > Importovať.} paid {Vyžaduje platený plán} info {Podrobnosti o nástroji sa nepodarilo načítať, preto zostávajú nástroje vypnuté.} other {Nedostupné}}",
+      "loading": "Načítavajú sa nástroje…"
+    },
+    "sidebar": {
+      "title": "Strany",
+      "placeholder": "Tu sa zobrazia miniatúry strán."
+    },
+    "viewer": {
+      "placeholder": "Tu sa zobrazí prehliadač strán."
+    },
+    "toolbar": {
+      "inspector": "Informácie o dokumente"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Meno} format {Formát} size {Veľkosť} pages {Strany} words {Slová} title {Názov} author {Autor} routes {Možno previesť na} other {Pole}}",
+      "loading": "Číta sa dokument…",
+      "warnings": "{count, plural, one {# upozornenie} few {# upozornenia} many {# upozornenia} other {# upozornení}}"
+    },
+    "run": {
+      "title": "Spustiť {tool}",
+      "run": "Spustiť",
+      "cancel": "Zrušiť",
+      "close": "Hotovo",
+      "working": "Spúšťa sa…",
+      "parameters": "Nastavenia",
+      "no_parameters": "Tento nástroj nemá žiadne nastavenia.",
+      "extra_documents": "Ďalšie dokumenty",
+      "add_documents": "Pridať…",
+      "remove": "Odstrániť",
+      "need_documents": "{count, plural, one {Pridajte ešte # dokument, aby ste mohli spustiť tento nástroj.} few {Pridajte ešte # dokumenty, aby ste mohli spustiť tento nástroj.} many {Pridajte ešte # dokumentu, aby ste mohli spustiť tento nástroj.} other {Pridajte ešte # dokumentov, aby ste mohli spustiť tento nástroj.}}",
+      "failed": "Nástroj sa nedokončil.",
+      "open": "Otvoriť",
+      "reveal": "Zobraziť vo Finderi",
+      "result_files": "{count, plural, one {Vytvorený # súbor} few {Vytvorené # súbory} many {Vytvorené # súbora} other {Vytvorených # súborov}}",
+      "field_error": "{kind, select, missing {Položka {field} je povinná.} other {Položka {field} nie je platná.}}",
+      "result": "Výsledok",
+      "presets": "Predvoľby"
+    },
+    "settings": {
+      "output_folder": "Ukladať výsledky do",
+      "output_same": "Vedľa pôvodného dokumentu",
+      "output_choose": "Vybrať priečinok…",
+      "open_result": "Po dokončení nástroja otvoriť výsledok",
+      "updates": "Aktualizácie",
+      "updates_auto": "Automaticky kontrolovať aktualizácie",
+      "updates_disabled": "Aktualizácie nie sú v tomto zostavení nastavené."
+    },
+    "onboarding": {
+      "title": "Vitajte v AriadShift",
+      "about": "Otvárajte, kontrolujte a spracúvajte dokumenty PDF rovnakým jadrom ako príkazový riadok AriadShift. Prevádzajte Markdown, HTML, Word, EPUB a obrázky do PDF cez Súbor > Importovať.",
+      "packs": "Voliteľné balíky jadra (OCR, podpisovanie, overovanie) sa ukladajú do {path}.",
+      "privacy": "AriadShift funguje na vašom Macu. Nenadväzuje žiadne sieťové spojenia, kým nezapnete funkciu, ktorá ich potrebuje.",
+      "start": "Začať"
+    },
+    "import": {
+      "message": "Vyberte dokument, ktorý sa má previesť do PDF",
+      "running": "Importuje sa {name}…",
+      "failed": "Položku {name} sa nepodarilo importovať"
+    },
+    "document": {
+      "invalid": "Tento súbor nie je platný PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: súkromný prevod dokumentov vo vašom prehliadači",

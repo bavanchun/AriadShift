@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importa…",
+      "print": "Stampa…",
+      "tools": "Strumenti",
+      "zoom": "{action, select, in {Ingrandisci} out {Riduci} actual {Dimensione reale} other {Zoom}}",
+      "check_updates": "Verifica aggiornamenti…",
+      "show_welcome": "Mostra il benvenuto"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organizza} convert {Converti} optimize {Ottimizza} security {Sicurezza} overlay {Sovrapponi} ocr {OCR e scansioni} annotate {Annota} forms {Moduli} sign {Firma} redact {Oscura} compare {Confronta e convalida} edit {Modifica} ai {IA} automation {Automazione} other {Altri strumenti}}",
+      "disabled": "{reason, select, later {Disponibile in una versione successiva} format {Funziona con altri formati. Usa File > Importa.} paid {Richiede un piano a pagamento} info {Non è stato possibile leggere i dettagli dello strumento, quindi gli strumenti restano disattivati.} other {Non disponibile}}",
+      "loading": "Caricamento degli strumenti…"
+    },
+    "sidebar": {
+      "title": "Pagine",
+      "placeholder": "Le miniature delle pagine appariranno qui."
+    },
+    "viewer": {
+      "placeholder": "Il visualizzatore delle pagine apparirà qui."
+    },
+    "toolbar": {
+      "inspector": "Informazioni sul documento"
+    },
+    "inspector": {
+      "title": "Documento",
+      "field": "{field, select, name {Nome} format {Formato} size {Dimensione} pages {Pagine} words {Parole} title {Titolo} author {Autore} routes {Può essere convertito in} other {Campo}}",
+      "loading": "Lettura del documento…",
+      "warnings": "{count, plural, one {# avviso} many {# di avvisi} other {# avvisi}}"
+    },
+    "run": {
+      "title": "Esegui {tool}",
+      "run": "Esegui",
+      "cancel": "Annulla",
+      "close": "Fine",
+      "working": "Esecuzione…",
+      "parameters": "Impostazioni",
+      "no_parameters": "Questo strumento non ha impostazioni.",
+      "extra_documents": "Documenti aggiuntivi",
+      "add_documents": "Aggiungi…",
+      "remove": "Rimuovi",
+      "need_documents": "{count, plural, one {Aggiungi # documento in più per eseguire questo strumento.} many {Aggiungi # di documenti in più per eseguire questo strumento.} other {Aggiungi # documenti in più per eseguire questo strumento.}}",
+      "failed": "Lo strumento non è stato completato.",
+      "open": "Apri",
+      "reveal": "Mostra nel Finder",
+      "result_files": "{count, plural, one {# file creato} many {# di file creati} other {# file creati}}",
+      "field_error": "{kind, select, missing {{field} è obbligatorio.} other {{field} non è valido.}}",
+      "result": "Risultato",
+      "presets": "Preset"
+    },
+    "settings": {
+      "output_folder": "Salva i risultati in",
+      "output_same": "Accanto al documento originale",
+      "output_choose": "Scegli cartella…",
+      "open_result": "Apri il risultato al termine di uno strumento",
+      "updates": "Aggiornamenti",
+      "updates_auto": "Verifica gli aggiornamenti automaticamente",
+      "updates_disabled": "Gli aggiornamenti non sono configurati in questa build."
+    },
+    "onboarding": {
+      "title": "Benvenuto in AriadShift",
+      "about": "Apri, ispeziona ed elabora documenti PDF con lo stesso motore della riga di comando di AriadShift. Converti Markdown, HTML, Word, EPUB e immagini in PDF con File > Importa.",
+      "packs": "I pacchetti motore opzionali (OCR, firma, convalida) sono archiviati in {path}.",
+      "privacy": "AriadShift funziona sul tuo Mac. Non stabilisce connessioni di rete a meno che tu non attivi una funzione che ne ha bisogno.",
+      "start": "Inizia"
+    },
+    "import": {
+      "message": "Scegli un documento da convertire in PDF",
+      "running": "Importazione di {name}…",
+      "failed": "Impossibile importare {name}"
+    },
+    "document": {
+      "invalid": "Questo file non è un PDF valido."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: conversione privata dei documenti nel tuo browser",

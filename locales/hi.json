@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "आयात करें…",
+      "print": "प्रिंट करें…",
+      "tools": "टूल",
+      "zoom": "{action, select, in {ज़ूम इन करें} out {ज़ूम आउट करें} actual {वास्तविक आकार} other {ज़ूम}}",
+      "check_updates": "अपडेट के लिए जाँचें…",
+      "show_welcome": "स्वागत दिखाएँ"
+    },
+    "tools": {
+      "group": "{group, select, organize {व्यवस्थित करें} convert {रूपांतरित करें} optimize {अनुकूलित करें} security {सुरक्षा} overlay {ओवरले} ocr {OCR और स्कैन} annotate {टिप्पणी जोड़ें} forms {फ़ॉर्म} sign {हस्ताक्षर करें} redact {छिपाएँ} compare {तुलना और सत्यापन} edit {संपादित करें} ai {AI} automation {स्वचालन} other {अन्य टूल}}",
+      "disabled": "{reason, select, later {बाद के रिलीज़ में उपलब्ध होगा} format {अन्य फ़ॉर्मैट के साथ काम करता है। फ़ाइल > आयात करें का उपयोग करें।} paid {सशुल्क प्लान आवश्यक है} info {टूल का विवरण पढ़ा नहीं जा सका, इसलिए टूल बंद रहेंगे।} other {उपलब्ध नहीं है}}",
+      "loading": "टूल लोड हो रहे हैं…"
+    },
+    "sidebar": {
+      "title": "पृष्ठ",
+      "placeholder": "पृष्ठों के थंबनेल यहाँ दिखाई देंगे।"
+    },
+    "viewer": {
+      "placeholder": "पृष्ठ व्यूअर यहाँ दिखाई देगा।"
+    },
+    "toolbar": {
+      "inspector": "दस्तावेज़ की जानकारी"
+    },
+    "inspector": {
+      "title": "दस्तावेज़",
+      "field": "{field, select, name {नाम} format {फ़ॉर्मैट} size {आकार} pages {पृष्ठ} words {शब्द} title {शीर्षक} author {लेखक} routes {इसमें रूपांतरित किया जा सकता है} other {फ़ील्ड}}",
+      "loading": "दस्तावेज़ पढ़ा जा रहा है…",
+      "warnings": "{count, plural, one {# चेतावनी} other {# चेतावनियाँ}}"
+    },
+    "run": {
+      "title": "चलाएँ: {tool}",
+      "run": "चलाएँ",
+      "cancel": "रद्द करें",
+      "close": "हो गया",
+      "working": "चल रहा है…",
+      "parameters": "सेटिंग",
+      "no_parameters": "इस टूल में कोई सेटिंग नहीं है।",
+      "extra_documents": "अतिरिक्त दस्तावेज़",
+      "add_documents": "जोड़ें…",
+      "remove": "हटाएँ",
+      "need_documents": "{count, plural, one {इस टूल को चलाने के लिए # और दस्तावेज़ जोड़ें।} other {इस टूल को चलाने के लिए # और दस्तावेज़ जोड़ें।}}",
+      "failed": "टूल पूरा नहीं हुआ।",
+      "open": "खोलें",
+      "reveal": "Finder में दिखाएँ",
+      "result_files": "{count, plural, one {# फ़ाइल बनाई गई} other {# फ़ाइलें बनाई गईं}}",
+      "field_error": "{kind, select, missing {{field} आवश्यक है।} other {{field} मान्य नहीं है।}}",
+      "result": "परिणाम",
+      "presets": "प्रीसेट"
+    },
+    "settings": {
+      "output_folder": "परिणाम यहाँ सहेजें",
+      "output_same": "मूल दस्तावेज़ के बगल में",
+      "output_choose": "फ़ोल्डर चुनें…",
+      "open_result": "टूल पूरा होने पर परिणाम खोलें",
+      "updates": "अपडेट",
+      "updates_auto": "अपडेट अपने आप जाँचें",
+      "updates_disabled": "इस बिल्ड में अपडेट सेट अप नहीं हैं।"
+    },
+    "onboarding": {
+      "title": "AriadShift में आपका स्वागत है",
+      "about": "AriadShift कमांड लाइन के समान इंजन से PDF दस्तावेज़ खोलें, जाँचें और प्रोसेस करें। फ़ाइल > आयात करें से Markdown, HTML, Word, EPUB और इमेज को PDF में बदलें।",
+      "packs": "वैकल्पिक इंजन पैक (OCR, हस्ताक्षर, सत्यापन) {path} में संग्रहीत होते हैं।",
+      "privacy": "AriadShift आपके Mac पर चलता है। जब तक आप ऐसी सुविधा चालू नहीं करते जिसे नेटवर्क की ज़रूरत हो, यह कोई नेटवर्क कनेक्शन नहीं बनाता।",
+      "start": "शुरू करें"
+    },
+    "import": {
+      "message": "PDF में बदलने के लिए कोई दस्तावेज़ चुनें",
+      "running": "{name} आयात हो रहा है…",
+      "failed": "{name} आयात नहीं किया जा सका"
+    },
+    "document": {
+      "invalid": "यह फ़ाइल मान्य PDF नहीं है।"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: आपके ब्राउज़र में निजी दस्तावेज़ रूपांतरण",

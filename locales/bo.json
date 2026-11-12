@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "ནང་འདྲེན།…",
+      "print": "པར་སྐྲུན།…",
+      "tools": "ལག་ཆ།",
+      "zoom": "{action, select, in {ཆེ་རུ་གཏོང་།} out {ཆུང་དུ་གཏོང་།} actual {ངོ་མའི་ཆེ་ཆུང་།} other {ཆེ་ཆུང་བསྒྱུར།}}",
+      "check_updates": "གསར་སྒྱུར་ཚོད་ལྟ།…",
+      "show_welcome": "ཕེབས་བསུ་སྟོན།"
+    },
+    "tools": {
+      "group": "{group, select, organize {སྒྲིག་འཛུགས།} convert {བསྒྱུར།} optimize {ལེགས་སྒྱུར།} security {བདེ་འཇགས།} overlay {བརྩེགས།} ocr {OCR དང་ཞིབ་བཤེར།} annotate {མཆན་འགོད།} forms {རེའུ་མིག} sign {མིང་རྟགས།} redact {སྦ་སྐུང་།} compare {བསྡུར་ཞིབ་དང་ར་སྤྲོད།} edit {རྩོམ་སྒྲིག} ai {AI} automation {རང་འགུལ།} other {ལག་ཆ་གཞན།}}",
+      "disabled": "{reason, select, later {ཐོན་རིམ་རྗེས་མར་སྤྱོད་ཆོག} format {བཀོད་པ་གཞན་དང་མཉམ་དུ་ལས་ཀ་བྱེད། ཡིག་ཆ། > ནང་འདྲེན་སྤྱོད།} paid {འགྲོ་སོང་དགོས་པའི་འཆར་གཞི་དགོས།} info {ལག་ཆའི་ཞིབ་ཕྲ་ཀློག་མ་ཐུབ་པས་ལག་ཆ་རྣམས་ཁ་རྒྱག་ཡོད།} other {སྤྱོད་མི་ཐུབ།}}",
+      "loading": "ལག་ཆ་འཇུག་བཞིན་པ།…"
+    },
+    "sidebar": {
+      "title": "ཤོག་ངོས།",
+      "placeholder": "ཤོག་ངོས་ཀྱི་པར་ཆུང་འདིར་མངོན།"
+    },
+    "viewer": {
+      "placeholder": "ཤོག་ངོས་ལྟ་ཆས་འདིར་མངོན།"
+    },
+    "toolbar": {
+      "inspector": "ཡིག་ཆའི་ཆ་འཕྲིན།"
+    },
+    "inspector": {
+      "title": "ཡིག་ཆ།",
+      "field": "{field, select, name {མིང་} format {བཀོད་པ།} size {ཆེ་ཆུང་།} pages {ཤོག་ངོས།} words {ཚིག} title {ཁ་ཡིག} author {རྩོམ་པ་པོ།} routes {འདིར་བསྒྱུར་ཆོག} other {ཁོངས།}}",
+      "loading": "ཡིག་ཆ་ཀློག་བཞིན་པ།…",
+      "warnings": "{count, plural, other {ཉེན་བརྡ་ #}}"
+    },
+    "run": {
+      "title": "{tool} གཡོག",
+      "run": "གཡོག",
+      "cancel": "འདོར།",
+      "close": "ཚར།",
+      "working": "གཡོག་བཞིན་པ།…",
+      "parameters": "སྒྲིག་འགོད།",
+      "no_parameters": "ལག་ཆ་འདིར་སྒྲིག་འགོད་མེད།",
+      "extra_documents": "ཡིག་ཆ་ཁ་སྣོན།",
+      "add_documents": "སྣོན།…",
+      "remove": "སུབ།",
+      "need_documents": "{count, plural, other {ལག་ཆ་འདི་གཡོག་ཆེད་ཡིག་ཆ་ # ཁ་སྣོན་བྱོས།}}",
+      "failed": "ལག་ཆ་མ་ཚར།",
+      "open": "ཁ་ཕྱེ།",
+      "reveal": "Finder ནང་སྟོན།",
+      "result_files": "{count, plural, other {ཡིག་ཆ་ # བཟོས་ཡོད།}}",
+      "field_error": "{kind, select, missing {{field} དགོས་ངེས།} other {{field} ནུས་མེད།}}",
+      "result": "གྲུབ་འབྲས།",
+      "presets": "སྔོན་སྒྲིག"
+    },
+    "settings": {
+      "output_folder": "གྲུབ་འབྲས་འདིར་ཉར།",
+      "output_same": "ཡིག་ཆ་ཐོག་མའི་འགྲམ།",
+      "output_choose": "ཡིག་སྣོད་འདེམས།…",
+      "open_result": "ལག་ཆ་ཚར་དུས་གྲུབ་འབྲས་ཁ་ཕྱེ།",
+      "updates": "གསར་སྒྱུར།",
+      "updates_auto": "གསར་སྒྱུར་རང་འགུལ་གྱིས་ཚོད་ལྟ།",
+      "updates_disabled": "ཐོན་རིམ་འདིར་གསར་སྒྱུར་སྒྲིག་འགོད་བྱས་མེད།"
+    },
+    "onboarding": {
+      "title": "AriadShift ལ་ཕེབས་བསུ།",
+      "about": "AriadShift ཡི་བཀའ་སྒྲིག་ཐིག་དང་འདྲ་བའི་འཁོར་ཆས་ཀྱིས་ PDF ཡིག་ཆ་ཁ་ཕྱེ་ཞིབ་བཤེར་དང་ཐག་གཅོད་བྱོས། ཡིག་ཆ། > ནང་འདྲེན་ལམ་ནས་ Markdown, HTML, Word, EPUB དང་པར་རིས་ PDF ལ་བསྒྱུར།",
+      "packs": "འདེམས་ཆ་འཁོར་ཆས་ཐུམ་ (OCR, མིང་རྟགས་ གཏན་ཁེལ་) {path} ནང་ཉར་ཡོད།",
+      "privacy": "AriadShift ནི་ཁྱེད་ཀྱི་ Mac སྟེང་ལས་ཀ་བྱེད། དྲ་རྒྱ་དགོས་པའི་ཁྱད་ཆོས་ཤིག་ཁ་ཕྱེ་མེད་ན་དྲ་རྒྱའི་སྦྲེལ་མཐུད་གང་ཡང་མི་བྱེད།",
+      "start": "འགོ་བརྩམ།"
+    },
+    "import": {
+      "message": "PDF ལ་བསྒྱུར་རྒྱུའི་ཡིག་ཆ་ཞིག་འདེམས།",
+      "running": "{name} ནང་འདྲེན་བཞིན་པ།…",
+      "failed": "{name} ནང་འདྲེན་བྱེད་མ་ཐུབ།"
+    },
+    "document": {
+      "invalid": "ཡིག་ཆ་འདི་ནི་ནུས་ཅན་གྱི་ PDF མིན།"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: ཁྱེད་ཀྱི་དྲ་ཚོལ་ཆས་ནང་ཡིག་ཚགས་སྒེར་དོན་གྱིས་བསྒྱུར་བ།",

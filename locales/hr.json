@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Uvezi…",
+      "print": "Ispiši…",
+      "tools": "Alati",
+      "zoom": "{action, select, in {Povećaj} out {Smanji} actual {Stvarna veličina} other {Zumiraj}}",
+      "check_updates": "Provjeri ažuriranja…",
+      "show_welcome": "Prikaži dobrodošlicu"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organiziraj} convert {Pretvori} optimize {Optimiziraj} security {Sigurnost} overlay {Preklapanje} ocr {OCR i skeniranja} annotate {Dodaj bilješke} forms {Obrasci} sign {Potpiši} redact {Zacrni} compare {Usporedi i provjeri} edit {Uredi} ai {UI} automation {Automatizacija} other {Ostali alati}}",
+      "disabled": "{reason, select, later {Dostupno u kasnijoj verziji} format {Radi s drugim formatima. Upotrijebite Datoteka > Uvezi.} paid {Zahtijeva plaćeni paket} info {Pojedinosti o alatu nije bilo moguće pročitati pa alati ostaju isključeni.} other {Nije dostupno}}",
+      "loading": "Učitavanje alata…"
+    },
+    "sidebar": {
+      "title": "Stranice",
+      "placeholder": "Minijature stranica pojavit će se ovdje."
+    },
+    "viewer": {
+      "placeholder": "Preglednik stranica pojavit će se ovdje."
+    },
+    "toolbar": {
+      "inspector": "Podaci o dokumentu"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Naziv} format {Format} size {Veličina} pages {Stranice} words {Riječi} title {Naslov} author {Autor} routes {Može se pretvoriti u} other {Polje}}",
+      "loading": "Čitanje dokumenta…",
+      "warnings": "{count, plural, one {# upozorenje} few {# upozorenja} other {# upozorenja}}"
+    },
+    "run": {
+      "title": "Pokreni {tool}",
+      "run": "Pokreni",
+      "cancel": "Odustani",
+      "close": "Gotovo",
+      "working": "Pokretanje…",
+      "parameters": "Postavke",
+      "no_parameters": "Ovaj alat nema postavki.",
+      "extra_documents": "Dodatni dokumenti",
+      "add_documents": "Dodaj…",
+      "remove": "Ukloni",
+      "need_documents": "{count, plural, one {Dodajte još # dokument da biste pokrenuli ovaj alat.} few {Dodajte još # dokumenta da biste pokrenuli ovaj alat.} other {Dodajte još # dokumenata da biste pokrenuli ovaj alat.}}",
+      "failed": "Alat nije završio.",
+      "open": "Otvori",
+      "reveal": "Prikaži u Finderu",
+      "result_files": "{count, plural, one {Izrađena je # datoteka} few {Izrađene su # datoteke} other {Izrađeno je # datoteka}}",
+      "field_error": "{kind, select, missing {Polje {field} obavezno je.} other {Polje {field} nije valjano.}}",
+      "result": "Rezultat",
+      "presets": "Predlošci"
+    },
+    "settings": {
+      "output_folder": "Spremi rezultate u",
+      "output_same": "Pokraj izvornog dokumenta",
+      "output_choose": "Odaberi mapu…",
+      "open_result": "Otvori rezultat kada se alat završi",
+      "updates": "Ažuriranja",
+      "updates_auto": "Automatski provjeravaj ažuriranja",
+      "updates_disabled": "Ažuriranja nisu postavljena u ovoj verziji."
+    },
+    "onboarding": {
+      "title": "Dobro došli u AriadShift",
+      "about": "Otvarajte, pregledavajte i obrađujte PDF dokumente istim pogonom kao naredbeni redak programa AriadShift. Pretvarajte Markdown, HTML, Word, EPUB i slike u PDF putem Datoteka > Uvezi.",
+      "packs": "Dodatni paketi pogona (OCR, potpisivanje, provjera) pohranjuju se u {path}.",
+      "privacy": "AriadShift radi na vašem Macu. Ne uspostavlja mrežne veze osim ako uključite značajku koja ih zahtijeva.",
+      "start": "Započni"
+    },
+    "import": {
+      "message": "Odaberite dokument za pretvorbu u PDF",
+      "running": "Uvoz datoteke {name}…",
+      "failed": "Uvoz datoteke {name} nije uspio"
+    },
+    "document": {
+      "invalid": "Ova datoteka nije valjan PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: privatno pretvaranje dokumenata u pregledniku",

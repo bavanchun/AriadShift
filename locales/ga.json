@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Iompórtáil…",
+      "print": "Priontáil…",
+      "tools": "Uirlisí",
+      "zoom": "{action, select, in {Zúmáil Isteach} out {Zúmáil Amach} actual {Fíormhéid} other {Zúmáil}}",
+      "check_updates": "Seiceáil le haghaidh nuashonruithe…",
+      "show_welcome": "Taispeáin an fáilte"
+    },
+    "tools": {
+      "group": "{group, select, organize {Eagraigh} convert {Tiontaigh} optimize {Barrfheabhsaigh} security {Slándáil} overlay {Forleagan} ocr {OCR agus scanadh} annotate {Anótáil} forms {Foirmeacha} sign {Sínigh} redact {Dubh amach} compare {Cuir i gcomparáid agus bailíochtaigh} edit {Cuir in eagar} ai {AI} automation {Uathoibriú} other {Uirlisí eile}}",
+      "disabled": "{reason, select, later {Ar fáil i leagan níos déanaí} format {Oibríonn sé le formáidí eile. Úsáid Comhad > Iompórtáil.} paid {Teastaíonn plean íoctha} info {Níorbh fhéidir sonraí na huirlise a léamh, mar sin fanann na huirlisí múchta.} other {Níl sé ar fáil}}",
+      "loading": "Uirlisí á luchtú…"
+    },
+    "sidebar": {
+      "title": "Leathanaigh",
+      "placeholder": "Beidh mionsamhlacha na leathanach le feiceáil anseo."
+    },
+    "viewer": {
+      "placeholder": "Beidh amharcóir na leathanach le feiceáil anseo."
+    },
+    "toolbar": {
+      "inspector": "Eolas na Cáipéise"
+    },
+    "inspector": {
+      "title": "Cáipéis",
+      "field": "{field, select, name {Ainm} format {Formáid} size {Méid} pages {Leathanaigh} words {Focail} title {Teideal} author {Údar} routes {Is féidir a thiontú go} other {Réimse}}",
+      "loading": "Cáipéis á léamh…",
+      "warnings": "{count, plural, one {# rabhadh} two {# rabhadh} few {# rabhadh} many {# rabhadh} other {# rabhadh}}"
+    },
+    "run": {
+      "title": "Rith {tool}",
+      "run": "Rith",
+      "cancel": "Cealaigh",
+      "close": "Déanta",
+      "working": "Á rith…",
+      "parameters": "Socruithe",
+      "no_parameters": "Níl aon socruithe ag an uirlis seo.",
+      "extra_documents": "Cáipéisí breise",
+      "add_documents": "Cuir leis…",
+      "remove": "Bain",
+      "need_documents": "{count, plural, one {Cuir # cháipéis eile leis chun an uirlis seo a rith.} two {Cuir # cháipéis eile leis chun an uirlis seo a rith.} few {Cuir # cháipéis eile leis chun an uirlis seo a rith.} many {Cuir # gcáipéis eile leis chun an uirlis seo a rith.} other {Cuir # cáipéis eile leis chun an uirlis seo a rith.}}",
+      "failed": "Níor chríochnaigh an uirlis.",
+      "open": "Oscail",
+      "reveal": "Taispeáin sa Finder",
+      "result_files": "{count, plural, one {Cruthaíodh # chomhad} two {Cruthaíodh # chomhad} few {Cruthaíodh # chomhad} many {Cruthaíodh # gcomhad} other {Cruthaíodh # comhad}}",
+      "field_error": "{kind, select, missing {Tá {field} riachtanach.} other {Níl {field} bailí.}}",
+      "result": "Toradh",
+      "presets": "Réamhshocruithe"
+    },
+    "settings": {
+      "output_folder": "Sábháil na torthaí i",
+      "output_same": "Cois na cáipéise bunaidh",
+      "output_choose": "Roghnaigh fillteán…",
+      "open_result": "Oscail an toradh nuair a chríochnaíonn uirlis",
+      "updates": "Nuashonruithe",
+      "updates_auto": "Seiceáil le haghaidh nuashonruithe go huathoibríoch",
+      "updates_disabled": "Níl nuashonruithe socraithe sa tógáil seo."
+    },
+    "onboarding": {
+      "title": "Fáilte go AriadShift",
+      "about": "Oscail, scrúdaigh agus próiseáil cáipéisí PDF leis an inneall céanna a úsáideann líne ordaithe AriadShift. Tiontaigh Markdown, HTML, Word, EPUB agus íomhánna go PDF le Comhad > Iompórtáil.",
+      "packs": "Stóráiltear pacáistí innill roghnacha (OCR, síniú, bailíochtú) in {path}.",
+      "privacy": "Oibríonn AriadShift ar do Mac. Ní dhéanann sé aon nasc líonra mura gcuireann tú gné ar siúl a bhfuil ceann de dhíth uirthi.",
+      "start": "Tosaigh"
+    },
+    "import": {
+      "message": "Roghnaigh cáipéis le tiontú go PDF",
+      "running": "{name} á iompórtáil…",
+      "failed": "Níorbh fhéidir {name} a iompórtáil"
+    },
+    "document": {
+      "invalid": "Ní PDF bailí é an comhad seo."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: tiontú príobháideach cáipéisí i do bhrabhsálaí",

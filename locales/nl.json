@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importeer…",
+      "print": "Druk af…",
+      "tools": "Gereedschappen",
+      "zoom": "{action, select, in {Inzoomen} out {Uitzoomen} actual {Ware grootte} other {Zoom}}",
+      "check_updates": "Zoek naar updates…",
+      "show_welcome": "Toon welkomstscherm"
+    },
+    "tools": {
+      "group": "{group, select, organize {Ordenen} convert {Converteren} optimize {Optimaliseren} security {Beveiliging} overlay {Overlay} ocr {OCR en scans} annotate {Annoteren} forms {Formulieren} sign {Ondertekenen} redact {Censureren} compare {Vergelijken en valideren} edit {Bewerken} ai {AI} automation {Automatisering} other {Overige gereedschappen}}",
+      "disabled": "{reason, select, later {Beschikbaar in een latere versie} format {Werkt met andere indelingen. Gebruik Archief > Importeer.} paid {Vereist een betaald abonnement} info {De gereedschapsgegevens konden niet worden gelezen, dus de gereedschappen blijven uitgeschakeld.} other {Niet beschikbaar}}",
+      "loading": "Gereedschappen laden…"
+    },
+    "sidebar": {
+      "title": "Pagina’s",
+      "placeholder": "Paginaminiaturen verschijnen hier."
+    },
+    "viewer": {
+      "placeholder": "De paginaweergave verschijnt hier."
+    },
+    "toolbar": {
+      "inspector": "Documentinfo"
+    },
+    "inspector": {
+      "title": "Document",
+      "field": "{field, select, name {Naam} format {Indeling} size {Grootte} pages {Pagina’s} words {Woorden} title {Titel} author {Auteur} routes {Kan worden geconverteerd naar} other {Veld}}",
+      "loading": "Document lezen…",
+      "warnings": "{count, plural, one {# waarschuwing} other {# waarschuwingen}}"
+    },
+    "run": {
+      "title": "{tool} uitvoeren",
+      "run": "Voer uit",
+      "cancel": "Annuleer",
+      "close": "Gereed",
+      "working": "Bezig met uitvoeren…",
+      "parameters": "Instellingen",
+      "no_parameters": "Dit gereedschap heeft geen instellingen.",
+      "extra_documents": "Extra documenten",
+      "add_documents": "Voeg toe…",
+      "remove": "Verwijder",
+      "need_documents": "{count, plural, one {Voeg nog # document toe om dit gereedschap uit te voeren.} other {Voeg nog # documenten toe om dit gereedschap uit te voeren.}}",
+      "failed": "Het gereedschap is niet voltooid.",
+      "open": "Open",
+      "reveal": "Toon in Finder",
+      "result_files": "{count, plural, one {# bestand aangemaakt} other {# bestanden aangemaakt}}",
+      "field_error": "{kind, select, missing {{field} is verplicht.} other {{field} is ongeldig.}}",
+      "result": "Resultaat",
+      "presets": "Voorinstellingen"
+    },
+    "settings": {
+      "output_folder": "Bewaar resultaten in",
+      "output_same": "Naast het originele document",
+      "output_choose": "Kies map…",
+      "open_result": "Open het resultaat wanneer een gereedschap klaar is",
+      "updates": "Updates",
+      "updates_auto": "Zoek automatisch naar updates",
+      "updates_disabled": "Updates zijn in deze build niet ingesteld."
+    },
+    "onboarding": {
+      "title": "Welkom bij AriadShift",
+      "about": "Open, inspecteer en verwerk PDF-documenten met dezelfde engine als de AriadShift-opdrachtregel. Converteer Markdown, HTML, Word, EPUB en afbeeldingen naar PDF met Archief > Importeer.",
+      "packs": "Optionele enginepakketten (OCR, ondertekenen, validatie) worden bewaard in {path}.",
+      "privacy": "AriadShift werkt op je Mac. Het maakt geen netwerkverbindingen, tenzij je een functie inschakelt die dat nodig heeft.",
+      "start": "Aan de slag"
+    },
+    "import": {
+      "message": "Kies een document om naar PDF te converteren",
+      "running": "{name} importeren…",
+      "failed": "{name} kon niet worden geïmporteerd"
+    },
+    "document": {
+      "invalid": "Dit bestand is geen geldige PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: documenten privé omzetten in je browser",

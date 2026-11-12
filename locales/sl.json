@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Uvozi…",
+      "print": "Natisni…",
+      "tools": "Orodja",
+      "zoom": "{action, select, in {Povečaj} out {Pomanjšaj} actual {Dejanska velikost} other {Zoom}}",
+      "check_updates": "Preveri posodobitve…",
+      "show_welcome": "Pokaži dobrodošlico"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organiziraj} convert {Pretvori} optimize {Optimiraj} security {Varnost} overlay {Prekrivanje} ocr {OCR in skeni} annotate {Dodaj opombe} forms {Obrazci} sign {Podpiši} redact {Zatemni} compare {Primerjaj in preveri} edit {Uredi} ai {UI} automation {Avtomatizacija} other {Druga orodja}}",
+      "disabled": "{reason, select, later {Na voljo v poznejši različici} format {Deluje z drugimi oblikami zapisa. Uporabite Datoteka > Uvozi.} paid {Zahteva plačljiv paket} info {Podrobnosti orodja ni bilo mogoče prebrati, zato orodja ostanejo izklopljena.} other {Ni na voljo}}",
+      "loading": "Nalaganje orodij…"
+    },
+    "sidebar": {
+      "title": "Strani",
+      "placeholder": "Sličice strani bodo prikazane tukaj."
+    },
+    "viewer": {
+      "placeholder": "Pregledovalnik strani bo prikazan tukaj."
+    },
+    "toolbar": {
+      "inspector": "Podatki o dokumentu"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Ime} format {Oblika zapisa} size {Velikost} pages {Strani} words {Besede} title {Naslov} author {Avtor} routes {Mogoče pretvoriti v} other {Polje}}",
+      "loading": "Branje dokumenta…",
+      "warnings": "{count, plural, one {# opozorilo} two {# opozorili} few {# opozorila} other {# opozoril}}"
+    },
+    "run": {
+      "title": "Zaženi {tool}",
+      "run": "Zaženi",
+      "cancel": "Prekliči",
+      "close": "Končano",
+      "working": "Izvajanje…",
+      "parameters": "Nastavitve",
+      "no_parameters": "To orodje nima nastavitev.",
+      "extra_documents": "Dodatni dokumenti",
+      "add_documents": "Dodaj…",
+      "remove": "Odstrani",
+      "need_documents": "{count, plural, one {Dodajte še # dokument, da zaženete to orodje.} two {Dodajte še # dokumenta, da zaženete to orodje.} few {Dodajte še # dokumente, da zaženete to orodje.} other {Dodajte še # dokumentov, da zaženete to orodje.}}",
+      "failed": "Orodje se ni končalo.",
+      "open": "Odpri",
+      "reveal": "Pokaži v Finderju",
+      "result_files": "{count, plural, one {Ustvarjena # datoteka} two {Ustvarjeni # datoteki} few {Ustvarjene # datoteke} other {Ustvarjenih # datotek}}",
+      "field_error": "{kind, select, missing {Polje {field} je obvezno.} other {Polje {field} ni veljavno.}}",
+      "result": "Rezultat",
+      "presets": "Prednastavitve"
+    },
+    "settings": {
+      "output_folder": "Shrani rezultate v",
+      "output_same": "Poleg izvirnega dokumenta",
+      "output_choose": "Izberi mapo…",
+      "open_result": "Odpri rezultat, ko se orodje konča",
+      "updates": "Posodobitve",
+      "updates_auto": "Samodejno preverjaj posodobitve",
+      "updates_disabled": "Posodobitve v tej različici niso nastavljene."
+    },
+    "onboarding": {
+      "title": "Dobrodošli v AriadShift",
+      "about": "Odpirajte, pregledujte in obdelujte dokumente PDF z istim pogonom kot ukazna vrstica AriadShift. Pretvorite Markdown, HTML, Word, EPUB in slike v PDF prek Datoteka > Uvozi.",
+      "packs": "Izbirni paketi pogona (OCR, podpisovanje, preverjanje) so shranjeni v {path}.",
+      "privacy": "AriadShift deluje na vašem Macu. Ne vzpostavlja omrežnih povezav, razen če vklopite funkcijo, ki jih potrebuje.",
+      "start": "Začnimo"
+    },
+    "import": {
+      "message": "Izberite dokument za pretvorbo v PDF",
+      "running": "Uvažanje {name}…",
+      "failed": "Uvoz {name} ni uspel"
+    },
+    "document": {
+      "invalid": "Ta datoteka ni veljaven PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: zasebna pretvorba dokumentov v vašem brskalniku",

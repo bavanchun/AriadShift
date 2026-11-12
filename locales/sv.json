@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importera…",
+      "print": "Skriv ut…",
+      "tools": "Verktyg",
+      "zoom": "{action, select, in {Zooma in} out {Zooma ut} actual {Verklig storlek} other {Zoom}}",
+      "check_updates": "Sök efter uppdateringar…",
+      "show_welcome": "Visa välkomstskärmen"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organisera} convert {Konvertera} optimize {Optimera} security {Säkerhet} overlay {Överlagring} ocr {OCR och skanningar} annotate {Kommentera} forms {Formulär} sign {Signera} redact {Maskera} compare {Jämför och validera} edit {Redigera} ai {AI} automation {Automatisering} other {Övriga verktyg}}",
+      "disabled": "{reason, select, later {Tillgängligt i en senare version} format {Fungerar med andra format. Använd Arkiv > Importera.} paid {Kräver en betald plan} info {Verktygsuppgifterna kunde inte läsas, så verktygen förblir avstängda.} other {Inte tillgängligt}}",
+      "loading": "Läser in verktyg…"
+    },
+    "sidebar": {
+      "title": "Sidor",
+      "placeholder": "Miniatyrer av sidor visas här."
+    },
+    "viewer": {
+      "placeholder": "Sidvisaren visas här."
+    },
+    "toolbar": {
+      "inspector": "Dokumentinformation"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Namn} format {Format} size {Storlek} pages {Sidor} words {Ord} title {Titel} author {Författare} routes {Kan konverteras till} other {Fält}}",
+      "loading": "Läser dokumentet…",
+      "warnings": "{count, plural, one {# varning} other {# varningar}}"
+    },
+    "run": {
+      "title": "Kör {tool}",
+      "run": "Kör",
+      "cancel": "Avbryt",
+      "close": "Klar",
+      "working": "Kör…",
+      "parameters": "Inställningar",
+      "no_parameters": "Det här verktyget har inga inställningar.",
+      "extra_documents": "Fler dokument",
+      "add_documents": "Lägg till…",
+      "remove": "Ta bort",
+      "need_documents": "{count, plural, one {Lägg till # dokument till för att köra det här verktyget.} other {Lägg till # dokument till för att köra det här verktyget.}}",
+      "failed": "Verktyget slutfördes inte.",
+      "open": "Öppna",
+      "reveal": "Visa i Finder",
+      "result_files": "{count, plural, one {# fil skapad} other {# filer skapade}}",
+      "field_error": "{kind, select, missing {{field} måste anges.} other {{field} är inte giltigt.}}",
+      "result": "Resultat",
+      "presets": "Förinställningar"
+    },
+    "settings": {
+      "output_folder": "Spara resultat i",
+      "output_same": "Bredvid originaldokumentet",
+      "output_choose": "Välj mapp…",
+      "open_result": "Öppna resultatet när ett verktyg är klart",
+      "updates": "Uppdateringar",
+      "updates_auto": "Sök efter uppdateringar automatiskt",
+      "updates_disabled": "Uppdateringar är inte konfigurerade i det här bygget."
+    },
+    "onboarding": {
+      "title": "Välkommen till AriadShift",
+      "about": "Öppna, granska och bearbeta PDF-dokument med samma motor som AriadShift-kommandoraden. Konvertera Markdown, HTML, Word, EPUB och bilder till PDF med Arkiv > Importera.",
+      "packs": "Valfria motorpaket (OCR, signering, validering) lagras i {path}.",
+      "privacy": "AriadShift fungerar på din Mac. Det skapar inga nätverksanslutningar om du inte aktiverar en funktion som behöver en.",
+      "start": "Kom igång"
+    },
+    "import": {
+      "message": "Välj ett dokument att konvertera till PDF",
+      "running": "Importerar {name}…",
+      "failed": "Det gick inte att importera {name}"
+    },
+    "document": {
+      "invalid": "Den här filen är inte en giltig PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: privat dokumentkonvertering i din webbläsare",

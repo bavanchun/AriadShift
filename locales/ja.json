@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "読み込む…",
+      "print": "プリント…",
+      "tools": "ツール",
+      "zoom": "{action, select, in {拡大} out {縮小} actual {実際のサイズ} other {ズーム}}",
+      "check_updates": "アップデートを確認…",
+      "show_welcome": "ようこそ画面を表示"
+    },
+    "tools": {
+      "group": "{group, select, organize {整理} convert {変換} optimize {最適化} security {セキュリティ} overlay {オーバーレイ} ocr {OCRとスキャン} annotate {注釈} forms {フォーム} sign {署名} redact {墨消し} compare {比較と検証} edit {編集} ai {AI} automation {自動化} other {その他のツール}}",
+      "disabled": "{reason, select, later {今後のリリースで利用可能になります} format {他の形式で動作します。「ファイル」>「読み込む」を使用してください。} paid {有料プランが必要です} info {ツールの詳細を読み取れなかったため、ツールは無効のままです。} other {利用できません}}",
+      "loading": "ツールを読み込み中…"
+    },
+    "sidebar": {
+      "title": "ページ",
+      "placeholder": "ページのサムネールがここに表示されます。"
+    },
+    "viewer": {
+      "placeholder": "ページビューアがここに表示されます。"
+    },
+    "toolbar": {
+      "inspector": "書類情報"
+    },
+    "inspector": {
+      "title": "書類",
+      "field": "{field, select, name {名前} format {形式} size {サイズ} pages {ページ数} words {単語数} title {タイトル} author {作成者} routes {変換可能な形式} other {項目}}",
+      "loading": "書類を読み込み中…",
+      "warnings": "{count, plural, other {警告 #件}}"
+    },
+    "run": {
+      "title": "{tool}を実行",
+      "run": "実行",
+      "cancel": "キャンセル",
+      "close": "完了",
+      "working": "実行中…",
+      "parameters": "設定",
+      "no_parameters": "このツールには設定がありません。",
+      "extra_documents": "追加の書類",
+      "add_documents": "追加…",
+      "remove": "削除",
+      "need_documents": "{count, plural, other {このツールを実行するには、あと#件の書類を追加してください。}}",
+      "failed": "ツールが完了しませんでした。",
+      "open": "開く",
+      "reveal": "Finderで表示",
+      "result_files": "{count, plural, other {#個のファイルを作成しました}}",
+      "field_error": "{kind, select, missing {{field}は必須です。} other {{field}が正しくありません。}}",
+      "result": "結果",
+      "presets": "プリセット"
+    },
+    "settings": {
+      "output_folder": "結果の保存先",
+      "output_same": "元の書類と同じ場所",
+      "output_choose": "フォルダを選択…",
+      "open_result": "ツールの完了時に結果を開く",
+      "updates": "アップデート",
+      "updates_auto": "アップデートを自動的に確認",
+      "updates_disabled": "このビルドではアップデートが設定されていません。"
+    },
+    "onboarding": {
+      "title": "AriadShiftへようこそ",
+      "about": "AriadShiftのコマンドラインと同じエンジンで、PDF書類を開き、検査し、処理します。「ファイル」>「読み込む」でMarkdown、HTML、Word、EPUB、画像をPDFに変換できます。",
+      "packs": "オプションのエンジンパック（OCR、署名、検証）は{path}に保存されます。",
+      "privacy": "AriadShiftはお使いのMac上で動作します。ネットワークを必要とする機能をオンにしない限り、ネットワーク接続は行いません。",
+      "start": "はじめる"
+    },
+    "import": {
+      "message": "PDFに変換する書類を選択",
+      "running": "{name}を読み込み中…",
+      "failed": "{name}を読み込めませんでした"
+    },
+    "document": {
+      "invalid": "このファイルは有効なPDFではありません。"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: ブラウザー内でプライベートに文書を変換",
