@@ -14,7 +14,15 @@ pub(crate) mod tesseract_image;
 pub mod typst;
 pub mod verapdf;
 
-pub use resolve::{ResolveError, resolve_pack, resolve_pack_in, resolve_pack_with_options};
+pub use resolve::{
+    ResolveError, resolve_engine_program, resolve_pack, resolve_pack_in, resolve_pack_with_options,
+};
+
+/// Returns the builtin capabilities for the planner.
+pub fn builtin_capabilities() -> ariad_core::planner::Capabilities {
+    crate::commands::active_capabilities()
+        .unwrap_or_else(|_| ariad_core::planner::embedded().clone())
+}
 
 use std::{
     collections::HashMap,

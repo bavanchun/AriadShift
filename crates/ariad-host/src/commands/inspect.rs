@@ -201,8 +201,15 @@ pub fn inspect(
             } else {
                 crate::engines::PANDOC.id
             };
-            let default_exe = std::env::current_exe().map_err(|_| ConvertError::Failed)?;
-            let program = engine_program.unwrap_or(&default_exe);
+            let program =
+                crate::engines::resolve_engine_program(engine_program).ok_or_else(|| {
+                    ConvertError::EngineMissing {
+                        engine: engine.to_owned(),
+                        hint: crate::engines::spec(engine)
+                            .map(|s| s.install_hint.to_owned())
+                            .unwrap_or_else(|| format!("install the {engine} engine")),
+                    }
+                })?;
             let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
             let res = read_to_ir_with_engine(
                 path,
@@ -210,7 +217,7 @@ pub fn inspect(
                 engine,
                 &mut workspace,
                 &limits,
-                &EngineInvocation::new(program),
+                &EngineInvocation::new(&program),
                 cancel.clone(),
             );
             let _ = workspace.close();

@@ -9,12 +9,16 @@ use ariad_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{ArchiveToIrOutput, ConvertError, map_run_error, plan_error, read_to_ir_with_engine};
+use super::{ArchiveToIrOutput, ConvertError, map_run_error, read_to_ir_with_engine};
 use crate::{
     commands::inspect::PdfSummary,
     engines::{self, EngineInvocation},
     workspace::Workspace,
 };
+
+pub(crate) fn plan_error(error: planner::PlanError, input: Format) -> ConvertError {
+    super::plan_error(error, input)
+}
 
 pub(crate) struct Selection {
     pub capabilities: Capabilities,

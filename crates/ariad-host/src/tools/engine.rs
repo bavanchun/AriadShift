@@ -329,9 +329,7 @@ pub fn resolve_engine_command(
         return Ok(cmd);
     }
     if let Some(spec) = engines::spec(engine_id) {
-        let program = engine_program
-            .map(Path::to_path_buf)
-            .or_else(|| std::env::current_exe().ok())
+        let program = crate::engines::resolve_engine_program(engine_program)
             .ok_or_else(|| ToolError::from_missing_engine(engine_id))?;
         return Ok(EngineCommand::builtin(&program, spec.id));
     }

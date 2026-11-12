@@ -119,11 +119,9 @@ impl EditContext<'_> {
         Ok(())
     }
 
-    fn program(&self) -> Result<PathBuf, ToolError> {
-        match self.engine_program {
-            Some(program) => Ok(program.to_path_buf()),
-            None => std::env::current_exe().map_err(|_| ToolError::from_missing_engine("pandoc")),
-        }
+    fn program(&self, engine_id: &str) -> Result<PathBuf, ToolError> {
+        crate::engines::resolve_engine_program(self.engine_program)
+            .ok_or_else(|| ToolError::from_missing_engine(engine_id))
     }
 
     fn read(&mut self, input: &(PathBuf, String), generated: bool) -> Result<Document, ToolError> {
@@ -141,7 +139,7 @@ impl EditContext<'_> {
                 "docx",
                 &mut workspace,
                 &limits,
-                &self.program()?,
+                &self.program("pandoc")?,
                 self.cancel.clone(),
             )
             .map_err(map_conversion_error)?;
@@ -196,7 +194,7 @@ impl EditContext<'_> {
             EditExportFormat::Docx => {
                 let input = self.workspace.work_dir().join("edited.ir.json");
                 self.write_ir(&input, document)?;
-                let request = ConvertRequest::new(input, &output, "docx", self.program()?);
+                let request = ConvertRequest::new(input, &output, "docx", self.program("pandoc")?);
                 let report = convert::convert_with_limits(
                     &request,
                     self.limits.clone(),
