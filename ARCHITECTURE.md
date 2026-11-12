@@ -49,7 +49,7 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | Python | **3.14.x** | Stable, supported until 2030-10 | Python has no LTS; 3.15 is unreleased |
 | PostgreSQL | **18.x** (18.6) | Major supported until 2030-11 | 19 is in beta |
 | Ubuntu (Docker image, CI) | **26.04 LTS** "Resolute Raccoon" | LTS | Single base image for all containers |
-| GitHub Actions runners | `ubuntu-26.04`, `macos-26`, `windows-2025` | GA | Pin labels explicitly; `ubuntu-latest` remains 24.04 until November 2026 |
+| GitHub Actions runners | `ubuntu-26.04`, `macos-26`, `windows-2025`; `xcode-27` for `apps/macos` | GA, except `xcode-27` (preview image label) | Pin labels explicitly; `ubuntu-latest` remains 24.04 until November 2026. `macos-26` images stop at Xcode 26.6, so only the macOS app workflow uses `xcode-27` (AD-28; [docs/ci.md](docs/ci.md#macos-workflow-runner)) |
 | LibreOffice | **26.8.x** | Longest-supported line currently available (until 2027-06) | LibreOffice has no LTS; 26.2 expires 2026-11-30 |
 
 ### 2.2 Web and Desktop
@@ -63,6 +63,9 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | Tailwind CSS | 4.3.3 | Through `@tailwindcss/postcss` |
 | shadcn/ui | CLI 4.22.1, **Base UI** style `base-nova` (`@base-ui/react` 1.9.0) | Base UI has been the shadcn default since 07/2026 |
 | Tauri | **2.12** | Tauri 3 is in alpha → not yet adopted |
+| Xcode / Swift (`apps/macos`) | **Xcode 27.2** (build 27B52) / **Swift 6.4.2**, deployment floor **macOS 15** | Stable release; CI selects exactly this Xcode ([docs/ci.md](docs/ci.md#macos-workflow-runner)) |
+| XcodeGen | **2.46.0** (MIT) | Dev tool only: generates the gitignored `AriadShift.xcodeproj` from `apps/macos/project.yml` (AD-28); never distributed |
+| Sparkle | **2.10.1** (MIT) | Swift package linked into `apps/macos`; EdDSA-signed appcast updates ([docs/macos.md](docs/macos.md), [docs/releasing.md](docs/releasing.md)) |
 | TanStack Query / Zustand / Zod | 5 / 5 / 4 | Server state / UI state / schema |
 | React Hook Form / Motion / lucide-react | 7 / 14 / 1.x | |
 | Uppy | 6 (+ `@uppy/aws-s3`) | Resumable multipart uploads |
@@ -297,7 +300,7 @@ ariadshift/
 │   └── inpaint/               # Optional `inpaint` pack (Florence-2 + OpenCV; LaMa gated on license review)
 ├── apps/
 │   ├── web/                   # Next.js 16: website + in-browser converter and PDF tool suite (docs/web.md)
-│   ├── macos/                 # Xcode project: Swift 6, SwiftUI + AppKit over ariad-ffi (notarized Developer ID + Sparkle)
+│   ├── macos/                 # Swift 6, SwiftUI + AppKit over ariad-ffi via the AriadShiftCore package; Xcode project generated from project.yml (notarized Developer ID + Sparkle)
 │   └── desktop/               # Vite 8 + React 19 (maintenance-only; macOS build retired at 0.7.0, Windows/Linux retained until native WinUI 3 / GTK apps replace it)
 │       └── src-tauri/         # Tauri 2, depends on ariad-host
 ├── packages/
@@ -1190,6 +1193,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Style cascade and DOCX interchange (AD-25) | `Document.styles: StyleSheet` centralizes defaults, a containing table paragraph baseline, named paragraph inheritance and direct overrides. Nested character styles preserve explicit false. DOCX uses `docx+styles`, bounded `styles.xml` and `document.xml` recovery, typed reference DOCX generation and absolute run-property materialization, shared by host and browser. HTML maps safe inline CSS; PDF retains evidenced run properties and restores display names for the bundled fonts' known PostScript aliases; Docling maps evidenced formatting flags; Typst/HTML/DOCX write supported styles and Markdown reports loss. Builds with Typst also stage its permitted font bytes in each LibreOffice job's private `user/fonts` directory, without system installation. | Surface-specific style logic, raw OOXML inside IR, embedded fonts without allowed permission | Keeps conversion logic in core and engines separate; font family availability never grants embedding permission. |
 | Stable document identity and geometry (AD-26) | Distinct validated `BlockId`/`StyleId` types. Missing import IDs use `b` plus full lowercase SHA-256 of the original traversal path and canonical semantic payload; assigned IDs survive insert/reorder. Layout and multi-fragment source maps use IDs. Footnote `note_id` stays separate. Sections reference body/furniture IDs. | Positional layout keys in `/2`, reassigning IDs on edits, conflating notes with block identity | Enables editor preservation without invalidating geometry; legacy output restores positional keys and semantic note IDs. |
 | Measured fidelity and edit-export handoff (AD-27) | `fidelity/2` compares independent authored truth in benchmarks and captured input IR against actual output read-back at runtime. Rust and Python share conformance vectors for raw CER, structure/table F1, style accuracy and layout IoU with coverage and explicit unavailable reasons. `ConvertOutput.fidelity` and the reusable `ToolOutcome.metrics.fidelity` attachment share the report. The real Document-mode export caller belongs to the next edit-engine stage. | Fixed successful scores, Python in production conversion, claiming the future edit export is already registered | Separates route estimates from measured artifact quality. Competitive gates retain CER(A) ≤ CER(S), table F1(A) ≥ table F1(S), style(A) ≥ 1.10 × style(S) with printed percentage-point delta, and layout IoU(A) ≥ layout IoU(S); failed gates require an owner decision. |
+| macOS build, runner and release trust (AD-28) | `apps/macos` is generated from the committed `apps/macos/project.yml` with XcodeGen; `AriadShift.xcodeproj` is gitignored. The Swift package `AriadShiftCore` wraps the `ariad-ffi` XCFramework and the app embeds the `ashift` helper at `Contents/Helpers/ashift`. CI builds on the preview runner label `xcode-27` because `macos-26` images stop at Xcode 26.6 and the package needs Xcode 27; `scripts/macos-select-xcode.sh` pins Xcode 27.2 exactly, and the fallback is a GA label once it ships that Xcode ([docs/ci.md](docs/ci.md#macos-workflow-runner)). Signing, notarization and appcast generation run only on `v*` tags under the `release` environment; an unsigned build exists only as a workflow artifact and is never published to a GitHub Release. Update trust is Developer ID plus notarization for the app and Sparkle EdDSA signatures for the feed, with key handling in [docs/releasing.md](docs/releasing.md). The `uniffi` crates are MPL-2.0 and used unmodified under per-crate cargo-deny exceptions. | A committed `project.pbxproj`; building on `macos-26` with an older Xcode; publishing unsigned DMGs | A pbxproj merges badly and hides settings, while `project.yml` is reviewable and regenerates reproducibly. The preview label is the only runner image with the required Xcode; an unsigned download cannot pass Gatekeeper or Sparkle verification and would train users to bypass both. |
 
 ---
 
