@@ -82,8 +82,11 @@ private final class ProgressBridge: ProgressListener, Sendable {
 /// cancellation to Swift concurrency.
 ///
 /// The helper path is process-global state inside the Rust engine: the last
-/// `EngineClient` configured wins. Each run and convert call therefore re-asserts
-/// this client's helper before it starts. App code must reach the engine only
+/// `EngineClient` configured wins. Every call that can launch the helper
+/// (`inspect`, `plan`, `runTool`, `convert`) re-asserts this client's helper
+/// first, which narrows that race but does not close it: a second client can
+/// reconfigure the engine between the re-assert and the Rust call. One client
+/// per process is the supported shape. App code must reach the engine only
 /// through this type, never through the generated free functions.
 public actor EngineClient {
     /// Location of the `ashift` helper used for out-of-process engines.
@@ -109,7 +112,7 @@ public actor EngineClient {
     }
 
     /// Validates the helper and points the engine at it. Idempotent and cheap.
-    private static func configureEngine(helper url: URL) throws {
+    static func configureEngine(helper url: URL) throws {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
             !isDirectory.boolValue,
@@ -131,11 +134,13 @@ public actor EngineClient {
     }
 
     public func inspect(path: String) async throws -> InspectReport {
-        try await Self.offload { try AriadShiftCore.inspect(path: path) }
+        try Self.configureEngine(helper: helperURL)
+        return try await Self.offload { try AriadShiftCore.inspect(path: path) }
     }
 
     public func plan(path: String, targetFormat: String, profile: String? = nil) async throws -> PlanReport {
-        try await Self.offload {
+        try Self.configureEngine(helper: helperURL)
+        return try await Self.offload {
             try AriadShiftCore.plan(path: path, targetFormat: targetFormat, profile: profile)
         }
     }

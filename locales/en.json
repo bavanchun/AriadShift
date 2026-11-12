@@ -113,6 +113,92 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Import…",
+      "print": "Print…",
+      "tools": "Tools",
+      "zoom": "{action, select, in {Zoom In} out {Zoom Out} actual {Actual Size} other {Zoom}}",
+      "zoom@note": "View menu zoom commands. {action} is the keyword in, out or actual. Keep the keywords untranslated.",
+      "check_updates": "Check for Updates…",
+      "show_welcome": "Show Welcome"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organize} convert {Convert} optimize {Optimize} security {Security} overlay {Overlay} ocr {OCR and scans} annotate {Annotate} forms {Forms} sign {Sign} redact {Redact} compare {Compare and validate} edit {Edit} ai {AI} automation {Automation} other {Other tools}}",
+      "group@note": "Submenu titles of the Tools menu, one per tool group. {group} is the keyword organize, convert, optimize, security, overlay, ocr, annotate, forms, sign, redact, compare, edit, ai or automation. Keep the keywords untranslated.",
+      "disabled": "{reason, select, later {Available in a later release} format {Works on other formats. Use File > Import.} paid {Needs a paid plan} info {Tool details could not be read, so tools stay off.} other {Not available}}",
+      "disabled@note": "Tooltip on a disabled Tools menu item. {reason} is the keyword later, format, paid or info. Keep the keywords untranslated.",
+      "loading": "Loading tools…"
+    },
+    "sidebar": {
+      "title": "Pages",
+      "placeholder": "Page thumbnails will appear here."
+    },
+    "viewer": {
+      "placeholder": "The page viewer will appear here."
+    },
+    "toolbar": {
+      "inspector": "Document Info",
+      "inspector@note": "Toolbar button that shows or hides the inspector panel."
+    },
+    "inspector": {
+      "title": "Document",
+      "field": "{field, select, name {Name} format {Format} size {Size} pages {Pages} words {Words} title {Title} author {Author} routes {Can convert to} other {Field}}",
+      "field@note": "Row labels in the document inspector. {field} is the keyword name, format, size, pages, words, title, author or routes. Keep the keywords untranslated.",
+      "loading": "Reading document…",
+      "warnings": "{count, plural, one {# warning} other {# warnings}}"
+    },
+    "run": {
+      "title": "Run {tool}",
+      "title@note": "Title of the sheet that runs a document tool. {tool} is the tool name, for example Rotate.",
+      "run": "Run",
+      "cancel": "Cancel",
+      "close": "Done",
+      "working": "Running…",
+      "parameters": "Settings",
+      "no_parameters": "This tool has no settings.",
+      "extra_documents": "Additional documents",
+      "add_documents": "Add…",
+      "remove": "Remove",
+      "need_documents": "{count, plural, one {Add # more document to run this tool.} other {Add # more documents to run this tool.}}",
+      "failed": "The tool did not finish.",
+      "open": "Open",
+      "reveal": "Show in Finder",
+      "result_files": "{count, plural, one {# file created} other {# files created}}",
+      "field_error": "{kind, select, missing {{field} is required.} other {{field} is not valid.}}",
+      "field_error@note": "Validation message for a tool setting. {kind} is the keyword missing or invalid, {field} is the setting name. Keep the keywords untranslated.",
+      "result": "Result",
+      "presets": "Presets",
+      "presets@note": "Menu that fills a text field with a named preset value."
+    },
+    "settings": {
+      "output_folder": "Save results in",
+      "output_same": "Next to the original document",
+      "output_choose": "Choose Folder…",
+      "open_result": "Open the result when a tool finishes",
+      "updates": "Updates",
+      "updates_auto": "Check for updates automatically",
+      "updates_disabled": "Updates are not set up in this build."
+    },
+    "onboarding": {
+      "title": "Welcome to AriadShift",
+      "about": "Open, inspect and process PDF documents with the same engine as the AriadShift command line. Convert Markdown, HTML, Word, EPUB and images to PDF with File > Import.",
+      "packs": "Optional engine packs (OCR, signing, validation) are stored in {path}.",
+      "packs@note": "{path} is a folder path in the user's Library. Keep it unchanged.",
+      "privacy": "AriadShift works on your Mac. It makes no network connections unless you turn on a feature that needs one.",
+      "start": "Get Started"
+    },
+    "import": {
+      "message": "Choose a document to convert to PDF",
+      "running": "Importing {name}…",
+      "running@note": "{name} is a file name.",
+      "failed": "Could not import {name}",
+      "failed@note": "Alert title. {name} is a file name."
+    },
+    "document": {
+      "invalid": "This file is not a valid PDF."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: private document conversion in your browser",

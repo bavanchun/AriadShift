@@ -5,6 +5,7 @@ options:
   deploymentTarget:
     macOS: "15.0"
   createIntermediateGroups: true
+  developmentLanguage: en
   generateEmptyDirectories: true
 settings:
   base:
@@ -19,9 +20,15 @@ settings:
     CODE_SIGN_IDENTITY: "-"
     MARKETING_VERSION: "0.0.0"
     CURRENT_PROJECT_VERSION: "1"
+    # EdDSA public key that verifies Sparkle updates. Empty in dev builds, which turns the
+    # updater off; the release build passes the real key (SPARKLE_PUBLIC_ED_KEY=...).
+    SPARKLE_PUBLIC_ED_KEY: ""
 packages:
   AriadShiftCore:
     path: AriadShiftCore
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 targets:
   AriadShift:
     type: application
@@ -30,6 +37,7 @@ targets:
       - AriadShift
     dependencies:
       - package: AriadShiftCore
+      - package: Sparkle
     info:
       path: AriadShift/Info.plist
       properties:
@@ -38,6 +46,16 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "15.0"
         LSApplicationCategoryType: public.app-category.productivity
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: PDF Document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.adobe.pdf]
+        SUFeedURL: https://github.com/bavanchun/AriadShift/releases/latest/download/appcast.xml
+        SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
+        SUEnableAutomaticChecks: false
+        SUAutomaticallyUpdate: false
+        SUVerifyUpdateBeforeExtraction: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ariadnev.ariadshift
@@ -73,6 +91,10 @@ schemes:
       config: Debug
     test:
       config: Debug
+      # The menu tests read English titles; pin the language so a Vietnamese Mac does not fail them.
+      commandLineArguments:
+        "-AppleLanguages (en)": true
+        "-AppleLocale en_US": true
       targets:
         - AriadShiftTests
     archive:
