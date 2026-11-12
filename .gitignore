@@ -39,3 +39,12 @@ apps/web/public/notices/
 apps/web/public/wasm/
 apps/web/public/sw.js
 packages/ariad-typst/pkg/
+
+# macOS app generated artifacts (apps/macos)
+apps/macos/AriadShift.xcodeproj/
+apps/macos/AriadShiftCore/Frameworks/
+apps/macos/AriadShiftCore/Sources/AriadShiftCore/Generated/
+apps/macos/AriadShiftCore/.build/
+apps/macos/.build/
+apps/macos/DerivedData/
+apps/macos/AriadShift/Info.plist
