@@ -17,15 +17,22 @@ extension EngineClient {
     /// reported output outside staging fails the run instead of being moved.
     /// Cancelling the calling task cancels the run and removes the staging folder.
     ///
-    /// - Parameter writesFiles: pass `false` for tools whose result is structured JSON
-    ///   (`ToolInfo.outputFormat == "json"`): the engine then returns it inline and writes
-    ///   nothing next to the document.
+    /// - Parameters:
+    ///   - writesFiles: pass `false` for tools whose result is structured JSON
+    ///     (`ToolInfo.outputFormat == "json"`): the engine then returns it inline and writes
+    ///     nothing next to the document.
+    ///   - outputName: the file name a single result gets instead of the tool's own; ignored when
+    ///     the tool produced any other number of files.
+    ///   - reservations: share one instance between runs that go on at the same time, so their
+    ///     results never contend for one name (see `NameReservations`).
     public func run(
         tool: String,
         inputs: [URL],
         paramsJSON: String? = nil,
         writesFiles: Bool = true,
         destination: URL,
+        outputName: String? = nil,
+        reservations: NameReservations? = nil,
         onProgress: (@Sendable (ProgressEvent) -> Void)? = nil
     ) async throws -> ToolRunResult {
         let staging = FileManager.default.temporaryDirectory
@@ -44,6 +51,8 @@ extension EngineClient {
         )
         // Only files the engine wrote into staging are moved; an input must never be relocated.
         let produced = try OutputPlacer.stagedFiles(outcome.outputPaths, in: staging)
-        return ToolRunResult(outcome: outcome, files: try OutputPlacer.place(produced, into: destination))
+        let names = produced.count == 1 ? outputName.map { [$0] } : nil
+        let files = try OutputPlacer.place(produced, into: destination, names: names, reservations: reservations)
+        return ToolRunResult(outcome: outcome, files: files)
     }
 }

@@ -59,15 +59,40 @@ public enum OutputPlacer {
     ///
     /// Choosing a free name and taking it are one atomic step (`moveExclusively`), so a writer
     /// that takes the chosen name first makes the move fail and the next free number is tried.
-    public static func place(_ files: [URL], into directory: URL, fileManager: FileManager = .default) throws -> [URL] {
+    ///
+    /// - Parameters:
+    ///   - names: the file name each file ends up with (default: its own name). Must match
+    ///     `files` in count.
+    ///   - reservations: names that concurrent jobs hold. A name is reserved from the moment it is
+    ///     chosen until its file is on disk, so jobs that share one instance never pick the same name.
+    public static func place(
+        _ files: [URL],
+        into directory: URL,
+        names: [String]? = nil,
+        reservations: NameReservations? = nil,
+        fileManager: FileManager = .default
+    ) throws -> [URL] {
+        try place(files, into: directory, names: names, reservations: reservations, fileManager: fileManager, renamer: .system)
+    }
+
+    static func place(
+        _ files: [URL],
+        into directory: URL,
+        names: [String]?,
+        reservations: NameReservations?,
+        fileManager: FileManager,
+        renamer: ExclusiveRename
+    ) throws -> [URL] {
+        precondition(names == nil || names?.count == files.count, "one name per file")
         var placed: [URL] = []
-        for file in files {
-            let desired = directory.appendingPathComponent(file.lastPathComponent)
+        for (index, file) in files.enumerated() {
+            let desired = directory.appendingPathComponent(names?[index] ?? file.lastPathComponent)
             var attempts = 0
             while true {
-                let target = uniqueURL(for: desired)
+                let target = reservations?.reserve(desired) ?? uniqueURL(for: desired)
+                defer { reservations?.release(target) }
                 do {
-                    try moveExclusively(file, to: target, fileManager: fileManager)
+                    try moveExclusively(file, to: target, fileManager: fileManager, renamer: renamer)
                     placed.append(target)
                     break
                 } catch let error as CocoaError where error.code == .fileWriteFileExists && attempts < 100 {
@@ -80,39 +105,109 @@ public enum OutputPlacer {
 
     /// Moves `source` to `target`, failing with `fileWriteFileExists` instead of replacing
     /// anything that is there, even when another writer creates it at the same moment.
-    static func moveExclusively(_ source: URL, to target: URL, fileManager: FileManager = .default) throws {
-        if renamex_np(source.path, target.path, UInt32(RENAME_EXCL)) == 0 { return }
-        switch errno {
+    ///
+    /// The name is claimed atomically in one of two ways: an exclusive rename, or, on a volume
+    /// without one, an exclusive create of the name followed by a rename over that empty file
+    /// (`renameOverClaimedName`). If the volume offers neither, it throws `PlacementError`.
+    static func moveExclusively(
+        _ source: URL,
+        to target: URL,
+        fileManager: FileManager = .default,
+        renamer: ExclusiveRename = .system
+    ) throws {
+        switch renamer.attempt(source.path, target.path) {
+        case 0:
+            return
         case EEXIST:
             throw CocoaError(.fileWriteFileExists)
         case EXDEV:
             // Another volume: the file cannot be renamed, so copy it beside the target first.
-            try copyExclusively(source, to: target, fileManager: fileManager)
+            try copyExclusively(source, to: target, fileManager: fileManager, renamer: renamer)
         case ENOTSUP, EINVAL:
-            // A volume without exclusive rename: `moveItem` still refuses an existing target,
-            // though without the guarantee against a concurrent writer.
-            try fileManager.moveItem(at: source, to: target)
-        default:
-            throw CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)])
+            try renameOverClaimedName(source, to: target)
+        case let code:
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)])
         }
     }
 
     /// Copies `source` next to `target` under a private name, renames that copy to `target`
-    /// exclusively, then deletes `source`.
-    static func copyExclusively(_ source: URL, to target: URL, fileManager: FileManager = .default) throws {
+    /// exclusively, then deletes `source`. A failure leaves `source` and no scratch file behind.
+    static func copyExclusively(
+        _ source: URL,
+        to target: URL,
+        fileManager: FileManager = .default,
+        renamer: ExclusiveRename = .system
+    ) throws {
         let scratch = target.deletingLastPathComponent().appendingPathComponent(".ashift-\(UUID().uuidString).part")
-        try fileManager.copyItem(at: source, to: scratch)
-        if renamex_np(scratch.path, target.path, UInt32(RENAME_EXCL)) != 0 {
-            let code = errno
-            try? fileManager.removeItem(at: scratch)
-            if code == EEXIST { throw CocoaError(.fileWriteFileExists) }
-            if code == ENOTSUP || code == EINVAL {
-                try fileManager.copyItem(at: source, to: target)
-            } else {
+        do {
+            try fileManager.copyItem(at: source, to: scratch)
+            switch renamer.attempt(scratch.path, target.path) {
+            case 0:
+                break
+            case EEXIST:
+                throw CocoaError(.fileWriteFileExists)
+            case ENOTSUP, EINVAL:
+                try renameOverClaimedName(scratch, to: target)
+            case let code:
                 throw CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)])
             }
+        } catch {
+            try? fileManager.removeItem(at: scratch)
+            throw error
         }
-        try fileManager.removeItem(at: source)
+        // The result is in place; the caller deletes the staging folder anyway.
+        try? fileManager.removeItem(at: source)
+    }
+
+    /// For a volume without exclusive rename: `open(O_CREAT | O_EXCL)` is atomic on every volume
+    /// and fails when anything, a dangling link included, holds the name. The empty file it creates
+    /// keeps every other exclusive creator (this code, the engine's `create_new`) off the name,
+    /// and `rename(2)` then replaces only that file with `source`. A writer that replaces files
+    /// without creating them exclusively could still win in that instant; no primitive on such a
+    /// volume prevents it.
+    static func renameOverClaimedName(_ source: URL, to target: URL) throws {
+        let descriptor = open(target.path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else { throw placementError(forCreateErrno: errno) }
+        var claimed = stat()
+        let knowsClaim = fstat(descriptor, &claimed) == 0
+        close(descriptor)
+        guard rename(source.path, target.path) == 0 else {
+            let code = errno
+            var current = stat()
+            // Drop the placeholder, but only if it is still the file this call created.
+            if knowsClaim, lstat(target.path, &current) == 0, current.st_dev == claimed.st_dev, current.st_ino == claimed.st_ino {
+                unlink(target.path)
+            }
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)])
+        }
+    }
+
+    /// The error for a failed exclusive create of an output name.
+    static func placementError(forCreateErrno code: Int32) -> Error {
+        switch code {
+        case EEXIST:
+            return CocoaError(.fileWriteFileExists)
+        case ENOTSUP, EOPNOTSUPP, EINVAL, ENOSYS:
+            return PlacementError.exclusivePlacementUnsupported
+        default:
+            return CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)])
+        }
+    }
+}
+
+/// An output could not be placed without risking the replacement of a file.
+public enum PlacementError: Error, Equatable, Sendable {
+    /// The destination volume supports neither an exclusive rename nor an exclusive create.
+    case exclusivePlacementUnsupported
+}
+
+/// The exclusive-rename syscall behind `OutputPlacer`, as a seam for tests that must reach the
+/// paths a volume without `RENAME_EXCL` takes. `attempt` returns 0, or the `errno` of the failure.
+struct ExclusiveRename: Sendable {
+    let attempt: @Sendable (_ source: String, _ target: String) -> Int32
+
+    static let system = ExclusiveRename { source, target in
+        renamex_np(source, target, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
     }
 }
 
