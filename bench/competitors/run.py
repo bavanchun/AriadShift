@@ -92,7 +92,7 @@ def terminate_process_tree(process):
     if hasattr(os, "killpg"):
         try:
             os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
         try:
             process.wait(timeout=2)
@@ -101,30 +101,38 @@ def terminate_process_tree(process):
         # The leader can exit before a grandchild that ignores SIGTERM.
         try:
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
-        process.wait(timeout=2)
+        try:
+            if process.returncode is None:
+                process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
         return
     import psutil
 
     try:
         parent = psutil.Process(process.pid)
         victims = [*parent.children(recursive=True), parent]
-    except psutil.NoSuchProcess:
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
         victims = []
     for victim in victims:
         try:
             victim.terminate()
-        except psutil.NoSuchProcess:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
     _, alive = psutil.wait_procs(victims, timeout=2)
     for victim in alive:
         try:
             victim.kill()
-        except psutil.NoSuchProcess:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
     psutil.wait_procs(alive, timeout=2)
-    process.wait(timeout=2)
+    try:
+        if process.returncode is None:
+            process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 class Runner:
@@ -162,9 +170,22 @@ class Runner:
                             if (started + limit) - time.monotonic() <= 0:
                                 raise
             except BaseException as exc:
-                terminate_process_tree(process)
+                cleanup_exc = None
+                try:
+                    terminate_process_tree(process)
+                except Exception as err:
+                    cleanup_exc = err
+                if not isinstance(exc, Exception):
+                    if cleanup_exc is not None and hasattr(exc, "add_note"):
+                        exc.add_note(f"terminate_process_tree error: {cleanup_exc}")
+                    raise exc
                 if isinstance(exc, subprocess.TimeoutExpired):
-                    raise HarnessError(f"Timed out after {limit:.2f}s: {' '.join(map(str, command[:4]))}") from exc
+                    timeout_err = HarnessError(f"Timed out after {limit:.2f}s: {' '.join(map(str, command[:4]))}")
+                    if cleanup_exc is not None:
+                        timeout_err.__context__ = cleanup_exc
+                    raise timeout_err from exc
+                if cleanup_exc is not None:
+                    raise cleanup_exc from exc
                 raise
             finally:
                 record.update(elapsed_ms=(time.monotonic() - started) * 1000, exit_code=process.returncode)
