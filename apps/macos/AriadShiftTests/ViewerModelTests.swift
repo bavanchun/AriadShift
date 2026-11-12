@@ -255,6 +255,46 @@ final class ViewerModelTests: XCTestCase {
         XCTAssertEqual(viewer.currentPageNumber, 777)
     }
 
+    func testAFindEndThatArrivesWithNoSearchRunningIsIgnored() async throws {
+        let viewer = try await openedViewer()
+        await search(viewer, "Page")
+        XCTAssertGreaterThan(viewer.find.matchCount, 0)
+        viewer.pdfView.highlightedSelections = nil
+        XCTAssertFalse(viewer.find.isSearching)
+
+        // The notification a cancelled search could still deliver late: it must not touch a finished state.
+        let delegate = try XCTUnwrap(viewer.document?.delegate)
+        delegate.documentDidEndDocumentFind?(Notification(name: .PDFDocumentDidEndFind))
+
+        XCTAssertFalse(viewer.find.isSearching)
+        XCTAssertNil(viewer.pdfView.highlightedSelections, "an end with no search running changes nothing")
+    }
+
+    func testASearchStartedAfterACancelledOneStillEnds() async throws {
+        let viewer = try await openedViewer("pdf-tools/large-1000-pages.pdf")
+        viewer.find.search("Thousand")
+        viewer.find.cancel()
+        await search(viewer, "Page 12 of 1000")
+        XCTAssertFalse(viewer.find.isSearching, "the later search is not left waiting for an end that was spent on the cancelled one")
+        XCTAssertGreaterThanOrEqual(viewer.find.matchCount, 1)
+    }
+
+    // MARK: - Documents without pages
+
+    func testADocumentWithoutPagesClearsTheViewAndFails() async throws {
+        let viewer = try await openedViewer()
+        XCTAssertNotNil(viewer.pdfView.document)
+
+        viewer.install(PDFDocument())
+
+        XCTAssertEqual(viewer.loadState, .failed)
+        XCTAssertNil(viewer.pdfView.document, "the earlier document is not left on screen")
+        XCTAssertEqual(viewer.pageCount, 0)
+        XCTAssertEqual(viewer.currentPageNumber, 1)
+        XCTAssertNil(viewer.thumbnails)
+        XCTAssertTrue(viewer.selection.pages.isEmpty)
+    }
+
     // MARK: - Text selection and copy
 
     func testSelectAllThenCopyPutsThePageTextOnThePasteboard() async throws {

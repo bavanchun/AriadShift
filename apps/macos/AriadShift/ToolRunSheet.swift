@@ -180,7 +180,7 @@ struct ToolRunSheet: View {
                     }
                 }
                     .keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("run.cancel")
+                    .accessibilityIdentifier("run.cancel.running")
             case let .finished(result):
                 if let first = result.files.first {
                     Button(String(localized: "mac.run.reveal")) { ToolRunModel.reveal(result.files) }

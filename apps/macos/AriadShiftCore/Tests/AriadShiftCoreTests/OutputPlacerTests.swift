@@ -250,17 +250,27 @@ final class OutputPlacerTests: XCTestCase {
         let image = directory.appendingPathComponent("scratch.dmg")
         let mountPoint = directory.appendingPathComponent("mount", isDirectory: true)
         try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
-        addTeardownBlock { Self.detachImages(at: image) }
+        // Before an attach is tried nothing can be mounted, so a failing `hdiutil info` in the teardown of a
+        // test that skipped (a locked-down runner) must not turn the skip into a failure.
+        let attach = AttachAttempt()
+        addTeardownBlock { Self.detachImages(at: image, mayBeAttached: attach.started) }
 
         guard let create = try? Self.hdiutil(["create", "-size", "8m", "-fs", "APFS", "-volname", "ashift-scratch", image.path]),
             create.status == 0
         else { throw XCTSkip("hdiutil cannot create a disk image here") }
         // -nobrowse keeps Finder and Spotlight away from the scratch volume.
-        guard let attach = try? Self.hdiutil(["attach", "-nobrowse", "-noverify", "-plist", "-mountpoint", mountPoint.path, image.path]),
-            attach.status == 0,
-            let mounted = Self.mountPoint(inAttachPlist: attach.output)
+        attach.started = true
+        guard let attached = try? Self.hdiutil(["attach", "-nobrowse", "-noverify", "-plist", "-mountpoint", mountPoint.path, image.path]),
+            attached.status == 0,
+            let mounted = Self.mountPoint(inAttachPlist: attached.output)
         else { throw XCTSkip("hdiutil cannot attach a disk image here") }
         return mounted
+    }
+
+    /// Whether the test got as far as trying to attach the image. It is set in the test body and read
+    /// by the teardown block after the body has ended, never concurrently.
+    private final class AttachAttempt: @unchecked Sendable {
+        var started = false
     }
 
     private struct HdiutilResult {
@@ -303,10 +313,12 @@ final class OutputPlacerTests: XCTestCase {
     }
 
     /// Detaches every attached image whose file is `image`, by the device node of its whole disk.
-    private static func detachImages(at image: URL) {
+    /// Without an attempt to attach (`mayBeAttached` false) there is nothing to detach, and a failed
+    /// listing is not reported; after one, a failed listing leaves a volume behind and fails the test.
+    private static func detachImages(at image: URL, mayBeAttached: Bool) {
         let wanted = image.resolvingSymlinksInPath().path
         guard let info = try? hdiutil(["info", "-plist"]), info.status == 0 else {
-            XCTFail("could not list attached disk images to detach \(wanted)")
+            if mayBeAttached { XCTFail("could not list attached disk images to detach \(wanted)") }
             return
         }
         let images = plist(info.output)?["images"] as? [[String: Any]] ?? []
