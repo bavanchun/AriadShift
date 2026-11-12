@@ -120,7 +120,13 @@
       "tools": "工具",
       "zoom": "{action, select, in {放大} out {缩小} actual {实际大小} other {缩放}}",
       "check_updates": "检查更新…",
-      "show_welcome": "显示欢迎页"
+      "show_welcome": "显示欢迎页",
+      "fit_width": "适合宽度",
+      "display_mode": "{mode, select, single {单页} continuous {连续滚动} twoUp {双页} other {页面显示}}",
+      "go_to_page": "前往页面…",
+      "find": "查找…",
+      "find_next": "查找下一个",
+      "find_previous": "查找上一个"
     },
     "tools": {
       "group": "{group, select, organize {整理} convert {转换} optimize {优化} security {安全} overlay {叠加} ocr {OCR 与扫描件} annotate {批注} forms {表单} sign {签名} redact {涂黑} compare {比较与验证} edit {编辑} ai {AI} automation {自动化} other {其他工具}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "页面",
-      "placeholder": "页面缩略图将显示在这里。"
+      "placeholder": "页面缩略图将显示在这里。",
+      "page": "第 {number} 页，共 {total} 页"
     },
     "viewer": {
-      "placeholder": "页面查看器将显示在这里。"
+      "placeholder": "页面查看器将显示在这里。",
+      "title": "页面查看器",
+      "loading": "正在打开文档…"
     },
     "toolbar": {
-      "inspector": "文稿信息"
+      "inspector": "文稿信息",
+      "page_grid": "页面网格",
+      "previous_page": "上一页",
+      "next_page": "下一页",
+      "page_field": "页码",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "文稿",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "此文件不是有效的 PDF。"
+    },
+    "find": {
+      "prompt": "在文档中查找",
+      "count": "{current} / {total}",
+      "none": "无匹配项",
+      "searching": "正在搜索…",
+      "done": "完成"
+    },
+    "grid": {
+      "hint": "拖动页面可重新排序。每次更改都会另存为原文件旁的新文件。",
+      "unavailable": "引擎准备就绪前，无法编辑页面。",
+      "rotate": "旋转所选页面",
+      "delete": "删除所选页面",
+      "move_earlier": "移到上一页之前",
+      "move_later": "移到下一页之后",
+      "drop_end": "拖放到此处可移到末尾"
     }
   },
   "web": {

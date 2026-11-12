@@ -120,7 +120,13 @@
       "tools": "Ferramentas",
       "zoom": "{action, select, in {Ampliar} out {Reduzir} actual {Tamanho real} other {Zoom}}",
       "check_updates": "Buscar atualizações…",
-      "show_welcome": "Mostrar boas-vindas"
+      "show_welcome": "Mostrar boas-vindas",
+      "fit_width": "Ajustar à largura",
+      "display_mode": "{mode, select, single {Página única} continuous {Rolagem contínua} twoUp {Duas páginas} other {Exibição de páginas}}",
+      "go_to_page": "Ir para a página…",
+      "find": "Buscar…",
+      "find_next": "Buscar próximo",
+      "find_previous": "Buscar anterior"
     },
     "tools": {
       "group": "{group, select, organize {Organizar} convert {Converter} optimize {Otimizar} security {Segurança} overlay {Sobrepor} ocr {OCR e digitalizações} annotate {Anotar} forms {Formulários} sign {Assinar} redact {Tarjar} compare {Comparar e validar} edit {Editar} ai {IA} automation {Automação} other {Outras ferramentas}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Páginas",
-      "placeholder": "As miniaturas das páginas aparecerão aqui."
+      "placeholder": "As miniaturas das páginas aparecerão aqui.",
+      "page": "Página {number} de {total}"
     },
     "viewer": {
-      "placeholder": "O visualizador de páginas aparecerá aqui."
+      "placeholder": "O visualizador de páginas aparecerá aqui.",
+      "title": "Visualizador de páginas",
+      "loading": "Abrindo o documento…"
     },
     "toolbar": {
-      "inspector": "Informações do documento"
+      "inspector": "Informações do documento",
+      "page_grid": "Grade de páginas",
+      "previous_page": "Página anterior",
+      "next_page": "Próxima página",
+      "page_field": "Número da página",
+      "page_of": "de {total}"
     },
     "inspector": {
       "title": "Documento",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Este arquivo não é um PDF válido."
+    },
+    "find": {
+      "prompt": "Buscar no documento",
+      "count": "{current} de {total}",
+      "none": "Nenhuma correspondência",
+      "searching": "Buscando…",
+      "done": "Concluído"
+    },
+    "grid": {
+      "hint": "Arraste as páginas para reordená-las. Cada alteração é salva como um novo arquivo ao lado do original.",
+      "unavailable": "A edição de páginas não está disponível até o mecanismo estar pronto.",
+      "rotate": "Girar as páginas selecionadas",
+      "delete": "Excluir as páginas selecionadas",
+      "move_earlier": "Mover antes da página anterior",
+      "move_later": "Mover depois da próxima página",
+      "drop_end": "Solte aqui para mover para o final"
     }
   },
   "web": {

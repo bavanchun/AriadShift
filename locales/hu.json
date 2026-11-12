@@ -120,7 +120,13 @@
       "tools": "Eszközök",
       "zoom": "{action, select, in {Nagyítás} out {Kicsinyítés} actual {Tényleges méret} other {Zoom}}",
       "check_updates": "Frissítések keresése…",
-      "show_welcome": "Üdvözlőképernyő megjelenítése"
+      "show_welcome": "Üdvözlőképernyő megjelenítése",
+      "fit_width": "Szélességhez igazítás",
+      "display_mode": "{mode, select, single {Egy oldal} continuous {Folyamatos görgetés} twoUp {Két oldal} other {Oldalmegjelenítés}}",
+      "go_to_page": "Ugrás oldalra…",
+      "find": "Keresés…",
+      "find_next": "Következő keresése",
+      "find_previous": "Előző keresése"
     },
     "tools": {
       "group": "{group, select, organize {Rendezés} convert {Átalakítás} optimize {Optimalizálás} security {Biztonság} overlay {Rátét} ocr {OCR és szkennelések} annotate {Jegyzetelés} forms {Űrlapok} sign {Aláírás} redact {Kitakarás} compare {Összehasonlítás és ellenőrzés} edit {Szerkesztés} ai {MI} automation {Automatizálás} other {További eszközök}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Oldalak",
-      "placeholder": "Az oldalak miniatűrjei itt jelennek meg."
+      "placeholder": "Az oldalak miniatűrjei itt jelennek meg.",
+      "page": "{number}. oldal, összesen {total}"
     },
     "viewer": {
-      "placeholder": "Az oldalmegjelenítő itt jelenik meg."
+      "placeholder": "Az oldalmegjelenítő itt jelenik meg.",
+      "title": "Oldalmegjelenítő",
+      "loading": "Dokumentum megnyitása…"
     },
     "toolbar": {
-      "inspector": "Dokumentuminformáció"
+      "inspector": "Dokumentuminformáció",
+      "page_grid": "Oldalrács",
+      "previous_page": "Előző oldal",
+      "next_page": "Következő oldal",
+      "page_field": "Oldalszám",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "Dokumentum",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Ez a fájl nem érvényes PDF."
+    },
+    "find": {
+      "prompt": "Keresés a dokumentumban",
+      "count": "{current} / {total}",
+      "none": "Nincs találat",
+      "searching": "Keresés…",
+      "done": "Kész"
+    },
+    "grid": {
+      "hint": "Húzza az oldalakat az átrendezésükhöz. Minden módosítás új fájlként mentődik az eredeti mellé.",
+      "unavailable": "Az oldalszerkesztés addig nem érhető el, amíg a motor nem áll készen.",
+      "rotate": "Kijelölt oldalak elforgatása",
+      "delete": "Kijelölt oldalak törlése",
+      "move_earlier": "Áthelyezés az előző oldal elé",
+      "move_later": "Áthelyezés a következő oldal mögé",
+      "drop_end": "Engedje ide a végére helyezéshez"
     }
   },
   "web": {

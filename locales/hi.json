@@ -120,7 +120,13 @@
       "tools": "टूल",
       "zoom": "{action, select, in {ज़ूम इन करें} out {ज़ूम आउट करें} actual {वास्तविक आकार} other {ज़ूम}}",
       "check_updates": "अपडेट के लिए जाँचें…",
-      "show_welcome": "स्वागत दिखाएँ"
+      "show_welcome": "स्वागत दिखाएँ",
+      "fit_width": "चौड़ाई के अनुसार",
+      "display_mode": "{mode, select, single {एकल पृष्ठ} continuous {लगातार स्क्रॉल} twoUp {दो पृष्ठ} other {पृष्ठ प्रदर्शन}}",
+      "go_to_page": "पृष्ठ पर जाएँ…",
+      "find": "खोजें…",
+      "find_next": "अगला खोजें",
+      "find_previous": "पिछला खोजें"
     },
     "tools": {
       "group": "{group, select, organize {व्यवस्थित करें} convert {रूपांतरित करें} optimize {अनुकूलित करें} security {सुरक्षा} overlay {ओवरले} ocr {OCR और स्कैन} annotate {टिप्पणी जोड़ें} forms {फ़ॉर्म} sign {हस्ताक्षर करें} redact {छिपाएँ} compare {तुलना और सत्यापन} edit {संपादित करें} ai {AI} automation {स्वचालन} other {अन्य टूल}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "पृष्ठ",
-      "placeholder": "पृष्ठों के थंबनेल यहाँ दिखाई देंगे।"
+      "placeholder": "पृष्ठों के थंबनेल यहाँ दिखाई देंगे।",
+      "page": "पृष्ठ {number} / {total}"
     },
     "viewer": {
-      "placeholder": "पृष्ठ व्यूअर यहाँ दिखाई देगा।"
+      "placeholder": "पृष्ठ व्यूअर यहाँ दिखाई देगा।",
+      "title": "पृष्ठ व्यूअर",
+      "loading": "दस्तावेज़ खुल रहा है…"
     },
     "toolbar": {
-      "inspector": "दस्तावेज़ की जानकारी"
+      "inspector": "दस्तावेज़ की जानकारी",
+      "page_grid": "पृष्ठ ग्रिड",
+      "previous_page": "पिछला पृष्ठ",
+      "next_page": "अगला पृष्ठ",
+      "page_field": "पृष्ठ संख्या",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "दस्तावेज़",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "यह फ़ाइल मान्य PDF नहीं है।"
+    },
+    "find": {
+      "prompt": "दस्तावेज़ में खोजें",
+      "count": "{current} / {total}",
+      "none": "कोई मिलान नहीं",
+      "searching": "खोज जारी है…",
+      "done": "हो गया"
+    },
+    "grid": {
+      "hint": "पृष्ठों को दोबारा क्रमित करने के लिए खींचें। हर बदलाव मूल फ़ाइल के बगल में नई फ़ाइल के रूप में सहेजा जाता है।",
+      "unavailable": "इंजन तैयार होने तक पृष्ठ संपादन उपलब्ध नहीं है।",
+      "rotate": "चुने हुए पृष्ठ घुमाएँ",
+      "delete": "चुने हुए पृष्ठ हटाएँ",
+      "move_earlier": "पिछले पृष्ठ से पहले ले जाएँ",
+      "move_later": "अगले पृष्ठ के बाद ले जाएँ",
+      "drop_end": "अंत में ले जाने के लिए यहाँ छोड़ें"
     }
   },
   "web": {

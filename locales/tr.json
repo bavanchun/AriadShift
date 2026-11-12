@@ -120,7 +120,13 @@
       "tools": "Araçlar",
       "zoom": "{action, select, in {Yakınlaştır} out {Uzaklaştır} actual {Gerçek Boyut} other {Yakınlaştırma}}",
       "check_updates": "Güncellemeleri Denetle…",
-      "show_welcome": "Karşılama Ekranını Göster"
+      "show_welcome": "Karşılama Ekranını Göster",
+      "fit_width": "Genişliğe Sığdır",
+      "display_mode": "{mode, select, single {Tek Sayfa} continuous {Sürekli Kaydırma} twoUp {İki Sayfa} other {Sayfa Görünümü}}",
+      "go_to_page": "Sayfaya Git…",
+      "find": "Bul…",
+      "find_next": "Sonrakini Bul",
+      "find_previous": "Öncekini Bul"
     },
     "tools": {
       "group": "{group, select, organize {Düzenle} convert {Dönüştür} optimize {Optimize et} security {Güvenlik} overlay {Bindirme} ocr {OCR ve taramalar} annotate {Not ekle} forms {Formlar} sign {İmzala} redact {Karart} compare {Karşılaştır ve doğrula} edit {Değiştir} ai {Yapay zeka} automation {Otomasyon} other {Diğer araçlar}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Sayfalar",
-      "placeholder": "Sayfa küçük resimleri burada görünecek."
+      "placeholder": "Sayfa küçük resimleri burada görünecek.",
+      "page": "Sayfa {number} / {total}"
     },
     "viewer": {
-      "placeholder": "Sayfa görüntüleyici burada görünecek."
+      "placeholder": "Sayfa görüntüleyici burada görünecek.",
+      "title": "Sayfa görüntüleyici",
+      "loading": "Belge açılıyor…"
     },
     "toolbar": {
-      "inspector": "Belge Bilgileri"
+      "inspector": "Belge Bilgileri",
+      "page_grid": "Sayfa Izgarası",
+      "previous_page": "Önceki Sayfa",
+      "next_page": "Sonraki Sayfa",
+      "page_field": "Sayfa numarası",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "Belge",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Bu dosya geçerli bir PDF değil."
+    },
+    "find": {
+      "prompt": "Belgede bul",
+      "count": "{current} / {total}",
+      "none": "Eşleşme yok",
+      "searching": "Aranıyor…",
+      "done": "Bitti"
+    },
+    "grid": {
+      "hint": "Sayfaları yeniden sıralamak için sürükleyin. Her değişiklik, orijinalin yanına yeni bir dosya olarak kaydedilir.",
+      "unavailable": "Motor hazır olana kadar sayfa düzenleme kullanılamaz.",
+      "rotate": "Seçili Sayfaları Döndür",
+      "delete": "Seçili Sayfaları Sil",
+      "move_earlier": "Önceki sayfanın önüne taşı",
+      "move_later": "Sonraki sayfanın arkasına taşı",
+      "drop_end": "Sona taşımak için buraya bırakın"
     }
   },
   "web": {

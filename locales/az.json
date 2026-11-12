@@ -120,7 +120,13 @@
       "tools": "Alətlər",
       "zoom": "{action, select, in {Yaxınlaşdır} out {Uzaqlaşdır} actual {Faktiki ölçü} other {Miqyas}}",
       "check_updates": "Yenilikləri yoxla…",
-      "show_welcome": "Salamlama ekranını göstər"
+      "show_welcome": "Salamlama ekranını göstər",
+      "fit_width": "Eninə sığdır",
+      "display_mode": "{mode, select, single {Tək səhifə} continuous {Fasiləsiz sürüşdürmə} twoUp {İki səhifə} other {Səhifə görünüşü}}",
+      "go_to_page": "Səhifəyə keç…",
+      "find": "Tap…",
+      "find_next": "Növbətini tap",
+      "find_previous": "Əvvəlkini tap"
     },
     "tools": {
       "group": "{group, select, organize {Təşkil et} convert {Çevir} optimize {Optimallaşdır} security {Təhlükəsizlik} overlay {Üstə qoyma} ocr {OCR və skanlar} annotate {Qeyd əlavə et} forms {Formalar} sign {İmzala} redact {Gizlət} compare {Müqayisə et və yoxla} edit {Redaktə et} ai {Süni intellekt} automation {Avtomatlaşdırma} other {Digər alətlər}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Səhifələr",
-      "placeholder": "Səhifələrin miniatürləri burada görünəcək."
+      "placeholder": "Səhifələrin miniatürləri burada görünəcək.",
+      "page": "Səhifə {number} / {total}"
     },
     "viewer": {
-      "placeholder": "Səhifə görüntüləyicisi burada görünəcək."
+      "placeholder": "Səhifə görüntüləyicisi burada görünəcək.",
+      "title": "Səhifə görüntüləyicisi",
+      "loading": "Sənəd açılır…"
     },
     "toolbar": {
-      "inspector": "Sənəd məlumatı"
+      "inspector": "Sənəd məlumatı",
+      "page_grid": "Səhifə şəbəkəsi",
+      "previous_page": "Əvvəlki səhifə",
+      "next_page": "Növbəti səhifə",
+      "page_field": "Səhifə nömrəsi",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "Sənəd",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Bu fayl etibarlı PDF deyil."
+    },
+    "find": {
+      "prompt": "Sənəddə axtar",
+      "count": "{current} / {total}",
+      "none": "Uyğunluq yoxdur",
+      "searching": "Axtarılır…",
+      "done": "Hazırdır"
+    },
+    "grid": {
+      "hint": "Səhifələri yenidən sıralamaq üçün sürüşdürün. Hər dəyişiklik orijinalın yanında yeni fayl kimi saxlanılır.",
+      "unavailable": "Mühərrik hazır olana qədər səhifə redaktəsi mövcud deyil.",
+      "rotate": "Seçilmiş səhifələri döndər",
+      "delete": "Seçilmiş səhifələri sil",
+      "move_earlier": "Əvvəlki səhifədən əvvələ apar",
+      "move_later": "Növbəti səhifədən sonraya apar",
+      "drop_end": "Sona aparmaq üçün bura buraxın"
     }
   },
   "web": {

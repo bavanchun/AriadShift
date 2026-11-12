@@ -120,7 +120,13 @@
       "tools": "Instrumente",
       "zoom": "{action, select, in {Mărește} out {Micșorează} actual {Dimensiune reală} other {Zoom}}",
       "check_updates": "Caută actualizări…",
-      "show_welcome": "Afișează ecranul de bun venit"
+      "show_welcome": "Afișează ecranul de bun venit",
+      "fit_width": "Potrivire la lățime",
+      "display_mode": "{mode, select, single {Pagină unică} continuous {Derulare continuă} twoUp {Două pagini} other {Afișarea paginilor}}",
+      "go_to_page": "Salt la pagina…",
+      "find": "Caută…",
+      "find_next": "Caută următorul",
+      "find_previous": "Caută anteriorul"
     },
     "tools": {
       "group": "{group, select, organize {Organizează} convert {Convertește} optimize {Optimizează} security {Securitate} overlay {Suprapunere} ocr {OCR și scanări} annotate {Adnotează} forms {Formulare} sign {Semnează} redact {Cenzurează} compare {Compară și validează} edit {Editează} ai {IA} automation {Automatizare} other {Alte instrumente}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Pagini",
-      "placeholder": "Miniaturile paginilor vor apărea aici."
+      "placeholder": "Miniaturile paginilor vor apărea aici.",
+      "page": "Pagina {number} din {total}"
     },
     "viewer": {
-      "placeholder": "Vizualizatorul de pagini va apărea aici."
+      "placeholder": "Vizualizatorul de pagini va apărea aici.",
+      "title": "Vizualizator de pagini",
+      "loading": "Se deschide documentul…"
     },
     "toolbar": {
-      "inspector": "Informații despre document"
+      "inspector": "Informații despre document",
+      "page_grid": "Grilă de pagini",
+      "previous_page": "Pagina anterioară",
+      "next_page": "Pagina următoare",
+      "page_field": "Numărul paginii",
+      "page_of": "din {total}"
     },
     "inspector": {
       "title": "Document",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Acest fișier nu este un PDF valid."
+    },
+    "find": {
+      "prompt": "Caută în document",
+      "count": "{current} din {total}",
+      "none": "Nicio potrivire",
+      "searching": "Se caută…",
+      "done": "Gata"
+    },
+    "grid": {
+      "hint": "Trageți paginile pentru a le reordona. Fiecare modificare este salvată ca fișier nou lângă original.",
+      "unavailable": "Editarea paginilor nu este disponibilă până când motorul este pregătit.",
+      "rotate": "Rotește paginile selectate",
+      "delete": "Șterge paginile selectate",
+      "move_earlier": "Mută înaintea paginii anterioare",
+      "move_later": "Mută după pagina următoare",
+      "drop_end": "Plasați aici pentru a muta la sfârșit"
     }
   },
   "web": {

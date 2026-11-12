@@ -120,7 +120,13 @@
       "tools": "Verktyg",
       "zoom": "{action, select, in {Zooma in} out {Zooma ut} actual {Verklig storlek} other {Zoom}}",
       "check_updates": "Sök efter uppdateringar…",
-      "show_welcome": "Visa välkomstskärmen"
+      "show_welcome": "Visa välkomstskärmen",
+      "fit_width": "Anpassa till bredd",
+      "display_mode": "{mode, select, single {Enkel sida} continuous {Kontinuerlig rullning} twoUp {Två sidor} other {Sidvisning}}",
+      "go_to_page": "Gå till sida…",
+      "find": "Sök…",
+      "find_next": "Sök nästa",
+      "find_previous": "Sök föregående"
     },
     "tools": {
       "group": "{group, select, organize {Organisera} convert {Konvertera} optimize {Optimera} security {Säkerhet} overlay {Överlagring} ocr {OCR och skanningar} annotate {Kommentera} forms {Formulär} sign {Signera} redact {Maskera} compare {Jämför och validera} edit {Redigera} ai {AI} automation {Automatisering} other {Övriga verktyg}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Sidor",
-      "placeholder": "Miniatyrer av sidor visas här."
+      "placeholder": "Miniatyrer av sidor visas här.",
+      "page": "Sida {number} av {total}"
     },
     "viewer": {
-      "placeholder": "Sidvisaren visas här."
+      "placeholder": "Sidvisaren visas här.",
+      "title": "Sidvisare",
+      "loading": "Öppnar dokumentet…"
     },
     "toolbar": {
-      "inspector": "Dokumentinformation"
+      "inspector": "Dokumentinformation",
+      "page_grid": "Sidrutnät",
+      "previous_page": "Föregående sida",
+      "next_page": "Nästa sida",
+      "page_field": "Sidnummer",
+      "page_of": "av {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Den här filen är inte en giltig PDF."
+    },
+    "find": {
+      "prompt": "Sök i dokumentet",
+      "count": "{current} av {total}",
+      "none": "Inga träffar",
+      "searching": "Söker…",
+      "done": "Klar"
+    },
+    "grid": {
+      "hint": "Dra sidor för att ändra ordning. Varje ändring sparas som en ny fil bredvid originalet.",
+      "unavailable": "Sidredigering är inte tillgänglig förrän motorn är klar.",
+      "rotate": "Rotera markerade sidor",
+      "delete": "Radera markerade sidor",
+      "move_earlier": "Flytta före föregående sida",
+      "move_later": "Flytta efter nästa sida",
+      "drop_end": "Släpp här för att flytta till slutet"
     }
   },
   "web": {

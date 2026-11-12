@@ -120,7 +120,13 @@
       "tools": "Orodja",
       "zoom": "{action, select, in {Povečaj} out {Pomanjšaj} actual {Dejanska velikost} other {Zoom}}",
       "check_updates": "Preveri posodobitve…",
-      "show_welcome": "Pokaži dobrodošlico"
+      "show_welcome": "Pokaži dobrodošlico",
+      "fit_width": "Prilagodi širini",
+      "display_mode": "{mode, select, single {Ena stran} continuous {Neprekinjeno drsenje} twoUp {Dve strani} other {Prikaz strani}}",
+      "go_to_page": "Pojdi na stran…",
+      "find": "Najdi…",
+      "find_next": "Najdi naslednjo",
+      "find_previous": "Najdi prejšnjo"
     },
     "tools": {
       "group": "{group, select, organize {Organiziraj} convert {Pretvori} optimize {Optimiraj} security {Varnost} overlay {Prekrivanje} ocr {OCR in skeni} annotate {Dodaj opombe} forms {Obrazci} sign {Podpiši} redact {Zatemni} compare {Primerjaj in preveri} edit {Uredi} ai {UI} automation {Avtomatizacija} other {Druga orodja}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Strani",
-      "placeholder": "Sličice strani bodo prikazane tukaj."
+      "placeholder": "Sličice strani bodo prikazane tukaj.",
+      "page": "Stran {number} od {total}"
     },
     "viewer": {
-      "placeholder": "Pregledovalnik strani bo prikazan tukaj."
+      "placeholder": "Pregledovalnik strani bo prikazan tukaj.",
+      "title": "Pregledovalnik strani",
+      "loading": "Odpiranje dokumenta …"
     },
     "toolbar": {
-      "inspector": "Podatki o dokumentu"
+      "inspector": "Podatki o dokumentu",
+      "page_grid": "Mreža strani",
+      "previous_page": "Prejšnja stran",
+      "next_page": "Naslednja stran",
+      "page_field": "Številka strani",
+      "page_of": "od {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Ta datoteka ni veljaven PDF."
+    },
+    "find": {
+      "prompt": "Najdi v dokumentu",
+      "count": "{current} od {total}",
+      "none": "Ni zadetkov",
+      "searching": "Iskanje …",
+      "done": "Končano"
+    },
+    "grid": {
+      "hint": "Povlecite strani, da jih preuredite. Vsaka sprememba se shrani kot nova datoteka ob izvirniku.",
+      "unavailable": "Urejanje strani ni na voljo, dokler mehanizem ni pripravljen.",
+      "rotate": "Zavrti izbrane strani",
+      "delete": "Izbriši izbrane strani",
+      "move_earlier": "Premakni pred prejšnjo stran",
+      "move_later": "Premakni za naslednjo stranjo",
+      "drop_end": "Spustite tukaj za premik na konec"
     }
   },
   "web": {

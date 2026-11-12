@@ -120,7 +120,13 @@
       "tools": "Ferramentas",
       "zoom": "{action, select, in {Ampliar} out {Reducir} actual {Tamaño real} other {Zoom}}",
       "check_updates": "Buscar actualizacións…",
-      "show_welcome": "Amosar a benvida"
+      "show_welcome": "Amosar a benvida",
+      "fit_width": "Axustar ao ancho",
+      "display_mode": "{mode, select, single {Unha páxina} continuous {Desprazamento continuo} twoUp {Dúas páxinas} other {Visualización de páxinas}}",
+      "go_to_page": "Ir á páxina…",
+      "find": "Buscar…",
+      "find_next": "Buscar seguinte",
+      "find_previous": "Buscar anterior"
     },
     "tools": {
       "group": "{group, select, organize {Organizar} convert {Converter} optimize {Optimizar} security {Seguridade} overlay {Superpoñer} ocr {OCR e dixitalizacións} annotate {Anotar} forms {Formularios} sign {Asinar} redact {Censurar} compare {Comparar e validar} edit {Editar} ai {IA} automation {Automatización} other {Outras ferramentas}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Páxinas",
-      "placeholder": "As miniaturas das páxinas aparecerán aquí."
+      "placeholder": "As miniaturas das páxinas aparecerán aquí.",
+      "page": "Páxina {number} de {total}"
     },
     "viewer": {
-      "placeholder": "O visor de páxinas aparecerá aquí."
+      "placeholder": "O visor de páxinas aparecerá aquí.",
+      "title": "Visor de páxinas",
+      "loading": "Abrindo o documento…"
     },
     "toolbar": {
-      "inspector": "Información do documento"
+      "inspector": "Información do documento",
+      "page_grid": "Grella de páxinas",
+      "previous_page": "Páxina anterior",
+      "next_page": "Páxina seguinte",
+      "page_field": "Número de páxina",
+      "page_of": "de {total}"
     },
     "inspector": {
       "title": "Documento",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Este ficheiro non é un PDF válido."
+    },
+    "find": {
+      "prompt": "Buscar no documento",
+      "count": "{current} de {total}",
+      "none": "Sen coincidencias",
+      "searching": "Buscando…",
+      "done": "Feito"
+    },
+    "grid": {
+      "hint": "Arrastra as páxinas para reordenalas. Cada cambio gárdase como un ficheiro novo xunto ao orixinal.",
+      "unavailable": "A edición de páxinas non está dispoñible ata que o motor estea listo.",
+      "rotate": "Xirar as páxinas seleccionadas",
+      "delete": "Eliminar as páxinas seleccionadas",
+      "move_earlier": "Mover antes da páxina anterior",
+      "move_later": "Mover despois da páxina seguinte",
+      "drop_end": "Solta aquí para mover ao final"
     }
   },
   "web": {

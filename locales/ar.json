@@ -120,7 +120,13 @@
       "tools": "الأدوات",
       "zoom": "{action, select, in {تكبير} out {تصغير} actual {الحجم الفعلي} other {تقريب}}",
       "check_updates": "التحقق من وجود تحديثات…",
-      "show_welcome": "إظهار الترحيب"
+      "show_welcome": "إظهار الترحيب",
+      "fit_width": "ملاءمة العرض",
+      "display_mode": "{mode, select, single {صفحة واحدة} continuous {تمرير متواصل} twoUp {صفحتان} other {عرض الصفحة}}",
+      "go_to_page": "انتقال إلى صفحة…",
+      "find": "بحث…",
+      "find_next": "البحث عن التالي",
+      "find_previous": "البحث عن السابق"
     },
     "tools": {
       "group": "{group, select, organize {تنظيم} convert {تحويل} optimize {تحسين} security {الأمان} overlay {تراكب} ocr {OCR والمسوحات} annotate {إضافة تعليقات} forms {النماذج} sign {توقيع} redact {حجب} compare {مقارنة وتحقق} edit {تحرير} ai {الذكاء الاصطناعي} automation {الأتمتة} other {أدوات أخرى}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "الصفحات",
-      "placeholder": "ستظهر الصور المصغّرة للصفحات هنا."
+      "placeholder": "ستظهر الصور المصغّرة للصفحات هنا.",
+      "page": "الصفحة {number} من {total}"
     },
     "viewer": {
-      "placeholder": "سيظهر عارض الصفحات هنا."
+      "placeholder": "سيظهر عارض الصفحات هنا.",
+      "title": "عارض الصفحات",
+      "loading": "جارٍ فتح المستند…"
     },
     "toolbar": {
-      "inspector": "معلومات المستند"
+      "inspector": "معلومات المستند",
+      "page_grid": "شبكة الصفحات",
+      "previous_page": "الصفحة السابقة",
+      "next_page": "الصفحة التالية",
+      "page_field": "رقم الصفحة",
+      "page_of": "من {total}"
     },
     "inspector": {
       "title": "المستند",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "هذا الملف ليس PDF صالحًا."
+    },
+    "find": {
+      "prompt": "بحث في المستند",
+      "count": "{current} من {total}",
+      "none": "لا توجد نتائج",
+      "searching": "جارٍ البحث…",
+      "done": "تم"
+    },
+    "grid": {
+      "hint": "اسحب الصفحات لإعادة ترتيبها. يُحفظ كل تغيير في ملف جديد بجوار الأصل.",
+      "unavailable": "تعديل الصفحات غير متاح إلى أن يصبح المحرّك جاهزًا.",
+      "rotate": "تدوير الصفحات المحددة",
+      "delete": "حذف الصفحات المحددة",
+      "move_earlier": "نقل قبل الصفحة السابقة",
+      "move_later": "نقل بعد الصفحة التالية",
+      "drop_end": "أفلِت هنا للنقل إلى النهاية"
     }
   },
   "web": {

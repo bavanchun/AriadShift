@@ -120,7 +120,13 @@
       "tools": "도구",
       "zoom": "{action, select, in {확대} out {축소} actual {실제 크기} other {확대/축소}}",
       "check_updates": "업데이트 확인…",
-      "show_welcome": "환영 화면 보기"
+      "show_welcome": "환영 화면 보기",
+      "fit_width": "너비에 맞춤",
+      "display_mode": "{mode, select, single {한 페이지} continuous {연속 스크롤} twoUp {두 페이지} other {페이지 표시}}",
+      "go_to_page": "페이지로 이동…",
+      "find": "찾기…",
+      "find_next": "다음 찾기",
+      "find_previous": "이전 찾기"
     },
     "tools": {
       "group": "{group, select, organize {정리} convert {변환} optimize {최적화} security {보안} overlay {오버레이} ocr {OCR 및 스캔} annotate {주석} forms {양식} sign {서명} redact {가리기} compare {비교 및 검증} edit {편집} ai {AI} automation {자동화} other {기타 도구}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "페이지",
-      "placeholder": "페이지 썸네일이 여기에 표시됩니다."
+      "placeholder": "페이지 썸네일이 여기에 표시됩니다.",
+      "page": "{total}페이지 중 {number}페이지"
     },
     "viewer": {
-      "placeholder": "페이지 뷰어가 여기에 표시됩니다."
+      "placeholder": "페이지 뷰어가 여기에 표시됩니다.",
+      "title": "페이지 뷰어",
+      "loading": "문서를 여는 중…"
     },
     "toolbar": {
-      "inspector": "문서 정보"
+      "inspector": "문서 정보",
+      "page_grid": "페이지 격자",
+      "previous_page": "이전 페이지",
+      "next_page": "다음 페이지",
+      "page_field": "페이지 번호",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "문서",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "이 파일은 올바른 PDF가 아닙니다."
+    },
+    "find": {
+      "prompt": "문서에서 찾기",
+      "count": "{current} / {total}",
+      "none": "일치하는 항목 없음",
+      "searching": "검색 중…",
+      "done": "완료"
+    },
+    "grid": {
+      "hint": "페이지를 끌어 순서를 바꾸세요. 변경할 때마다 원본 옆에 새 파일로 저장됩니다.",
+      "unavailable": "엔진이 준비될 때까지 페이지 편집을 사용할 수 없습니다.",
+      "rotate": "선택한 페이지 회전",
+      "delete": "선택한 페이지 삭제",
+      "move_earlier": "이전 페이지 앞으로 이동",
+      "move_later": "다음 페이지 뒤로 이동",
+      "drop_end": "여기에 놓아 맨 끝으로 이동"
     }
   },
   "web": {

@@ -120,7 +120,13 @@
       "tools": "ツール",
       "zoom": "{action, select, in {拡大} out {縮小} actual {実際のサイズ} other {ズーム}}",
       "check_updates": "アップデートを確認…",
-      "show_welcome": "ようこそ画面を表示"
+      "show_welcome": "ようこそ画面を表示",
+      "fit_width": "幅に合わせる",
+      "display_mode": "{mode, select, single {単一ページ} continuous {連続スクロール} twoUp {見開き} other {ページ表示}}",
+      "go_to_page": "ページへ移動…",
+      "find": "検索…",
+      "find_next": "次を検索",
+      "find_previous": "前を検索"
     },
     "tools": {
       "group": "{group, select, organize {整理} convert {変換} optimize {最適化} security {セキュリティ} overlay {オーバーレイ} ocr {OCRとスキャン} annotate {注釈} forms {フォーム} sign {署名} redact {墨消し} compare {比較と検証} edit {編集} ai {AI} automation {自動化} other {その他のツール}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "ページ",
-      "placeholder": "ページのサムネールがここに表示されます。"
+      "placeholder": "ページのサムネールがここに表示されます。",
+      "page": "{total} ページ中 {number} ページ"
     },
     "viewer": {
-      "placeholder": "ページビューアがここに表示されます。"
+      "placeholder": "ページビューアがここに表示されます。",
+      "title": "ページビューア",
+      "loading": "書類を開いています…"
     },
     "toolbar": {
-      "inspector": "書類情報"
+      "inspector": "書類情報",
+      "page_grid": "ページグリッド",
+      "previous_page": "前のページ",
+      "next_page": "次のページ",
+      "page_field": "ページ番号",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "書類",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "このファイルは有効なPDFではありません。"
+    },
+    "find": {
+      "prompt": "書類内を検索",
+      "count": "{current} / {total}",
+      "none": "一致なし",
+      "searching": "検索中…",
+      "done": "完了"
+    },
+    "grid": {
+      "hint": "ページをドラッグして並べ替えます。変更ごとに、元のファイルの隣に新しいファイルとして保存されます。",
+      "unavailable": "エンジンの準備ができるまで、ページ編集は利用できません。",
+      "rotate": "選択したページを回転",
+      "delete": "選択したページを削除",
+      "move_earlier": "前のページの前へ移動",
+      "move_later": "次のページの後ろへ移動",
+      "drop_end": "ここにドロップして末尾へ移動"
     }
   },
   "web": {

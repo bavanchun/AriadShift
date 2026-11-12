@@ -120,7 +120,13 @@
       "tools": "Narzędzia",
       "zoom": "{action, select, in {Powiększ} out {Pomniejsz} actual {Rozmiar rzeczywisty} other {Zoom}}",
       "check_updates": "Sprawdź dostępność aktualizacji…",
-      "show_welcome": "Pokaż ekran powitalny"
+      "show_welcome": "Pokaż ekran powitalny",
+      "fit_width": "Dopasuj do szerokości",
+      "display_mode": "{mode, select, single {Pojedyncza strona} continuous {Przewijanie ciągłe} twoUp {Dwie strony} other {Wyświetlanie stron}}",
+      "go_to_page": "Przejdź do strony…",
+      "find": "Znajdź…",
+      "find_next": "Znajdź następne",
+      "find_previous": "Znajdź poprzednie"
     },
     "tools": {
       "group": "{group, select, organize {Organizuj} convert {Konwertuj} optimize {Optymalizuj} security {Zabezpieczenia} overlay {Nakładka} ocr {OCR i skany} annotate {Dodaj adnotacje} forms {Formularze} sign {Podpisz} redact {Zaczernij} compare {Porównaj i zweryfikuj} edit {Edytuj} ai {AI} automation {Automatyzacja} other {Inne narzędzia}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Strony",
-      "placeholder": "Miniatury stron pojawią się tutaj."
+      "placeholder": "Miniatury stron pojawią się tutaj.",
+      "page": "Strona {number} z {total}"
     },
     "viewer": {
-      "placeholder": "Przeglądarka stron pojawi się tutaj."
+      "placeholder": "Przeglądarka stron pojawi się tutaj.",
+      "title": "Przeglądarka stron",
+      "loading": "Otwieranie dokumentu…"
     },
     "toolbar": {
-      "inspector": "Informacje o dokumencie"
+      "inspector": "Informacje o dokumencie",
+      "page_grid": "Siatka stron",
+      "previous_page": "Poprzednia strona",
+      "next_page": "Następna strona",
+      "page_field": "Numer strony",
+      "page_of": "z {total}"
     },
     "inspector": {
       "title": "Dokument",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Ten plik nie jest prawidłowym plikiem PDF."
+    },
+    "find": {
+      "prompt": "Znajdź w dokumencie",
+      "count": "{current} z {total}",
+      "none": "Brak dopasowań",
+      "searching": "Wyszukiwanie…",
+      "done": "Gotowe"
+    },
+    "grid": {
+      "hint": "Przeciągnij strony, aby zmienić ich kolejność. Każda zmiana jest zapisywana jako nowy plik obok oryginału.",
+      "unavailable": "Edycja stron jest niedostępna, dopóki silnik nie będzie gotowy.",
+      "rotate": "Obróć zaznaczone strony",
+      "delete": "Usuń zaznaczone strony",
+      "move_earlier": "Przenieś przed poprzednią stronę",
+      "move_later": "Przenieś za następną stronę",
+      "drop_end": "Upuść tutaj, aby przenieść na koniec"
     }
   },
   "web": {
