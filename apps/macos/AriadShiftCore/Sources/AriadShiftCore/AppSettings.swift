@@ -10,11 +10,23 @@ public enum SettingsKey {
 
 /// The settings that change engine behaviour. Values persist in `UserDefaults`.
 public struct AppSettings: Sendable {
+    /// Names a `UserDefaults` suite to use instead of the standard defaults. UI tests set it so every
+    /// run starts from a fresh preferences domain and never touches the user's own settings.
+    public static let defaultsSuiteVariable = "ASHIFT_DEFAULTS_SUITE"
+
+    /// The defaults the app reads and writes: the suite named by `ASHIFT_DEFAULTS_SUITE`, else the standard ones.
+    public nonisolated(unsafe) static let launchDefaults: UserDefaults = {
+        guard let suite = ProcessInfo.processInfo.environment[defaultsSuiteVariable], !suite.isEmpty,
+            let defaults = UserDefaults(suiteName: suite)
+        else { return .standard }
+        return defaults
+    }()
+
     // UserDefaults is documented thread-safe but not declared Sendable in the SDK; removing this
     // fails with "stored property 'defaults' ... has non-Sendable type" (checked on the macOS 27.2 SDK).
     private nonisolated(unsafe) let defaults: UserDefaults
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = AppSettings.launchDefaults) {
         self.defaults = defaults
     }
 

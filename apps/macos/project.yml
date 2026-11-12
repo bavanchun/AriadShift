@@ -81,6 +81,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ariadnev.ariadshift.tests
         GENERATE_INFOPLIST_FILE: YES
+  AriadShiftUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - AriadShiftUITests
+    dependencies:
+      - target: AriadShift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ariadnev.ariadshift.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: AriadShift
+        # The runner and the ad-hoc signed test bundle have different Team IDs; library validation would refuse the bundle.
+        ENABLE_HARDENED_RUNTIME: NO
 schemes:
   AriadShift:
     build:
@@ -99,3 +113,17 @@ schemes:
         - AriadShiftTests
     archive:
       config: Release
+  # UI tests drive the built app through the accessibility APIs, which needs Automation Mode and an
+  # unlocked screen, so they run from their own scheme and the unit scheme stays headless-friendly.
+  AriadShiftUI:
+    build:
+      targets:
+        AriadShift: all
+        AriadShiftUITests: [test]
+    test:
+      config: Debug
+      commandLineArguments:
+        "-AppleLanguages (en)": true
+        "-AppleLocale en_US": true
+      targets:
+        - AriadShiftUITests

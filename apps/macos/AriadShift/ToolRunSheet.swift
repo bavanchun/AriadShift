@@ -23,6 +23,8 @@ struct ToolRunSheet: View {
         .padding(20)
         .frame(minWidth: 440, idealWidth: 480)
         .interactiveDismissDisabled(isRunning)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("run.sheet")
     }
 
     private var isRunning: Bool {
@@ -47,6 +49,7 @@ struct ToolRunSheet: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(String(localized: "mac.run.working"))
+            .accessibilityIdentifier("run.progress")
         case let .finished(result):
             resultView(result)
         case let .failed(message):
@@ -159,28 +162,41 @@ struct ToolRunSheet: View {
             case .editing:
                 Button(String(localized: "mac.run.cancel"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("run.cancel")
                 Button(String(localized: "mac.run.run")) { model.start() }
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("run.run")
                     .disabled(!model.canRun)
             case .running:
                 Button(String(localized: "mac.run.cancel"), role: .cancel) {
                     model.cancel()
-                    // A page edit has no settings to go back to.
-                    if model.isPrepared { dismiss() }
+                    // A page edit has no settings to go back to; leave once the run has really ended, so
+                    // a result that was already on its way is removed before the sheet goes.
+                    if model.isPrepared {
+                        Task {
+                            await model.waitUntilFinished()
+                            dismiss()
+                        }
+                    }
                 }
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("run.cancel")
             case let .finished(result):
                 if let first = result.files.first {
                     Button(String(localized: "mac.run.reveal")) { ToolRunModel.reveal(result.files) }
+                        .accessibilityIdentifier("run.reveal")
                     Button(String(localized: "mac.run.open")) {
                         Task { await ToolRunModel.open(first) }
                     }
+                    .accessibilityIdentifier("run.open")
                 }
                 Button(String(localized: "mac.run.close")) { dismiss() }
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("run.close")
             case .failed:
                 Button(String(localized: "mac.run.close")) { dismiss() }
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("run.close")
             }
         }
     }

@@ -139,6 +139,34 @@ final class ViewerModelTests: XCTestCase {
         XCTAssertTrue(viewer.pdfView.autoScales)
     }
 
+    /// PDFKit's own auto-scale fits the whole page in single-page mode; Fit Width computes the width fit.
+    func testFitWidthInSinglePageModeFitsThePageWidthNotTheWholePage() async throws {
+        let viewer = try await openedViewer()
+        viewer.setDisplayMode(.single)
+        let page = try XCTUnwrap(viewer.pdfView.currentPage)
+        let pageWidth = page.bounds(for: viewer.pdfView.displayBox).width
+        let margins = viewer.pdfView.pageBreakMargins
+        let expected = (viewer.pdfView.bounds.width - margins.left - margins.right) / pageWidth
+
+        viewer.fitWidth()
+
+        XCTAssertEqual(viewer.scaleFactor, Double(expected), accuracy: 0.01)
+        XCTAssertGreaterThan(viewer.scaleFactor, Double(viewer.pdfView.scaleFactorForSizeToFit) + 0.05, "wider than a whole-page fit")
+        XCTAssertFalse(viewer.fitsWidth, "a computed fit does not follow window resizes")
+
+        viewer.setDisplayMode(.continuous)
+        viewer.fitWidth()
+        XCTAssertTrue(viewer.fitsWidth, "the scrolling layouts keep following the window width")
+    }
+
+    func testADocumentWithoutPagesDoesNotLoad() async throws {
+        let viewer = ViewerModel()
+        viewer.install(PDFDocument())
+        XCTAssertEqual(viewer.loadState, .failed)
+        XCTAssertEqual(viewer.pageCount, 0)
+        XCTAssertNil(viewer.thumbnails)
+    }
+
     func testDisplayModes() async throws {
         let viewer = try await openedViewer()
 

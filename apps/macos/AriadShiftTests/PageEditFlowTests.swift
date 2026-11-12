@@ -138,11 +138,35 @@ final class PageEditFlowTests: XCTestCase {
         editing.perform(.move([0], before: 900), pageCount: 1000)
         let run = try XCTUnwrap(session.run)
         run.cancel()
+        await run.waitUntilFinished()
         session.cancelRun()
 
         XCTAssertNil(session.run)
-        try await Task.sleep(for: .seconds(3))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"], "a cancelled edit writes no file")
+    }
+
+    /// Cancel at several moments of a short run, including when the engine is about to finish: whether the
+    /// run ends cancelled or the result lands after Cancel, no file is left next to the input.
+    func testCancelAtAnyMomentLeavesNoResultFile() async throws {
+        for delay in [0, 5, 20, 60, 150] as [Int] {
+            let (url, directory) = try copyOfFixture()
+            let session = DocumentSession(fileURL: url)
+            let editing = PageEditing(session: session, engine: engine)
+            editing.perform(.shift([4], by: -1), pageCount: 20)
+            let run = try XCTUnwrap(session.run)
+            if delay > 0 { try await Task.sleep(for: .milliseconds(delay)) }
+            guard case .running = run.phase else {
+                session.cancelRun()  // already finished: Cancel is no longer on offer, nothing to assert
+                continue
+            }
+
+            run.cancel()
+            await run.waitUntilFinished()
+
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"], "cancel after \(delay) ms")
+            if case .running = run.phase { XCTFail("the run is still running after it was awaited") }
+            session.cancelRun()
+        }
     }
 
     func testEditingIsOfferedOnlyWhileNoRunIsShowing() async throws {

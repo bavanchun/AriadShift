@@ -24,10 +24,36 @@ public enum PageOrder {
     }
 
     /// The order after shifting the selected pages one position toward the start (`-1`) or end (`1`).
+    ///
+    /// Every maximal run of neighbouring selected pages swaps places with the one page next to it, so
+    /// a selection of separate pages (`{1, 5}`) moves each page by one and never gathers them. A run
+    /// already at the edge stays; nil when no page would move.
     public static func shifted(_ selection: Set<Int>, by step: Int, pageCount: Int) -> [Int]? {
-        guard let first = selection.min(), let last = selection.max(), step == -1 || step == 1 else { return nil }
-        let insertion = step < 0 ? first - 1 : last + 2
-        return moved(selection, toInsertionPoint: insertion, pageCount: pageCount)
+        guard pageCount > 1, step == -1 || step == 1, !selection.isEmpty,
+            selection.allSatisfy({ (0..<pageCount).contains($0) })
+        else { return nil }
+        var order = Array(0..<pageCount)
+        for run in runs(of: selection.sorted()) {
+            if step < 0, run.lowerBound > 0 {
+                order.replaceSubrange((run.lowerBound - 1)...run.upperBound, with: Array(run) + [run.lowerBound - 1])
+            } else if step > 0, run.upperBound < pageCount - 1 {
+                order.replaceSubrange(run.lowerBound...(run.upperBound + 1), with: [run.upperBound + 1] + Array(run))
+            }
+        }
+        return order == Array(0..<pageCount) ? nil : order
+    }
+
+    /// The maximal runs of consecutive numbers in an ascending list.
+    private static func runs(of sorted: [Int]) -> [ClosedRange<Int>] {
+        var result: [ClosedRange<Int>] = []
+        for value in sorted {
+            if let last = result.last, last.upperBound + 1 == value {
+                result[result.count - 1] = last.lowerBound...value
+            } else {
+                result.append(value...value)
+            }
+        }
+        return result
     }
 
     /// Page-range text for `pages` (0-based, order kept): 1-based numbers where an ascending run

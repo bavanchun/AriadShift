@@ -6,6 +6,11 @@ import PDFKit
 /// Nothing is rendered up front: a row asks for its page when it appears and the request is
 /// dropped when the row goes away first, so a 1,000-page document only ever renders the pages
 /// near the viewport. Rendered images stay in a small least-recently-used cache.
+///
+/// With the document's bytes (`source`) the pages render on a background actor from a second
+/// `PDFDocument`, so rendering never competes with scrolling on the main thread and never touches
+/// the pages a live `PDFView` shows. Without them (a caller that holds only a document) rendering
+/// stays on the main actor.
 @MainActor
 public final class ThumbnailCache {
     struct Key: Hashable {
@@ -14,6 +19,7 @@ public final class ThumbnailCache {
     }
 
     private let document: PDFDocument
+    private let background: BackgroundRenderer?
     public let capacity: Int
     private var images: [Key: NSImage] = [:]
     /// Least recently used first.
@@ -22,8 +28,9 @@ public final class ThumbnailCache {
     public private(set) var renderCount = 0
     public var cachedCount: Int { images.count }
 
-    public init(document: PDFDocument, capacity: Int = 240) {
+    public init(document: PDFDocument, source: Data? = nil, capacity: Int = 240) {
         self.document = document
+        background = source.map(BackgroundRenderer.init)
         self.capacity = max(capacity, 1)
     }
 
@@ -55,7 +62,13 @@ public final class ThumbnailCache {
         if let hit = cachedImage(page: page, width: width) { return hit }
 
         guard let size = size(page: page, width: CGFloat(width)) else { return nil }
-        let image = pdfPage.thumbnail(of: size, for: .cropBox)
+        let rendered: NSImage?
+        if let background {
+            rendered = await background.thumbnail(page: page, size: size)
+        } else {
+            rendered = pdfPage.thumbnail(of: size, for: .cropBox)
+        }
+        guard let image = rendered else { return nil }
         renderCount += 1
         store(image, for: Key(page: page, width: width))
         return image
@@ -77,5 +90,22 @@ public final class ThumbnailCache {
     private func touch(_ key: Key) {
         if let position = recency.firstIndex(of: key) { recency.remove(at: position) }
         recency.append(key)
+    }
+}
+
+/// Renders thumbnails from its own parse of the document, one at a time, off the main actor.
+private actor BackgroundRenderer {
+    private let data: Data
+    private var document: PDFDocument?
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    /// A request whose task was cancelled while it waited its turn renders nothing.
+    func thumbnail(page: Int, size: CGSize) -> NSImage? {
+        guard !Task.isCancelled else { return nil }
+        if document == nil { document = PDFDocument(data: data) }
+        return document?.page(at: page)?.thumbnail(of: size, for: .cropBox)
     }
 }

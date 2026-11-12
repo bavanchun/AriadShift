@@ -71,7 +71,9 @@ final class ToolRunModel: Identifiable {
         let toolID = tool.id
         let writesFiles = tool.info.outputFormat != "json"
         let client = client
-        task = Task { [weak self] in
+        // The task keeps the model alive until it ends, even when the sheet is already gone, so a result
+        // that lands after Cancel is always seen here and removed.
+        task = Task { [self] in
             do {
                 let result = try await client.run(
                     tool: toolID, inputs: inputs, paramsJSON: params,
@@ -79,16 +81,32 @@ final class ToolRunModel: Identifiable {
                 ) { [weak self] event in
                     Task { @MainActor in self?.progress = event }
                 }
-                guard let self else { return }
+                if Task.isCancelled {
+                    // Cancel arrived as the engine finished: Cancel promises no output, so take the files back.
+                    Self.discard(result.files)
+                    progress = nil
+                    phase = .editing
+                    return
+                }
                 phase = .finished(result)
                 await openResultIfWanted(result)
             } catch EngineError.cancelled {
-                self?.progress = nil
-                self?.phase = .editing
+                progress = nil
+                phase = .editing
             } catch {
-                self?.phase = .failed(error.localizedDescription)
+                phase = .failed(error.localizedDescription)
             }
         }
+    }
+
+    /// Removes result files this run placed (they are new files, never the user's originals).
+    private static func discard(_ files: [URL]) {
+        files.forEach { try? FileManager.default.removeItem(at: $0) }
+    }
+
+    /// Waits until the running task has ended. A cancelled run ends with nothing placed.
+    func waitUntilFinished() async {
+        await task?.value
     }
 
     func cancel() {
