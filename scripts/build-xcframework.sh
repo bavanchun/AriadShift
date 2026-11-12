@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Build universal XCFramework and Swift bindings for ariad-ffi.
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(CDPATH='' cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
@@ -17,6 +17,8 @@ if ! rustup target list --installed | grep -q "^x86_64-apple-darwin$"; then
     echo "Notice: x86_64-apple-darwin target is missing. Running 'rustup target add x86_64-apple-darwin' to enable universal dual-slice macOS builds..."
     rustup target add x86_64-apple-darwin
 fi
+
+export MACOSX_DEPLOYMENT_TARGET=15.0
 
 echo "==> Building ariad-ffi release slice: aarch64-apple-darwin"
 cargo build -p ariad-ffi --release --target aarch64-apple-darwin

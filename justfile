@@ -454,6 +454,47 @@ macos-ffi *args:
 macos-project:
     cd apps/macos && xcodegen generate
 
+# Build the universal Release macOS application bundle. Extra xcodebuild settings may be passed as arguments
+# (each stays one argument: the global `set positional-arguments` forwards them with "$@" instead of textual substitution).
+[macos]
+macos-build *args: macos-ffi
+    bash apps/macos/scripts/sync-ffi.sh
+    just macos-project
+    derived_dir="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-target/derived-data}}"; \
+    mkdir -p "$derived_dir"; \
+    xcodebuild -project apps/macos/AriadShift.xcodeproj \
+        -scheme AriadShift \
+        -configuration Release \
+        -destination 'generic/platform=macOS' \
+        -derivedDataPath "$derived_dir" \
+        build "$@"
+
+# Run tests for AriadShiftCore and the AriadShift Xcode scheme.
+[macos]
+macos-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    REPO_ROOT="$(pwd)"
+    DERIVED_DATA="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-${REPO_ROOT}/target/derived-data}}"
+    mkdir -p "${DERIVED_DATA}"
+    if [[ -z "${ASHIFT_HELPER_PATH:-}" ]]; then
+        if [[ -x "${REPO_ROOT}/target/release/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${REPO_ROOT}/target/release/ashift"
+        elif [[ -x "${REPO_ROOT}/target/aarch64-apple-darwin/release/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${REPO_ROOT}/target/aarch64-apple-darwin/release/ashift"
+        elif [[ -x "${DERIVED_DATA}/Build/Products/Release/AriadShift.app/Contents/Helpers/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${DERIVED_DATA}/Build/Products/Release/AriadShift.app/Contents/Helpers/ashift"
+        elif [[ -x "${REPO_ROOT}/target/debug/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${REPO_ROOT}/target/debug/ashift"
+        fi
+    fi
+    swift test --package-path apps/macos/AriadShiftCore
+    xcodebuild test \
+        -project apps/macos/AriadShift.xcodeproj \
+        -scheme AriadShift \
+        -destination 'platform=macOS' \
+        -derivedDataPath "${DERIVED_DATA}"
+
 # Generated IPC types and wrappers come only from Rust.
 desktop-licenses:
     node scripts/generate-desktop-licenses.mjs > apps/desktop/THIRD_PARTY_JS_LICENSES
