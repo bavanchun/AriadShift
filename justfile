@@ -449,10 +449,13 @@ fuzz target="" seconds="60":
 macos-ffi *args:
     bash scripts/build-xcframework.sh "$@"
 
-# Generate apps/macos/AriadShift.xcodeproj from project.yml (needs `brew install xcodegen`).
+# Generate apps/macos/AriadShift.xcodeproj from project.yml (needs `brew install xcodegen`) and install the tracked
+# apps/macos/Package.resolved, the one place Xcode reads SwiftPM pins from for the generated, gitignored project.
 [macos]
 macos-project:
     cd apps/macos && xcodegen generate
+    mkdir -p apps/macos/AriadShift.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+    cp apps/macos/Package.resolved apps/macos/AriadShift.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # Build the universal Release macOS application bundle. Extra xcodebuild settings may be passed as arguments
 # (each stays one argument: the global `set positional-arguments` forwards them with "$@" instead of textual substitution).
@@ -467,6 +470,7 @@ macos-build *args: macos-ffi
         -configuration Release \
         -destination 'generic/platform=macOS' \
         -derivedDataPath "$derived_dir" \
+        -onlyUsePackageVersionsFromResolvedFile \
         build "$@"
 
 # Run tests for AriadShiftCore and the AriadShift Xcode scheme.
@@ -493,7 +497,8 @@ macos-test:
         -project apps/macos/AriadShift.xcodeproj \
         -scheme AriadShift \
         -destination 'platform=macOS' \
-        -derivedDataPath "${DERIVED_DATA}"
+        -derivedDataPath "${DERIVED_DATA}" \
+        -onlyUsePackageVersionsFromResolvedFile
 
 # Generated IPC types and wrappers come only from Rust.
 desktop-licenses:
