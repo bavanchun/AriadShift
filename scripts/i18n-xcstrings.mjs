@@ -274,7 +274,8 @@ export function buildCatalog(dir = LOCALES_DIR) {
       }
       for (const [suffix, localization] of converted) {
         const full = `${key}${suffix}`;
-        const record = (strings[full] ??= { extractionState: "manual", localizations: {} });
+        strings[full] ??= { extractionState: "manual", localizations: {} };
+        const record = strings[full];
         if (note && record.comment === undefined) {
           record.comment = note;
         }
@@ -294,9 +295,11 @@ export function serializeCatalog(catalog) {
     const indent = "  ".repeat(depth + 1);
     const keys = Object.keys(value).sort();
     if (keys.length === 0) {
-      return "{\n" + "  ".repeat(depth) + "}";
+      return `{\n${"  ".repeat(depth)}}`;
     }
-    const body = keys.map((key) => `${indent}${JSON.stringify(key)} : ${write(value[key], depth + 1)}`);
+    const body = keys.map(
+      (key) => `${indent}${JSON.stringify(key)} : ${write(value[key], depth + 1)}`,
+    );
     return `{\n${body.join(",\n")}\n${"  ".repeat(depth)}}`;
   };
   return `${write(catalog, 0)}\n`;
