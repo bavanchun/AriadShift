@@ -113,6 +113,81 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Nhập…",
+      "print": "In…",
+      "tools": "Công cụ",
+      "zoom": "{action, select, in {Phóng to} out {Thu nhỏ} actual {Kích thước thực} other {Thu phóng}}",
+      "check_updates": "Kiểm tra cập nhật…",
+      "show_welcome": "Hiện màn hình chào mừng"
+    },
+    "tools": {
+      "group": "{group, select, organize {Sắp xếp} convert {Chuyển đổi} optimize {Tối ưu} security {Bảo mật} overlay {Lớp phủ} ocr {OCR và bản quét} annotate {Chú thích} forms {Biểu mẫu} sign {Ký} redact {Che dữ liệu} compare {So sánh và kiểm tra} edit {Chỉnh sửa} ai {AI} automation {Tự động hóa} other {Công cụ khác}}",
+      "disabled": "{reason, select, later {Sẽ có trong bản phát hành sau} format {Dùng cho định dạng khác. Hãy dùng Tệp > Nhập.} paid {Cần gói trả phí} info {Không đọc được thông tin công cụ nên các công cụ đang tắt.} other {Không khả dụng}}",
+      "loading": "Đang tải công cụ…"
+    },
+    "sidebar": {
+      "title": "Trang",
+      "placeholder": "Ảnh thu nhỏ của các trang sẽ hiện ở đây."
+    },
+    "viewer": {
+      "placeholder": "Trình xem trang sẽ hiện ở đây."
+    },
+    "toolbar": {
+      "inspector": "Thông tin tài liệu"
+    },
+    "inspector": {
+      "title": "Tài liệu",
+      "field": "{field, select, name {Tên} format {Định dạng} size {Dung lượng} pages {Số trang} words {Số từ} title {Tiêu đề} author {Tác giả} routes {Có thể chuyển sang} other {Trường}}",
+      "loading": "Đang đọc tài liệu…",
+      "warnings": "{count, plural, other {# cảnh báo}}"
+    },
+    "run": {
+      "title": "Chạy {tool}",
+      "run": "Chạy",
+      "cancel": "Hủy",
+      "close": "Xong",
+      "working": "Đang chạy…",
+      "parameters": "Cài đặt",
+      "no_parameters": "Công cụ này không có cài đặt.",
+      "extra_documents": "Tài liệu bổ sung",
+      "add_documents": "Thêm…",
+      "remove": "Xóa",
+      "need_documents": "{count, plural, other {Hãy thêm # tài liệu nữa để chạy công cụ này.}}",
+      "failed": "Công cụ chưa chạy xong.",
+      "open": "Mở",
+      "reveal": "Hiện trong Finder",
+      "result_files": "{count, plural, other {Đã tạo # tệp}}",
+      "field_error": "{kind, select, missing {Cần nhập {field}.} other {{field} không hợp lệ.}}",
+      "result": "Kết quả",
+      "presets": "Mẫu có sẵn"
+    },
+    "settings": {
+      "output_folder": "Lưu kết quả vào",
+      "output_same": "Cạnh tài liệu gốc",
+      "output_choose": "Chọn thư mục…",
+      "open_result": "Mở kết quả khi công cụ chạy xong",
+      "updates": "Cập nhật",
+      "updates_auto": "Tự động kiểm tra cập nhật",
+      "updates_disabled": "Bản dựng này chưa thiết lập cập nhật."
+    },
+    "onboarding": {
+      "title": "Chào mừng đến với AriadShift",
+      "about": "Mở, xem thông tin và xử lý tài liệu PDF bằng cùng bộ máy với dòng lệnh AriadShift. Chuyển Markdown, HTML, Word, EPUB và ảnh sang PDF bằng Tệp > Nhập.",
+      "packs": "Các gói bộ máy tùy chọn (OCR, ký số, kiểm tra) được lưu trong {path}.",
+      "privacy": "AriadShift chạy ngay trên máy Mac của bạn. Ứng dụng không kết nối mạng, trừ khi bạn bật một tính năng cần mạng.",
+      "start": "Bắt đầu"
+    },
+    "import": {
+      "message": "Chọn một tài liệu để chuyển sang PDF",
+      "running": "Đang nhập {name}…",
+      "failed": "Không thể nhập {name}"
+    },
+    "document": {
+      "invalid": "Tệp này không phải PDF hợp lệ."
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: chuyển đổi tài liệu riêng tư ngay trong trình duyệt",

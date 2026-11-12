@@ -25,13 +25,13 @@ final class EngineProgramTests: XCTestCase {
         let client = try EngineClient(helperURL: helper)
         XCTAssertEqual(client.helperURL, helper)
 
-        // An engine-backed route (Pandoc) must spawn the configured helper, not
-        // the test runner and not a binary found on PATH.
+        // The PDF writer (Typst) always runs out of process through the helper, with no
+        // system tool involved, so this route reaches the spawn on any machine.
         let input = try fixturePath("md/vi-links-autolinks.md")
-        let output = try temporaryDirectory().appendingPathComponent("out.docx").path
+        let output = try temporaryDirectory().appendingPathComponent("out.pdf").path
         do {
             _ = try await client.convert(
-                ConvertRequest(input: input, output: output, targetFormat: "docx", overwrite: true)
+                ConvertRequest(input: input, output: output, targetFormat: "pdf", overwrite: true)
             )
             XCTFail("the recording helper exits non-zero, so the conversion must fail")
         } catch is EngineError {
@@ -49,9 +49,9 @@ final class EngineProgramTests: XCTestCase {
         let client = try EngineClient(helperURL: second)
 
         let input = try fixturePath("md/vi-links-autolinks.md")
-        let output = try temporaryDirectory().appendingPathComponent("out.docx").path
+        let output = try temporaryDirectory().appendingPathComponent("out.pdf").path
         _ = try? await client.convert(
-            ConvertRequest(input: input, output: output, targetFormat: "docx", overwrite: true)
+            ConvertRequest(input: input, output: output, targetFormat: "pdf", overwrite: true)
         )
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: secondLog.path), "latest helper must be used")
@@ -65,9 +65,9 @@ final class EngineProgramTests: XCTestCase {
         _ = try EngineClient(helperURL: second)
 
         let input = try fixturePath("md/vi-links-autolinks.md")
-        let output = try temporaryDirectory().appendingPathComponent("out.docx").path
+        let output = try temporaryDirectory().appendingPathComponent("out.pdf").path
         _ = try? await client.convert(
-            ConvertRequest(input: input, output: output, targetFormat: "docx", overwrite: true)
+            ConvertRequest(input: input, output: output, targetFormat: "pdf", overwrite: true)
         )
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: firstLog.path), "a client must use its own helper")
@@ -110,10 +110,10 @@ final class EngineProgramTests: XCTestCase {
         // Bypass EngineClient, which would re-assert its own helper, and call the
         // generated binding: it must still launch the helper configured before.
         let input = try fixturePath("md/vi-links-autolinks.md")
-        let output = try temporaryDirectory().appendingPathComponent("out.docx").path
+        let output = try temporaryDirectory().appendingPathComponent("out.pdf").path
         _ = try? await AriadShiftCore.convert(
             request: ConvertRunRequest(
-                input: input, output: output, targetFormat: "docx", profile: nil, overwrite: true, cancelToken: nil
+                input: input, output: output, targetFormat: "pdf", profile: nil, overwrite: true, cancelToken: nil
             ),
             listener: nil
         )
@@ -132,6 +132,26 @@ final class EngineProgramTests: XCTestCase {
                 ConvertRequest(input: input, output: output, targetFormat: "html", overwrite: true)
             )
             XCTFail("expected helperMissing")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .helperMissing(path: helper.path))
+        }
+    }
+
+    func testHelperRemovedAfterInitThrowsTypedErrorOnInspectAndPlan() async throws {
+        let (helper, _) = try makeRecordingHelper()
+        let client = try EngineClient(helperURL: helper)
+        try FileManager.default.removeItem(at: helper)
+
+        let input = try fixturePath("md/vi-links-autolinks.md")
+        do {
+            _ = try await client.inspect(path: input)
+            XCTFail("expected helperMissing from inspect")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .helperMissing(path: helper.path))
+        }
+        do {
+            _ = try await client.plan(path: input, targetFormat: "html")
+            XCTFail("expected helperMissing from plan")
         } catch let error as EngineError {
             XCTAssertEqual(error, .helperMissing(path: helper.path))
         }
