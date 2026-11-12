@@ -7,6 +7,7 @@ import os
 ///
 /// Budgets: cold launch to the first window 400 ms (M-series), a 1,000-page PDF to page 1 in 300 ms,
 /// no scroll hitch over 16 ms, and 150 MB of memory for an idle app with a 100-page document.
+/// The tests record metrics and assert no budget, so a miss never fails a run; read the numbers.
 @MainActor
 final class PerformanceUITests: UITestCase {
     private func options(_ iterations: Int) -> XCTMeasureOptions {
@@ -19,8 +20,18 @@ final class PerformanceUITests: UITestCase {
         ["-ApplePersistenceIgnoreState", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US", document.path]
     }
 
-    /// Cold launch with a document, until the app is responsive.
+    /// Cold launch with a document: `XCTApplicationLaunchMetric`, the time until the app has launched. Launch
+    /// times vary by tens of percent between runs, so it takes ten iterations; compare the median.
     func testColdLaunchToFirstWindow() throws {
+        try measureLaunch(XCTApplicationLaunchMetric())
+    }
+
+    /// The same launch, until the first frame is presented and the app responds: a stricter reading of "first window".
+    func testColdLaunchToResponsiveFirstFrame() throws {
+        try measureLaunch(XCTApplicationLaunchMetric(waitUntilResponsive: true))
+    }
+
+    private func measureLaunch(_ metric: XCTMetric) throws {
         seedDefaults()
         let document = try copyFixture("pdf-tools/multipage-20.pdf")
         let app = XCUIApplication()
@@ -28,7 +39,7 @@ final class PerformanceUITests: UITestCase {
         app.launchEnvironment["ASHIFT_DEFAULTS_SUITE"] = suite
         self.app = app
 
-        measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)], options: options(5)) {
+        measure(metrics: [metric], options: options(10)) {
             app.launch()
             XCTAssertTrue(self.documentWindow().waitForExistence(timeout: 30))
             app.terminate()
@@ -58,12 +69,16 @@ final class PerformanceUITests: UITestCase {
         seedDefaults()
         launchApp(opening: [try copyFixture("pdf-tools/large-1000-pages.pdf")])
         waitForDocumentWindow(pages: 1000)
-        let viewer = element("viewer.pdf")
-        XCTAssertTrue(viewer.isHittable)
+        // Scroll at a point over the page view, not on the PDF view element: the 1,000-page view exposes thousands
+        // of accessibility elements, and resolving it for every scroll step takes seconds, which would dilute the
+        // hitch metric. (Scrolling the window element itself does not reach the pages.)
+        let pages = documentWindow().coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
 
         measure(metrics: [XCTHitchMetric(application: app)], options: options(3)) {
-            for _ in 0..<40 { viewer.scroll(byDeltaX: 0, deltaY: -400) }
-            for _ in 0..<40 { viewer.scroll(byDeltaX: 0, deltaY: 400) }
+            for _ in 0..<40 { pages.scroll(byDeltaX: 0, deltaY: -400) }
+            // The scroll is real: the viewer has left page 1.
+            XCTAssertNotEqual(self.pageFieldValue(), self.pageValue(1, of: 1000), "scrolling moved the document")
+            for _ in 0..<40 { pages.scroll(byDeltaX: 0, deltaY: 400) }
         }
     }
 
