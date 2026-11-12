@@ -118,6 +118,27 @@ final class DocumentImportTests: XCTestCase {
         )
     }
 
+    /// The name x.pdf is held by hand, as a running import would hold it: the image import must
+    /// skip it even though nothing is on disk yet. Without the reservation it would take x.pdf.
+    func testImageImportSkipsANameThatAnotherImportHolds() async throws {
+        let client = try makeClient()
+        let directory = try temporaryDirectory()
+        let image = directory.appendingPathComponent("x.png")
+        try FileManager.default.copyItem(atPath: try fixturePath("image/en-repair-receipt.png"), toPath: image.path)
+        let reservations = NameReservations()
+        let held = reservations.reserve(directory.appendingPathComponent("x.pdf"))
+        XCTAssertEqual(held.lastPathComponent, "x.pdf")
+
+        let output = try await DocumentImporter.importDocument(
+            at: image, destination: directory, client: client, reservations: reservations
+        )
+
+        XCTAssertEqual(output.lastPathComponent, "x 2.pdf")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: held.path), "the held name stays free on disk")
+        reservations.release(held)
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path)), ["x.png", "x 2.pdf"])
+    }
+
     func testImageImportWrapsTheImageIntoAPDF() async throws {
         let client = try makeClient()
         let directory = try temporaryDirectory()

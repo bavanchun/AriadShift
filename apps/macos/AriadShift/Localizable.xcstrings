@@ -14033,6 +14033,211 @@
         }
       }
     },
+    "mac.find.count" : {
+      "comment" : "Position of the current match among all matches, for example \"3 of 17\". types: current=int, total=int",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "mac.find.done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xong"
+          }
+        }
+      }
+    },
+    "mac.find.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matches"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có kết quả"
+          }
+        }
+      }
+    },
+    "mac.find.prompt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find in document"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm trong tài liệu"
+          }
+        }
+      }
+    },
+    "mac.find.searching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang tìm…"
+          }
+        }
+      }
+    },
+    "mac.grid.delete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Selected Pages"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xóa các trang đã chọn"
+          }
+        }
+      }
+    },
+    "mac.grid.drop_end" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop here to move to the end"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thả vào đây để chuyển xuống cuối"
+          }
+        }
+      }
+    },
+    "mac.grid.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag pages to reorder them. Each change is saved as a new file next to the original."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kéo các trang để sắp xếp lại. Mỗi thay đổi được lưu thành một tệp mới cạnh bản gốc."
+          }
+        }
+      }
+    },
+    "mac.grid.move_earlier" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move before the previous page"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chuyển lên trước trang liền trước"
+          }
+        }
+      }
+    },
+    "mac.grid.move_later" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move after the next page"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chuyển ra sau trang liền sau"
+          }
+        }
+      }
+    },
+    "mac.grid.rotate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotate Selected Pages"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xoay các trang đã chọn"
+          }
+        }
+      }
+    },
+    "mac.grid.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page editing is not available until the engine is ready."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa thể chỉnh sửa trang cho đến khi bộ máy sẵn sàng."
+          }
+        }
+      }
+    },
     "mac.import.failed" : {
       "comment" : "Alert title. {name} is a file name.",
       "extractionState" : "manual",
@@ -18668,6 +18873,163 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "檢查更新…"
+          }
+        }
+      }
+    },
+    "mac.menu.display_mode.continuous" : {
+      "comment" : "View menu items that choose how pages are laid out. {mode} is the keyword single, continuous or twoUp. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuous Scroll"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuộn liên tục"
+          }
+        }
+      }
+    },
+    "mac.menu.display_mode.other" : {
+      "comment" : "View menu items that choose how pages are laid out. {mode} is the keyword single, continuous or twoUp. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page Display"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiển thị trang"
+          }
+        }
+      }
+    },
+    "mac.menu.display_mode.single" : {
+      "comment" : "View menu items that choose how pages are laid out. {mode} is the keyword single, continuous or twoUp. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Single Page"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Từng trang"
+          }
+        }
+      }
+    },
+    "mac.menu.display_mode.twoUp" : {
+      "comment" : "View menu items that choose how pages are laid out. {mode} is the keyword single, continuous or twoUp. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two Pages"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hai trang"
+          }
+        }
+      }
+    },
+    "mac.menu.find" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm…"
+          }
+        }
+      }
+    },
+    "mac.menu.find_next" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find Next"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm tiếp"
+          }
+        }
+      }
+    },
+    "mac.menu.find_previous" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find Previous"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm trước"
+          }
+        }
+      }
+    },
+    "mac.menu.fit_width" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fit Width"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vừa chiều rộng"
+          }
+        }
+      }
+    },
+    "mac.menu.go_to_page" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to Page…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đến trang…"
           }
         }
       }
@@ -29694,6 +30056,24 @@
         }
       }
     },
+    "mac.sidebar.page" : {
+      "comment" : "Spoken label of a page thumbnail, for example \"Page 3 of 20\". types: number=int, total=int",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page %1$lld of %2$lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trang %1$lld trên %2$lld"
+          }
+        }
+      }
+    },
     "mac.sidebar.placeholder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30444,6 +30824,92 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "文件資訊"
+          }
+        }
+      }
+    },
+    "mac.toolbar.next_page" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next Page"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trang sau"
+          }
+        }
+      }
+    },
+    "mac.toolbar.page_field" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page number"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Số trang"
+          }
+        }
+      }
+    },
+    "mac.toolbar.page_grid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page Grid"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lưới trang"
+          }
+        }
+      }
+    },
+    "mac.toolbar.page_of" : {
+      "comment" : "Next to the page number field in the toolbar, for example \"of 20\". types: total=int",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "of %1$lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "/ %1$lld"
+          }
+        }
+      }
+    },
+    "mac.toolbar.previous_page" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous Page"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trang trước"
           }
         }
       }
@@ -35829,6 +36295,23 @@
         }
       }
     },
+    "mac.viewer.loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opening the document…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang mở tài liệu…"
+          }
+        }
+      }
+    },
     "mac.viewer.placeholder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36076,6 +36559,23 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "頁面檢視器將顯示在這裡。"
+          }
+        }
+      }
+    },
+    "mac.viewer.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page viewer"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trình xem trang"
           }
         }
       }

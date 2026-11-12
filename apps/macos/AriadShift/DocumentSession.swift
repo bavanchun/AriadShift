@@ -42,6 +42,15 @@ final class DocumentSession {
         run = ToolRunModel(tool: tool, document: fileURL, client: client)
     }
 
+    /// Runs `tool` straight away with parameters the viewer built (a page edit), showing the same
+    /// run sheet as the Tools menu: progress, Cancel, errors and the result.
+    func begin(_ tool: ToolEntry, paramsJSON: String, client: EngineClient?) {
+        guard run == nil, let fileURL, let client, tool.isAvailable else { return }
+        let model = ToolRunModel(tool: tool, document: fileURL, client: client, paramsJSON: paramsJSON)
+        run = model
+        model.start()
+    }
+
     /// Ends the tool run when its window goes away: the task is cancelled, so nothing is placed
     /// for a document the user has closed, and the sheet's model is dropped.
     func cancelRun() {

@@ -24,13 +24,19 @@ final class ToolRunModel: Identifiable {
     private(set) var fieldError: (kind: String, field: String)?
     private let client: EngineClient
     private var task: Task<Void, Never>?
+    /// Parameters built by the app (a page edit); such a run skips the settings form.
+    private let presetParams: String?
 
-    init(tool: ToolEntry, document: URL, client: EngineClient) {
+    init(tool: ToolEntry, document: URL, client: EngineClient, paramsJSON: String? = nil) {
         self.tool = tool
         self.document = document
         self.client = client
+        presetParams = paramsJSON
         values = tool.form.initialValues()
     }
+
+    /// A run started with parameters the app built: Cancel ends it instead of showing a form.
+    var isPrepared: Bool { presetParams != nil }
 
     /// Additional documents still needed before the tool can run.
     var missingDocuments: Int { max(tool.arity.extraRange.lowerBound - extraDocuments.count, 0) }
@@ -40,17 +46,21 @@ final class ToolRunModel: Identifiable {
     func start() {
         guard case .editing = phase, canRun else { return }
         let params: String
-        do {
-            params = try tool.form.encode(values)
-        } catch let error as ParamFormError {
-            switch error {
-            case let .missing(field): fieldError = ("missing", field)
-            case let .invalid(field): fieldError = ("invalid", field)
-            case .invalidSchema: fieldError = ("invalid", tool.title)
+        if let presetParams {
+            params = presetParams
+        } else {
+            do {
+                params = try tool.form.encode(values)
+            } catch let error as ParamFormError {
+                switch error {
+                case let .missing(field): fieldError = ("missing", field)
+                case let .invalid(field): fieldError = ("invalid", field)
+                case .invalidSchema: fieldError = ("invalid", tool.title)
+                }
+                return
+            } catch {
+                return
             }
-            return
-        } catch {
-            return
         }
         fieldError = nil
         progress = nil

@@ -121,7 +121,14 @@
       "zoom": "{action, select, in {Zoom In} out {Zoom Out} actual {Actual Size} other {Zoom}}",
       "zoom@note": "View menu zoom commands. {action} is the keyword in, out or actual. Keep the keywords untranslated.",
       "check_updates": "Check for Updates…",
-      "show_welcome": "Show Welcome"
+      "show_welcome": "Show Welcome",
+      "fit_width": "Fit Width",
+      "display_mode": "{mode, select, single {Single Page} continuous {Continuous Scroll} twoUp {Two Pages} other {Page Display}}",
+      "display_mode@note": "View menu items that choose how pages are laid out. {mode} is the keyword single, continuous or twoUp. Keep the keywords untranslated.",
+      "go_to_page": "Go to Page…",
+      "find": "Find…",
+      "find_next": "Find Next",
+      "find_previous": "Find Previous"
     },
     "tools": {
       "group": "{group, select, organize {Organize} convert {Convert} optimize {Optimize} security {Security} overlay {Overlay} ocr {OCR and scans} annotate {Annotate} forms {Forms} sign {Sign} redact {Redact} compare {Compare and validate} edit {Edit} ai {AI} automation {Automation} other {Other tools}}",
@@ -132,14 +139,24 @@
     },
     "sidebar": {
       "title": "Pages",
-      "placeholder": "Page thumbnails will appear here."
+      "placeholder": "Page thumbnails will appear here.",
+      "page": "Page {number} of {total}",
+      "page@note": "Spoken label of a page thumbnail, for example \"Page 3 of 20\". types: number=int, total=int"
     },
     "viewer": {
-      "placeholder": "The page viewer will appear here."
+      "placeholder": "The page viewer will appear here.",
+      "title": "Page viewer",
+      "loading": "Opening the document…"
     },
     "toolbar": {
       "inspector": "Document Info",
-      "inspector@note": "Toolbar button that shows or hides the inspector panel."
+      "inspector@note": "Toolbar button that shows or hides the inspector panel.",
+      "page_grid": "Page Grid",
+      "previous_page": "Previous Page",
+      "next_page": "Next Page",
+      "page_field": "Page number",
+      "page_of": "of {total}",
+      "page_of@note": "Next to the page number field in the toolbar, for example \"of 20\". types: total=int"
     },
     "inspector": {
       "title": "Document",
@@ -197,6 +214,23 @@
     },
     "document": {
       "invalid": "This file is not a valid PDF."
+    },
+    "find": {
+      "prompt": "Find in document",
+      "count": "{current} of {total}",
+      "count@note": "Position of the current match among all matches, for example \"3 of 17\". types: current=int, total=int",
+      "none": "No matches",
+      "searching": "Searching…",
+      "done": "Done"
+    },
+    "grid": {
+      "hint": "Drag pages to reorder them. Each change is saved as a new file next to the original.",
+      "unavailable": "Page editing is not available until the engine is ready.",
+      "rotate": "Rotate Selected Pages",
+      "delete": "Delete Selected Pages",
+      "move_earlier": "Move before the previous page",
+      "move_later": "Move after the next page",
+      "drop_end": "Drop here to move to the end"
     }
   },
   "web": {

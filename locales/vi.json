@@ -120,7 +120,13 @@
       "tools": "Công cụ",
       "zoom": "{action, select, in {Phóng to} out {Thu nhỏ} actual {Kích thước thực} other {Thu phóng}}",
       "check_updates": "Kiểm tra cập nhật…",
-      "show_welcome": "Hiện màn hình chào mừng"
+      "show_welcome": "Hiện màn hình chào mừng",
+      "fit_width": "Vừa chiều rộng",
+      "display_mode": "{mode, select, single {Từng trang} continuous {Cuộn liên tục} twoUp {Hai trang} other {Hiển thị trang}}",
+      "go_to_page": "Đến trang…",
+      "find": "Tìm…",
+      "find_next": "Tìm tiếp",
+      "find_previous": "Tìm trước"
     },
     "tools": {
       "group": "{group, select, organize {Sắp xếp} convert {Chuyển đổi} optimize {Tối ưu} security {Bảo mật} overlay {Lớp phủ} ocr {OCR và bản quét} annotate {Chú thích} forms {Biểu mẫu} sign {Ký} redact {Che dữ liệu} compare {So sánh và kiểm tra} edit {Chỉnh sửa} ai {AI} automation {Tự động hóa} other {Công cụ khác}}",
@@ -129,13 +135,21 @@
     },
     "sidebar": {
       "title": "Trang",
-      "placeholder": "Ảnh thu nhỏ của các trang sẽ hiện ở đây."
+      "placeholder": "Ảnh thu nhỏ của các trang sẽ hiện ở đây.",
+      "page": "Trang {number} trên {total}"
     },
     "viewer": {
-      "placeholder": "Trình xem trang sẽ hiện ở đây."
+      "placeholder": "Trình xem trang sẽ hiện ở đây.",
+      "title": "Trình xem trang",
+      "loading": "Đang mở tài liệu…"
     },
     "toolbar": {
-      "inspector": "Thông tin tài liệu"
+      "inspector": "Thông tin tài liệu",
+      "page_grid": "Lưới trang",
+      "previous_page": "Trang trước",
+      "next_page": "Trang sau",
+      "page_field": "Số trang",
+      "page_of": "/ {total}"
     },
     "inspector": {
       "title": "Tài liệu",
@@ -186,6 +200,22 @@
     },
     "document": {
       "invalid": "Tệp này không phải PDF hợp lệ."
+    },
+    "find": {
+      "prompt": "Tìm trong tài liệu",
+      "count": "{current} / {total}",
+      "none": "Không có kết quả",
+      "searching": "Đang tìm…",
+      "done": "Xong"
+    },
+    "grid": {
+      "hint": "Kéo các trang để sắp xếp lại. Mỗi thay đổi được lưu thành một tệp mới cạnh bản gốc.",
+      "unavailable": "Chưa thể chỉnh sửa trang cho đến khi bộ máy sẵn sàng.",
+      "rotate": "Xoay các trang đã chọn",
+      "delete": "Xóa các trang đã chọn",
+      "move_earlier": "Chuyển lên trước trang liền trước",
+      "move_later": "Chuyển ra sau trang liền sau",
+      "drop_end": "Thả vào đây để chuyển xuống cuối"
     }
   },
   "web": {

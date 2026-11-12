@@ -163,7 +163,11 @@ struct ToolRunSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canRun)
             case .running:
-                Button(String(localized: "mac.run.cancel"), role: .cancel) { model.cancel() }
+                Button(String(localized: "mac.run.cancel"), role: .cancel) {
+                    model.cancel()
+                    // A page edit has no settings to go back to.
+                    if model.isPrepared { dismiss() }
+                }
                     .keyboardShortcut(.cancelAction)
             case let .finished(result):
                 if let first = result.files.first {
