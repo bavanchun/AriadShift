@@ -53,10 +53,16 @@ struct FindBar: View {
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(statusText)
                 .accessibilityIdentifier("find.status")
+            // A borderless icon button is only as large as its glyph (about 11 by 6 pt), too small to hit: give it a
+            // comfortable target that is clickable all over.
             Button(String(localized: "mac.menu.find_previous"), systemImage: "chevron.up") { find.previous() }
+                .frame(minWidth: 24, minHeight: 24)
+                .contentShape(Rectangle())
                 .disabled(find.matchCount == 0)
                 .accessibilityIdentifier("find.previous")
             Button(String(localized: "mac.menu.find_next"), systemImage: "chevron.down") { find.next() }
+                .frame(minWidth: 24, minHeight: 24)
+                .contentShape(Rectangle())
                 .disabled(find.matchCount == 0)
                 .accessibilityIdentifier("find.next")
             Spacer()

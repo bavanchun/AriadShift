@@ -37,7 +37,26 @@ final class ToolsUITests: UITestCase {
         waitUntil("the sheet is gone") { !self.element("run.sheet").exists }
     }
 
-    /// Cancel during a longer run: no result file, and the window stays usable.
+    /// Cancel on a tool's settings closes the sheet: nothing runs, nothing is written, the window is as it was.
+    func testCancellingFromTheSettingsClosesTheSheetWithoutRunning() throws {
+        seedDefaults(openResultAfterRun: false)
+        launchApp(opening: [try copyFixture("pdf-tools/multipage-20.pdf")])
+        waitForDocumentWindow()
+
+        chooseTool(group: "Optimize", tool: "Decompress")
+        XCTAssertTrue(element("run.sheet").waitForExistence(timeout: 10), "the run sheet appears")
+        let cancel = element("run.cancel")
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), "the settings offer Cancel")
+        cancel.click()
+        waitUntil("the sheet is gone") { !self.element("run.sheet").exists }
+        XCTAssertTrue(resultFiles().isEmpty, "nothing was written: \(resultFiles().map(\.lastPathComponent))")
+        XCTAssertEqual(pageFieldValue(), pageValue(1), "the viewer still works")
+    }
+
+    /// Cancel during a longer run: no result file, and the window stays usable. Every free tool finishes this
+    /// document in about a tenth of a second on the Mac it was written on, and no engine pack is installed there,
+    /// so Cancel usually cannot be pressed while the run is on screen; the test then skips with that reason.
+    /// The late-result path itself is covered by `ToolRunModelTests`.
     func testCancellingALongerRunWritesNothingAndLeavesTheWindowIntact() throws {
         seedDefaults(openResultAfterRun: false)
         let document = try copyFixture("pdf-tools/large-1000-pages.pdf")
@@ -70,7 +89,7 @@ final class ToolsUITests: UITestCase {
         waitUntil("the sheet is gone") { !self.element("run.sheet").exists }
         XCTAssertTrue(resultFiles().isEmpty, "a cancelled run writes no file: \(resultFiles().map(\.lastPathComponent))")
         XCTAssertTrue(window.exists)
-        XCTAssertEqual(element("inspector.value.pages").label, "1000")
+        XCTAssertEqual(inspectorValue("pages"), number(1000))
         XCTAssertEqual(pageFieldValue(), pageValue(1, of: 1000), "the viewer still works")
     }
 }

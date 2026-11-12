@@ -3,17 +3,6 @@ import XCTest
 /// The Settings window, a setting that persists across launches, and the updater's state in a dev build.
 @MainActor
 final class SettingsAndUpdatesUITests: UITestCase {
-    private func openSettings() -> XCUIElement {
-        app.typeKey(",", modifierFlags: .command)
-        let toggle = element("settings.openResult")
-        XCTAssertTrue(toggle.waitForExistence(timeout: 15), "the Settings window opens")
-        return toggle
-    }
-
-    private func isOn(_ toggle: XCUIElement) -> Bool {
-        (toggle.value as? String) == "1" || (toggle.value as? Int) == 1
-    }
-
     func testASettingPersistsAcrossRelaunch() throws {
         seedDefaults()
         let document = try copyFixture("pdf-tools/multipage-20.pdf")

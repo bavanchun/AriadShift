@@ -8,8 +8,12 @@ let repositoryRoot: URL = {
     return url
 }()
 
-/// Base class of the UI tests: a scratch folder for documents and a preferences suite of its own, so a run
+/// Base class of the UI tests: a scratch folder for documents and a preferences file of its own, so a run
 /// never touches the user's documents or settings and the app never starts from leftover state.
+///
+/// The test runner is sandboxed and the app is not, so a named suite written by the runner lands in the runner's
+/// container and the app never sees it. The suite is therefore the absolute path of a preferences file inside the
+/// scratch folder, which both processes can reach and which goes away with the folder.
 ///
 /// The app under test is the built AriadShift app with its real engine; nothing is mocked. Documents are
 /// copies of the committed fixtures, passed as launch arguments (AppKit opens a path argument as a
@@ -24,12 +28,11 @@ class UITestCase: XCTestCase {
         continueAfterFailure = false
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("ashift-ui-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        suite = "com.ariadnev.ariadshift.uitests.\(UUID().uuidString)"
+        suite = scratch.appendingPathComponent("preferences").path
     }
 
     override func tearDownWithError() throws {
         app?.terminate()
-        UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: scratch)
     }
 
@@ -48,6 +51,7 @@ class UITestCase: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.set(onboardingCompleted, forKey: "onboarding.completed")
         if let openResultAfterRun { defaults.set(openResultAfterRun, forKey: "settings.openResultAfterRun") }
+        defaults.synchronize()  // the app reads the file as soon as it starts
     }
 
     /// Launches the app on `documents` with this test's preferences suite and waits until it is in front.
@@ -87,27 +91,48 @@ class UITestCase: XCTestCase {
         waitUntil("the viewer has loaded the document (the page field is enabled)", timeout: 30, file: file, line: line) { pageField.isEnabled }
         let pagesValue = element("inspector.value.pages")
         XCTAssertTrue(pagesValue.waitForExistence(timeout: 30), "the inspector has no page count", file: file, line: line)
-        waitUntil("the inspector shows \(pages) pages", timeout: 30, file: file, line: line) { pagesValue.label == "\(pages)" }
+        waitUntil("the inspector shows \(pages) pages", timeout: 30, file: file, line: line) { self.inspectorValue("pages") == self.number(pages) }
         return window
+    }
+
+    /// The text of an inspector fact. SwiftUI exposes a Text's content as the accessibility value of its static text
+    /// element, so `label` is empty.
+    func inspectorValue(_ field: String) -> String { (element("inspector.value.\(field)").value as? String) ?? "" }
+
+    /// Opens the Settings window with Command-comma and returns the "open the result" switch.
+    @discardableResult
+    func openSettings(file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        app.typeKey(",", modifierFlags: .command)
+        let toggle = element("settings.openResult")
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15), "the Settings window opens", file: file, line: line)
+        return toggle
+    }
+
+    func isOn(_ toggle: XCUIElement) -> Bool {
+        (toggle.value as? String) == "1" || (toggle.value as? Int) == 1
     }
 
     /// The accessibility value of the page field: "Page N of M" (the contract of `ViewerToolbar`).
     func pageFieldValue() -> String { (element("toolbar.pageField").value as? String) ?? "" }
 
     /// The value the page field reports on page `page` of a `total`-page document.
-    func pageValue(_ page: Int, of total: Int = 20) -> String { "Page \(page) of \(total)" }
+    func pageValue(_ page: Int, of total: Int = 20) -> String { "Page \(number(page)) of \(number(total))" }
+
+    /// A number as the app shows it: it launches in en_US, which groups thousands ("1,000").
+    func number(_ value: Int) -> String { value.formatted(.number.locale(Locale(identifier: "en_US"))) }
 
     /// Waits until `condition` holds. It polls on the main actor until a deadline and runs the run loop
     /// between polls, so nothing here depends on which thread XCTest evaluates a predicate on and no
     /// fixed sleep is involved.
+    /// `state` is evaluated once, when the wait times out, and added to the failure message.
     func waitUntil(
-        _ description: String, timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line,
+        _ description: String, timeout: TimeInterval = 20, state: () -> String = { "" }, file: StaticString = #filePath, line: UInt = #line,
         _ condition: () -> Bool
     ) {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
             guard Date() < deadline else {
-                XCTFail("timed out waiting until \(description)", file: file, line: line)
+                XCTFail("timed out waiting until \(description)\(state().isEmpty ? "" : " (last state: \(state()))")", file: file, line: line)
                 return
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))

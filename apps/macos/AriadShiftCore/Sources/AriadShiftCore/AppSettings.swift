@@ -10,24 +10,23 @@ public enum SettingsKey {
 
 /// The settings that change engine behaviour. Values persist in `UserDefaults`.
 public struct AppSettings: Sendable {
-    /// Names a `UserDefaults` suite to use instead of the standard defaults, in Debug builds only. UI tests
-    /// set it so every run starts from a fresh preferences domain and never touches the user's own settings.
+    /// Names a `UserDefaults` suite to use instead of the standard defaults: a suite name, or the absolute path of a
+    /// preferences file. Only a Debug build of the app reads it (see `AriadShiftApp.init`): UI tests set it so every
+    /// run starts from a fresh preferences file and never touches the user's own settings.
     public static let defaultsSuiteVariable = "ASHIFT_DEFAULTS_SUITE"
 
-    /// The defaults the app reads and writes: in a Debug build the suite named by `ASHIFT_DEFAULTS_SUITE`,
-    /// otherwise (and always in a Release build) the standard ones.
-    public nonisolated(unsafe) static let launchDefaults: UserDefaults = {
-        #if DEBUG
-        // The test process seeds the suite before the app starts, which works across processes only
-        // because the app is not sandboxed (`ENABLE_APP_SANDBOX: NO`): a sandboxed app could not read it.
-        if let suite = ProcessInfo.processInfo.environment[defaultsSuiteVariable], !suite.isEmpty,
-            let defaults = UserDefaults(suiteName: suite)
-        {
-            return defaults
-        }
-        #endif
-        return .standard
-    }()
+    /// The suite named by `defaultsSuiteVariable` in `environment`, or nil when it is absent or empty.
+    public static func suiteDefaults(in environment: [String: String]) -> UserDefaults? {
+        guard let suite = environment[defaultsSuiteVariable], !suite.isEmpty else { return nil }
+        return UserDefaults(suiteName: suite)
+    }
+
+    /// The defaults the app reads and writes: the standard ones, unless the app replaces them once at startup,
+    /// before anything reads them. The replacement is made in the app target under `#if DEBUG` because a Swift
+    /// package built by Xcode does not see the app's `DEBUG` condition, so a gate here would never open.
+    /// The test process seeds the suite before the app starts, which works across processes only because the
+    /// app is not sandboxed (`ENABLE_APP_SANDBOX: NO`): a sandboxed app could not read it.
+    public nonisolated(unsafe) static var launchDefaults: UserDefaults = .standard
 
     // UserDefaults is documented thread-safe but not declared Sendable in the SDK; removing this
     // fails with "stored property 'defaults' ... has non-Sendable type" (checked on the macOS 27.2 SDK).

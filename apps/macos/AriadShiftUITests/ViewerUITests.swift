@@ -51,23 +51,30 @@ final class ViewerUITests: UITestCase {
 
         let status = element("find.status")
         func position() -> (current: Int, total: Int)? {
-            let parts = status.label.split(separator: " ")
+            // A Text's content is the accessibility value of its static text element (the label stays empty).
+            let parts = ((status.value as? String) ?? "").split(separator: " ")
             guard parts.count == 3, parts[1] == "of", let current = Int(parts[0]), let total = Int(parts[2]) else { return nil }
             return (current, total)
         }
-        waitUntil("the search reports matches", timeout: 30) { (position()?.total ?? 0) > 0 }
-        let total = try XCTUnwrap(position()).total
-        XCTAssertGreaterThanOrEqual(total, 20, "one match on each of the 20 pages")
+        // PDFKit streams matches, so the first reading can be short of the 20 pages: wait for the full count.
+        waitUntil("the search finds one match on each of the 20 pages", timeout: 30, state: { "\(status.value ?? "nil")" }) {
+            (position()?.total ?? 0) >= 20
+        }
         XCTAssertEqual(position()?.current, 1)
 
         app.typeKey("g", modifierFlags: .command)
-        waitUntil("Find Next moves to match 2") { position()?.current == 2 }
+        waitUntil("Find Next moves to match 2", state: { "\(status.value ?? "nil")" }) { position()?.current == 2 }
         app.typeKey("g", modifierFlags: [.command, .shift])
-        waitUntil("Find Previous goes back to match 1") { position()?.current == 1 }
+        waitUntil("Find Previous goes back to match 1", state: { "\(status.value ?? "nil")" }) { position()?.current == 1 }
+        // The arrow buttons are borderless icons: their hit area must not be just the glyph.
+        for id in ["find.previous", "find.next"] {
+            let frame = element(id).frame
+            XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 20, "\(id) has a comfortable hit area, not just its glyph: \(frame)")
+        }
         element("find.next").click()
-        waitUntil("the Next button moves to match 2") { position()?.current == 2 }
+        waitUntil("the Next button moves to match 2", state: { "\(status.value ?? "nil")" }) { position()?.current == 2 }
         element("find.previous").click()
-        waitUntil("the Previous button moves to match 1") { position()?.current == 1 }
+        waitUntil("the Previous button moves to match 1", state: { "\(status.value ?? "nil")" }) { position()?.current == 1 }
         element("find.done").click()
         waitUntil("the find bar is closed") { !field.exists }
     }
@@ -92,8 +99,9 @@ final class ViewerUITests: UITestCase {
         XCTAssertEqual(try printedNumbers(result), [2, 1] + Array(3...20))
         XCTAssertEqual(try printedNumbers(document), Array(1...20), "the original is untouched")
 
-        let reordered = app.windows.matching(NSPredicate(format: "title BEGINSWITH %@", "doc 2")).firstMatch
-        XCTAssertTrue(reordered.waitForExistence(timeout: 30), "the result opens in its own window")
+        // The engine names the result after the operation: doc.reordered.pdf.
+        let reordered = app.windows.matching(NSPredicate(format: "title BEGINSWITH %@", "doc.reordered")).firstMatch
+        XCTAssertTrue(reordered.waitForExistence(timeout: 30), "the result opens in its own window; windows: \(app.windows.allElementsBoundByIndex.map(\.title))")
     }
 
     /// Everything the toolbar offers works from the keyboard: the page field, previous and next, the grid.
@@ -101,10 +109,11 @@ final class ViewerUITests: UITestCase {
         seedDefaults()
         launchApp(opening: [try copyFixture("pdf-tools/multipage-20.pdf")])
         waitForDocumentWindow()
-        let page = element("toolbar.pageField")
 
-        app.typeKey("g", modifierFlags: [.command, .option])  // Go to Page focuses the field
-        page.typeText("7\r")
+        // Go to Page focuses the field with its text selected: typing replaces it. This types into the app rather
+        // than into the element, so it fails if the shortcut did not move keyboard focus to the field.
+        app.typeKey("g", modifierFlags: [.command, .option])
+        app.typeText("7\r")
         waitUntil("the page field reports page 7") { self.pageFieldValue() == self.pageValue(7) }
         app.typeKey(.downArrow, modifierFlags: [.command, .option])
         waitUntil("Next Page goes to 8") { self.pageFieldValue() == self.pageValue(8) }
@@ -120,16 +129,18 @@ final class ViewerUITests: UITestCase {
         for id in ["toolbar.pageGrid", "toolbar.previousPage", "toolbar.nextPage", "toolbar.zoomOut", "toolbar.zoom", "toolbar.zoomIn", "toolbar.find"] {
             let item = element(id)
             XCTAssertTrue(item.exists, "\(id) is in the toolbar")
-            XCTAssertFalse(item.label.isEmpty, "\(id) has an accessibility label")
+            // A button's name is its label; a menu button (the zoom menu) reports it as its title.
+            XCTAssertFalse(item.label.isEmpty && item.title.isEmpty, "\(id) has an accessible name")
         }
     }
 
     /// Apple's accessibility audit on the document window; every issue it reports fails the test.
     ///
-    /// Strict on purpose: no exclusion is justified from the code alone, and a guessed one would hide a real
-    /// finding. This test has never run (Automation Mode is off on the machine that wrote it), so it is the
-    /// first one to triage once the UI tests can run: fix each reported issue, or exclude it here with the
-    /// reason, through the issue handler of `performAccessibilityAudit`.
+    /// Strict on purpose: there is no issue handler and no exclusion. The audit service has to complete for the
+    /// result to mean anything, so its own failure ("Audit failed to complete in time", error -56) is the one
+    /// thing that skips the test; any reported issue still fails it. On the Mac this was first run on
+    /// (macOS 27.2, Xcode 27.2) the service times out after 15 s even for the welcome window and for Calculator,
+    /// so the skip is an environment limit, not a property of the app.
     func testAccessibilityAuditOfTheDocumentWindowFindsNothing() throws {
         seedDefaults()
         launchApp(opening: [try copyFixture("pdf-tools/multipage-20.pdf")])
@@ -137,6 +148,10 @@ final class ViewerUITests: UITestCase {
         let thumbnail = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Page 1 of 20")).firstMatch
         XCTAssertTrue(thumbnail.waitForExistence(timeout: 20))
 
-        try app.performAccessibilityAudit()
+        do {
+            try app.performAccessibilityAudit()
+        } catch let error as NSError where error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56 {
+            throw XCTSkip("the accessibility audit service cannot complete on this machine (\(error.localizedDescription)); it also times out for Calculator")
+        }
     }
 }

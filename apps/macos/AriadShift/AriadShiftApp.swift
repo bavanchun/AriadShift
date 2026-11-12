@@ -8,6 +8,12 @@ struct AriadShiftApp: App {
     @State private var imports = ImportModel()
 
     init() {
+        #if DEBUG
+        // UI tests name a preferences suite of their own; a Release build never reads the variable.
+        if let defaults = AppSettings.suiteDefaults(in: ProcessInfo.processInfo.environment) {
+            AppSettings.launchDefaults = defaults
+        }
+        #endif
         // Starts before any window exists, so the Tools menu is ready when one opens.
         let engine = EngineModel()
         engine.start()

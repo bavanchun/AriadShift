@@ -11,6 +11,17 @@ final class AppSettingsTests: XCTestCase {
         return defaults
     }
 
+    func testSuiteDefaultsComeFromTheNamedVariableOnly() {
+        XCTAssertNil(AppSettings.suiteDefaults(in: [:]), "no variable: the standard defaults stay")
+        XCTAssertNil(AppSettings.suiteDefaults(in: [AppSettings.defaultsSuiteVariable: ""]), "an empty name is ignored")
+        let name = "ashift-settings-suite-\(UUID().uuidString)"
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: name) }
+        let suite = AppSettings.suiteDefaults(in: [AppSettings.defaultsSuiteVariable: name])
+        XCTAssertNotNil(suite)
+        suite?.set(true, forKey: SettingsKey.onboardingCompleted)
+        XCTAssertFalse(AppSettings(defaults: UserDefaults(suiteName: name)!).needsOnboarding, "the suite is a real, separate domain")
+    }
+
     func testDefaultsAreNextToInputAndOpenResult() {
         let settings = AppSettings(defaults: makeDefaults())
         XCTAssertNil(settings.outputFolder)
