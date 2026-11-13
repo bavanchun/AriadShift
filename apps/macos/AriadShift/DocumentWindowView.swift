@@ -57,7 +57,7 @@ struct DocumentWindowView: View {
         }
         // Closing the window ends a running tool: nothing may be placed for a closed document.
         .onDisappear { session.cancelRun() }
-        .frame(minWidth: 720, minHeight: 440)
+        .frame(minWidth: 840, minHeight: 440)
     }
 
     private var editing: PageEditing { PageEditing(session: session, engine: engine) }
