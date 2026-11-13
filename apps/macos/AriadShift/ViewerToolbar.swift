@@ -1,3 +1,4 @@
+import AppKit
 import AriadShiftCore
 import SwiftUI
 
@@ -84,6 +85,7 @@ private struct PageNavigation: View {
             if !focused { text = String(number) }
         }
         .onChange(of: viewer.pageFieldFocusRequest) { focused = true }
+        .background(PageFieldFocuser(request: viewer.pageFieldFocusRequest))
     }
 
     /// A number outside the document goes to the nearest page; anything else restores the current one.
@@ -136,5 +138,43 @@ private struct ZoomControls: View {
         }
         .labelStyle(.iconOnly)
         .disabled(viewer.loadState != .loaded || viewer.layout != .reader)
+    }
+}
+
+/// Moves keyboard focus into the page field when Go to Page asks for it. SwiftUI's `FocusState` does not reach a
+/// text field hosted in a window toolbar on macOS (Go to Page left the field untouched), so this finds the field next
+/// to itself and makes it the first responder with its text selected, ready to be replaced by typing.
+private struct PageFieldFocuser: NSViewRepresentable {
+    let request: Int
+
+    final class Coordinator { var handled = 0 }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        guard request != context.coordinator.handled else { return }
+        context.coordinator.handled = request
+        DispatchQueue.main.async { [weak view] in
+            guard let view, let window = view.window else { return }
+            var ancestor: NSView? = view.superview
+            while let container = ancestor, container !== window.contentView {
+                if let field = Self.editableField(in: container) {
+                    window.makeFirstResponder(field)
+                    field.selectText(nil)
+                    return
+                }
+                ancestor = container.superview
+            }
+        }
+    }
+
+    private static func editableField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        for child in view.subviews {
+            if let found = editableField(in: child) { return found }
+        }
+        return nil
     }
 }
