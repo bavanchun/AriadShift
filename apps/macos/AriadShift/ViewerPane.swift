@@ -44,12 +44,16 @@ struct FindBar: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { find.next() }
-                .frame(minWidth: 160, maxWidth: 320)
+                .frame(minWidth: 80, maxWidth: 320)
                 .accessibilityLabel(String(localized: "mac.find.prompt"))
                 .accessibilityIdentifier("find.field")
+            // A stable width: a status text that grows from "" to "12 of 40" must not change the bar's width. Longer
+            // strings (other locales, large counts) still show in full, as the column's reported size no longer follows the bar.
             Text(statusText)
                 .font(.callout)
                 .monospacedDigit()
+                .lineLimit(1)
+                .frame(minWidth: 72, alignment: .leading)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(statusText)
                 .accessibilityIdentifier("find.status")
