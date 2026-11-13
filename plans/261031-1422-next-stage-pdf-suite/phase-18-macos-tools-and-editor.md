@@ -32,7 +32,7 @@ Every tool and both edit modes in the native app, feeling like a first-party App
 - **Task 0 (before T1): re-land the two UI changes that were reverted** to keep the macOS unit scheme green on CI. One change per commit, each with its own `macOS build & test` run: (a) the go-to-page field focus bridge (`PageFieldFocuser`), (b) the find-bar arrow hit area. The reverted layout commit is 4b4e4976. If the AppKit crash "window marked as needing another Update Constraints in Window pass" (`SplitViewChildController.hostingView(_:didUpdateMinSize:maxSize:)`) recurs in the hosted-window tests, revert the layout change first, then investigate.
 - **Sparkle manual path**: check the Check for Updates menu item and update window, the relaunch after install, and an https appcast under App Transport Security. Phase 17 proved the automatic path only.
 - **CI build time**: find why the Release build step of `macos.yml` takes 52-56 min (tests add ~3 min; job timeout is 90 min). Record before and after times in this file.
-  - Root causes found: the Rust graph is compiled three times, `uniffi-bindgen` builds in the dev profile, and there is no compiler cache.
+  - Root causes found: the Xcode helper phase compiled the dependency graph a second time, and `uniffi-bindgen` was rebuilt through `cargo run` in the dev profile. There is also no compiler cache. The baseline build step is 49-63 min (typically 52-56).
   - Fix is in PR #316. After-time: record it here from that PR's macOS check. Then sccache with the R2 bucket for `macos.yml` is approved (same pattern as `ci.yml`).
 
 ## Pro entitlement interim (decision by the lead)
@@ -49,6 +49,10 @@ Interim for T1 and T5:
 - No licence stub, no purchase flow, no UI Pro toggle.
 
 **OPEN QUESTION for the owner:** the real Pro grant mechanism. Options: StoreKit receipt, licence key, or cloud token. A signed offline token needs a signing key that the owner creates. Until answered, Release macOS stays Free (scout lines 23-28).
+
+Trust caveat: the `plan` field is caller-supplied in `ariad-ffi`, so a modified client can pass `pro`. Real enforcement needs the licence layer, which is why the grant mechanism stays an open question.
+
+Carried over from the scout (Q3, Q4): whether plan verification belongs in `ariad-host` or per surface, and whether to gate `ASHIFT_PLAN` in the release CLI. The Pro tool list is still open (ARCHITECTURE open question 9).
 
 ## Tasks
 
