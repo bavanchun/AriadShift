@@ -76,6 +76,7 @@ fn request(recipe: &str, out: &Path) -> RecipeRunRequest {
         confirmed: false,
         overwrite: false,
         cancel_token: None,
+        secrets: None,
     }
 }
 

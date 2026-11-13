@@ -13,7 +13,9 @@ use ariad_host::tools::{
 use futures_util::FutureExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::{CancelToken, FfiError, FfiWarning, catch_panics, engine_program, panic_message};
+use crate::{
+    CancelToken, FfiError, FfiWarning, SecretBag, catch_panics, engine_program, panic_message,
+};
 
 static RECIPE_VALIDATOR: LazyLock<Result<jsonschema::Validator, String>> = LazyLock::new(|| {
     let schema: serde_json::Value = serde_json::from_str(&generated_recipe_schema())
@@ -98,6 +100,47 @@ pub fn validate_recipe(recipe_json: String, imported: bool) -> Result<RecipeSumm
     })
 }
 
+/// Secret parameter names a recipe asks the user for, sorted and without repeats.
+///
+/// These are the tool parameters set to `{"$secret": "prompt"}`. The app prompts once per name,
+/// stores the answers in a [`SecretBag`] under the same names and passes it to `run_recipe`;
+/// one value serves every step that names the field.
+#[uniffi::export]
+pub fn recipe_secret_fields(recipe_json: String, imported: bool) -> Result<Vec<String>, FfiError> {
+    catch_panics(|| {
+        let recipe = Recipe::from_json_str(&recipe_json, origin(imported)).map_err(|e| {
+            FfiError::InvalidRequest {
+                message: e.to_string(),
+            }
+        })?;
+        let mut fields = std::collections::BTreeSet::new();
+        for step in &recipe.steps {
+            let Step::Tool { tool, params, .. } = step else {
+                continue;
+            };
+            let Some(spec) = ariad_core::tools::registry::find(tool.as_str()) else {
+                continue;
+            };
+            let Some(map) = params.as_object() else {
+                continue;
+            };
+            for &field in spec.secret_params {
+                let prompted = map.iter().any(|(key, value)| {
+                    key.eq_ignore_ascii_case(field)
+                        && matches!(
+                            ariad_core::tools::SecretRef::from_json_value(field, value),
+                            Ok(ariad_core::tools::SecretRef::Prompt)
+                        )
+                });
+                if prompted {
+                    fields.insert(field.to_string());
+                }
+            }
+        }
+        Ok(fields.into_iter().collect())
+    })
+}
+
 /// Request parameters for `run_recipe`.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct RecipeRunRequest {
@@ -110,6 +153,10 @@ pub struct RecipeRunRequest {
     pub confirmed: bool,
     pub overwrite: bool,
     pub cancel_token: Option<Arc<CancelToken>>,
+    /// Values for the recipe's `{"$secret": "prompt"}` fields, keyed by parameter name
+    /// (see [`recipe_secret_fields`]).
+    #[uniffi(default = None)]
+    pub secrets: Option<Arc<SecretBag>>,
 }
 
 /// Result of one executed step.
@@ -187,6 +234,9 @@ fn build_recipe_request(
         .with_origin(origin(request.imported), request.confirmed)
         .with_overwrite(request.overwrite)
         .with_cancel(cancel);
+    if let Some(bag) = &request.secrets {
+        recipe_request = recipe_request.with_secrets(bag.snapshot()?);
+    }
     if let Some(program) = engine_program() {
         recipe_request = recipe_request.with_engine_program(program);
     }

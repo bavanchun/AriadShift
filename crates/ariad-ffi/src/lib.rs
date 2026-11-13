@@ -17,11 +17,13 @@ use tokio_util::sync::CancellationToken;
 
 mod metrics;
 mod recipe;
+mod secrets;
 pub use metrics::{ChangeList, FidelityCoverage, FidelityReport, FidelityStructureScore};
 pub use recipe::{
     RecipeListener, RecipeRunOutcome, RecipeRunRequest, RecipeStepOutcome, RecipeStepSummary,
-    RecipeSummary, run_recipe, validate_recipe,
+    RecipeSummary, recipe_secret_fields, run_recipe, validate_recipe,
 };
+pub use secrets::SecretBag;
 
 uniffi::setup_scaffolding!("ariad_ffi");
 
@@ -322,6 +324,9 @@ pub struct ToolRunRequest {
     pub params_json: Option<String>,
     pub options_json: Option<String>,
     pub cancel_token: Option<Arc<CancelToken>>,
+    /// Secret parameter values (`password`, `api_key`, ...) kept out of `params_json`.
+    #[uniffi(default = None)]
+    pub secrets: Option<Arc<SecretBag>>,
 }
 
 /// Output outcome produced by `run_tool`.
@@ -376,6 +381,9 @@ pub(crate) fn build_tool_request(
         ariad_host::tools::ToolRequest::new(tool_id, inputs, output).with_params(params);
     tool_req.cancel = cancel;
     tool_req.engine_program = engine_program();
+    if let Some(bag) = &request.secrets {
+        tool_req.secrets = bag.snapshot()?;
+    }
 
     if let Some(opts_str) = &request.options_json
         && !opts_str.trim().is_empty()
@@ -853,10 +861,21 @@ mod tests {
                 params_json: None,
                 options_json: None,
                 cancel_token: None,
+                secrets: Some({
+                    let bag = SecretBag::new();
+                    bag.put("password".to_string(), "unit-secret".to_string())
+                        .expect("put secret");
+                    bag
+                }),
             },
             cancel,
         )
         .expect("build_tool_request");
+        assert_eq!(
+            tool_req.secrets.get("password"),
+            Some("unit-secret"),
+            "bag secrets must reach ToolRequest.secrets"
+        );
 
         assert_eq!(
             tool_req.engine_program,

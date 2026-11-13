@@ -131,6 +131,7 @@ async fn test_run_tool_structural_and_page_count() {
         params_json: Some(r#"{"order":"reverse"}"#.to_string()),
         options_json: None,
         cancel_token: None,
+        secrets: None,
     };
 
     let outcome = run_tool(req, None).await.expect("run_tool failed");
@@ -154,6 +155,7 @@ async fn test_invalid_tool_id_returns_typed_error() {
         params_json: None,
         options_json: None,
         cancel_token: None,
+        secrets: None,
     };
 
     let res = run_tool(req, None).await;
@@ -176,6 +178,7 @@ async fn test_invalid_options_json_returns_invalid_request() {
         params_json: None,
         options_json: Some("{not valid json".to_string()),
         cancel_token: None,
+        secrets: None,
     };
 
     let res = run_tool(req, None).await;
@@ -221,6 +224,7 @@ async fn test_listener_panic_returns_internal_error() {
         params_json: Some(r#"{"order":"reverse"}"#.to_string()),
         options_json: None,
         cancel_token: None,
+        secrets: None,
     };
 
     let listener = Box::new(PanickingListener);
@@ -254,6 +258,7 @@ async fn test_cancel_before_start_and_during_run() {
         params_json: Some(r#"{"order":"reverse"}"#.to_string()),
         options_json: None,
         cancel_token: Some(token_before),
+        secrets: None,
     };
 
     let res_before = run_tool(req_before, None).await;
@@ -274,6 +279,7 @@ async fn test_cancel_before_start_and_during_run() {
         params_json: Some(r#"{"order":"reverse"}"#.to_string()),
         options_json: None,
         cancel_token: Some(token_during),
+        secrets: None,
     };
 
     let res_during = run_tool(req_during, Some(listener)).await;
@@ -303,6 +309,7 @@ async fn test_run_tool_dropped_future_cancels_worker() {
         params_json: Some(r#"{"order":"reverse"}"#.to_string()),
         options_json: None,
         cancel_token: None,
+        secrets: None,
     };
 
     tokio::select! {
@@ -351,6 +358,7 @@ async fn test_progress_callback_receives_events() {
         params_json: Some(r#"{"order":"reverse"}"#.to_string()),
         options_json: None,
         cancel_token: None,
+        secrets: None,
     };
 
     let outcome = run_tool(req, Some(listener))
@@ -529,6 +537,7 @@ fn tool_request(tool: &str, inputs: &[&Path], output: &Path, params: &str) -> To
         params_json: Some(params.to_string()),
         options_json: None,
         cancel_token: None,
+        secrets: None,
     }
 }
 
