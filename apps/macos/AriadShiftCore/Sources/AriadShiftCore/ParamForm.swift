@@ -64,9 +64,34 @@ public enum ParamValue: Equatable, Sendable {
 }
 
 /// One row of a list editor: the chosen variant and its field values.
-public struct ParamRow: Equatable, Sendable {
+public struct ParamRow: Identifiable, Equatable, Sendable {
+    /// Stable identity, so an editor keeps addressing the same row after others are removed or moved.
+    /// It is not part of equality: two rows are equal when their kind and values are.
+    public let id: UUID
     public var variant: Int
     public var values: [String: ParamValue]
+
+    public init(id: UUID = UUID(), variant: Int, values: [String: ParamValue]) {
+        self.id = id
+        self.variant = variant
+        self.values = values
+    }
+
+    public static func == (lhs: ParamRow, rhs: ParamRow) -> Bool {
+        lhs.variant == rhs.variant && lhs.values == rhs.values
+    }
+}
+
+extension Array where Element == ParamRow {
+    /// The row with `id`, or nil once it has been removed. Lets a view hold a row's identity
+    /// instead of a position that goes stale when another row is removed.
+    public func row(id: ParamRow.ID) -> ParamRow? { first { $0.id == id } }
+
+    /// Replaces the row with `id` through `change`; does nothing when it no longer exists.
+    public mutating func update(id: ParamRow.ID, _ change: (inout ParamRow) -> Void) {
+        guard let index = firstIndex(where: { $0.id == id }) else { return }
+        change(&self[index])
+    }
 }
 
 public enum ParamFormError: Error, Equatable, Sendable {
@@ -95,7 +120,7 @@ public struct ParamForm: Equatable, Sendable {
         } catch {
             throw ParamFormError.invalidSchema("the parameter schema is not valid JSON")
         }
-        guard case let .object(properties) = schema["properties"] ?? .object([:]) else {
+        guard case .object = schema["properties"] ?? .object([:]) else {
             throw ParamFormError.invalidSchema("the parameter schema has no property object")
         }
         let result = ParamSchemaReader(root: schema).fields(of: schema, secretNames: secretParams)

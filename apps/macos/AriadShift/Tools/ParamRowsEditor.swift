@@ -12,8 +12,8 @@ struct ParamRowsEditor: View {
     var body: some View {
         GroupBox(field.isRequired ? field.title + " *" : field.title) {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(rows.indices, id: \.self) { position in
-                    rowView(position)
+                ForEach(rows) { row in
+                    rowView(row.id)
                 }
                 addControl
             }
@@ -23,29 +23,36 @@ struct ParamRowsEditor: View {
         .help(field.help ?? "")
     }
 
-    private func rowView(_ position: Int) -> some View {
+    private func rowView(_ id: ParamRow.ID) -> some View {
         GroupBox {
             VStack(alignment: .leading) {
                 HStack {
                     if shape.variants.count > 1 {
-                        Picker(shape.discriminator.map(Self.title) ?? "", selection: variant(position)) {
+                        Picker(shape.discriminator.map(Self.title) ?? "", selection: variant(id)) {
                             ForEach(shape.variants.indices, id: \.self) { index in
                                 Text(verbatim: shape.variants[index].title).tag(index)
                             }
                         }
                     }
                     Spacer()
-                    Button(String(localized: "mac.run.move_up"), systemImage: "arrow.up") { rows.swapAt(position, position - 1) }
-                        .disabled(position == 0)
-                    Button(String(localized: "mac.run.move_down"), systemImage: "arrow.down") { rows.swapAt(position, position + 1) }
-                        .disabled(position == rows.count - 1)
-                    Button(String(localized: "mac.run.remove"), systemImage: "minus.circle") { rows.remove(at: position) }
+                    Button(String(localized: "mac.run.move_up"), systemImage: "arrow.up") { move(id, by: -1) }
+                        .disabled(rows.first?.id == id)
+                    Button(String(localized: "mac.run.move_down"), systemImage: "arrow.down") { move(id, by: 1) }
+                        .disabled(rows.last?.id == id)
+                    Button(String(localized: "mac.run.remove"), systemImage: "minus.circle") { rows.removeAll { $0.id == id } }
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                ParamFieldsView(fields: shape.variants[rows[position].variant].fields, values: values(position))
+                if let row = rows.row(id: id) {
+                    ParamFieldsView(fields: shape.variants[row.variant].fields, values: values(id))
+                }
             }
         }
+    }
+
+    private func move(_ id: ParamRow.ID, by offset: Int) {
+        guard let index = rows.firstIndex(where: { $0.id == id }), rows.indices.contains(index + offset) else { return }
+        rows.swapAt(index, index + offset)
     }
 
     @ViewBuilder
@@ -64,14 +71,19 @@ struct ParamRowsEditor: View {
 
     private static func title(_ key: String) -> String { key.capitalized }
 
-    private func variant(_ position: Int) -> Binding<Int> {
+    private func variant(_ id: ParamRow.ID) -> Binding<Int> {
         Binding(
-            get: { rows[position].variant },
-            set: { rows[position] = shape.makeRow(variant: $0) }
+            get: { rows.row(id: id)?.variant ?? 0 },
+            set: { kind in
+                rows.update(id: id) { $0 = ParamRow(id: id, variant: kind, values: shape.makeRow(variant: kind).values) }
+            }
         )
     }
 
-    private func values(_ position: Int) -> Binding<[String: ParamValue]> {
-        Binding(get: { rows[position].values }, set: { rows[position].values = $0 })
+    private func values(_ id: ParamRow.ID) -> Binding<[String: ParamValue]> {
+        Binding(
+            get: { rows.row(id: id)?.values ?? [:] },
+            set: { newValues in rows.update(id: id) { $0.values = newValues } }
+        )
     }
 }

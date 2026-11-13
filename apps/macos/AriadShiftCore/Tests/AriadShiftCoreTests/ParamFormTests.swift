@@ -57,6 +57,20 @@ final class ParamFormTests: XCTestCase {
         XCTAssertThrowsError(try form.encode(values))
     }
 
+    func testNumberDefaultIsComparedByValue() throws {
+        let form = try ParamForm(
+            schemaJSON: #"{"type":"object","properties":{"scale":{"type":"number","default":10.0}}}"#
+        )
+        var values = form.initialValues()
+        for entered in ["10", "10.0", " 10 "] {
+            values["scale"] = .text(entered)
+            XCTAssertEqual(try form.encode(values), "{}", "\(entered) equals the default of 10.0")
+        }
+        values["scale"] = .text("11")
+        let sent = try JSONValue(jsonString: form.encode(values))
+        XCTAssertEqual(sent["scale"]?.doubleValue, 11)
+    }
+
     func testSwitchIsOmittedAtItsDefaultAndWrittenWhenChanged() async throws {
         let form = try ParamForm(schemaJSON: try await schema(of: "pdf.compress"))
         var values = form.initialValues()

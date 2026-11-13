@@ -43,12 +43,10 @@ final class ParamFormNestedTests: XCTestCase {
 
     func testOnlyTheKnownToolsRemainBlocked() throws {
         var blocked: [String: String] = [:]
-        let all = try descriptors()
-        for tool in all {
+        for tool in try descriptors() {
             let form = try tool.form()
             if !form.isSupported { blocked[tool.id] = form.blocked.joined(separator: ", ") }
         }
-        print("blocked tools (\(blocked.count) of \(all.count)): \(blocked.sorted { $0.key < $1.key })")
         XCTAssertEqual(blocked, Self.stillBlocked)
     }
 
@@ -216,14 +214,69 @@ final class ParamFormNestedTests: XCTestCase {
         return values
     }
 
+    /// Walks a filled form beside its encoded request: every required secret is sent as typed and
+    /// every row carries its kind's tag.
+    private func assertEncoded(
+        _ fields: [ParamField], in object: JSONValue?, _ context: String, tags: inout Int, secrets: inout Int
+    ) {
+        for field in fields where field.isRequired {
+            let name = "\(context).\(field.name)"
+            let value = object?[field.name]
+            XCTAssertNotNil(value, name)
+            switch field.kind {
+            case .secret:
+                XCTAssertEqual(value, .string("x"), name)
+                secrets += 1
+            case let .group(children):
+                assertEncoded(children, in: value, name, tags: &tags, secrets: &secrets)
+            case let .rows(shape):
+                let sent = value?.arrayValue ?? []
+                XCTAssertEqual(sent.count, shape.variants.count, name)
+                for (row, variant) in zip(sent, shape.variants) {
+                    if let key = shape.discriminator, let tag = variant.tag {
+                        XCTAssertEqual(row[key], .string(tag), name)
+                        tags += 1
+                    }
+                    assertEncoded(variant.fields, in: row, name, tags: &tags, secrets: &secrets)
+                }
+            default: break
+            }
+        }
+    }
+
     func testEverySupportedToolEncodesAFilledForm() throws {
         var encoded = 0
+        var tags = 0
+        var secrets = 0
         for tool in try descriptors() {
             let form = try tool.form()
             guard form.isSupported else { continue }
-            XCTAssertNoThrow(try JSONValue(jsonString: form.encode(sample(form.fields))), tool.id)
+            let sent = try JSONValue(jsonString: form.encode(sample(form.fields)))
+            assertEncoded(form.fields, in: sent, tool.id, tags: &tags, secrets: &secrets)
             encoded += 1
         }
         XCTAssertEqual(encoded, try descriptors().count - Self.stillBlocked.count)
+        XCTAssertGreaterThan(tags, 0, "no tagged row was checked")
+        XCTAssertGreaterThan(secrets, 0, "no required secret was checked")
+    }
+
+    // MARK: - Rows
+
+    func testRowsAreAddressedByIdentityAfterRemoval() {
+        func row(_ text: String) -> ParamRow { ParamRow(variant: 0, values: ["name": .text(text)]) }
+        var rows = [row("a"), row("b"), row("c"), row("d")]
+        let ids = rows.map(\.id)
+
+        rows.removeAll { $0.id == ids[3] }
+        XCTAssertNil(rows.row(id: ids[3]), "the removed last row is gone, not out of range")
+        rows.update(id: ids[3]) { $0.values["name"] = .text("late write") }
+        XCTAssertEqual(rows.count, 3, "a write to a removed row is ignored")
+
+        rows.removeAll { $0.id == ids[1] }
+        XCTAssertNil(rows.row(id: ids[1]))
+        XCTAssertEqual(rows.row(id: ids[0])?.values["name"], .text("a"))
+        XCTAssertEqual(rows.row(id: ids[2])?.values["name"], .text("c"), "later rows keep their identity")
+        rows.update(id: ids[2]) { $0.values["name"] = .text("C") }
+        XCTAssertEqual(rows.map { $0.values["name"] }, [.text("a"), .text("C")])
     }
 }
