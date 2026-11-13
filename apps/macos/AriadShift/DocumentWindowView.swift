@@ -23,16 +23,13 @@ struct DocumentWindowView: View {
     var body: some View {
         NavigationSplitView {
             PageSidebarView(viewer: viewer, editing: editing)
-                .constantMinimumSize(width: Column.sidebarMinWidth)
-                .navigationSplitViewColumnWidth(min: Column.sidebarMinWidth, ideal: 200, max: 320)
+                .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 320)
         } detail: {
             ViewerPane(viewer: viewer, editing: editing)
-                .constantMinimumSize(width: Column.detailMinWidth, height: Column.detailMinHeight)
         }
         .inspector(isPresented: $showInspector) {
             InspectorView(session: session)
-                .constantMinimumSize(width: Column.inspectorMinWidth)
-                .inspectorColumnWidth(min: Column.inspectorMinWidth, ideal: 280, max: 400)
+                .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
         }
         .toolbar {
             ViewerToolbar(viewer: viewer)
@@ -57,33 +54,8 @@ struct DocumentWindowView: View {
         }
         // Closing the window ends a running tool: nothing may be placed for a closed document.
         .onDisappear { session.cancelRun() }
-        .frame(minWidth: Column.windowMinWidth, minHeight: 440)
+        .frame(minWidth: 720, minHeight: 440)
     }
 
     private var editing: PageEditing { PageEditing(session: session, engine: engine) }
-}
-
-/// Minimum widths of the three columns. Their sum fits in the window's minimum width, so the split view never has to
-/// resolve conflicting minimums.
-private enum Column {
-    static let sidebarMinWidth: CGFloat = 160
-    static let detailMinWidth: CGFloat = 320
-    static let detailMinHeight: CGFloat = 200
-    static let inspectorMinWidth: CGFloat = 220
-    static let windowMinWidth: CGFloat = 720
-}
-
-private extension View {
-    /// Gives a split-view column a minimum size that is the same whatever it shows.
-    ///
-    /// A SwiftUI column reports the minimum size of its content to the split view, which re-reads it on every
-    /// constraints pass. A minimum that follows the content (a find bar that appears, a status text that changes, a
-    /// loading indicator replaced by the pages) can change while the split view is laying out, and AppKit then stops
-    /// with "window marked as needing another Update Constraints in Window pass". A clear, flexible base view sets the
-    /// column's size instead and the content is laid over it, so nothing inside can alter what the column reports.
-    func constantMinimumSize(width: CGFloat, height: CGFloat = 0) -> some View {
-        Color.clear
-            .frame(minWidth: width, maxWidth: .infinity, minHeight: height, maxHeight: .infinity)
-            .overlay { self }
-    }
 }

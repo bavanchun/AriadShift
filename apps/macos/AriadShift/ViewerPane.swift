@@ -44,31 +44,19 @@ struct FindBar: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { find.next() }
-                .frame(minWidth: 80, maxWidth: 320)
+                .frame(minWidth: 160, maxWidth: 320)
                 .accessibilityLabel(String(localized: "mac.find.prompt"))
                 .accessibilityIdentifier("find.field")
-            // A stable width: a status text that grows from "" to "12 of 40" must not change the bar's width. Longer
-            // strings (other locales, large counts) still show in full, as the column's reported size no longer follows the bar.
             Text(statusText)
                 .font(.callout)
                 .monospacedDigit()
-                .lineLimit(1)
-                .frame(minWidth: 72, alignment: .leading)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(statusText)
                 .accessibilityIdentifier("find.status")
-            // A borderless icon button is only as large as its glyph (about 11 by 6 pt), too small to hit: give it a
-            // comfortable target that is clickable all over. The size is fixed rather than a minimum: a min-only frame
-            // stays flexible, so the detail column's measured min and max size would depend on the proposal it is
-            // probed with, and the split view re-measures that size on every constraints pass.
             Button(String(localized: "mac.menu.find_previous"), systemImage: "chevron.up") { find.previous() }
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
                 .disabled(find.matchCount == 0)
                 .accessibilityIdentifier("find.previous")
             Button(String(localized: "mac.menu.find_next"), systemImage: "chevron.down") { find.next() }
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
                 .disabled(find.matchCount == 0)
                 .accessibilityIdentifier("find.next")
             Spacer()
