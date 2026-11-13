@@ -1,7 +1,7 @@
 ---
 phase: 17
 title: "macOS foundation: ariad-ffi (UniFFI), XCFramework, SwiftUI/AppKit document app shell, viewer, Sparkle, notarization"
-status: pending
+status: completed
 priority: P1
 effort: "6 tasks, ~12-15 worker-days"
 dependencies: [16]

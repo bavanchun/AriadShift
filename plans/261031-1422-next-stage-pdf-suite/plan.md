@@ -51,7 +51,7 @@ AriadShift today converts documents (36 routes, shared IR, CLI/MCP/web/desktop/c
 | 14 | [Web foundation: shell, i18n 40+, viewer](./phase-14-web-foundation-i18n-viewer.md) | D (parallel with 5-13) → 0.4.0 | 3, 4 | Pending |
 | 15 | [Web tool suite](./phase-15-web-tool-suite.md) | D → 0.5.0 | 14, 10 | Pending |
 | 16 | [Web editor + AI panel](./phase-16-web-editor-and-ai.md) | D → 0.6.0 | 15, 12, 13 | Pending |
-| 17 | [macOS foundation: ariad-ffi, shell, viewer, Sparkle](./phase-17-macos-foundation-ffi-shell.md) | E | 16 | Pending |
+| 17 | [macOS foundation: ariad-ffi, shell, viewer, Sparkle](./phase-17-macos-foundation-ffi-shell.md) | E | 16 | Completed (PR #284; Sparkle menu/relaunch/ATS path carried to 18) |
 | 18 | [macOS tools + editor](./phase-18-macos-tools-and-editor.md) | E → 0.7.0 | 17 | Pending |
 | 19 | [macOS native integrations](./phase-19-macos-native-integrations.md) | E → 0.8.0 | 18 | Pending |
 | 20 | [Hardening, benchmarks, 1.0 launch](./phase-20-hardening-benchmarks-and-1-0-launch.md) | F → 1.0.0 | 19 | Pending |
