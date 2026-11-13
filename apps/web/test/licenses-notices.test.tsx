@@ -353,7 +353,7 @@ describe("web licence notices", () => {
     expect(jsNotices).toContain("@opentelemetry/api@1.10.0");
     expect(jsNotices).toContain("pg@8.23.1");
     expect(jsNotices).toContain("sharp@0.35.5");
-    expect(jsNotices).toContain("next@16.4.3");
+    expect(jsNotices).toContain("next@16.4.5");
     expect(jsNotices).toContain("react@19.3.1");
   });
 
