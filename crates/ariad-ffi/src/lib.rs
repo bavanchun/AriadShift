@@ -5,6 +5,7 @@
 //! as non-throwing methods. They operate strictly on infallible atomics (`tokio_util::sync::CancellationToken`)
 //! with no allocation failures, panics, or I/O failure paths.
 
+use std::str::FromStr;
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
@@ -327,6 +328,10 @@ pub struct ToolRunRequest {
     /// Secret parameter values (`password`, `api_key`, ...) kept out of `params_json`.
     #[uniffi(default = None)]
     pub secrets: Option<Arc<SecretBag>>,
+    /// Plan the run executes under: `free`, `pro`, `team` or `enterprise`. Absent means `free`.
+    /// The host decides tier access from it; callers never re-implement that decision.
+    #[uniffi(default = None)]
+    pub plan: Option<String>,
 }
 
 /// Output outcome produced by `run_tool`.
@@ -377,8 +382,18 @@ pub(crate) fn build_tool_request(
         Value::Object(serde_json::Map::new())
     };
 
-    let mut tool_req =
-        ariad_host::tools::ToolRequest::new(tool_id, inputs, output).with_params(params);
+    let plan = match request.plan.as_deref() {
+        None => ariad_core::tools::Plan::default(),
+        Some(value) => ariad_core::tools::Plan::from_str(value.trim()).map_err(|e| {
+            FfiError::InvalidRequest {
+                message: format!("invalid plan: {e}"),
+            }
+        })?,
+    };
+
+    let mut tool_req = ariad_host::tools::ToolRequest::new(tool_id, inputs, output)
+        .with_params(params)
+        .with_plan(plan);
     tool_req.cancel = cancel;
     tool_req.engine_program = engine_program();
     if let Some(bag) = &request.secrets {
@@ -867,6 +882,7 @@ mod tests {
                         .expect("put secret");
                     bag
                 }),
+                plan: None,
             },
             cancel,
         )
