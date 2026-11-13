@@ -175,7 +175,10 @@
       "result_files": "{count, plural, other {Đã tạo # tệp}}",
       "field_error": "{kind, select, missing {Cần nhập {field}.} other {{field} không hợp lệ.}}",
       "result": "Kết quả",
-      "presets": "Mẫu có sẵn"
+      "presets": "Mẫu có sẵn",
+      "add_row": "Thêm",
+      "move_up": "Chuyển lên",
+      "move_down": "Chuyển xuống"
     },
     "settings": {
       "output_folder": "Lưu kết quả vào",

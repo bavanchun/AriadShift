@@ -10,9 +10,7 @@ struct ParamFormView: View {
 
     var body: some View {
         Form {
-            ForEach(form.fields) { field in
-                row(for: field)
-            }
+            ParamFieldsView(fields: form.fields, values: $values)
             if let error {
                 Text(L10n.branch("mac.run.field_error", error.kind, error.field))
                     .foregroundStyle(.red)
@@ -20,6 +18,18 @@ struct ParamFormView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// The editors of one object level. Groups and list rows nest it, each over its own value dictionary.
+struct ParamFieldsView: View {
+    let fields: [ParamField]
+    @Binding var values: [String: ParamValue]
+
+    var body: some View {
+        ForEach(fields) { field in
+            row(for: field)
+        }
     }
 
     private func text(_ field: ParamField) -> Binding<String> {
@@ -33,6 +43,20 @@ struct ParamFormView: View {
         Binding(
             get: { if case let .flag(value)? = values[field.name] { value } else { false } },
             set: { values[field.name] = .flag($0) }
+        )
+    }
+
+    private func group(_ field: ParamField) -> Binding<[String: ParamValue]> {
+        Binding(
+            get: { if case let .group(value)? = values[field.name] { value } else { [:] } },
+            set: { values[field.name] = .group($0) }
+        )
+    }
+
+    private func rows(_ field: ParamField) -> Binding<[ParamRow]> {
+        Binding(
+            get: { if case let .rows(value)? = values[field.name] { value } else { [] } },
+            set: { values[field.name] = .rows($0) }
         )
     }
 
@@ -83,6 +107,13 @@ struct ParamFormView: View {
                 }
                 .fixedSize()
             }
+        case let .group(children):
+            GroupBox(field.title) {
+                VStack(alignment: .leading) { ParamFieldsView(fields: children, values: group(field)) }
+            }
+            .help(field.help ?? "")
+        case let .rows(shape):
+            ParamRowsEditor(field: field, shape: shape, rows: rows(field))
         case .text, .integer, .number, .list:
             TextField(title(field), text: text(field)).help(field.help ?? "")
                 .announced(as: field, requiredHint: requiredHint(field))
