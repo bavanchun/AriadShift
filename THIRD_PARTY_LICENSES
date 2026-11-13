@@ -5367,7 +5367,7 @@ License: Apache License 2.0 (Apache-2.0)
 --------------------------------------------------------------------------------
 
 Used by:
-  - ammonia 4.2.4 (https://github.com/rust-ammonia/ammonia)
+  - ammonia 4.2.5 (https://github.com/rust-ammonia/ammonia)
   - anstream 1.0.0 (https://github.com/rust-cli/anstyle.git)
   - anstyle-parse 1.0.0 (https://github.com/rust-cli/anstyle.git)
   - anstyle-query 1.1.5 (https://github.com/rust-cli/anstyle.git)
