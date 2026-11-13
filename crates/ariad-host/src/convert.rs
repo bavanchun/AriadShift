@@ -1927,7 +1927,7 @@ fn plan_with_available_engines(
     profile: Profile,
     invocation: &EngineInvocation<'_>,
     cancel: &CancellationToken,
-) -> Result<Plan, ConvertError> {
+) -> Result<(Plan, Option<String>), ConvertError> {
     let needed: Vec<&str> = initial
         .steps
         .iter()
@@ -1935,7 +1935,7 @@ fn plan_with_available_engines(
         .filter(|engine| *engine != IN_PROCESS_ENGINE && *engine != engines::IN_PROCESS_PDF_ENGINE)
         .collect();
     if needed.is_empty() {
-        return Ok(initial);
+        return Ok((initial, None));
     }
     let report =
         engines::availability_of(invocation, &needed, cancel.clone()).map_err(map_run_error)?;
@@ -1952,7 +1952,7 @@ fn plan_with_available_engines(
         .find(|engine| !report.is_available(engine))
         .map(|engine| (*engine).to_owned())
     else {
-        return Ok(initial);
+        return Ok((initial, None));
     };
 
     let registered = caps.registered_engines();
@@ -1960,7 +1960,7 @@ fn plan_with_available_engines(
     let report =
         engines::availability_of(invocation, &registered, cancel.clone()).map_err(map_run_error)?;
     let (Some(first), Some(last)) = (initial.steps.first(), initial.steps.last()) else {
-        return Ok(initial);
+        return Ok((initial, None));
     };
     match planner::plan(
         caps,
@@ -1969,7 +1969,7 @@ fn plan_with_available_engines(
         profile,
         &report.available_engine_ids(),
     ) {
-        Ok(plan) => Ok(plan),
+        Ok(plan) => Ok((plan, Some(missing))),
         Err(PlanError::NoRoute { .. }) => Err(ConvertError::missing_engine(&missing)),
         Err(error) => Err(plan_error(error, first.from)),
     }
@@ -2039,13 +2039,32 @@ where
         &limits,
         &cancel,
     )?;
-    let plan = plan_with_available_engines(
+    let initial_reader = selected
+        .plan
+        .steps
+        .first()
+        .filter(|step| step.from == Format::Pdf)
+        .map(|step| step.engine.clone());
+    let (plan, missing_engine) = plan_with_available_engines(
         &selected.capabilities,
         selected.plan,
         request.profile,
         invocation,
         &cancel,
     )?;
+
+    let mut fallback_warning = selected.fallback_warning;
+    if fallback_warning.is_none()
+        && request.reader_engine.is_none()
+        && initial_reader.as_deref() == Some(engines::docling::ENGINE_ID)
+        && missing_engine.as_deref() == Some(engines::docling::ENGINE_ID)
+        && plan.steps.first().map(|step| step.engine.as_str()) == Some(engines::PDF.id)
+    {
+        fallback_warning = Some(ConvertWarning {
+            code: "docling_fallback".to_owned(),
+            message: "The Docling engine pack is not installed; converted digital PDF with the built-in PDF reader.".to_owned(),
+        });
+    }
 
     let route = route_from_plan(&plan).ok_or_else(|| ConvertError::UnsupportedRoute {
         detail: Some(format!(
@@ -2065,6 +2084,9 @@ where
         on_event,
     )?;
     report.elapsed = started.elapsed();
+    if let Some(warning) = fallback_warning {
+        report.warnings.insert(0, warning);
+    }
     if extension_mismatch {
         report.warnings.insert(
             0,

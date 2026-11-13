@@ -497,3 +497,105 @@ fn scanned_pdf_requires_ocr_instead_of_silently_returning_empty_text() {
     assert!(stderr(&result).contains("docling"), "{}", stderr(&result));
     assert!(!output.exists());
 }
+
+/// Merges the digital map-room page with `scans` image-only pages into one PDF.
+fn mixed_pdf(directory: &Path, scans: usize) -> PathBuf {
+    let digital = repository().join("fixtures/pdf/en-map-room.pdf");
+    let scan = repository().join("fixtures/pdf/vi-garden-image-only.pdf");
+    let out_dir = directory.join(format!("merged-{scans}"));
+    fs::create_dir_all(&out_dir).unwrap();
+    let mut command = cli();
+    command.args(["tool", "pdf.merge"]).arg(&digital);
+    for _ in 0..scans {
+        command.arg(&scan);
+    }
+    let merged = command.arg("-o").arg(&out_dir).output().unwrap();
+    assert!(merged.status.success(), "{}", stderr(&merged));
+    out_dir.join("en-map-room.merged.pdf")
+}
+
+fn warning_message(report: &Value, code: &str) -> Option<String> {
+    report["warnings"]
+        .as_array()?
+        .iter()
+        .find(|warning| warning["code"] == code)
+        .and_then(|warning| warning["message"].as_str())
+        .map(str::to_owned)
+}
+
+#[test]
+fn mixed_pdf_without_docling_falls_back_and_names_the_skipped_pages() {
+    let directory = tempdir().unwrap();
+
+    let three_pages = mixed_pdf(directory.path(), 2);
+    let docx = directory.path().join("mixed.docx");
+    let converted = cli()
+        .arg("convert")
+        .arg(&three_pages)
+        .args(["--to", "docx", "--json", "-o"])
+        .arg(&docx)
+        .output()
+        .unwrap();
+    assert_eq!(converted.status.code(), Some(0), "{}", stderr(&converted));
+    let report: Value = serde_json::from_slice(&converted.stdout).unwrap();
+    assert_eq!(report["route"][0]["engine"], "pdf");
+    assert_eq!(
+        warning_message(&report, "docling_fallback").as_deref(),
+        Some(
+            "2 of 3 pages have no text layer and were left without text; install Docling to OCR them."
+        )
+    );
+    let text = directory.path().join("mixed.md");
+    let back = cli()
+        .arg("convert")
+        .arg(&docx)
+        .args(["--to", "md", "-o"])
+        .arg(&text)
+        .output()
+        .unwrap();
+    assert!(back.status.success(), "{}", stderr(&back));
+    assert!(
+        fs::read_to_string(&text)
+            .unwrap()
+            .contains("Notes from the Map Room")
+    );
+
+    let two_pages = mixed_pdf(directory.path(), 1);
+    let markdown = directory.path().join("mixed-two.md");
+    let converted = cli()
+        .arg("convert")
+        .arg(&two_pages)
+        .args(["--to", "md", "--json", "-o"])
+        .arg(&markdown)
+        .output()
+        .unwrap();
+    assert_eq!(converted.status.code(), Some(0), "{}", stderr(&converted));
+    let report: Value = serde_json::from_slice(&converted.stdout).unwrap();
+    assert_eq!(
+        warning_message(&report, "docling_fallback").as_deref(),
+        Some(
+            "1 of 2 pages has no text layer and was left without text; install Docling to OCR it."
+        )
+    );
+    assert!(stderr(&converted).contains("warning[docling_fallback]"));
+}
+
+#[test]
+fn scanned_pdf_without_docling_still_fails_with_the_cli_hint() {
+    let directory = tempdir().unwrap();
+    let output = directory.path().join("scan.docx");
+    let result = cli()
+        .arg("convert")
+        .arg(repository().join("fixtures/pdf/vi-garden-image-only.pdf"))
+        .args(["--to", "docx", "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(5), "{}", stderr(&result));
+    assert!(
+        stderr(&result).contains("ashift engines install docling"),
+        "{}",
+        stderr(&result)
+    );
+    assert!(!output.exists());
+}

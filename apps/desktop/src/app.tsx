@@ -158,6 +158,10 @@ export function App() {
     (id: string) => setToasts((current) => current.filter((toast) => toast.id !== id)),
     [],
   );
+  const openInstallPack = useCallback((pack: string) => {
+    setPackName(pack);
+    setTab("Engine packs");
+  }, []);
   const refresh = useCallback(async () => {
     const next = await commands.snapshot({});
     const finished = newlyFinished(statuses.current, next.jobs).filter(
@@ -172,6 +176,7 @@ export function App() {
         reveal: (job) => void revealItemInDir(job.output).catch((e) => setNotice(failure(e))),
         retry: (job) => void commands.retry({ id: job.id }).catch((e) => setNotice(failure(e))),
         viewQueue: () => setTab("Queue"),
+        installPack: openInstallPack,
       });
       const ids = new Set(created.map((toast) => toast.id));
       setToasts((current) => [...current.filter((t) => !ids.has(t.id)), ...created].slice(-3));
@@ -186,7 +191,7 @@ export function App() {
       setOverwrite(next.settings.overwrite);
       if (next.settings.output_policy === "folder") setOutput(next.settings.output_folder);
     }
-  }, []);
+  }, [openInstallPack]);
   const run = useCallback(
     async (action: () => Promise<unknown>) => {
       setNotice(undefined);
@@ -742,6 +747,11 @@ export function App() {
                         onClick={() => void run(() => commands.cancel({ id: job.id }))}
                       >
                         Cancel
+                      </Button>
+                    )}
+                    {job.missing_pack === "docling" && (
+                      <Button variant="outline" onClick={() => openInstallPack("docling")}>
+                        Install Docling
                       </Button>
                     )}
                     {job.error && (

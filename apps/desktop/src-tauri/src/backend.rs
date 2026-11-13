@@ -16,6 +16,8 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+const DOCLING_MISSING_COPY: &str = "The Docling engine pack is not installed. Scanned PDFs and images require Docling for OCR — install Docling in Engine packs.";
+
 pub(crate) struct Job {
     pub view: JobView,
     pub request: QueueRequest,
@@ -193,6 +195,7 @@ impl Backend {
                 stage: "Queued".into(),
                 error: None,
                 warnings: vec![],
+                missing_pack: None,
             };
             result.push(view);
         }
@@ -299,6 +302,9 @@ impl Backend {
             Ok(report) => {
                 job.view.status = JobStatus::Succeeded;
                 job.view.stage = format!("Completed in {} ms", report.elapsed.as_millis());
+                if report.warnings.iter().any(|w| w.code == "docling_fallback") {
+                    job.view.missing_pack = Some("docling".into());
+                }
                 job.view.warnings = report.warnings.into_iter().map(|w| w.message).collect();
             }
             Err(error) => {
@@ -314,6 +320,24 @@ impl Backend {
                 }
                 .into();
                 job.view.error = Some(error.to_string());
+                if !cancel.is_cancelled() {
+                    match &error {
+                        convert::ConvertError::DoclingMissing
+                        | convert::ConvertError::DoclingToolMissing => {
+                            job.view.missing_pack = Some("docling".into());
+                            job.view.error = Some(DOCLING_MISSING_COPY.into());
+                        }
+                        convert::ConvertError::EngineMissing { engine, .. }
+                            if packs::index_entries().iter().any(|p| p.name == *engine) =>
+                        {
+                            job.view.missing_pack = Some(engine.clone());
+                            job.view.error = Some(format!(
+                                "The {engine} engine pack is not installed. Install {engine} in Engine packs."
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         drop(m);
@@ -336,8 +360,7 @@ impl Backend {
             &caps,
             Some(&self.engine),
             CancellationToken::new(),
-        )
-        .map_err(|e| e.to_string());
+        );
         let explanation = match plan {
             Ok(plan) => format!(
                 "{} · {} · {}",
@@ -355,7 +378,12 @@ impl Backend {
                     .map(|e| format!("Missing engine: {e}"))
                     .unwrap_or_else(|| "Runs locally".into())
             ),
-            Err(e) => e,
+            Err(
+                convert::ConvertError::DoclingMissing | convert::ConvertError::DoclingToolMissing,
+            ) => {
+                "The Docling engine pack is not installed; install Docling in Engine packs.".into()
+            }
+            Err(e) => e.to_string(),
         };
         Ok(Inspection {
             summary: format!(
@@ -637,6 +665,33 @@ mod tests {
             })
             .unwrap();
         assert_eq!(wait(&app.backend, 3)[2].status, JobStatus::Succeeded);
+    }
+    #[test]
+    fn scanned_pdf_without_docling_fails_with_desktop_install_copy() {
+        let installed = packs::PackContext::from_env()
+            .and_then(|context| packs::list_installed(&context))
+            .map(|rows| rows.iter().any(|p| p.name == "docling"))
+            .unwrap_or(false);
+        if installed || std::env::var_os("ASHIFT_PACK_DOCLING").is_some() {
+            return;
+        }
+        let app = TestApp::new();
+        let scan = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../fixtures/pdf/vi-garden-image-only.pdf");
+        let input = app._dir.path().join("scan.pdf");
+        std::fs::copy(scan, &input).unwrap();
+        app.backend
+            .enqueue(QueueRequest {
+                target: "docx".into(),
+                ..request(vec![input.to_string_lossy().into_owned()])
+            })
+            .unwrap();
+        let job = wait(&app.backend, 1).remove(0);
+        assert_eq!(job.status, JobStatus::Failed);
+        assert_eq!(job.missing_pack.as_deref(), Some("docling"));
+        let error = job.error.unwrap();
+        assert!(error.contains("Engine packs"), "{error}");
+        assert!(!error.contains("ashift engines install"), "{error}");
     }
     #[test]
     fn invalid_batch_is_atomic_and_settings_are_validated_and_persisted() {

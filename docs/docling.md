@@ -11,6 +11,8 @@ Docling turns PDF (digital and scanned), Office files and images into a structur
 
 The planner appends any writer, so `ashift convert scan.pdf --to docx` is `pdf ─docling→ docling+json ─ariad-core→ ariad-ir+json ─pandoc→ docx`. In the format graph, PDF `editable` routes prefer Docling while `fast` routes prefer the Rust reader, based on [measured capabilities](bench-report.md). File-based conversion and plan previews first apply the existing content-aware policy: digital text uses the built-in reader, scans require Docling, and `--engine docling` explicitly requests digital layout extraction. DOCX readers compete by profile using the measured metrics.
 
+When Docling is not installed, a digital PDF, including a mixed PDF with some pages that have no text layer, falls back to the built-in PDF reader. The conversion succeeds and reports `warning[docling_fallback]`, which names how many pages were left without text and suggests installing Docling to OCR them; `PDF → XLSX` and `PDF → CSV` of a fully digital PDF report the same code to say that Docling table layout extraction was skipped. A scanned PDF, with no text layer on any page, still needs Docling and exits with code 5. The desktop app shows an `Install Docling` action on both the failed job and the fallback warning.
+
 ## What it needs
 
 The 0.2.0 pack requires `ashift >=0.2.0, <2.0.0`: it speaks the frozen
