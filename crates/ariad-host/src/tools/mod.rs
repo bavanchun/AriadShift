@@ -29,7 +29,10 @@ pub use publish::{
     PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
     default_single_artifact_name, default_tool_suffix, publish_atomic, render_naming_template,
 };
-pub use recipe::{RecipeOutcome, RecipeRequest, StepOutcome, run_recipe, run_recipe_with_events};
+pub use recipe::{
+    RecipeEvent, RecipeOutcome, RecipeRequest, StepOutcome, run_recipe, run_recipe_with_events,
+    run_recipe_with_step_events,
+};
 pub use run::{
     InputRef, OutputTarget, ToolError, ToolEvent, ToolMetrics, ToolOutcome, ToolRequest, run_tool,
     run_tool_with_events, validate_params_against_schema,
