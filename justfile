@@ -460,11 +460,24 @@ macos-project:
 # Build the universal Release macOS application bundle. Extra xcodebuild settings may be passed as arguments
 # (each stays one argument: the global `set positional-arguments` forwards them with "$@" instead of textual substitution).
 [macos]
-macos-build *args: macos-ffi
+macos-build *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The ashift helper is built in the same cargo invocation as the XCFramework slices and handed to the Xcode helper
+    # phase through ASHIFT_HELPER_PATH, so the dependency graph compiles once per target. A caller-provided
+    # ASHIFT_HELPER_PATH is kept and no helper is built.
+    target_dir="${CARGO_TARGET_DIR:-target}"
+    [[ "$target_dir" = /* ]] || target_dir="$PWD/$target_dir"
+    if [[ -z "${ASHIFT_HELPER_PATH:-}" ]]; then
+        ASHIFT_HELPER_OUT="$target_dir/universal/release/ashift" bash scripts/build-xcframework.sh
+        export ASHIFT_HELPER_PATH="$target_dir/universal/release/ashift"
+    else
+        bash scripts/build-xcframework.sh
+    fi
     bash apps/macos/scripts/sync-ffi.sh
     just macos-project
-    derived_dir="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-target/derived-data}}"; \
-    mkdir -p "$derived_dir"; \
+    derived_dir="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-target/derived-data}}"
+    mkdir -p "$derived_dir"
     xcodebuild -project apps/macos/AriadShift.xcodeproj \
         -scheme AriadShift \
         -configuration Release \

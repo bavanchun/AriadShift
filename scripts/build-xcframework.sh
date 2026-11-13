@@ -20,11 +20,15 @@ fi
 
 export MACOSX_DEPLOYMENT_TARGET=15.0
 
-echo "==> Building ariad-ffi release slice: aarch64-apple-darwin"
-cargo build -p ariad-ffi --release --target aarch64-apple-darwin
-
-echo "==> Building ariad-ffi release slice: x86_64-apple-darwin"
-cargo build -p ariad-ffi --release --target x86_64-apple-darwin
+# One cargo invocation builds both slices, so each crate compiles once per target and the host-side build scripts
+# are shared. When ASHIFT_HELPER_OUT is set, the same invocation also builds the ashift helper (ariad-cli), so the
+# dependency graph is not compiled a second time later; the helper slices are merged into that path with lipo.
+CARGO_ARGS=(build --release -p ariad-ffi --target aarch64-apple-darwin --target x86_64-apple-darwin)
+if [[ -n "${ASHIFT_HELPER_OUT:-}" ]]; then
+    CARGO_ARGS+=(-p ariad-cli --locked)
+fi
+echo "==> Building release slices: aarch64-apple-darwin x86_64-apple-darwin"
+cargo "${CARGO_ARGS[@]}"
 
 echo "==> Creating universal binary with lipo"
 UNIVERSAL_DIR="${TARGET_DIR}/universal/release"
@@ -34,11 +38,23 @@ lipo -create \
     "${TARGET_DIR}/x86_64-apple-darwin/release/libariad_ffi.a" \
     -output "${UNIVERSAL_DIR}/libariad_ffi.a"
 
+if [[ -n "${ASHIFT_HELPER_OUT:-}" ]]; then
+    echo "==> Creating universal ashift helper with lipo: ${ASHIFT_HELPER_OUT}"
+    mkdir -p "$(dirname "${ASHIFT_HELPER_OUT}")"
+    lipo -create \
+        "${TARGET_DIR}/aarch64-apple-darwin/release/ashift" \
+        "${TARGET_DIR}/x86_64-apple-darwin/release/ashift" \
+        -output "${ASHIFT_HELPER_OUT}"
+fi
+
 echo "==> Generating Swift bindings and C headers"
 TEMP_BINDINGS="$(mktemp -d)"
 trap 'rm -rf "${TEMP_BINDINGS}"' EXIT
 
-cargo run -p ariad-ffi --bin uniffi-bindgen -- generate \
+# The release build above already produced uniffi-bindgen for both targets; run the one that matches this host
+# instead of compiling the dependency graph again in the dev profile.
+HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+"${TARGET_DIR}/${HOST_TRIPLE}/release/uniffi-bindgen" generate \
     "${UNIVERSAL_DIR}/libariad_ffi.a" \
     --language swift \
     --out-dir "${TEMP_BINDINGS}"
