@@ -52,7 +52,8 @@ final class EngineModel: ObservableObject {
             // guessed: the catalogue disables every tool that needs them.
             let runtimeInfo = try? await client.toolRuntimeInfo()
             runtimeInfoFailed = runtimeInfo == nil
-            groups = ToolCatalog.build(tools: try await tools, runtimeInfo: runtimeInfo ?? [:])
+            groups = ToolCatalog.build(
+                tools: try await tools, runtimeInfo: runtimeInfo ?? [:], plan: client.displayPlan)
             self.client = client
             state = .ready
         } catch {

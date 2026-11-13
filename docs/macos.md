@@ -43,6 +43,12 @@ as `secrets` on `ToolRunRequest` or `RecipeRunRequest`; values never appear in p
 strings (drop semantics); it does not zeroize memory, and the values still cross the UniFFI boundary as ordinary strings. `RecipeRunRequest.imported`
 and `confirmed` are flags set by the caller, not verified by the library, so only the app's own trust decision should set them.
 
+`ToolRunRequest.plan` (`free`, `pro`, `team`, `enterprise`; absent means `free`) sets the plan a tool run executes under. `ariad-host` parses it and
+alone decides tier access, so an unknown value is `InvalidRequest` and a Pro tool on Free fails with `tier_not_allowed`. The app takes the plan from a
+`PlanProvider`: Release builds always answer Free because no purchase or licence system exists yet, and Debug builds read `ASHIFT_PLAN` with the CLI's
+strict values. The plan field is caller-supplied, so it is not an entitlement check; a signed licence is still to be decided. Pro tools show a "(Pro)"
+label in the Tools menu and a notice in the run sheet, and a refused run shows an upgrade message.
+
 ## Tools menu
 The menu comes from `listTools()` grouped by registry group. A tool is enabled when it is free, takes the open PDF, and every required parameter has
 an editor (text, number, switch, enum, list, presets, nested object as a group, array of objects as a row list with add, remove and move, tagged rows

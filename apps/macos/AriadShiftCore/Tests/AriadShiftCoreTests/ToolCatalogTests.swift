@@ -70,9 +70,23 @@ final class ToolCatalogTests: XCTestCase {
         }
         XCTAssertEqual(try entry("ai.summarize", in: groups).availability, .unavailable(.later))
         XCTAssertEqual(try entry("edit.apply", in: groups).availability, .unavailable(.later))
-        XCTAssertEqual(try entry("pdf.sign_token", in: groups).availability, .unavailable(.paid), "paid tier")
         XCTAssertEqual(try entry("web.to_pdf", in: groups).availability, .unavailable(.later), "takes no document")
         XCTAssertEqual(try entry("image.to_pdf", in: groups).availability, .unavailable(.otherFormat))
+    }
+
+    func testProToolsAreLabelledAndKeepTheirRunnableState() async throws {
+        let client = try makeClient()
+        let tools = try await client.listTools()
+        let info = try await client.toolRuntimeInfo()
+        let free = ToolCatalog.build(tools: tools, runtimeInfo: info, plan: .free).flatMap(\.tools)
+        let pro = ToolCatalog.build(tools: tools, runtimeInfo: info, plan: .pro).flatMap(\.tools)
+        XCTAssertTrue(free.filter(\.isPro).map(\.id).contains("pdf.sign_token"))
+        XCTAssertEqual(free.filter(\.isPro).map(\.id), pro.filter(\.isPro).map(\.id), "the plan never changes the tier label")
+        XCTAssertEqual(free.map(\.availability), pro.map(\.availability), "the plan never changes availability: the host decides")
+        let freeTool = try XCTUnwrap(free.first { $0.id == "pdf.sign_token" })
+        XCTAssertTrue(freeTool.isProLocked)
+        XCTAssertFalse(try XCTUnwrap(pro.first { $0.id == "pdf.sign_token" }).isProLocked)
+        XCTAssertTrue(free.filter { !$0.isPro }.allSatisfy { !$0.isProLocked }, "Free tools are never locked")
     }
 
     /// Tools that are off in this release, with the reason shown in their tooltip.
@@ -81,7 +95,6 @@ final class ToolCatalogTests: XCTestCase {
         "edit.apply": .later, "edit.export_document": .later, "edit.open_document": .later, "edit.page_objects": .later,
         "ai.ask": .later, "ai.extract_tables": .later, "ai.recipe_from_text": .later,
         "ai.summarize": .later, "ai.translate": .later,
-        "pdf.sign_token": .paid,
         "image.to_pdf": .otherFormat, "image.ocr": .otherFormat,
     ]
 
@@ -98,7 +111,7 @@ final class ToolCatalogTests: XCTestCase {
         pdf.linearize pdf.merge pdf.metadata pdf.nup pdf.ocr pdf.outline pdf.overlay
         pdf.page_labels pdf.page_numbers pdf.permissions pdf.portfolio pdf.posterize pdf.qr pdf.redact pdf.redact_verify pdf.remove_blank
         pdf.render pdf.reorder pdf.repair pdf.replace_color pdf.rotate pdf.rotate_content
-        pdf.sanitize pdf.scale pdf.scan_split pdf.scanner_effect pdf.sign pdf.sign_remove
+        pdf.sanitize pdf.scale pdf.scan_split pdf.scanner_effect pdf.sign pdf.sign_remove pdf.sign_token
         pdf.sign_verify pdf.sign_visual pdf.single_page pdf.split pdf.stamp pdf.tables_to_csv
         pdf.text_layout pdf.thumbnails pdf.timestamp pdf.to_cbz pdf.to_images pdf.to_pdfa
         pdf.to_pdfua pdf.toc_page pdf.unlock_forms pdf.validate_pdfa pdf.validate_pdfua
@@ -162,8 +175,8 @@ final class ToolCatalogTests: XCTestCase {
 
     func testEveryDisabledToolHasATooltipBranch() {
         XCTAssertEqual(
-            [UnavailableReason.later, .otherFormat, .paid, .infoUnavailable].map(\.tooltipBranch),
-            ["later", "format", "paid", "info"]
+            [UnavailableReason.later, .otherFormat, .infoUnavailable].map(\.tooltipBranch),
+            ["later", "format", "info"]
         )
     }
 }

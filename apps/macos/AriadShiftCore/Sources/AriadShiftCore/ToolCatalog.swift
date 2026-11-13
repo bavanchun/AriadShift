@@ -25,8 +25,6 @@ public enum UnavailableReason: String, Equatable, Sendable {
     case later
     /// Works on other formats, not on the open PDF; it belongs to File > Import.
     case otherFormat
-    /// Belongs to a paid tier.
-    case paid
     /// The registry facts (arity, secret parameters) could not be read, so the tool stays
     /// off rather than guessing: a wrong guess would show a password in a plain text field.
     case infoUnavailable
@@ -36,7 +34,6 @@ public enum UnavailableReason: String, Equatable, Sendable {
         switch self {
         case .later: "later"
         case .otherFormat: "format"
-        case .paid: "paid"
         case .infoUnavailable: "info"
         }
     }
@@ -55,6 +52,15 @@ public struct ToolEntry: Identifiable, Equatable, Sendable {
     public let form: ParamForm
     public let arity: InputArity
     public let availability: ToolAvailability
+    /// The plan this menu was built for, used only to label Pro tools.
+    public let plan: EntitlementPlan
+
+    /// The tool belongs to the Pro tier. It is labelled in the menu and the run sheet.
+    public var isPro: Bool { info.tier != "free" }
+
+    /// A Pro tool on a plan that does not grant Pro. It can still be opened; the host refuses
+    /// the run with `tier_not_allowed`, which the run sheet shows as an upgrade message.
+    public var isProLocked: Bool { isPro && !plan.grantsPro }
 
     public var isAvailable: Bool { availability == .available }
 }
@@ -96,7 +102,10 @@ public enum ToolCatalog {
     /// - Parameter runtimeInfo: arity and secret parameters per tool id. A tool without an
     ///   entry is unavailable (`infoUnavailable`): nothing is guessed, so an empty dictionary
     ///   (the registry facts failed to load) keeps every tool that needs them disabled.
-    public static func build(tools: [ToolInfo], runtimeInfo: [String: ToolRuntimeInfo] = [:]) -> [ToolGroup] {
+    /// - Parameter plan: labels Pro tools in the menu. It never decides whether a run is allowed.
+    public static func build(
+        tools: [ToolInfo], runtimeInfo: [String: ToolRuntimeInfo] = [:], plan: EntitlementPlan = .free
+    ) -> [ToolGroup] {
         var byGroup: [String: [ToolEntry]] = [:]
         for info in tools {
             let known = runtimeInfo[info.id]
@@ -107,7 +116,8 @@ public enum ToolCatalog {
                 title: title(for: info.id),
                 form: form ?? ParamForm.unsupported,
                 arity: arity,
-                availability: availability(of: info, form: form, runtimeInfo: known)
+                availability: availability(of: info, form: form, runtimeInfo: known),
+                plan: plan
             )
             byGroup[info.group, default: []].append(entry)
         }
@@ -121,9 +131,6 @@ public enum ToolCatalog {
     private static func availability(of info: ToolInfo, form: ParamForm?, runtimeInfo: ToolRuntimeInfo?) -> ToolAvailability {
         if laterGroups.contains(info.group) {
             return .unavailable(.later)
-        }
-        if info.tier != "free" {
-            return .unavailable(.paid)
         }
         guard let runtimeInfo else {
             return .unavailable(.infoUnavailable)

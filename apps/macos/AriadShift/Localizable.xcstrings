@@ -30897,6 +30897,23 @@
         }
       }
     },
+    "mac.run.pro_notice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a Pro tool. It needs a Pro plan to run."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đây là công cụ Pro. Cần gói Pro để chạy."
+          }
+        }
+      }
+    },
     "mac.run.remove" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -33012,6 +33029,23 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "執行 %1$@"
+          }
+        }
+      }
+    },
+    "mac.run.upgrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This tool needs a Pro plan. Upgrade to run it."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Công cụ này cần gói Pro. Hãy nâng cấp để chạy."
           }
         }
       }
@@ -42663,6 +42697,41 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "正在載入工具…"
+          }
+        }
+      }
+    },
+    "mac.tools.pro_hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Pro tool. Running it needs a Pro plan."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Công cụ Pro. Cần gói Pro để chạy."
+          }
+        }
+      }
+    },
+    "mac.tools.pro_title" : {
+      "comment" : "Tools menu item of a Pro tool. {title} is the tool name, for example Sign Token. Keep (Pro) as the plan name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (Pro)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (Pro)"
           }
         }
       }
