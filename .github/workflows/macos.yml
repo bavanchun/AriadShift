@@ -54,6 +54,7 @@ jobs:
     runs-on: xcode-27
     # The universal Release build alone takes 50-60 minutes without a compiler cache; tests need about 5 more.
     timeout-minutes: 90
+    environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && 'ci-cache-write' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,7 +65,29 @@ jobs:
           cache: false
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
-          tool: just@1.58.0
+          tool: just@1.58.0,sccache@0.19.0
+      - name: Start sccache (read-write)
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/macos/
+          SCCACHE_S3_RW_MODE: READ_WRITE
+        run: bash scripts/ci-sccache.sh start
+      - name: Start sccache (read-only)
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')) }}
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/macos/
+          SCCACHE_S3_RW_MODE: READ_ONLY
+        run: bash scripts/ci-sccache.sh start
       - name: Select Xcode 27.2
         run: bash scripts/macos-select-xcode.sh
       - name: Install pinned XcodeGen
@@ -106,6 +129,11 @@ jobs:
           name: AriadShift-app-unsigned
           path: target/derived-data/Build/Products/Release/AriadShift-unsigned.zip
           if-no-files-found: error
+      - name: Stop sccache and report stats
+        if: always()
+        env:
+          JOB_NAME: macOS build & test
+        run: bash scripts/ci-sccache.sh stop
 
   release-sign:
     name: macOS release (sign and notarize)
