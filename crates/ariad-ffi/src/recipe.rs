@@ -6,7 +6,7 @@
 
 use std::{path::PathBuf, sync::Arc, sync::LazyLock};
 
-use ariad_core::tools::{Recipe, RecipeOrigin, Step};
+use ariad_core::tools::{Recipe, RecipeOrigin, Step, generated_recipe_schema};
 use ariad_host::tools::{
     InputRef, RecipeEvent, RecipeRequest, ToolEvent, run_recipe_with_step_events,
 };
@@ -15,10 +15,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{CancelToken, FfiError, FfiWarning, catch_panics, engine_program, panic_message};
 
-const RECIPE_SCHEMA: &str = include_str!("../../../schemas/recipe.v1.json");
-
 static RECIPE_VALIDATOR: LazyLock<Result<jsonschema::Validator, String>> = LazyLock::new(|| {
-    let schema: serde_json::Value = serde_json::from_str(RECIPE_SCHEMA)
+    let schema: serde_json::Value = serde_json::from_str(&generated_recipe_schema())
         .map_err(|e| format!("recipe schema is invalid JSON: {e}"))?;
     jsonschema::validator_for(&schema).map_err(|e| format!("recipe schema failed to compile: {e}"))
 });
