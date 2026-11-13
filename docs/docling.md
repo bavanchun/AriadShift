@@ -234,9 +234,13 @@ before displaying them.
 Native pack jobs also sign a test copy of the manifest with an ephemeral key, install it through
 `ashift engines install docling --from`, convert a digital PDF using installed-pack resolution,
 and run two Office jobs in a shared session before checking a 64 MiB memory limit. The test
-copy accepts the development host version; the distributed manifest still requires 0.2.x.
+copy accepts the development host version; the distributed manifest requires `>=0.2.0, <2.0.0`.
 
-Signing the manifest and attaching it with the archives to the `pack-docling-v<version>` release is described in [packs.md](packs.md#signing-and-publishing).
+On a `pack-docling-v*` tag whose commit is on `origin/main`, the `Sign and publish` job
+(`environment: release`) verifies `SHA256SUMS`, signs `pack.toml` with
+`scripts/pack/sign-pack.sh`, and publishes `pack.toml`, `pack.toml.minisig`, `SHA256SUMS`, and
+`*.tar.zst` to the GitHub release. Signing and publishing the pack is described in
+[packs.md](packs.md#signing-and-publishing).
 
 ### Updating a pin
 

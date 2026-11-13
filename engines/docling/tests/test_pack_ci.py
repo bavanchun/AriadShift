@@ -65,6 +65,56 @@ def test_pack_supersession_preserves_trusted_branches_and_tags(pack_workflow, ev
 
 
 @pytest.mark.parametrize(
+    "event,ref,expected",
+    [
+        ("push", "refs/tags/pack-docling-v0.2.0", True),
+        ("pull_request", "refs/pull/271/merge", False),
+        ("workflow_dispatch", "refs/tags/pack-docling-v0.2.0", False),
+        ("push", "refs/tags/v0.6.0", False),
+        ("push", "refs/tags/pack-pdfium-v0.1.0", False),
+    ],
+)
+def test_release_job_condition_selects_docling_tag_pushes_only(pack_workflow, event, ref, expected):
+    release = pack_workflow["jobs"]["release"]
+    github = SimpleNamespace(event_name=event, ref=ref)
+    assert bool(workflow_condition(release["if"], github=github)) is expected
+
+
+def test_release_job_configuration_and_steps(pack_workflow):
+    release = pack_workflow["jobs"]["release"]
+    assert release["needs"] == ["engine", "conformance", "manifest"]
+    assert release["environment"] == "release"
+    assert release["permissions"] == {"contents": "write"}
+
+    steps = {step["name"]: step for step in release["steps"]}
+
+    checkout = steps["Check out source"]
+    assert checkout["uses"].startswith("actions/checkout@")
+    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["persist-credentials"] is False
+
+    ancestry = steps["Require stable branch ancestry"]
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in ancestry["run"]
+
+    checksums = steps["Verify component checksums"]
+    assert "sha256sum --check SHA256SUMS" in checksums["run"]
+
+    signing = steps["Sign the manifest"]
+    assert "scripts/pack/sign-pack.sh" in signing["run"]
+    assert signing.get("env", {}).get("MINISIGN_SECRET_KEY") == "${{ secrets.PACK_MINISIGN_KEY }}"
+
+    for job_name, job in pack_workflow["jobs"].items():
+        assert "PACK_MINISIGN_KEY" not in str(job.get("env", {}))
+        for step in job.get("steps", []):
+            if job_name == "release" and step.get("name") == "Sign the manifest":
+                continue
+            assert "PACK_MINISIGN_KEY" not in str(step.get("env", {}))
+
+    publish = steps["Publish the release"]
+    assert 'gh release create "$TAG" --verify-tag' in publish["run"]
+
+
+@pytest.mark.parametrize(
     "hit,outcome,cleanup,restore_compiler,save_compiler,save_native",
     [
         ("true", "success", "success", False, False, False),
