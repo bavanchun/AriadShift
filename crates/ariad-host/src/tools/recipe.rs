@@ -239,6 +239,26 @@ pub fn run_recipe(request: &RecipeRequest) -> Result<RecipeOutcome, ToolError> {
     run_recipe_with_events(request, |_| {})
 }
 
+/// Event emitted while a recipe runs: step boundaries plus the progress of the running tool.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecipeEvent {
+    /// A step is about to run.
+    StepStarted {
+        /// 0-based step index.
+        step_index: usize,
+        /// Total number of steps in the recipe.
+        total: usize,
+        /// Step kind (`"tool"` or `"convert"`).
+        kind: String,
+        /// Tool ID or target conversion format.
+        target: String,
+    },
+    /// Progress reported by the tool running inside the current step.
+    Tool(ToolEvent),
+    /// A step completed.
+    StepFinished(StepOutcome),
+}
+
 /// Executes a [`RecipeRequest`] synchronously, streaming [`ToolEvent`]s to `on_event`.
 pub fn run_recipe_with_events<F>(
     request: &RecipeRequest,
@@ -246,6 +266,24 @@ pub fn run_recipe_with_events<F>(
 ) -> Result<RecipeOutcome, ToolError>
 where
     F: FnMut(ToolEvent),
+{
+    run_recipe_with_step_events(request, |event| {
+        if let RecipeEvent::Tool(tool_event) = event {
+            on_event(tool_event);
+        }
+    })
+}
+
+/// Executes a [`RecipeRequest`] synchronously, streaming step boundaries and tool progress.
+///
+/// A failing step emits no finish event: the run returns the error and the caller knows the
+/// failing step from the last [`RecipeEvent::StepStarted`].
+pub fn run_recipe_with_step_events<F>(
+    request: &RecipeRequest,
+    mut on_event: F,
+) -> Result<RecipeOutcome, ToolError>
+where
+    F: FnMut(RecipeEvent),
 {
     let scrubber = request.secrets.scrubber();
     run_recipe_inner(request, &mut on_event)
@@ -257,12 +295,13 @@ where
 pub(crate) fn run_recipe_with_sources(
     request: &RecipeRequest,
 ) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
-    run_recipe_inner(request, &mut |_| {}).map_err(|e| e.scrubbed(&request.secrets.scrubber()))
+    run_recipe_inner(request, &mut |_: RecipeEvent| {})
+        .map_err(|e| e.scrubbed(&request.secrets.scrubber()))
 }
 
 fn run_recipe_inner(
     request: &RecipeRequest,
-    on_event: &mut dyn FnMut(ToolEvent),
+    on_event: &mut dyn FnMut(RecipeEvent),
 ) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
     let started = Instant::now();
     let scrubber = request.secrets.scrubber();
@@ -416,6 +455,16 @@ fn run_recipe_inner(
             return Err(ToolError::Interrupted);
         }
         let step_started = Instant::now();
+        let (announced_kind, announced_target) = match step {
+            Step::Tool { tool, .. } => ("tool", tool.to_string()),
+            Step::Convert { to, .. } => ("convert", to.user_name().to_owned()),
+        };
+        on_event(RecipeEvent::StepStarted {
+            step_index: step_idx,
+            total: request.recipe.steps.len(),
+            kind: announced_kind.to_owned(),
+            target: announced_target,
+        });
         let step_dir = workspace.work_dir().join(format!("step-{step_idx:03}"));
         fs::create_dir_all(&step_dir)
             .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
@@ -476,7 +525,7 @@ fn run_recipe_inner(
                         params,
                         items.iter().map(|item| InputRef::new(&item.path)).collect(),
                         &item_out_dir,
-                        on_event,
+                        &mut |event| on_event(RecipeEvent::Tool(event)),
                         clock,
                     );
                     let mut outputs = Vec::new();
@@ -634,13 +683,15 @@ fn run_recipe_inner(
             }
         };
         current_items = slots.into_iter().flatten().collect();
-        step_outcomes.push(StepOutcome {
+        let step_outcome = StepOutcome {
             step_index: step_idx,
             kind: kind.to_owned(),
             target,
             artifacts: current_items.len(),
             elapsed_ms: u64::try_from(step_started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        });
+        };
+        on_event(RecipeEvent::StepFinished(step_outcome.clone()));
+        step_outcomes.push(step_outcome);
     }
 
     // 7. Stage final step outputs into `workspace.output_dir()` and atomically publish.
