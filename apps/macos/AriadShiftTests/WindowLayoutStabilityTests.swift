@@ -50,10 +50,13 @@ final class WindowLayoutStabilityTests: XCTestCase {
         await pump(15) { if case .loaded = session.info { viewer.loadState == .loaded } else { false } }
         XCTAssertEqual(viewer.loadState, .loaded)
 
-        try await Task.sleep(for: .seconds(1))
+        // Sample every 100 ms until five consecutive samples agree, or give up after 5 s. The last five
+        // samples are returned either way: equal when the layout settled, still moving when it did not.
         var taken: [[CGFloat]] = []
-        for _ in 0..<5 {
-            taken.append(widths(of: window))
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            taken = Array((taken + [widths(of: window)]).suffix(5))
+            if taken.count == 5, taken.allSatisfy({ $0 == taken[0] }) { break }
             try await Task.sleep(for: .milliseconds(100))
         }
         return taken
@@ -62,7 +65,10 @@ final class WindowLayoutStabilityTests: XCTestCase {
     func testColumnWidthsStayStableAfterTheWindowSettles() async throws {
         for size in [NSSize(width: 900, height: 560), NSSize(width: 720, height: 440)] {
             let taken = try await samples(at: size)
-            XCTAssertTrue(taken.allSatisfy { $0 == taken[0] }, "layout widths kept changing at \(size): \(taken)")
+            XCTAssertTrue(
+                taken.count == 5 && taken.allSatisfy { $0 == taken[0] },
+                "layout widths did not stabilise within 5 s at \(size); last samples: \(taken)"
+            )
         }
     }
 }
