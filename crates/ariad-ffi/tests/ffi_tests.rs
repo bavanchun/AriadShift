@@ -662,7 +662,7 @@ async fn test_pro_plan_passes_the_tier_gate() {
 }
 
 #[tokio::test]
-async fn test_unparseable_plan_is_an_invalid_request() {
+async fn test_unparsable_plan_is_an_invalid_request() {
     let err = run_tool(pro_tool_request(Some("platinum")), None)
         .await
         .expect_err("an unknown plan must be rejected");

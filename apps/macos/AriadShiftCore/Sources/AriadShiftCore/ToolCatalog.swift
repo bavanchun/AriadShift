@@ -82,6 +82,11 @@ public enum ToolCatalog {
     /// with the document editor.
     private static let laterGroups: Set<String> = ["ai", "edit"]
 
+    /// Tools held back although their group ships. `pdf.sign_token` stays off because PKCS#11
+    /// token signing returns `tool_missing` in production builds and needs the sign pack, so
+    /// offering an upgrade for it would promise something that still fails.
+    private static let laterTools: Set<String> = ["pdf.sign_token"]
+
     // Interim display names until the shared catalogue carries translated tool names.
     private static let acronyms = [
         "pdf": "PDF", "ocr": "OCR", "qr": "QR", "csv": "CSV", "cbz": "CBZ", "toc": "TOC",
@@ -129,7 +134,7 @@ public enum ToolCatalog {
     }
 
     private static func availability(of info: ToolInfo, form: ParamForm?, runtimeInfo: ToolRuntimeInfo?) -> ToolAvailability {
-        if laterGroups.contains(info.group) {
+        if laterGroups.contains(info.group) || laterTools.contains(info.id) {
             return .unavailable(.later)
         }
         guard let runtimeInfo else {
