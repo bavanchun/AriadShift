@@ -45,6 +45,48 @@ notices = [
 [components.export_objects]
 "cv2/.dylibs/libImath-3_1.29.11.0.dylib" = "1f20d905051a125d8aa4e481b9f0c1c42e2cc0d4a08ae9ddedf88e451a09ef01"
 
+# Export-only receipt for the video-disabled macOS OpenCV extension. The notices are the raw
+# wheel files, including the x86 IPP section the installed pack strips later; installed
+# inventory ignores export_only entries.
+[[components]]
+name = "opencv-export-macos"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND IJG AND ISC AND MIT AND Zlib AND libpng-2.0 AND libtiff"
+reviewed_terms = ["IJG", "libpng-2.0", "libtiff"]
+export_only = true
+files = [
+  "cv2/cv2.abi3.so",
+]
+notices = [
+  { path = "cv2/LICENSE.txt", sha256 = "09d719058e782ac7bc71ba21c944e1136cde2bb957c0e888121f0218d6b5f02c" },
+  { path = "cv2/LICENSE-3RD-PARTY.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[components.export_objects]
+"cv2/cv2.abi3.so" = "6034c601045a4549f5eeeca6a030bfe73db535c7bc85e7b412db627ac63ff471"
+
+# Export-only receipt for the IPP-free Linux OpenCV extension. Notices are the raw wheel
+# files (including the x86 IPP section stripped during scanning); installed inventory ignores
+# export_only entries.
+[[components]]
+name = "opencv-export-linux"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND IJG AND ISC AND MIT AND Zlib AND libpng-2.0 AND libtiff"
+reviewed_terms = ["IJG", "libpng-2.0", "libtiff"]
+export_only = true
+files = [
+  "cv2/cv2.abi3.so",
+]
+notices = [
+  { path = "cv2/LICENSE.txt", sha256 = "09d719058e782ac7bc71ba21c944e1136cde2bb957c0e888121f0218d6b5f02c" },
+  { path = "cv2/LICENSE-3RD-PARTY.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[components.export_objects]
+"cv2/cv2.abi3.so" = "4dc06d80ac1fa81d0e8522b4fd7890be6f2596fc5213ce78b520feaca2f7e2d2"
+
 [[components]]
 name = "tokenizers-native"
 distribution = "tokenizers"
@@ -255,7 +297,20 @@ files = [
 notices = [
   { path = "pytorch-2.14.1-native-notices.txt", sha256 = "b7b24c6a7552f7cc36f11fbd401ce5669024b3acd9b45aefb2b158d2891c24a5" },
   { path = "llvm-openmp-notice.txt", sha256 = "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4" },
+  { path = "ittapi.txt", sha256 = "cf48cdd9ed87c2031b68fb1b9f4cfb55d00dcf815b21a30bf8304aa1e5e6f76a" },
 ]
+
+[components.export_objects]
+"torch/_C.cpython-314-x86_64-linux-gnu.so" = "99a35ac6957710fc35471f9b005772ef708c704ae03154f13552eed887f4ec88"
+"torch/bin/protoc" = "279dfac2b151b9e5c60d0c4ab4187739cde4961850410adff57ce4774b4ccb6c"
+"torch/bin/protoc-3.21.12.0" = "279dfac2b151b9e5c60d0c4ab4187739cde4961850410adff57ce4774b4ccb6c"
+"torch/bin/torch_shm_manager" = "6ce07ed8dde7585eda9da3ea07c2913e1172081e8877091f0c4b79b518b09797"
+"torch/lib/libc10.so" = "b18b3c1b6132a64aaa8cc1acb8fd40bbe4e39f13e3ece76f498c8e6947de6f92"
+"torch/lib/libshm.so" = "07b6ea142bdb7a7a19d01235467f9c749d3e493ea38c483bfae8a69366e99a67"
+"torch/lib/libtorch.so" = "c8d2d7df7a2f060dd66148ebf894fe828936faf0bab3963cf1ce573d80eb4463"
+"torch/lib/libtorch_cpu.so" = "439a6d35204a3da51663bf894e3d114f04dc3c6b9ad2657cba5e57593090ab1a"
+"torch/lib/libtorch_global_deps.so" = "cf140675bcfca4a5a461d2c4fba5c6f90c1dbfaa4248cc5cd2239875d547494e"
+"torch/lib/libtorch_python.so" = "cf0dc6af28cad01d6819ab737b895bad1615512c044a5bb85c69653c8b21af86"
 
 [components.reviewed_wheels."aarch64-unknown-linux-gnu"]
 name = "torch-2.14.1+cpu-cp314-cp314-manylinux_2_28_aarch64.whl"
@@ -548,6 +603,12 @@ distribution = "torch"
 target = "x86_64-unknown-linux-gnu"
 path = "torch/lib/libgomp.so.1"
 sha256 = "dcb9bd5cc517b0a23cf5923864abeee11ee00ba11abe9b3089388f50f7ba4628"
+
+[[gnu_runtimes]]
+distribution = "torch"
+target = "x86_64-unknown-linux-gnu"
+path = "torch.libs/libgomp-6a29c32d.so.1.0.0"
+sha256 = "2aa037784caec5079de4f23a7d526a62bcc03a3fb98ac94031345daabe21c465"
 
 [[gnu_runtimes]]
 distribution = "numpy"
