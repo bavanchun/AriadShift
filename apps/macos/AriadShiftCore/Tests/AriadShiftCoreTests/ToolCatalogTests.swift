@@ -61,8 +61,12 @@ final class ToolCatalogTests: XCTestCase {
 
     func testToolsOutsideThisReleaseAreDisabledWithAReason() async throws {
         let groups = try await catalog()
-        for id in ["pdf.crop", "pdf.page_labels", "pdf.forms_fill", "pdf.redact"] {
-            XCTAssertEqual(try entry(id, in: groups).availability, .unavailable(.later), "\(id) needs a structured editor")
+        XCTAssertEqual(
+            try entry("pdf.forms_fill", in: groups).availability, .unavailable(.later),
+            "a free-form map of form fields has no schema-driven editor"
+        )
+        for id in ["pdf.crop", "pdf.page_labels", "pdf.redact", "pdf.redact_verify", "pdf.forms_create"] {
+            XCTAssertEqual(try entry(id, in: groups).availability, .available, "\(id) uses nested objects and lists of objects")
         }
         XCTAssertEqual(try entry("ai.summarize", in: groups).availability, .unavailable(.later))
         XCTAssertEqual(try entry("edit.apply", in: groups).availability, .unavailable(.later))
@@ -73,8 +77,7 @@ final class ToolCatalogTests: XCTestCase {
 
     /// Tools that are off in this release, with the reason shown in their tooltip.
     private static let expectedDisabled: [String: UnavailableReason] = [
-        "pdf.crop": .later, "pdf.page_labels": .later, "web.to_pdf": .later,
-        "pdf.forms_create": .later, "pdf.forms_fill": .later, "pdf.redact": .later, "pdf.redact_verify": .later,
+        "web.to_pdf": .later, "pdf.forms_fill": .later,
         "edit.apply": .later, "edit.export_document": .later, "edit.open_document": .later, "edit.page_objects": .later,
         "ai.ask": .later, "ai.extract_tables": .later, "ai.recipe_from_text": .later,
         "ai.summarize": .later, "ai.translate": .later,
@@ -88,12 +91,12 @@ final class ToolCatalogTests: XCTestCase {
         pdf.accessibility_report pdf.add_image pdf.add_text pdf.adjust_colors pdf.alternate_mix
         pdf.annotations pdf.annotations_export pdf.annotations_import pdf.attachments
         pdf.auto_rotate pdf.background pdf.bates pdf.booklet pdf.compare pdf.compress
-        pdf.crop_whitespace pdf.decompress pdf.decrypt pdf.delete_pages pdf.deskew
+        pdf.crop pdf.crop_whitespace pdf.decompress pdf.decrypt pdf.delete_pages pdf.deskew
         pdf.detect_scanned pdf.divide_pages pdf.encrypt pdf.extract_images pdf.extract_pages
-        pdf.forms_detect pdf.forms_export pdf.forms_flatten pdf.forms_import pdf.forms_list
+        pdf.forms_create pdf.forms_detect pdf.forms_export pdf.forms_flatten pdf.forms_import pdf.forms_list
         pdf.grayscale pdf.header_footer pdf.info pdf.insert_blank pdf.invert_colors pdf.layers
         pdf.linearize pdf.merge pdf.metadata pdf.nup pdf.ocr pdf.outline pdf.overlay
-        pdf.page_numbers pdf.permissions pdf.portfolio pdf.posterize pdf.qr pdf.remove_blank
+        pdf.page_labels pdf.page_numbers pdf.permissions pdf.portfolio pdf.posterize pdf.qr pdf.redact pdf.redact_verify pdf.remove_blank
         pdf.render pdf.reorder pdf.repair pdf.replace_color pdf.rotate pdf.rotate_content
         pdf.sanitize pdf.scale pdf.scan_split pdf.scanner_effect pdf.sign pdf.sign_remove
         pdf.sign_verify pdf.sign_visual pdf.single_page pdf.split pdf.stamp pdf.tables_to_csv

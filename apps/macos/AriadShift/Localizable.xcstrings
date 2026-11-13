@@ -27467,6 +27467,24 @@
         }
       }
     },
+    "mac.run.add_row" : {
+      "comment" : "Button that adds a row to a list of items in a tool setting.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thêm"
+          }
+        }
+      }
+    },
     "mac.run.cancel" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28971,6 +28989,42 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "%1$@無效。"
+          }
+        }
+      }
+    },
+    "mac.run.move_down" : {
+      "comment" : "Button that moves a row of a tool setting list down.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move down"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chuyển xuống"
+          }
+        }
+      }
+    },
+    "mac.run.move_up" : {
+      "comment" : "Button that moves a row of a tool setting list up.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move up"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chuyển lên"
           }
         }
       }

@@ -186,7 +186,13 @@
       "field_error@note": "Validation message for a tool setting. {kind} is the keyword missing or invalid, {field} is the setting name. Keep the keywords untranslated.",
       "result": "Result",
       "presets": "Presets",
-      "presets@note": "Menu that fills a text field with a named preset value."
+      "presets@note": "Menu that fills a text field with a named preset value.",
+      "add_row": "Add",
+      "add_row@note": "Button that adds a row to a list of items in a tool setting.",
+      "move_up": "Move up",
+      "move_up@note": "Button that moves a row of a tool setting list up.",
+      "move_down": "Move down",
+      "move_down@note": "Button that moves a row of a tool setting list down."
     },
     "settings": {
       "output_folder": "Save results in",
