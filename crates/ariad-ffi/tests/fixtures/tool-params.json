@@ -1,0 +1,794 @@
+{
+  "tools": {
+    "pdf.info": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.merge": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf",
+        "fixtures/pdf-tools/annotations.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.split": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "mode": "every",
+        "every": 5
+      }
+    },
+    "pdf.extract_pages": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "pages": "1-3"
+      }
+    },
+    "pdf.delete_pages": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "pages": "2"
+      }
+    },
+    "pdf.reorder": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "order": "reverse"
+      }
+    },
+    "pdf.alternate_mix": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf",
+        "fixtures/pdf-tools/annotations.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.insert_blank": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.rotate": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "angle": 90
+      }
+    },
+    "pdf.crop": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "box": {
+          "left": 0,
+          "bottom": 0,
+          "right": 300,
+          "top": 300
+        }
+      }
+    },
+    "pdf.scale": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.single_page": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.rotate_content": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "angle_deg": 90
+      }
+    },
+    "pdf.decompress": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.nup": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.booklet": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.overlay": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf",
+        "fixtures/pdf-tools/annotations.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.divide_pages": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.posterize": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.metadata": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "set": {
+          "title": "Determinism"
+        }
+      }
+    },
+    "pdf.outline": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "action": "export"
+      }
+    },
+    "pdf.attachments": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "action": "list"
+      }
+    },
+    "pdf.page_labels": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "ranges": [
+          {
+            "from": 1,
+            "style": "decimal"
+          }
+        ]
+      }
+    },
+    "pdf.viewer_prefs": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "fit_window": true
+      }
+    },
+    "pdf.portfolio": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "action": "list"
+      }
+    },
+    "pdf.layers": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "action": "list"
+      }
+    },
+    "pdf.replace_color": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "to": "#ff0000"
+      }
+    },
+    "pdf.adjust_colors": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "brightness": 0.2
+      }
+    },
+    "pdf.watermark": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "text": "DRAFT"
+      }
+    },
+    "pdf.stamp": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.add_image": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf",
+        "fixtures/image/en-repair-receipt.png"
+      ],
+      "params": {}
+    },
+    "pdf.add_text": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "text": "Hello"
+      }
+    },
+    "pdf.qr": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "content": "https://example.com"
+      }
+    },
+    "pdf.page_numbers": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.header_footer": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "header": {
+          "center": "Header"
+        }
+      }
+    },
+    "pdf.bates": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.toc_page": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.background": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.invert_colors": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.watermark_detect": {
+      "inputs": [
+        "fixtures/pdf-tools/watermark-layer.pdf"
+      ],
+      "params": {}
+    },
+    "image.to_pdf": {
+      "inputs": [
+        "fixtures/image/en-repair-receipt.png"
+      ],
+      "params": {}
+    },
+    "pdf.compress": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.grayscale": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.sanitize": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.unlock_forms": {
+      "inputs": [
+        "fixtures/pdf-tools/form-acroform.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.annotations": {
+      "inputs": [
+        "fixtures/pdf-tools/annotations.pdf"
+      ],
+      "params": {
+        "action": "list"
+      }
+    },
+    "pdf.annotations_export": {
+      "inputs": [
+        "fixtures/pdf-tools/annotations.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.forms_list": {
+      "inputs": [
+        "fixtures/pdf-tools/form-acroform.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.forms_flatten": {
+      "inputs": [
+        "fixtures/pdf-tools/form-acroform.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.forms_export": {
+      "inputs": [
+        "fixtures/pdf-tools/form-acroform.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.compare": {
+      "inputs": [
+        "fixtures/pdf-tools/compare-before.pdf",
+        "fixtures/pdf-tools/compare-after.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.accessibility_report": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {}
+    },
+    "pdf.sign_visual": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "rect": [
+          50,
+          50,
+          200,
+          100
+        ],
+        "text": "Signed"
+      }
+    },
+    "pdf.watermark_remove": {
+      "inputs": [
+        "fixtures/pdf-tools/watermark-layer.pdf"
+      ],
+      "params": {
+        "candidates": [
+          "wm1.3f19999a.616c6c.e5a3042bb0ac9afc6eb0bdc2b59fda68f583bd6a2ea0114ffe0756da167f9fc7"
+        ]
+      }
+    },
+    "pdf.forms_fill": {
+      "inputs": [
+        "fixtures/pdf-tools/form-acroform.pdf"
+      ],
+      "params": {
+        "values": {
+          "full_name": "Ada Lovelace"
+        }
+      }
+    },
+    "pdf.forms_create": {
+      "inputs": [
+        "fixtures/pdf-tools/multipage-20.pdf"
+      ],
+      "params": {
+        "fields": [
+          {
+            "name": "determinism_field",
+            "type": "text",
+            "page": 1,
+            "rect": [
+              72,
+              700,
+              272,
+              724
+            ]
+          }
+        ]
+      }
+    },
+    "pdf.forms_import": {
+      "inputs": [
+        "fixtures/pdf-forms/forms-all-types.pdf",
+        "fixtures/pdf-forms/formdata/forms-all-types.json"
+      ],
+      "params": {}
+    },
+    "pdf.annotations_import": {
+      "inputs": [
+        "fixtures/pdf-forms/forms-all-types.pdf",
+        "fixtures/pdf-forms/formdata/forms-all-types.xfdf"
+      ],
+      "params": {}
+    },
+    "edit.open_document": {
+      "inputs": [
+        "fixtures/md/en-emphasis-strike.md"
+      ],
+      "params": {}
+    },
+    "edit.export_document": {
+      "inputs": [
+        "fixtures/editor/mixed-document.ir.json"
+      ],
+      "params": {
+        "format": "html"
+      }
+    }
+  },
+  "allow_list": {
+    "pdf.watermark_remove_raster": {
+      "requires": "pack:inpaint",
+      "reason": "needs the inpaint engine pack; tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.render": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.to_images": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.thumbnails": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.extract_images": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.text_layout": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.remove_blank": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.crop_whitespace": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.detect_scanned": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.repair": {
+      "requires": "pack:qpdf",
+      "reason": "needs the qpdf engine pack (ashift engines install qpdf); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.linearize": {
+      "requires": "pack:qpdf",
+      "reason": "needs the qpdf engine pack (ashift engines install qpdf); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.encrypt": {
+      "requires": "pack:qpdf",
+      "reason": "needs the qpdf engine pack (ashift engines install qpdf); tool_missing without it"
+    },
+    "pdf.decrypt": {
+      "requires": "pack:qpdf",
+      "reason": "needs the qpdf engine pack (ashift engines install qpdf); tool_missing without it"
+    },
+    "pdf.permissions": {
+      "requires": "pack:qpdf",
+      "reason": "needs the qpdf engine pack (ashift engines install qpdf); tool_missing without it"
+    },
+    "pdf.ocr": {
+      "requires": "pack:tesseract",
+      "reason": "needs the Tesseract and PDFium engine packs; tool_missing without them",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "image.ocr": {
+      "requires": "pack:tesseract",
+      "reason": "needs the Tesseract and PDFium engine packs; tool_missing without them",
+      "probe": {
+        "inputs": [
+          "fixtures/image/en-repair-receipt.png"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.auto_rotate": {
+      "requires": "pack:tesseract",
+      "reason": "needs the Tesseract and PDFium engine packs; tool_missing without them",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.deskew": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.scan_split": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.scanner_effect": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.forms_detect": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.redact": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {
+          "targets": [
+            {
+              "kind": "exact",
+              "text": "Page"
+            }
+          ]
+        }
+      }
+    },
+    "pdf.redact_verify": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {
+          "targets": [
+            {
+              "kind": "exact",
+              "text": "Page"
+            }
+          ]
+        }
+      }
+    },
+    "pdf.sign": {
+      "requires": "pack:sign",
+      "reason": "needs the sign engine pack (ashift engines install sign); tool_missing without it"
+    },
+    "pdf.timestamp": {
+      "requires": "network",
+      "reason": "fetches a URL over the network, so its output is not reproducible offline"
+    },
+    "pdf.sign_verify": {
+      "requires": "pack:sign",
+      "reason": "needs the sign engine pack (ashift engines install sign); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.sign_remove": {
+      "requires": "pack:sign",
+      "reason": "needs the sign engine pack (ashift engines install sign); tool_missing without it"
+    },
+    "pdf.tables_to_csv": {
+      "requires": "pack:docling",
+      "reason": "needs the Docling engine pack (ashift engines install docling); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf/arxiv-tableformer-2203-01017-v1.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.to_cbz": {
+      "requires": "pack:pdfium",
+      "reason": "needs the pdfium engine pack (ashift engines install pdfium); tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.to_pdfa": {
+      "requires": "pack:verapdf",
+      "reason": "needs the veraPDF engine pack and a Java runtime; tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.to_pdfua": {
+      "requires": "pack:verapdf",
+      "reason": "needs the veraPDF engine pack and a Java runtime; tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.validate_pdfa": {
+      "requires": "pack:verapdf",
+      "reason": "needs the veraPDF engine pack and a Java runtime; tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "pdf.validate_pdfua": {
+      "requires": "pack:verapdf",
+      "reason": "needs the veraPDF engine pack and a Java runtime; tool_missing without it",
+      "probe": {
+        "inputs": [
+          "fixtures/pdf-tools/multipage-20.pdf"
+        ],
+        "params": {}
+      }
+    },
+    "web.to_pdf": {
+      "requires": "network",
+      "reason": "fetches a URL over the network, so its output is not reproducible offline"
+    },
+    "ai.summarize": {
+      "requires": "pack:ai",
+      "reason": "needs the ai engine pack and an AI provider; secrets and network are involved"
+    },
+    "ai.ask": {
+      "requires": "pack:ai",
+      "reason": "needs the ai engine pack and an AI provider; secrets and network are involved"
+    },
+    "ai.translate": {
+      "requires": "pack:ai",
+      "reason": "needs the ai engine pack and an AI provider; secrets and network are involved"
+    },
+    "ai.extract_tables": {
+      "requires": "pack:ai",
+      "reason": "needs the ai engine pack and an AI provider; secrets and network are involved"
+    },
+    "ai.recipe_from_text": {
+      "requires": "pack:ai",
+      "reason": "needs the ai engine pack and an AI provider; secrets and network are involved"
+    }
+  }
+}

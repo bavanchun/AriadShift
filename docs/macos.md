@@ -95,3 +95,10 @@ apps/macos/AriadShift.xcodeproj -scheme AriadShift`, then copy it back to `apps/
 `scripts/i18n-xcstrings.mjs` generates `AriadShift/Localizable.xcstrings` from `locales/*.json` (`--check` fails on drift); never edit the catalogue
 by hand. Swift reads plain and plural messages with `String(localized:)` and select messages with `L10n.branch`. Declare a numeric argument in the
 English note (`types: size=int`). Community locales must stay above 80% of the counted keys, so new `mac.*` keys need translations or a bootstrap run.
+
+## FFI determinism test
+`crates/ariad-ffi/tests/determinism_tests.rs` runs every Free tool in `schemas/tools.v1.json` through `run_tool` and through the `ashift` CLI with the
+same inputs, params and `SOURCE_DATE_EPOCH`, and requires byte-identical output files. Inputs and minimal params live in
+`crates/ariad-ffi/tests/fixtures/tool-params.json`, validated against each tool's params schema. A Free tool in neither its `tools` table nor its
+`allow_list` fails the test, so adding a Free tool means adding an entry. An allow-list entry names what the tool needs (`pack:<name>` or `network`) and
+may carry a probe that must fail with `tool_missing` on both surfaces. Only tools that run an engine pack or the network may be allow-listed.
