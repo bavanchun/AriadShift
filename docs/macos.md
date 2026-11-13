@@ -10,6 +10,8 @@
   and `ThumbnailCache`.
 - `AriadShift/`: the app. `DocumentGroup(viewing:)` for PDF; File > Import (`DocumentImporter`) converts md, html, docx, epub and
   images to PDF and opens the result.
+  Sources are grouped by feature: `Tools/` (Tools menu, run sheet, schema form), `Viewer/` (PDF viewer, toolbar, find),
+  `Editor/Page/` (page grid, sidebar, page edits, thumbnails); app shell, session, settings and import files stay at the top.
 - `scripts/`: `sync-ffi.sh` copies the XCFramework and UniFFI Swift file into the package; `embed-helper.sh` is the Run Script
   phase that embeds `Contents/Helpers/ashift`.
 
