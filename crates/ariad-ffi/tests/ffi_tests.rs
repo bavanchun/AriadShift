@@ -519,3 +519,85 @@ fn test_plan_returns_route() {
     assert!(!report.route.is_empty(), "plan route must not be empty");
     assert_eq!(report.route.first().unwrap().from, "pdf");
 }
+
+fn tool_request(tool: &str, inputs: &[&Path], output: &Path, params: &str) -> ToolRunRequest {
+    ToolRunRequest {
+        tool: tool.to_string(),
+        inputs: inputs.iter().map(|p| p.display().to_string()).collect(),
+        output_dir: None,
+        output_path: Some(output.display().to_string()),
+        params_json: Some(params.to_string()),
+        options_json: None,
+        cancel_token: None,
+    }
+}
+
+#[tokio::test]
+async fn test_export_document_carries_typed_fidelity_and_change_list() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = dir.path().join("note.md");
+    std::fs::write(&source, "# Title\n\nFirst paragraph\n\nSecond paragraph\n").unwrap();
+    let opened = dir.path().join("opened.json");
+    let open = run_tool(
+        tool_request("edit.open_document", &[&source], &opened, "{}"),
+        None,
+    )
+    .await
+    .expect("open_document");
+    // Opening reports block counts but no fidelity measurement.
+    assert!(open.fidelity.is_none() && open.change_list.is_none());
+    assert!(open.metrics_json.contains("block_count"));
+
+    let exported = dir.path().join("out.html");
+    let outcome = run_tool(
+        tool_request(
+            "edit.export_document",
+            &[&opened],
+            &exported,
+            r#"{"format":"html"}"#,
+        ),
+        None,
+    )
+    .await
+    .expect("export_document");
+
+    let fidelity = outcome.fidelity.expect("typed fidelity");
+    assert_eq!(fidelity.metric_version, "fidelity/2");
+    assert_eq!(fidelity.status, "measured");
+    assert_eq!(fidelity.basis, "runtime_readback");
+    let score = fidelity.score.expect("measured score");
+    assert!((0.0..=1.0).contains(&score), "score {score}");
+    assert!(!fidelity.structure_by_kind.is_empty());
+    assert!(fidelity.coverage.values().any(|c| c.reference > 0));
+    assert!(outcome.change_list.is_some());
+
+    // The typed view and the raw metrics JSON describe the same measurement.
+    let raw: serde_json::Value = serde_json::from_str(&outcome.metrics_json).unwrap();
+    assert_eq!(raw["fidelity"]["metric_version"], "fidelity/2");
+    assert_eq!(
+        raw["fidelity"]["score"].as_f64(),
+        fidelity.score,
+        "typed score must equal metrics.fidelity.score"
+    );
+    assert!(raw["change_list"]["added"].is_array());
+    assert!(
+        outcome.inline_json.is_none(),
+        "metrics are not carried by inline_json"
+    );
+}
+
+#[tokio::test]
+async fn test_non_edit_tool_has_metrics_json_without_typed_fields() {
+    let fixture = fixture_path("fixtures/pdf/pd-vi-qd-1922-2026.pdf");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("out.pdf");
+    let outcome = run_tool(
+        tool_request("pdf.reorder", &[&fixture], &out, r#"{"order":"reverse"}"#),
+        None,
+    )
+    .await
+    .expect("reorder");
+    assert!(outcome.fidelity.is_none() && outcome.change_list.is_none());
+    let raw: serde_json::Value = serde_json::from_str(&outcome.metrics_json).unwrap();
+    assert!(raw.get("elapsed_ms").is_some());
+}

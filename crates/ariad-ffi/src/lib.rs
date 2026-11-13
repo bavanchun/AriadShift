@@ -15,6 +15,9 @@ use futures_util::FutureExt;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+mod metrics;
+pub use metrics::{ChangeList, FidelityCoverage, FidelityReport, FidelityStructureScore};
+
 uniffi::setup_scaffolding!("ariad_ffi");
 
 static CONFIGURED_ENGINE_PROGRAM: RwLock<Option<PathBuf>> = RwLock::new(None);
@@ -317,7 +320,7 @@ pub struct ToolRunRequest {
 }
 
 /// Output outcome produced by `run_tool`.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct ToolOutcome {
     pub tool: String,
     pub version: String,
@@ -325,6 +328,12 @@ pub struct ToolOutcome {
     pub output_paths: Vec<String>,
     pub warnings: Vec<FfiWarning>,
     pub inline_json: Option<String>,
+    /// The host `metrics` object as JSON (always carries `elapsed_ms`).
+    pub metrics_json: String,
+    /// Typed `metrics.fidelity` from `edit.export_document`.
+    pub fidelity: Option<FidelityReport>,
+    /// Typed `metrics.change_list` from `edit.export_document`.
+    pub change_list: Option<ChangeList>,
 }
 
 pub(crate) fn build_tool_request(
@@ -428,6 +437,13 @@ pub async fn run_tool(
             message: "tool worker thread terminated prematurely".to_string(),
         })??;
 
+        let fidelity = metrics::fidelity_from_metrics(&inner_res.metrics);
+        let change_list = metrics::change_list_from_metrics(&inner_res.metrics);
+        let metrics_json =
+            serde_json::to_string(&inner_res.metrics).map_err(|e| FfiError::Internal {
+                message: format!("failed to serialize tool metrics: {e}"),
+            })?;
+
         Ok(ToolOutcome {
             tool: inner_res.tool,
             version: inner_res.version,
@@ -446,6 +462,9 @@ pub async fn run_tool(
                 })
                 .collect(),
             inline_json: inner_res.inline_json.map(|v| v.to_string()),
+            metrics_json,
+            fidelity,
+            change_list,
         })
     });
 
