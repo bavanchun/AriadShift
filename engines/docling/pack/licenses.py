@@ -17,7 +17,10 @@ pack target remains deferred.
 Exported toolchain wheels also refuse video-library names, including FFmpeg, even without
 licence markers. Every native export additionally requires a positive component identity
 from reviewed SHA-256 receipts and its allowed licence and bundled hash-verified notices.
-Generated output checksums cannot create a review. Permissive component wheel receipts force
+Generated output checksums cannot create a review. An export receipt may name extra permissive
+``reviewed_terms`` only when the static native table already binds them and its raw, unstripped
+notices carry matching text. Reviewed GNU runtimes match by target, distribution and member path.
+Permissive component wheel receipts force
 a new review on lock drift; they are not independently reviewed per-object hashes.
 Export ZIP members require unique, case-insensitive relative POSIX paths. Directory entries
 must have zero declared/compressed size and no readable bytes; payloads still reach scanning.
@@ -35,6 +38,7 @@ Usage::
 
     python licenses.py --site SITE_PACKAGES [--notices DIR]
     python licenses.py --wheels WHEEL [WHEEL ...] [--openmp-dll PATH] [--allow-itt]
+        [--target TRIPLE]
     python licenses.py --render-toolchain-pins DIR --release-tag TAG
 """
 
@@ -371,12 +375,18 @@ def _reviewed_license_field(distribution: metadata.Distribution) -> bool:
     }.get(name)
 
 
-def verdict(name: str, expression: str, *, metadata_only: bool = False) -> str | None:
+def verdict(
+    name: str,
+    expression: str,
+    *,
+    metadata_only: bool = False,
+    allowed: frozenset[str] = ALLOWED,
+) -> str | None:
     """Returns why an expression is not acceptable, or ``None`` when it is."""
     return _core.verdict(
         name,
         expression,
-        allowed=ALLOWED,
+        allowed=allowed,
         allowed_exceptions=ALLOWED_EXCEPTIONS,
         mpl_exceptions=MPL_EXCEPTIONS,
         metadata_only=metadata_only,
@@ -695,8 +705,24 @@ with Path(__file__).with_name("native-components.toml").open("rb") as _handle:
         (item["target"], item["distribution"], item["path"]): item["sha256"]
         for item in _native_reviews.get("gnu_runtimes", [])
     }
+# Permissive terms a native export receipt may additionally name in ``reviewed_terms``.
+# Derived from the static table before the receipts merge in, so a receipt cannot approve
+# itself, and copyleft or denied expressions never contribute a term.
+_TERMS = re.compile(r"\s*(?:\b(?:AND|OR|WITH)\b|[()])\s*")
+_BOUND_NATIVE_TERMS = frozenset(
+    term
+    for expression, _ in NATIVE_LIBRARIES.values()
+    if not expression.startswith(("LGPL-", "MPL-")) and not _DENIED.search(expression)
+    for term in _TERMS.split(expression)
+    if term
+)
+# Export-only receipts describe wheel bytes that are not vendor sidecars once installed.
 NATIVE_LIBRARIES.update(
-    {name: (item["license"], {item["distribution"]}) for name, item in _NATIVE_COMPONENTS.items()}
+    {
+        name: (item["license"], {item["distribution"]})
+        for name, item in _NATIVE_COMPONENTS.items()
+        if not item.get("export_only")
+    }
 )
 _NATIVE_VERSIONS = {
     "shapely": {"2.2.0"},
@@ -867,6 +893,7 @@ def _native_family(owner: str, filename: str) -> str | None:
             name
             for name, item in _NATIVE_COMPONENTS.items()
             if item["distribution"] == owner
+            and not item.get("export_only")
             and filename in _component_basenames(tuple(item["files"]))
         ),
         None,
@@ -1005,16 +1032,19 @@ _GNU_SHARED_FILES = {
 _GNU_FAMILIES = frozenset({"libgomp", "libgfortran", "libquadmath"})
 
 
-def _elf_shared_object(path: Path) -> bool:
-    with path.open("rb") as handle:
-        header = handle.read(20)
+def _elf_shared_object_bytes(header: bytes) -> bool:
     return (
-        len(header) == 20
+        len(header) >= 20
         and header.startswith(b"\x7fELF")
         and header[4] in {1, 2}
         and header[5] in {1, 2}
         and int.from_bytes(header[16:18], "little" if header[5] == 1 else "big") == 3
     )
+
+
+def _elf_shared_object(path: Path) -> bool:
+    with path.open("rb") as handle:
+        return _elf_shared_object_bytes(handle.read(20))
 
 
 def vendored_libraries(site: Path, target: str) -> list[dict]:
@@ -1492,13 +1522,86 @@ def _scan_stream(
     return None
 
 
-def _export_native_review(digest: str, label: str, archive, artifact: Path, errors: list[str]):
+_REVIEWED_TERM_MARKERS = {
+    "IJG": ("libjpeg-turbo", "independent jpeg group"),
+    "libpng-2.0": ("libpng", "png reference library license version 2"),
+    "libtiff": ("tiff library", "sam leffler", "silicon graphics"),
+}
+_WHEEL_TARGETS = (
+    (("linux", "x86_64"), "x86_64-unknown-linux-gnu"),
+    (("linux", "aarch64"), "aarch64-unknown-linux-gnu"),
+    (("macosx", "arm64"), "aarch64-apple-darwin"),
+    (("win_amd64",), "x86_64-pc-windows-msvc"),
+)
+
+
+def _wheel_identity(filename: str, explicit_target: str | None) -> tuple[str | None, str | None]:
+    """Name the distribution and target of a wheel; compound platform tags are searched."""
+    if not filename.lower().endswith(".whl") or "-" not in filename:
+        return None, explicit_target
+    distribution = canonical(filename.split("-", 1)[0])
+    platform = filename[:-4].rsplit("-", 1)[-1].lower()
+    target = explicit_target
+    if target is None:
+        target = next(
+            (name for words, name in _WHEEL_TARGETS if all(word in platform for word in words)),
+            None,
+        )
+    return distribution, target
+
+
+def _reviewed_gnu_runtime(
+    digest: str, label: str, archive, artifact: Path, target: str | None, errors: list[str]
+) -> bool:
+    """Accept an exact GNU runtime receipt for this target, distribution and member path."""
+    member = label.split("!/", 1)[1]
+    distribution, wheel_target = _wheel_identity(artifact.name, target)
+    expected = (
+        _GNU_TARGET_SHARED_FILES.get((wheel_target, distribution, member))
+        if distribution and wheel_target
+        else None
+    )
+    if (
+        expected is None
+        or digest != expected
+        or _native_family(distribution, Path(member).name) not in _GNU_FAMILIES
+    ):
+        return False
+    with archive.open(member) as handle:
+        if not _elf_shared_object_bytes(handle.read(20)):
+            errors.append(f"native export GNU runtime is not an ELF shared object: {label}")
+            return True
+    try:
+        text = "\n".join(path.read_text(encoding="utf-8").lower() for path in _gnu_notice_texts())
+    except SystemExit:
+        text = ""
+    if "gnu general public license" not in text or "gcc runtime library exception" not in text:
+        errors.append(f"native export lacks complete GNU runtime notices: {label}")
+    return True
+
+
+def _export_native_review(
+    digest: str,
+    label: str,
+    archive,
+    artifact: Path,
+    errors: list[str],
+    *,
+    target: str | None = None,
+):
     """Identify actual bytes using trusted reviews, never candidate output checksums.
 
     Paths in receipts document the reviewed originals; identity follows the hash
     through renames. Notices must accompany these bytes in the artifact itself.
     Installed-pack wheel-input reviews do not constitute export object approvals.
+    Reviewed GNU runtimes are matched by target, distribution and member path.
     """
+    if (
+        archive is not None
+        and "!/" in label
+        and _reviewed_gnu_runtime(digest, label, archive, artifact, target, errors)
+    ):
+        return
     matches = [
         component
         for component in _NATIVE_COMPONENTS.values()
@@ -1508,14 +1611,28 @@ def _export_native_review(digest: str, label: str, archive, artifact: Path, erro
         errors.append(f"unreviewed native export: {label}: sha256={digest}; matches={len(matches)}")
         return
     component = matches[0]
+    reviewed_terms = component.get("reviewed_terms", [])
+    terms_bound = (
+        isinstance(reviewed_terms, list)
+        and all(isinstance(term, str) for term in reviewed_terms)
+        and set(reviewed_terms) <= _BOUND_NATIVE_TERMS
+    )
     if (
         not all(component.get(key) for key in ("name", "distribution", "version", "license"))
-        or verdict(component["distribution"], component["license"]) is not None
+        or not terms_bound
+        or verdict(
+            component["distribution"],
+            component["license"],
+            allowed=ALLOWED | frozenset(reviewed_terms),
+        )
+        is not None
         or not component.get("notices")
         or any(path not in component["files"] for path in component["export_objects"])
     ):
         errors.append(f"native export lacks an allowed component licence/review: {label}")
         return
+    notice_texts = []
+    notices_ok = True
     for notice in component["notices"]:
         relative = notice["path"]
         # Receipt paths use portable archive syntax, including on Windows,
@@ -1529,6 +1646,7 @@ def _export_native_review(digest: str, label: str, archive, artifact: Path, erro
             or ".." in relative.split("/")
         ):
             errors.append(f"native export notice path is unsafe: {label}")
+            notices_ok = False
             continue
         path = Path(relative)
         if component.get("notice_scope") == "upstream":
@@ -1543,6 +1661,15 @@ def _export_native_review(digest: str, label: str, archive, artifact: Path, erro
             raw = b""
         if not raw.strip() or hashlib.sha256(raw).hexdigest() != notice["sha256"]:
             errors.append(f"native export lacks its reviewed notice: {label}: {path}")
+            notices_ok = False
+        else:
+            notice_texts.append(raw.decode("utf-8", errors="replace").lower())
+    if reviewed_terms and notices_ok:
+        text = "\n".join(notice_texts)
+        for term in reviewed_terms:
+            markers = _REVIEWED_TERM_MARKERS.get(term)
+            if markers is None or not all(marker in text for marker in markers):
+                errors.append(f"native export notice omits reviewed {term} text: {label}")
 
 
 def check_vendor_files(
@@ -1615,12 +1742,20 @@ def check_wheel_files(
     *,
     allow_itt: bool = False,
     openmp_dll: Path | None = None,
+    target: str | None = None,
 ) -> None:
     """Require reviewed native bytes/licences/notices and refuse Intel/video exports.
 
-    Source-built toolchain wheels disable ITT instrumentation (``USE_ITT=0``,
-    ``-DWITH_ITT=OFF``, ``-DLIBOMP_USE_ITT_NOTIFY=OFF``), so ``allow_itt``
-    defaults to ``False`` here. Video-library names are refused independently of
+    OpenCV (``-DWITH_ITT=OFF``), LLVM OpenMP (``-DLIBOMP_USE_ITT_NOTIFY=OFF``) and
+    loose/OpenMP sidecars disable ITT instrumentation, so ``allow_itt`` defaults to
+    ``False`` for them. CPU ``torch`` wheels pass ``USE_ITT=0``, yet ``USE_MKLDNN=1``
+    builds vendored oneDNN (``third_party/ideep/mkl-dnn``) with the default
+    ``DNNL_ENABLE_ITT_TASKS=ON``, which compiles BSD-3-Clause ``ittapi``
+    (``ittnotify``/``jitprofiling``) into ``libtorch_cpu.so``. ITT markers and library
+    names are therefore allowed only inside ``.whl`` archives whose canonical
+    distribution is ``torch`` (paired with the bundled ``notices/ittapi.txt``), while
+    proprietary Intel IPP/MKL/OpenMP markers and libraries are refused in every wheel
+    and sidecar. Video-library names are refused independently of
     GPL self-declarations/flags. The installed pack keeps its named LGPL FFmpeg review.
     Every native payload also requires one explicit export-object SHA-256 review
     and complete reviewed notices inside its wheel (or beside a loose artifact).
@@ -1659,6 +1794,8 @@ def check_wheel_files(
         name = path.name.lower()
         if name.endswith(".whl"):
             is_opencv = name.startswith("opencv_python_headless-")
+            distribution, _ = _wheel_identity(path.name, target)
+            wheel_allow_itt = allow_itt or distribution == "torch"
             with zipfile.ZipFile(path) as archive:
                 members = archive.infolist()
                 names = [info.filename.removesuffix("/").casefold() for info in members]
@@ -1701,12 +1838,14 @@ def check_wheel_files(
                             member_name,
                             approved,
                             errors,
-                            allow_itt=allow_itt,
+                            allow_itt=wheel_allow_itt,
                             reject_video=True,
                             strip_opencv_ipp_notice=is_opencv,
                         )
                     if digest is not None:
-                        _export_native_review(digest, member_rel, archive, path, errors)
+                        _export_native_review(
+                            digest, member_rel, archive, path, errors, target=target
+                        )
         else:
             label = path.name
             present.add(label)
@@ -1814,6 +1953,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wheels", type=Path, nargs="+")
     parser.add_argument("--openmp-dll", type=Path)
     parser.add_argument("--allow-itt", action="store_true")
+    parser.add_argument("--target")
     parser.add_argument("--render-toolchain-pins", type=Path)
     parser.add_argument("--release-tag")
     args = parser.parse_args(argv)
@@ -1827,6 +1967,7 @@ def main(argv: list[str] | None = None) -> int:
             args.wheels,
             allow_itt=args.allow_itt,
             openmp_dll=args.openmp_dll,
+            target=args.target,
         )
         print(f"{len(args.wheels)} wheel artifact(s) passed the vendor library gate")
         return 0

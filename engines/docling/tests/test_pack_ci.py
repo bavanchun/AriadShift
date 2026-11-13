@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import base64
+import csv
 import hashlib
 import importlib
+import importlib.util
 import io
 import json
 import os
+import pathlib
 import runpy
 import shlex
 import subprocess
 import sys
 import tarfile
 import tomllib
+import zipfile
 from dataclasses import asdict
 from types import SimpleNamespace
 
@@ -426,3 +431,205 @@ def test_real_manifest_and_checksums_contain_only_built_targets(planner, tmp_pat
     for line in checksums:
         digest, filename = line.split("  ", 1)
         assert hashlib.sha256((tmp_path / filename).read_bytes()).hexdigest() == digest
+
+
+TORCH_WHEEL = "torch-2.14.1+cpu-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+TORCH_DIST_INFO = "torch-2.14.1+cpu.dist-info"
+TORCH_NOTICES = {
+    "notices/pytorch-2.14.1-native-notices.txt": "pytorch-2.14.1-native-notices.txt",
+    "notices/llvm-openmp-notice.txt": "llvm-openmp-notice.txt",
+    "notices/ittapi.txt": "ittapi.txt",
+}
+
+
+def toolchain_build_script(monkeypatch, tmp_path):
+    """The audited inner program of the Linux toolchain job, as the runner would receive it."""
+    workflow = yaml.safe_load(
+        (REPOSITORY / ".github/workflows/toolchain-wheels.yml").read_text("utf-8")
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name")
+        == "Build IPP-free OpenCV wheel, collate toolchain artifacts and audit wheels"
+    )
+    commands = []
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            subprocess, "run", lambda command, **_: commands.append(command) or SimpleNamespace()
+        )
+        outer = tmp_path / "outer-step.py"
+        outer.write_text(step["run"], "utf-8")
+        runpy.run_path(str(outer))
+    return commands[0][9]
+
+
+def unpack_wheel_without_wheel_package(command):
+    """Unpack a wheel and verify its RECORD as ``python -m wheel unpack`` does."""
+    dest = pathlib.Path(command[command.index("--dest") + 1])
+    wheel = pathlib.Path(command[-1])
+
+    def fail(reason):
+        raise subprocess.CalledProcessError(1, command, stderr=f"{wheel.name}: {reason}")
+
+    with zipfile.ZipFile(wheel) as archive:
+        members = {info.filename: info for info in archive.infolist() if not info.is_dir()}
+        records = [name for name in members if name.endswith(".dist-info/RECORD")]
+        if len(records) != 1:
+            fail("expected exactly one RECORD")
+        hashed = set()
+        for name, checksum, size in csv.reader(io.StringIO(archive.read(records[0]).decode())):
+            if name == records[0]:
+                continue
+            if name not in members:
+                fail(f"RECORD lists a missing member: {name}")
+            data = archive.read(name)
+            algorithm, _, expected = checksum.partition("=")
+            digest = base64.urlsafe_b64encode(hashlib.new(algorithm, data).digest())
+            if algorithm != "sha256" or digest.decode().rstrip("=") != expected:
+                fail(f"RECORD digest mismatch: {name}")
+            if size and int(size) != len(data):
+                fail(f"RECORD size mismatch: {name}")
+            hashed.add(name)
+        if unhashed := set(members) - hashed - {records[0]}:
+            fail(f"members without a RECORD hash: {sorted(unhashed)}")
+        archive.extractall(dest / wheel.stem)  # noqa: S202 - the test's own synthetic wheel
+
+
+def synthetic_torch_wheel(path):
+    members = {
+        "torch/__init__.py": b"# synthetic torch\n",
+        "torch/lib/data.bin": bytes(range(256)) * 64,
+        f"{TORCH_DIST_INFO}/METADATA": b"Metadata-Version: 2.1\nName: torch\nVersion: 2.14.1+cpu\n",
+        f"{TORCH_DIST_INFO}/WHEEL": (
+            b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\n"
+            b"Tag: cp314-cp314-manylinux_2_27_x86_64\nTag: cp314-cp314-manylinux_2_28_x86_64\n"
+        ),
+    }
+    record = "".join(f"{name},,\n" for name in members) + f"{TORCH_DIST_INFO}/RECORD,,\n"
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            info = zipfile.ZipInfo(name, date_time=(2026, 1, 2, 3, 4, 6))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100755 << 16
+            archive.writestr(info, data)
+        archive.writestr(f"{TORCH_DIST_INFO}/RECORD", record)
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or sys.version_info[:2] != (3, 14),
+    reason="the synthetic wheel carries the Linux x86_64 cp314 tags the toolchain job produces",
+)
+def test_toolchain_job_repacks_the_torch_wheel_with_reviewed_notices(tmp_path, monkeypatch):
+    import licenses
+
+    script = toolchain_build_script(monkeypatch, tmp_path)
+    work = tmp_path / "work"
+    (work / "torch-out").mkdir(parents=True)
+    (work / "engines").symlink_to(REPOSITORY / "engines")
+    wheel = work / "torch-out" / TORCH_WHEEL
+    synthetic_torch_wheel(wheel)
+    openblas = work / "torch-out/OpenBLAS-LICENSE.txt"
+    openblas.write_bytes(b"OpenBLAS licence\n")
+    target = "x86_64-unknown-linux-gnu"
+    build_record = {
+        "schema": 1,
+        "target": target,
+        "build_key": "synthetic-key",
+        "files": {
+            TORCH_WHEEL: {"sha256": fetch._sha256(wheel), "size": wheel.stat().st_size},
+            openblas.name: {"sha256": fetch._sha256(openblas), "size": openblas.stat().st_size},
+        },
+    }
+    build_json = work / "torch-out/build.json"
+    build_json.write_text(json.dumps(build_record, indent=2) + "\n", "utf-8")
+    original = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in (wheel, openblas, build_json)
+    }
+
+    audits = []
+    installs = []
+    real_run = subprocess.run
+
+    def run(command, **kwargs):
+        # Only the OpenCV reinstall into the build environment is replaced; the virtual-environment
+        # install of the repacked wheel runs for real. The unpack runs through the ``wheel`` package
+        # when it is installed (``pack-build`` group) and through an equivalent RECORD-verifying
+        # unpack otherwise, as in the plain ``just docling-test`` environment.
+        if "--reinstall" in command:
+            installs.append(command)
+            return subprocess.CompletedProcess(command, 0)
+        if (
+            len(command) >= 6
+            and command[1:4] == ["-m", "wheel", "unpack"]
+            and importlib.util.find_spec("wheel") is None
+        ):
+            unpack_wheel_without_wheel_package(command)
+            return subprocess.CompletedProcess(command, 0)
+        return real_run(command, **kwargs)
+
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("TARGET", target)
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(native_build, "opencv", lambda *_: work / "opencv.whl")
+    monkeypatch.setattr(native_build, "verify_opencv", lambda *_, **__: None)
+    monkeypatch.setattr(native_build, "export_opencv", lambda *_: None)
+    monkeypatch.setattr(
+        licenses,
+        "check_wheel_files",
+        lambda artifacts, **options: audits.append((list(artifacts), options)),
+    )
+    exec(compile(script, "<toolchain-linux-step>", "exec"), {"__name__": "__main__"})  # noqa: S102
+
+    assert len(installs) == 1
+    # The cache-keyed inputs are byte-for-byte what the build produced.
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in (wheel, openblas, build_json)
+    } == original
+
+    released = work / "wheels-out" / TORCH_WHEEL
+    reviewed = {
+        notice["path"]: notice["sha256"]
+        for notice in licenses._NATIVE_COMPONENTS["torch-native"]["notices"]
+    }
+    with zipfile.ZipFile(released) as archive:
+        for member, source in TORCH_NOTICES.items():
+            data = archive.read(member)
+            assert data == (REPOSITORY / "engines/docling/pack/licenses" / source).read_bytes()
+            assert hashlib.sha256(data).hexdigest() == reviewed[source]
+        rows = list(csv.reader(io.StringIO(archive.read(f"{TORCH_DIST_INFO}/RECORD").decode())))
+        assert rows[-1] == [f"{TORCH_DIST_INFO}/RECORD", "", ""]
+        assert {row[0] for row in rows} == set(archive.namelist())
+        for name, checksum, size in rows[:-1]:
+            data = archive.read(name)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+            assert (checksum, size) == (f"sha256={digest}", str(len(data)))
+        with zipfile.ZipFile(wheel) as source:
+            for info in source.infolist():
+                if info.filename.endswith("/RECORD"):
+                    continue
+                copied = archive.getinfo(info.filename)
+                assert (copied.date_time, copied.external_attr, copied.compress_type) == (
+                    info.date_time,
+                    info.external_attr,
+                    info.compress_type,
+                )
+                assert archive.read(info.filename) == source.read(info.filename)
+
+    record = json.loads((work / "wheels-out" / f"torch-build-{target}.json").read_text("utf-8"))
+    entry = record["files"][TORCH_WHEEL]
+    assert entry["sha256"] == hashlib.sha256(released.read_bytes()).hexdigest()
+    assert entry["sha256"] != build_record["files"][TORCH_WHEEL]["sha256"]
+    assert entry["size"] == released.stat().st_size != build_record["files"][TORCH_WHEEL]["size"]
+    sidecar = record["files"][openblas.name]
+    assert sidecar["asset"] == f"OpenBLAS-LICENSE-{target}.txt"
+    assert (sidecar["sha256"], sidecar["size"]) == (
+        build_record["files"][openblas.name]["sha256"],
+        build_record["files"][openblas.name]["size"],
+    )
+    assert (work / "wheels-out" / sidecar["asset"]).read_bytes() == openblas.read_bytes()
+    assert len(audits) == 1
+    artifacts, options = audits[0]
+    assert pathlib.Path("wheels-out", TORCH_WHEEL) in artifacts and options["target"] == target

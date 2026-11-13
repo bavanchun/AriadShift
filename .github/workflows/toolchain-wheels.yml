@@ -167,17 +167,95 @@ jobs:
           subprocess.run([
               "uv", "run", "--package", "ariad-docling", "--group", "pack-build",
               "--frozen", "python", "-c", textwrap.dedent(r"""
+              import base64
+              import copy
+              import csv
+              import hashlib
+              import io
               import json
               import os
               import shutil
               import subprocess
               import sys
+              import tempfile
+              import zipfile
               from pathlib import Path
 
               sys.path.insert(0, str(Path("engines/docling/pack").resolve()))
               import fetch
               import licenses
               import native_build
+
+              # The audited wheel in torch-out/ is cache-keyed and stays untouched. The release
+              # copy carries the reviewed upstream notices next to the native bytes they cover.
+              notice_root = Path("engines/docling/pack/licenses")
+              torch_notices = {
+                  "notices/pytorch-2.14.1-native-notices.txt": (
+                      notice_root / "pytorch-2.14.1-native-notices.txt"
+                  ),
+                  "notices/llvm-openmp-notice.txt": notice_root / "llvm-openmp-notice.txt",
+                  "notices/ittapi.txt": notice_root / "ittapi.txt",
+              }
+
+              def record_row(name, digest, size):
+                  checksum = base64.urlsafe_b64encode(digest).decode().rstrip("=")
+                  return [name, f"sha256={checksum}", str(size)]
+
+              def repack_torch_wheel(source, dest):
+                  with zipfile.ZipFile(source) as archive, zipfile.ZipFile(dest, "w") as repacked:
+                      members = [info for info in archive.infolist() if not info.is_dir()]
+                      records = [
+                          info for info in members
+                          if info.filename.count("/") == 1
+                          and info.filename.split("/")[0].endswith(".dist-info")
+                          and info.filename.endswith("/RECORD")
+                      ]
+                      if len(records) != 1:
+                          raise SystemExit(f"expected exactly one RECORD in {source.name}")
+                      if any(info.filename in torch_notices for info in members):
+                          raise SystemExit(f"{source.name} already carries the reviewed notices")
+                      rows = []
+                      for info in members:
+                          if info is records[0]:
+                              continue
+                          digest = hashlib.sha256()
+                          size = 0
+                          with archive.open(info) as reader, repacked.open(
+                              copy.copy(info), "w", force_zip64=info.file_size >= zipfile.ZIP64_LIMIT
+                          ) as writer:
+                              for chunk in iter(lambda: reader.read(1 << 20), b""):
+                                  digest.update(chunk)
+                                  size += len(chunk)
+                                  writer.write(chunk)
+                          rows.append(record_row(info.filename, digest.digest(), size))
+                      for name, notice in torch_notices.items():
+                          data = notice.read_bytes()
+                          member = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                          member.compress_type = zipfile.ZIP_DEFLATED
+                          member.external_attr = 0o100644 << 16
+                          repacked.writestr(member, data)
+                          rows.append(record_row(name, hashlib.sha256(data).digest(), len(data)))
+                      rows.append([records[0].filename, "", ""])
+                      text = io.StringIO()
+                      csv.writer(text, lineterminator="\n").writerows(rows)
+                      repacked.writestr(copy.copy(records[0]), text.getvalue().encode("utf-8"))
+
+              def verify_repacked_wheel(wheel):
+                  with tempfile.TemporaryDirectory() as scratch:
+                      scratch = Path(scratch)
+                      subprocess.run([
+                          sys.executable, "-m", "wheel", "unpack",
+                          "--dest", str(scratch / "unpack"), str(wheel),
+                      ], check=True)
+                      venv = scratch / "venv"
+                      subprocess.run(["uv", "venv", str(venv), "--python", sys.executable], check=True)
+                      python = next(
+                          path for path in (venv / "bin" / "python", venv / "Scripts" / "python.exe")
+                          if path.is_file()
+                      )
+                      subprocess.run([
+                          "uv", "pip", "install", "--python", str(python), "--no-deps", str(wheel),
+                      ], check=True)
 
               target = os.environ["TARGET"]
               pins = dict(fetch.load_pins())
@@ -205,7 +283,17 @@ jobs:
                       if name == "OpenBLAS-LICENSE.txt"
                       else name
                   )
-                  shutil.copyfile(source, out / asset)
+                  dest = out / asset
+                  if name.startswith("torch-") and name.endswith(".whl"):
+                      repack_torch_wheel(source, dest)
+                      verify_repacked_wheel(dest)
+                      torch_files[name] = {
+                          "asset": asset,
+                          "sha256": fetch._sha256(dest),
+                          "size": dest.stat().st_size,
+                      }
+                      continue
+                  shutil.copyfile(source, dest)
                   torch_files[name] = {
                       "asset": asset,
                       "sha256": meta["sha256"],
@@ -219,7 +307,9 @@ jobs:
 
               artifacts = sorted(path for path in out.rglob("*") if path.is_file())
               openmp = out / "libiomp5md.dll" if target.endswith("windows-msvc") else None
-              licenses.check_wheel_files(artifacts, allow_itt=False, openmp_dll=openmp)
+              licenses.check_wheel_files(
+                  artifacts, allow_itt=False, openmp_dll=openmp, target=target,
+              )
           """)], check=True)
 
       - name: Upload toolchain wheels and provenance
@@ -328,6 +418,7 @@ jobs:
           native_build.export_opencv(wheel, target, pins, out)
           licenses.check_wheel_files(
               sorted(path for path in out.rglob('*') if path.is_file()), allow_itt=False,
+              target=target,
           )
           """], check=True)
 
