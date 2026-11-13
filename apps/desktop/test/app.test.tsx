@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/app";
+import type { JobView } from "../src/bindings/types";
 
 const { events, ipc, links, picker, updateCheck } = vi.hoisted(() => ({
   events: { listen: vi.fn(), handlers: new Map<string, () => void>() },
@@ -38,6 +39,23 @@ const settings = {
   telemetry: false,
   concurrency: 2,
 };
+const queueJob = (
+  id: string,
+  status: JobView["status"],
+  extra: Partial<JobView> = {},
+): JobView => ({
+  id,
+  input: `/docs/${id}.pdf`,
+  output: `/docs/${id}.docx`,
+  target: "docx",
+  profile: "private",
+  status,
+  stage: status,
+  error: null,
+  warnings: [],
+  missing_pack: null,
+  ...extra,
+});
 beforeEach(() => {
   events.handlers.clear();
   events.listen.mockReset().mockImplementation(async (name: string, handler: () => void) => {
@@ -103,6 +121,53 @@ describe("desktop workflow", () => {
         },
       }),
     );
+  });
+  it("offers Install Docling on a failed job and opens Engine packs", async () => {
+    const guiError =
+      "The Docling engine pack is not installed. Scanned PDFs and images require Docling for OCR — install Docling in Engine packs.";
+    const original = ipc.getMockImplementation();
+    ipc.mockImplementation(async (name, args) =>
+      name === "snapshot"
+        ? {
+            jobs: [queueJob("scan", "failed", { error: guiError, missing_pack: "docling" })],
+            watches: [],
+            settings,
+            pack_progress: "",
+            pack_busy: false,
+          }
+        : original?.(name, args),
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Queue/ }));
+    await screen.findByText(guiError);
+    expect(screen.queryByText(/ashift engines install/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Install Docling" }));
+    const packName = await screen.findByLabelText("Pack name");
+    expect((packName as HTMLInputElement).value).toBe("docling");
+    expect(screen.getByRole("heading", { level: 1, name: "Engine packs" })).toBeTruthy();
+  });
+  it("offers Install Docling on a succeeded job that used the fallback reader", async () => {
+    const warning =
+      "2 of 14 pages have no text layer and were left without text; install Docling to OCR them.";
+    const original = ipc.getMockImplementation();
+    ipc.mockImplementation(async (name, args) =>
+      name === "snapshot"
+        ? {
+            jobs: [
+              queueJob("mixed", "succeeded", { warnings: [warning], missing_pack: "docling" }),
+            ],
+            watches: [],
+            settings,
+            pack_progress: "",
+            pack_busy: false,
+          }
+        : original?.(name, args),
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Queue/ }));
+    await screen.findByText(warning);
+    fireEvent.click(screen.getByRole("button", { name: "Install Docling" }));
+    expect(((await screen.findByLabelText("Pack name")) as HTMLInputElement).value).toBe("docling");
   });
   it("adds files the OS opened before the window subscribed, after subscribing", async () => {
     const original = ipc.getMockImplementation();

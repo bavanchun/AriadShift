@@ -123,6 +123,8 @@ export type FinishedHandlers = {
   reveal: (job: JobView) => void;
   retry: (job: JobView) => void;
   viewQueue: () => void;
+  /** Opens the engine pack screen for `pack`; omitted when the host cannot install packs. */
+  installPack?: (pack: string) => void;
 };
 
 /**
@@ -131,6 +133,12 @@ export type FinishedHandlers = {
  */
 export function finishedToasts(finished: JobView[], handlers: FinishedHandlers): Toast[] {
   const viewQueue = { label: "View queue", run: handlers.viewQueue };
+  const installDocling = (job: JobView): ToastAction[] => {
+    const { installPack } = handlers;
+    return job.missing_pack === "docling" && installPack
+      ? [{ label: "Install Docling", run: () => installPack("docling") }]
+      : [];
+  };
   const first = finished[0];
   if (!first) return [];
   if (finished.length > 3) {
@@ -151,13 +159,20 @@ export function finishedToasts(finished: JobView[], handlers: FinishedHandlers):
             id: job.id,
             tone: "success",
             text: `Converted ${fileName(job.input)} to ${job.target.toUpperCase()}.`,
-            actions: [{ label: "Show output", run: () => handlers.reveal(job) }],
+            actions: [
+              { label: "Show output", run: () => handlers.reveal(job) },
+              ...installDocling(job),
+            ],
           }
         : {
             id: job.id,
             tone: "error",
             text: `Could not convert ${fileName(job.input)}${job.error ? `: ${job.error}` : "."}`,
-            actions: [{ label: "Retry", run: () => handlers.retry(job) }, viewQueue],
+            actions: [
+              ...installDocling(job),
+              { label: "Retry", run: () => handlers.retry(job) },
+              viewQueue,
+            ],
           },
   );
 }

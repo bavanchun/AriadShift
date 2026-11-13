@@ -97,6 +97,9 @@ pub struct JobView {
     pub stage: String,
     pub error: Option<String>,
     pub warnings: Vec<String>,
+    /// Engine pack whose installation would resolve the failure or warning.
+    #[serde(default)]
+    pub missing_pack: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
 pub struct WatchRequest {
