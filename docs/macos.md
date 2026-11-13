@@ -34,6 +34,13 @@ on Calculator; it stays strict and fails on any reported issue. `PerformanceUITe
 Cancelling the calling `Task` cancels the Rust run (`EngineError.cancelled`). One client per process is the supported shape; app code never calls the
 generated free functions.
 
+## Recipes, secrets and tool results (`ariad-ffi`)
+New public API: `run_recipe` (step events through a `RecipeListener`), `validate_recipe`, `recipe_secret_fields`, the `SecretBag` object, and on
+`ToolOutcome` the typed `fidelity`, `change_list` and `metrics_json`. Put prompted values into a `SecretBag` under the tool parameter name and pass it
+as `secrets` on `ToolRunRequest` or `RecipeRunRequest`; values never appear in params, outcomes or errors. `SecretBag.clear()` drops the stored
+strings (drop semantics); it does not zeroize memory, and the values still cross the UniFFI boundary as ordinary strings. `RecipeRunRequest.imported`
+and `confirmed` are flags set by the caller, not verified by the library, so only the app's own trust decision should set them.
+
 ## Tools menu
 The menu comes from `listTools()` grouped by registry group. A tool is enabled when it is free, takes the open PDF, and every required parameter has
 an editor (text, number, switch, enum, list, presets): the run sheet generates that form from the tool's JSON Schema. Others are listed disabled with
