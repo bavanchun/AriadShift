@@ -26,10 +26,13 @@ struct DocumentWindowView: View {
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 320)
         } detail: {
             ViewerPane(viewer: viewer, editing: editing)
-        }
-        .inspector(isPresented: $showInspector) {
-            InspectorView(session: session)
-                .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
+                // The inspector belongs to the detail column. Wrapping the whole split view in a second split
+                // controller made the hosting view report a different minimum width on every layout pass
+                // until AppKit gave up with "needing another Update Constraints in Window pass".
+                .inspector(isPresented: $showInspector) {
+                    InspectorView(session: session)
+                        .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
+                }
         }
         .toolbar {
             ViewerToolbar(viewer: viewer)
