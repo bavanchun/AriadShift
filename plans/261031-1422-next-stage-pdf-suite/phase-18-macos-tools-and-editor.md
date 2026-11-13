@@ -27,6 +27,12 @@ Every tool and both edit modes in the native app, feeling like a first-party App
 6. **AI panel**: Foundation Models (macOS 26+) for summarise/ask/translate/NL-recipe on device; fallback to the phase-13 local model pack on macOS 15-25; cloud (Pro) only with explicit consent.
 7. **Keyboard-first**: every command in menus with shortcuts; command palette (⌘K) as a native panel.
 
+## Carried from phase 17
+
+- **Task 0 (before T1): re-land the two UI changes that were reverted** to keep the macOS unit scheme green on CI. One change per commit, each with its own `macOS build & test` run: (a) the go-to-page field focus bridge (`PageFieldFocuser`), (b) the find-bar arrow hit area. The reverted layout commit is 4b4e4976. If the AppKit crash "window marked as needing another Update Constraints in Window pass" (`SplitViewChildController.hostingView(_:didUpdateMinSize:maxSize:)`) recurs in the hosted-window tests, revert the layout change first, then investigate.
+- **Sparkle manual path**: check the Check for Updates menu item and update window, the relaunch after install, and an https appcast under App Transport Security. Phase 17 proved the automatic path only.
+- **CI build time**: find why the Release build step of `macos.yml` takes 52-56 min (tests add ~3 min; job timeout is 90 min). Record before and after times in this file.
+
 ## Tasks
 
 | Task | Owner (model) | Files owned |
@@ -43,4 +49,7 @@ Every tool and both edit modes in the native app, feeling like a first-party App
 - [ ] Parity checklist: every row in `docs/parity-matrix.md` marked `mac` works in the app (UI test or recorded manual check).
 - [ ] Output bytes of each tool equal CLI output for the same inputs/params (determinism test via `ariad-ffi` vs `ashift`).
 - [ ] Document/Page mode acceptance identical to phase 16.
+- [ ] The two reverted UI changes are re-landed, each green on its own macOS CI run.
+- [ ] Sparkle menu/update-window, relaunch and https/ATS checks recorded.
+- [ ] CI build-time investigation recorded with before (52-56 min build + ~3 min tests) and after times.
 - [ ] macOS preview 0.7.0 notarized DMG + Sparkle appcast (owner GO).
