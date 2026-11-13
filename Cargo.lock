@@ -278,6 +278,7 @@ dependencies = [
  "ariad-host",
  "ariad-pdf",
  "futures-util",
+ "jsonschema",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
