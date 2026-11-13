@@ -206,6 +206,44 @@ def test_pack_cleanup_stops_only_its_named_container(
         assert calls[-1] == ["sccache", "--stop-server"]
 
 
+def test_toolchain_linux_opencv_step_runs_inside_uv_project_environment(tmp_path, monkeypatch):
+    workflow = yaml.safe_load(
+        (REPOSITORY / ".github/workflows/toolchain-wheels.yml").read_text("utf-8")
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name")
+        == "Build IPP-free OpenCV wheel, collate toolchain artifacts and audit wheels"
+    )
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    script = tmp_path / "step.py"
+    script.write_text(step["run"], "utf-8")
+    runpy.run_path(str(script))
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:8] == [
+        "uv",
+        "run",
+        "--package",
+        "ariad-docling",
+        "--group",
+        "pack-build",
+        "--frozen",
+        "python",
+    ]
+    assert command[8] == "-c"
+    compile(command[9], "<toolchain-linux-step>", "exec")
+    for fragment in ("uv", "pip", "sys.executable", "licenses.check_wheel_files"):
+        assert fragment in command[9]
+
+
 @pytest.fixture
 def planner():
     return importlib.import_module("ci_plan")

@@ -161,59 +161,66 @@ jobs:
 
       - name: Build IPP-free OpenCV wheel, collate toolchain artifacts and audit wheels
         run: |
-          import json
-          import os
-          import shutil
           import subprocess
-          import sys
-          from pathlib import Path
+          import textwrap
 
-          sys.path.insert(0, str(Path("engines/docling/pack").resolve()))
-          import fetch
-          import licenses
-          import native_build
-
-          target = os.environ["TARGET"]
-          pins = dict(fetch.load_pins())
-          pins.pop("toolchain", None)
-          cache = fetch.default_cache()
-          opencv_wheel = native_build.opencv(target, pins, cache)
           subprocess.run([
-              "uv", "pip", "install", "--python", sys.executable,
-              "--no-deps", "--reinstall", str(opencv_wheel),
-          ], check=True)
-          native_build.verify_opencv(sys.executable, target=target)
+              "uv", "run", "--package", "ariad-docling", "--group", "pack-build",
+              "--frozen", "python", "-c", textwrap.dedent(r"""
+              import json
+              import os
+              import shutil
+              import subprocess
+              import sys
+              from pathlib import Path
 
-          out = Path("wheels-out")
-          shutil.rmtree(out, ignore_errors=True)
-          out.mkdir(parents=True)
-          native_build.export_opencv(opencv_wheel, target, pins, out)
+              sys.path.insert(0, str(Path("engines/docling/pack").resolve()))
+              import fetch
+              import licenses
+              import native_build
 
-          torch_out = Path("torch-out")
-          torch_record = json.loads((torch_out / "build.json").read_text(encoding="utf-8"))
-          torch_files = {}
-          for name, meta in sorted(torch_record["files"].items()):
-              source = torch_out / name
-              asset = (
-                  f"OpenBLAS-LICENSE-{target}.txt"
-                  if name == "OpenBLAS-LICENSE.txt"
-                  else name
+              target = os.environ["TARGET"]
+              pins = dict(fetch.load_pins())
+              pins.pop("toolchain", None)
+              cache = fetch.default_cache()
+              opencv_wheel = native_build.opencv(target, pins, cache)
+              subprocess.run([
+                  "uv", "pip", "install", "--python", sys.executable,
+                  "--no-deps", "--reinstall", str(opencv_wheel),
+              ], check=True)
+              native_build.verify_opencv(sys.executable, target=target)
+
+              out = Path("wheels-out")
+              shutil.rmtree(out, ignore_errors=True)
+              out.mkdir(parents=True)
+              native_build.export_opencv(opencv_wheel, target, pins, out)
+
+              torch_out = Path("torch-out")
+              torch_record = json.loads((torch_out / "build.json").read_text(encoding="utf-8"))
+              torch_files = {}
+              for name, meta in sorted(torch_record["files"].items()):
+                  source = torch_out / name
+                  asset = (
+                      f"OpenBLAS-LICENSE-{target}.txt"
+                      if name == "OpenBLAS-LICENSE.txt"
+                      else name
+                  )
+                  shutil.copyfile(source, out / asset)
+                  torch_files[name] = {
+                      "asset": asset,
+                      "sha256": meta["sha256"],
+                      "size": meta["size"],
+                  }
+              torch_record["kind"] = "torch"
+              torch_record["files"] = torch_files
+              (out / f"torch-build-{target}.json").write_text(
+                  json.dumps(torch_record, indent=2) + "\n", encoding="utf-8"
               )
-              shutil.copyfile(source, out / asset)
-              torch_files[name] = {
-                  "asset": asset,
-                  "sha256": meta["sha256"],
-                  "size": meta["size"],
-              }
-          torch_record["kind"] = "torch"
-          torch_record["files"] = torch_files
-          (out / f"torch-build-{target}.json").write_text(
-              json.dumps(torch_record, indent=2) + "\n", encoding="utf-8"
-          )
 
-          artifacts = sorted(path for path in out.rglob("*") if path.is_file())
-          openmp = out / "libiomp5md.dll" if target.endswith("windows-msvc") else None
-          licenses.check_wheel_files(artifacts, allow_itt=False, openmp_dll=openmp)
+              artifacts = sorted(path for path in out.rglob("*") if path.is_file())
+              openmp = out / "libiomp5md.dll" if target.endswith("windows-msvc") else None
+              licenses.check_wheel_files(artifacts, allow_itt=False, openmp_dll=openmp)
+          """)], check=True)
 
       - name: Upload toolchain wheels and provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
