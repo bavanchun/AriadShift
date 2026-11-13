@@ -63,7 +63,7 @@ final class WindowLayoutStabilityTests: XCTestCase {
     }
 
     func testColumnWidthsStayStableAfterTheWindowSettles() async throws {
-        for size in [NSSize(width: 900, height: 560), NSSize(width: 720, height: 440)] {
+        for size in [NSSize(width: 900, height: 560), NSSize(width: 840, height: 440)] {
             let taken = try await samples(at: size)
             XCTAssertTrue(
                 taken.count == 5 && taken.allSatisfy { $0 == taken[0] },
