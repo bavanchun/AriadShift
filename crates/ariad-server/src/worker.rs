@@ -87,7 +87,7 @@ impl Failure {
             "database" => "job data is unavailable",
             "output_io" => "the output could not be written",
             "tool_missing" => "a required engine is missing on the worker",
-            "engine_unavailable" => "a required conversion engine is unavailable",
+            "failed" => "the conversion engine failed",
             _ => "the conversion could not finish",
         };
         tracing::warn!(code, "conversion operation failed");
@@ -108,13 +108,11 @@ impl Failure {
             ConvertError::SandboxUnavailable(_) => {
                 Self::transient("sandbox_unavailable", "the conversion could not finish")
             }
-            ConvertError::Failed | ConvertError::FailedWithMemoryHint { .. } => {
+            ConvertError::Failed
+            | ConvertError::FailedWithMemoryHint { .. }
+            | ConvertError::EngineUnavailable { .. } => {
                 Self::transient("failed", "the conversion engine failed")
             }
-            ConvertError::EngineUnavailable { .. } => Self::transient(
-                "engine_unavailable",
-                "a required conversion engine is unavailable",
-            ),
             ConvertError::OutputIo => {
                 Self::transient("output_io", "the output could not be written")
             }
@@ -1126,11 +1124,8 @@ mod tests {
             detail: "Pandoc timed out while checking version".to_owned(),
         });
         assert!(unavailable.transient);
-        assert_eq!(unavailable.code, "engine_unavailable");
-        assert_eq!(
-            unavailable.message,
-            "a required conversion engine is unavailable"
-        );
+        assert_eq!(unavailable.code, "failed");
+        assert_eq!(unavailable.message, "the conversion engine failed");
         for error in [
             ConvertError::DoclingMissing,
             ConvertError::DoclingToolMissing,
