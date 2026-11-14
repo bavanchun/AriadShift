@@ -1327,16 +1327,22 @@ impl EngineProcess {
                 "output or exit before the next request",
             ));
         }
+        let mut watchdog = self
+            .id()
+            .zip(job.memory_limit_mb)
+            .map(|(pid, limit_mb)| MemoryWatchdog::new(pid, limit_mb));
         // A warm session can already exceed a new job's lower limit and finish before
         // the first periodic sample. Reject it before delivering that request.
-        if let Some((pid, limit_mb)) = self.id().zip(job.memory_limit_mb)
-            && MemoryWatchdog::new(pid, limit_mb).exceeded().is_some()
+        if let Some(watchdog) = watchdog.as_mut()
+            && watchdog.exceeded().is_some()
         {
-            return Err(RunError::MemoryLimitExceeded { limit_mb });
+            return Err(RunError::MemoryLimitExceeded {
+                limit_mb: watchdog.limit_mb(),
+            });
         }
         // Keep one watchdog alive across request delivery and event processing, including
         // backpressure from an engine that has not started reading its request.
-        let memory_limit = wait_memory_limit(self.id(), job.memory_limit_mb);
+        let memory_limit = wait_memory_limit(watchdog);
         tokio::pin!(memory_limit);
         let Some(stdin) = self.stdin.as_mut() else {
             return Err(RunError::Io(io::Error::other("engine stdin is closed")));
@@ -1684,11 +1690,10 @@ async fn wait_deadline(deadline: Option<Instant>) {
     }
 }
 
-async fn wait_memory_limit(pid: Option<u32>, limit_mb: Option<u32>) -> u32 {
-    let Some((pid, limit_mb)) = pid.zip(limit_mb) else {
+async fn wait_memory_limit(watchdog: Option<MemoryWatchdog>) -> u32 {
+    let Some(mut watchdog) = watchdog.filter(MemoryWatchdog::is_active) else {
         return future::pending().await;
     };
-    let mut watchdog = MemoryWatchdog::new(pid, limit_mb);
     let mut sample = time::interval_at(
         Instant::now() + watchdog::SAMPLE_INTERVAL,
         watchdog::SAMPLE_INTERVAL,
@@ -1697,7 +1702,7 @@ async fn wait_memory_limit(pid: Option<u32>, limit_mb: Option<u32>) -> u32 {
     loop {
         sample.tick().await;
         if watchdog.exceeded().is_some() {
-            return limit_mb;
+            return watchdog.limit_mb();
         }
     }
 }
@@ -2012,5 +2017,48 @@ mod tests {
         );
         assert_eq!(external.engine, "engine-probe");
         assert_eq!(external.launcher, None);
+    }
+
+    #[tokio::test]
+    async fn disabled_watchdog_wait_memory_limit_stays_pending() {
+        use std::{future::Future, task};
+
+        let mut warnings = Vec::new();
+        let mut watchdog = super::MemoryWatchdog::from_init(
+            std::process::id(),
+            1,
+            Err("simulated sysinfo failure"),
+            |warning| warnings.push(warning),
+        );
+        assert_eq!(warnings.len(), 1);
+        assert!(!watchdog.is_active());
+        assert_eq!(watchdog.exceeded(), None);
+
+        let mut cx = task::Context::from_waker(task::Waker::noop());
+        let mut pending = std::pin::pin!(super::wait_memory_limit(Some(watchdog)));
+        assert!(pending.as_mut().poll(&mut cx).is_pending());
+        assert!(
+            super::time::timeout(super::watchdog::SAMPLE_INTERVAL * 2, pending)
+                .await
+                .is_err(),
+            "disabled watchdog must stay pending across sample intervals"
+        );
+
+        let mut none_pending = std::pin::pin!(super::wait_memory_limit(None));
+        assert!(none_pending.as_mut().poll(&mut cx).is_pending());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    #[tokio::test]
+    async fn active_watchdog_wait_memory_limit_triggers_when_exceeded() {
+        let watchdog = super::MemoryWatchdog::new(std::process::id(), 1);
+        assert!(watchdog.is_active());
+        let limit_mb = super::time::timeout(
+            super::Duration::from_secs(5),
+            super::wait_memory_limit(Some(watchdog)),
+        )
+        .await
+        .expect("active watchdog must report exceeded 1 MiB limit");
+        assert_eq!(limit_mb, 1);
     }
 }
