@@ -93,6 +93,8 @@ final class ToolRunModel: Identifiable {
             } catch EngineError.cancelled {
                 progress = nil
                 phase = .editing
+            } catch let error as EngineError where error.isTierNotAllowed {
+                phase = .failed(String(localized: "mac.run.upgrade"))
             } catch {
                 phase = .failed(error.localizedDescription)
             }

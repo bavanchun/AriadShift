@@ -131,7 +131,9 @@
     "tools": {
       "group": "{group, select, organize {Sắp xếp} convert {Chuyển đổi} optimize {Tối ưu} security {Bảo mật} overlay {Lớp phủ} ocr {OCR và bản quét} annotate {Chú thích} forms {Biểu mẫu} sign {Ký} redact {Che dữ liệu} compare {So sánh và kiểm tra} edit {Chỉnh sửa} ai {AI} automation {Tự động hóa} other {Công cụ khác}}",
       "disabled": "{reason, select, later {Sẽ có trong bản phát hành sau} format {Dùng cho định dạng khác. Hãy dùng Tệp > Nhập.} paid {Cần gói trả phí} info {Không đọc được thông tin công cụ nên các công cụ đang tắt.} other {Không khả dụng}}",
-      "loading": "Đang tải công cụ…"
+      "loading": "Đang tải công cụ…",
+      "pro_title": "{title} (Pro)",
+      "pro_hint": "Công cụ Pro. Cần gói Pro để chạy."
     },
     "sidebar": {
       "title": "Trang",
@@ -170,6 +172,8 @@
       "remove": "Xóa",
       "need_documents": "{count, plural, other {Hãy thêm # tài liệu nữa để chạy công cụ này.}}",
       "failed": "Công cụ chưa chạy xong.",
+      "pro_notice": "Đây là công cụ Pro. Cần gói Pro để chạy.",
+      "upgrade": "Công cụ này cần gói Pro. Hãy nâng cấp để chạy.",
       "open": "Mở",
       "reveal": "Hiện trong Finder",
       "result_files": "{count, plural, other {Đã tạo # tệp}}",

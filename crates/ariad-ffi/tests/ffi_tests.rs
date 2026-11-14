@@ -132,6 +132,7 @@ async fn test_run_tool_structural_and_page_count() {
         options_json: None,
         cancel_token: None,
         secrets: None,
+        plan: None,
     };
 
     let outcome = run_tool(req, None).await.expect("run_tool failed");
@@ -156,6 +157,7 @@ async fn test_invalid_tool_id_returns_typed_error() {
         options_json: None,
         cancel_token: None,
         secrets: None,
+        plan: None,
     };
 
     let res = run_tool(req, None).await;
@@ -179,6 +181,7 @@ async fn test_invalid_options_json_returns_invalid_request() {
         options_json: Some("{not valid json".to_string()),
         cancel_token: None,
         secrets: None,
+        plan: None,
     };
 
     let res = run_tool(req, None).await;
@@ -225,6 +228,7 @@ async fn test_listener_panic_returns_internal_error() {
         options_json: None,
         cancel_token: None,
         secrets: None,
+        plan: None,
     };
 
     let listener = Box::new(PanickingListener);
@@ -259,6 +263,7 @@ async fn test_cancel_before_start_and_during_run() {
         options_json: None,
         cancel_token: Some(token_before),
         secrets: None,
+        plan: None,
     };
 
     let res_before = run_tool(req_before, None).await;
@@ -280,6 +285,7 @@ async fn test_cancel_before_start_and_during_run() {
         options_json: None,
         cancel_token: Some(token_during),
         secrets: None,
+        plan: None,
     };
 
     let res_during = run_tool(req_during, Some(listener)).await;
@@ -310,6 +316,7 @@ async fn test_run_tool_dropped_future_cancels_worker() {
         options_json: None,
         cancel_token: None,
         secrets: None,
+        plan: None,
     };
 
     tokio::select! {
@@ -359,6 +366,7 @@ async fn test_progress_callback_receives_events() {
         options_json: None,
         cancel_token: None,
         secrets: None,
+        plan: None,
     };
 
     let outcome = run_tool(req, Some(listener))
@@ -538,6 +546,7 @@ fn tool_request(tool: &str, inputs: &[&Path], output: &Path, params: &str) -> To
         options_json: None,
         cancel_token: None,
         secrets: None,
+        plan: None,
     }
 }
 
@@ -609,4 +618,56 @@ async fn test_non_edit_tool_has_metrics_json_without_typed_fields() {
     assert!(outcome.fidelity.is_none() && outcome.change_list.is_none());
     let raw: serde_json::Value = serde_json::from_str(&outcome.metrics_json).unwrap();
     assert!(raw.get("elapsed_ms").is_some());
+}
+
+fn pro_tool_request(plan: Option<&str>) -> ToolRunRequest {
+    ToolRunRequest {
+        tool: "pdf.sign_token".to_string(),
+        inputs: vec![
+            fixture_path("fixtures/pdf/pd-vi-qd-1922-2026.pdf")
+                .display()
+                .to_string(),
+        ],
+        output_dir: None,
+        output_path: None,
+        params_json: Some("{}".to_string()),
+        options_json: None,
+        cancel_token: None,
+        secrets: None,
+        plan: plan.map(str::to_string),
+    }
+}
+
+#[tokio::test]
+async fn test_pro_tool_without_plan_is_refused_by_the_host() {
+    let err = run_tool(pro_tool_request(None), None)
+        .await
+        .expect_err("a Pro tool must not run on the Free plan");
+    assert!(
+        matches!(&err, FfiError::Tool { code, .. } if code == "tier_not_allowed"),
+        "expected tier_not_allowed, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_pro_plan_passes_the_tier_gate() {
+    // pdf.sign_token has no token provider in tests, so it fails after the gate, never with the tier error.
+    let err = run_tool(pro_tool_request(Some("pro")), None)
+        .await
+        .expect_err("the sign token tool cannot complete without a hardware token");
+    assert!(
+        !matches!(&err, FfiError::Tool { code, .. } if code == "tier_not_allowed"),
+        "plan pro must pass the tier gate, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_unparsable_plan_is_an_invalid_request() {
+    let err = run_tool(pro_tool_request(Some("platinum")), None)
+        .await
+        .expect_err("an unknown plan must be rejected");
+    assert!(
+        matches!(err, FfiError::InvalidRequest { .. }),
+        "expected InvalidRequest, got {err:?}"
+    );
 }

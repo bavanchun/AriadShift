@@ -30,6 +30,13 @@ public enum EngineError: Error, Equatable, Sendable {
     }
 }
 
+extension EngineError {
+    /// The host refused the run because the plan does not grant the tool's tier.
+    public var isTierNotAllowed: Bool {
+        if case let .tool(code, _) = self { code == "tier_not_allowed" } else { false }
+    }
+}
+
 extension EngineError: LocalizedError {
     // Keys resolve against the app's String Catalog once the shell ships one;
     // the default values are the English source strings.
