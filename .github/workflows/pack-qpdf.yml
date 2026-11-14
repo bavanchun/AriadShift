@@ -204,20 +204,59 @@ jobs:
       - name: Download corresponding sources
         run: |
           mkdir -p sources
-          while read -r digest name url; do
+          trap 'rm -rf "$RUNNER_TEMP/aports" "$RUNNER_TEMP/aports.tar"' EXIT
+          count=0
+          while read -r digest name url extra || [ -n "${digest:-}" ]; do
+            [ -n "${digest:-}" ] || { echo 'empty line in runtime-sources.txt' >&2; exit 1; }
+            [ -z "${extra:-}" ] || { echo "invalid runtime-sources entry: $digest $name $url $extra" >&2; exit 1; }
+            case "$digest" in
+              *[!0-9a-f]*) echo "invalid sha256 in runtime-sources.txt: $digest" >&2; exit 1 ;;
+            esac
+            [ "${#digest}" -eq 64 ] || { echo "invalid sha256 length in runtime-sources.txt: $digest" >&2; exit 1; }
+            case "$name" in
+              ''|.|..|*/*|*\\*) echo "invalid filename in runtime-sources.txt: $name" >&2; exit 1 ;;
+            esac
             case "$url" in
               https://github.com/alpinelinux/aports.git\#*)
+                case "$name" in
+                  *.tar.gz) ;;
+                  *) echo "aports archive must end in .tar.gz: $name" >&2; exit 1 ;;
+                esac
                 revision=${url#*#}
+                case "$revision" in
+                  *:*) ;;
+                  *) echo "invalid aports revision: $revision" >&2; exit 1 ;;
+                esac
                 commit=${revision%:*}; tree=${revision#*:}
+                case "$commit$tree" in
+                  *[!0-9a-f]*) echo "invalid aports revision hex: $revision" >&2; exit 1 ;;
+                esac
+                [ "${#commit}" -eq 40 ] && [ "${#tree}" -eq 40 ] || { echo "invalid aports revision length: $revision" >&2; exit 1; }
+                rm -rf "$RUNNER_TEMP/aports" "$RUNNER_TEMP/aports.tar"
                 git init -q "$RUNNER_TEMP/aports"
                 git -C "$RUNNER_TEMP/aports" fetch --depth=1 https://github.com/alpinelinux/aports.git "$commit"
                 test "$(git -C "$RUNNER_TEMP/aports" rev-parse "FETCH_HEAD^{tree}")" = "$tree"
-                git -C "$RUNNER_TEMP/aports" archive --format=tar --mtime=1970-01-01T00:00:00Z "$tree" | gzip -n -9 > "sources/$name"
+                git -C "$RUNNER_TEMP/aports" archive --format=tar --mtime=1970-01-01T00:00:00Z "$tree" > "$RUNNER_TEMP/aports.tar"
+                verify_path="$RUNNER_TEMP/aports.tar"
                 ;;
-              *) curl -fsSL --retry 3 --max-time 900 "$url" -o "sources/$name" ;;
+              https://*)
+                curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --max-time 900 "$url" -o "sources/$name"
+                verify_path="sources/$name"
+                ;;
+              *)
+                echo "non-https url in runtime-sources.txt: $url" >&2
+                exit 1
+                ;;
             esac
-            printf '%s  %s\n' "$digest" "sources/$name" | sha256sum --check
+            printf '%s  %s\n' "$digest" "$verify_path" | sha256sum --check
+            if [ "$verify_path" = "$RUNNER_TEMP/aports.tar" ]; then
+              gzip -n -9 -c "$RUNNER_TEMP/aports.tar" > "sources/$name"
+              rm -rf "$RUNNER_TEMP/aports" "$RUNNER_TEMP/aports.tar"
+              printf 'Informational .tar.gz SHA-256 (gzip -n -9): %s\n' "$(sha256sum "sources/$name")"
+            fi
+            count=$((count + 1))
           done < engines/qpdf/pack/runtime-sources.txt
+          [ "$count" -eq 5 ] || { echo "expected 5 runtime-sources entries, got $count" >&2; exit 1; }
       - name: Verify release evidence
         run: bash engines/qpdf/pack/check-release.sh receipts sources pack-dist
       - name: Archive receipts
