@@ -14,13 +14,13 @@ use crate::{
     output::ToolContext,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Call {
     pub op: Vec<u8>,
     pub name: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Facts {
     pub ops: usize,
     pub glyphs: usize,
@@ -34,6 +34,12 @@ fn hash_len(hasher: &mut Sha256, len: usize) {
 fn hash_bytes(hasher: &mut Sha256, bytes: &[u8]) {
     hash_len(hasher, bytes.len());
     hasher.update(bytes);
+}
+
+pub(crate) fn object_digest(object: &Object) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_object(&mut hasher, object);
+    hasher.finalize().into()
 }
 
 fn hash_object(hasher: &mut Sha256, root: &Object) {
@@ -105,7 +111,7 @@ fn hash_object(hasher: &mut Sha256, root: &Object) {
 }
 
 #[derive(Default)]
-struct Category {
+pub(crate) struct Category {
     entries: BTreeMap<Vec<u8>, Object>,
     digest: OnceCell<[u8; 32]>,
 }
@@ -166,7 +172,7 @@ impl Category {
 }
 
 #[derive(Default)]
-struct Categories {
+pub(crate) struct Categories {
     entries: BTreeMap<Vec<u8>, Rc<Category>>,
     digest: OnceCell<[u8; 32]>,
 }
@@ -221,7 +227,7 @@ impl Categories {
 }
 
 #[derive(Clone, Default)]
-struct Scope {
+pub(crate) struct Scope {
     page: Rc<Categories>,
     physical_page: Rc<Categories>,
     current: Rc<Categories>,
@@ -230,7 +236,10 @@ struct Scope {
 }
 
 impl Scope {
-    fn from_page(doc: &lopdf::Document, resources: Option<&Object>) -> Result<Self, EngineFailure> {
+    pub(crate) fn from_page(
+        doc: &lopdf::Document,
+        resources: Option<&Object>,
+    ) -> Result<Self, EngineFailure> {
         let current = Rc::new(categories(doc, resources)?);
         Ok(Self {
             page: current.clone(),
@@ -240,7 +249,7 @@ impl Scope {
             digest: OnceCell::new(),
         })
     }
-    fn child(
+    pub(crate) fn child(
         &self,
         doc: &lopdf::Document,
         resources: Option<&Object>,
@@ -267,7 +276,7 @@ impl Scope {
             digest: OnceCell::new(),
         })
     }
-    fn digest(&self) -> [u8; 32] {
+    pub(crate) fn digest(&self) -> [u8; 32] {
         *self.digest.get_or_init(|| {
             let mut hasher = Sha256::new();
             hasher.update(b"ariad.execution_budget.scope.v1");
@@ -282,10 +291,67 @@ impl Scope {
             hasher.finalize().into()
         })
     }
-    fn get(&self, category: &[u8], name: &[u8]) -> Option<&Object> {
+    pub(crate) fn resource_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"ariad.execution_budget.resource_scope.v1");
+        hasher.update(self.page.digest());
+        hasher.update(self.physical_page.digest());
+        hasher.update(self.current.digest());
+        hasher.finalize().into()
+    }
+    pub(crate) fn colorspace_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"ariad.execution_budget.colorspace_scope.v1");
+        if let Some(cs) = self.current.get(b"ColorSpace".as_slice()) {
+            hasher.update([1]);
+            hasher.update(cs.digest());
+        } else {
+            hasher.update([0]);
+        }
+        hasher.finalize().into()
+    }
+    pub(crate) fn get(&self, category: &[u8], name: &[u8]) -> Option<&Object> {
         self.current
             .get(category)
             .and_then(|values| values.get(name))
+    }
+    pub(crate) fn current(&self) -> &Rc<Categories> {
+        &self.current
+    }
+    pub(crate) fn current_category(&self, category: &[u8]) -> Option<&Rc<Category>> {
+        self.current.get(category)
+    }
+    pub(crate) fn inherited_fonts(&self) -> &[(Object, Rc<Categories>)] {
+        &self.inherited_fonts
+    }
+    pub(crate) fn mask_scope(&self) -> Self {
+        Self {
+            page: self.physical_page.clone(),
+            physical_page: self.physical_page.clone(),
+            current: self.physical_page.clone(),
+            inherited_fonts: Vec::new(),
+            digest: OnceCell::new(),
+        }
+    }
+    pub(crate) fn type3_glyph_scope(
+        &self,
+        doc: &lopdf::Document,
+        selected_resources: &Rc<Categories>,
+        font: &Dictionary,
+    ) -> Result<Self, EngineFailure> {
+        let selected_scope = Self {
+            page: selected_resources.clone(),
+            physical_page: self.physical_page.clone(),
+            current: selected_resources.clone(),
+            inherited_fonts: self.inherited_fonts.clone(),
+            digest: OnceCell::new(),
+        };
+        let mut glyph_scope = selected_scope.child(doc, font.get(b"Resources").ok())?;
+        // PDFium treats even an empty font Resources dictionary as present.
+        // Its selected font scope becomes the CharProc's fallback scope.
+        glyph_scope.page = glyph_scope.current.clone();
+        glyph_scope.digest = OnceCell::new();
+        Ok(glyph_scope)
     }
 }
 
@@ -307,6 +373,7 @@ fn categories(
         b"ExtGState",
         b"Shading",
         b"Font",
+        b"ColorSpace",
     ] {
         if let Ok(value) = dict.get(category) {
             let values = resolve(Some(doc), value)?
@@ -327,7 +394,7 @@ fn categories(
     Ok(out)
 }
 
-fn inherited_resources(
+pub(crate) fn inherited_resources(
     doc: &lopdf::Document,
     page: ObjectId,
 ) -> Result<Option<&Object>, EngineFailure> {
@@ -354,7 +421,7 @@ fn inherited_resources(
     }
 }
 
-fn stream_ids(
+pub(crate) fn stream_ids(
     doc: &lopdf::Document,
     obj: &Object,
     allow_dict: bool,
@@ -408,6 +475,7 @@ struct Calculator<'a, 'b> {
     ctx: &'a ToolContext<'b>,
     doc: &'a lopdf::Document,
     facts: &'a BTreeMap<ObjectId, Facts>,
+    scoped_ops: Option<&'a HashMap<(ObjectId, [u8; 32]), usize>>,
     memo: HashMap<MemoKey, usize>,
     glyph_memo: HashMap<GlyphKey, usize>,
     page_contents: HashSet<ObjectId>,
@@ -460,7 +528,13 @@ impl Calculator<'_, '_> {
                 stream.dict.get(b"Resources").ok()
             },
         )?;
-        let mut cost = facts.ops;
+        let mut cost = match self.scoped_ops {
+            Some(map) => map
+                .get(&(id, scope.colorspace_digest()))
+                .copied()
+                .ok_or_else(EngineFailure::limit_exceeded)?,
+            None => facts.ops,
+        };
         for call in &facts.calls {
             let extra = match call.op.as_slice() {
                 b"Do" => self.target(scope.get(b"XObject", &call.name), &scope, depth, active)?,
@@ -517,19 +591,8 @@ impl Calculator<'_, '_> {
                         .1
                         .as_dict()
                         .map_err(|_| EngineFailure::limit_exceeded())?;
-                    let selected_scope = Scope {
-                        page: selected_resources.clone(),
-                        physical_page: scope.physical_page.clone(),
-                        current: selected_resources.clone(),
-                        inherited_fonts: scope.inherited_fonts.clone(),
-                        digest: OnceCell::new(),
-                    };
-                    let mut glyph_scope =
-                        selected_scope.child(self.doc, font.get(b"Resources").ok())?;
-                    // PDFium treats even an empty font Resources dictionary as present.
-                    // Its selected font scope becomes the CharProc's fallback scope.
-                    glyph_scope.page = glyph_scope.current.clone();
-                    glyph_scope.digest = OnceCell::new();
+                    let glyph_scope =
+                        scope.type3_glyph_scope(self.doc, selected_resources, font)?;
                     for (_, proc) in procs.iter() {
                         let (proc_id, _) = resolve(Some(self.doc), proc)?;
                         let glyph_cost = self.stream(
@@ -648,17 +711,12 @@ impl Calculator<'_, '_> {
             .map_err(|_| EngineFailure::limit_exceeded())?
             .get(b"G")
             .map_err(|_| EngineFailure::limit_exceeded())?;
-        let mask_scope = Scope {
-            page: scope.physical_page.clone(),
-            physical_page: scope.physical_page.clone(),
-            current: scope.physical_page.clone(),
-            inherited_fonts: Vec::new(),
-            digest: OnceCell::new(),
-        };
+        let mask_scope = scope.mask_scope();
         self.target(Some(group), &mask_scope, depth, active)
     }
 }
 
+#[cfg(test)]
 pub(crate) fn check(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
@@ -666,10 +724,33 @@ pub(crate) fn check(
     pages: Option<&ariad_core::tools::PageRange>,
     page_contents: &HashSet<ObjectId>,
 ) -> Result<(), EngineFailure> {
+    check_inner(ctx, doc, facts, None, pages, page_contents)
+}
+
+pub(crate) fn check_with_scoped_ops(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    facts: &BTreeMap<ObjectId, Facts>,
+    scoped_ops: &HashMap<(ObjectId, [u8; 32]), usize>,
+    pages: Option<&ariad_core::tools::PageRange>,
+    page_contents: &HashSet<ObjectId>,
+) -> Result<(), EngineFailure> {
+    check_inner(ctx, doc, facts, Some(scoped_ops), pages, page_contents)
+}
+
+fn check_inner(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    facts: &BTreeMap<ObjectId, Facts>,
+    scoped_ops: Option<&HashMap<(ObjectId, [u8; 32]), usize>>,
+    pages: Option<&ariad_core::tools::PageRange>,
+    page_contents: &HashSet<ObjectId>,
+) -> Result<(), EngineFailure> {
     let mut calc = Calculator {
         ctx,
         doc,
         facts,
+        scoped_ops,
         memo: HashMap::new(),
         glyph_memo: HashMap::new(),
         page_contents: page_contents.clone(),
@@ -786,6 +867,7 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &facts,
+            scoped_ops: None,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
             page_contents: HashSet::new(),
@@ -863,6 +945,7 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &facts,
+            scoped_ops: None,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
             page_contents: HashSet::new(),
@@ -911,6 +994,7 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &facts,
+            scoped_ops: None,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
             page_contents: HashSet::new(),
@@ -962,6 +1046,7 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &all,
+            scoped_ops: None,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
             page_contents: HashSet::new(),
@@ -1018,6 +1103,7 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &all,
+            scoped_ops: None,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
             page_contents: HashSet::new(),
@@ -1028,11 +1114,65 @@ mod tests {
         );
     }
 
-    fn object_digest(object: &Object) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hash_object(&mut hasher, object);
-        hasher.finalize().into()
+    #[test]
+    fn scoped_ops_missing_entry_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = ariad_engine_io::RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = crate::output::ToolContext::new(
+            "missing-scoped-ops",
+            "pdf.render",
+            paths,
+            ariad_core::limits::Limits::local(),
+            &mut sink,
+        );
+        let mut doc = lopdf::Document::new();
+        let content_id = doc.add_object(lopdf::Stream::new(Dictionary::new(), b"q Q".to_vec()));
+        let page_id = doc.add_object(lopdf::dictionary! {
+            "Type" => "Page",
+            "Contents" => Object::Reference(content_id),
+        });
+        let pages_id = doc.add_object(lopdf::dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        });
+        if let Ok(page_dict) = doc.get_dictionary_mut(page_id) {
+            page_dict.set("Parent", Object::Reference(pages_id));
+        }
+        let catalog_id = doc.add_object(lopdf::dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+
+        let mut facts = BTreeMap::new();
+        facts.insert(
+            content_id,
+            Facts {
+                ops: 1,
+                calls: Vec::new(),
+                glyphs: 0,
+            },
+        );
+        let mut page_contents = HashSet::new();
+        page_contents.insert(content_id);
+        let empty_scoped_ops = HashMap::new();
+
+        let err =
+            check_with_scoped_ops(&ctx, &doc, &facts, &empty_scoped_ops, None, &page_contents)
+                .expect_err(
+                    "Some(scoped_ops) missing entry must fail closed, never fallback to facts.ops",
+                );
+        assert_eq!(err.code, EngineFailure::limit_exceeded().code);
     }
+
+    use super::object_digest;
 
     #[test]
     fn object_digest_is_canonical_and_domain_separated() {
@@ -1151,6 +1291,84 @@ mod tests {
             start.elapsed() < std::time::Duration::from_secs(1),
             "elapsed: {:?}",
             start.elapsed()
+        );
+    }
+
+    #[test]
+    fn scoped_ops_adjusts_cost_per_colorspace_scope() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut doc = lopdf::Document::new();
+        let form_id = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let page1_stream = form(&mut doc, dictionary! {});
+        let page2_stream = form(&mut doc, dictionary! {});
+        let pages_id = doc.new_object_id();
+        let p1_res = Object::Dictionary(dictionary! {
+            "XObject" => dictionary! { "F" => Object::Reference(form_id) },
+            "ColorSpace" => dictionary! { "Cs" => "DeviceGray" },
+        });
+        let p2_res = Object::Dictionary(dictionary! {
+            "XObject" => dictionary! { "F" => Object::Reference(form_id) },
+            "ColorSpace" => dictionary! { "Cs" => "DeviceRGB" },
+        });
+        let page1_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => Object::Reference(pages_id),
+            "Resources" => p1_res.clone(),
+            "Contents" => Object::Reference(page1_stream),
+        });
+        let page2_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => Object::Reference(pages_id),
+            "Resources" => p2_res.clone(),
+            "Contents" => Object::Reference(page2_stream),
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![Object::Reference(page1_id), Object::Reference(page2_id)],
+                "Count" => 2,
+            }),
+        );
+        let root_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(root_id));
+
+        let scope1 = Scope::from_page(&doc, Some(&p1_res)).unwrap();
+        let scope2 = Scope::from_page(&doc, Some(&p2_res)).unwrap();
+        assert_ne!(scope1.colorspace_digest(), scope2.colorspace_digest());
+
+        let page_contents = HashSet::from([page1_stream, page2_stream]);
+        let table = BTreeMap::from([
+            (page1_stream, facts(20_000, &[(b"Do", b"F")])),
+            (page2_stream, facts(11_000, &[(b"Do", b"F")])),
+            (form_id, facts(30_000, &[])),
+        ]);
+        let scoped_ops = HashMap::from([
+            ((page1_stream, scope1.colorspace_digest()), 20_000),
+            ((page2_stream, scope2.colorspace_digest()), 11_000),
+            ((form_id, scope1.colorspace_digest()), 30_000),
+            ((form_id, scope2.colorspace_digest()), 90_000),
+        ]);
+
+        let mut sink = Vec::new();
+        let ctx = context(dir.path(), &mut sink);
+        check_with_scoped_ops(
+            &ctx,
+            &doc,
+            &table,
+            &scoped_ops,
+            Some(&ariad_core::tools::PageRange::parse("1").unwrap()),
+            &page_contents,
+        )
+        .expect("Page 1 scoped cost (20_000 + 30_000) fits");
+        let err = check_with_scoped_ops(&ctx, &doc, &table, &scoped_ops, None, &page_contents)
+            .expect_err("Page 2 scoped cost (11_000 + 90_000) must exceed 100_000");
+        assert!(
+            err.message.contains("Content execution cost"),
+            "unexpected error: {err:?}"
         );
     }
 }

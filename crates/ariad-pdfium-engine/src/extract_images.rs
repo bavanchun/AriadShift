@@ -2,7 +2,7 @@
 //! `min_px` filtering, `MAX_IMAGE_PIXELS` bounds, and original JPEG/JPX stream preservation.
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     io::{Cursor, Read},
 };
@@ -582,7 +582,7 @@ struct PreflightBudget<'a> {
     glyph_max: usize,
     glyph_max_pixels: u64,
     glyph_max_bytes: u64,
-    font_ids: HashSet<(PdfObjectId, [u8; 32])>,
+    font_ids: HashSet<(PdfObjectId, [u8; 32], [u8; 32])>,
     document_work: &'a mut usize,
 }
 
@@ -761,6 +761,25 @@ pub(crate) fn canonical_content_streams(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     pages: Option<&ariad_core::tools::PageRange>,
+) -> Result<BTreeMap<PdfObjectId, Object>, EngineFailure> {
+    canonical_content_streams_inner(ctx, pdf_doc, pages, None)
+}
+
+#[cfg(test)]
+pub(crate) fn canonical_content_streams_with_rewrite_counts(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    pages: Option<&ariad_core::tools::PageRange>,
+    rewrite_counts: &mut HashMap<PdfObjectId, usize>,
+) -> Result<BTreeMap<PdfObjectId, Object>, EngineFailure> {
+    canonical_content_streams_inner(ctx, pdf_doc, pages, Some(rewrite_counts))
+}
+
+fn canonical_content_streams_inner(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    pages: Option<&ariad_core::tools::PageRange>,
+    rewrite_counts: Option<&mut HashMap<PdfObjectId, usize>>,
 ) -> Result<BTreeMap<PdfObjectId, Object>, EngineFailure> {
     let doc = pdf_doc.inner();
     let mut ids = HashSet::new();
@@ -946,6 +965,7 @@ pub(crate) fn canonical_content_streams(
         document_work: &mut image_work,
     };
     let empty_scope = XobjectScope::new(BTreeMap::new());
+    let empty_resource_scope = crate::execution_budget::Scope::default();
     let mut seen_images = PreflightMemo::new();
     let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
     for (&id, value) in &doc.objects {
@@ -982,13 +1002,16 @@ pub(crate) fn canonical_content_streams(
                     0,
                     &mut seen_images,
                     &empty_scope,
+                    &empty_resource_scope,
                     &mut image_budget,
                 )?;
             }
         }
     }
     let mut page_contents = HashSet::new();
-    for page_id in preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))? {
+    let max_depth = usize::from(ctx.limits().max_nesting_depth);
+    let all_pages = preflight_page_tree(doc, max_depth)?;
+    for &page_id in &all_pages {
         let page = doc
             .get_dictionary(page_id)
             .map_err(|_| EngineFailure::limit_exceeded())?;
@@ -996,72 +1019,423 @@ pub(crate) fn canonical_content_streams(
             content_ids(doc, contents, &mut page_contents, 0, false)?;
         }
     }
-    let mut out = BTreeMap::new();
-    let mut remaining = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
-    let mut memo = PreflightMemo::new();
-    let mut facts = BTreeMap::new();
-    for id in ids {
-        let mut document_work = 0;
-        ctx.check()?;
-        let stream = doc
+
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    enum Type3FontKey {
+        Indirect(PdfObjectId),
+        Direct([u8; 32]),
+    }
+
+    struct CanonicalState<'a, 'b> {
+        ctx: &'a ToolContext<'b>,
+        doc: &'a lopdf::Document,
+        max_depth: usize,
+        allowed_ids: &'a HashSet<PdfObjectId>,
+        page_contents: &'a HashSet<PdfObjectId>,
+        remaining: usize,
+        decoded_cache: HashMap<PdfObjectId, Vec<u8>>,
+        visited: HashSet<(PdfObjectId, [u8; 32], bool)>,
+        type3_visited: HashSet<(Type3FontKey, [u8; 32])>,
+        out: BTreeMap<PdfObjectId, Object>,
+        facts: BTreeMap<PdfObjectId, crate::execution_budget::Facts>,
+        scoped_ops: HashMap<(PdfObjectId, [u8; 32]), usize>,
+        document_work: usize,
+        rewrite_memo: HashMap<(PdfObjectId, [u8; 32]), std::rc::Rc<crate::execution_budget::Facts>>,
+        rewrite_counts: Option<&'a mut HashMap<PdfObjectId, usize>>,
+    }
+
+    fn visit_type3_font(
+        state: &mut CanonicalState<'_, '_>,
+        scope: &crate::execution_budget::Scope,
+        selected_resources: &std::rc::Rc<crate::execution_budget::Categories>,
+        font_obj: &Object,
+        depth: usize,
+        active: &mut HashSet<PdfObjectId>,
+    ) -> Result<(), EngineFailure> {
+        let (font_id, resolved) = resolve(Some(state.doc), font_obj)?;
+        let font = resolved
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let subtype = font
+            .get(b"Subtype")
+            .ok()
+            .and_then(|v| resolve(Some(state.doc), v).ok())
+            .and_then(|(_, v)| v.as_name().ok());
+        if subtype != Some(b"Type3") {
+            return Ok(());
+        }
+        let procs = font
+            .get(b"CharProcs")
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let procs = resolve(Some(state.doc), procs)?
+            .1
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let glyph_scope = scope.type3_glyph_scope(state.doc, selected_resources, font)?;
+        let font_key = match font_id {
+            Some(id) => Type3FontKey::Indirect(id),
+            None => Type3FontKey::Direct(crate::execution_budget::object_digest(resolved)),
+        };
+        if !state
+            .type3_visited
+            .insert((font_key, glyph_scope.resource_digest()))
+        {
+            return Ok(());
+        }
+        if let Ok(font_res) = font.get(b"Resources") {
+            visit_declared_resources(state, &glyph_scope, font_res, depth + 1, active)?;
+        }
+        for (_, proc) in procs.iter() {
+            let (proc_id, _) = resolve(Some(state.doc), proc)?;
+            let proc_id = proc_id.ok_or_else(EngineFailure::limit_exceeded)?;
+            visit_stream(state, proc_id, &glyph_scope, depth + 1, active)?;
+        }
+        Ok(())
+    }
+
+    fn visit_declared_resources(
+        state: &mut CanonicalState<'_, '_>,
+        scope: &crate::execution_budget::Scope,
+        resources: &Object,
+        depth: usize,
+        active: &mut HashSet<PdfObjectId>,
+    ) -> Result<(), EngineFailure> {
+        if depth > state.max_depth {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let dict = resolve(Some(state.doc), resources)?
+            .1
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        if let Ok(xobjects) = dict.get(b"XObject") {
+            let xobjects = resolve(Some(state.doc), xobjects)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, val) in xobjects.iter() {
+                visit_xobject_target_stream(state, scope, val, depth, active)?;
+            }
+        }
+        if let Ok(patterns) = dict.get(b"Pattern") {
+            let patterns = resolve(Some(state.doc), patterns)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, val) in patterns.iter() {
+                visit_pattern_target_stream(state, scope, val, depth, active)?;
+            }
+        }
+        if let Ok(ext_gstates) = dict.get(b"ExtGState") {
+            let ext_gstates = resolve(Some(state.doc), ext_gstates)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, val) in ext_gstates.iter() {
+                visit_mask_target_stream(state, scope, val, depth, active)?;
+            }
+        }
+        if let Ok(fonts) = dict.get(b"Font") {
+            let fonts = resolve(Some(state.doc), fonts)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, font_obj) in fonts.iter() {
+                visit_type3_font(state, scope, scope.current(), font_obj, depth, active)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_xobject_target_stream(
+        state: &mut CanonicalState<'_, '_>,
+        scope: &crate::execution_budget::Scope,
+        target: &Object,
+        depth: usize,
+        active: &mut HashSet<PdfObjectId>,
+    ) -> Result<(), EngineFailure> {
+        let (child_id, resolved) = resolve(Some(state.doc), target)?;
+        let child_stream = resolved
+            .as_stream()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let subtype = child_stream
+            .dict
+            .get(b"Subtype")
+            .ok()
+            .and_then(|v| resolve(Some(state.doc), v).ok())
+            .and_then(|(_, v)| v.as_name().ok());
+        if subtype == Some(b"Form") {
+            let child_id = child_id.ok_or_else(EngineFailure::limit_exceeded)?;
+            visit_stream(state, child_id, scope, depth + 1, active)?;
+        }
+        Ok(())
+    }
+
+    fn visit_pattern_target_stream(
+        state: &mut CanonicalState<'_, '_>,
+        scope: &crate::execution_budget::Scope,
+        target: &Object,
+        depth: usize,
+        active: &mut HashSet<PdfObjectId>,
+    ) -> Result<(), EngineFailure> {
+        let (pat_id, resolved) = resolve(Some(state.doc), target)?;
+        if let Object::Stream(pat_stream) = resolved {
+            let kind = pat_stream
+                .dict
+                .get(b"PatternType")
+                .ok()
+                .and_then(|v| resolve(Some(state.doc), v).ok())
+                .and_then(|(_, v)| v.as_i64().ok());
+            if kind == Some(1) {
+                let pat_id = pat_id.ok_or_else(EngineFailure::limit_exceeded)?;
+                visit_stream(state, pat_id, scope, depth + 1, active)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_mask_target_stream(
+        state: &mut CanonicalState<'_, '_>,
+        scope: &crate::execution_budget::Scope,
+        target: &Object,
+        depth: usize,
+        active: &mut HashSet<PdfObjectId>,
+    ) -> Result<(), EngineFailure> {
+        let dict = resolve(Some(state.doc), target)?
+            .1
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let Ok(mask) = dict.get(b"SMask") else {
+            return Ok(());
+        };
+        let mask = resolve(Some(state.doc), mask)?.1;
+        if matches!(mask, Object::Name(name) if name == b"None") {
+            return Ok(());
+        }
+        let group = mask
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?
+            .get(b"G")
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let mask_scope = scope.mask_scope();
+        visit_xobject_target_stream(state, &mask_scope, group, depth, active)
+    }
+
+    fn visit_stream(
+        state: &mut CanonicalState<'_, '_>,
+        id: PdfObjectId,
+        scope: &crate::execution_budget::Scope,
+        depth: usize,
+        active: &mut HashSet<PdfObjectId>,
+    ) -> Result<(), EngineFailure> {
+        state.ctx.check()?;
+        if !state.allowed_ids.contains(&id) || depth > state.max_depth || !active.insert(id) {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let is_page = state.page_contents.contains(&id);
+        let stream = state
+            .doc
             .get_object(id)
             .and_then(Object::as_stream)
             .map_err(|_| EngineFailure::limit_exceeded())?;
-        let bytes = preflight_stream_bytes(doc, stream, remaining)?;
-        remaining = remaining
-            .checked_sub(bytes.len())
-            .ok_or_else(EngineFailure::limit_exceeded)?;
-        let (content, invoked, stream_facts) =
-            rewrite_preflighted_content(ctx, doc, &bytes, remaining, &mut document_work)?;
-        let mut xobjects = BTreeMap::new();
-        if let Ok(resources) = stream.dict.get(b"Resources") {
-            insert_xobjects_from_resources!(doc, resources, xobjects);
+        let active_scope = scope.child(
+            state.doc,
+            if is_page {
+                None
+            } else {
+                stream.dict.get(b"Resources").ok()
+            },
+        )?;
+        if !state
+            .visited
+            .insert((id, active_scope.resource_digest(), is_page))
+        {
+            active.remove(&id);
+            return Ok(());
         }
-        let scope = XobjectScope::new(xobjects);
-        let mut budget = PreflightBudget {
-            scanned: 0,
-            image_bytes: 0,
-            image_pixels: 0,
-            page_work: 0,
-            glyph_count: 0,
-            glyph_max: 0,
-            glyph_max_pixels: 0,
-            glyph_max_bytes: 0,
-            font_ids: HashSet::new(),
-            document_work: &mut document_work,
+
+        let cs_digest = active_scope.colorspace_digest();
+        let stream_facts = if let Some(memoized) = state.rewrite_memo.get(&(id, cs_digest)).cloned()
+        {
+            let Some(Object::Stream(existing)) = state.out.get_mut(&id) else {
+                return Err(EngineFailure::limit_exceeded());
+            };
+            if is_page {
+                existing.dict.remove(b"Resources");
+            }
+            state.scoped_ops.insert((id, cs_digest), memoized.ops);
+            memoized
+        } else {
+            if !state.decoded_cache.contains_key(&id) {
+                let bytes = preflight_stream_bytes(state.doc, stream, state.remaining)?;
+                state.remaining = state
+                    .remaining
+                    .checked_sub(bytes.len())
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                state.decoded_cache.insert(id, bytes);
+            }
+            let bytes = &state.decoded_cache[&id];
+            if let Some(counts) = state.rewrite_counts.as_deref_mut() {
+                *counts.entry(id).or_default() += 1;
+            }
+            let (content, _invoked, raw_facts) = rewrite_preflighted_content_in_scope(
+                state.ctx,
+                state.doc,
+                bytes,
+                state.remaining,
+                &active_scope,
+                &mut state.document_work,
+            )?;
+            let stream_facts = std::rc::Rc::new(raw_facts);
+            state.scoped_ops.insert((id, cs_digest), stream_facts.ops);
+            state
+                .rewrite_memo
+                .insert((id, cs_digest), std::rc::Rc::clone(&stream_facts));
+            if let Some(Object::Stream(existing)) = state.out.get(&id) {
+                if existing.content != content {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+                if let Some(existing_facts) = state.facts.get_mut(&id) {
+                    existing_facts.ops = existing_facts.ops.max(stream_facts.ops);
+                }
+            } else {
+                state.remaining = state
+                    .remaining
+                    .checked_sub(content.len())
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                let mut canonical_stream = stream.clone();
+                canonical_stream.content = content;
+                canonical_stream.dict.remove(b"Filter");
+                canonical_stream.dict.remove(b"DecodeParms");
+                if is_page {
+                    canonical_stream.dict.remove(b"Resources");
+                }
+                canonical_stream.dict.set(
+                    "Length",
+                    i64::try_from(canonical_stream.content.len())
+                        .map_err(|_| EngineFailure::limit_exceeded())?,
+                );
+                state.out.insert(id, Object::Stream(canonical_stream));
+                state.facts.insert(id, (*stream_facts).clone());
+            }
+            stream_facts
         };
-        for name in invoked {
-            if let Some(child) = scope.get(&name) {
-                preflight_xobject(
-                    ctx,
-                    pdf_doc,
-                    *child,
-                    remaining,
-                    usize::from(ctx.limits().max_nesting_depth),
-                    0,
-                    &mut memo,
-                    &scope,
-                    &mut budget,
+
+        if !is_page && let Ok(resources) = stream.dict.get(b"Resources") {
+            visit_declared_resources(state, &active_scope, resources, depth + 1, active)?;
+        }
+        let mut seen_calls = HashSet::new();
+        for call in &stream_facts.calls {
+            if !seen_calls.insert((call.op.as_slice(), call.name.as_slice())) {
+                continue;
+            }
+            match call.op.as_slice() {
+                b"Do" => {
+                    if let Some(target) = active_scope.get(b"XObject", &call.name) {
+                        visit_xobject_target_stream(state, &active_scope, target, depth, active)?;
+                    }
+                }
+                b"scn" | b"SCN" => {
+                    if let Some(target) = active_scope.get(b"Pattern", &call.name) {
+                        visit_pattern_target_stream(state, &active_scope, target, depth, active)?;
+                    }
+                }
+                b"gs" => {
+                    if let Some(target) = active_scope.get(b"ExtGState", &call.name) {
+                        visit_mask_target_stream(state, &active_scope, target, depth, active)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if stream_facts.glyphs > 0 {
+            let current_fonts: Vec<_> = active_scope
+                .current_category(b"Font")
+                .into_iter()
+                .flat_map(|fonts| fonts.values().cloned())
+                .map(|font| (font, active_scope.current().clone()))
+                .collect();
+            let inherited: Vec<_> = active_scope.inherited_fonts().to_vec();
+            for (font_obj, selected_resources) in current_fonts.into_iter().chain(inherited) {
+                visit_type3_font(
+                    state,
+                    &active_scope,
+                    &selected_resources,
+                    &font_obj,
+                    depth,
+                    active,
                 )?;
             }
         }
-        remaining = remaining
-            .checked_sub(content.len())
-            .ok_or_else(EngineFailure::limit_exceeded)?;
-        let mut stream = stream.clone();
-        stream.content = content;
-        stream.dict.remove(b"Filter");
-        stream.dict.remove(b"DecodeParms");
-        if page_contents.contains(&id) {
-            stream.dict.remove(b"Resources");
-        }
-        stream.dict.set(
-            "Length",
-            i64::try_from(stream.content.len()).map_err(|_| EngineFailure::limit_exceeded())?,
-        );
-        out.insert(id, Object::Stream(stream));
-        facts.insert(id, stream_facts);
+
+        active.remove(&id);
+        Ok(())
     }
+
+    let mut state = CanonicalState {
+        ctx,
+        doc,
+        max_depth,
+        allowed_ids: &ids,
+        page_contents: &page_contents,
+        remaining: usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2),
+        decoded_cache: HashMap::new(),
+        visited: HashSet::new(),
+        type3_visited: HashSet::new(),
+        out: BTreeMap::new(),
+        facts: BTreeMap::new(),
+        scoped_ops: HashMap::new(),
+        document_work: 0,
+        rewrite_memo: HashMap::new(),
+        rewrite_counts,
+    };
+
+    for page_id in all_pages {
+        let page = doc
+            .get_dictionary(page_id)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let inherited = crate::execution_budget::inherited_resources(doc, page_id)?;
+        let page_scope = crate::execution_budget::Scope::from_page(doc, inherited)?;
+        let mut active = HashSet::new();
+        if let Some(res) = inherited {
+            visit_declared_resources(&mut state, &page_scope, res, 0, &mut active)?;
+        }
+        if let Ok(contents) = page.get(b"Contents") {
+            let mut roots = Vec::new();
+            crate::execution_budget::stream_ids(doc, contents, false, 0, &mut roots)?;
+            for id in roots {
+                visit_stream(&mut state, id, &page_scope, 0, &mut active)?;
+            }
+        }
+        if let Ok(annotations) = page.get(b"Annots") {
+            let annotations = resolve(Some(doc), annotations)?
+                .1
+                .as_array()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            let mut ap_roots = Vec::new();
+            for annotation in annotations {
+                let annotation = resolve(Some(doc), annotation)?
+                    .1
+                    .as_dict()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                if let Ok(appearance) = annotation.get(b"AP") {
+                    crate::execution_budget::stream_ids(doc, appearance, true, 0, &mut ap_roots)?;
+                }
+            }
+            for id in ap_roots {
+                visit_stream(&mut state, id, &page_scope, 0, &mut active)?;
+            }
+        }
+    }
+
+    let empty_scope = crate::execution_budget::Scope::default();
+    for &id in &ids {
+        if !state.out.contains_key(&id) {
+            visit_stream(&mut state, id, &empty_scope, 0, &mut HashSet::new())?;
+        }
+    }
+    let out = state.out;
+    let facts = state.facts;
+    let scoped_ops = state.scoped_ops;
     fn check_type3_resources(
         doc: &lopdf::Document,
         value: &Object,
@@ -1120,7 +1494,14 @@ pub(crate) fn canonical_content_streams(
     for value in doc.objects.values() {
         check_type3_resources(doc, value, &facts, &page_contents, 0)?;
     }
-    crate::execution_budget::check(ctx, doc, &facts, pages, &page_contents)?;
+    crate::execution_budget::check_with_scoped_ops(
+        ctx,
+        doc,
+        &facts,
+        &scoped_ops,
+        pages,
+        &page_contents,
+    )?;
     Ok(out)
 }
 
@@ -1168,6 +1549,10 @@ fn preflight_page_images_inner(
     let page = doc
         .get_dictionary(page_id)
         .map_err(|_| EngineFailure::limit_exceeded())?;
+    let page_scope = crate::execution_budget::Scope::from_page(
+        doc,
+        crate::execution_budget::inherited_resources(doc, page_id)?,
+    )?;
     let mut page_names = Vec::new();
     if let Ok(contents) = page.get(b"Contents") {
         page_names = preflight_content_object(
@@ -1178,6 +1563,7 @@ fn preflight_page_images_inner(
             max_depth,
             0,
             &mut HashSet::new(),
+            &page_scope,
             &mut budget,
         )?;
     }
@@ -1188,6 +1574,7 @@ fn preflight_page_images_inner(
     let xobjects = XobjectScope::new(resolve_page_xobject_map(pdf_doc, page_id, max_depth));
     let mut node = page_id;
     let mut ancestors = HashSet::new();
+    let mut seen_page_resources = false;
     for _ in 0..=max_depth {
         if !ancestors.insert(node) {
             return Err(EngineFailure::limit_exceeded());
@@ -1197,11 +1584,18 @@ fn preflight_page_images_inner(
             .map_err(|_| EngineFailure::limit_exceeded())?;
         if let Ok(resources) = dict.get(b"Resources") {
             validate_xobject_resources(doc, resources)?;
+            let ancestor_scope = if !seen_page_resources {
+                seen_page_resources = true;
+                page_scope.clone()
+            } else {
+                crate::execution_budget::Scope::from_page(doc, Some(resources))?
+            };
             preflight_type3_fonts(
                 ctx,
                 pdf_doc,
                 resources,
                 &xobjects,
+                &ancestor_scope,
                 max_bytes,
                 max_depth,
                 0,
@@ -1231,6 +1625,7 @@ fn preflight_page_images_inner(
             0,
             &mut seen,
             &xobjects,
+            &page_scope,
             &mut budget,
         )?;
     }
@@ -1245,6 +1640,7 @@ fn preflight_page_images_inner(
                 0,
                 &mut seen,
                 &xobjects,
+                &page_scope,
                 &mut budget,
             )?;
             execution_pixels = execution_pixels
@@ -1311,6 +1707,7 @@ fn preflight_content_object(
     max_depth: usize,
     depth: usize,
     active: &mut HashSet<PdfObjectId>,
+    resource_scope: &crate::execution_budget::Scope,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<Vec<Vec<u8>>, EngineFailure> {
     charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
@@ -1333,6 +1730,7 @@ fn preflight_content_object(
                 max_depth,
                 depth + 1,
                 active,
+                resource_scope,
                 budget,
             );
             active.remove(id);
@@ -1349,6 +1747,7 @@ fn preflight_content_object(
                     max_depth,
                     depth + 1,
                     active,
+                    resource_scope,
                     budget,
                 )?);
             }
@@ -1357,7 +1756,7 @@ fn preflight_content_object(
         Object::Stream(stream) => {
             let bytes = preflight_stream_bytes(doc, stream, budget.remaining_content(max_bytes)?)?;
             budget.charge_content(bytes.len(), max_bytes)?;
-            preflight_content(ctx, doc, &bytes, max_bytes, budget)
+            preflight_content_in_scope(ctx, doc, &bytes, max_bytes, resource_scope, budget)
         }
         Object::Null => Ok(Vec::new()),
         _ => Err(EngineFailure::new(
@@ -1373,6 +1772,7 @@ fn preflight_type3_fonts(
     pdf_doc: &PdfDoc,
     resources: &Object,
     invoking_scope: &XobjectScope<'_>,
+    invoking_resource_scope: &crate::execution_budget::Scope,
     max_bytes: usize,
     max_depth: usize,
     depth: usize,
@@ -1397,7 +1797,11 @@ fn preflight_type3_fonts(
         charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
         let (id, font) = resolve(Some(doc), font)?;
         if let Some(id) = id
-            && !budget.font_ids.insert((id, invoking_scope.digest))
+            && !budget.font_ids.insert((
+                id,
+                invoking_scope.digest,
+                invoking_resource_scope.resource_digest(),
+            ))
         {
             continue;
         }
@@ -1432,12 +1836,18 @@ fn preflight_type3_fonts(
             scope.page = Some(invoking_scope);
             scope
         };
+        let font_resource_scope = invoking_resource_scope.type3_glyph_scope(
+            doc,
+            invoking_resource_scope.current(),
+            font,
+        )?;
         if let Ok(resources) = font.get(b"Resources") {
             preflight_type3_fonts(
                 ctx,
                 pdf_doc,
                 resources,
                 &font_scope,
+                &font_resource_scope,
                 max_bytes,
                 max_depth,
                 depth + 1,
@@ -1449,6 +1859,11 @@ fn preflight_type3_fonts(
             let before = budget.page_work;
             let pixels_before = budget.image_pixels;
             let bytes_before = budget.image_bytes;
+            let proc_resources = resolve(Some(doc), proc)
+                .ok()
+                .and_then(|(_, obj)| obj.as_stream().ok())
+                .and_then(|stream| stream.dict.get(b"Resources").ok());
+            let proc_resource_scope = font_resource_scope.child(doc, proc_resources)?;
             let names = preflight_content_object(
                 ctx,
                 doc,
@@ -1457,6 +1872,7 @@ fn preflight_type3_fonts(
                 max_depth,
                 depth + 1,
                 &mut HashSet::new(),
+                &proc_resource_scope,
                 budget,
             )?;
             let (_, proc_object) = resolve(Some(doc), proc)?;
@@ -1473,6 +1889,7 @@ fn preflight_type3_fonts(
                     pdf_doc,
                     resources,
                     &proc_scope,
+                    &proc_resource_scope,
                     max_bytes,
                     max_depth,
                     depth + 1,
@@ -1493,6 +1910,7 @@ fn preflight_type3_fonts(
                         depth + 1,
                         &mut proc_seen,
                         &proc_scope,
+                        &proc_resource_scope,
                         budget,
                     )?;
                     proc_pixels = proc_pixels
@@ -1517,6 +1935,7 @@ fn preflight_type3_fonts(
                 pdf_doc,
                 resources,
                 &font_scope,
+                &font_resource_scope,
                 max_bytes,
                 max_depth,
                 depth + 1,
@@ -1536,6 +1955,7 @@ fn preflight_type3_fonts(
                     depth + 1,
                     &mut seen,
                     &xobjects,
+                    &font_resource_scope,
                     budget,
                 )?;
             }
@@ -1568,14 +1988,22 @@ fn validate_xobject_resources(
     Ok(())
 }
 
-type PreflightMemo = BTreeMap<(PdfObjectId, [u8; 32], [u8; 32], usize), (usize, usize, u64, u64)>;
+type PreflightMemo =
+    BTreeMap<(PdfObjectId, [u8; 32], [u8; 32], [u8; 32], usize), (usize, usize, u64, u64)>;
 
 fn preflight_memo_key(
     id: PdfObjectId,
     scope: &XobjectScope<'_>,
+    resource_scope: &crate::execution_budget::Scope,
     depth: usize,
-) -> (PdfObjectId, [u8; 32], [u8; 32], usize) {
-    (id, scope.digest, scope.page.unwrap_or(scope).digest, depth)
+) -> (PdfObjectId, [u8; 32], [u8; 32], [u8; 32], usize) {
+    (
+        id,
+        scope.digest,
+        scope.page.unwrap_or(scope).digest,
+        resource_scope.resource_digest(),
+        depth,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1588,10 +2016,11 @@ fn preflight_xobject(
     depth: usize,
     seen: &mut PreflightMemo,
     parent_xobjects: &XobjectScope<'_>,
+    resource_scope: &crate::execution_budget::Scope,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<(usize, usize, u64, u64), EngineFailure> {
-    let key = preflight_memo_key(id, parent_xobjects, depth);
-    let first = (id, key.1, key.2, 0);
+    let key = preflight_memo_key(id, parent_xobjects, resource_scope, depth);
+    let first = (id, key.1, key.2, key.3, 0);
     let already_charged = seen.range(first..key).any(|(_, cost)| cost.0 != 0);
     if already_charged && !seen.contains_key(&key) {
         // Recheck the stricter depth without charging the same resources twice.
@@ -1616,6 +2045,7 @@ fn preflight_xobject(
             depth,
             seen,
             parent_xobjects,
+            resource_scope,
             &mut replay,
         );
     }
@@ -1628,6 +2058,7 @@ fn preflight_xobject(
         depth,
         seen,
         parent_xobjects,
+        resource_scope,
         budget,
     )
 }
@@ -1642,13 +2073,14 @@ fn preflight_xobject_inner(
     depth: usize,
     seen: &mut PreflightMemo,
     parent_xobjects: &XobjectScope<'_>,
+    resource_scope: &crate::execution_budget::Scope,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<(usize, usize, u64, u64), EngineFailure> {
     charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let scope_key = preflight_memo_key(id, parent_xobjects, depth);
+    let scope_key = preflight_memo_key(id, parent_xobjects, resource_scope, depth);
     if let Some(&cost) = seen.get(&scope_key) {
         return (cost.0 != 0)
             .then_some(cost)
@@ -1657,7 +2089,7 @@ fn preflight_xobject_inner(
     // A completed traversal at a greater depth has already checked the stricter
     // nesting bound for this same scope. Reuse it without charging the same
     // resource a second time when it is also reached from a shallower root.
-    let strictest = (id, scope_key.1, scope_key.2, usize::MAX);
+    let strictest = (id, scope_key.1, scope_key.2, scope_key.3, usize::MAX);
     if let Some((_, &cost)) = seen
         .range((
             std::ops::Bound::Excluded(scope_key),
@@ -1739,7 +2171,7 @@ fn preflight_xobject_inner(
                     )
                 })?;
             }
-            preflight_image_dict(ctx, &stream.dict, Some(doc), jpx_info)?;
+            preflight_image_dict(ctx, &stream.dict, Some(doc), None, false, jpx_info)?;
             if stream.content.len() > max_bytes {
                 return Err(EngineFailure::limit_exceeded());
             }
@@ -1754,6 +2186,7 @@ fn preflight_xobject_inner(
                         depth + 1,
                         seen,
                         parent_xobjects,
+                        resource_scope,
                         budget,
                     )?;
                 }
@@ -1766,7 +2199,16 @@ fn preflight_xobject_inner(
             let glyphs_before = budget.glyph_count;
             let pixels_before = budget.image_pixels;
             let bytes_before = budget.image_bytes;
-            let names = preflight_content(ctx, doc, &bytes, max_bytes, budget)?;
+            let child_resource_scope =
+                resource_scope.child(doc, stream.dict.get(b"Resources").ok())?;
+            let names = preflight_content_in_scope(
+                ctx,
+                doc,
+                &bytes,
+                max_bytes,
+                &child_resource_scope,
+                budget,
+            )?;
             expansion_cost = expansion_cost
                 .checked_add(budget.page_work - work_before)
                 .ok_or_else(EngineFailure::limit_exceeded)?;
@@ -1781,6 +2223,7 @@ fn preflight_xobject_inner(
                     pdf_doc,
                     resources,
                     &xobjects,
+                    &child_resource_scope,
                     max_bytes,
                     max_depth,
                     depth + 1,
@@ -1800,6 +2243,7 @@ fn preflight_xobject_inner(
                         depth + 1,
                         seen,
                         &xobjects,
+                        &child_resource_scope,
                         budget,
                     )?;
                     expansion_cost = expansion_cost
@@ -1833,6 +2277,7 @@ fn preflight_xobject_inner(
                         depth + 1,
                         seen,
                         &xobjects,
+                        &child_resource_scope,
                         budget,
                     )?;
                 }
@@ -1861,10 +2306,12 @@ fn preflight_image_dict(
     ctx: &ToolContext<'_>,
     dict: &Dictionary,
     doc: Option<&lopdf::Document>,
+    color_scope: Option<&crate::execution_budget::Scope>,
+    allow_abbreviated: bool,
     jpx_info: Option<(u64, u64, u64, u64)>,
 ) -> Result<usize, EngineFailure> {
     let get = |long: &[u8], short: &[u8]| -> Result<Option<&Object>, EngineFailure> {
-        let value = if doc.is_none() {
+        let value = if allow_abbreviated {
             dict.get(long).or_else(|_| dict.get(short))
         } else {
             dict.get(long)
@@ -1911,7 +2358,7 @@ fn preflight_image_dict(
         1
     } else {
         match get(b"ColorSpace", b"CS")? {
-            Some(obj) => color_components(obj, doc, 0)?,
+            Some(obj) => color_components(obj, doc, color_scope, 0)?,
             None => jpx_info
                 .map(|(_, _, _, components)| components)
                 .ok_or_else(EngineFailure::limit_exceeded)?,
@@ -2031,54 +2478,204 @@ fn jpx_dimensions(data: &[u8]) -> Result<(u64, u64, u64, u64), EngineFailure> {
     ))
 }
 
+fn resolve_color_object<'a>(
+    doc: Option<&'a lopdf::Document>,
+    mut obj: &'a Object,
+    seen_ids: &mut HashSet<PdfObjectId>,
+    inserted_ids: &mut Vec<PdfObjectId>,
+) -> Result<&'a Object, EngineFailure> {
+    let mut hops = 0usize;
+    while let Object::Reference(id) = obj {
+        hops += 1;
+        if hops > 16 || !seen_ids.insert(*id) {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        inserted_ids.push(*id);
+        let document = doc.ok_or_else(EngineFailure::limit_exceeded)?;
+        obj = document
+            .get_object(*id)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+    }
+    Ok(obj)
+}
+
+// Inline images in PDFium resolve explicit device or page/stream resource colour-space names
+// directly; DefaultGray / DefaultRGB / DefaultCMYK substitution is intentionally not modelled.
 fn color_components(
     obj: &Object,
     doc: Option<&lopdf::Document>,
+    scope: Option<&crate::execution_budget::Scope>,
     depth: usize,
+) -> Result<u64, EngineFailure> {
+    let mut seen_ids = HashSet::new();
+    color_components_inner(obj, doc, scope, true, depth, &mut seen_ids)
+}
+
+fn color_components_inner(
+    obj: &Object,
+    doc: Option<&lopdf::Document>,
+    scope: Option<&crate::execution_budget::Scope>,
+    allow_indexed: bool,
+    depth: usize,
+    seen_ids: &mut HashSet<PdfObjectId>,
 ) -> Result<u64, EngineFailure> {
     if depth > 16 {
         return Err(EngineFailure::limit_exceeded());
     }
-    let obj = resolve(doc, obj)?.1;
-    match obj {
-        Object::Name(name) => match name.as_slice() {
-            b"DeviceGray" | b"G" => Ok(1),
-            b"DeviceRGB" | b"RGB" => Ok(3),
-            b"DeviceCMYK" | b"CMYK" => Ok(4),
-            _ => Err(EngineFailure::limit_exceeded()),
-        },
-        Object::Array(parts) => match parts
-            .first()
-            .and_then(|v| resolve(doc, v).ok())
-            .and_then(|(_, v)| v.as_name().ok())
-        {
-            Some(b"Indexed" | b"I" | b"Separation") => Ok(1),
-            Some(b"CalGray") => Ok(1),
-            Some(b"CalRGB" | b"Lab") => Ok(3),
-            Some(b"DeviceN" | b"NChannel") => parts
-                .get(1)
-                .and_then(|v| resolve(doc, v).ok())
-                .and_then(|(_, v)| v.as_array().ok())
-                .and_then(|v| u64::try_from(v.len()).ok())
-                .filter(|v| *v > 0)
-                .ok_or_else(EngineFailure::limit_exceeded),
-            Some(b"ICCBased") => {
-                let profile = parts.get(1).ok_or_else(EngineFailure::limit_exceeded)?;
-                let profile = resolve(doc, profile)?.1;
-                profile
-                    .as_stream()
-                    .ok()
-                    .and_then(|s| s.dict.get(b"N").ok())
-                    .and_then(|v| resolve(doc, v).ok())
-                    .and_then(|(_, v)| v.as_i64().ok())
-                    .and_then(|v| u64::try_from(v).ok())
-                    .filter(|v| *v > 0)
-                    .ok_or_else(EngineFailure::limit_exceeded)
+    let mut inserted_ids = Vec::new();
+    let result = (|| -> Result<u64, EngineFailure> {
+        let obj = resolve_color_object(doc, obj, seen_ids, &mut inserted_ids)?;
+        match obj {
+            Object::Name(name) => match name.as_slice() {
+                b"DeviceGray" | b"G" => Ok(1),
+                b"DeviceRGB" | b"RGB" => Ok(3),
+                b"DeviceCMYK" | b"CMYK" => Ok(4),
+                b"Pattern" => Err(EngineFailure::limit_exceeded()),
+                other => {
+                    // PDFium only resolves resource names at top-level lookup, not chained
+                    // resource-to-resource aliases or Indexed/alternate sub-spaces.
+                    if let Some(entry) = scope.and_then(|s| s.get(b"ColorSpace", other)) {
+                        color_components_inner(entry, doc, None, allow_indexed, depth + 1, seen_ids)
+                    } else {
+                        Err(EngineFailure::limit_exceeded())
+                    }
+                }
+            },
+            Object::Array(parts) => {
+                let mut first_ids = Vec::new();
+                let first_name = parts
+                    .first()
+                    .and_then(|v| resolve_color_object(doc, v, seen_ids, &mut first_ids).ok())
+                    .and_then(|v| v.as_name().ok());
+                let array_res = match first_name {
+                    Some(b"Indexed" | b"I") => {
+                        if !allow_indexed || parts.len() != 4 {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
+                        let mut hival_ids = Vec::new();
+                        let hival_res =
+                            resolve_color_object(doc, &parts[2], seen_ids, &mut hival_ids)
+                                .and_then(|v| {
+                                    v.as_i64().map_err(|_| EngineFailure::limit_exceeded())
+                                })
+                                .and_then(|v| {
+                                    (0..=255)
+                                        .contains(&v)
+                                        .then_some(v)
+                                        .ok_or_else(EngineFailure::limit_exceeded)
+                                });
+                        for id in hival_ids {
+                            seen_ids.remove(&id);
+                        }
+                        hival_res?;
+
+                        let mut lookup_ids = Vec::new();
+                        let lookup_ok =
+                            resolve_color_object(doc, &parts[3], seen_ids, &mut lookup_ids)
+                                .is_ok_and(|v| {
+                                    matches!(v, Object::String(_, _) | Object::Stream(_))
+                                });
+                        for id in lookup_ids {
+                            seen_ids.remove(&id);
+                        }
+                        if !lookup_ok {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
+
+                        color_components_inner(&parts[1], doc, None, false, depth + 1, seen_ids)?;
+                        Ok(1)
+                    }
+                    Some(b"Separation") => {
+                        if parts.len() != 4 {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
+                        color_components_inner(&parts[2], doc, None, false, depth + 1, seen_ids)?;
+                        Ok(1)
+                    }
+                    Some(b"CalGray") => {
+                        if parts.len() != 2 {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
+                        Ok(1)
+                    }
+                    Some(b"CalRGB" | b"Lab") => {
+                        if parts.len() != 2 {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
+                        Ok(3)
+                    }
+                    Some(b"DeviceN" | b"NChannel") => {
+                        if !matches!(parts.len(), 4 | 5) {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
+                        color_components_inner(&parts[2], doc, None, false, depth + 1, seen_ids)?;
+                        let mut list_ids = Vec::new();
+                        let count = parts
+                            .get(1)
+                            .and_then(|v| {
+                                resolve_color_object(doc, v, seen_ids, &mut list_ids).ok()
+                            })
+                            .and_then(|v| v.as_array().ok())
+                            .and_then(|v| u64::try_from(v.len()).ok())
+                            .filter(|v| *v > 0)
+                            .ok_or_else(EngineFailure::limit_exceeded);
+                        for id in list_ids {
+                            seen_ids.remove(&id);
+                        }
+                        count
+                    }
+                    Some(b"ICCBased") => {
+                        let profile = parts.get(1).ok_or_else(EngineFailure::limit_exceeded)?;
+                        let mut profile_ids = Vec::new();
+                        let components =
+                            resolve_color_object(doc, profile, seen_ids, &mut profile_ids)
+                                .and_then(|v| {
+                                    v.as_stream().map_err(|_| EngineFailure::limit_exceeded())
+                                })
+                                .and_then(|s| {
+                                    s.dict
+                                        .get(b"N")
+                                        .map_err(|_| EngineFailure::limit_exceeded())
+                                })
+                                .and_then(|n| {
+                                    let mut n_ids = Vec::new();
+                                    let val = resolve_color_object(doc, n, seen_ids, &mut n_ids)
+                                        .and_then(|v| {
+                                            v.as_i64().map_err(|_| EngineFailure::limit_exceeded())
+                                        })
+                                        .and_then(|v| {
+                                            u64::try_from(v)
+                                                .map_err(|_| EngineFailure::limit_exceeded())
+                                        })
+                                        .and_then(|v| {
+                                            (v > 0)
+                                                .then_some(v)
+                                                .ok_or_else(EngineFailure::limit_exceeded)
+                                        });
+                                    for id in n_ids {
+                                        seen_ids.remove(&id);
+                                    }
+                                    val
+                                });
+                        for id in profile_ids {
+                            seen_ids.remove(&id);
+                        }
+                        components
+                    }
+                    _ => Err(EngineFailure::limit_exceeded()),
+                };
+                for id in first_ids {
+                    seen_ids.remove(&id);
+                }
+                array_res
             }
             _ => Err(EngineFailure::limit_exceeded()),
-        },
-        _ => Err(EngineFailure::limit_exceeded()),
+        }
+    })();
+    for id in inserted_ids {
+        seen_ids.remove(&id);
     }
+    result
 }
 
 fn resource_name(token: &[u8]) -> Result<&[u8], EngineFailure> {
@@ -2123,6 +2720,7 @@ fn content_number(token: &[u8]) -> bool {
     digits > 0 && dots <= 1
 }
 
+#[cfg(test)]
 fn preflight_content(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
@@ -2130,14 +2728,28 @@ fn preflight_content(
     max_bytes: usize,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<Vec<Vec<u8>>, EngineFailure> {
-    preflight_content_inner(ctx, doc, bytes, max_bytes, budget, None, None)
+    let empty_scope = crate::execution_budget::Scope::default();
+    preflight_content_inner(ctx, doc, bytes, max_bytes, &empty_scope, budget, None, None)
 }
 
+fn preflight_content_in_scope(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    bytes: &[u8],
+    max_bytes: usize,
+    color_scope: &crate::execution_budget::Scope,
+    budget: &mut PreflightBudget<'_>,
+) -> Result<Vec<Vec<u8>>, EngineFailure> {
+    preflight_content_inner(ctx, doc, bytes, max_bytes, color_scope, budget, None, None)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn preflight_content_inner(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
     bytes: &[u8],
     max_bytes: usize,
+    color_scope: &crate::execution_budget::Scope,
     budget: &mut PreflightBudget<'_>,
     mut output: Option<&mut Vec<u8>>,
     mut calls: Option<&mut Vec<crate::execution_budget::Call>>,
@@ -2335,7 +2947,7 @@ fn preflight_content_inner(
                     continue;
                 }
                 if matches!(key, b"/CS" | b"/ColorSpace")
-                    && bytes[s] == b'/'
+                    && matches!(bytes[s], b'/' | b'[')
                     && let Some(calls) = calls.as_deref_mut()
                 {
                     calls.push(crate::execution_budget::Call {
@@ -2496,12 +3108,21 @@ fn preflight_content_inner(
                 })?;
             match colorspace {
                 Object::Name(_) => (),
-                Object::Array(items) if matches!(items.first(), Some(Object::Name(_))) => (),
+                Object::Array(items) if matches!(items.first(), Some(Object::Name(_))) => {
+                    if matches!(
+                        items.first().and_then(|v| v.as_name().ok()),
+                        Some(b"Indexed" | b"I")
+                    ) && !matches!(items.get(1), Some(Object::Name(_)))
+                    {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                }
                 _ => return Err(EngineFailure::limit_exceeded()),
             }
-            color_components(colorspace, Some(doc), 0)?;
+            color_components(colorspace, Some(doc), Some(color_scope), 0)?;
         }
-        let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
+        let decoded_len =
+            preflight_image_dict(ctx, dict, Some(doc), Some(color_scope), true, None)?;
         budget.charge_image(ctx, dict, doc, decoded_len)?;
         budget.page_work = budget
             .page_work
@@ -2939,11 +3560,24 @@ fn preflight_content_inner(
 
 type RewrittenContent = (Vec<u8>, Vec<Vec<u8>>, crate::execution_budget::Facts);
 
+#[cfg(test)]
 pub(crate) fn rewrite_preflighted_content(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
     bytes: &[u8],
     max_bytes: usize,
+    work: &mut usize,
+) -> Result<RewrittenContent, EngineFailure> {
+    let empty_scope = crate::execution_budget::Scope::default();
+    rewrite_preflighted_content_in_scope(ctx, doc, bytes, max_bytes, &empty_scope, work)
+}
+
+pub(crate) fn rewrite_preflighted_content_in_scope(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    bytes: &[u8],
+    max_bytes: usize,
+    color_scope: &crate::execution_budget::Scope,
     work: &mut usize,
 ) -> Result<RewrittenContent, EngineFailure> {
     let mut budget = PreflightBudget {
@@ -2965,6 +3599,7 @@ pub(crate) fn rewrite_preflighted_content(
         doc,
         bytes,
         max_bytes,
+        color_scope,
         &mut budget,
         Some(&mut out),
         Some(&mut calls),
@@ -4068,6 +4703,61 @@ fn visit_pdfium_images<'a>(
     Ok(false)
 }
 
+fn ceil_f64_to_u64(value: f64) -> Result<u64, EngineFailure> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    let ceiled = value.ceil();
+    if !ceiled.is_finite() || ceiled >= (u64::MAX as f64) {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    Ok(ceiled as u64)
+}
+
+fn check_processed_bitmap_budget(
+    ctx: &ToolContext<'_>,
+    img_obj: &PdfPageImageObject<'_>,
+) -> Result<(), EngineFailure> {
+    let matrix = img_obj
+        .matrix()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let coeffs = [
+        f64::from(matrix.a()),
+        f64::from(matrix.b()),
+        f64::from(matrix.c()),
+        f64::from(matrix.d()),
+        f64::from(matrix.e()),
+        f64::from(matrix.f()),
+    ];
+    if coeffs.iter().any(|v| !v.is_finite()) {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    let bounds = img_obj
+        .bounds()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let est_w = ceil_f64_to_u64(coeffs[0].abs() + coeffs[2].abs())?
+        .max(ceil_f64_to_u64(f64::from(bounds.width().value).abs())?);
+    let est_h = ceil_f64_to_u64(coeffs[1].abs() + coeffs[3].abs())?
+        .max(ceil_f64_to_u64(f64::from(bounds.height().value).abs())?);
+    ctx.check_pixels(est_w, est_h)?;
+    let rgba_bytes = est_w
+        .checked_mul(est_h)
+        .and_then(|px| px.checked_mul(4))
+        .ok_or_else(EngineFailure::limit_exceeded)?;
+    let limits = ctx.limits();
+    if rgba_bytes > limits.max_decompressed_bytes
+        || limits.max_asset_bytes.is_some_and(|cap| rgba_bytes > cap)
+        || limits.max_memory_mb.is_some_and(|mb| {
+            u64::from(mb)
+                .checked_mul(1024 * 1024)
+                .is_none_or(|cap| rgba_bytes > cap)
+        })
+    {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    Ok(())
+}
+
 fn extract_dynamic_image_from_pdfium_obj(
     ctx: &ToolContext<'_>,
     pdfium_doc: &PdfDocument<'_>,
@@ -4080,7 +4770,10 @@ fn extract_dynamic_image_from_pdfium_obj(
         return Err(EngineFailure::limit_exceeded());
     };
     ctx.check_pixels(width, height)?;
-    if let Ok(raw_bitmap) = img_obj.get_raw_bitmap() {
+    if let Ok(raw_bitmap) = img_obj.get_raw_bitmap()
+        && raw_bitmap.width() > 0
+        && raw_bitmap.height() > 0
+    {
         ctx.check_pixels(
             u64::try_from(raw_bitmap.width()).map_err(|_| EngineFailure::limit_exceeded())?,
             u64::try_from(raw_bitmap.height()).map_err(|_| EngineFailure::limit_exceeded())?,
@@ -4089,6 +4782,7 @@ fn extract_dynamic_image_from_pdfium_obj(
             return Ok(Some(img));
         }
     }
+    check_processed_bitmap_budget(ctx, img_obj)?;
     if let Ok(proc_bitmap) = img_obj.get_processed_bitmap(pdfium_doc) {
         ctx.check_pixels(
             u64::try_from(proc_bitmap.width()).map_err(|_| EngineFailure::limit_exceeded())?,
@@ -5279,13 +5973,14 @@ mod corpus_tests {
         let mut form_b = XobjectScope::new(BTreeMap::new());
         form_a.page = Some(&page_a);
         form_b.page = Some(&page_b);
+        let scope = crate::execution_budget::Scope::default();
         assert_ne!(
-            preflight_memo_key((3, 0), &form_a, 1),
-            preflight_memo_key((3, 0), &form_b, 1)
+            preflight_memo_key((3, 0), &form_a, &scope, 1),
+            preflight_memo_key((3, 0), &form_b, &scope, 1)
         );
         assert_ne!(
-            preflight_memo_key((3, 0), &form_a, 1),
-            preflight_memo_key((3, 0), &form_a, 2)
+            preflight_memo_key((3, 0), &form_a, &scope, 1),
+            preflight_memo_key((3, 0), &form_a, &scope, 2)
         );
     }
 
@@ -5493,6 +6188,371 @@ mod corpus_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn color_components_resolves_resource_spaces_and_validates_families() {
+        use lopdf::dictionary;
+        let mut doc = lopdf::Document::new();
+        let icc1_id = doc.add_object(lopdf::Stream::new(dictionary! { "N" => 1 }, vec![0; 4]));
+        let icc3_id = doc.add_object(lopdf::Stream::new(dictionary! { "N" => 3 }, vec![0; 4]));
+        let icc4_id = doc.add_object(lopdf::Stream::new(dictionary! { "N" => 4 }, vec![0; 4]));
+        let icc0_id = doc.add_object(lopdf::Stream::new(dictionary! { "N" => 0 }, vec![0; 4]));
+        let icc_neg_id = doc.add_object(lopdf::Stream::new(dictionary! { "N" => -1 }, vec![0; 4]));
+        let lookup_stream_id = doc.add_object(lopdf::Stream::new(dictionary! {}, vec![0; 6]));
+        let cmyk_ref_id = doc.add_object(Object::Name(b"DeviceCMYK".to_vec()));
+        let cal_gray_id = doc.add_object(Object::Array(vec![
+            Object::Name(b"CalGray".to_vec()),
+            Object::Dictionary(dictionary! {}),
+        ]));
+        let cal_rgb_id = doc.add_object(Object::Array(vec![
+            Object::Name(b"CalRGB".to_vec()),
+            Object::Dictionary(dictionary! {}),
+        ]));
+        let lab_id = doc.add_object(Object::Array(vec![
+            Object::Name(b"Lab".to_vec()),
+            Object::Dictionary(dictionary! {}),
+        ]));
+        let sep_id = doc.add_object(Object::Array(vec![
+            Object::Name(b"Separation".to_vec()),
+            Object::Name(b"Spot".to_vec()),
+            Object::Name(b"DeviceCMYK".to_vec()),
+            Object::Dictionary(dictionary! {}),
+        ]));
+        let devn_id = doc.add_object(Object::Array(vec![
+            Object::Name(b"DeviceN".to_vec()),
+            Object::Array(vec![
+                Object::Name(b"C1".to_vec()),
+                Object::Name(b"C2".to_vec()),
+                Object::Name(b"C3".to_vec()),
+                Object::Name(b"C4".to_vec()),
+                Object::Name(b"C5".to_vec()),
+            ]),
+            Object::Name(b"DeviceRGB".to_vec()),
+            Object::Dictionary(dictionary! {}),
+        ]));
+        let nchan_id = doc.add_object(Object::Array(vec![
+            Object::Name(b"NChannel".to_vec()),
+            Object::Array(vec![
+                Object::Name(b"A".to_vec()),
+                Object::Name(b"B".to_vec()),
+            ]),
+            Object::Name(b"DeviceGray".to_vec()),
+            Object::Dictionary(dictionary! {}),
+        ]));
+
+        let res = Object::Dictionary(dictionary! {
+            "ColorSpace" => dictionary! {
+                "CsIcc1" => vec![Object::Name(b"ICCBased".to_vec()), Object::Reference(icc1_id)],
+                "CsIcc3" => vec![Object::Name(b"ICCBased".to_vec()), Object::Reference(icc3_id)],
+                "CsIcc4" => vec![Object::Name(b"ICCBased".to_vec()), Object::Reference(icc4_id)],
+                "CsIcc0" => vec![Object::Name(b"ICCBased".to_vec()), Object::Reference(icc0_id)],
+                "CsIccNeg" => vec![Object::Name(b"ICCBased".to_vec()), Object::Reference(icc_neg_id)],
+                "CsIccNonStream" => vec![Object::Name(b"ICCBased".to_vec()), Object::Integer(3)],
+                "CsCalG" => Object::Reference(cal_gray_id),
+                "CsCalR" => Object::Reference(cal_rgb_id),
+                "CsLab" => Object::Reference(lab_id),
+                "CsSep" => Object::Reference(sep_id),
+                "CsDevN" => Object::Reference(devn_id),
+                "CsNChan" => Object::Reference(nchan_id),
+                "CsCmykRef" => Object::Reference(cmyk_ref_id),
+                "CsAlias" => Object::Name(b"CsCmykRef".to_vec()),
+                "CsCycA" => Object::Name(b"CsCycB".to_vec()),
+                "CsCycB" => Object::Name(b"CsCycA".to_vec()),
+                "CsPat" => Object::Name(b"Pattern".to_vec()),
+                "CsIdxStr" => vec![
+                    Object::Name(b"Indexed".to_vec()),
+                    Object::Reference(cal_rgb_id),
+                    Object::Integer(1),
+                    Object::Stream(lopdf::Stream::new(dictionary! {}, vec![0; 6])),
+                ],
+                "CsIdxResBase" => vec![
+                    Object::Name(b"Indexed".to_vec()),
+                    Object::Name(b"CsCalR".to_vec()),
+                    Object::Integer(1),
+                    Object::Stream(lopdf::Stream::new(dictionary! {}, vec![0; 6])),
+                ],
+                "CsSepResAlt" => vec![
+                    Object::Name(b"Separation".to_vec()),
+                    Object::Name(b"Spot".to_vec()),
+                    Object::Name(b"CsCalR".to_vec()),
+                    Object::Dictionary(dictionary! {}),
+                ],
+                "CsIdxRefLookup" => vec![
+                    Object::Name(b"Indexed".to_vec()),
+                    Object::Name(b"DeviceRGB".to_vec()),
+                    Object::Integer(255),
+                    Object::Reference(lookup_stream_id),
+                ],
+            }
+        });
+        let scope = crate::execution_budget::Scope::from_page(&doc, Some(&res)).unwrap();
+
+        let count = |obj: Object| color_components(&obj, Some(&doc), Some(&scope), 0);
+        assert_eq!(count(Object::Name(b"DeviceGray".to_vec())).unwrap(), 1);
+        assert_eq!(count(Object::Name(b"G".to_vec())).unwrap(), 1);
+        assert_eq!(count(Object::Name(b"DeviceRGB".to_vec())).unwrap(), 3);
+        assert_eq!(count(Object::Name(b"RGB".to_vec())).unwrap(), 3);
+        assert_eq!(count(Object::Name(b"DeviceCMYK".to_vec())).unwrap(), 4);
+        assert_eq!(count(Object::Name(b"CMYK".to_vec())).unwrap(), 4);
+        assert_eq!(count(Object::Name(b"CsIcc1".to_vec())).unwrap(), 1);
+        assert_eq!(count(Object::Name(b"CsIcc3".to_vec())).unwrap(), 3);
+        assert_eq!(count(Object::Name(b"CsIcc4".to_vec())).unwrap(), 4);
+        assert_eq!(count(Object::Name(b"CsCalG".to_vec())).unwrap(), 1);
+        assert_eq!(count(Object::Name(b"CsCalR".to_vec())).unwrap(), 3);
+        assert_eq!(count(Object::Name(b"CsLab".to_vec())).unwrap(), 3);
+        assert_eq!(count(Object::Name(b"CsSep".to_vec())).unwrap(), 1);
+        assert_eq!(count(Object::Name(b"CsDevN".to_vec())).unwrap(), 5);
+        assert_eq!(count(Object::Name(b"CsNChan".to_vec())).unwrap(), 2);
+        assert_eq!(count(Object::Name(b"CsCmykRef".to_vec())).unwrap(), 4);
+        assert_eq!(count(Object::Name(b"CsIdxStr".to_vec())).unwrap(), 1);
+        assert_eq!(count(Object::Name(b"CsIdxRefLookup".to_vec())).unwrap(), 1);
+
+        for bad in [
+            Object::Name(b"Unknown".to_vec()),
+            Object::Name(b"CsAlias".to_vec()),
+            Object::Name(b"CsIdxResBase".to_vec()),
+            Object::Name(b"CsSepResAlt".to_vec()),
+            Object::Name(b"CsIcc0".to_vec()),
+            Object::Name(b"CsIccNeg".to_vec()),
+            Object::Name(b"CsIccNonStream".to_vec()),
+            Object::Name(b"CsCycA".to_vec()),
+            Object::Name(b"CsPat".to_vec()),
+            Object::Array(vec![
+                Object::Name(b"Indexed".to_vec()),
+                Object::Name(b"CsPat".to_vec()),
+                Object::Integer(1),
+                Object::String(vec![0; 6], lopdf::StringFormat::Hexadecimal),
+            ]),
+            Object::Array(vec![
+                Object::Name(b"Indexed".to_vec()),
+                Object::Name(b"CsCalR".to_vec()),
+                Object::Integer(1),
+                Object::String(vec![0; 6], lopdf::StringFormat::Hexadecimal),
+            ]),
+            Object::Array(vec![
+                Object::Name(b"Indexed".to_vec()),
+                Object::Name(b"DeviceRGB".to_vec()),
+                Object::Integer(256),
+                Object::String(vec![0; 6], lopdf::StringFormat::Hexadecimal),
+            ]),
+            Object::Array(vec![
+                Object::Name(b"I".to_vec()),
+                Object::Name(b"DeviceRGB".to_vec()),
+                Object::Integer(1),
+            ]),
+            Object::Array(vec![
+                Object::Name(b"DeviceN".to_vec()),
+                Object::Array(vec![]),
+                Object::Name(b"DeviceRGB".to_vec()),
+                Object::Dictionary(dictionary! {}),
+            ]),
+        ] {
+            assert!(count(bad.clone()).is_err(), "expected err for {bad:?}");
+        }
+    }
+
+    #[test]
+    fn rewrite_preflighted_content_in_scope_keeps_resource_names() {
+        use lopdf::dictionary;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("rewrite", "pdf.render", paths, Limits::local(), &mut sink);
+        let doc = lopdf::Document::new();
+        let res = Object::Dictionary(dictionary! {
+            "ColorSpace" => dictionary! {
+                "Cs8" => "DeviceRGB",
+                "CsBase" => "DeviceGray",
+            }
+        });
+        let scope = crate::execution_budget::Scope::from_page(&doc, Some(&res)).unwrap();
+        let input = b"BI /W 1 /H 1 /BPC 8 /CS /Cs8 ID abc EI BI /W 1 /H 1 /BPC 8 /CS /G ID g EI BI /W 1 /H 1 /BPC 8 /CS [/I /G 0 <FF>] ID \x00 EI";
+        let mut work = 0;
+        let (canonical, _, facts) =
+            rewrite_preflighted_content_in_scope(&ctx, &doc, input, 4096, &scope, &mut work)
+                .expect("rewrite");
+        let text = String::from_utf8_lossy(&canonical);
+        assert!(text.contains("/ColorSpace /Cs8 "), "{text}");
+        assert!(text.contains("/ColorSpace /DeviceGray "), "{text}");
+        assert!(
+            text.contains("/ColorSpace [ /Indexed /G 0 <FF> ] "),
+            "{text}"
+        );
+        assert!(
+            facts.calls.iter().any(|c| c.op == b"BI"),
+            "facts should record BI dependency on ColorSpace scope"
+        );
+
+        let unresolvable = b"BI /W 1 /H 1 /BPC 8 /CS [/I /CsBase 0 <FF>] ID \x00 EI";
+        let mut reject_work = 0;
+        assert!(
+            rewrite_preflighted_content_in_scope(
+                &ctx,
+                &doc,
+                unresolvable,
+                4096,
+                &scope,
+                &mut reject_work,
+            )
+            .is_err(),
+            "resource-named Indexed base must fail closed"
+        );
+    }
+
+    #[test]
+    fn memoizes_form_rewrites_across_distinct_extgstate_scopes() {
+        use lopdf::dictionary;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut doc = lopdf::Document::new();
+        let form_bytes = b"q Q ".repeat(2_000);
+        let form_id = doc.add_object(lopdf::Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Form",
+                "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+            },
+            form_bytes,
+        ));
+        let pages_id = doc.new_object_id();
+        let mut kids = Vec::new();
+        for idx in 0..210usize {
+            let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, b"/F Do".to_vec()));
+            let gs_name = format!("GS{idx}");
+            let mut extgstate = dictionary! {};
+            extgstate.set(gs_name, dictionary! { "CA" => 1 });
+            let page_id = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => Object::Reference(pages_id),
+                "Resources" => dictionary! {
+                    "XObject" => dictionary! { "F" => Object::Reference(form_id) },
+                    "ExtGState" => extgstate,
+                },
+                "Contents" => Object::Reference(content_id),
+            });
+            kids.push(Object::Reference(page_id));
+        }
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Count" => i64::try_from(kids.len()).unwrap(),
+                "Kids" => kids,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+
+        let mut raw_bytes = Vec::new();
+        doc.save_to(&mut raw_bytes).expect("save pdf");
+        let input_path = dir.path().join("memo.pdf");
+        fs::write(&input_path, &raw_bytes).expect("write pdf");
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "memo",
+            "pdf.render",
+            RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![input_path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            },
+            Limits::local(),
+            &mut sink,
+        );
+        let pdf_doc = ariad_pdf::document::open(&raw_bytes, ctx.limits()).unwrap();
+        let mut rewrite_counts = HashMap::new();
+        canonical_content_streams_with_rewrite_counts(&ctx, &pdf_doc, None, &mut rewrite_counts)
+            .expect("210 ExtGState scopes sharing 4_000-op Form should memoize and succeed");
+        assert_eq!(
+            rewrite_counts.get(&form_id).copied(),
+            Some(1),
+            "shared Form must be rewritten exactly once across identical ColorSpace scopes"
+        );
+        ctx.load_validated_pdf_bytes()
+            .expect("load_validated_pdf_bytes must succeed via memoized canonicalization");
+    }
+
+    #[test]
+    fn enforces_document_wide_rewrite_work_across_distinct_colorspace_scopes() {
+        use lopdf::dictionary;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut doc = lopdf::Document::new();
+        let form_bytes = b"q Q ".repeat(2_250);
+        let form_id = doc.add_object(lopdf::Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Form",
+                "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+            },
+            form_bytes,
+        ));
+        let pages_id = doc.new_object_id();
+        let mut kids = Vec::new();
+        for idx in 0..250usize {
+            let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, b"/F Do".to_vec()));
+            let cs_name = format!("Cs{idx}");
+            let mut colorspace = dictionary! {};
+            colorspace.set(cs_name, "DeviceRGB");
+            let page_id = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => Object::Reference(pages_id),
+                "Resources" => dictionary! {
+                    "XObject" => dictionary! { "F" => Object::Reference(form_id) },
+                    "ColorSpace" => colorspace,
+                },
+                "Contents" => Object::Reference(content_id),
+            });
+            kids.push(Object::Reference(page_id));
+        }
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Count" => i64::try_from(kids.len()).unwrap(),
+                "Kids" => kids,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+
+        let mut raw_bytes = Vec::new();
+        doc.save_to(&mut raw_bytes).expect("save pdf");
+        let input_path = dir.path().join("docwork.pdf");
+        fs::write(&input_path, &raw_bytes).expect("write pdf");
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "docwork",
+            "pdf.render",
+            RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![input_path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            },
+            Limits::local(),
+            &mut sink,
+        );
+        let pdf_doc = ariad_pdf::document::open(&raw_bytes, ctx.limits()).unwrap();
+        let page1 = ariad_core::tools::PageRange::parse("1").unwrap();
+        let err = canonical_content_streams(&ctx, &pdf_doc, Some(&page1))
+            .expect_err("250 distinct ColorSpace scopes * 4500 ops > 1_000_000 must fail closed");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        let load_err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("load_validated_pdf_bytes must fail closed");
+        assert_eq!(load_err.code, ErrorCode::LimitExceeded);
     }
 
     #[test]
