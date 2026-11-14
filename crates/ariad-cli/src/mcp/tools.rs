@@ -740,7 +740,9 @@ impl McpServer {
                             || "missing".to_owned(),
                             |row| match row.status.as_str() {
                                 "ready" => "available".to_owned(),
-                                "wrong version" | "cannot start" => "incompatible".to_owned(),
+                                "wrong version" | "cannot start" | "timed out" | "unavailable" => {
+                                    "incompatible".to_owned()
+                                }
                                 _ => "missing".to_owned(),
                             },
                         )

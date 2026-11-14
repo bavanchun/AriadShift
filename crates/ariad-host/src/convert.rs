@@ -283,6 +283,12 @@ pub enum ConvertError {
         standard: String,
         report: Box<serde_json::Value>,
     },
+    /// A required engine failed availability probing (such as `pandoc --version` timing out)
+    /// rather than reporting itself missing.
+    EngineUnavailable {
+        engine: String,
+        detail: String,
+    },
     Failed,
 }
 
@@ -337,6 +343,9 @@ impl std::fmt::Display for ConvertError {
             Self::ComplianceFailed { standard, report } => {
                 write!(f, "{standard} compliance validation failed: {report}")
             }
+            Self::EngineUnavailable { engine, detail } => {
+                write!(f, "the {engine} engine is unavailable: {detail}")
+            }
             Self::Failed => write!(f, "conversion failed"),
         }
     }
@@ -379,6 +388,7 @@ impl ConvertError {
             | Self::InvalidCapabilities(_)
             | Self::FailedWithMemoryHint { .. }
             | Self::ComplianceFailed { .. }
+            | Self::EngineUnavailable { .. }
             | Self::Failed => 1,
         }
     }
@@ -401,6 +411,7 @@ impl ConvertError {
             Self::OutputIo => "output_io",
             Self::UnsupportedIrVersion => "unsupported_ir_version",
             Self::InvalidCapabilities(_) => "invalid_capabilities",
+            Self::EngineUnavailable { .. } => "engine_unavailable",
             Self::Failed | Self::FailedWithMemoryHint { .. } => "failed",
             Self::ComplianceFailed { .. } => "compliance_failed",
         }
@@ -1919,8 +1930,23 @@ fn plan_error(error: PlanError, input: Format) -> ConvertError {
     }
 }
 
+fn describe_failure_error(engine: &str, failure: &engines::DescribeFailure) -> ConvertError {
+    match failure {
+        engines::DescribeFailure::LimitTimeout => ConvertError::LimitExceeded,
+        engines::DescribeFailure::ProbeTimeout { detail }
+        | engines::DescribeFailure::Failed { detail } => ConvertError::EngineUnavailable {
+            engine: engine.to_owned(),
+            detail: detail.clone(),
+        },
+    }
+}
+
 /// Keeps the planned route when its engines are available; otherwise plans again over the
 /// engines that are, and names the first missing engine when nothing else reaches the target.
+///
+/// If no fallback route exists and a needed or fallback-blocking engine failed `describe`
+/// unexpectedly instead of reporting a missing or unsupported tool, maps that failure to
+/// [`ConvertError::LimitExceeded`] or [`ConvertError::EngineUnavailable`] rather than exit code 5.
 fn plan_with_available_engines(
     caps: &planner::Capabilities,
     initial: Plan,
@@ -1937,10 +1963,11 @@ fn plan_with_available_engines(
     if needed.is_empty() {
         return Ok((initial, None));
     }
-    let report =
-        engines::availability_of(invocation, &needed, cancel.clone()).map_err(map_run_error)?;
+    let detailed = engines::availability_of_detailed(invocation, &needed, cancel.clone())
+        .map_err(map_run_error)?;
     for engine in &needed {
-        if let Some(detail) = report
+        if let Some(detail) = detailed
+            .report
             .get(engine)
             .and_then(|entry| entry.startup_failure.as_ref())
         {
@@ -1949,28 +1976,94 @@ fn plan_with_available_engines(
     }
     let Some(missing) = needed
         .iter()
-        .find(|engine| !report.is_available(engine))
+        .find(|engine| !detailed.report.is_available(engine))
         .map(|engine| (*engine).to_owned())
     else {
         return Ok((initial, None));
     };
 
-    let registered = caps.registered_engines();
-    let registered: Vec<&str> = registered.iter().map(String::as_str).collect();
-    let report =
-        engines::availability_of(invocation, &registered, cancel.clone()).map_err(map_run_error)?;
     let (Some(first), Some(last)) = (initial.steps.first(), initial.steps.last()) else {
         return Ok((initial, None));
     };
+    let registered = caps.registered_engines();
+    let candidate_without_unavailable: Vec<String> = registered
+        .iter()
+        .filter(|id| !needed.contains(&id.as_str()) || detailed.report.is_available(id))
+        .cloned()
+        .collect();
+    if let Err(PlanError::NoRoute { .. }) = planner::plan(
+        caps,
+        first.from,
+        last.to,
+        profile,
+        &candidate_without_unavailable,
+    ) {
+        let non_failing_candidates: Vec<String> = registered
+            .iter()
+            .filter(|id| {
+                !needed.contains(&id.as_str())
+                    || detailed.report.is_available(id)
+                    || detailed.describe_failures.contains_key(id.as_str())
+            })
+            .cloned()
+            .collect();
+        if let Ok(blocked_plan) =
+            planner::plan(caps, first.from, last.to, profile, &non_failing_candidates)
+            && let Some((engine, failure)) = blocked_plan.steps.iter().find_map(|step| {
+                detailed
+                    .describe_failures
+                    .get(&step.engine)
+                    .map(|failure| (step.engine.as_str(), failure))
+            })
+        {
+            return Err(describe_failure_error(engine, failure));
+        }
+        return Err(ConvertError::missing_engine(&missing));
+    }
+
+    let registered_refs: Vec<&str> = registered.iter().map(String::as_str).collect();
+    let registered_detailed =
+        engines::availability_of_detailed(invocation, &registered_refs, cancel.clone())
+            .map_err(map_run_error)?;
     match planner::plan(
         caps,
         first.from,
         last.to,
         profile,
-        &report.available_engine_ids(),
+        &registered_detailed.report.available_engine_ids(),
     ) {
         Ok(plan) => Ok((plan, Some(missing))),
-        Err(PlanError::NoRoute { .. }) => Err(ConvertError::missing_engine(&missing)),
+        Err(PlanError::NoRoute { .. }) => {
+            let mut non_failing_available = registered_detailed.report.available_engine_ids();
+            for engine in registered_detailed.describe_failures.keys() {
+                if !non_failing_available.contains(engine) {
+                    non_failing_available.push(engine.clone());
+                }
+            }
+            if let Ok(blocked_plan) =
+                planner::plan(caps, first.from, last.to, profile, &non_failing_available)
+                && let Some((engine, failure)) = blocked_plan
+                    .steps
+                    .iter()
+                    .find_map(|step| {
+                        registered_detailed
+                            .describe_failures
+                            .get(&step.engine)
+                            .map(|failure| (step.engine.as_str(), failure))
+                    })
+                    .or_else(|| {
+                        needed.iter().find_map(|engine| {
+                            detailed
+                                .describe_failures
+                                .get(*engine)
+                                .map(|failure| (*engine, failure))
+                        })
+                    })
+            {
+                return Err(describe_failure_error(engine, failure));
+            }
+            Err(ConvertError::missing_engine(&missing))
+        }
         Err(error) => Err(plan_error(error, first.from)),
     }
 }
@@ -3055,5 +3148,199 @@ for line in sys.stdin:
         let truncated = &buf[..64 * 1024];
         let err = super::validate_utf8_reader_streaming(truncated).unwrap_err();
         assert_eq!(err, ConvertError::InputIo);
+    }
+
+    #[test]
+    fn describe_failure_maps_to_non_missing_convert_errors() {
+        use crate::engines::DescribeFailure;
+
+        let timeout_err = super::describe_failure_error("pandoc", &DescribeFailure::LimitTimeout);
+        assert_eq!(timeout_err, ConvertError::LimitExceeded);
+        assert_eq!(timeout_err.exit_code(), 4);
+
+        let probe_timeout_err = super::describe_failure_error(
+            "pandoc",
+            &DescribeFailure::ProbeTimeout {
+                detail: "Pandoc timed out while checking version".to_owned(),
+            },
+        );
+        assert_eq!(
+            probe_timeout_err,
+            ConvertError::EngineUnavailable {
+                engine: "pandoc".to_owned(),
+                detail: "Pandoc timed out while checking version".to_owned(),
+            }
+        );
+        assert_eq!(probe_timeout_err.exit_code(), 1);
+        assert_eq!(probe_timeout_err.code(), "engine_unavailable");
+
+        let failed_err = super::describe_failure_error(
+            "pandoc",
+            &DescribeFailure::Failed {
+                detail: "engine describe failed".to_owned(),
+            },
+        );
+        assert_eq!(
+            failed_err,
+            ConvertError::EngineUnavailable {
+                engine: "pandoc".to_owned(),
+                detail: "engine describe failed".to_owned(),
+            }
+        );
+        assert_eq!(failed_err.exit_code(), 1);
+        assert_eq!(failed_err.code(), "engine_unavailable");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_with_available_engines_distinguishes_describe_failure_from_missing_tool() {
+        use std::os::unix::fs::PermissionsExt;
+
+        use crate::engines::EngineInvocation;
+        use ariad_core::planner::{self, Profile};
+        use tokio_util::sync::CancellationToken;
+
+        const CHILD: &str = "ARIAD_TEST_PLAN_DESCRIBE_FAILURE_CHILD";
+        if let Some(dir_raw) = std::env::var_os(CHILD) {
+            let dir = std::path::PathBuf::from(dir_raw);
+            let caps = planner::embedded();
+            let md_to_docx = planner::plan(
+                caps,
+                Format::Markdown,
+                Format::Docx,
+                Profile::default(),
+                &caps.registered_engines(),
+            )
+            .expect("md -> docx route");
+
+            // A. Transient probe timeout returns ConvertError::EngineUnavailable (exit 1), and next call recovers.
+            let transient = dir.join("transient.sh");
+            let inv_transient = EngineInvocation::with_args(&transient, &[]);
+            let err = super::plan_with_available_engines(
+                caps,
+                md_to_docx.clone(),
+                Profile::default(),
+                &inv_transient,
+                &CancellationToken::new(),
+            )
+            .expect_err("transient describe failure must fail with EngineUnavailable");
+            assert_eq!(
+                err,
+                ConvertError::EngineUnavailable {
+                    engine: "pandoc".to_owned(),
+                    detail: "timed out".to_owned(),
+                }
+            );
+            assert_eq!(err.exit_code(), 1);
+
+            let (recovered, warning) = super::plan_with_available_engines(
+                caps,
+                md_to_docx.clone(),
+                Profile::default(),
+                &inv_transient,
+                &CancellationToken::new(),
+            )
+            .expect("availability cache must not be poisoned by describe failure");
+            assert_eq!(recovered, md_to_docx);
+            assert_eq!(warning, None);
+
+            // B. LimitExceeded / Timeout during describe returns ConvertError::LimitExceeded (exit 4).
+            let limit_script = dir.join("limit.sh");
+            let inv_limit = EngineInvocation::with_args(&limit_script, &[]);
+            let err = super::plan_with_available_engines(
+                caps,
+                md_to_docx.clone(),
+                Profile::default(),
+                &inv_limit,
+                &CancellationToken::new(),
+            )
+            .expect_err("limit failure must map to ConvertError::LimitExceeded");
+            assert_eq!(err, ConvertError::LimitExceeded);
+            assert_eq!(err.exit_code(), 4);
+
+            // C. Genuine ToolAvailability::Missing still returns ConvertError::ToolMissing (exit 5).
+            let missing_script = dir.join("missing.sh");
+            let inv_missing = EngineInvocation::with_args(&missing_script, &[]);
+            let err = super::plan_with_available_engines(
+                caps,
+                md_to_docx,
+                Profile::default(),
+                &inv_missing,
+                &CancellationToken::new(),
+            )
+            .expect_err("missing tool must still return ToolMissing");
+            assert_eq!(err, ConvertError::ToolMissing);
+            assert_eq!(err.exit_code(), 5);
+
+            // D. Fallback-blocking engine describe failure on docx -> pdf returns ConvertError::EngineUnavailable.
+            let docx_to_pdf = planner::plan(
+                caps,
+                Format::Docx,
+                Format::Pdf,
+                Profile::default(),
+                &caps.registered_engines(),
+            )
+            .expect("docx -> pdf route");
+            let fallback_fail = dir.join("fallback-fail.sh");
+            let inv_fallback = EngineInvocation::new(&fallback_fail);
+            let err = super::plan_with_available_engines(
+                caps,
+                docx_to_pdf,
+                Profile::default(),
+                &inv_fallback,
+                &CancellationToken::new(),
+            )
+            .expect_err("fallback engine describe failure must return EngineUnavailable");
+            assert_eq!(
+                err,
+                ConvertError::EngineUnavailable {
+                    engine: "libreoffice".to_owned(),
+                    detail: "describe crashed".to_owned(),
+                }
+            );
+            assert_eq!(err.exit_code(), 1);
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let write_exec = |name: &str, body: &str| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, body).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+
+        let flag = dir.path().join("fail-once");
+        std::fs::write(&flag, b"1").unwrap();
+        write_exec(
+            "transient.sh",
+            &format!(
+                "#!/bin/sh\nread _req\nif [ -f '{}' ]; then\n  rm -f '{}'\n  printf '{{\"type\":\"result\",\"ok\":false,\"metrics\":null,\"error\":{{\"code\":\"engine_failure\",\"message\":\"timed out\"}}}}\\n'\n  exit 1\nfi\nprintf '{{\"type\":\"capabilities\",\"engine\":\"pandoc\",\"version\":\"0.6.0\",\"tool\":{{\"name\":\"pandoc\",\"version\":\"3.12\",\"status\":\"found\"}},\"license\":\"GPL-2.0-or-later\",\"routes\":[],\"enforces_memory_limit\":false,\"supports_session\":false}}\\n'\nprintf '{{\"type\":\"result\",\"ok\":true,\"metrics\":null,\"error\":null}}\\n'\n",
+                flag.display(),
+                flag.display()
+            ),
+        );
+        write_exec(
+            "limit.sh",
+            "#!/bin/sh\nread _req\nprintf '{\"type\":\"result\",\"ok\":false,\"metrics\":null,\"error\":{\"code\":\"limit_exceeded\",\"message\":\"timeout\"}}\\n'\nexit 1\n",
+        );
+        write_exec(
+            "missing.sh",
+            "#!/bin/sh\nread _req\nprintf '{\"type\":\"capabilities\",\"engine\":\"pandoc\",\"version\":\"0.6.0\",\"tool\":{\"name\":\"pandoc\",\"version\":null,\"status\":\"missing\"},\"license\":\"GPL-2.0-or-later\",\"routes\":[],\"enforces_memory_limit\":false,\"supports_session\":false}\\n'\nprintf '{\"type\":\"result\",\"ok\":true,\"metrics\":null,\"error\":null}\\n'\n",
+        );
+        write_exec(
+            "fallback-fail.sh",
+            "#!/bin/sh\nread _req\ncase \"$2\" in\n  pandoc)\n    printf '{\"type\":\"capabilities\",\"engine\":\"pandoc\",\"version\":\"0.6.0\",\"tool\":{\"name\":\"pandoc\",\"version\":null,\"status\":\"missing\"},\"license\":\"GPL-2.0-or-later\",\"routes\":[],\"enforces_memory_limit\":false,\"supports_session\":false}\\n'\n    printf '{\"type\":\"result\",\"ok\":true,\"metrics\":null,\"error\":null}\\n'\n    ;;\n  typst)\n    printf '{\"type\":\"capabilities\",\"engine\":\"typst\",\"version\":\"0.6.0\",\"tool\":{\"name\":\"typst\",\"version\":\"0.14\",\"status\":\"found\"},\"license\":\"Apache-2.0\",\"routes\":[],\"enforces_memory_limit\":false,\"supports_session\":false}\\n'\n    printf '{\"type\":\"result\",\"ok\":true,\"metrics\":null,\"error\":null}\\n'\n    ;;\n  libreoffice)\n    printf '{\"type\":\"result\",\"ok\":false,\"metrics\":null,\"error\":{\"code\":\"engine_failure\",\"message\":\"describe crashed\"}}\\n'\n    exit 1\n    ;;\n  *)\n    printf '{\"type\":\"capabilities\",\"engine\":\"%s\",\"version\":\"0.6.0\",\"tool\":{\"name\":\"%s\",\"version\":\"1.0\",\"status\":\"missing\"},\"license\":\"Apache-2.0\",\"routes\":[],\"enforces_memory_limit\":false,\"supports_session\":false}\\n' \"$2\" \"$2\"\n    printf '{\"type\":\"result\",\"ok\":true,\"metrics\":null,\"error\":null}\\n'\n    ;;\nesac\n",
+        );
+
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "convert::tests::plan_with_available_engines_distinguishes_describe_failure_from_missing_tool",
+            ])
+            .env(CHILD, dir.path())
+            .env("ASHIFT_SANDBOX", "off")
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 }

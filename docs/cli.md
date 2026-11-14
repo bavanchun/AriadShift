@@ -41,7 +41,7 @@ All CLI commands adhere to a single unified exit-code table:
 | Exit Code | Name | Meaning |
 |---|---|---|
 | `0` | Success | Command completed successfully. All required checks passed for `doctor`. |
-| `1` | Failure | Conversion or operation failed, input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive, rejected manifest (including an `engine_protocol` that differs from the engine's) or I/O failure, or `engines verify` found differences. |
+| `1` | Failure | Conversion or operation failed, engine availability probe timed out or failed `describe` (`error[engine_unavailable]`, distinct from exit `5` `Tool Missing`), input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive, rejected manifest (including an `engine_protocol` that differs from the engine's) or I/O failure, or `engines verify` found differences. |
 | `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
 | `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
 | `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
@@ -504,7 +504,7 @@ An array of engine rows. `pack` appears only on rows backed by an engine pack:
 ]
 ```
 
-`status` is one of `ready`, `missing`, `wrong version`, `not installed`; `pack.source` is `installed` or `override`.
+`status` is one of `ready`, `missing`, `wrong version`, `not installed`, `cannot start`, `timed out`, `unavailable`; `pack.source` is `installed` or `override`.
 
 ---
 
