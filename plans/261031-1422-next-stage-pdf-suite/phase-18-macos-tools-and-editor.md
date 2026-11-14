@@ -33,7 +33,17 @@ Every tool and both edit modes in the native app, feeling like a first-party App
 - **Sparkle manual path**: check the Check for Updates menu item and update window, the relaunch after install, and an https appcast under App Transport Security. Phase 17 proved the automatic path only.
 - **CI build time**: find why the Release build step of `macos.yml` takes 52-56 min (tests add ~3 min; job timeout is 90 min). Record before and after times in this file.
   - Root causes found: the Xcode helper phase compiled the dependency graph a second time, and `uniffi-bindgen` was rebuilt through `cargo run` in the dev profile. There is also no compiler cache. The baseline build step is 49-63 min (typically 52-56).
-  - Fix is in PR #316. After-time: record it here from that PR's macOS check. Then sccache with the R2 bucket for `macos.yml` is approved (same pattern as `ci.yml`).
+  - Fix is in PR #316, followed by sccache on R2 for `macos.yml` (#318). Results (job `macOS build & test`, step times from the run logs):
+
+    | State | Build step | Tests | Job | Run |
+    |---|---|---|---|---|
+    | Before (dev; range 49-63 min over 6 runs) | 54m28s | 2m49s-3m13s | n/a | 43459827099 |
+    | PR #316: Rust graph compiled once per target, release `uniffi-bindgen`, helper built in the same cargo call (PR run) | 34m55s | n/a | 38m58s | 43487412405 |
+    | #318 first dev push, cold cache: 0 hits, 1050 misses (994 Rust) | 31m28s | n/a | n/a | 43515736178 |
+    | #318 second dev push, warm cache: hit rate 99.52% (1045 of 1056; 5 Rust misses) | 8m31s | 1m58s | 11m36s | 43532587182 |
+
+  - Queue time before a macOS job starts is now the dominant delay (27 min to 3.5 h observed on the shared xcode-27 pool when many PR runs are open). PR runs read the cache read-only, so their hit rate is not yet measured; measure it on the next PR run.
+  - Follow-ups: report the R2 bucket size (prefix `ariadshift-sccache-v2/macos/`) after the first week (due 2026-11-21). Issue #320 (Release `ASHIFT_PLAN` guard) is separate.
 
 ## Pro entitlement interim (decision by the lead)
 
@@ -72,6 +82,6 @@ Carried over from the scout (Q3, Q4): whether plan verification belongs in `aria
 - [ ] Document/Page mode acceptance identical to phase 16.
 - [ ] The two reverted UI changes are re-landed, each green on its own macOS CI run.
 - [ ] Sparkle menu/update-window, relaunch and https/ATS checks recorded.
-- [ ] CI build-time investigation recorded with before (52-56 min build + ~3 min tests) and after times (PR #316 check, then the sccache PR).
+- [x] CI build-time investigation recorded with before (52-56 min build + ~3 min tests) and after times (PR #316 check, then the sccache PR).
 - [ ] Pro interim implemented as above; the owner answers the Pro grant open question before any purchase or licence work.
 - [ ] macOS preview 0.7.0 notarized DMG + Sparkle appcast (owner GO).
