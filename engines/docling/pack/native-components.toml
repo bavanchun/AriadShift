@@ -308,7 +308,7 @@ notices = [
 "torch/lib/libc10.so" = "b18b3c1b6132a64aaa8cc1acb8fd40bbe4e39f13e3ece76f498c8e6947de6f92"
 "torch/lib/libshm.so" = "07b6ea142bdb7a7a19d01235467f9c749d3e493ea38c483bfae8a69366e99a67"
 "torch/lib/libtorch.so" = "c8d2d7df7a2f060dd66148ebf894fe828936faf0bab3963cf1ce573d80eb4463"
-"torch/lib/libtorch_cpu.so" = "439a6d35204a3da51663bf894e3d114f04dc3c6b9ad2657cba5e57593090ab1a"
+"torch/lib/libtorch_cpu.so" = "ba640c16c903a59ccbc026a704b1562ff3562043546df6913ca0eb4357c96b68"
 "torch/lib/libtorch_global_deps.so" = "cf140675bcfca4a5a461d2c4fba5c6f90c1dbfaa4248cc5cd2239875d547494e"
 "torch/lib/libtorch_python.so" = "cf0dc6af28cad01d6819ab737b895bad1615512c044a5bb85c69653c8b21af86"
 
