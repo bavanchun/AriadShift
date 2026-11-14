@@ -1,16 +1,24 @@
 import SwiftUI
 
-/// A tool row in the sidebar's Tools tab: a 16pt icon and the title on a 28pt row. A tool that cannot run here (Pro,
-/// a missing pack) keeps its normal look and shows a small badge instead of greying out. Hover fades a fill in over
-/// 120ms without moving anything.
+/// A tool row in the sidebar's Tools tab: a 16pt icon (`accent`, or `thread` gold for AI tools) and the title on a
+/// 28pt row. A tool that cannot run here (Pro, a missing pack) keeps its normal look and shows a small badge instead
+/// of greying out. Hover fades a fill in over 120ms without moving anything.
 public struct DSSidebarToolRow: View {
     let systemImage: String
+    let tint: DSIconWell.Tint
     let title: Text
     let badge: Text?
     let action: () -> Void
 
-    public init(systemImage: String, title: Text, badge: Text? = nil, action: @escaping () -> Void) {
+    public init(
+        systemImage: String,
+        tint: DSIconWell.Tint = .accent,
+        title: Text,
+        badge: Text? = nil,
+        action: @escaping () -> Void
+    ) {
         self.systemImage = systemImage
+        self.tint = tint
         self.title = title
         self.badge = badge
         self.action = action
@@ -21,7 +29,7 @@ public struct DSSidebarToolRow: View {
             HStack(spacing: DSSpacing.s) {
                 Image(systemName: systemImage)
                     .font(DSFont.body)
-                    .foregroundStyle(DSColor.accent)
+                    .foregroundStyle(tint == .thread ? DSColor.thread : DSColor.accent)
                     .frame(width: DSSize.icon, height: DSSize.icon)
                     .accessibilityHidden(true)
                 title
@@ -88,6 +96,8 @@ private struct SidebarRowStyle: ButtonStyle {
         DSSidebarToolRow(systemImage: "scissors", title: Text(verbatim: "Split PDF")) {}
         DSSidebarGroupHeader(Text(verbatim: "Secure"))
         DSSidebarToolRow(systemImage: "signature", title: Text(verbatim: "Sign digitally"), badge: Text(verbatim: "Get pack")) {}
+        DSSidebarGroupHeader(Text(verbatim: "AI"))
+        DSSidebarToolRow(systemImage: "sparkles", tint: .thread, title: Text(verbatim: "Summarize")) {}
     }
     .frame(width: DSSize.sidebarWidth)
     .padding(DSSpacing.m)

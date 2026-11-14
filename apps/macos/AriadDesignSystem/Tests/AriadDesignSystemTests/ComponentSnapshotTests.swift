@@ -152,7 +152,7 @@ final class ComponentSnapshotTests: DSSnapshotTestCase {
     }
 
     func testSidebarToolRows() {
-        assertAppearances(size: CGSize(width: 264, height: 200)) {
+        assertAppearances(size: CGSize(width: 264, height: 264)) {
             VStack(spacing: 0) {
                 DSSidebarGroupHeader(Text(verbatim: "Organize"))
                 DSSidebarToolRow(systemImage: "rectangle.stack", title: Text(verbatim: "Merge PDFs")) {}
@@ -161,6 +161,8 @@ final class ComponentSnapshotTests: DSSnapshotTestCase {
                 DSSidebarToolRow(
                     systemImage: "signature", title: Text(verbatim: "Sign digitally"), badge: Text(verbatim: "Get pack")
                 ) {}
+                DSSidebarGroupHeader(Text(verbatim: "AI"))
+                DSSidebarToolRow(systemImage: "sparkles", tint: .thread, title: Text(verbatim: "Summarize")) {}
             }
             .padding(DSSpacing.m)
         }
