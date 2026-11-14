@@ -58,6 +58,14 @@ except Exception as e:
 if not isinstance(data, dict):
     fail(f"Top-level YAML in {workflow_path} is not a mapping")
 
+on_block = data.get('on') if 'on' in data else data.get(True)
+if not isinstance(on_block, dict):
+    fail("'on' trigger section missing or not a mapping")
+push_trigger = on_block.get('push')
+if not isinstance(push_trigger, dict) or push_trigger.get('tags') != ['v*']:
+    actual_tags = push_trigger.get('tags') if isinstance(push_trigger, dict) else push_trigger
+    fail(f"on.push.tags must be narrowed to ['v*'], got {actual_tags!r}")
+
 jobs = data.get('jobs')
 if not isinstance(jobs, dict):
     fail("'jobs' section missing or not a mapping")
