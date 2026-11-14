@@ -45,8 +45,9 @@ final class ViewerUITests: UITestCase {
         waitForDocumentWindow()
 
         app.typeKey("f", modifierFlags: .command)
-        let field = element("find.field")
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "Cmd+F opens the find bar")
+        // Find is the toolbar search field; Cmd+F focuses it.
+        let field = documentWindow().searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Cmd+F focuses the toolbar search field")
         field.typeText("of 20")  // the fixture prints "Page N of 20" on every page
 
         let status = element("find.status")
@@ -66,7 +67,7 @@ final class ViewerUITests: UITestCase {
         waitUntil("Find Next moves to match 2", state: { "\(status.value ?? "nil")" }) { position()?.current == 2 }
         app.typeKey("g", modifierFlags: [.command, .shift])
         waitUntil("Find Previous goes back to match 1", state: { "\(status.value ?? "nil")" }) { position()?.current == 1 }
-        // The arrow buttons are borderless icons: their hit area must not be just the glyph.
+        // The arrow buttons sit in a control group: their hit area must not be just the glyph.
         for id in ["find.previous", "find.next"] {
             let frame = element(id).frame
             XCTAssertGreaterThanOrEqual(min(frame.width, frame.height), 20, "\(id) has a comfortable hit area, not just its glyph: \(frame)")
@@ -75,8 +76,8 @@ final class ViewerUITests: UITestCase {
         waitUntil("the Next button moves to match 2", state: { "\(status.value ?? "nil")" }) { position()?.current == 2 }
         element("find.previous").click()
         waitUntil("the Previous button moves to match 1", state: { "\(status.value ?? "nil")" }) { position()?.current == 1 }
-        element("find.done").click()
-        waitUntil("the find bar is closed") { !field.exists }
+        field.typeKey(.escape, modifierFlags: [])
+        waitUntil("Escape ends the search") { !status.exists }
     }
 
     /// Select a page in the grid, move it with Option and an arrow: the engine writes a new file in the new
@@ -126,7 +127,7 @@ final class ViewerUITests: UITestCase {
         app.typeKey("p", modifierFlags: [.command, .option])
         waitUntil("back in the reader") { !self.element("grid").exists }
 
-        for id in ["toolbar.pageGrid", "toolbar.previousPage", "toolbar.nextPage", "toolbar.zoomOut", "toolbar.zoom", "toolbar.zoomIn", "toolbar.find"] {
+        for id in ["toolbar.pageGrid", "toolbar.previousPage", "toolbar.nextPage", "toolbar.zoomOut", "toolbar.zoom", "toolbar.zoomIn", "toolbar.inspector"] {
             let item = element(id)
             XCTAssertTrue(item.exists, "\(id) is in the toolbar")
             // A button's name is its label; a menu button (the zoom menu) reports it as its title.

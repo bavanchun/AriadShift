@@ -1,4 +1,5 @@
 import AppKit
+import AriadDesignSystem
 import PDFKit
 import SwiftUI
 import XCTest
@@ -64,10 +65,10 @@ final class ViewerRenderTests: XCTestCase {
         let cache = try XCTUnwrap(viewer.thumbnails)
         XCTAssertGreaterThan(cache.renderCount, 0, "the sidebar shows thumbnails")
         XCTAssertLessThan(cache.renderCount, 80, "\(cache.renderCount) thumbnails rendered for 1,000 pages")
-        let thumbnail = try XCTUnwrap(cache.cachedImage(page: 0, width: Int(120 * (window.backingScaleFactor))), "page 1 has its thumbnail")
+        let thumbnail = try XCTUnwrap(cache.cachedImage(page: 0, width: Int(DSSize.thumbnailWidth * window.backingScaleFactor)), "page 1 has its thumbnail")
         let thumbnailRep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(thumbnail.tiffRepresentation)))
         XCTAssertTrue(hasContent(thumbnailRep), "the thumbnail shows the page, not a blank")
-        XCTAssertNil(cache.cachedImage(page: 900, width: Int(120 * (window.backingScaleFactor))), "a page far below was not rendered")
+        XCTAssertNil(cache.cachedImage(page: 900, width: Int(DSSize.thumbnailWidth * window.backingScaleFactor)), "a page far below was not rendered")
     }
 
     func testGridAndReaderRenderWithTheSidebar() async throws {
@@ -92,7 +93,7 @@ final class ViewerRenderTests: XCTestCase {
         XCTAssertEqual(viewer.currentPageNumber, 4)
     }
 
-    func testFindBarShowsAndSearchesInTheWindow() async throws {
+    func testToolbarFindSearchesInTheWindow() async throws {
         let (window, viewer, _) = try await openWindow("pdf-tools/multipage-20.pdf")
 
         viewer.find.show()
@@ -101,7 +102,7 @@ final class ViewerRenderTests: XCTestCase {
         await pump(1) { false }
 
         XCTAssertGreaterThanOrEqual(viewer.find.matchCount, 1)
-        XCTAssertEqual(viewer.currentPageNumber, 9, "the find bar's debounced search moved the view")
+        XCTAssertEqual(viewer.currentPageNumber, 9, "the search field's debounced search moved the view")
         let rep = try snapshot(window, name: "t4-viewer-find")
         XCTAssertTrue(hasContent(rep))
     }
