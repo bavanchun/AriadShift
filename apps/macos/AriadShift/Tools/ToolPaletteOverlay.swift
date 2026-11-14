@@ -98,5 +98,14 @@ private struct ToolRunPresentationModifier: ViewModifier {
                     session.begin(tool, client: engine.client)
                 }
             }
+            // A tool requested before the catalogue loaded opens once it is ready.
+            .task(id: RequestKey(toolID: session.requestedToolID, state: engine.state)) {
+                session.openRequestedTool(groups: engine.groups, client: engine.client, state: engine.state)
+            }
+    }
+
+    private struct RequestKey: Equatable {
+        let toolID: String?
+        let state: EngineModel.State
     }
 }

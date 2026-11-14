@@ -153,6 +153,48 @@ final class DocumentSessionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"], "nothing was placed")
     }
 
+    func testARequestedToolOpensOnceTheCatalogueIsReady() async throws {
+        let engine = try await readyEngine()
+        let (url, _) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+
+        session.requestTool(id: "pdf.rotate")
+        session.openRequestedTool(groups: [], client: nil, state: .loading)
+        XCTAssertNil(session.run, "nothing opens while the catalogue loads")
+        XCTAssertEqual(session.requestedToolID, "pdf.rotate", "the request waits")
+
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: engine.state)
+        XCTAssertEqual(session.run?.tool.id, "pdf.rotate", "the tool opens once the catalogue is ready")
+        XCTAssertNil(session.requestedToolID, "a request opens once")
+    }
+
+    func testAnUnknownOrFailedRequestIsDroppedAndARunningToolIsKept() async throws {
+        let engine = try await readyEngine()
+        let (url, directory) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+
+        session.requestTool(id: "convert:pdf→docx")
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: engine.state)
+        XCTAssertNil(session.run, "an id the catalogue does not have opens nothing")
+        XCTAssertNil(session.requestedToolID)
+
+        session.requestTool(id: "pdf.rotate")
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: .failed("no helper"))
+        XCTAssertNil(session.run, "a failed engine opens nothing")
+        XCTAssertNil(session.requestedToolID, "and drops the request")
+
+        session.begin(try tool("pdf.rotate", in: engine), client: engine.client)
+        let running = try XCTUnwrap(session.run)
+        running.values["angle"] = .index(0)
+        running.start()
+        session.requestTool(id: "pdf.info")
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: engine.state)
+        XCTAssertTrue(session.run === running, "a request never replaces a running tool")
+        running.cancel()
+        await running.waitUntilFinished()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"])
+    }
+
     func testAToolThatCannotRunOpensButDoesNotStart() async throws {
         let engine = try await readyEngine()
         let (url, _) = try copyOfFixture()

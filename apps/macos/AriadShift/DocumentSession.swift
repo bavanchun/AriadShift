@@ -1,6 +1,7 @@
 import AriadDesignSystem
 import AriadShiftCore
 import Observation
+import os
 import SwiftUI
 
 /// State of one document window: the inspector data, the tool open in the inspector, and the tool palette and toast.
@@ -19,6 +20,9 @@ final class DocumentSession {
     var run: ToolRunModel?
     /// The ⌘K palette and the result toast of this window.
     let tools = ToolPresentation()
+    /// A tool asked for before the engine catalogue was ready (the welcome window hands one over); it opens as soon
+    /// as the catalogue arrives.
+    private(set) var requestedToolID: String?
 
     init(fileURL: URL?) {
         self.fileURL = fileURL
@@ -74,6 +78,35 @@ final class DocumentSession {
         withDSAnimation(.fade) { run = model }
         model.start()
     }
+
+    /// Opens the registry tool `id` in the inspector once the engine catalogue is ready, which it may not be yet
+    /// when the window has just opened. A later request replaces an earlier one that has not opened yet.
+    func requestTool(id: String) {
+        requestedToolID = id
+    }
+
+    /// Opens the requested tool when `state` is ready, through the same `begin` as every other way in, so a running
+    /// tool is never replaced and a tool that cannot run opens with its reason. An id the catalogue does not have,
+    /// or an engine that failed, drops the request with a log line.
+    func openRequestedTool(groups: [ToolGroup], client: EngineClient?, state: EngineModel.State) {
+        guard let id = requestedToolID else { return }
+        switch state {
+        case .loading:
+            return
+        case let .failed(message):
+            requestedToolID = nil
+            Self.log.notice("requested tool \(id, privacy: .public) dropped: the engine failed (\(message, privacy: .public))")
+        case .ready:
+            requestedToolID = nil
+            guard let tool = ToolDirectory(groups: groups).entry(id: id) else {
+                Self.log.notice("requested tool \(id, privacy: .public) dropped: not in the tool catalogue")
+                return
+            }
+            begin(tool, client: client)
+        }
+    }
+
+    private static let log = Logger(subsystem: "com.ariadnev.ariadshift", category: "tools")
 
     /// Closes the tool in the inspector unless it is running.
     func closeTool() {
