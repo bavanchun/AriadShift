@@ -6,9 +6,12 @@ import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -27,7 +30,6 @@ const repoRootDir = path.resolve(defaultWebDir, "../..");
 const defaultRootDir = process.env.ARIADSHIFT_ROOT_DIR
   ? path.resolve(process.env.ARIADSHIFT_ROOT_DIR)
   : repoRootDir;
-const defaultOutDir = path.join(defaultRootDir, "apps/web/public/notices");
 const defaultPagePath = path.join(defaultRootDir, "apps/web/src/app/[locale]/licenses/page.tsx");
 
 // Monorepo subpackages whose published tarballs omit the root LICENSE file
@@ -91,6 +93,16 @@ function removedByOverrides(rootDir) {
   );
 }
 
+export function assertNodeModulesInstalled(rootDir = defaultRootDir) {
+  const hasRootNodeModules = existsSync(path.join(rootDir, "node_modules"));
+  const hasWebNodeModules = existsSync(path.join(rootDir, "apps/web/node_modules"));
+  if (!hasRootNodeModules && !hasWebNodeModules) {
+    throw new Error(
+      "JavaScript dependencies are not installed (missing node_modules); run 'pnpm install' first.",
+    );
+  }
+}
+
 function resolveDependency(directory, name, optional = false) {
   for (let current = directory; ; current = path.dirname(current)) {
     const candidate = path.join(current, "node_modules", name);
@@ -101,7 +113,7 @@ function resolveDependency(directory, name, optional = false) {
       if (optional) {
         return null;
       }
-      throw new Error(`Missing dependency ${name}`);
+      throw new Error(`Missing dependency ${name}; run 'pnpm install' first.`);
     }
   }
 }
@@ -150,6 +162,7 @@ function readLicenseTexts(directory, metadata) {
 }
 
 export function generateWebJsNotices(rootDir = defaultRootDir) {
+  assertNodeModulesInstalled(rootDir);
   const seen = new Set();
   const notices = new Map();
   const removed = removedByOverrides(rootDir);
@@ -456,7 +469,10 @@ export function computeWasmRustProductionClosure(rootDir = defaultRootDir) {
 
 export function generateWebRustNotices(rootDir = defaultRootDir) {
   const wasmClosure = computeWasmRustProductionClosure(rootDir);
-  const raw = readFileSync(path.join(rootDir, "THIRD_PARTY_LICENSES"), "utf8");
+  const noticesPath = process.env.ARIADSHIFT_THIRD_PARTY_LICENSES
+    ? path.resolve(process.env.ARIADSHIFT_THIRD_PARTY_LICENSES)
+    : path.join(rootDir, "THIRD_PARTY_LICENSES");
+  const raw = readFileSync(noticesPath, "utf8");
   const separator =
     "================================================================================";
   const parts = raw.split(separator);
@@ -677,6 +693,7 @@ export function verifyLicensesPage(
   pagePath = defaultPagePath,
   { verifyWasmBinary = false } = {},
 ) {
+  assertNodeModulesInstalled(rootDir);
   const webDir = path.join(rootDir, "apps/web");
   const wasmPath = path.join(webDir, "public/wasm/pandoc/pandoc.wasm");
   const engineAssets = readPandocEngineAssets(webDir);
@@ -798,6 +815,7 @@ export function validateNoticesAndLockfiles({
   verifyWasmBinary = false,
   checkBundle = false,
 } = {}) {
+  assertNodeModulesInstalled(rootDir);
   verifyLicensesPage(rootDir, pagePath, { verifyWasmBinary });
   const notices = expectedNotices(rootDir);
   verifyPnpmLockAgainstJsNotices(rootDir, notices["THIRD_PARTY_JS_LICENSES.txt"]);
@@ -810,30 +828,63 @@ export function validateNoticesAndLockfiles({
   return notices;
 }
 
-export function syncNotices({
-  rootDir = defaultRootDir,
-  outDir = defaultOutDir,
-  pagePath = path.join(rootDir, "apps/web/src/app/[locale]/licenses/page.tsx"),
-} = {}) {
-  const notices = validateNoticesAndLockfiles({ rootDir, pagePath });
-  mkdirSync(outDir, { recursive: true });
-  for (const [name, content] of Object.entries(notices)) {
-    writeFileSync(path.join(outDir, name), content, "utf8");
-  }
-  const exportNoticesDir = path.join(rootDir, "apps/web/out/notices");
-  if (outDir === path.join(rootDir, "apps/web/public/notices") && existsSync(exportNoticesDir)) {
-    for (const [name, content] of Object.entries(notices)) {
-      writeFileSync(path.join(exportNoticesDir, name), content, "utf8");
+function writeNoticesAtomically(targetDirs, entries) {
+  const staged = [];
+  try {
+    for (const targetDir of targetDirs) {
+      const resolvedDir = path.resolve(targetDir);
+      const parentDir = path.dirname(resolvedDir);
+      mkdirSync(parentDir, { recursive: true });
+      const stageDir = mkdtempSync(path.join(parentDir, ".notices-stage-"));
+      staged.push({ resolvedDir, stageDir });
+      for (const [name, content] of entries) {
+        writeFileSync(path.join(stageDir, name), content, "utf8");
+      }
+    }
+    for (const { resolvedDir, stageDir } of staged) {
+      mkdirSync(resolvedDir, { recursive: true });
+      for (const [name] of entries) {
+        renameSync(path.join(stageDir, name), path.join(resolvedDir, name));
+      }
+    }
+  } finally {
+    for (const { stageDir } of staged) {
+      rmSync(stageDir, { recursive: true, force: true });
     }
   }
 }
 
+export function syncNotices({
+  rootDir = defaultRootDir,
+  outDir = path.join(rootDir, "apps/web/public/notices"),
+  pagePath = path.join(rootDir, "apps/web/src/app/[locale]/licenses/page.tsx"),
+} = {}) {
+  assertNodeModulesInstalled(rootDir);
+  const notices = validateNoticesAndLockfiles({ rootDir, pagePath });
+  const entries = Object.entries(notices);
+  for (const [name, content] of entries) {
+    if (typeof content !== "string" || content.length === 0) {
+      throw new Error(`Generated web notice ${name} is empty.`);
+    }
+  }
+  const targetDirs = [outDir];
+  const exportNoticesDir = path.join(rootDir, "apps/web/out/notices");
+  if (
+    path.resolve(outDir) === path.resolve(rootDir, "apps/web/public/notices") &&
+    existsSync(exportNoticesDir)
+  ) {
+    targetDirs.push(exportNoticesDir);
+  }
+  writeNoticesAtomically(targetDirs, entries);
+}
+
 export function checkNotices({
   rootDir = defaultRootDir,
-  outDir = defaultOutDir,
+  outDir = path.join(rootDir, "apps/web/public/notices"),
   pagePath = path.join(rootDir, "apps/web/src/app/[locale]/licenses/page.tsx"),
   checkFiles = true,
 } = {}) {
+  assertNodeModulesInstalled(rootDir);
   const isDefaultNoticesDir =
     rootDir === defaultRootDir && outDir === path.join(rootDir, "apps/web/public/notices");
   const notices = validateNoticesAndLockfiles({
@@ -905,7 +956,18 @@ export function checkNotices({
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+function isMainModule() {
+  if (!process.argv[1]) {
+    return false;
+  }
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
   const args = process.argv.slice(2);
   const rootDirIndex = args.indexOf("--root-dir");
   const rootDir =
@@ -918,10 +980,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       ? path.resolve(args[outDirIndex + 1])
       : path.join(rootDir, "apps/web/public/notices");
   const pagePath = path.join(rootDir, "apps/web/src/app/[locale]/licenses/page.tsx");
+  const isCheckPreconditions = args.includes("--check-preconditions");
   const isCheck = args.includes("--check");
   const isCheckGraph = args.includes("--check-graph");
   try {
-    if (isCheck || isCheckGraph) {
+    if (isCheckPreconditions) {
+      assertNodeModulesInstalled(rootDir);
+    } else if (isCheck || isCheckGraph) {
       checkNotices({ rootDir, outDir, pagePath, checkFiles: isCheck });
     } else {
       syncNotices({ rootDir, outDir, pagePath });
