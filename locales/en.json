@@ -144,7 +144,9 @@
       "title": "Pages",
       "placeholder": "Page thumbnails will appear here.",
       "page": "Page {number} of {total}",
-      "page@note": "Spoken label of a page thumbnail, for example \"Page 3 of 20\". types: number=int, total=int"
+      "page@note": "Spoken label of a page thumbnail, for example \"Page 3 of 20\". types: number=int, total=int",
+      "tools": "Tools",
+      "tabs": "Sidebar content"
     },
     "viewer": {
       "placeholder": "The page viewer will appear here.",
@@ -241,7 +243,19 @@
       "delete": "Delete Selected Pages",
       "move_earlier": "Move before the previous page",
       "move_later": "Move after the next page",
-      "drop_end": "Drop here to move to the end"
+      "drop_end": "Drop here to move to the end",
+      "selected": "{count} selected",
+      "selected@note": "Count of selected pages in the page grid action bar, for example \"3 selected\". types: count=int"
+    },
+    "window": {
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "pages@note": "Toolbar subtitle under the document name, before the file size, for example \"20 pages\". types: count=int"
+    },
+    "drop": {
+      "open": "Drop to open",
+      "insert": "Drop to insert the pages",
+      "insert_hint": "Hold ⌥ to insert the pages into this document",
+      "insert_hint@note": "Shown while files are dragged over a document window. ⌥ is the Option key symbol."
     }
   },
   "web": {

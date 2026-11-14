@@ -1,54 +1,96 @@
+import AriadDesignSystem
 import AriadShiftCore
 import SwiftUI
 
-/// The sidebar: one thumbnail per page in a lazy list. The row of the page on screen is
-/// highlighted, clicking a row goes to that page and several rows can be selected.
+/// The Pages tab of the sidebar: one thumbnail per page in a lazy column. The selected pages (or, with nothing
+/// selected, the page on screen) carry the accent ring. Click selects and goes to a page, Command and Shift extend the
+/// selection, the arrow keys move it, and the list scrolls the current page into view with `smooth`.
 struct PageSidebarView: View {
     let viewer: ViewerModel
     let editing: PageEditing
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if viewer.loadState == .loaded, let cache = viewer.thumbnails {
                 list(cache)
             } else if viewer.loadState == .failed {
-                Text("mac.document.invalid").foregroundStyle(.secondary).padding()
+                DSEmptyState(systemImage: "exclamationmark.triangle", title: Text("mac.document.invalid"))
             } else if viewer.loadState == .empty {
-                Text("mac.sidebar.placeholder").foregroundStyle(.secondary).multilineTextAlignment(.center).padding()
+                DSEmptyState(systemImage: "doc.richtext", title: Text("mac.sidebar.placeholder"))
             } else {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(String(localized: "mac.sidebar.title"))
         .accessibilityIdentifier("sidebar")
     }
 
     private func list(_ cache: ThumbnailCache) -> some View {
         ScrollViewReader { proxy in
-            List(selection: Binding(get: { viewer.selection.pages }, set: { viewer.setSelection($0) })) {
-                ForEach(0..<viewer.pageCount, id: \.self) { index in
-                    VStack(spacing: 4) {
-                        ThumbnailView(cache: cache, index: index, width: 120)
-                        Text(index + 1, format: .number)
-                            .font(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(spacing: DSSpacing.l) {
+                    ForEach(0..<viewer.pageCount, id: \.self) { index in
+                        row(cache, index)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 2)
-                    .pageAccessibility(index: index, total: viewer.pageCount)
-                    .tag(index)
-                    .id(index)
+                }
+                .padding(.vertical, DSSpacing.m)
+                .frame(maxWidth: .infinity)
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(phases: [.down, .repeat]) { press in
+                switch press.key {
+                case .upArrow: step(-1, extend: press.modifiers.contains(.shift))
+                case .downArrow: step(1, extend: press.modifiers.contains(.shift))
+                default: .ignored
                 }
             }
-            .listStyle(.sidebar)
-            .contextMenu(forSelectionType: Int.self) { pages in
-                PageEditButtons(viewer: viewer, editing: editing, pages: pages.isEmpty ? viewer.selection.pages : pages)
+            .contextMenu {
+                PageEditButtons(viewer: viewer, editing: editing, pages: viewer.selection.pages)
             }
             .onChange(of: viewer.currentPageIndex) { _, index in
-                proxy.scrollTo(index)
+                withAnimation(DSMotion.smooth.animation(reduceMotion: reduceMotion)) { proxy.scrollTo(index) }
             }
         }
+    }
+
+    private func row(_ cache: ThumbnailCache, _ index: Int) -> some View {
+        let selected = isSelected(index)
+        return VStack(spacing: DSSpacing.xs) {
+            ThumbnailView(cache: cache, index: index, width: DSSize.thumbnailWidth)
+                .dsPageThumbnail(isSelected: selected)
+            DSPageCaption(index + 1, isSelected: selected)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { viewer.select(index, PageSelection.Click.current) }
+        .pageAccessibility(index: index, total: viewer.pageCount)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .accessibilityAction(.default) { viewer.select(index, .plain) }
+        .id(index)
+    }
+
+    /// Selected pages carry the ring; with no selection, the page on screen does.
+    private func isSelected(_ index: Int) -> Bool {
+        viewer.selection.pages.isEmpty ? index == viewer.currentPageIndex : viewer.selection.pages.contains(index)
+    }
+
+    private func step(_ offset: Int, extend: Bool) -> KeyPress.Result {
+        guard viewer.pageCount > 0 else { return .ignored }
+        let from = (offset > 0 ? viewer.selection.pages.max() : viewer.selection.pages.min()) ?? viewer.currentPageIndex
+        viewer.select(min(max(from + offset, 0), viewer.pageCount - 1), extend ? .extend : .plain)
+        return .handled
+    }
+}
+
+extension PageSelection.Click {
+    /// The click kind of the mouse event being handled: Shift extends the selection, Command toggles a page.
+    @MainActor static var current: Self {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.shift) { return .extend }
+        if flags.contains(.command) { return .toggle }
+        return .plain
     }
 }
 

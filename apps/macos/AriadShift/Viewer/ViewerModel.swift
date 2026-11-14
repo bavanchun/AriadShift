@@ -1,5 +1,6 @@
-import AriadShiftCore
 import AppKit
+import AriadDesignSystem
+import AriadShiftCore
 import Observation
 import PDFKit
 import SwiftUI
@@ -74,6 +75,10 @@ final class ViewerModel {
         view.displayDirection = .vertical
         view.displaysPageBreaks = true
         view.pageShadowsEnabled = true
+        // Pages sit 24 apart with 32 around the document; `PDFViewRepresentable` paints the canvas behind them.
+        view.pageBreakMargins = NSEdgeInsets(
+            top: DSSpacing.xl / 2, left: DSSpacing.xxl, bottom: DSSpacing.xl / 2, right: DSSpacing.xxl
+        )
         view.interpolationQuality = .high
         view.minScaleFactor = ZoomLevel.minimum
         view.maxScaleFactor = ZoomLevel.maximum

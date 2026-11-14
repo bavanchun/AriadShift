@@ -14033,6 +14033,58 @@
         }
       }
     },
+    "mac.drop.insert" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop to insert the pages"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thả để chèn các trang"
+          }
+        }
+      }
+    },
+    "mac.drop.insert_hint" : {
+      "comment" : "Shown while files are dragged over a document window. ⌥ is the Option key symbol.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold ⌥ to insert the pages into this document"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giữ ⌥ để chèn các trang vào tài liệu này"
+          }
+        }
+      }
+    },
+    "mac.drop.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop to open"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thả để mở"
+          }
+        }
+      }
+    },
     "mac.find.count" : {
       "comment" : "Position of the current match among all matches, for example \"3 of 17\". types: current=int, total=int",
       "extractionState" : "manual",
@@ -16791,6 +16843,24 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "旋轉所選頁面"
+          }
+        }
+      }
+    },
+    "mac.grid.selected" : {
+      "comment" : "Count of selected pages in the page grid action bar, for example \"3 selected\". types: count=int",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld selected"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã chọn %1$lld"
           }
         }
       }
@@ -35561,6 +35631,23 @@
         }
       }
     },
+    "mac.sidebar.tabs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sidebar content"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nội dung thanh bên"
+          }
+        }
+      }
+    },
     "mac.sidebar.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35808,6 +35895,23 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "頁面"
+          }
+        }
+      }
+    },
+    "mac.sidebar.tools" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tools"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Công cụ"
           }
         }
       }
@@ -43485,6 +43589,42 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "頁面檢視器"
+          }
+        }
+      }
+    },
+    "mac.window.pages" : {
+      "comment" : "Toolbar subtitle under the document name, before the file size, for example \"20 pages\". types: count=int",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%1$lld page"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%1$lld pages"
+                }
+              }
+            }
+          }
+        },
+        "vi" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%1$lld trang"
+                }
+              }
+            }
           }
         }
       }

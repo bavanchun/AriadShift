@@ -64,6 +64,12 @@ public enum DSSize {
 
     public static let thumbnailWidth: CGFloat = 136
     public static let gridCellWidthRange: ClosedRange<CGFloat> = 168...220
+    /// The dashed target after the last grid cell is this fraction of a cell's width tall.
+    public static let gridEndTargetAspect: CGFloat = 0.6
+    /// A page whose box is not known yet reserves this height per point of width (portrait A4/Letter).
+    public static let pagePlaceholderAspect: CGFloat = 1.3
+    /// The thread bar that marks where dragged pages will land.
+    public static let insertionBar: CGFloat = 3
 
     public static let paletteWidth: CGFloat = 640
     /// The palette results list never grows past this height; it snaps to whole rows below it.
@@ -75,9 +81,19 @@ public enum DSSize {
     public static let icon: CGFloat = 16
     public static let emptyStateIcon: CGFloat = 32
     public static let pageField: CGFloat = 64
+    /// The query field of the expanded toolbar find capsule.
+    public static let findField: CGFloat = 180
 
     public static let hairline: CGFloat = 0.5
     public static let selectionRing: CGFloat = 2.5
     public static let focusRing: CGFloat = 3
     public static let dropZoneBorder: CGFloat = 1.5
+}
+
+/// Opacities of tinted overlays that are not color tokens of their own.
+public enum DSOpacity {
+    /// The accent scrim over the canvas while files are dragged over the window.
+    public static let dropScrim: Double = 0.06
+    /// The `accentSoft` halo around a selected page in dark appearance, where the full halo reads heavy.
+    public static let selectionHaloDark: Double = 0.3
 }

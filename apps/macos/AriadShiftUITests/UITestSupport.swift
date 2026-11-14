@@ -89,7 +89,9 @@ class UITestCase: XCTestCase {
         let pageField = element("toolbar.pageField")
         XCTAssertTrue(pageField.waitForExistence(timeout: 30), "the toolbar has no page field", file: file, line: line)
         waitUntil("the viewer has loaded the document (the page field is enabled)", timeout: 30, file: file, line: line) { pageField.isEnabled }
+        // The inspector starts closed; Option-Command-I opens it on the document facts.
         let pagesValue = element("inspector.value.pages")
+        if !pagesValue.exists { app.typeKey("i", modifierFlags: [.command, .option]) }
         XCTAssertTrue(pagesValue.waitForExistence(timeout: 30), "the inspector has no page count", file: file, line: line)
         waitUntil("the inspector shows \(pages) pages", timeout: 30, file: file, line: line) { self.inspectorValue("pages") == self.number(pages) }
         return window

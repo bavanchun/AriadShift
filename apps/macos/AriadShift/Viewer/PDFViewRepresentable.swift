@@ -1,3 +1,4 @@
+import AriadDesignSystem
 import PDFKit
 import SwiftUI
 
@@ -13,7 +14,18 @@ struct PDFViewRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ view: PDFView, context: Context) {
-        // The area around the pages follows the system: gray in light mode, near black in dark mode.
-        view.backgroundColor = colorScheme == .dark ? .black : .underPageBackgroundColor
+        // The area around the pages is the canvas, like the page grid. PDFKit caches the resolved color, so it is
+        // set again when the appearance changes.
+        let canvas = DSColor.nsColor(.canvas) ?? .underPageBackgroundColor
+        if view.backgroundColor != canvas || context.coordinator.colorScheme != colorScheme {
+            view.backgroundColor = canvas
+            context.coordinator.colorScheme = colorScheme
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var colorScheme: ColorScheme?
     }
 }
