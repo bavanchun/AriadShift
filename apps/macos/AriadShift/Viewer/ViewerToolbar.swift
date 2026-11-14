@@ -3,9 +3,8 @@ import AriadDesignSystem
 import AriadShiftCore
 import SwiftUI
 
-/// The window toolbar of the viewer: page grid switch, the page capsule and the zoom capsule, then the find status
-/// next to the search field (`searchable` puts the field itself in the toolbar). Every control is a button, menu or
-/// field with a label, so it works with the keyboard and VoiceOver.
+/// The window toolbar of the viewer: page grid switch, the page capsule and the zoom capsule, then the find capsule.
+/// Every control is a button, menu or field with a label, so it works with the keyboard and VoiceOver.
 struct ViewerToolbar: ToolbarContent {
     let viewer: ViewerModel
 
@@ -24,7 +23,7 @@ struct ViewerToolbar: ToolbarContent {
             ZoomControls(viewer: viewer)
         }
         ToolbarItem(placement: .primaryAction) {
-            FindStatus(find: viewer.find)
+            FindField(find: viewer.find, isEnabled: viewer.loadState == .loaded)
         }
     }
 }
@@ -47,36 +46,77 @@ private struct PageNavigation: View {
             accessibilityIDs: .init(previous: "toolbar.previousPage", field: "toolbar.pageField", next: "toolbar.nextPage")
         )
         .disabled(viewer.loadState != .loaded || viewer.layout != .reader)
-        .background(PageFieldFocuser(request: viewer.pageFieldFocusRequest))
+        .background(ToolbarFieldFocuser(request: viewer.pageFieldFocusRequest))
     }
 }
 
-/// While a find query is entered: "3 of 12" and the previous and next match. Return in the search field also steps
-/// to the next match.
-private struct FindStatus: View {
-    let find: ViewerFind
+/// Find: a magnifier button that ⌘F expands in place into the query field, "4 of 12" with ↑↓, and a close button.
+/// Return and ⌘G step to the next match; Escape or the close button ends the search. Collapsed, it leaves the toolbar
+/// room for the document title at narrow window widths.
+private struct FindField: View {
+    @Bindable var find: ViewerFind
+    let isEnabled: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if find.isVisible && find.hasQuery {
-            HStack(spacing: DSSpacing.xs) {
+        Group {
+            if find.isVisible {
+                expanded
+                    .transition(.opacity)
+            } else {
+                Button {
+                    find.show()
+                } label: {
+                    Label(String(localized: "mac.menu.find"), systemImage: "magnifyingglass")
+                }
+                .help(String(localized: "mac.menu.find"))
+                .accessibilityIdentifier("toolbar.find")
+                .disabled(!isEnabled)
+                .transition(.opacity)
+            }
+        }
+        .animation(DSMotion.smooth.animation(reduceMotion: reduceMotion), value: find.isVisible)
+    }
+
+    private var expanded: some View {
+        HStack(spacing: DSSpacing.xs) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField(String(localized: "mac.find.prompt"), text: $find.query)
+                .textFieldStyle(.plain)
+                .frame(width: DSSize.findField)
+                .onSubmit { find.next() }
+                .onExitCommand { find.hide() }
+                .accessibilityLabel(String(localized: "mac.find.prompt"))
+                .accessibilityIdentifier("find.field")
+            if find.hasQuery {
                 Text(statusText)
                     .font(DSFont.callout)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .contentTransition(.numericText())
+                    .fixedSize()
                     .accessibilityLabel(statusText)
                     .accessibilityIdentifier("find.status")
-                ControlGroup {
-                    Button(String(localized: "mac.menu.find_previous"), systemImage: "chevron.up") { find.previous() }
-                        .accessibilityIdentifier("find.previous")
-                    Button(String(localized: "mac.menu.find_next"), systemImage: "chevron.down") { find.next() }
-                        .accessibilityIdentifier("find.next")
-                }
-                .labelStyle(.iconOnly)
-                .disabled(find.matchCount == 0)
+                Button(String(localized: "mac.menu.find_previous"), systemImage: "chevron.up") { find.previous() }
+                    .disabled(find.matchCount == 0)
+                    .modifier(ToolbarIconTarget())
+                    .accessibilityIdentifier("find.previous")
+                Button(String(localized: "mac.menu.find_next"), systemImage: "chevron.down") { find.next() }
+                    .disabled(find.matchCount == 0)
+                    .modifier(ToolbarIconTarget())
+                    .accessibilityIdentifier("find.next")
             }
-            .dsAnimation(.snappy, value: find.currentIndex)
+            Button(String(localized: "mac.find.done"), systemImage: "xmark.circle.fill") { find.hide() }
+                .foregroundStyle(.secondary)
+                .modifier(ToolbarIconTarget())
+                .accessibilityIdentifier("find.done")
         }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, DSSpacing.s)
+        .dsToolbarCapsule()
+        .background(ToolbarFieldFocuser(request: find.focusRequest))
     }
 
     private var statusText: String {
@@ -86,6 +126,16 @@ private struct FindStatus: View {
             localized: "mac.find.count",
             defaultValue: "\((find.currentIndex ?? 0) + 1) of \(find.matchCount)"
         )
+    }
+}
+
+/// A borderless icon button is only as large as its glyph, too small to hit: this gives it a 24pt target that is
+/// clickable all over. The size is fixed rather than a minimum, so the toolbar item measures the same on every pass.
+private struct ToolbarIconTarget: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .frame(width: DSControlHeight.small, height: DSControlHeight.small)
+            .contentShape(Rectangle())
     }
 }
 
@@ -135,10 +185,11 @@ private struct ZoomControls: View {
     }
 }
 
-/// Moves keyboard focus into the page field when Go to Page asks for it. SwiftUI's `FocusState` does not reach a
-/// text field hosted in a window toolbar on macOS (Go to Page left the field untouched), so this finds the field next
-/// to itself and makes it the first responder with its text selected, ready to be replaced by typing.
-private struct PageFieldFocuser: NSViewRepresentable {
+/// Moves keyboard focus into a toolbar text field (the page field on Go to Page, the find field on ⌘F) when `request`
+/// changes. SwiftUI's `FocusState` does not reach a text field hosted in a window toolbar on macOS (Go to Page left
+/// the field untouched), so this finds the field next to itself and makes it the first responder with its text
+/// selected, ready to be replaced by typing.
+private struct ToolbarFieldFocuser: NSViewRepresentable {
     let request: Int
 
     final class Coordinator { var handled = 0 }

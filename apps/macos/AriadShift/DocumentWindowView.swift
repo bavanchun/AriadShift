@@ -3,7 +3,7 @@ import AriadShiftCore
 import SwiftUI
 
 /// The window of one PDF: a Pages / Tools sidebar, the reader or page grid on the canvas, and an inspector that stays
-/// closed until a tool is chosen (or ⌥⌘I opens it on the document facts). Find is the toolbar search field, and the
+/// closed until a tool is chosen (or ⌥⌘I opens it on the document facts). Find is the toolbar find capsule, and the
 /// whole window takes dropped files.
 struct DocumentWindowView: View {
     let document: PDFFileDocument
@@ -26,7 +26,6 @@ struct DocumentWindowView: View {
     }
 
     var body: some View {
-        @Bindable var find = viewer.find
         NavigationSplitView {
             DocumentSidebar(viewer: viewer, editing: editing) {
                 SidebarToolsList(state: engine.state, groups: engine.groups) { tool in
@@ -64,14 +63,12 @@ struct DocumentWindowView: View {
                 .keyboardShortcut("i", modifiers: [.command, .option])
             }
         }
-        .searchable(text: $find.query, isPresented: $find.isVisible, placement: .toolbar, prompt: Text("mac.find.prompt"))
-        .onSubmit(of: .search) { viewer.find.next() }
-        .task(id: find.query) {
+        .task(id: viewer.find.query) {
             // Wait for a pause in typing before searching a long document.
             try? await Task.sleep(for: .milliseconds(200))
             if !Task.isCancelled { viewer.find.search(viewer.find.query) }
         }
-        .onChange(of: find.isVisible) { _, visible in
+        .onChange(of: viewer.find.isVisible) { _, visible in
             if visible {
                 // Matches are shown in the reader, so searching leaves the page grid.
                 if viewer.layout == .pageGrid { viewer.layout = .reader }

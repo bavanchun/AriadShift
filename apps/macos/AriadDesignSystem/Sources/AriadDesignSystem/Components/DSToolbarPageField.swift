@@ -71,8 +71,7 @@ public struct DSToolbarPageField: View {
             .frame(width: DSSize.pageField)
             chevron("chevron.right", label: nextLabel, id: ids?.next, enabled: page < pageCount) { go(to: page + 1) }
         }
-        .frame(height: DSControlHeight.regular)
-        .background(Color.primary.opacity(0.05), in: Capsule())
+        .dsToolbarCapsule()
         .onAppear { draft = page }
         .onChange(of: page) { _, newPage in draft = newPage }
         .onChange(of: isEditing) { _, editing in if !editing { draft = page } }
@@ -97,6 +96,14 @@ public struct DSToolbarPageField: View {
         guard pageCount > 0 else { return }
         page = min(max(target, 1), pageCount)
         draft = page
+    }
+}
+
+extension View {
+    /// The 28pt toolbar capsule that the page field and the find field sit in.
+    public func dsToolbarCapsule() -> some View {
+        frame(height: DSControlHeight.regular)
+            .background(Color.primary.opacity(0.05), in: Capsule())
     }
 }
 

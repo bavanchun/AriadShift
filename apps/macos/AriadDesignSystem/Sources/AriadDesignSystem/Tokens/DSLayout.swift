@@ -81,6 +81,8 @@ public enum DSSize {
     public static let icon: CGFloat = 16
     public static let emptyStateIcon: CGFloat = 32
     public static let pageField: CGFloat = 64
+    /// The query field of the expanded toolbar find capsule.
+    public static let findField: CGFloat = 180
 
     public static let hairline: CGFloat = 0.5
     public static let selectionRing: CGFloat = 2.5
