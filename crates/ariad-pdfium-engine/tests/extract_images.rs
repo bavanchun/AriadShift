@@ -2053,3 +2053,765 @@ fn inline_filter_payload_boundaries_match_pdfium() {
         assert_eq!(render(&pdfium, &canonical), expected, "canonical {filter}");
     }
 }
+
+fn zlib_compress(data: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(data).expect("zlib write");
+    encoder.finish().expect("zlib finish")
+}
+
+fn pdf_with_page_resources(
+    resources: &str,
+    content: &[u8],
+    extra_objects: Vec<Vec<u8>>,
+) -> Vec<u8> {
+    let mut objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << {resources} >> /Contents 4 0 R >>"
+        )
+        .into_bytes(),
+        stream_object("", content),
+    ];
+    objects.extend(extra_objects);
+    assemble_pdf(&objects)
+}
+
+#[test]
+fn inline_resource_colorspace_renders_and_extracts_like_device_rgb() {
+    let rgb_samples = b"\xff\x00\x00\x00\xff\x00\x00\x00\xff\xff\xff\x00";
+    let control_content = [
+        b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS /RGB ID ".as_slice(),
+        rgb_samples.as_slice(),
+        b" EI Q".as_slice(),
+    ]
+    .concat();
+    let control_pdf = pdf_with_page_resources("", &control_content, vec![]);
+
+    for (key, res, extra) in [
+        ("/CS", "/ColorSpace << /Cs8 /DeviceRGB >>", vec![]),
+        (
+            "/ColorSpace",
+            "/ColorSpace << /Cs8 5 0 R >>",
+            vec![b"/DeviceRGB".to_vec()],
+        ),
+    ] {
+        let mut content =
+            format!("q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 {key} /Cs8 ID ").into_bytes();
+        content.extend_from_slice(rgb_samples);
+        content.extend_from_slice(b" EI Q BI /W 1 /H 1 /BPC 8 /CS /G ID \x80 EI");
+        let input = pdf_with_page_resources(res, &content, extra.clone());
+        let ws = TestWorkspace::from_bytes("inline_cs.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "inline-cs",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let canonical = ctx
+            .load_validated_pdf_bytes()
+            .expect("resource-named inline colorspace should canonicalize");
+        let parsed = lopdf::Document::load_mem(&canonical).expect("valid canonical pdf");
+        let page_id = *parsed.get_pages().values().next().unwrap();
+        let stream_bytes = parsed.get_page_content(page_id);
+        let text = String::from_utf8_lossy(&stream_bytes);
+        assert!(
+            text.contains("/ColorSpace /Cs8 "),
+            "resource name should stay /Cs8: {text}"
+        );
+        assert!(
+            text.contains("/ColorSpace /DeviceGray "),
+            "abbreviated /G should still expand to /DeviceGray: {text}"
+        );
+
+        let Ok(lib_dir) = std::env::var("ARIAD_TEST_PDFIUM_DIR") else {
+            continue;
+        };
+        if lib_dir.is_empty() {
+            continue;
+        }
+
+        let control_ws = TestWorkspace::from_bytes("control.pdf", &control_pdf);
+        let mut control_sink = Vec::new();
+        let mut control_ctx = ToolContext::new(
+            "control",
+            "pdf.extract_images",
+            control_ws.paths,
+            Limits::local(),
+            &mut control_sink,
+        )
+        .with_library_dir(&lib_dir);
+
+        let single_inline = [
+            format!("q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 {key} /Cs8 ID ").into_bytes(),
+            rgb_samples.to_vec(),
+            b" EI Q".to_vec(),
+        ]
+        .concat();
+        let single_input = pdf_with_page_resources(res, &single_inline, extra.clone());
+
+        let test_ws = TestWorkspace::from_bytes("resource.pdf", &single_input);
+        let mut test_sink = Vec::new();
+        let mut test_ctx = ToolContext::new(
+            "resource",
+            "pdf.extract_images",
+            test_ws.paths,
+            Limits::local(),
+            &mut test_sink,
+        )
+        .with_library_dir(&lib_dir);
+
+        let params = ExtractImagesParams {
+            min_px: 1,
+            format: ExtractFormat::Png,
+            ..ExtractImagesParams::default()
+        };
+        let pdfium = control_ctx.pdfium().unwrap();
+        let expected_doc = pdfium.load_pdf_from_byte_slice(&control_pdf, None).unwrap();
+        let expected_rgba = expected_doc
+            .pages()
+            .get(0)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_size(20, 20))
+            .unwrap()
+            .as_rgba_bytes();
+
+        let single_ws = TestWorkspace::from_bytes("single.pdf", &single_input);
+        let mut single_sink = Vec::new();
+        let mut single_ctx = ToolContext::new(
+            "single",
+            "pdf.render",
+            single_ws.paths,
+            Limits::local(),
+            &mut single_sink,
+        )
+        .with_library_dir(&lib_dir);
+        let single_canonical = single_ctx.load_validated_pdf_bytes().unwrap();
+        let actual_doc = pdfium
+            .load_pdf_from_byte_slice(&single_canonical, None)
+            .unwrap();
+        let actual_rgba = actual_doc
+            .pages()
+            .get(0)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_size(20, 20))
+            .unwrap()
+            .as_rgba_bytes();
+        assert_eq!(
+            actual_rgba, expected_rgba,
+            "rendered page must match /DeviceRGB control (case `{key}` `{res}`)"
+        );
+
+        if res.contains("<< /Cs8 /DeviceRGB >>") {
+            let expected_extract =
+                extract_images::extract_document_images(&mut control_ctx, &params)
+                    .expect("control extract");
+            let actual_extract = extract_images::extract_document_images(&mut test_ctx, &params)
+                .unwrap_or_else(|e| panic!("resource extract ({key} {res}): {e:?}"));
+            assert_eq!(actual_extract.images[0].width, 2);
+            assert_eq!(actual_extract.images[0].height, 2);
+            let expected_png = &expected_extract.images[0].bytes;
+            let actual_png = &actual_extract.images[0].bytes;
+            assert_eq!(
+                image::load_from_memory(actual_png).unwrap().to_rgba8(),
+                image::load_from_memory(expected_png).unwrap().to_rgba8(),
+                "extracted inline image pixels must match /DeviceRGB control"
+            );
+        }
+    }
+}
+
+#[test]
+fn inline_indexed_resource_and_base_colorspaces() {
+    // Wait: inline image indexes 2x2 image using 2 palette entries (red, green)
+    let indexed_samples = b"\x00\x01\x01\x00";
+    let control_content = [
+        b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS [/Indexed /DeviceRGB 1 <FF0000 00FF00>] ID "
+            .as_slice(),
+        indexed_samples.as_slice(),
+        b" EI Q".as_slice(),
+    ]
+    .concat();
+    let control_pdf = pdf_with_page_resources("", &control_content, vec![]);
+
+    type IndexedCase<'a> = (&'a str, Vec<u8>, Vec<Vec<u8>>, &'a str);
+    let cases: Vec<IndexedCase<'_>> = vec![
+        (
+            "/ColorSpace << /CsBase /DeviceRGB >>",
+            [
+                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS [/I /CsBase 1 <FF0000 00FF00>] ID "
+                    .as_slice(),
+                indexed_samples.as_slice(),
+                b" EI Q".as_slice(),
+            ]
+            .concat(),
+            vec![],
+            "/ColorSpace [ /Indexed /CsBase ",
+        ),
+        (
+            "/ColorSpace << /CsBase /RGB >>",
+            [
+                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS [/I /CsBase 1 <FF0000 00FF00>] ID "
+                    .as_slice(),
+                indexed_samples.as_slice(),
+                b" EI Q".as_slice(),
+            ]
+            .concat(),
+            vec![],
+            "/ColorSpace [ /Indexed /CsBase ",
+        ),
+        (
+            "/ColorSpace << /CsBase /DeviceRGB /CsIdx [/Indexed /CsBase 1 5 0 R] >>",
+            [
+                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS /CsIdx ID ".as_slice(),
+                indexed_samples.as_slice(),
+                b" EI Q".as_slice(),
+            ]
+            .concat(),
+            vec![stream_object("", b"\xff\x00\x00\x00\xff\x00")],
+            "/ColorSpace /CsIdx ",
+        ),
+        (
+            "/ColorSpace << /CsIdx [/Indexed /DeviceRGB 1 5 0 R] >>",
+            [
+                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS /CsIdx ID ".as_slice(),
+                indexed_samples.as_slice(),
+                b" EI Q".as_slice(),
+            ]
+            .concat(),
+            vec![stream_object("", b"\xff\x00\x00\x00\xff\x00")],
+            "/ColorSpace /CsIdx ",
+        ),
+        (
+            "",
+            [
+                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS [/I /DeviceRGB 1 <FF0000 00FF00>] ID "
+                    .as_slice(),
+                indexed_samples.as_slice(),
+                b" EI Q".as_slice(),
+            ]
+            .concat(),
+            vec![],
+            "/ColorSpace [ /Indexed /DeviceRGB ",
+        ),
+    ];
+
+    for (res, content, extra, expected_snippet) in cases {
+        let input = pdf_with_page_resources(res, &content, extra.clone());
+        let ws = TestWorkspace::from_bytes("indexed.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "indexed",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let canonical = ctx
+            .load_validated_pdf_bytes()
+            .unwrap_or_else(|e| panic!("failed {expected_snippet}: {e:?}"));
+        let parsed = lopdf::Document::load_mem(&canonical).unwrap();
+        let page_id = *parsed.get_pages().values().next().unwrap();
+        let stream_bytes = parsed.get_page_content(page_id);
+        let text = String::from_utf8_lossy(&stream_bytes);
+        assert!(
+            text.contains(expected_snippet),
+            "missing `{expected_snippet}` in: {text}"
+        );
+
+        let Ok(lib_dir) = std::env::var("ARIAD_TEST_PDFIUM_DIR") else {
+            continue;
+        };
+        if lib_dir.is_empty() {
+            continue;
+        }
+        let render_ws = TestWorkspace::from_bytes("render.pdf", &canonical);
+        let mut render_sink = Vec::new();
+        let render_ctx = ToolContext::new(
+            "render",
+            "pdf.render",
+            render_ws.paths,
+            Limits::local(),
+            &mut render_sink,
+        )
+        .with_library_dir(&lib_dir);
+        let pdfium = render_ctx.pdfium().unwrap();
+        let expected_doc = pdfium.load_pdf_from_byte_slice(&control_pdf, None).unwrap();
+        let actual_doc = pdfium.load_pdf_from_byte_slice(&canonical, None).unwrap();
+        let expected_rgba = expected_doc
+            .pages()
+            .get(0)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_size(20, 20))
+            .unwrap()
+            .as_rgba_bytes();
+        let actual_rgba = actual_doc
+            .pages()
+            .get(0)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_size(20, 20))
+            .unwrap()
+            .as_rgba_bytes();
+        // PDFium itself resolves `/CS /CsIdx` when `/CsIdx`'s base is a built-in space (or direct
+        // `[/I /DeviceRGB ...]`), whereas resource-named bases inside `[/Indexed /CsBase ...]`
+        // still pass preflight/component counting for the local validator.
+        if !res.contains("/CsBase") {
+            assert_eq!(
+                actual_rgba, expected_rgba,
+                "rendered indexed mismatch for `{res}` (`{expected_snippet}`)"
+            );
+        }
+    }
+}
+
+#[test]
+fn inline_resource_colorspace_follows_execution_budget_scopes() {
+    // 1. Inherited from /Pages /Resources down to Page without /Resources
+    let inherited_page = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 /Resources << /ColorSpace << /Cs8 /DeviceRGB >> >> >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"BI /W 1 /H 1 /BPC 8 /CS /Cs8 ID abc EI"),
+    ]);
+    // 2. Form inherits when no /Resources; overrides when /ColorSpace present; falls back to Page when /Resources omits /ColorSpace
+    let form_scopes = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /FInherit 5 0 R /FOuter 6 0 R >> /ColorSpace << /Cs1 /DeviceGray /CsRgb /DeviceRGB >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/FInherit Do /FOuter Do"),
+        // 5: inherits Page CsRgb (3 bytes)
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 1 /H 1 /BPC 8 /CS /CsRgb ID abc EI"),
+        // 6: overrides Cs1 to DeviceRGB (3 bytes) and invokes 7 which omits /ColorSpace so 7 MUST fall back to Page Cs1 (DeviceGray, 1 byte)
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /XObject << /FInner 7 0 R >> /ColorSpace << /Cs1 /DeviceRGB >> >>", b"BI /W 1 /H 1 /BPC 8 /CS /Cs1 ID abc EI /FInner Do"),
+        // 7: has /Resources << /Font << >> >> (omits /ColorSpace) -> falls back to Page Cs1 (1 byte = x)
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /Font << >> >>", b"BI /W 1 /H 1 /BPC 8 /CS /Cs1 ID x EI"),
+    ]);
+    // 3. Tiling Pattern (PatternType 1), Annotation AP, ExtGState SMask falling back to physical_page, and Type3 CharProc
+    let pattern_ap_smask_type3 = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /ColorSpace << /CsPage /DeviceGray /CsPhys /DeviceRGB >> /XObject << /FOuter 5 0 R >> /Pattern << /P1 6 0 R >> /Font << /T3 7 0 R >> >> /Annots [8 0 R] /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/FOuter Do /P1 scn BT /T3 1 Tf (A) Tj ET"),
+        // 5: Outer Form overrides /CsPhys to /DeviceGray, invokes /GS1 whose /SMask /G (10 0 R) MUST use physical_page CsPhys (/DeviceRGB = 3 bytes)
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /ColorSpace << /CsPhys /DeviceGray >> /ExtGState << /GS1 << /SMask << /S /Alpha /G 10 0 R >> >> >> >>", b"/GS1 gs"),
+        // 6: PatternType 1 with no /Resources inherits Page CsPage (1 byte)
+        stream_object("/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 10 10] /XStep 10 /YStep 10", b"BI /W 1 /H 1 /BPC 8 /CS /CsPage ID x EI"),
+        // 7: Type3 Font with /Resources << /ColorSpace << /CsFont /DeviceRGB >> >> and CharProc /A = 11 0 R
+        b"<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /A 11 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1] /Resources << /ColorSpace << /CsFont /DeviceRGB >> >> >>".to_vec(),
+        // 8: Annotation with /AP /N 9 0 R
+        b"<< /Type /Annot /Subtype /Stamp /Rect [0 0 10 10] /AP << /N 9 0 R >> >>".to_vec(),
+        // 9: AP stream with own override /CsAp
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /ColorSpace << /CsAp /DeviceRGB >> >>", b"BI /W 1 /H 1 /BPC 8 /CS /CsAp ID abc EI"),
+        // 10: SMask Group Form without /Resources -> physical_page CsPhys (DeviceRGB = 3 bytes)
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 1 /H 1 /BPC 8 /CS /CsPhys ID rgb EI"),
+        // 11: Type3 CharProc without /Resources -> inherits Font CsFont (DeviceRGB = 3 bytes)
+        stream_object("", b"0 0 d0 BI /W 1 /H 1 /BPC 8 /CS /CsFont ID rgb EI"),
+    ]);
+    // 4. Page /Contents stream ignoring its own /Resources (CsPage IS on Page, even if /Contents has conflicting /CsPage)
+    let contents_ignores_own_resources = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /ColorSpace << /Cs8 /DeviceRGB >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("/Resources << /ColorSpace << /Cs8 /DeviceGray >> >>", b"BI /W 1 /H 1 /BPC 8 /CS /Cs8 ID rgb EI"),
+    ]);
+
+    for (label, bytes) in [
+        ("inherited_page", inherited_page),
+        ("form_scopes", form_scopes),
+        ("pattern_ap_smask_type3", pattern_ap_smask_type3),
+        (
+            "contents_ignores_own_resources",
+            contents_ignores_own_resources,
+        ),
+    ] {
+        let ws = TestWorkspace::from_bytes("scope.pdf", &bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(label, "pdf.render", ws.paths, Limits::local(), &mut sink);
+        ctx.load_validated_pdf_bytes()
+            .unwrap_or_else(|e| panic!("{label} should pass: {e:?}"));
+    }
+
+    // Contents stream /Resources alone (NOT on Page) must fail closed
+    let content_only_res = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Contents 4 0 R >>".to_vec(),
+        stream_object(
+            "/Resources << /ColorSpace << /Cs8 /DeviceRGB >> >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Cs8 ID rgb EI",
+        ),
+    ]);
+    let ws = TestWorkspace::from_bytes("content_only.pdf", &content_only_res);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "content-only",
+        "pdf.render",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    );
+    assert_eq!(
+        ctx.load_validated_pdf_bytes().unwrap_err().code,
+        ErrorCode::LimitExceeded,
+        "page /Contents stream /Resources must be ignored"
+    );
+}
+
+#[test]
+fn shared_stream_across_multiple_scopes_is_bounded_and_scoped() {
+    // 200x150 = 30_000 px: DeviceGray decoded_len = 30_000; DeviceRGB decoded_len = 90_000.
+    let gray_payload = zlib_compress(&vec![0u8; 200 * 150]);
+    let shared_form = [
+        b"BI /W 200 /H 150 /BPC 8 /CS /Cs /F /Fl ID ".as_slice(),
+        gray_payload.as_slice(),
+        b" EI".as_slice(),
+    ]
+    .concat();
+
+    let build_two_page = |p1_ops: usize, p2_ops: usize, p2_cs: &str| {
+        let mut p1_body = b"/F Do ".to_vec();
+        p1_body.extend_from_slice(&b"q Q ".repeat(p1_ops));
+        let mut p2_body = b"/F Do ".to_vec();
+        p2_body.extend_from_slice(&b"q Q ".repeat(p2_ops));
+        assemble_pdf(&[
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /F 7 0 R >> /ColorSpace << /Cs /DeviceGray >> >> /Contents 5 0 R >>".to_vec(),
+            format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /F 7 0 R >> {p2_cs} >> /Contents 6 0 R >>"
+            )
+            .into_bytes(),
+            stream_object("", &p1_body),
+            stream_object("", &p2_body),
+            stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", &shared_form),
+        ])
+    };
+
+    // Valid: Page 1 has 20_000 ops (20_000 * 2 = 40_000 + 30_002 < 100_000); Page 2 has 1 op (2 + 90_002 < 100_000)
+    let both_fit = build_two_page(20_000, 1, "/ColorSpace << /Cs /DeviceRGB >>");
+    {
+        let ws = TestWorkspace::from_bytes("both_fit.pdf", &both_fit);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "both-fit",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        ctx.load_validated_pdf_bytes()
+            .expect("both pages within per-scope budget");
+    }
+
+    // Over budget on Page 2 ONLY because Cs -> DeviceRGB (90_002 + 10_000 > 100_000), while Page 1 Cs -> DeviceGray fit!
+    let p2_over = build_two_page(1, 5_500, "/ColorSpace << /Cs /DeviceRGB >>");
+    {
+        let ws = TestWorkspace::from_bytes("p2_over.pdf", &p2_over);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "p2-over",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("shared form must not undercharge Page 2 RGB budget");
+        assert_eq!(
+            err.code,
+            ErrorCode::LimitExceeded,
+            "unexpected error: {err:?}"
+        );
+    }
+
+    // Over budget specifically at page invocation fan-out when Form fits single-pass preflight:
+    // 100x100 = 10_000 Gray, 30_000 RGB; 4 invocations -> 40_008 on Page 1 vs 120_008 on Page 2.
+    {
+        let small_payload = zlib_compress(&vec![0u8; 100 * 100]);
+        let small_form = [
+            b"BI /W 100 /H 100 /BPC 8 /CS /Cs /F /Fl ID ".as_slice(),
+            small_payload.as_slice(),
+            b" EI".as_slice(),
+        ]
+        .concat();
+        let fanout = assemble_pdf(&[
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /F 7 0 R >> /ColorSpace << /Cs /DeviceGray >> >> /Contents 5 0 R >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /F 7 0 R >> /ColorSpace << /Cs /DeviceRGB >> >> /Contents 6 0 R >>".to_vec(),
+            stream_object("", b"/F Do /F Do /F Do /F Do"),
+            stream_object("", b"/F Do /F Do /F Do /F Do"),
+            stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", &small_form),
+        ]);
+        let ws = TestWorkspace::from_bytes("fanout_over.pdf", &fanout);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "fanout-over",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("4 invocations of 30_000 RGB form must exceed 100_000 page work");
+        assert_eq!(
+            err.code,
+            ErrorCode::LimitExceeded,
+            "unexpected error: {err:?}"
+        );
+    }
+
+    // Missing /Cs on Page 2 even though Page 1 defines /Cs -> fails closed!
+    let p2_missing = build_two_page(1, 1, "");
+    {
+        let ws = TestWorkspace::from_bytes("p2_missing.pdf", &p2_missing);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "p2-missing",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        assert_eq!(
+            ctx.load_validated_pdf_bytes().unwrap_err().code,
+            ErrorCode::LimitExceeded
+        );
+    }
+}
+
+#[test]
+fn rejects_unresolvable_cyclic_and_malformed_inline_colorspaces() {
+    type RejectCase<'a> = (&'a str, &'a str, &'a [u8], Vec<Vec<u8>>);
+    let cases: Vec<RejectCase<'_>> = vec![
+        (
+            "missing_name",
+            "/ColorSpace << /Other /DeviceGray >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Missing /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "self_ref_cycle",
+            "/ColorSpace << /Cs 5 0 R >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Cs /F /AHx ID 00> EI",
+            vec![b"5 0 R".to_vec()],
+        ),
+        (
+            "two_step_ref_cycle",
+            "/ColorSpace << /Cs 5 0 R >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Cs /F /AHx ID 00> EI",
+            vec![b"6 0 R".to_vec(), b"5 0 R".to_vec()],
+        ),
+        (
+            "indexed_container_cycle",
+            "/ColorSpace << /Cs 5 0 R >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Cs /F /AHx ID 00> EI",
+            vec![b"[/Indexed 5 0 R 1 <0001>]".to_vec()],
+        ),
+        (
+            "name_alias_cycle",
+            "/ColorSpace << /Cs1 /Cs2 /Cs2 /Cs1 >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Cs1 /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "nested_indexed_direct",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed [/Indexed /DeviceRGB 1 <000000FFFFFF>] 1 <0001>] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "nested_indexed_via_resource",
+            "/ColorSpace << /CsBase [/Indexed /DeviceRGB 1 <000000FFFFFF>] >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /CsBase 1 <0001>] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "indexed_pattern_base",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /Pattern 1 <0001>] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "direct_pattern",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Pattern /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "pattern_array",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Pattern /DeviceRGB] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "indexed_unresolvable_base",
+            "/ColorSpace << /CsOther /DeviceRGB >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /MissingBase 1 <000000FFFFFF>] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "indexed_hival_negative",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /DeviceRGB -1 <000000>] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "indexed_hival_over_255",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /DeviceRGB 256 <000000>] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "indexed_missing_lookup",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /DeviceRGB 1] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "indexed_int_lookup",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /DeviceRGB 1 123] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "indexed_indirect_ref_in_inline_dict",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed /DeviceRGB 1 5 0 R] /F /AHx ID 00> EI",
+            vec![b"<000000FFFFFF>".to_vec()],
+        ),
+        (
+            "cs_integer",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS 123 /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "cs_string",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS (DeviceRGB) /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "cs_dict",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS << /A 1 >> /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "cs_empty_array",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [] /F /AHx ID 00> EI",
+            vec![],
+        ),
+        (
+            "cs_indirect_ref",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS 5 0 R /F /AHx ID 00> EI",
+            vec![b"/DeviceRGB".to_vec()],
+        ),
+    ];
+
+    for (label, res, content, extra) in cases {
+        let input = pdf_with_page_resources(res, content, extra);
+        let ws = TestWorkspace::from_bytes("bad.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(label, "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err(&format!("case `{label}` must fail closed"));
+        assert_eq!(
+            err.code,
+            ErrorCode::LimitExceeded,
+            "case `{label}`: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_resolved_inline_colorspace_over_limits() {
+    // Part A: max_asset_bytes cap via 16-bit 80x80 (6_400 px <= max_pixels 10_000):
+    // 1-component DeviceGray = 12_800 bytes <= 40_000; 4-component DeviceCMYK = 51_200 bytes > 40_000.
+    let payload_16 = zlib_compress(&vec![0u8; 80 * 80 * 2]);
+    let content_16 = [
+        b"BI /W 80 /H 80 /BPC 16 /CS /Cs /F /Fl ID ".as_slice(),
+        payload_16.as_slice(),
+        b" EI".as_slice(),
+    ]
+    .concat();
+    let gray_pdf =
+        pdf_with_page_resources("/ColorSpace << /Cs /DeviceGray >>", &content_16, vec![]);
+    let cmyk_pdf =
+        pdf_with_page_resources("/ColorSpace << /Cs /DeviceCMYK >>", &content_16, vec![]);
+    let mut limits = Limits::local();
+    limits.max_asset_bytes = Some(40_000);
+
+    let ws_gray = TestWorkspace::from_bytes("gray.pdf", &gray_pdf);
+    let mut sink_gray = Vec::new();
+    let mut ctx_gray = ToolContext::new(
+        "gray",
+        "pdf.render",
+        ws_gray.paths,
+        limits.clone(),
+        &mut sink_gray,
+    );
+    ctx_gray
+        .load_validated_pdf_bytes()
+        .expect("1-component 16-bit DeviceGray fits 40_000 byte cap");
+
+    let ws_cmyk = TestWorkspace::from_bytes("cmyk.pdf", &cmyk_pdf);
+    let mut sink_cmyk = Vec::new();
+    let mut ctx_cmyk =
+        ToolContext::new("cmyk", "pdf.render", ws_cmyk.paths, limits, &mut sink_cmyk);
+    let err = ctx_cmyk
+        .load_validated_pdf_bytes()
+        .expect_err("4-component 16-bit DeviceCMYK (51_200 bytes) must exceed cap");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+
+    // Part B: page_work 100_000 ceiling via 8-bit 120x250 (30_000 px):
+    // DeviceGray = 30_000 <= 100_000; DeviceCMYK = 120_000 > 100_000.
+    let payload_8 = zlib_compress(&vec![0u8; 120 * 250]);
+    let content_8 = [
+        b"BI /W 120 /H 250 /BPC 8 /CS /Cs /F /Fl ID ".as_slice(),
+        payload_8.as_slice(),
+        b" EI".as_slice(),
+    ]
+    .concat();
+    let work_gray =
+        pdf_with_page_resources("/ColorSpace << /Cs /DeviceGray >>", &content_8, vec![]);
+    let work_cmyk =
+        pdf_with_page_resources("/ColorSpace << /Cs /DeviceCMYK >>", &content_8, vec![]);
+
+    let ws_wgray = TestWorkspace::from_bytes("wgray.pdf", &work_gray);
+    let mut sink_wgray = Vec::new();
+    let mut ctx_wgray = ToolContext::new(
+        "wgray",
+        "pdf.render",
+        ws_wgray.paths,
+        Limits::local(),
+        &mut sink_wgray,
+    );
+    ctx_wgray
+        .load_validated_pdf_bytes()
+        .expect("DeviceGray 30_000 page work fits 100_000 limit");
+
+    let ws_wcmyk = TestWorkspace::from_bytes("wcmyk.pdf", &work_cmyk);
+    let mut sink_wcmyk = Vec::new();
+    let mut ctx_wcmyk = ToolContext::new(
+        "wcmyk",
+        "pdf.render",
+        ws_wcmyk.paths,
+        Limits::local(),
+        &mut sink_wcmyk,
+    );
+    let err = ctx_wcmyk
+        .load_validated_pdf_bytes()
+        .expect_err("DeviceCMYK 120_000 page work must exceed 100_000 limit");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
