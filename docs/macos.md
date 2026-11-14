@@ -119,9 +119,11 @@ and the app's `Package.resolved`) in light, dark and increased contrast light an
 in far off screen, because SwiftUI draws nothing into a window that is not on screen. Increased contrast is set both on the window
 appearance and in the SwiftUI environment, which is where asset colors read it. Glass is rendered on its material fallback: the window
 server composites Liquid Glass from whatever lies behind the window, so it cannot be captured offscreen and would never give a stable
-reference; the Liquid Glass branch is checked in Xcode previews and the running app. Text and material rendering differ between macOS
-releases, so the references were recorded on macOS 27.2 with Xcode 27.2, the toolchain of the `xcode-27` CI runner; if CI runs a
-different OS, re-record there. Re-record with `SNAPSHOT_TESTING_RECORD=all` and review every changed image. Set `SWIFTPM_CACHE_PATH`
+reference; the Liquid Glass branch is checked in Xcode previews and the running app. Text and material rendering differ between Macs
+and macOS releases, so the references are the renders of the CI macOS runner image, not of a local Mac. To refresh them, push the
+change and let the macOS job fail: it uploads the runner's renders as the `AriadShift-snapshot-failures` artifact (from
+`SNAPSHOT_ARTIFACTS`). Download it, copy the images over the references, look at every changed one and push again. Locally,
+`SNAPSHOT_TESTING_RECORD=all` re-records for a quick check, but those images are not committed. Set `SWIFTPM_CACHE_PATH`
 to keep SwiftPM's repository cache off the system disk in `just macos-build` and `just macos-test`.
 
 ## Updates (Sparkle 2.10.1)
