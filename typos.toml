@@ -62,6 +62,8 @@ extend-exclude = [
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
+    # Interactive design mockups: short script identifiers (sring, toword), not prose.
+    "plans/*/mockups/**",
     "fixtures/golden/*.snap",
     # Generated snapshots preserve multilingual text and hashed identities.
     "fixtures/golden/v2/*.snap",
