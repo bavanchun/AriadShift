@@ -122,8 +122,10 @@ notice layout or native artifact fails the build.
 
 The official Linux and Windows x86_64 CPU PyTorch wheels contain proprietary
 oneMKL. These targets use a source-built CPU wheel with static OpenBLAS and C
-LAPACK instead. Apache-2.0 oneDNN remains enabled; CUDA, ROCm, XPU and distributed
-execution are disabled. The official torchvision wheel is retained only after
+LAPACK instead. Apache-2.0 oneDNN (and XNNPACK) remain enabled to keep CPU math
+and convolution paths; legacy NNPACK (`USE_NNPACK=0`, whose PeachPy codegen is
+ASLR-nondeterministic), CUDA, ROCm, XPU and distributed execution are disabled.
+The official torchvision wheel is retained only after
 its native NMS and ROIAlign operators pass against the replacement torch;
 otherwise the toolchain builds torchvision against that torch. ARM retains the
 official hash-locked PyTorch wheels, which were audited without MKL markers.

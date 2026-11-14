@@ -207,18 +207,22 @@ the notices. The final gate checks wheel binaries and notice contents as well
 as distribution metadata. Build prerequisites, ARM notice handling and real
 conversion comparisons are described in [the Docling build](docling.md#the-pack).
 Linux and Windows x86_64 also replace the MKL-bearing PyTorch wheels with
-source-built OpenBLAS CPU wheels, retaining Apache-2.0 oneDNN. Once a
+source-built OpenBLAS CPU wheels, retaining Apache-2.0 oneDNN while disabling
+legacy NNPACK (`USE_NNPACK=0`, because PeachPy codegen is ASLR-nondeterministic
+and OpenBLAS plus oneDNN keep the CPU math and convolution paths). Once a
 `toolchain-wheels-v*` release is published by
 [`.github/workflows/toolchain-wheels.yml`](../.github/workflows/toolchain-wheels.yml)
 and pinned under `[toolchain]` in `engines/docling/pack/pins.toml`, the pack
 consumes those hash-verified release wheels and sidecars (falling back to the
 pinned source build only while a target's `[toolchain]` entry is omitted during
 bootstrap). Official ARM PyTorch wheels remain; BSD-3-Clause ITT is permitted
-there and its license is included in the third-party notices, while source-built
-toolchain wheels disable ITT (`USE_ITT=0`, `-DWITH_ITT=OFF`,
-`-DLIBOMP_USE_ITT_NOTIFY=OFF`). The gate distinguishes ITT/oneDNN from
-proprietary MKL, IPP and Intel OpenMP. The owning build and update route is in
-the [Docling guide](docling.md#the-pack).
+there and its license is included in the third-party notices. Source-built
+OpenCV (`-DWITH_ITT=OFF`) and LLVM OpenMP (`-DLIBOMP_USE_ITT_NOTIFY=OFF`)
+disable ITT (`allow_itt=False`); CPU `torch` passes `USE_ITT=0`, yet vendored
+oneDNN (`DNNL_ENABLE_ITT_TASKS=ON`) still compiles BSD-3-Clause `ittnotify`
+into `libtorch_cpu.so`, so the exported `torch` wheel carries `notices/ittapi.txt`.
+The gate distinguishes ITT/oneDNN from proprietary MKL, IPP and Intel OpenMP.
+The owning build and update route is in the [Docling guide](docling.md#the-pack).
 
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
