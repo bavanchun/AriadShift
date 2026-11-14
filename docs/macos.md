@@ -126,7 +126,9 @@ change and let the macOS job fail: it uploads the runner's renders as the `Ariad
 `SNAPSHOT_TESTING_RECORD=all` re-records for a quick check, but those images are not committed. Outside CI the snapshot tests
 are skipped (reported as skipped, not passed) unless `ARIAD_SNAPSHOTS=1` is set, because local renders differ from the runner's.
 Snapshot tests subclass `DSSnapshotTestCase` from the package's `AriadDesignSystemTesting` library, which holds the appearance
-matrix, the offscreen renderer and that gate; the package tests and `AriadShiftTests` link it, the app never does. Set `SWIFTPM_CACHE_PATH`
+matrix, the offscreen renderer and that gate; the package tests and `AriadShiftTests` link it, the app never does.
+`xcodebuild test` passes only `TEST_RUNNER_`-prefixed variables to the test process, so `just macos-test` forwards `CI`,
+`ARIAD_SNAPSHOTS` and `SNAPSHOT_ARTIFACTS` that way; run the app's tests through that recipe. Set `SWIFTPM_CACHE_PATH`
 to keep SwiftPM's repository cache off the system disk in `just macos-build` and `just macos-test`.
 
 ## Updates (Sparkle 2.10.1)

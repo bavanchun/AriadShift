@@ -521,7 +521,14 @@ macos-test:
     swift test --package-path apps/macos/AriadShiftCore
     # Token, model and snapshot tests of the design system (reference images in Tests/**/__Snapshots__).
     swift test --package-path apps/macos/AriadDesignSystem ${cache_args[@]+"${cache_args[@]}"}
-    xcodebuild test \
+    # xcodebuild hands the test process only TEST_RUNNER_-prefixed variables (without the prefix), so the snapshot
+    # gate and the failed-render folder are passed through that way, each only when set: an empty SNAPSHOT_ARTIFACTS
+    # would make failed renders land in the working directory.
+    runner_env=()
+    for name in CI ARIAD_SNAPSHOTS SNAPSHOT_ARTIFACTS; do
+        if [[ -n "${!name:-}" ]]; then runner_env+=("TEST_RUNNER_${name}=${!name}"); fi
+    done
+    env ${runner_env[@]+"${runner_env[@]}"} xcodebuild test \
         -project apps/macos/AriadShift.xcodeproj \
         -scheme AriadShift \
         -destination 'platform=macOS' \
