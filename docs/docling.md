@@ -158,8 +158,9 @@ sidecar must additionally match one component's reviewed `export_objects`
 SHA-256 receipt in
 [`native-components.toml`](../engines/docling/pack/native-components.toml), with
 an allowed SPDX licence and all hash-verified notices bundled. Wheel-scoped
-notices retain their reviewed paths; upstream notices go inside the wheel at
-`notices/<path>`. Loose artifacts require those files beside the artifact.
+notices retain their reviewed paths; upstream notices go inside the wheel under
+`<dist-info>/licenses/<path>`. Loose artifacts keep upstream notices beside the
+artifact under `notices/<path>`.
 Renaming an object, a generated output checksum or an OpenMP sidecar hash cannot
 create an approval. ZIP directory entries must have zero declared/compressed
 size and no readable bytes; payloads still reach content scanning and are refused.

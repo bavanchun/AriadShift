@@ -31,7 +31,7 @@ image = "quay.io/pypa/manylinux_2_28_x86_64@sha256:f6adcfd450f0927a05c66ded9b4c3
 # Releases (`toolchain-wheels-v*`). OpenCV (`-DWITH_ITT=OFF`) and LLVM OpenMP
 # (`-DLIBOMP_USE_ITT_NOTIFY=OFF`) are also ITT-free. The MKL-free CPU `torch` wheel keeps
 # vendored oneDNN's `DNNL_ENABLE_ITT_TASKS`, so it carries BSD-3-Clause `ittapi`
-# (`ittnotify`) with the bundled `notices/ittapi.txt`.
+# (`ittnotify`) with the bundled `torch-*.dist-info/licenses/ittapi.txt`.
 #
 # While `[toolchain.targets.<triple>.<kind>]` (`kind` in `opencv`, `torch`) is omitted
 # during bootstrap (before the first `toolchain-wheels-v*` release is cut),
