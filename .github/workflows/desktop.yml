@@ -66,6 +66,30 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
           unshare --user --map-root-user --mount true
+      - name: Run desktop smoke script unit tests
+        run: |
+          for candidate in python3 python; do
+            if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+              "$candidate" scripts/desktop-smoke-test.py
+              exit 0
+            fi
+          done
+          if py -3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+            py -3 scripts/desktop-smoke-test.py
+            exit 0
+          fi
+          tool_cache="${RUNNER_TOOL_CACHE:-}"
+          tool_cache="${tool_cache//\\//}"
+          if [[ -n "$tool_cache" && -d "$tool_cache/Python" ]]; then
+            while IFS= read -r py_exe; do
+              if "$py_exe" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+                "$py_exe" scripts/desktop-smoke-test.py
+                exit 0
+              fi
+            done < <(find "$tool_cache/Python" -maxdepth 4 -type f -name 'python.exe' 2>/dev/null | { sort -Vr 2>/dev/null || sort -r; })
+          fi
+          echo "No Python 3 interpreter found" >&2
+          exit 1
       - run: pnpm install --frozen-lockfile
       - run: just pandoc
       - run: just desktop-bindings-check
