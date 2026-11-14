@@ -1,25 +1,13 @@
-import AppKit
-import SnapshotTesting
+import AriadDesignSystemTesting
 import SwiftUI
 import XCTest
 @testable import AriadDesignSystem
 
 /// Snapshots every component in light, dark and increased contrast (light and dark) at a fixed size and scale.
 ///
-/// Glass is rendered on its material fallback. Liquid Glass is composited by the window server from whatever lies
-/// behind the window, so offscreen capture returns nothing for it and it could never give a stable reference.
-///
-/// Reference images live in `__Snapshots__/ComponentSnapshotTests` and are the renders of the CI macOS runner, whose
-/// text antialiasing differs from other Macs. The comparison therefore runs only on CI or when `ARIAD_SNAPSHOTS=1` is
-/// set; anywhere else every test is reported as skipped, never as passed. After an intended visual change, refresh the
-/// references from the failed-snapshot artifact of the macOS job (see docs/macos.md) and review every changed image.
-@MainActor
-final class ComponentSnapshotTests: XCTestCase {
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-        try XCTSkipUnless(SnapshotGate.isEnabled, SnapshotGate.skipMessage)
-    }
-
+/// `DSSnapshotTestCase` holds the rendering and the CI gate. Reference images live in
+/// `__Snapshots__/ComponentSnapshotTests`; they are the CI runner's renders (see docs/macos.md for refreshing them).
+final class ComponentSnapshotTests: DSSnapshotTestCase {
     func testEmptyState() {
         assertAppearances(size: CGSize(width: 400, height: 240)) {
             DSEmptyState(
@@ -193,109 +181,5 @@ final class ComponentSnapshotTests: XCTestCase {
             )
             .padding(DSSpacing.xl)
         }
-    }
-}
-
-// MARK: - Rendering
-
-/// Whether snapshot images are compared in this run: always on CI (`CI=true`), locally only with `ARIAD_SNAPSHOTS=1`.
-enum SnapshotGate {
-    static var isEnabled: Bool {
-        let environment = ProcessInfo.processInfo.environment
-        return environment["CI"] == "true" || environment["ARIAD_SNAPSHOTS"] == "1"
-    }
-
-    static let skipMessage =
-        "snapshot references are recorded on the CI macOS runner; set ARIAD_SNAPSHOTS=1 to compare locally"
-}
-
-/// The appearances every component is snapshot in.
-/// SwiftUI reads increased contrast from its environment rather than from the window appearance, so both are set.
-private let snapshotAppearances: [(name: String, appearance: NSAppearance.Name, contrast: ColorSchemeContrast)] = [
-    ("light", .aqua, .standard),
-    ("dark", .darkAqua, .standard),
-    ("light-contrast", .accessibilityHighContrastAqua, .increased),
-    ("dark-contrast", .accessibilityHighContrastDarkAqua, .increased),
-]
-
-extension ComponentSnapshotTests {
-    /// Renders `content` on the `canvas` color at a fixed size and scale in every appearance and compares it with the
-    /// reference images. Animations are disabled so state changes on appear land on their final frame.
-    func assertAppearances<Content: View>(
-        size: CGSize,
-        scale: CGFloat = 2,
-        file: StaticString = #filePath,
-        testName: String = #function,
-        line: UInt = #line,
-        @ViewBuilder content: () -> Content
-    ) {
-        let view = content()
-        for (name, appearance, contrast) in snapshotAppearances {
-            let image = render(view, size: size, scale: scale, appearance: appearance, contrast: contrast)
-            assertSnapshot(
-                of: image,
-                as: .image(precision: 0.995, perceptualPrecision: 0.98),
-                named: name,
-                file: file,
-                testName: testName,
-                line: line
-            )
-        }
-    }
-
-    private func render<Content: View>(
-        _ content: Content,
-        size: CGSize,
-        scale: CGFloat,
-        appearance: NSAppearance.Name,
-        contrast: ColorSchemeContrast
-    ) -> NSImage {
-        let root = content
-            .frame(width: size.width, height: size.height)
-            .background(DSColor.canvas)
-            .environment(\.dsPrefersMaterialGlass, true)
-            .environment(\._colorSchemeContrast, contrast)
-            .transaction { transaction in
-                transaction.animation = nil
-                transaction.disablesAnimations = true
-            }
-        let host = NSHostingView(rootView: root)
-        host.frame = CGRect(origin: .zero, size: size)
-        // SwiftUI only draws into a window that is on screen, so the window is ordered in far outside every display.
-        let window = NSWindow(
-            contentRect: CGRect(origin: CGPoint(x: -10_000, y: -10_000), size: size),
-            styleMask: [.borderless], backing: .buffered, defer: false
-        )
-        window.appearance = NSAppearance(named: appearance)
-        window.contentView = host
-        window.orderFrontRegardless()
-        // Let onAppear work (focus, first selection) run, then lay out and draw before capturing.
-        host.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
-        host.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        defer {
-            window.orderOut(nil)
-            window.contentView = nil
-        }
-
-        let pixelsWide = Int(size.width * scale)
-        let pixelsHigh = Int(size.height * scale)
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: pixelsWide, pixelsHigh: pixelsHigh,
-            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-        ) else {
-            XCTFail("Could not allocate a \(pixelsWide)×\(pixelsHigh) bitmap")
-            return NSImage(size: size)
-        }
-        rep.size = size
-        NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
-            host.cacheDisplay(in: host.bounds, to: rep)
-        }
-        let image = NSImage(size: size)
-        image.addRepresentation(rep)
-        return image
     }
 }

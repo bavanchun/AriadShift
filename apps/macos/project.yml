@@ -84,6 +84,9 @@ targets:
     dependencies:
       - target: AriadShift
       - package: AriadShiftCore
+      # Snapshot test support; linked into this test bundle only, never into the app.
+      - package: AriadDesignSystem
+        product: AriadDesignSystemTesting
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ariadnev.ariadshift.tests

@@ -64,5 +64,5 @@ private struct AdaptiveGlassModifier<S: Shape>: ViewModifier {
 
 extension EnvironmentValues {
     /// Forces the pre-macOS 26 material fallback so it can be previewed and snapshot-tested on a newer system.
-    @Entry var dsPrefersMaterialGlass = false
+    @Entry public var dsPrefersMaterialGlass = false
 }
