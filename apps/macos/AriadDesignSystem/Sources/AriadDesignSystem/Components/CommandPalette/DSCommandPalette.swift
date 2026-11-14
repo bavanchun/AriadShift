@@ -182,6 +182,9 @@ public struct DSPaletteRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: DSSpacing.s)
+            if let badge = row.item.badge {
+                DSBadge(Text(verbatim: badge))
+            }
             if let shortcut = row.item.shortcut {
                 Text(shortcut)
                     .font(DSFont.caption)

@@ -81,6 +81,21 @@ final class ComponentSnapshotTests: DSSnapshotTestCase {
         }
     }
 
+    func testPaletteRowBadge() {
+        let item = DSPaletteItem(
+            id: "validate", title: "Validate PDF/A", outcome: "Check the file against the archive standard.",
+            systemImage: "checkmark.seal", badge: "Pro"
+        )
+        let row = DSPaletteRowModel(id: "secure/validate", item: item, highlightedOffsets: [], score: 0)
+        assertAppearances(size: CGSize(width: 656, height: 104)) {
+            VStack(spacing: 0) {
+                DSPaletteRow(row: row, isSelected: true)
+                DSPaletteRow(row: row, isSelected: false)
+            }
+            .padding(DSSpacing.s)
+        }
+    }
+
     func testToast() {
         assertAppearances(size: CGSize(width: 520, height: 120)) {
             DSToast(DSToastContent(
