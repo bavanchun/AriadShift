@@ -112,6 +112,60 @@ final class ComponentSnapshotTests: DSSnapshotTestCase {
         }
     }
 
+    func testDropOverlay() {
+        assertAppearances(size: CGSize(width: 560, height: 280)) {
+            DSDropOverlay(
+                title: Text(verbatim: "Drop to open"),
+                hint: Text(verbatim: "Hold ⌥ to insert the pages into this document")
+            )
+        }
+    }
+
+    func testPageThumbnailsAndInsertionBar() {
+        assertAppearances(size: CGSize(width: 560, height: 264)) {
+            HStack(alignment: .top, spacing: DSSpacing.xl) {
+                ForEach(1...3, id: \.self) { page in
+                    VStack(spacing: DSSpacing.xs) {
+                        DSColor.surface
+                            .frame(width: DSSize.thumbnailWidth, height: DSSize.thumbnailWidth * DSSize.pagePlaceholderAspect)
+                            .dsPageThumbnail(isSelected: page == 2)
+                        DSPageCaption(page, isSelected: page == 2)
+                    }
+                }
+                DSInsertionBar()
+                    .frame(height: DSSize.thumbnailWidth * DSSize.pagePlaceholderAspect)
+            }
+            .padding(DSSpacing.xxl)
+        }
+    }
+
+    func testSelectionActionBar() {
+        assertAppearances(size: CGSize(width: 440, height: 120)) {
+            Color.clear.dsSelectionActionBar(isPresented: true) {
+                DSSelectionActionBar(count: Text(verbatim: "3 selected"), countValue: 3) {
+                    Button(String("Rotate"), systemImage: "rotate.right") {}
+                    Button(String("Extract"), systemImage: "doc.on.doc") {}
+                    Button(String("Delete"), systemImage: "trash") {}
+                }
+            }
+        }
+    }
+
+    func testSidebarToolRows() {
+        assertAppearances(size: CGSize(width: 264, height: 200)) {
+            VStack(spacing: 0) {
+                DSSidebarGroupHeader(Text(verbatim: "Organize"))
+                DSSidebarToolRow(systemImage: "rectangle.stack", title: Text(verbatim: "Merge PDFs")) {}
+                DSSidebarToolRow(systemImage: "scissors", title: Text(verbatim: "Split PDF")) {}
+                DSSidebarGroupHeader(Text(verbatim: "Secure"))
+                DSSidebarToolRow(
+                    systemImage: "signature", title: Text(verbatim: "Sign digitally"), badge: Text(verbatim: "Get pack")
+                ) {}
+            }
+            .padding(DSSpacing.m)
+        }
+    }
+
     /// The whole gallery at 1x, so one image shows every token and component together.
     func testGallery() {
         assertAppearances(size: CGSize(width: 1440, height: 900), scale: 1) {
