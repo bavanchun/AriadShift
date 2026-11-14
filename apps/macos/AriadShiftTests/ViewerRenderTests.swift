@@ -80,12 +80,16 @@ final class ViewerRenderTests: XCTestCase {
 
         viewer.goTo(pageNumber: 4)
         viewer.select(6, .toggle)
+        let rendersBeforeGrid = viewer.thumbnails?.renderCount ?? 0
         viewer.layout = .pageGrid
-        await pump(10) { viewer.thumbnails?.renderCount ?? 0 > 20 }
+        // The grid draws its cells at its own width, so they are new renders, a full row (at least 4 cells) or more.
+        await pump(10) { (viewer.thumbnails?.renderCount ?? 0) - rendersBeforeGrid >= 8 }
         await pump(1) { false }
         let grid = try snapshot(window, name: "t4-viewer-grid")
         XCTAssertTrue(hasContent(grid))
-        XCTAssertGreaterThan(viewer.thumbnails?.renderCount ?? 0, 10, "the grid shows many thumbnails")
+        XCTAssertGreaterThanOrEqual(
+            (viewer.thumbnails?.renderCount ?? 0) - rendersBeforeGrid, 4, "the grid renders at least a full row of thumbnails"
+        )
 
         viewer.layout = .reader
         await pump(2) { viewer.pdfView.window != nil }
