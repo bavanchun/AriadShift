@@ -43,6 +43,23 @@ final class OpeningPlanTests: XCTestCase {
         XCTAssertEqual(plan(lastSeen: "0.7.0", reduceMotion: true).motion, .fade)
     }
 
+    func testTheClipTakesOverOnlyBeforeTheBeadLands() {
+        func path(_ readyAt: Double?, motion: OpeningPlan.Motion = .play(.full), reduceTransparency: Bool = false) -> HeroPath {
+            HeroPath.resolve(motion: motion, reduceTransparency: reduceTransparency, readyAt: readyAt)
+        }
+        XCTAssertEqual(path(0), .clipAtStart, "ready when the opening starts: the clip plays from its first frame")
+        XCTAssertEqual(path(-0.2), .clipAtStart)
+        XCTAssertEqual(path(0.31), .clipLate(milliseconds: 310), "ready later: it starts at the elapsed time")
+        XCTAssertEqual(path(0.639), .clipLate(milliseconds: 639))
+        XCTAssertEqual(path(0.64), .vector, "from the bead's landing on, the vector glyph stays")
+        XCTAssertEqual(path(nil), .vector, "a clip that cannot play leaves the vector glyph")
+        XCTAssertEqual(path(0, motion: .play(.short)), .vector, "the short variant is always vector")
+        XCTAssertEqual(path(0, motion: .fade), .vector, "the Reduce Motion crossfade is always vector")
+        XCTAssertEqual(path(0, reduceTransparency: true), .vector)
+        XCTAssertEqual(HeroPath.clipLate(milliseconds: 310).logName, "clip-late@310ms")
+        XCTAssertEqual(HeroPath.clipAtStart.logName, "clip-at-0")
+    }
+
     func testTheRecordKeepsTheLastSeenVersion() throws {
         let suite = "opening-plan-tests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -1,4 +1,3 @@
-import AVFoundation
 import AriadDesignSystem
 import AriadShiftCore
 import Observation
@@ -56,7 +55,7 @@ struct WelcomeWindow: View {
             .onAppear {
                 session.model.openFile = openFile
                 session.model.onOpened = { dismissWindow(id: "welcome") }
-                session.begin(hero: OpeningHero.shared.player(
+                session.begin(hero: OpeningHero.shared.source(
                     for: session.director.motion, scheme: colorScheme, reduceTransparency: reduceTransparency
                 ))
             }
@@ -104,7 +103,7 @@ final class WelcomeSession {
     }
 
     /// Plays the opening; the planned sheet follows when it ends.
-    func begin(hero: AVPlayer?) {
+    func begin(hero: OpeningHero.Appearance?) {
         let presentation = WelcomePresentation.shared
         presentation.hasAppeared = true
         _ = presentation.consumeOnboardingRequest()

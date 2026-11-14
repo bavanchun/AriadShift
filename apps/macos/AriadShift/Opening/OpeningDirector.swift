@@ -33,8 +33,10 @@ final class OpeningDirector {
     private(set) var shownItems: Int
     /// The whole window's content; only the Reduce Motion crossfade changes it.
     private(set) var contentOpacity: Double
-    /// The hero clip while it plays the glyph, nil once the vector glyph takes over.
+    /// The hero clip while it plays the glyph, nil while the vector glyph plays.
     private(set) var heroPlayer: AVPlayer?
+    /// The clip's opacity over the vector glyph: 1 from the start, or a `fade` crossfade when it takes over late.
+    private(set) var heroOpacity: Double = 0
     private(set) var isPlaying = false
 
     /// Called once when the opening has ended, whether it ran out or was skipped.
@@ -42,6 +44,9 @@ final class OpeningDirector {
     @ObservationIgnored private var scheduled: [Task<Void, Never>] = []
     @ObservationIgnored private var inputMonitor: Any?
     @ObservationIgnored private var interval: OSSignpostIntervalState?
+    @ObservationIgnored private var startTime: ContinuousClock.Instant?
+    @ObservationIgnored private var heroWait: Task<Void, Never>?
+    @ObservationIgnored private var heroDecided = false
 
     init(motion: OpeningPlan.Motion) {
         self.motion = motion
@@ -68,12 +73,12 @@ final class OpeningDirector {
         return director
     }
 
-    /// Starts the opening. `hero` is the clip to play instead of the vector glyph, if it is ready.
-    func begin(hero: AVPlayer?) {
+    /// Starts the opening. `hero` is the clip that may take over the glyph (see `HeroPath`), or nil.
+    func begin(hero: OpeningHero.Appearance?) {
         guard !isPlaying else { return }
         isPlaying = true
+        startTime = .now
         interval = Self.signposter.beginInterval("Opening")
-        Self.log.notice("opening \(String(describing: self.motion), privacy: .public) with the \(hero == nil ? "vector" : "hero", privacy: .public) glyph")
         installInputMonitor()
         switch motion {
         case .fade:
@@ -81,9 +86,9 @@ final class OpeningDirector {
             schedule(at: DSMotion.fadeDuration) { $0.finish() }
         case .play(let variant):
             let timeline = DSOpeningTimeline.of(variant)
-            heroPlayer = hero
             markRun = DSBrandMarkRun(id: markRun.id + 1, motion: .play(variant))
-            schedule(at: timeline.heroHandover) { $0.heroPlayer = nil }
+            startHero(hero)
+            schedule(at: timeline.heroHandover) { $0.endHero() }
             schedule(at: timeline.move.lowerBound) { director in
                 withAnimation(Self.smooth(timeline.move)) { director.markInHeader = true }
             }
@@ -102,7 +107,7 @@ final class OpeningDirector {
         guard isPlaying else { return }
         Self.log.notice("opening skipped by input")
         cancelScheduled()
-        heroPlayer = nil
+        endHero()
         switch motion {
         case .fade:
             var instant = Transaction(animation: nil)
@@ -123,11 +128,69 @@ final class OpeningDirector {
         guard isPlaying else { return }
         isPlaying = false
         cancelScheduled()
-        heroPlayer = nil
+        endHero()
         removeInputMonitor()
         if let interval { Self.signposter.endInterval("Opening", interval) }
         interval = nil
         onFinish()
+    }
+
+    // MARK: Hero clip
+
+    /// The vector glyph has already started. A clip that is ready now plays from its first frame; otherwise this
+    /// waits for it until the bead starts to land and lets it take over then, or keeps the vector glyph.
+    private func startHero(_ appearance: OpeningHero.Appearance?) {
+        guard let appearance else { return decideHero(.vector) }
+        if let player = OpeningHero.shared.readyPlayer(appearance) {
+            return takeOver(player, path: .clipAtStart)
+        }
+        heroWait = Task { [weak self] in
+            let player = await OpeningHero.shared.player(appearance)
+            guard let self, !Task.isCancelled, isPlaying, !heroDecided else { return }
+            let path = HeroPath.resolve(motion: motion, reduceTransparency: false, readyAt: player == nil ? nil : elapsed)
+            if let player, case .clipLate = path {
+                takeOver(player, path: path)
+            } else {
+                decideHero(.vector)
+            }
+        }
+        schedule(at: HeroPath.takeoverDeadline) { $0.decideHero(.vector) }
+    }
+
+    private func takeOver(_ player: AVPlayer, path: HeroPath) {
+        guard !heroDecided else { return }
+        OpeningHero.start(player, at: elapsed)
+        heroPlayer = player
+        if path == .clipAtStart {
+            heroOpacity = 1
+        } else {
+            withAnimation(DSMotion.fade.animation(reduceMotion: true)) { heroOpacity = 1 }
+        }
+        decideHero(path)
+    }
+
+    /// Records which glyph this opening shows, once, in the `opening` log line.
+    private func decideHero(_ path: HeroPath) {
+        guard !heroDecided else { return }
+        heroDecided = true
+        heroWait?.cancel()
+        heroWait = nil
+        Self.log.notice("opening \(String(describing: self.motion), privacy: .public): \(path.logName, privacy: .public)")
+    }
+
+    /// Hands the glyph back to the vector mark.
+    private func endHero() {
+        decideHero(.vector)
+        heroPlayer?.pause()
+        heroPlayer = nil
+        heroOpacity = 0
+    }
+
+    /// Seconds since the opening started.
+    private var elapsed: Double {
+        guard let startTime else { return 0 }
+        let duration = ContinuousClock.now - startTime
+        return Double(duration.components.seconds) + Double(duration.components.attoseconds) * 1e-18
     }
 
     /// The `smooth` spring fitted into a timeline window, as the mockup plays it.

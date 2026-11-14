@@ -5,15 +5,14 @@ import SwiftUI
 /// The pre-rendered 3D glyph of the full opening (`opening-hero-light.mov`, `opening-hero-dark.mov`, rendered by
 /// `brand/hero/opening-hero.py`): HEVC with alpha at 60 fps, 0–860 ms, on the mark's 256-unit grid, last frame at rest.
 ///
-/// The clip replaces the vector glyph only when every condition holds; otherwise the vector glyph plays, so the
-/// first window never waits for video:
-/// - `isEnabled` (the one switch) is on and the clip is in the bundle;
-/// - the full variant plays (the short variant and the Reduce Motion fade stay vector);
-/// - Reduce Transparency is off;
-/// - the clip has loaded and prerolled before the opening starts.
+/// The vector glyph always starts the opening, so the first window never waits for video. The clip takes over when
+/// `HeroPath` allows it: `isEnabled` (the one switch) is on, the clip is bundled, the full variant plays, Reduce
+/// Transparency is off, and the clip has loaded and prerolled before the bead starts to land (640 ms). Ready at the
+/// start, it plays from its first frame; ready later, it starts at the elapsed time and crossfades over the vector
+/// glyph. Both follow the same timeline on the same grid, so they line up.
 ///
-/// The vector tile stays behind the clip as its backplate. The clip hands over to the vector glyph when the mark
-/// starts to move (800 ms), on any input, or when it ends.
+/// The vector tile stays behind the clip as its backplate. The clip hands back to the vector glyph when the mark
+/// starts to move (800 ms), on any input, or when the opening ends.
 @MainActor
 final class OpeningHero {
     static let shared = OpeningHero()
@@ -38,32 +37,67 @@ final class OpeningHero {
 
     /// Players whose clip has loaded and prerolled, so their first frame is decoded.
     private var ready: [Appearance: AVPlayer] = [:]
+    /// Clips whose loading has ended, whether it succeeded or not.
+    private var loaded: Set<Appearance> = []
+    private var waiters: [Appearance: [CheckedContinuation<AVPlayer?, Never>]] = [:]
+    private var bundled: Set<Appearance> = []
     private var started = false
 
-    /// Starts loading both clips on a background task. Called once at launch so a clip can be ready when the welcome
-    /// window appears. Nothing waits for it and none of the work runs on the main thread, so the launch is not slowed.
+    /// Starts loading both clips, each on its own background task. Called once at launch so a clip can be ready
+    /// early in the opening. Nothing waits for it and none of the work runs on the main thread, so the launch is not
+    /// slowed.
     func prepare() {
         guard Self.isEnabled, !started else { return }
         started = true
-        let clips = Appearance.allCases.compactMap { appearance in
-            Bundle.main.url(forResource: appearance.resource, withExtension: "mov").map { (appearance, $0) }
-        }
-        Task.detached(priority: .utility) { [weak self] in
-            for (appearance, url) in clips {
-                guard let player = await Self.loadAndPreroll(url) else { continue }
-                await self?.markReady(PreparedPlayer(player: player), for: appearance)
+        for appearance in Appearance.allCases {
+            guard let url = Bundle.main.url(forResource: appearance.resource, withExtension: "mov") else { continue }
+            bundled.insert(appearance)
+            Task.detached(priority: .userInitiated) { [weak self] in
+                let player = await Self.loadAndPreroll(url)
+                await self?.finishLoading(appearance, player.map { PreparedPlayer(player: $0) })
             }
         }
     }
 
-    /// The player for the opening about to start, or nil when the vector glyph plays.
-    func player(for motion: OpeningPlan.Motion, scheme: ColorScheme, reduceTransparency: Bool) -> AVPlayer? {
-        guard Self.isEnabled, motion == .play(.full), !reduceTransparency else { return nil }
-        return ready[Appearance(scheme)]
+    /// The clip for an opening about to start, or nil when only the vector glyph may play.
+    func source(for motion: OpeningPlan.Motion, scheme: ColorScheme, reduceTransparency: Bool) -> Appearance? {
+        let appearance = Appearance(scheme)
+        guard Self.isEnabled, bundled.contains(appearance),
+              HeroPath.isEligible(motion: motion, reduceTransparency: reduceTransparency)
+        else { return nil }
+        return appearance
     }
 
-    private func markReady(_ prepared: PreparedPlayer, for appearance: Appearance) {
-        ready[appearance] = prepared.player
+    /// The player if its clip is ready now.
+    func readyPlayer(_ appearance: Appearance) -> AVPlayer? {
+        ready[appearance]
+    }
+
+    /// The player once its clip has loaded, or nil if it cannot play.
+    func player(_ appearance: Appearance) async -> AVPlayer? {
+        if loaded.contains(appearance) { return ready[appearance] }
+        return await withCheckedContinuation { waiters[appearance, default: []].append($0) }
+    }
+
+    /// Starts `player` at `seconds` into its clip so that it shows the same moment as the vector timeline. Playback is
+    /// scheduled two frames ahead on the host clock, so the layer is attached before the first frame and the clip
+    /// stays locked to the timeline rather than starting late by its own startup time.
+    static func start(_ player: AVPlayer, at seconds: Double) {
+        let lead = 2.0 / 60
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
+        player.setRate(
+            1,
+            time: CMTime(seconds: max(seconds, 0) + lead, preferredTimescale: 600),
+            atHostTime: CMTimeAdd(now, CMTime(seconds: lead, preferredTimescale: 600))
+        )
+    }
+
+    private func finishLoading(_ appearance: Appearance, _ prepared: PreparedPlayer?) {
+        loaded.insert(appearance)
+        ready[appearance] = prepared?.player
+        for waiter in waiters.removeValue(forKey: appearance) ?? [] {
+            waiter.resume(returning: prepared?.player)
+        }
     }
 
     /// A muted player for `url` once its item is ready and prerolled, or nil if the clip cannot play.
@@ -73,6 +107,8 @@ final class OpeningHero {
         player.isMuted = true
         player.actionAtItemEnd = .pause
         player.preventsDisplaySleepDuringVideoPlayback = false
+        // Required by `setRate(_:time:atHostTime:)`; a local, prerolled clip never stalls.
+        player.automaticallyWaitsToMinimizeStalling = false
         guard await StatusObserver.readyToPlay(item), await player.preroll(atRate: 1) else { return nil }
         return player
     }
@@ -121,15 +157,14 @@ private final class StatusObserver: @unchecked Sendable {
     }
 }
 
-/// Plays the hero clip on a transparent layer, scaled to fit the glyph frame it is given.
+/// Shows the hero clip on a transparent layer, scaled to fit the glyph frame it is given.
 struct OpeningHeroView: NSViewRepresentable {
     let player: AVPlayer
 
     func makeNSView(context: Context) -> HeroPlayerView {
+        // The director starts playback (`OpeningHero.start`); the view only shows it.
         let view = HeroPlayerView()
         view.playerLayer.player = player
-        player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
-        player.play()
         return view
     }
 

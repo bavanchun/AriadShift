@@ -52,6 +52,45 @@ struct OpeningPlan: Equatable {
     }
 }
 
+/// Which glyph the full opening shows. The vector glyph always starts at t = 0, so the window never waits; the hero
+/// clip takes over if it is ready before the bead starts to land.
+enum HeroPath: Equatable {
+    /// The clip was ready when the opening started and plays from its first frame.
+    case clipAtStart
+    /// The clip became ready this many milliseconds in; it starts at that point of its timeline and crossfades in.
+    case clipLate(milliseconds: Int)
+    /// The vector glyph plays throughout.
+    case vector
+
+    /// The path as the `opening` log line names it.
+    var logName: String {
+        switch self {
+        case .clipAtStart: "clip-at-0"
+        case .clipLate(let milliseconds): "clip-late@\(milliseconds)ms"
+        case .vector: "vector"
+        }
+    }
+
+    /// The latest moment the clip may take over: when the bead starts to land (640 ms), so the landing, glow and
+    /// handover are never split between two renderings.
+    static let takeoverDeadline = DSOpeningTimeline.full.bead.lowerBound
+
+    /// Whether the clip may play at all: only in the full variant and with Reduce Transparency off. The short variant
+    /// and the Reduce Motion crossfade stay vector.
+    static func isEligible(motion: OpeningPlan.Motion, reduceTransparency: Bool) -> Bool {
+        motion == .play(.full) && !reduceTransparency
+    }
+
+    /// The path for a clip that became ready `readyAt` seconds after the opening started (0 or less: before it), or
+    /// nil if it never became ready.
+    static func resolve(motion: OpeningPlan.Motion, reduceTransparency: Bool, readyAt: Double?) -> HeroPath {
+        guard isEligible(motion: motion, reduceTransparency: reduceTransparency), let readyAt else { return .vector }
+        if readyAt <= 0 { return .clipAtStart }
+        guard readyAt < takeoverDeadline else { return .vector }
+        return .clipLate(milliseconds: Int((readyAt * 1000).rounded()))
+    }
+}
+
 /// The version the welcome window last appeared in, kept in the app's defaults next to the onboarding flag.
 struct OpeningRecord {
     static let lastSeenVersionKey = "opening.lastSeenVersion"
