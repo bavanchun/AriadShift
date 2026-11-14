@@ -118,23 +118,34 @@ def load_config():
     return config
 
 
+def _hash_part(digest, label: str, data: bytes) -> None:
+    """Feed a length-prefixed (label, data) pair so adjacent inputs cannot collide."""
+    encoded = label.encode("utf-8")
+    digest.update(len(encoded).to_bytes(8, "big"))
+    digest.update(encoded)
+    digest.update(len(data).to_bytes(8, "big"))
+    digest.update(data)
+
+
 def key(target):
     load_config()
-    digest = hashlib.sha256(target.encode())
-    # Model pins and published wheel digests do not invalidate the source build.
-    for path in (
-        CONFIG,
-        Path(__file__),
-        PACK / "native_build.py",
-        PACK / "vcomp-compat.cpp",
-        PACK / "vcomp-probe.cpp",
-        PACK / "vcomp-import.cpp",
-        REPOSITORY / ".github/workflows/torch-docling.yml",
-        REPOSITORY / "uv.lock",
+    digest = hashlib.sha256()
+    _hash_part(digest, "target", target.encode("utf-8"))
+    # Model pins, published wheel digests, and workflow files do not invalidate the source build.
+    for label, path in (
+        ("torch-build.toml", CONFIG),
+        ("torch_build.py", Path(__file__)),
+        ("native_build.py", PACK / "native_build.py"),
+        ("vcomp-compat.cpp", PACK / "vcomp-compat.cpp"),
+        ("vcomp-probe.cpp", PACK / "vcomp-probe.cpp"),
+        ("vcomp-import.cpp", PACK / "vcomp-import.cpp"),
+        ("engines/docling/pyproject.toml", PACK.parent / "pyproject.toml"),
+        ("uv.lock", REPOSITORY / "uv.lock"),
     ):
-        digest.update(path.read_bytes())
+        _hash_part(digest, label, path.read_bytes())
     pins = fetch.load_pins()
-    digest.update(json.dumps({p: pins[p] for p in ("llvm", "manylinux")}, sort_keys=True).encode())
+    for section in ("llvm", "manylinux"):
+        _hash_part(digest, f"pins.{section}", json.dumps(pins[section], sort_keys=True).encode())
     return digest.hexdigest()
 
 

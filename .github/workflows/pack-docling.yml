@@ -221,7 +221,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/native
-          key: docling-native-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/torch_build.py', 'engines/docling/pack/torch-build.toml', 'engines/docling/pack/vcomp-*.cpp', 'engines/docling/pack/pins.toml', '.github/workflows/torch-docling.yml', 'uv.lock') }}
+          key: docling-native-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/torch_build.py', 'engines/docling/pack/torch-build.toml', 'engines/docling/pack/vcomp-*.cpp', 'engines/docling/pack/pins.toml', 'engines/docling/pyproject.toml', 'uv.lock') }}
 
       - name: Restore native compiler work
         if: startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true'
