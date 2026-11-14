@@ -2241,31 +2241,7 @@ fn inline_indexed_resource_and_base_colorspaces() {
     type IndexedCase<'a> = (&'a str, Vec<u8>, Vec<Vec<u8>>, &'a str);
     let cases: Vec<IndexedCase<'_>> = vec![
         (
-            "/ColorSpace << /CsBase /DeviceRGB >>",
-            [
-                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS [/I /CsBase 1 <FF0000 00FF00>] ID "
-                    .as_slice(),
-                indexed_samples.as_slice(),
-                b" EI Q".as_slice(),
-            ]
-            .concat(),
-            vec![],
-            "/ColorSpace [ /Indexed /CsBase ",
-        ),
-        (
-            "/ColorSpace << /CsBase /RGB >>",
-            [
-                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS [/I /CsBase 1 <FF0000 00FF00>] ID "
-                    .as_slice(),
-                indexed_samples.as_slice(),
-                b" EI Q".as_slice(),
-            ]
-            .concat(),
-            vec![],
-            "/ColorSpace [ /Indexed /CsBase ",
-        ),
-        (
-            "/ColorSpace << /CsBase /DeviceRGB /CsIdx [/Indexed /CsBase 1 5 0 R] >>",
+            "/ColorSpace << /CsIdx [/Indexed /DeviceRGB 1 5 0 R] >>",
             [
                 b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS /CsIdx ID ".as_slice(),
                 indexed_samples.as_slice(),
@@ -2276,14 +2252,17 @@ fn inline_indexed_resource_and_base_colorspaces() {
             "/ColorSpace /CsIdx ",
         ),
         (
-            "/ColorSpace << /CsIdx [/Indexed /DeviceRGB 1 5 0 R] >>",
+            "/ColorSpace << /CsIdx [/Indexed 5 0 R 1 6 0 R] >>",
             [
                 b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS /CsIdx ID ".as_slice(),
                 indexed_samples.as_slice(),
                 b" EI Q".as_slice(),
             ]
             .concat(),
-            vec![stream_object("", b"\xff\x00\x00\x00\xff\x00")],
+            vec![
+                b"/DeviceRGB".to_vec(),
+                stream_object("", b"\xff\x00\x00\x00\xff\x00"),
+            ],
             "/ColorSpace /CsIdx ",
         ),
         (
@@ -2297,6 +2276,18 @@ fn inline_indexed_resource_and_base_colorspaces() {
             .concat(),
             vec![],
             "/ColorSpace [ /Indexed /DeviceRGB ",
+        ),
+        (
+            "",
+            [
+                b"q 10 0 0 10 2 2 cm BI /W 2 /H 2 /BPC 8 /CS [/I /RGB 1 <FF0000 00FF00>] ID "
+                    .as_slice(),
+                indexed_samples.as_slice(),
+                b" EI Q".as_slice(),
+            ]
+            .concat(),
+            vec![],
+            "/ColorSpace [ /Indexed /RGB ",
         ),
     ];
 
@@ -2356,15 +2347,10 @@ fn inline_indexed_resource_and_base_colorspaces() {
             .render_with_config(&PdfRenderConfig::new().set_target_size(20, 20))
             .unwrap()
             .as_rgba_bytes();
-        // PDFium itself resolves `/CS /CsIdx` when `/CsIdx`'s base is a built-in space (or direct
-        // `[/I /DeviceRGB ...]`), whereas resource-named bases inside `[/Indexed /CsBase ...]`
-        // still pass preflight/component counting for the local validator.
-        if !res.contains("/CsBase") {
-            assert_eq!(
-                actual_rgba, expected_rgba,
-                "rendered indexed mismatch for `{res}` (`{expected_snippet}`)"
-            );
-        }
+        assert_eq!(
+            actual_rgba, expected_rgba,
+            "rendered indexed mismatch for `{res}` (`{expected_snippet}`)"
+        );
     }
 }
 
@@ -2716,6 +2702,60 @@ fn rejects_unresolvable_cyclic_and_malformed_inline_colorspaces() {
             b"BI /W 1 /H 1 /BPC 8 /CS 5 0 R /F /AHx ID 00> EI",
             vec![b"/DeviceRGB".to_vec()],
         ),
+        (
+            "indexed_inline_I_csbase",
+            "/ColorSpace << /CsBase /DeviceRGB >>",
+            b"BI /W 2 /H 2 /BPC 8 /CS [/I /CsBase 1 <FF0000 00FF00>] ID \x00\x01\x01\x00 EI",
+            vec![],
+        ),
+        (
+            "indexed_inline_I_csbase_abbr",
+            "/ColorSpace << /CsBase /RGB >>",
+            b"BI /W 2 /H 2 /BPC 8 /CS [/I /CsBase 1 <FF0000 00FF00>] ID \x00\x01\x01\x00 EI",
+            vec![],
+        ),
+        (
+            "indexed_inline_full_csbase",
+            "/ColorSpace << /CsBase /DeviceRGB >>",
+            b"BI /W 2 /H 2 /BPC 8 /CS [/Indexed /CsBase 1 <FF0000 00FF00>] ID \x00\x01\x01\x00 EI",
+            vec![],
+        ),
+        (
+            "indexed_res_csidx_csbase",
+            "/ColorSpace << /CsBase /DeviceRGB /CsIdx [/Indexed /CsBase 1 5 0 R] >>",
+            b"BI /W 2 /H 2 /BPC 8 /CS /CsIdx ID \x00\x01\x01\x00 EI",
+            vec![stream_object("", b"\xff\x00\x00\x00\xff\x00")],
+        ),
+        (
+            "indexed_indirect_resname_base",
+            "/ColorSpace << /CsBase /DeviceRGB /CsIdx [/Indexed 5 0 R 1 6 0 R] >>",
+            b"BI /W 2 /H 2 /BPC 8 /CS /CsIdx ID \x00\x01\x01\x00 EI",
+            vec![b"/CsBase".to_vec(), stream_object("", b"\xff\x00\x00\x00\xff\x00")],
+        ),
+        (
+            "indexed_inline_nested_calrgb",
+            "",
+            b"BI /W 1 /H 1 /BPC 8 /CS [/Indexed [/CalRGB << /WhitePoint [1 1 1] >>] 0 <FF0000>] ID \x00 EI",
+            vec![],
+        ),
+        (
+            "alias_two_hop_device_gray",
+            "/ColorSpace << /Cs1 /Cs2 /Cs2 /DeviceGray >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Cs1 ID \x00 EI",
+            vec![],
+        ),
+        (
+            "alias_indirect_to_resname",
+            "/ColorSpace << /Cs1 5 0 R /Cs2 /DeviceRGB >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /Cs1 ID \xff\x00\x00 EI",
+            vec![b"/Cs2".to_vec()],
+        ),
+        (
+            "separation_res_alternate",
+            "/ColorSpace << /CsAlt /DeviceRGB /CsSep [/Separation /Spot /CsAlt 5 0 R] >>",
+            b"BI /W 1 /H 1 /BPC 8 /CS /CsSep ID \xff EI",
+            vec![b"<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [1 0 0] /N 1 >>".to_vec()],
+        ),
     ];
 
     for (label, res, content, extra) in cases {
@@ -2814,4 +2854,318 @@ fn rejects_resolved_inline_colorspace_over_limits() {
         .load_validated_pdf_bytes()
         .expect_err("DeviceCMYK 120_000 page work must exceed 100_000 limit");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn direct_type3_fonts_in_same_scope_keep_distinct_budgets() {
+    let build_pdf = |f1_w: usize, f1_h: usize, f2: Option<(usize, usize)>, page_stream: &[u8]| {
+        let gray_payload = zlib_compress(&vec![0u8; f1_w * f1_h]);
+        let glyph_gray = [
+            format!("0 0 d0 BI /W {f1_w} /H {f1_h} /BPC 8 /CS /DeviceGray /F /Fl ID ").into_bytes(),
+            gray_payload,
+            b" EI".to_vec(),
+        ]
+        .concat();
+        let (fonts, extras) = if let Some((f2_w, f2_h)) = f2 {
+            let cmyk_payload = zlib_compress(&vec![0u8; f2_w * f2_h * 4]);
+            let glyph_cmyk = [
+                format!("0 0 d0 BI /W {f2_w} /H {f2_h} /BPC 8 /CS /Cs8 /F /Fl ID ").into_bytes(),
+                cmyk_payload,
+                b" EI".to_vec(),
+            ]
+            .concat();
+            (
+                "/Font << /F1 << /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /A 5 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1] >> /F2 << /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /B 6 0 R >> /Encoding << /Type /Encoding /Differences [66 /B] >> /FirstChar 66 /LastChar 66 /Widths [1] >> >>".to_string(),
+                vec![
+                    stream_object("/Resources << >>", &glyph_gray),
+                    stream_object("/Resources << >>", &glyph_cmyk),
+                ],
+            )
+        } else {
+            (
+                "/Font << /F1 << /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /A 5 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1] >> >>".to_string(),
+                vec![stream_object("/Resources << >>", &glyph_gray)],
+            )
+        };
+        let mut objects = vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /ColorSpace << /Cs8 /DeviceCMYK >> {fonts} >> /Contents 4 0 R >>"
+            )
+            .into_bytes(),
+            stream_object("", page_stream),
+        ];
+        objects.extend(extras);
+        assemble_pdf(&objects)
+    };
+
+    // Within-budget variants:
+    // (a) only /F1 (100x200 Gray, 2 glyphs)
+    // (b) both direct /F1 (50x100 Gray = 5_000) and /F2 (50x100 CMYK = 20_000), 2 glyphs
+    for (label, pdf) in [
+        (
+            "only_f1_fits",
+            build_pdf(100, 200, None, b"BT /F1 1 Tf () Tj ET"),
+        ),
+        (
+            "both_smaller_f1_f2_fit",
+            build_pdf(50, 100, Some((50, 100)), b"BT /F1 1 Tf () Tj ET"),
+        ),
+    ] {
+        let ws = TestWorkspace::from_bytes("t3_ok.pdf", &pdf);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(label, "pdf.render", ws.paths, Limits::local(), &mut sink);
+        ctx.load_validated_pdf_bytes()
+            .unwrap_or_else(|e| panic!("{label} should fit per-page budget: {e:?}"));
+    }
+
+    // Over-budget variants:
+    // (a) Exact 100x200 Gray + 100x200 CMYK with 2 glyphs
+    let lead_over = build_pdf(
+        100,
+        200,
+        Some((100, 200)),
+        b"BT /F1 1 Tf (A) Tj /F2 1 Tf (B) Tj ET",
+    );
+    // (b) Single-draw budget check on /F1 + /F2 (50x100 Gray + 100x200 CMYK, 2 glyphs = 160_000 > 100_000)
+    let budget_over = build_pdf(50, 100, Some((100, 200)), b"BT /F1 1 Tf () Tj ET");
+
+    for (label, pdf) in [
+        ("lead_both_100x200", lead_over),
+        ("two_glyphs_160k_over_budget", budget_over),
+    ] {
+        let ws = TestWorkspace::from_bytes("t3_over.pdf", &pdf);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(label, "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err(&format!("{label} must fail closed when exceeding 100_000"));
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "{label}: {err:?}");
+    }
+}
+
+#[test]
+fn multi_page_shared_form_extgstate_memoizes_and_distinct_colorspace_enforces_document_work() {
+    let build_multi_page = |pages: usize, repeats: usize, distinct_cs: bool| {
+        let form_ops = b"q Q ".repeat(repeats);
+        let form_id = 3usize;
+        let first_page_id = 4usize;
+        let mut objects: Vec<Vec<u8>> = Vec::with_capacity(3 + pages * 2);
+        objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
+        let kids: String = (0..pages)
+            .map(|i| format!("{} 0 R", first_page_id + i * 2))
+            .collect::<Vec<_>>()
+            .join(" ");
+        objects.push(format!("<< /Type /Pages /Kids [{kids}] /Count {pages} >>").into_bytes());
+        objects.push(stream_object(
+            "/Type /XObject /Subtype /Form /BBox [0 0 10 10]",
+            &form_ops,
+        ));
+        for i in 0..pages {
+            let page_id = first_page_id + i * 2;
+            let content_id = page_id + 1;
+            let extra_res = if distinct_cs {
+                format!("/ColorSpace << /Cs{i} /DeviceRGB >>")
+            } else {
+                format!("/ExtGState << /GS{i} << /CA 1 >> >>")
+            };
+            objects.push(
+                format!(
+                    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /F {form_id} 0 R >> {extra_res} >> /Contents {content_id} 0 R >>"
+                )
+                .into_bytes(),
+            );
+            objects.push(stream_object("", b"/F Do"));
+        }
+        assemble_pdf(&objects)
+    };
+
+    // 210 pages sharing a 4_000-op Form under distinct ExtGState scopes memoize canonical rewrites.
+    let memo_pdf = build_multi_page(210, 2_000, false);
+    {
+        let ws = TestWorkspace::from_bytes("memo210.pdf", &memo_pdf);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "memo-210",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        ctx.load_validated_pdf_bytes()
+            .expect("210 pages with distinct ExtGState scopes should succeed");
+    }
+
+    // 250 pages sharing a 4_500-op Form across distinct ColorSpace scopes exceed 1_000_000 document rewrite work.
+    let cs_over_pdf = build_multi_page(250, 2_250, true);
+    {
+        let ws = TestWorkspace::from_bytes("docwork250.pdf", &cs_over_pdf);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "docwork-250",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("250 distinct ColorSpace scopes must fail closed at document work cap");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+
+        let page1 = PageRange::parse("1").unwrap();
+        let mut sink_p1 = Vec::new();
+        let ws_p1 = TestWorkspace::from_bytes("docwork250_p1.pdf", &cs_over_pdf);
+        let mut ctx_p1 = ToolContext::new(
+            "docwork-250-p1",
+            "pdf.render",
+            ws_p1.paths,
+            Limits::local(),
+            &mut sink_p1,
+        );
+        let err_p1 = ctx_p1
+            .load_validated_pdf_bytes_for_pages(Some(&page1))
+            .expect_err(
+                "document-wide canonical rewrite work must still fail when rendering page 1",
+            );
+        assert_eq!(err_p1.code, ErrorCode::LimitExceeded);
+    }
+}
+
+#[test]
+fn rejects_transformed_huge_inline_image_with_unresolvable_or_cal_colorspace() {
+    let lead_repro = pdf_with_page_resources(
+        "/ColorSpace << /CsBase /DeviceRGB >>",
+        b"q 20000 0 0 20000 0 0 cm BI /W 1 /H 1 /BPC 8 /CS [/I /CsBase 0 <FF0000>] ID \x00 EI Q",
+        vec![],
+    );
+    {
+        let ws = TestWorkspace::from_bytes("lead_repro_render.pdf", &lead_repro);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "lead-repro-render",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("Lead repro must fail closed in pdf.render preflight");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+    }
+
+    let cal_indirect = vec![b"[/CalRGB << /WhitePoint [0.9505 1 1.089] >>]".to_vec()];
+    let huge_cal = pdf_with_page_resources(
+        "/ColorSpace << /CsCal 5 0 R >>",
+        b"q 20000 0 0 20000 0 0 cm BI /W 1 /H 1 /BPC 8 /CS /CsCal ID abc EI Q",
+        cal_indirect.clone(),
+    );
+    {
+        let ws = TestWorkspace::from_bytes("huge_cal_preflight.pdf", &huge_cal);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "huge-cal-preflight",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        ctx.load_validated_pdf_bytes()
+            .expect("1x1 /CsCal image should be preflight-valid for canonicalization");
+    }
+
+    let Ok(lib_dir) = std::env::var("ARIAD_TEST_PDFIUM_DIR") else {
+        return;
+    };
+    if lib_dir.is_empty() {
+        return;
+    }
+
+    let params = ExtractImagesParams {
+        min_px: 1,
+        format: ExtractFormat::Png,
+        ..ExtractImagesParams::default()
+    };
+
+    // 1. Lead repro under extract_images
+    {
+        let ws = TestWorkspace::from_bytes("lead_repro_extract.pdf", &lead_repro);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "lead-repro-extract",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let err = extract_images::extract_document_images(&mut ctx, &params)
+            .expect_err("Lead repro must fail closed in pdf.extract_images");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+    }
+
+    // 2. Preflight-valid 1x1 /CsCal scaled 20000x20000 -> exceeds pixel cap before get_processed_bitmap
+    {
+        let ws = TestWorkspace::from_bytes("huge_cal_extract.pdf", &huge_cal);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "huge-cal-extract",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let err = extract_images::extract_document_images(&mut ctx, &params)
+            .expect_err("20000x20000 transformed /CsCal must fail before get_processed_bitmap");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+    }
+
+    // 3. Transformed size within MAX_IMAGE_PIXELS (2000x2000 = 4M px) but 16 MB RGBA > max_asset_bytes (4 MB)
+    let med_cal = pdf_with_page_resources(
+        "/ColorSpace << /CsCal 5 0 R >>",
+        b"q 2000 0 0 2000 0 0 cm BI /W 1 /H 1 /BPC 8 /CS /CsCal ID abc EI Q",
+        cal_indirect.clone(),
+    );
+    {
+        let mut limits = Limits::local();
+        limits.max_asset_bytes = Some(4_000_000);
+        let ws = TestWorkspace::from_bytes("med_cal_asset_cap.pdf", &med_cal);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "med-cal-asset-cap",
+            "pdf.extract_images",
+            ws.paths,
+            limits,
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let err = extract_images::extract_document_images(&mut ctx, &params)
+            .expect_err("2000x2000 RGBA (16 MB) must exceed 4 MB max_asset_bytes");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+    }
+
+    // 4. Normal 10x10 /CsCal extracts cleanly
+    let small_cal = pdf_with_page_resources(
+        "/ColorSpace << /CsCal 5 0 R >>",
+        b"q 10 0 0 10 2 2 cm BI /W 1 /H 1 /BPC 8 /CS /CsCal ID \xff\x00\x00 EI Q",
+        cal_indirect,
+    );
+    {
+        let ws = TestWorkspace::from_bytes("small_cal_extract.pdf", &small_cal);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "small-cal-extract",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let outcome = extract_images::extract_document_images(&mut ctx, &params)
+            .expect("10x10 /CsCal image within limits should extract");
+        assert_eq!(outcome.images.len(), 1);
+    }
 }

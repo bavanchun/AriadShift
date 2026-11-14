@@ -36,6 +36,12 @@ fn hash_bytes(hasher: &mut Sha256, bytes: &[u8]) {
     hasher.update(bytes);
 }
 
+pub(crate) fn object_digest(object: &Object) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_object(&mut hasher, object);
+    hasher.finalize().into()
+}
+
 fn hash_object(hasher: &mut Sha256, root: &Object) {
     enum Step<'a> {
         Obj(&'a Object),
@@ -522,11 +528,13 @@ impl Calculator<'_, '_> {
                 stream.dict.get(b"Resources").ok()
             },
         )?;
-        let mut cost = self
-            .scoped_ops
-            .and_then(|map| map.get(&(id, scope.colorspace_digest())))
-            .copied()
-            .unwrap_or(facts.ops);
+        let mut cost = match self.scoped_ops {
+            Some(map) => map
+                .get(&(id, scope.colorspace_digest()))
+                .copied()
+                .ok_or_else(EngineFailure::limit_exceeded)?,
+            None => facts.ops,
+        };
         for call in &facts.calls {
             let extra = match call.op.as_slice() {
                 b"Do" => self.target(scope.get(b"XObject", &call.name), &scope, depth, active)?,
@@ -716,7 +724,7 @@ pub(crate) fn check(
     pages: Option<&ariad_core::tools::PageRange>,
     page_contents: &HashSet<ObjectId>,
 ) -> Result<(), EngineFailure> {
-    check_with_scoped_ops(ctx, doc, facts, &HashMap::new(), pages, page_contents)
+    check_inner(ctx, doc, facts, None, pages, page_contents)
 }
 
 pub(crate) fn check_with_scoped_ops(
@@ -727,11 +735,22 @@ pub(crate) fn check_with_scoped_ops(
     pages: Option<&ariad_core::tools::PageRange>,
     page_contents: &HashSet<ObjectId>,
 ) -> Result<(), EngineFailure> {
+    check_inner(ctx, doc, facts, Some(scoped_ops), pages, page_contents)
+}
+
+fn check_inner(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    facts: &BTreeMap<ObjectId, Facts>,
+    scoped_ops: Option<&HashMap<(ObjectId, [u8; 32]), usize>>,
+    pages: Option<&ariad_core::tools::PageRange>,
+    page_contents: &HashSet<ObjectId>,
+) -> Result<(), EngineFailure> {
     let mut calc = Calculator {
         ctx,
         doc,
         facts,
-        scoped_ops: Some(scoped_ops),
+        scoped_ops,
         memo: HashMap::new(),
         glyph_memo: HashMap::new(),
         page_contents: page_contents.clone(),
@@ -1095,11 +1114,65 @@ mod tests {
         );
     }
 
-    fn object_digest(object: &Object) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hash_object(&mut hasher, object);
-        hasher.finalize().into()
+    #[test]
+    fn scoped_ops_missing_entry_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = ariad_engine_io::RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = crate::output::ToolContext::new(
+            "missing-scoped-ops",
+            "pdf.render",
+            paths,
+            ariad_core::limits::Limits::local(),
+            &mut sink,
+        );
+        let mut doc = lopdf::Document::new();
+        let content_id = doc.add_object(lopdf::Stream::new(Dictionary::new(), b"q Q".to_vec()));
+        let page_id = doc.add_object(lopdf::dictionary! {
+            "Type" => "Page",
+            "Contents" => Object::Reference(content_id),
+        });
+        let pages_id = doc.add_object(lopdf::dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        });
+        if let Ok(page_dict) = doc.get_dictionary_mut(page_id) {
+            page_dict.set("Parent", Object::Reference(pages_id));
+        }
+        let catalog_id = doc.add_object(lopdf::dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+
+        let mut facts = BTreeMap::new();
+        facts.insert(
+            content_id,
+            Facts {
+                ops: 1,
+                calls: Vec::new(),
+                glyphs: 0,
+            },
+        );
+        let mut page_contents = HashSet::new();
+        page_contents.insert(content_id);
+        let empty_scoped_ops = HashMap::new();
+
+        let err =
+            check_with_scoped_ops(&ctx, &doc, &facts, &empty_scoped_ops, None, &page_contents)
+                .expect_err(
+                    "Some(scoped_ops) missing entry must fail closed, never fallback to facts.ops",
+                );
+        assert_eq!(err.code, EngineFailure::limit_exceeded().code);
     }
+
+    use super::object_digest;
 
     #[test]
     fn object_digest_is_canonical_and_domain_separated() {
@@ -1274,6 +1347,8 @@ mod tests {
             (form_id, facts(30_000, &[])),
         ]);
         let scoped_ops = HashMap::from([
+            ((page1_stream, scope1.colorspace_digest()), 20_000),
+            ((page2_stream, scope2.colorspace_digest()), 11_000),
             ((form_id, scope1.colorspace_digest()), 30_000),
             ((form_id, scope2.colorspace_digest()), 90_000),
         ]);
