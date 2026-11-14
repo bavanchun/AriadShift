@@ -452,10 +452,18 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 Err(pandoc_bin::PandocBinaryError::UnsupportedVersion { found }) => {
                     (ToolAvailability::WrongVersion, found)
                 }
-                Err(pandoc_bin::PandocBinaryError::Missing)
-                | Err(pandoc_bin::PandocBinaryError::TimedOut)
-                | Err(pandoc_bin::PandocBinaryError::Interrupted) => {
-                    (ToolAvailability::Missing, None)
+                Err(pandoc_bin::PandocBinaryError::Missing) => (ToolAvailability::Missing, None),
+                Err(pandoc_bin::PandocBinaryError::TimedOut) => {
+                    return Err(EngineFailure::new(
+                        ErrorCode::EngineFailure,
+                        "Pandoc timed out while checking version",
+                    ));
+                }
+                Err(pandoc_bin::PandocBinaryError::Interrupted) => {
+                    return Err(EngineFailure::new(
+                        ErrorCode::EngineFailure,
+                        "Pandoc locate was interrupted",
+                    ));
                 }
             };
             emit(
@@ -1508,5 +1516,69 @@ mod tests {
 
         // Other MetaValue variants are not considered empty or whitespace
         assert!(!is_meta_empty_or_whitespace(&MetaValue::MetaBool(true)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn describe_reports_engine_failure_when_pandoc_version_times_out() {
+        use std::io::Cursor;
+        use std::os::unix::fs::PermissionsExt;
+
+        use ariad_core::protocol::Request;
+
+        const CHILD: &str = "ARIAD_TEST_PANDOC_DESCRIBE_TIMEOUT_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let request = Request::Describe {
+                protocol: ariad_core::protocol::PROTOCOL.to_owned(),
+                job: "job-describe-timeout".to_owned(),
+            };
+            let request_bytes = serde_json::to_vec(&request).unwrap();
+            let mut output_bytes = Vec::new();
+            let exit_code = super::serve(Cursor::new(request_bytes), &mut output_bytes);
+            assert_ne!(exit_code, std::process::ExitCode::SUCCESS);
+
+            let output_str = String::from_utf8(output_bytes).unwrap();
+            let events: Vec<Event> = output_str
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("valid engine event"))
+                .collect();
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, Event::Capabilities { .. })),
+                "timed-out describe must not emit Capabilities (ToolAvailability::Missing): {events:?}"
+            );
+            let error = events
+                .iter()
+                .find_map(|event| match event {
+                    Event::Result {
+                        ok: false,
+                        error: Some(err),
+                        ..
+                    } => Some(err),
+                    _ => None,
+                })
+                .expect("must emit failed Event::Result with EngineError");
+            assert_eq!(error.code, ErrorCode::EngineFailure);
+            assert_eq!(error.message, "Pandoc timed out while checking version");
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let stub = dir.path().join("pandoc-hang");
+        std::fs::write(&stub, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engines::pandoc::tests::describe_reports_engine_failure_when_pandoc_version_times_out",
+            ])
+            .env(CHILD, "1")
+            .env("ASHIFT_PANDOC", &stub)
+            .env(crate::pandoc_bin::TEST_TIMEOUT_ENV, "80")
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 }

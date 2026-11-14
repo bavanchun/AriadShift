@@ -143,7 +143,10 @@ pub fn doctor(
         }
         Err(PandocBinaryError::TimedOut) => {
             if failure_error.is_none() {
-                failure_error = Some(ConvertError::ToolMissing);
+                failure_error = Some(ConvertError::EngineUnavailable {
+                    engine: crate::engines::PANDOC.id.to_owned(),
+                    detail: "Pandoc timed out while checking version".to_owned(),
+                });
             }
             (
                 None,
@@ -218,79 +221,96 @@ pub fn doctor(
     }
 
     // 3. Engine describe round trip
-    let default_args = [
-        std::ffi::OsString::from("__engine"),
-        std::ffi::OsString::from("pandoc"),
-    ];
-    let describe_check = match runner::describe(engine_program, &default_args, cancel.clone()) {
-        Ok(ariad_core::protocol::Event::Capabilities {
-            ref tool,
-            ref engine,
-            ..
-        }) => {
-            if tool.status == ariad_core::protocol::ToolAvailability::Found {
-                DoctorCheck {
-                    id: "engine_describe".to_owned(),
-                    ok: true,
-                    required: true,
-                    message: format!("engine '{engine}' passes describe round trip"),
-                    hint: String::new(),
-                }
-            } else {
-                if failure_error.is_none() {
-                    failure_error = Some(ConvertError::ToolMissing);
-                }
-                let status_desc = match tool.status {
-                    ariad_core::protocol::ToolAvailability::WrongVersion => {
-                        "unsupported tool version"
+    let pandoc_command =
+        crate::engines::EngineInvocation::new(engine_program).command_for("pandoc");
+    let describe_check =
+        match runner::describe_command(&pandoc_command, runner::DESCRIBE_TIMEOUT, cancel.clone()) {
+            Ok(ariad_core::protocol::Event::Capabilities {
+                ref tool,
+                ref engine,
+                ..
+            }) => {
+                if tool.status == ariad_core::protocol::ToolAvailability::Found {
+                    DoctorCheck {
+                        id: "engine_describe".to_owned(),
+                        ok: true,
+                        required: true,
+                        message: format!("engine '{engine}' passes describe round trip"),
+                        hint: String::new(),
                     }
-                    ariad_core::protocol::ToolAvailability::Missing => "tool is missing",
-                    _ => "tool is not ready",
-                };
+                } else {
+                    if failure_error.is_none() {
+                        failure_error = Some(ConvertError::ToolMissing);
+                    }
+                    let status_desc = match tool.status {
+                        ariad_core::protocol::ToolAvailability::WrongVersion => {
+                            "unsupported tool version"
+                        }
+                        ariad_core::protocol::ToolAvailability::Missing => "tool is missing",
+                        _ => "tool is not ready",
+                    };
+                    DoctorCheck {
+                        id: "engine_describe".to_owned(),
+                        ok: false,
+                        required: true,
+                        message: format!("engine '{engine}' describe reported {status_desc}"),
+                        hint: "run 'just pandoc' to install Pandoc >=3.12,<4".to_owned(),
+                    }
+                }
+            }
+            Ok(_) => {
+                if failure_error.is_none() {
+                    failure_error = Some(ConvertError::Failed);
+                }
                 DoctorCheck {
                     id: "engine_describe".to_owned(),
                     ok: false,
                     required: true,
-                    message: format!("engine '{engine}' describe reported {status_desc}"),
-                    hint: "run 'just pandoc' to install Pandoc >=3.12,<4".to_owned(),
+                    message: "engine returned unexpected response to describe".to_owned(),
+                    hint: "verify engine implementation conforms to engine protocol".to_owned(),
                 }
             }
-        }
-        Ok(_) => {
-            if failure_error.is_none() {
-                failure_error = Some(ConvertError::Failed);
-            }
-            DoctorCheck {
-                id: "engine_describe".to_owned(),
-                ok: false,
-                required: true,
-                message: "engine returned unexpected response to describe".to_owned(),
-                hint: "verify engine implementation conforms to engine protocol".to_owned(),
-            }
-        }
-        Err(e) => {
-            if failure_error.is_none() {
-                failure_error = Some(match &e {
-                    runner::RunError::SandboxUnavailable(detail)
-                    | runner::RunError::SandboxLaunchFailed(detail) => {
-                        ConvertError::SandboxUnavailable(detail.clone())
+            Err(e) => {
+                if failure_error.is_none() {
+                    failure_error = Some(match &e {
+                        runner::RunError::SandboxUnavailable(detail)
+                        | runner::RunError::SandboxLaunchFailed(detail) => {
+                            ConvertError::SandboxUnavailable(detail.clone())
+                        }
+                        runner::RunError::Timeout
+                        | runner::RunError::EngineFailed {
+                            code: ariad_core::protocol::ErrorCode::LimitExceeded,
+                            ..
+                        } => ConvertError::LimitExceeded,
+                        runner::RunError::EngineFailed { message, .. }
+                            if message.to_ascii_lowercase().contains("timed out") =>
+                        {
+                            ConvertError::EngineUnavailable {
+                                engine: crate::engines::PANDOC.id.to_owned(),
+                                detail: "Pandoc timed out while checking version".to_owned(),
+                            }
+                        }
+                        _ => ConvertError::Failed,
+                    });
+                }
+                let startup_failure = match &e {
+                    runner::RunError::SandboxLaunchFailed(detail) => Some(detail.as_str()),
+                    _ => None,
+                };
+                let sanitized_msg = match &e {
+                    runner::RunError::SandboxUnavailable(_) => "the engine sandbox is unavailable",
+                    runner::RunError::Spawn { .. } => "could not spawn engine process",
+                    runner::RunError::Io(_) => "engine communication I/O failure",
+                    runner::RunError::Timeout => "engine describe timed out",
+                    runner::RunError::EngineFailed { message, .. }
+                        if message.to_ascii_lowercase().contains("timed out") =>
+                    {
+                        "Pandoc timed out while checking version"
                     }
-                    _ => ConvertError::Failed,
-                });
-            }
-            let startup_failure = match &e {
-                runner::RunError::SandboxLaunchFailed(detail) => Some(detail.as_str()),
-                _ => None,
-            };
-            let sanitized_msg = match &e {
-                runner::RunError::SandboxUnavailable(_) => "the engine sandbox is unavailable",
-                runner::RunError::Spawn { .. } => "could not spawn engine process",
-                runner::RunError::Io(_) => "engine communication I/O failure",
-                runner::RunError::Timeout => "engine describe timed out",
-                runner::RunError::Crash { .. } => "engine process crashed during describe",
-                _ => "engine describe round trip failed",
-            };
-            DoctorCheck {
+                    runner::RunError::Crash { .. } => "engine process crashed during describe",
+                    _ => "engine describe round trip failed",
+                };
+                DoctorCheck {
                 id: "engine_describe".to_owned(),
                 ok: false,
                 required: true,
@@ -306,8 +326,8 @@ pub fn doctor(
                     |detail| launcher_failure_hint(detail).to_owned(),
                 ),
             }
-        }
-    };
+            }
+        };
     checks.push(describe_check);
 
     // 4. Built-in and system engines beyond Pandoc
@@ -896,5 +916,54 @@ mod tests {
         assert!(!describe_check.ok);
         assert!(describe_check.required);
         assert_eq!(report.failure(), Some(ConvertError::Failed));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn doctor_pandoc_version_timeout_produces_failed_report() {
+        use std::os::unix::fs::PermissionsExt;
+
+        const CHILD: &str = "ARIAD_TEST_DOCTOR_PANDOC_TIMEOUT_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let temp = tempfile::tempdir().unwrap();
+            let bad_engine = temp.path().join("definitely-nonexistent-engine-binary");
+            let report = doctor(&bad_engine, CancellationToken::new()).expect("doctor run");
+            let pandoc_check = report
+                .checks
+                .iter()
+                .find(|c| c.id == "pandoc_version")
+                .expect("pandoc_version check exists");
+            assert!(!pandoc_check.ok);
+            assert!(pandoc_check.required);
+            assert_eq!(
+                pandoc_check.message,
+                "Pandoc timed out while checking version"
+            );
+            assert_eq!(
+                report.failure(),
+                Some(ConvertError::EngineUnavailable {
+                    engine: "pandoc".to_owned(),
+                    detail: "Pandoc timed out while checking version".to_owned(),
+                })
+            );
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let stub = dir.path().join("pandoc-hang");
+        std::fs::write(&stub, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "commands::doctor::tests::doctor_pandoc_version_timeout_produces_failed_report",
+            ])
+            .env(CHILD, "1")
+            .env("ASHIFT_PANDOC", &stub)
+            .env(crate::pandoc_bin::TEST_TIMEOUT_ENV, "80")
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 }

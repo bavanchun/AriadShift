@@ -1241,6 +1241,13 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
         ),
         (ConvertError::Failed, 1),
         (
+            ConvertError::EngineUnavailable {
+                engine: "pandoc".to_owned(),
+                detail: "Pandoc timed out while checking version".to_owned(),
+            },
+            1,
+        ),
+        (
             ConvertError::ComplianceFailed {
                 standard: "a-2b".into(),
                 report: Box::new(serde_json::json!({"compliant": false})),
@@ -1284,6 +1291,7 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::InvalidCapabilities(_) => {}
             ConvertError::Failed
             | ConvertError::FailedWithMemoryHint { .. }
+            | ConvertError::EngineUnavailable { .. }
             | ConvertError::ComplianceFailed { .. } => {}
             ConvertError::DestinationSameAsInput => {}
             ConvertError::UnsupportedRoute { .. } => {}

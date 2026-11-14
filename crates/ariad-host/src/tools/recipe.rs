@@ -898,6 +898,7 @@ fn map_convert_error(err: ConvertError) -> ToolError {
         ConvertError::UnsupportedIrVersion
         | ConvertError::InvalidCapabilities(_)
         | ConvertError::FailedWithMemoryHint { .. }
+        | ConvertError::EngineUnavailable { .. }
         | ConvertError::Failed => ToolError::EngineFailure(err.to_string()),
     }
 }

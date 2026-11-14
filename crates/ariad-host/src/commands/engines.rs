@@ -1,8 +1,8 @@
 //! Engines command implementation.
 
-use std::{collections::BTreeSet, ffi::OsString, path::Path};
+use std::{collections::BTreeSet, path::Path};
 
-use ariad_core::protocol::{Event, ToolAvailability};
+use ariad_core::protocol::{ErrorCode, Event, ToolAvailability};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -42,6 +42,10 @@ pub enum EngineStatus {
     NotInstalled,
     #[serde(rename = "cannot start")]
     CannotStart,
+    #[serde(rename = "timed out")]
+    TimedOut,
+    #[serde(rename = "unavailable")]
+    Unavailable,
 }
 
 impl EngineStatus {
@@ -53,6 +57,8 @@ impl EngineStatus {
             Self::WrongVersion => "wrong version",
             Self::NotInstalled => "not installed",
             Self::CannotStart => "cannot start",
+            Self::TimedOut => "timed out",
+            Self::Unavailable => "unavailable",
         }
     }
 }
@@ -102,15 +108,15 @@ pub fn engines(
         return Err(ConvertError::Interrupted);
     }
 
-    let default_args: [OsString; 0] = [];
-    let report =
-        engines::availability(engine_program, &default_args, cancel.clone()).map_err(|error| {
-            match error {
-                RunError::SandboxUnavailable(detail) => ConvertError::SandboxUnavailable(detail),
-                RunError::Cancelled => ConvertError::Interrupted,
-                _ => ConvertError::Failed,
-            }
-        })?;
+    let detailed = engines::availability_detailed(
+        &engines::EngineInvocation::new(engine_program),
+        cancel.clone(),
+    )
+    .map_err(|error| match error {
+        RunError::SandboxUnavailable(detail) => ConvertError::SandboxUnavailable(detail),
+        RunError::Cancelled => ConvertError::Interrupted,
+        _ => ConvertError::Failed,
+    })?;
 
     let mut rows = Vec::new();
 
@@ -131,12 +137,10 @@ pub fn engines(
         .iter()
         .filter(|spec| spec.id != docling::ENGINE_ID)
     {
-        let startup_failure = report
-            .get(spec.id)
-            .and_then(|entry| entry.startup_failure.as_ref());
-        let tool = report
-            .get(spec.id)
-            .and_then(|avail| avail.tool_status.as_ref());
+        let entry = detailed.report.get(spec.id);
+        let startup_failure = entry.and_then(|entry| entry.startup_failure.as_ref());
+        let tool = entry.and_then(|avail| avail.tool_status.as_ref());
+        let describe_failure = detailed.describe_failures.get(spec.id);
         let (status, version) = match tool {
             Some(tool) => match tool.status {
                 ToolAvailability::Found => (
@@ -150,6 +154,10 @@ pub fn engines(
                 ToolAvailability::Missing => (EngineStatus::Missing, "-".to_owned()),
             },
             None if startup_failure.is_some() => (EngineStatus::CannotStart, "-".to_owned()),
+            None if describe_failure.is_some_and(engines::DescribeFailure::is_timeout) => {
+                (EngineStatus::TimedOut, "-".to_owned())
+            }
+            None if describe_failure.is_some() => (EngineStatus::Unavailable, "-".to_owned()),
             None => (EngineStatus::Missing, "-".to_owned()),
         };
         let note = match status {
@@ -157,6 +165,9 @@ pub fn engines(
                 startup_failure.map(|detail| format!("installed, cannot start: {detail}"))
             }
             EngineStatus::WrongVersion => spec.supported.map(|range| format!("supported: {range}")),
+            EngineStatus::TimedOut | EngineStatus::Unavailable => {
+                describe_failure.map(|failure| failure.detail().to_owned())
+            }
             EngineStatus::Missing if !spec.required => Some("optional".to_owned()),
             _ => None,
         };
@@ -420,7 +431,24 @@ fn apply_describe(
             row.status = EngineStatus::CannotStart;
             row.note = Some(format!("installed, cannot start: {detail}"));
         }
-        Ok(_) | Err(_) => row.note = Some("engine describe failed".to_owned()),
+        Err(RunError::Timeout)
+        | Err(RunError::EngineFailed {
+            code: ErrorCode::LimitExceeded,
+            ..
+        }) => {
+            row.status = EngineStatus::TimedOut;
+            row.note = Some("engine describe timed out".to_owned());
+        }
+        Err(RunError::EngineFailed { message, .. })
+            if message.to_ascii_lowercase().contains("timed out") =>
+        {
+            row.status = EngineStatus::TimedOut;
+            row.note = Some("engine probe timed out".to_owned());
+        }
+        Ok(_) | Err(_) => {
+            row.status = EngineStatus::Unavailable;
+            row.note = Some("engine describe failed".to_owned());
+        }
     }
     Ok(())
 }
