@@ -45,6 +45,8 @@ apps/macos/AriadShift.xcodeproj/
 apps/macos/AriadShiftCore/Frameworks/
 apps/macos/AriadShiftCore/Sources/AriadShiftCore/Generated/
 apps/macos/AriadShiftCore/.build/
+apps/macos/AriadDesignSystem/.build/
+apps/macos/AriadDesignSystem/.swiftpm/
 apps/macos/.build/
 apps/macos/DerivedData/
 apps/macos/AriadShift/Info.plist
