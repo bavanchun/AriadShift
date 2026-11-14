@@ -72,7 +72,7 @@ All heavy steps ran through `.run/coord/build-lock.sh`. DerivedData is at `.cach
 | Command | Result |
 |---|---|
 | `swift test --package-path apps/macos/AriadDesignSystem` | 34 tests, 0 failures (includes the new badge snapshot) |
-| `xcodebuild test -scheme AriadShift` (AriadShiftTests, full) | First run: 90 tests. Every failure was a first recording of the new snapshots; everything else passed. Final run without recording: **90 tests, 0 failures, TEST SUCCEEDED**. After rebasing onto the shared snapshot helper (`9cec40a3`), a run with `ARIAD_SNAPSHOTS=1` again gave 90 tests, 0 failures, and all 11 snapshot tests matched their references. The references are still renders from this Mac; they will be re-recorded from the CI runner artifact once the branch is pushed |
+| `xcodebuild test -scheme AriadShift` (AriadShiftTests, full) | First run: 90 tests. Every failure was a first recording of the new snapshots; everything else passed. Final run without recording: **90 tests, 0 failures, TEST SUCCEEDED**. After rebasing onto the shared snapshot helper (`9cec40a3`), a run with `ARIAD_SNAPSHOTS=1` again gave 90 tests, 0 failures, and all 11 snapshot tests matched their references. The 44 app references and the palette badge references were then re-recorded from the CI runner's `AriadShift-snapshot-failures` artifact (runs 43635273571 and 43640742520) |
 | `just macos-lint` | green, 35 baselined, assets up to date |
 | `node --test scripts/i18n-xcstrings.test.mjs`, `node scripts/i18n-check.mjs`, `i18n-xcstrings.mjs --check` | 17/17 pass, 42 locales pass, catalogue up to date |
 
