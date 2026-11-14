@@ -1,6 +1,12 @@
 //! Integration tests for `pdf.merge`.
 
-use std::{fs, path::PathBuf, time::Instant};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicBool},
+    time::Instant,
+};
 
 use ariad_core::{limits::Limits, reader};
 use ariad_pdf::{
@@ -339,4 +345,246 @@ fn merge_and_split_1000_page_fixture_within_10_seconds() {
         "1000-page merge + split took {:.2}s (target < 10.0s)",
         elapsed.as_secs_f64()
     );
+}
+
+fn build_pdf_with_fields_and_attachments(
+    field_names: &[&str],
+    attachment_names: &[&str],
+    duplicate_first_af: bool,
+) -> Vec<u8> {
+    use lopdf::{Document, Object, Stream, StringFormat, dictionary};
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let page_id = doc.new_object_id();
+    let content_id = doc.add_object(Stream::new(dictionary! {}, b"BT (Page) Tj ET".to_vec()));
+
+    let mut page_annots = Vec::with_capacity(field_names.len());
+    let mut acro_fields = Vec::with_capacity(field_names.len());
+    for (idx, &name) in field_names.iter().enumerate() {
+        let y = 700 - i64::try_from(idx).unwrap_or(0) * 30;
+        let widget_id = doc.add_object(dictionary! {
+            "Type" => "Annot",
+            "Subtype" => "Widget",
+            "FT" => "Tx",
+            "T" => Object::String(name.as_bytes().to_vec(), StringFormat::Literal),
+            "V" => Object::String(b"val".to_vec(), StringFormat::Literal),
+            "Rect" => vec![72.into(), y.into(), 220.into(), (y + 20).into()],
+            "P" => Object::Reference(page_id),
+        });
+        page_annots.push(Object::Reference(widget_id));
+        acro_fields.push(Object::Reference(widget_id));
+    }
+
+    doc.objects.insert(
+        page_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => content_id,
+            "Annots" => page_annots,
+        }),
+    );
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        }),
+    );
+
+    let mut ef_pairs = Vec::with_capacity(attachment_names.len() * 2);
+    let mut af_refs = Vec::with_capacity(attachment_names.len() + usize::from(duplicate_first_af));
+    for &att_name in attachment_names {
+        let stream_id = doc.add_object(Stream::new(dictionary! {}, att_name.as_bytes().to_vec()));
+        let filespec_id = doc.add_object(dictionary! {
+            "Type" => "Filespec",
+            "F" => Object::String(att_name.as_bytes().to_vec(), StringFormat::Literal),
+            "UF" => Object::String(att_name.as_bytes().to_vec(), StringFormat::Literal),
+            "EF" => dictionary! { "F" => Object::Reference(stream_id) },
+        });
+        ef_pairs.push(Object::String(
+            att_name.as_bytes().to_vec(),
+            StringFormat::Literal,
+        ));
+        ef_pairs.push(Object::Reference(filespec_id));
+        af_refs.push(Object::Reference(filespec_id));
+    }
+    if duplicate_first_af && let Some(first) = af_refs.first().cloned() {
+        af_refs.push(first);
+    }
+
+    let ef_tree_id = doc.add_object(dictionary! {
+        "Names" => ef_pairs,
+    });
+    let acro_id = doc.add_object(dictionary! {
+        "Fields" => acro_fields,
+    });
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+        "AcroForm" => Object::Reference(acro_id),
+        "Names" => dictionary! {
+            "EmbeddedFiles" => Object::Reference(ef_tree_id),
+        },
+        "AF" => af_refs,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save synthetic pdf");
+    bytes
+}
+
+#[test]
+fn merge_many_colliding_fields_and_attachments_disambiguates_deterministically() {
+    let seed_bytes = build_pdf_with_fields_and_attachments(
+        &["shared_2", "shared_3", "other"],
+        &["report_2.txt", "report_3.txt", "readme_2", "readme"],
+        false,
+    );
+    let colliding_dup_af_bytes = build_pdf_with_fields_and_attachments(
+        &["shared", "other"],
+        &["report.txt", "readme"],
+        true,
+    );
+    let colliding_bytes = build_pdf_with_fields_and_attachments(
+        &["shared", "other"],
+        &["report.txt", "readme"],
+        false,
+    );
+
+    let mut inputs = Vec::with_capacity(250);
+    inputs.push(InputDoc::new("doc-000", seed_bytes));
+    inputs.push(InputDoc::new("doc-001", colliding_dup_af_bytes));
+    for idx in 2..250 {
+        inputs.push(InputDoc::new(
+            format!("doc-{idx:03}"),
+            colliding_bytes.clone(),
+        ));
+    }
+
+    let out = run_merge(&inputs, &json!({})).expect("250-doc colliding merge should succeed");
+    assert_eq!(out.artifacts.len(), 1);
+    let report = inspect_bytes(&out.artifacts[0].bytes);
+    assert_eq!(report.page_count, 250);
+    assert!(report.has_forms);
+    assert!(report.has_attachments);
+
+    let merged = open(&out.artifacts[0].bytes, &Limits::local()).expect("open merged pdf");
+    let cat = merged.inner().catalog().expect("catalog");
+
+    // Verify all 501 AcroForm field `/T` names in exact order and uniqueness.
+    let acro_id = cat
+        .get(b"AcroForm")
+        .and_then(|o| o.as_reference())
+        .expect("AcroForm ref");
+    let acro_dict = merged
+        .inner()
+        .get_dictionary(acro_id)
+        .expect("AcroForm dict");
+    let fields_arr = acro_dict
+        .get(b"Fields")
+        .and_then(|o| o.as_array())
+        .expect("Fields array");
+    let actual_fields: Vec<String> = fields_arr
+        .iter()
+        .map(|entry| {
+            let fid = entry.as_reference().expect("field ref");
+            let fdict = merged.inner().get_dictionary(fid).expect("field dict");
+            let raw = fdict
+                .get(b"T")
+                .and_then(|o| o.as_str())
+                .expect("field /T string");
+            String::from_utf8(raw.to_vec()).expect("utf-8 field name")
+        })
+        .collect();
+
+    let mut expected_fields = vec![
+        "shared_2".to_owned(),
+        "shared_3".to_owned(),
+        "other".to_owned(),
+        "shared".to_owned(),
+        "other_2".to_owned(),
+    ];
+    for idx in 2..250 {
+        expected_fields.push(format!("shared_{}", idx + 2));
+        expected_fields.push(format!("other_{}", idx + 1));
+    }
+    assert_eq!(actual_fields, expected_fields);
+    assert_eq!(
+        actual_fields.iter().collect::<BTreeSet<_>>().len(),
+        501,
+        "all merged field names must be unique"
+    );
+
+    // Verify all 502 EmbeddedFiles `/Names` entries, uniqueness, and sorted order.
+    let names_dict = cat
+        .get(b"Names")
+        .and_then(|o| o.as_dict())
+        .expect("Names dict");
+    let ef_id = names_dict
+        .get(b"EmbeddedFiles")
+        .and_then(|o| o.as_reference())
+        .expect("EmbeddedFiles ref");
+    let ef_dict = merged.inner().get_dictionary(ef_id).expect("ef dict");
+    let ef_arr = ef_dict
+        .get(b"Names")
+        .and_then(|o| o.as_array())
+        .expect("EmbeddedFiles Names array");
+    assert_eq!(ef_arr.len(), 502 * 2);
+
+    let actual_attachments: Vec<String> = ef_arr
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| {
+            let raw = pair[0].as_str().expect("attachment name string");
+            String::from_utf8(raw.to_vec()).expect("utf-8 attachment name")
+        })
+        .collect();
+    assert!(
+        actual_attachments.windows(2).all(|w| w[0] < w[1]),
+        "EmbeddedFiles /Names entries must be strictly sorted and unique"
+    );
+
+    let mut expected_attachments = BTreeSet::new();
+    expected_attachments.insert("report.txt".to_owned());
+    expected_attachments.insert("report_2.txt".to_owned());
+    expected_attachments.insert("report_3.txt".to_owned());
+    for suffix in 4..=251 {
+        expected_attachments.insert(format!("report_{suffix}.txt"));
+    }
+    expected_attachments.insert("readme".to_owned());
+    for suffix in 2..=251 {
+        expected_attachments.insert(format!("readme_{suffix}"));
+    }
+    let actual_attachment_set: BTreeSet<String> = actual_attachments.into_iter().collect();
+    assert_eq!(actual_attachment_set, expected_attachments);
+
+    // Verify `/AF` array deduplicated the repeated ref from input 1 without losing entries.
+    let af_arr = cat.get(b"AF").and_then(|o| o.as_array()).expect("AF array");
+    assert_eq!(af_arr.len(), 502);
+    let af_refs: BTreeSet<(u32, u16)> = af_arr
+        .iter()
+        .map(|o| o.as_reference().expect("AF entry ref"))
+        .collect();
+    assert_eq!(af_refs.len(), 502);
+
+    // Verify byte-for-byte determinism.
+    let out2 = run_merge(&inputs, &json!({})).expect("second 250-doc merge should succeed");
+    assert_eq!(out.artifacts[0].bytes, out2.artifacts[0].bytes);
+}
+
+#[test]
+fn merge_returns_cancelled_when_tool_ctx_is_cancelled() {
+    let form1 = load_input("form-acroform.pdf");
+    let form2 = load_input("form-with-values.pdf");
+    let cancelled_ctx = ToolCtx::with_cancel(Arc::new(AtomicBool::new(true)));
+
+    let err = run_tool("pdf.merge", &[form1, form2], &json!({}), &cancelled_ctx)
+        .expect_err("cancelled ToolCtx must abort pdf.merge");
+    assert_eq!(err, PdfError::CANCELLED);
 }
