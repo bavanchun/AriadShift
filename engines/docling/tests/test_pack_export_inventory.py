@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import re
+import shutil
 import sys
 import zipfile
 from pathlib import PureWindowsPath
@@ -207,9 +208,99 @@ def test_upstream_notices_must_be_bundled_under_the_reviewed_notice_path(tmp_pat
     wheel = export_wheel(tmp_path)
     with pytest.raises(SystemExit, match=r"native export.*notice"):
         licenses.check_wheel_files([wheel])
-    with zipfile.ZipFile(wheel, "a") as archive:
+    stale_wheel = tmp_path / "stale" / wheel.name
+    stale_wheel.parent.mkdir()
+    shutil.copyfile(wheel, stale_wheel)
+    with zipfile.ZipFile(stale_wheel, "a") as archive:
         archive.writestr("notices/codec-LICENSE.txt", NOTICE)
+    with pytest.raises(SystemExit, match=r"native export lacks its reviewed notice"):
+        licenses.check_wheel_files([stale_wheel])
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr("codec-1.0.dist-info/licenses/codec-LICENSE.txt", NOTICE)
     licenses.check_wheel_files([wheel])
+
+
+@pytest.mark.parametrize(
+    ("distribution", "version", "expected_dist_info"),
+    [
+        ("torch", "2.14.1+cpu", "torch-2.14.1+cpu.dist-info"),
+        ("My.Codec-Pkg_1", "2.0.1+cpu", "my_codec_pkg_1-2.0.1+cpu.dist-info"),
+        ("opencv-python-headless", "4.13.0", "opencv_python_headless-4.13.0.dist-info"),
+    ],
+)
+def test_upstream_wheel_notices_follow_pep427_dist_info_normalization(
+    tmp_path, monkeypatch, distribution, version, expected_dist_info
+):
+    assert licenses._wheel_dist_info_dir(distribution, version) == expected_dist_info
+    component = review(monkeypatch)
+    component["distribution"] = distribution
+    component["version"] = version
+    component["notice_scope"] = "upstream"
+    component["notices"][0]["path"] = "codec-LICENSE.txt"
+    wheel = tmp_path / f"{expected_dist_info.removesuffix('.dist-info')}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("codec/libcodec.dylib", PAYLOAD)
+        archive.writestr("notices/codec-LICENSE.txt", NOTICE)
+    with pytest.raises(SystemExit, match=r"native export lacks its reviewed notice"):
+        licenses.check_wheel_files([wheel])
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr(f"{expected_dist_info}/licenses/codec-LICENSE.txt", NOTICE)
+    licenses.check_wheel_files([wheel])
+
+
+def test_upstream_loose_artifact_notices_stay_under_notices_dir(tmp_path, monkeypatch):
+    component = review(monkeypatch)
+    component["notice_scope"] = "upstream"
+    component["notices"][0]["path"] = "codec-LICENSE.txt"
+    artifact = tmp_path / "payload.data"
+    artifact.write_bytes(PAYLOAD)
+    (tmp_path / "codec-LICENSE.txt").write_bytes(NOTICE)
+    with pytest.raises(SystemExit, match=r"native export lacks its reviewed notice"):
+        licenses.check_wheel_files([artifact])
+    notice = tmp_path / "notices/codec-LICENSE.txt"
+    notice.parent.mkdir()
+    notice.write_bytes(NOTICE)
+    licenses.check_wheel_files([artifact])
+
+
+@pytest.mark.parametrize(
+    ("distribution", "version"),
+    [
+        ("../evil", "1.0"),
+        ("codec", "../1.0"),
+        ("codec/sub", "1.0"),
+        ("codec", "1.0\\bad"),
+        ("codec..pkg", "1.0"),
+        ("codec", "1.0-bad"),
+    ],
+)
+def test_upstream_wheel_notices_fail_closed_on_unsafe_distribution_or_version(
+    tmp_path, monkeypatch, distribution, version
+):
+    assert licenses._wheel_dist_info_dir(distribution, version) is None
+    component = review(monkeypatch)
+    component["distribution"] = distribution
+    component["version"] = version
+    component["notice_scope"] = "upstream"
+    component["notices"][0]["path"] = "codec-LICENSE.txt"
+    with pytest.raises(SystemExit, match="native export notice path is unsafe"):
+        licenses.check_wheel_files([export_wheel(tmp_path)])
+
+
+def test_upstream_wheel_notices_resolve_safely_under_windows_semantics(tmp_path, monkeypatch):
+    component = review(monkeypatch)
+    component["notice_scope"] = "upstream"
+    component["notices"][0]["path"] = "codec-LICENSE.txt"
+    wheel = export_wheel(tmp_path)
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr("codec-1.0.dist-info/licenses/codec-LICENSE.txt", NOTICE)
+    with zipfile.ZipFile(wheel) as archive:
+        monkeypatch.setattr(licenses, "Path", PureWindowsPath)
+        errors = []
+        licenses._export_native_review(
+            hashlib.sha256(PAYLOAD).hexdigest(), wheel.name, archive, wheel, errors
+        )
+    assert errors == []
 
 
 def test_licensed_python_extension_does_not_supply_a_native_identity(tmp_path):
@@ -584,6 +675,7 @@ def test_wheel_identity_names_the_distribution_and_triple(filename, explicit, ex
 
 
 TORCH_NATIVE_PATH = "torch/lib/libtorch_cpu.so"
+TORCH_DIST_INFO = "torch-2.14.1+cpu.dist-info"
 TORCH_NOTICE_NAMES = (
     "pytorch-2.14.1-native-notices.txt",
     "llvm-openmp-notice.txt",
@@ -598,7 +690,10 @@ def torch_native_wheel(tmp_path, payload, member=TORCH_NATIVE_PATH):
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr(member, payload)
         for name in TORCH_NOTICE_NAMES:
-            archive.writestr(f"notices/{name}", (NOTICE_ROOT / name).read_bytes())
+            archive.writestr(
+                f"{TORCH_DIST_INFO}/licenses/{name}",
+                (NOTICE_ROOT / name).read_bytes(),
+            )
     return wheel
 
 
@@ -623,8 +718,24 @@ def test_torch_wheel_itt_markers_still_need_the_bundled_ittapi_notice(tmp_path, 
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr(TORCH_NATIVE_PATH, payload)
         for name in TORCH_NOTICE_NAMES[:2]:
-            archive.writestr(f"notices/{name}", (NOTICE_ROOT / name).read_bytes())
+            archive.writestr(
+                f"{TORCH_DIST_INFO}/licenses/{name}",
+                (NOTICE_ROOT / name).read_bytes(),
+            )
+        archive.writestr("notices/ittapi.txt", (NOTICE_ROOT / "ittapi.txt").read_bytes())
     with pytest.raises(SystemExit, match=r"native export lacks its reviewed notice.*ittapi"):
+        licenses.check_wheel_files([wheel], target=PLATFORM)
+
+
+def test_torch_wheel_rejects_wheel_root_notices_without_dist_info_licenses(tmp_path, monkeypatch):
+    payload = elf() + b" ".join(licenses._ITT_MARKERS)
+    review_torch_payload(monkeypatch, payload)
+    wheel = tmp_path / TORCH_WHEEL
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(TORCH_NATIVE_PATH, payload)
+        for name in TORCH_NOTICE_NAMES:
+            archive.writestr(f"notices/{name}", (NOTICE_ROOT / name).read_bytes())
+    with pytest.raises(SystemExit, match="native export lacks its reviewed notice"):
         licenses.check_wheel_files([wheel], target=PLATFORM)
 
 
@@ -709,7 +820,10 @@ def test_real_torch_receipts_cover_every_reviewed_object_notice_and_gnu_runtime(
     errors: list[str] = []
     with zipfile.ZipFile(wheel, "w") as archive:
         for name in TORCH_NOTICE_NAMES:
-            archive.writestr(f"notices/{name}", (NOTICE_ROOT / name).read_bytes())
+            archive.writestr(
+                f"{TORCH_DIST_INFO}/licenses/{name}",
+                (NOTICE_ROOT / name).read_bytes(),
+            )
         archive.writestr(REAL_GOMP_PATH, elf())
         reviewed = [*linux_objects.items()]
         reviewed.append(
@@ -720,3 +834,21 @@ def test_real_torch_receipts_cover_every_reviewed_object_notice_and_gnu_runtime(
                 digest, f"{TORCH_WHEEL}!/{path}", archive, wheel, errors, target=PLATFORM
             )
     assert errors == []
+
+    stale_wheel = tmp_path / "stale" / TORCH_WHEEL
+    stale_wheel.parent.mkdir()
+    stale_errors: list[str] = []
+    with zipfile.ZipFile(stale_wheel, "w") as archive:
+        for name in TORCH_NOTICE_NAMES:
+            archive.writestr(f"notices/{name}", (NOTICE_ROOT / name).read_bytes())
+        for path, digest in linux_objects.items():
+            licenses._export_native_review(
+                digest,
+                f"{TORCH_WHEEL}!/{path}",
+                archive,
+                stale_wheel,
+                stale_errors,
+                target=PLATFORM,
+            )
+    assert len(stale_errors) == len(linux_objects) * len(TORCH_NOTICE_NAMES)
+    assert all("native export lacks its reviewed notice" in err for err in stale_errors)

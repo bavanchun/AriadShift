@@ -291,6 +291,18 @@ def canonical(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def _wheel_dist_info_dir(distribution: str, version: str) -> str | None:
+    """Return the canonical PEP 427 ``.dist-info`` directory name, or ``None`` if unsafe."""
+    if (
+        ".." in distribution
+        or ".." in version
+        or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?", distribution)
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_]*", version)
+    ):
+        return None
+    return f"{canonical(distribution).replace('-', '_')}-{version}.dist-info"
+
+
 def _licence_classifiers(distribution: metadata.Distribution) -> list[str]:
     return [
         item
@@ -1592,9 +1604,11 @@ def _export_native_review(
     """Identify actual bytes using trusted reviews, never candidate output checksums.
 
     Paths in receipts document the reviewed originals; identity follows the hash
-    through renames. Notices must accompany these bytes in the artifact itself.
-    Installed-pack wheel-input reviews do not constitute export object approvals.
-    Reviewed GNU runtimes are matched by target, distribution and member path.
+    through renames. Notices must accompany these bytes in the artifact itself
+    (under ``<dist-info>/licenses/`` for upstream-scoped wheel notices, or
+    ``notices/`` beside loose native artifacts). Installed-pack wheel-input
+    reviews do not constitute export object approvals. Reviewed GNU runtimes are
+    matched by target, distribution and member path.
     """
     if (
         archive is not None
@@ -1639,18 +1653,26 @@ def _export_native_review(
         # where a leading slash is rooted but Path.is_absolute() is false.
         if (
             not relative
-            or "\0" in relative
+            or any(ord(char) < 32 or ord(char) == 127 for char in relative)
             or relative.startswith("/")
             or ":" in relative
             or "\\" in relative
-            or ".." in relative.split("/")
+            or any(part in ("", ".", "..") for part in relative.split("/"))
         ):
             errors.append(f"native export notice path is unsafe: {label}")
             notices_ok = False
             continue
         path = Path(relative)
         if component.get("notice_scope") == "upstream":
-            path = Path("notices") / path
+            if archive is not None:
+                dist_info = _wheel_dist_info_dir(component["distribution"], component["version"])
+                if dist_info is None:
+                    errors.append(f"native export notice path is unsafe: {label}")
+                    notices_ok = False
+                    continue
+                path = Path(dist_info) / "licenses" / path
+            else:
+                path = Path("notices") / path
         try:
             raw = (
                 archive.read(path.as_posix())
@@ -1753,7 +1775,7 @@ def check_wheel_files(
     ``DNNL_ENABLE_ITT_TASKS=ON``, which compiles BSD-3-Clause ``ittapi``
     (``ittnotify``/``jitprofiling``) into ``libtorch_cpu.so``. ITT markers and library
     names are therefore allowed only inside ``.whl`` archives whose canonical
-    distribution is ``torch`` (paired with the bundled ``notices/ittapi.txt``), while
+    distribution is ``torch`` (paired with ``<dist-info>/licenses/ittapi.txt``), while
     proprietary Intel IPP/MKL/OpenMP markers and libraries are refused in every wheel
     and sidecar. Video-library names are refused independently of
     GPL self-declarations/flags. The installed pack keeps its named LGPL FFmpeg review.

@@ -436,9 +436,11 @@ def test_real_manifest_and_checksums_contain_only_built_targets(planner, tmp_pat
 TORCH_WHEEL = "torch-2.14.1+cpu-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
 TORCH_DIST_INFO = "torch-2.14.1+cpu.dist-info"
 TORCH_NOTICES = {
-    "notices/pytorch-2.14.1-native-notices.txt": "pytorch-2.14.1-native-notices.txt",
-    "notices/llvm-openmp-notice.txt": "llvm-openmp-notice.txt",
-    "notices/ittapi.txt": "ittapi.txt",
+    f"{TORCH_DIST_INFO}/licenses/pytorch-2.14.1-native-notices.txt": (
+        "pytorch-2.14.1-native-notices.txt"
+    ),
+    f"{TORCH_DIST_INFO}/licenses/llvm-openmp-notice.txt": "llvm-openmp-notice.txt",
+    f"{TORCH_DIST_INFO}/licenses/ittapi.txt": "ittapi.txt",
 }
 
 
@@ -550,6 +552,7 @@ def test_toolchain_job_repacks_the_torch_wheel_with_reviewed_notices(tmp_path, m
 
     audits = []
     installs = []
+    installed_sites = []
     real_run = subprocess.run
 
     def run(command, **kwargs):
@@ -560,14 +563,30 @@ def test_toolchain_job_repacks_the_torch_wheel_with_reviewed_notices(tmp_path, m
         if "--reinstall" in command:
             installs.append(command)
             return subprocess.CompletedProcess(command, 0)
-        if (
-            len(command) >= 6
-            and command[1:4] == ["-m", "wheel", "unpack"]
-            and importlib.util.find_spec("wheel") is None
-        ):
-            unpack_wheel_without_wheel_package(command)
-            return subprocess.CompletedProcess(command, 0)
-        return real_run(command, **kwargs)
+        result = _run_with_wheel_unpack_fallback(real_run, command, **kwargs)
+        if command[:3] == ["uv", "pip", "install"]:
+            venv_python = command[command.index("--python") + 1]
+            platlib = pathlib.Path(
+                real_run(
+                    [venv_python, "-c", "import sysconfig; print(sysconfig.get_path('platlib'))"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            )
+            licenses_dir = platlib / TORCH_DIST_INFO / "licenses"
+            installed_sites.append(
+                {
+                    "has_notices": (platlib / "notices").exists()
+                    or (platlib / "notices").is_symlink(),
+                    "dist_info_licenses": (
+                        {path.name: path.read_bytes() for path in licenses_dir.iterdir()}
+                        if licenses_dir.is_dir()
+                        else {}
+                    ),
+                }
+            )
+        return result
 
     monkeypatch.chdir(work)
     monkeypatch.setenv("TARGET", target)
@@ -583,6 +602,12 @@ def test_toolchain_job_repacks_the_torch_wheel_with_reviewed_notices(tmp_path, m
     exec(compile(script, "<toolchain-linux-step>", "exec"), {"__name__": "__main__"})  # noqa: S102
 
     assert len(installs) == 1
+    assert len(installed_sites) == 1
+    assert installed_sites[0]["has_notices"] is False
+    assert installed_sites[0]["dist_info_licenses"] == {
+        source: (REPOSITORY / "engines/docling/pack/licenses" / source).read_bytes()
+        for source in TORCH_NOTICES.values()
+    }
     # The cache-keyed inputs are byte-for-byte what the build produced.
     assert {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -595,6 +620,10 @@ def test_toolchain_job_repacks_the_torch_wheel_with_reviewed_notices(tmp_path, m
         for notice in licenses._NATIVE_COMPONENTS["torch-native"]["notices"]
     }
     with zipfile.ZipFile(released) as archive:
+        assert not any(
+            name.rstrip("/") == "notices" or name.startswith("notices/")
+            for name in archive.namelist()
+        )
         for member, source in TORCH_NOTICES.items():
             data = archive.read(member)
             assert data == (REPOSITORY / "engines/docling/pack/licenses" / source).read_bytes()
@@ -633,3 +662,139 @@ def test_toolchain_job_repacks_the_torch_wheel_with_reviewed_notices(tmp_path, m
     assert len(audits) == 1
     artifacts, options = audits[0]
     assert pathlib.Path("wheels-out", TORCH_WHEEL) in artifacts and options["target"] == target
+
+
+def _run_with_wheel_unpack_fallback(real_run, command, **kwargs):
+    if (
+        len(command) >= 6
+        and command[1:4] == ["-m", "wheel", "unpack"]
+        and importlib.util.find_spec("wheel") is None
+    ):
+        unpack_wheel_without_wheel_package(command)
+        return subprocess.CompletedProcess(command, 0)
+    return real_run(command, **kwargs)
+
+
+def load_toolchain_helpers(monkeypatch, tmp_path):
+    script = toolchain_build_script(monkeypatch, tmp_path)
+    namespace = {"__name__": "toolchain_helpers"}
+    monkeypatch.chdir(REPOSITORY)
+    exec(compile(script, "<toolchain-linux-helpers>", "exec"), namespace)  # noqa: S102
+    return namespace
+
+
+def _write_wheel_with_hashed_record(dest, members, dist_info):
+    rows = []
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+            rows.append([name, f"sha256={digest}", str(len(data))])
+        rows.append([f"{dist_info}/RECORD", "", ""])
+        buf = io.StringIO()
+        csv.writer(buf, lineterminator="\n").writerows(rows)
+        archive.writestr(f"{dist_info}/RECORD", buf.getvalue().encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    "conflicting",
+    [
+        f"{TORCH_DIST_INFO}/licenses/ittapi.txt",
+        "notices/ittapi.txt",
+        "notices/",
+        f"{TORCH_DIST_INFO}/licenses",
+    ],
+)
+def test_repack_torch_wheel_rejects_existing_notice_or_legacy_collisions(
+    tmp_path, monkeypatch, conflicting
+):
+    helpers = load_toolchain_helpers(monkeypatch, tmp_path)
+    source = tmp_path / TORCH_WHEEL
+    synthetic_torch_wheel(source)
+    with zipfile.ZipFile(source, "a") as archive:
+        if conflicting.endswith("/"):
+            archive.mkdir(conflicting.rstrip("/"))
+        else:
+            archive.writestr(conflicting, b"stale notice\n")
+    dest = tmp_path / "repacked.whl"
+    with pytest.raises(SystemExit, match="conflicting notice path"):
+        helpers["repack_torch_wheel"](source, dest)
+    assert not dest.exists()
+
+
+@pytest.mark.parametrize(
+    "dist_infos",
+    [
+        [],
+        [TORCH_DIST_INFO, "other-1.0.dist-info"],
+        ["not_torch-1.0.dist-info"],
+        ["torch-..bad.dist-info"],
+    ],
+)
+def test_repack_torch_wheel_requires_single_canonical_torch_dist_info(
+    tmp_path, monkeypatch, dist_infos
+):
+    helpers = load_toolchain_helpers(monkeypatch, tmp_path)
+    source = tmp_path / TORCH_WHEEL
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("torch/__init__.py", b"# synthetic\n")
+        for index, dist_info in enumerate(dist_infos):
+            archive.writestr(f"{dist_info}/METADATA", b"Name: torch\nVersion: 2.14.1+cpu\n")
+            if index == 0:
+                archive.writestr(f"{dist_info}/RECORD", f"{dist_info}/RECORD,,\n")
+    dest = tmp_path / "repacked.whl"
+    with pytest.raises(SystemExit):
+        helpers["repack_torch_wheel"](source, dest)
+    assert not dest.exists()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or sys.version_info[:2] != (3, 14),
+    reason="the synthetic wheel carries the Linux x86_64 cp314 tags the toolchain job produces",
+)
+def test_verify_repacked_wheel_rejects_site_packages_notices_and_missing_license(
+    tmp_path, monkeypatch
+):
+    helpers = load_toolchain_helpers(monkeypatch, tmp_path)
+    real_run = subprocess.run
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kwargs: _run_with_wheel_unpack_fallback(real_run, command, **kwargs),
+    )
+
+    base_members = {
+        "torch/__init__.py": b"# synthetic torch\n",
+        f"{TORCH_DIST_INFO}/METADATA": b"Metadata-Version: 2.1\nName: torch\nVersion: 2.14.1+cpu\n",
+        f"{TORCH_DIST_INFO}/WHEEL": (
+            b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\n"
+            b"Tag: cp314-cp314-manylinux_2_27_x86_64\nTag: cp314-cp314-manylinux_2_28_x86_64\n"
+        ),
+    }
+    notice_root = REPOSITORY / "engines/docling/pack/licenses"
+    full_notices = {
+        member: (notice_root / source).read_bytes() for member, source in TORCH_NOTICES.items()
+    }
+
+    stale_wheel = tmp_path / "stale-notices" / TORCH_WHEEL
+    stale_wheel.parent.mkdir()
+    _write_wheel_with_hashed_record(
+        stale_wheel,
+        {**base_members, **full_notices, "notices/stale.txt": b"stale\n"},
+        TORCH_DIST_INFO,
+    )
+    with pytest.raises(SystemExit, match="unexpected site-packages/notices"):
+        helpers["verify_repacked_wheel"](stale_wheel)
+
+    incomplete_wheel = tmp_path / "missing-itt" / TORCH_WHEEL
+    incomplete_wheel.parent.mkdir()
+    incomplete_notices = {
+        member: data for member, data in full_notices.items() if not member.endswith("/ittapi.txt")
+    }
+    _write_wheel_with_hashed_record(
+        incomplete_wheel,
+        {**base_members, **incomplete_notices},
+        TORCH_DIST_INFO,
+    )
+    with pytest.raises(SystemExit, match="missing installed notice"):
+        helpers["verify_repacked_wheel"](incomplete_wheel)

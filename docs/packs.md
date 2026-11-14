@@ -220,7 +220,8 @@ there and its license is included in the third-party notices. Source-built
 OpenCV (`-DWITH_ITT=OFF`) and LLVM OpenMP (`-DLIBOMP_USE_ITT_NOTIFY=OFF`)
 disable ITT (`allow_itt=False`); CPU `torch` passes `USE_ITT=0`, yet vendored
 oneDNN (`DNNL_ENABLE_ITT_TASKS=ON`) still compiles BSD-3-Clause `ittnotify`
-into `libtorch_cpu.so`, so the exported `torch` wheel carries `notices/ittapi.txt`.
+into `libtorch_cpu.so`, so the exported `torch` wheel carries
+`torch-*.dist-info/licenses/ittapi.txt`.
 The gate distinguishes ITT/oneDNN from proprietary MKL, IPP and Intel OpenMP.
 The owning build and update route is in the [Docling guide](docling.md#the-pack).
 
