@@ -46,8 +46,9 @@ and `confirmed` are flags set by the caller, not verified by the library, so onl
 `ToolRunRequest.plan` (`free`, `pro`, `team`, `enterprise`; absent means `free`) sets the plan a tool run executes under. `ariad-host` parses it and
 alone decides tier access, so an unknown value is `InvalidRequest` and a Pro tool on Free fails with `tier_not_allowed`. The app takes the plan from a
 `PlanProvider`: Release builds always answer Free because no purchase or licence system exists yet, and Debug builds read `ASHIFT_PLAN` with the CLI's
-strict values. The plan field is caller-supplied, so it is not an entitlement check; a signed licence is still to be decided. Pro tools show a "(Pro)"
-label in the Tools menu and a notice in the run sheet, and a refused run shows an upgrade message.
+strict values. In CI and release builds, `scripts/macos-check-release-plan.sh` asserts that `AriadShift` and `AriadShiftCore.o` contain neither
+`EnvironmentPlanProvider` nor `ASHIFT_PLAN`. The plan field is caller-supplied, so it is not an entitlement check; a signed licence is still to be
+decided. Pro tools show a "(Pro)" label in the Tools menu and a notice in the run sheet, and a refused run shows an upgrade message.
 
 ## Tools menu
 The menu comes from `listTools()` grouped by registry group. A tool is enabled when it ships in this release (not held back in `ToolCatalog`'s

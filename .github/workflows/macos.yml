@@ -106,8 +106,11 @@ jobs:
         run: |
           bash scripts/macos-check-secrets.test.sh
           bash scripts/macos-check-secrets-workflow.test.sh
+          bash scripts/macos-check-release-plan.test.sh
       - name: Build macOS application bundle
         run: just macos-build
+      - name: Verify Release app omits debug plan override
+        run: bash scripts/macos-check-release-plan.sh target/derived-data/Build/Products/Release/AriadShift.app
       - name: Run macOS tests
         run: just macos-test
       - name: Upload test results on failure
@@ -231,6 +234,8 @@ jobs:
             build_args+=("SPARKLE_PUBLIC_ED_KEY=${SPARKLE_PUBLIC_ED_KEY}")
           fi
           just macos-build "${build_args[@]}"
+      - name: Verify Release app omits debug plan override
+        run: bash scripts/macos-check-release-plan.sh target/derived-data/Build/Products/Release/AriadShift.app
       - name: Verify built Info.plist version, build number and updater key
         env:
           RELEASE_MODE: ${{ steps.mode.outputs.mode }}
