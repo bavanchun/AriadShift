@@ -9,10 +9,17 @@ import XCTest
 /// Glass is rendered on its material fallback. Liquid Glass is composited by the window server from whatever lies
 /// behind the window, so offscreen capture returns nothing for it and it could never give a stable reference.
 ///
-/// Reference images live in `__Snapshots__/ComponentSnapshotTests`. To re-record after an intended visual change,
-/// run the tests with `SNAPSHOT_TESTING_RECORD=all` and review every changed image before committing it.
+/// Reference images live in `__Snapshots__/ComponentSnapshotTests` and are the renders of the CI macOS runner, whose
+/// text antialiasing differs from other Macs. The comparison therefore runs only on CI or when `ARIAD_SNAPSHOTS=1` is
+/// set; anywhere else every test is reported as skipped, never as passed. After an intended visual change, refresh the
+/// references from the failed-snapshot artifact of the macOS job (see docs/macos.md) and review every changed image.
 @MainActor
 final class ComponentSnapshotTests: XCTestCase {
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        try XCTSkipUnless(SnapshotGate.isEnabled, SnapshotGate.skipMessage)
+    }
+
     func testEmptyState() {
         assertAppearances(size: CGSize(width: 400, height: 240)) {
             DSEmptyState(
@@ -190,6 +197,17 @@ final class ComponentSnapshotTests: XCTestCase {
 }
 
 // MARK: - Rendering
+
+/// Whether snapshot images are compared in this run: always on CI (`CI=true`), locally only with `ARIAD_SNAPSHOTS=1`.
+enum SnapshotGate {
+    static var isEnabled: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["CI"] == "true" || environment["ARIAD_SNAPSHOTS"] == "1"
+    }
+
+    static let skipMessage =
+        "snapshot references are recorded on the CI macOS runner; set ARIAD_SNAPSHOTS=1 to compare locally"
+}
 
 /// The appearances every component is snapshot in.
 /// SwiftUI reads increased contrast from its environment rather than from the window appearance, so both are set.

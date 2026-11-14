@@ -123,7 +123,8 @@ reference; the Liquid Glass branch is checked in Xcode previews and the running 
 and macOS releases, so the references are the renders of the CI macOS runner image, not of a local Mac. To refresh them, push the
 change and let the macOS job fail: it uploads the runner's renders as the `AriadShift-snapshot-failures` artifact (from
 `SNAPSHOT_ARTIFACTS`). Download it, copy the images over the references, look at every changed one and push again. Locally,
-`SNAPSHOT_TESTING_RECORD=all` re-records for a quick check, but those images are not committed. Set `SWIFTPM_CACHE_PATH`
+`SNAPSHOT_TESTING_RECORD=all` re-records for a quick check, but those images are not committed. Outside CI the snapshot tests
+are skipped (reported as skipped, not passed) unless `ARIAD_SNAPSHOTS=1` is set, because local renders differ from the runner's. Set `SWIFTPM_CACHE_PATH`
 to keep SwiftPM's repository cache off the system disk in `just macos-build` and `just macos-test`.
 
 ## Updates (Sparkle 2.10.1)
