@@ -10,9 +10,15 @@ pub const PANDOC_GOLDEN_VERSION: &str = "3.12";
 
 /// Default timeout for `pandoc --version` probes.
 ///
-/// Chosen cleanly below `runner::DESCRIBE_TIMEOUT` (30s) so an unresponsive Pandoc binary
-/// returns `PandocBinaryError::TimedOut` before the outer host watchdog kills the engine.
-const DEFAULT_VERSION_TIMEOUT: Duration = Duration::from_secs(25);
+/// Sized at `15s` from measured `macos-26` CI telemetry in run `43605221838`: in job
+/// `132509183838`, the first cold `pandoc` invocation (`cli_interrupt_signal_handling`,
+/// `20/2885`) took `5.364s` under concurrent nextest load inside `sandbox-exec` while warm runs
+/// took `0.608s`–`2.011s`, and attempt 1 (`job 132478519346`) hit the old `5.000s` cliff
+/// (`5.00s` + `~2.99s` fallback probes = `8.059s`). `15s` provides ~2.8x headroom over the
+/// measured `5.364s` cold start while staying at half of `runner::DESCRIBE_TIMEOUT` (`30s`), so
+/// a stalled probe still yields `PandocBinaryError::TimedOut` cleanly before the outer host
+/// watchdog kills the engine.
+const DEFAULT_VERSION_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Test-only environment variable overriding the Pandoc version probe timeout (milliseconds).
 #[cfg(any(test, feature = "test-probe"))]
@@ -235,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn default_version_timeout_is_25s_and_honors_test_override() {
+    fn default_version_timeout_is_15s_and_honors_test_override() {
         use std::{env, process::Command, time::Duration};
 
         const CHILD: &str = "ARIAD_TEST_PANDOC_TIMEOUT_DEFAULT_CHILD";
@@ -243,11 +249,11 @@ mod tests {
             assert_eq!(super::default_version_timeout(), Duration::from_millis(123));
             return;
         }
-        assert_eq!(super::DEFAULT_VERSION_TIMEOUT, Duration::from_secs(25));
+        assert_eq!(super::DEFAULT_VERSION_TIMEOUT, Duration::from_secs(15));
         let status = Command::new(env::current_exe().unwrap())
             .args([
                 "--exact",
-                "pandoc_bin::tests::default_version_timeout_is_25s_and_honors_test_override",
+                "pandoc_bin::tests::default_version_timeout_is_15s_and_honors_test_override",
             ])
             .env(CHILD, "1")
             .env(super::TEST_TIMEOUT_ENV, "123")
@@ -255,12 +261,12 @@ mod tests {
             .unwrap();
         assert!(status.success());
 
-        // When unset, default_version_timeout falls back to 25 seconds.
+        // When unset, default_version_timeout falls back to 15 seconds.
         const UNSET_CHILD: &str = "ARIAD_TEST_PANDOC_TIMEOUT_UNSET_CHILD";
         let unset_status = Command::new(env::current_exe().unwrap())
             .args([
                 "--exact",
-                "pandoc_bin::tests::default_version_timeout_returns_25s_when_unset",
+                "pandoc_bin::tests::default_version_timeout_returns_15s_when_unset",
             ])
             .env(UNSET_CHILD, "1")
             .env_remove(super::TEST_TIMEOUT_ENV)
@@ -270,13 +276,13 @@ mod tests {
     }
 
     #[test]
-    fn default_version_timeout_returns_25s_when_unset() {
+    fn default_version_timeout_returns_15s_when_unset() {
         if std::env::var_os("ARIAD_TEST_PANDOC_TIMEOUT_UNSET_CHILD").is_none() {
             return;
         }
         assert_eq!(
             super::default_version_timeout(),
-            std::time::Duration::from_secs(25)
+            std::time::Duration::from_secs(15)
         );
     }
 
@@ -292,15 +298,15 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn locate_with_timeout_accepts_slow_stub_within_25s() {
+    fn locate_with_timeout_accepts_slow_stub_within_15s() {
         use std::{env, process::Command, time::Duration};
 
         const CHILD: &str = "ARIAD_TEST_SLOW_PANDOC_CHILD";
         if env::var_os(CHILD).is_some() {
-            let binary = super::locate_with_timeout(None, true, Duration::from_secs(25))
-                .expect("slow stub must succeed within 25s");
+            let binary = super::locate_with_timeout(None, true, Duration::from_secs(15))
+                .expect("slow stub must succeed within 15s");
             assert_eq!(binary.version, "3.12");
-            let via_default = super::locate().expect("default 25s timeout must also succeed");
+            let via_default = super::locate().expect("default 15s timeout must also succeed");
             assert_eq!(via_default.version, "3.12");
             return;
         }
@@ -314,7 +320,7 @@ mod tests {
         let status = Command::new(env::current_exe().unwrap())
             .args([
                 "--exact",
-                "pandoc_bin::tests::locate_with_timeout_accepts_slow_stub_within_25s",
+                "pandoc_bin::tests::locate_with_timeout_accepts_slow_stub_within_15s",
             ])
             .env(CHILD, "1")
             .env("ASHIFT_PANDOC", &stub)
