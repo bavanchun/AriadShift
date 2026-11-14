@@ -258,7 +258,7 @@
         "merge": "Merge PDFs",
         "compress": "Compress",
         "ocr": "OCR a scan",
-        "to_word": "To Word"
+        "split": "Split a PDF"
       },
       "suggest_message": "Choose PDFs for {tool}.",
       "suggest_message@note": "{tool} is the name of a suggested task, such as Compress."
@@ -267,11 +267,11 @@
       "title": "What’s New in AriadShift {version}",
       "title@note": "{version} is the app version, such as 0.7.0.",
       "look_title": "A new look",
-      "look_detail": "A calmer window, with Liquid Glass on macOS 26 and clear spacing everywhere.",
+      "look_detail": "A calmer window with Liquid Glass on macOS 26, a page sidebar and an inspector that opens when you need it.",
       "tools_title": "Every tool within reach",
-      "tools_detail": "Suggested tasks on this window, and every tool in the Tools menu.",
+      "tools_detail": "Press ⌘K to find any tool and run it right beside your document.",
       "private_title": "Still private",
-      "private_detail": "Every tool runs on your Mac. Nothing leaves it unless you choose.",
+      "private_detail": "Every tool runs on your Mac. Your documents stay on it unless you choose otherwise.",
       "continue": "Continue"
     },
     "import": {

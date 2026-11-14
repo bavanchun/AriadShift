@@ -17099,7 +17099,7 @@
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chưa thể chỉnh sửa trang cho đến khi bộ máy sẵn sàng."
+            "value" : "Chưa thể chỉnh sửa trang cho đến khi bộ xử lý sẵn sàng."
           }
         },
         "zh-Hans" : {
@@ -26282,7 +26282,7 @@
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mở, xem thông tin và xử lý tài liệu PDF bằng cùng bộ máy với dòng lệnh AriadShift. Chuyển Markdown, HTML, Word, EPUB và ảnh sang PDF bằng Tệp > Nhập."
+            "value" : "Mở, xem thông tin và xử lý tài liệu PDF bằng cùng bộ xử lý với công cụ dòng lệnh AriadShift. Chuyển Markdown, HTML, Word, EPUB và ảnh sang PDF bằng Tệp > Nhập."
           }
         },
         "zh-Hans" : {
@@ -26534,7 +26534,7 @@
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Các gói bộ máy tùy chọn (OCR, ký số, kiểm tra) được lưu trong %1$@."
+            "value" : "Các gói xử lý tùy chọn (OCR, ký số, kiểm tra) được lưu trong %1$@."
           }
         },
         "zh-Hans" : {
@@ -42719,19 +42719,19 @@
         }
       }
     },
-    "mac.welcome.suggest.to_word" : {
+    "mac.welcome.suggest.split" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To Word"
+            "value" : "Split a PDF"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sang Word"
+            "value" : "Tách PDF"
           }
         }
       }
@@ -42749,7 +42749,7 @@
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chọn tệp PDF để %1$@."
+            "value" : "Chọn tệp PDF cho %1$@."
           }
         }
       }
@@ -42812,13 +42812,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A calmer window, with Liquid Glass on macOS 26 and clear spacing everywhere."
+            "value" : "A calmer window with Liquid Glass on macOS 26, a page sidebar and an inspector that opens when you need it."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cửa sổ gọn gàng hơn, có Liquid Glass trên macOS 26 và khoảng cách rõ ràng ở mọi nơi."
+            "value" : "Cửa sổ thoáng hơn với Liquid Glass trên macOS 26, thanh trang bên cạnh và bảng thông tin chỉ mở khi bạn cần."
           }
         }
       }
@@ -42846,13 +42846,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every tool runs on your Mac. Nothing leaves it unless you choose."
+            "value" : "Every tool runs on your Mac. Your documents stay on it unless you choose otherwise."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mọi công cụ chạy trên máy Mac của bạn. Không gì rời khỏi máy trừ khi bạn chọn."
+            "value" : "Mọi công cụ chạy ngay trên máy Mac. Tài liệu của bạn ở lại trên máy, trừ khi bạn chọn khác."
           }
         }
       }
@@ -42898,13 +42898,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Suggested tasks on this window, and every tool in the Tools menu."
+            "value" : "Press ⌘K to find any tool and run it right beside your document."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Các tác vụ gợi ý ngay trên cửa sổ này, và mọi công cụ trong menu Công cụ."
+            "value" : "Nhấn ⌘K để tìm mọi công cụ và chạy ngay bên cạnh tài liệu."
           }
         }
       }

@@ -26,9 +26,10 @@ struct RecentDocument: Identifiable, Equatable {
     }
 }
 
-/// A suggested task: it asks for documents, opens them and hands the tool to the document window.
+/// A suggested task: it asks for documents, opens them and hands the tool to the document window. Every suggestion
+/// is a tool of the engine's catalogue, so the document window can open it (a conversion route is not a tool).
 struct WelcomeSuggestion: Identifiable, Equatable {
-    /// The tool id in the engine's tool registry.
+    /// The tool id in the engine's tool registry, such as `pdf.compress`.
     let id: String
     let titleKey: String
     let symbol: String
@@ -40,33 +41,48 @@ struct WelcomeSuggestion: Identifiable, Equatable {
         WelcomeSuggestion(id: "pdf.merge", titleKey: "mac.welcome.suggest.merge", symbol: "arrow.triangle.merge", allowsMultiple: true),
         WelcomeSuggestion(id: "pdf.compress", titleKey: "mac.welcome.suggest.compress", symbol: "arrow.down.right.and.arrow.up.left", allowsMultiple: false),
         WelcomeSuggestion(id: "pdf.ocr", titleKey: "mac.welcome.suggest.ocr", symbol: "text.viewfinder", allowsMultiple: false),
-        WelcomeSuggestion(id: "convert:pdf→docx", titleKey: "mac.welcome.suggest.to_word", symbol: "doc.richtext", allowsMultiple: false),
+        WelcomeSuggestion(id: "pdf.split", titleKey: "mac.welcome.suggest.split", symbol: "scissors", allowsMultiple: false),
     ]
 }
 
-/// The tool a suggested task asked for, waiting for the document window that opens its documents. The document
-/// window takes it with `take(for:)` and opens that tool; until a window takes it, the documents simply open.
+/// The tool a suggested task asked for, waiting for the document window of the documents it opened.
+///
+/// The welcome window calls `request(_:documents:)` after the open panel and then opens the documents. When a
+/// document window opens, it calls `take(for:)` with its file URL and, if that returns a tool id, starts the tool
+/// (`DocumentSession.requestTool(id:)`, which waits for the engine catalogue):
+///
+///     if let url = session.fileURL, let id = WelcomeToolHandoff.shared.take(for: url) { session.requestTool(id: id) }
+///
+/// A request is taken once: the first window of any of its documents gets the tool (for Merge, the first of the
+/// chosen files) and the others open plainly. File URLs match after resolving symbolic links and standardizing, so a
+/// path through `/var` matches its `/private/var` form.
 @MainActor
 @Observable
 final class WelcomeToolHandoff {
     static let shared = WelcomeToolHandoff()
 
     struct Request: Equatable {
+        /// A tool id of the engine's catalogue, such as `pdf.compress`.
         let toolID: String
         let documents: [URL]
     }
 
     private(set) var pending: Request?
 
+    /// Replaces any earlier request: only the latest suggested task waits.
     func request(_ toolID: String, documents: [URL]) {
         pending = Request(toolID: toolID, documents: documents)
     }
 
-    /// The tool waiting for the document at `url`, removed once taken.
+    /// The tool id waiting for the document at `url`, or nil. A returned request is removed.
     func take(for url: URL) -> String? {
-        guard let pending, pending.documents.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }) else { return nil }
+        guard let pending, pending.documents.map(Self.canonical).contains(Self.canonical(url)) else { return nil }
         self.pending = nil
         return pending.toolID
+    }
+
+    private static func canonical(_ url: URL) -> URL {
+        url.resolvingSymlinksInPath().standardizedFileURL
     }
 }
 
