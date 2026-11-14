@@ -2,8 +2,8 @@
 # Fail closed unless the exact component review explicitly records approval.
 set -euo pipefail
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-python3 - "$here/licence-review.toml" "$here/runtime-sources.txt" "${1:-}" "${2:-}" "${3:-}" "$here/targets.txt" <<'PY'
-import pathlib, subprocess, sys, tomllib
+python3 - "$here/licence-review.toml" "$here/runtime-sources.txt" "${1:-}" "${2:-}" "${3:-}" "$here/targets.txt" "$here/build-inputs.txt" "$here/compile-qpdf.sh" <<'PY'
+import pathlib, re, subprocess, sys, tomllib
 p = pathlib.Path(sys.argv[1])
 try:
     review = tomllib.loads(p.read_text())
@@ -24,6 +24,8 @@ try:
         sys.exit(0)
     import hashlib
     source_manifest = pathlib.Path(sys.argv[2]).read_bytes()
+    build_inputs_manifest = pathlib.Path(sys.argv[7]).read_bytes()
+    compile_text = pathlib.Path(sys.argv[8]).read_text()
     receipts, sources, packdir = map(pathlib.Path, sys.argv[3:6])
     if not all(sys.argv[3:6]):
         raise ValueError('receipt, source and pack directories are required')
@@ -33,6 +35,46 @@ try:
     for digest, name, _ in entries:
         if pathlib.Path(name).name != name or hashlib.sha256((sources / name).read_bytes()).hexdigest() != digest:
             raise ValueError(f'source hash mismatch: {name}')
+    compile_hashes = {}
+    for var in ('qpdf', 'jpeg', 'zlib'):
+        matches = re.findall(rf'^verify ([0-9a-f]{{64}}) "\${var}"$', compile_text, re.MULTILINE)
+        if len(matches) != 1:
+            raise ValueError(f'missing verify hash in compile-qpdf.sh: {var}')
+        compile_hashes[var] = matches[0]
+    build_lines = build_inputs_manifest.decode().splitlines()
+    build_entries = [line.split() for line in build_lines]
+    if (not build_inputs_manifest.endswith(b'\n') or len(build_entries) != 3 or
+            any(len(entry) != 3 or line != ' '.join(entry) for line, entry in zip(build_lines, build_entries))):
+        raise ValueError('invalid build inputs manifest')
+    build_map = {}
+    for digest, name, url in build_entries:
+        if len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+            raise ValueError(f'invalid build input hash: {name}')
+        if pathlib.Path(name).name != name or name in ('.', '..'):
+            raise ValueError(f'invalid build input filename: {name}')
+        if not url.startswith('https://') or not url.endswith(f'/{name}'):
+            raise ValueError(f'invalid build input URL: {url}')
+        if name in build_map:
+            raise ValueError(f'duplicate build input filename: {name}')
+        build_map[name] = (digest, url)
+    expected_inputs = {
+        'qpdf-12.4.2.tar.gz': (
+            compile_hashes['qpdf'],
+            'https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz',
+        ),
+        'libjpeg-turbo-3.2.1.tar.gz': (
+            compile_hashes['jpeg'],
+            expected['source'],
+        ),
+        'zlib-1.3.2.tar.gz': (
+            compile_hashes['zlib'],
+            'https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz',
+        ),
+    }
+    if expected_inputs['libjpeg-turbo-3.2.1.tar.gz'][0] != expected['sha256']:
+        raise ValueError('libjpeg-turbo hash mismatch between review and compile script')
+    if list(build_map) != list(expected_inputs) or build_map != expected_inputs:
+        raise ValueError('build inputs manifest mismatch')
     platforms = {
         'linux-x64': ('f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f', '14.2.1', '308fa896e2bdae71da3b8dc67fc577d3951c74e8bc7a6e6c96e9da7ee1911784', '99358806eb985f6202a57b56ea2f105d1e4c987729421cc136b4b7c0678a3b9a'),
         'linux-arm64': ('54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676', '14.2.1', 'd8dcea39c8507d21c2274e9353b1ee720f172b303dcb5e1bf4d4cfbe38f72f2c', '69c8b51af4a99672127fffc2fe892d0d57329e2b4058bcd925edc44fada8c213'),
@@ -43,7 +85,12 @@ try:
         'linux-musl-x64': ['d1d482472ed91240731c60dbae8176bc1e32e1dfb694856da6759f6d32716325', '563244a562f5c48b921f7f0b4a571e373cfcba65175fe2d4f752c5f975738bcd', '62ce308cdbf127dcac6eee1520a4ffec8dc98b30974653908842fe4cc7d90b43', '310b51cff12e1d5ce5f135c558a82e2550427da5465bbd16c9ff9b05e63ee3d9'],
         'linux-musl-arm64': ['ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221', '2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919', '8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510', '45afe0a9f78de3402b6b5d11f5153ed955bf59d59b45344d9c3fed9f4bbf2f66'],
     }
-    triples = {line.split()[0]: line.split()[1] for line in pathlib.Path(sys.argv[6]).read_text().splitlines() if line and not line.startswith('#')}
+    target_rows = [line.split() for line in pathlib.Path(sys.argv[6]).read_text().splitlines() if line and not line.startswith('#')]
+    if any(len(row) != 4 for row in target_rows):
+        raise ValueError('invalid targets manifest')
+    triples = {row[0]: row[1] for row in target_rows}
+    if {(row[2], row[3]) for row in target_rows} != {('qpdf-12.4.2.tar.gz', compile_hashes['qpdf'])}:
+        raise ValueError('targets.txt qpdf asset or hash mismatch')
     linux_targets = {slug for slug in triples if slug.startswith('linux-')}
     if set(platforms) != linux_targets:
         raise ValueError('Linux target and reviewed platform sets differ')
@@ -65,6 +112,8 @@ try:
             raise ValueError(f'qpdf hash mismatch: {platform}')
         if (receipt / 'runtime-sources.txt').read_bytes() != source_manifest:
             raise ValueError(f'source receipt mismatch: {platform}')
+        if (receipt / 'build-inputs.txt').read_bytes() != build_inputs_manifest:
+            raise ValueError(f'build input receipt mismatch: {platform}')
         if not (receipt / 'image.txt').read_text().strip().endswith('@sha256:' + image):
             raise ValueError(f'image mismatch: {platform}')
         if not (receipt / 'image-id.txt').read_text().strip().startswith('sha256:'):

@@ -18,6 +18,8 @@ fi
 cp "$repo/engines/qpdf/pack/check-release.sh" "$tmp/check-release.sh"
 cp "$repo/engines/qpdf/pack/targets.txt" "$tmp/targets.txt"
 cp "$repo/engines/qpdf/pack/licence-review.toml" "$tmp/licence-review.toml"
+cp "$repo/engines/qpdf/pack/build-inputs.txt" "$tmp/build-inputs.txt"
+cp "$repo/engines/qpdf/pack/compile-qpdf.sh" "$tmp/compile-qpdf.sh"
 mkdir -p "$tmp/sources" "$tmp/receipts" "$tmp/packdir"
 python3 - "$tmp" <<'PYTEST'
 import hashlib, pathlib, subprocess, sys
@@ -30,6 +32,7 @@ for i in range(5):
     entries.append(f'{hashlib.sha256(data).hexdigest()} {name} https://example.invalid/{name}\n')
 manifest = ''.join(entries)
 (root / 'runtime-sources.txt').write_text(manifest)
+build_inputs_manifest = (root / 'build-inputs.txt').read_text()
 platforms = {
     'linux-x64': ('f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f', '14.2.1', '308fa896e2bdae71da3b8dc67fc577d3951c74e8bc7a6e6c96e9da7ee1911784', '99358806eb985f6202a57b56ea2f105d1e4c987729421cc136b4b7c0678a3b9a'),
     'linux-arm64': ('54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676', '14.2.1', 'd8dcea39c8507d21c2274e9353b1ee720f172b303dcb5e1bf4d4cfbe38f72f2c', '69c8b51af4a99672127fffc2fe892d0d57329e2b4058bcd925edc44fada8c213'),
@@ -51,7 +54,7 @@ for slug, (image, gcc, stdcpp, libgcc) in platforms.items():
     manifest_lines.append(f'[[targets]]\ntriple = "{targets[slug]}"\n[[targets.components]]\nname = "engine"\nurl = "{archive.name}"\nsha256 = "{digest}"\n')
     d = root / 'receipts' / f'qpdf-input-receipts-{slug}'
     d.mkdir()
-    for name, value in {'image.txt': f'image@sha256:{image}', 'image-id.txt': 'sha256:abc', 'gcc-version.txt': gcc, 'packages.txt': 'package', 'package-sha256.txt': ''.join(f'{h} package\n' for h in apk_hashes.get(slug, ['hash'])), 'runtime-sha256.txt': f'{libgcc}  libgcc.a\n{stdcpp}  libstdc++.a\n', 'runtime-sources.txt': manifest, 'qpdf-sha256.txt': f'{hashlib.sha256(b"qpdf fixture").hexdigest()}  bin/qpdf\n', 'runtime-extra-sha256.txt': ''.join(f'{"0" * 64}  /runtime/{name}\n' for name in ('libgcc_eh.a', 'crtbegin.o', 'crtend.o'))}.items():
+    for name, value in {'image.txt': f'image@sha256:{image}', 'image-id.txt': 'sha256:abc', 'gcc-version.txt': gcc, 'packages.txt': 'package', 'package-sha256.txt': ''.join(f'{h} package\n' for h in apk_hashes.get(slug, ['hash'])), 'runtime-sha256.txt': f'{libgcc}  libgcc.a\n{stdcpp}  libstdc++.a\n', 'runtime-sources.txt': manifest, 'build-inputs.txt': build_inputs_manifest, 'qpdf-sha256.txt': f'{hashlib.sha256(b"qpdf fixture").hexdigest()}  bin/qpdf\n', 'runtime-extra-sha256.txt': ''.join(f'{"0" * 64}  /runtime/{name}\n' for name in ('libgcc_eh.a', 'crtbegin.o', 'crtend.o'))}.items():
         (d / name).write_text(value)
 (root / 'packdir/pack.toml').write_text(''.join(manifest_lines))
 PYTEST
@@ -107,6 +110,8 @@ review = tomllib.loads(original)
 repo = source.parents[3]
 gate = (source.parent / 'check-release.sh').read_text()
 compiler = (source.parent / 'compile-qpdf.sh').read_text()
+build_inputs_text = (source.parent / 'build-inputs.txt').read_text()
+targets_text = (source.parent / 'targets.txt').read_text()
 workflow = (repo / '.github/workflows/pack-qpdf.yml').read_text()
 
 def one(pattern, text, label):
@@ -115,14 +120,59 @@ def one(pattern, text, label):
         sys.exit(f'{label}: expected exactly one match')
     return matches[0]
 
+if 'zlib.net' in build_inputs_text or 'zlib.net' in workflow:
+    sys.exit('mutable zlib.net URL must not appear in build inputs or workflow')
+
+build_rows = [line.split() for line in build_inputs_text.splitlines()]
+if len(build_rows) != 3 or any(len(row) != 3 for row in build_rows):
+    sys.exit('build-inputs.txt must have exactly three <sha256> <filename> <url> entries')
+build_inputs = {name: (digest, url) for digest, name, url in build_rows}
+if len(build_inputs) != 3:
+    sys.exit('duplicate filename in build-inputs.txt')
+
 source_url = one(r"'source': '([^']+)'", gate, 'release gate source')
 source_hash = one(r"'sha256': '([^']+)'", gate, 'release gate hash')
-build_hash = one(r'^verify ([0-9a-f]{64}) "\$jpeg"$', compiler, 'build hash')
-download_url = one(r'curl [^\n]* (https://\S*libjpeg-turbo\S*) -o "\$RUNNER_TEMP/qpdf-input/jpeg.tar.gz"', workflow, 'download source')
-if review['source'] != source_url or source_url != download_url:
-    sys.exit('libjpeg-turbo source URL differs between review, gate and workflow')
-if review['sha256'] != source_hash or source_hash != build_hash:
-    sys.exit('libjpeg-turbo SHA-256 differs between review, gate and build')
+qpdf_build_hash = one(r'^verify ([0-9a-f]{64}) "\$qpdf"$', compiler, 'qpdf build hash')
+jpeg_build_hash = one(r'^verify ([0-9a-f]{64}) "\$jpeg"$', compiler, 'libjpeg-turbo build hash')
+zlib_build_hash = one(r'^verify ([0-9a-f]{64}) "\$zlib"$', compiler, 'zlib build hash')
+
+target_assets = {(line.split()[2], line.split()[3]) for line in targets_text.splitlines() if line and not line.startswith('#')}
+if target_assets != {('qpdf-12.4.2.tar.gz', qpdf_build_hash)}:
+    sys.exit('qpdf target asset or hash differs between targets.txt and compile-qpdf.sh')
+
+expected_inputs = {
+    'qpdf-12.4.2.tar.gz': (
+        qpdf_build_hash,
+        'https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz',
+    ),
+    'libjpeg-turbo-3.2.1.tar.gz': (
+        jpeg_build_hash,
+        review['source'],
+    ),
+    'zlib-1.3.2.tar.gz': (
+        'bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16',
+        'https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz',
+    ),
+}
+if review['source'] != source_url or review['sha256'] != source_hash or source_hash != jpeg_build_hash:
+    sys.exit('libjpeg-turbo source URL or SHA-256 differs between review, gate and build')
+if zlib_build_hash != expected_inputs['zlib-1.3.2.tar.gz'][0]:
+    sys.exit('zlib SHA-256 in compile-qpdf.sh does not match pinned release asset')
+if build_inputs != expected_inputs:
+    sys.exit('build-inputs.txt differs from pinned build hashes or immutable upstream URLs')
+
+for needle, count, label in (
+    ('done < engines/qpdf/pack/build-inputs.txt', 1, 'workflow build-inputs loop'),
+    ("--proto '=https' --proto-redir '=https' --tlsv1.2", 1, 'workflow HTTPS-only curl flags'),
+    ('sha256sum --check', 3, 'workflow sha256sum verification'),
+    ('printf \'%s  %s\\n\' "$digest" "$RUNNER_TEMP/qpdf-input/$name" | sha256sum --check', 1, 'workflow Linux sha256sum verification'),
+    ('printf \'%s  %s\\n\' "$digest" "$RUNNER_TEMP/qpdf-input/$name" | shasum -a 256 --check', 1, 'workflow macOS shasum verification'),
+    ('cp engines/qpdf/pack/build-inputs.txt "$RUNNER_TEMP/qpdf-output/receipt/build-inputs.txt"', 1, 'workflow receipt copy'),
+    ('compile-qpdf.sh /input/qpdf-12.4.2.tar.gz /input/libjpeg-turbo-3.2.1.tar.gz /input/zlib-1.3.2.tar.gz /output', 2, 'workflow Linux compile-qpdf args'),
+    ('compile-qpdf.sh "$RUNNER_TEMP/qpdf-input/qpdf-12.4.2.tar.gz"\n          "$RUNNER_TEMP/qpdf-input/libjpeg-turbo-3.2.1.tar.gz" "$RUNNER_TEMP/qpdf-input/zlib-1.3.2.tar.gz"\n          "$RUNNER_TEMP/qpdf-output"', 1, 'workflow macOS compile-qpdf args'),
+):
+    if workflow.count(needle) != count:
+        sys.exit(f'{label}: expected {count} occurrence(s) in pack-qpdf.yml')
 
 def check(text, accepted, label):
     review_path.write_text(text)
@@ -140,6 +190,13 @@ if subprocess.run(['bash', str(directory / 'check-release.sh'), '--review-only']
 review_path.write_text(original)
 if subprocess.run(['bash', str(directory / 'check-release.sh'), '--review-only'], capture_output=True).returncode == 0:
     sys.exit('pending review-only check was accepted')
+
+receipt_build_inputs = directory / 'receipts/qpdf-input-receipts-linux-x64/build-inputs.txt'
+saved_receipt_inputs = receipt_build_inputs.read_text()
+receipt_build_inputs.unlink()
+check(approved, False, 'missing receipt build-inputs.txt')
+receipt_build_inputs.write_text(saved_receipt_inputs)
+
 # Each mutation must independently make the otherwise valid evidence fail.
 mutations = [
     (directory / 'receipts/qpdf-input-receipts-linux-x64/image.txt', lambda text: text.replace('f6adc', '00000')),
@@ -147,7 +204,14 @@ mutations = [
     (directory / 'receipts/qpdf-input-receipts-linux-x64/gcc-version.txt', lambda text: 'wrong compiler'),
     (directory / 'receipts/qpdf-input-receipts-linux-musl-x64/package-sha256.txt', lambda text: text.replace('d1d482', '000000')),
     (directory / 'receipts/qpdf-input-receipts-linux-x64/runtime-sources.txt', lambda text: text + 'changed'),
+    (directory / 'receipts/qpdf-input-receipts-linux-x64/build-inputs.txt', lambda text: text.replace('github.com/madler/zlib/releases/download/v1.3.2', 'zlib.net')),
+    (directory / 'receipts/qpdf-input-receipts-linux-x64/build-inputs.txt', lambda text: text + 'changed'),
     (directory / 'runtime-sources.txt', lambda text: text + text.splitlines(keepends=True)[0]),
+    (directory / 'build-inputs.txt', lambda text: text.replace('bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16', '0' * 64)),
+    (directory / 'build-inputs.txt', lambda text: text.replace('https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz', 'https://zlib.net/zlib-1.3.2.tar.gz')),
+    (directory / 'build-inputs.txt', lambda text: text.replace('https://', 'http://')),
+    (directory / 'build-inputs.txt', lambda text: text + text.splitlines(keepends=True)[0]),
+    (directory / 'compile-qpdf.sh', lambda text: text.replace('bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16', '0' * 64)),
     (directory / 'targets.txt', lambda text: text + 'linux-new new-triple source hash\n'),
     (directory / 'receipts/qpdf-input-receipts-linux-x64/runtime-extra-sha256.txt', lambda text: text.replace('libgcc_eh.a', 'missing.a')),
 ]
