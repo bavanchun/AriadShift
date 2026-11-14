@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Exercise the real desktop UI through tauri-driver (Linux/WebKitGTK only)."""
+import contextvars
 import http.client
 import json
 import os
-import signal
 import pathlib
+import signal
 import subprocess
 import sys
 import tempfile
@@ -13,7 +14,19 @@ import urllib.error
 import urllib.request
 
 URL = "http://127.0.0.1:4444"
+TIMEOUT = 30
+POLL_INTERVAL = 0.15
+DISCONNECT_GRACE_SECONDS = 1.5
+MAX_CLICK_DISCONNECT_RETRIES = 2
 DISCONNECT_ERRORS = (http.client.RemoteDisconnected, ConnectionResetError, urllib.error.URLError)
+_TIMED_OUT = object()
+_ACTIVE_DEADLINE = contextvars.ContextVar("desktop_smoke_deadline", default=None)
+
+
+def _scoped_deadline(deadline):
+    current = _ACTIVE_DEADLINE.get()
+    effective = deadline if current is None else min(current, deadline)
+    return effective, _ACTIVE_DEADLINE.set(effective)
 
 
 def disconnected(error):
@@ -27,9 +40,12 @@ def request(method, path, body=None):
     req = urllib.request.Request(URL + path, data=data, method=method,
                                  headers={"Content-Type": "application/json", "Connection": "close"})
     # Element lookup is a read despite using POST. Never replay session creation,
-    # clicks or key events: the command may have succeeded before its response was lost.
+    # clicks or key events inside request(); click() checks state before retrying.
     retryable = method == "GET" or (method == "POST" and path.endswith("/element"))
-    deadline = time.monotonic() + 30
+    active_deadline = _ACTIVE_DEADLINE.get()
+    deadline = time.monotonic() + TIMEOUT
+    if active_deadline is not None:
+        deadline = min(deadline, active_deadline)
     for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=max(0.001, deadline - time.monotonic())) as response:
@@ -41,22 +57,42 @@ def request(method, path, body=None):
         except DISCONNECT_ERRORS as error:
             if not retryable or not disconnected(error) or attempt == 2 or time.monotonic() >= deadline:
                 raise
-            time.sleep(min(0.15 * (attempt + 1), max(0, deadline - time.monotonic())))
+            time.sleep(min(POLL_INTERVAL * (attempt + 1), max(0, deadline - time.monotonic())))
 
 
-def until(action, timeout=30):
-    started = time.monotonic()
-    last_error = None
+def _timeout_error(last_error):
+    return RuntimeError(f"Timed out waiting for desktop UI: {last_error}")
+
+
+def _poll_until(action, deadline, last_error=None):
+    """Poll ``action`` until truthy or ``deadline`` expires, returning ``(_TIMED_OUT, last_error)`` on timeout."""
     while True:
         try:
             value = action()
             if value:
-                return value
+                return value, last_error
         except (OSError, KeyError) as error:
             last_error = error
-        if time.monotonic() - started > timeout:
-            raise RuntimeError(f"Timed out waiting for desktop UI: {last_error}")
-        time.sleep(0.15)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return _TIMED_OUT, last_error
+        time.sleep(min(POLL_INTERVAL, remaining))
+
+
+def _wait_until_deadline(action, deadline, last_error=None):
+    """Wait until ``action`` returns truthy before ``deadline`` or raise RuntimeError."""
+    value, last_error = _poll_until(action, deadline, last_error=last_error)
+    if value is _TIMED_OUT:
+        raise _timeout_error(last_error)
+    return value
+
+
+def until(action, timeout=TIMEOUT, last_error=None):
+    deadline, token = _scoped_deadline(time.monotonic() + timeout)
+    try:
+        return _wait_until_deadline(action, deadline, last_error=last_error)
+    finally:
+        _ACTIVE_DEADLINE.reset(token)
 
 
 def element(prefix, xpath):
@@ -66,19 +102,64 @@ def element(prefix, xpath):
     return ident if rect["width"] > 0 and rect["height"] > 0 else None
 
 
-def click(prefix, xpath, completed):
+def click(prefix, xpath, completed, timeout=TIMEOUT):
+    """Click an element and confirm its post-condition, retrying idempotently on transient disconnects."""
+    deadline, token = _scoped_deadline(time.monotonic() + timeout)
+    try:
+        return _click_until(prefix, xpath, completed, deadline)
+    finally:
+        _ACTIVE_DEADLINE.reset(token)
+
+
+def _click_until(prefix, xpath, completed, deadline):
     def ready():
         ident = element(prefix, xpath)
         return ident if ident and request("GET", prefix + f"/element/{ident}/enabled") else None
-    ident = until(ready)
-    try:
-        request("POST", prefix + f"/element/{ident}/click", {})
-    except DISCONNECT_ERRORS as error:
-        if not disconnected(error):
-            raise
-    # Confirm the effect even when only the response was lost; a second click could
-    # close the path disclosure or enqueue the same conversion twice.
-    until(completed)
+
+    def retry_step():
+        completed_error = None
+        try:
+            done = completed()
+            if done:
+                return ("completed", done)
+        except (OSError, KeyError) as exc:
+            completed_error = exc
+        ident = ready()
+        if ident:
+            return ("ready", ident)
+        if completed_error is not None:
+            raise completed_error
+        return None
+
+    last_error = None
+    for attempt in range(1 + MAX_CLICK_DISCONNECT_RETRIES):
+        if attempt == 0:
+            ident = _wait_until_deadline(ready, deadline, last_error=last_error)
+        else:
+            kind, payload = _wait_until_deadline(retry_step, deadline, last_error=last_error)
+            if kind == "completed":
+                return payload
+            ident = payload
+
+        if time.monotonic() >= deadline:
+            raise _timeout_error(last_error)
+        try:
+            request("POST", prefix + f"/element/{ident}/click", {})
+            break
+        except DISCONNECT_ERRORS as error:
+            if not disconnected(error):
+                raise
+            last_error = error
+            if attempt >= MAX_CLICK_DISCONNECT_RETRIES:
+                break
+            grace_deadline = min(deadline, time.monotonic() + DISCONNECT_GRACE_SECONDS)
+            observed, last_error = _poll_until(completed, grace_deadline, last_error=last_error)
+            if observed is not _TIMED_OUT:
+                return observed
+            if time.monotonic() >= deadline:
+                raise _timeout_error(last_error) from error
+
+    return _wait_until_deadline(completed, deadline, last_error=last_error)
 
 
 def main():
@@ -120,15 +201,16 @@ def main():
                     click(prefix,
                           "//nav[@aria-label='Main navigation']//button[span[normalize-space()='Convert']]",
                           lambda: element(prefix, "//h1[normalize-space()='Convert']"))
-                click(prefix, "//summary[normalize-space()='Add a local file by path']",
+                click(prefix, "//details[not(@open)]/summary[normalize-space()='Add a local file by path']",
                       lambda: element(prefix, "//details[@open]//input[@id='file-path']"))
                 type_path(input_path)
                 click(prefix, "//button[normalize-space()='Add file']",
-                      lambda: element(prefix, f"//ul[@class='file-list']//span[normalize-space()='{input_path.name}']"))
+                      lambda name=input_path.name: element(prefix, f"//ul[@class='file-list']//span[normalize-space()='{name}']"))
                 click(prefix, "//button[@aria-label='Start conversion']",
                       lambda: element(prefix, "//h1[normalize-space()='Queue']"))
-                until(lambda: element(prefix,
-                    f"//div[strong[normalize-space()='{input_path.name}']]//*[@data-status='succeeded']"))
+                until(lambda name=input_path.name: element(
+                    prefix,
+                    f"//div[strong[normalize-space()='{name}']]//*[@data-status='succeeded']"))
                 output = input_path.with_suffix(".html")
                 assert "Desktop smoke" in output.read_text(encoding="utf-8")
                 assert "A real local conversion." in output.read_text(encoding="utf-8")
