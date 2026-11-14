@@ -703,6 +703,7 @@ def test_real_torch_receipts_cover_every_reviewed_object_notice_and_gnu_runtime(
         if "aarch64" not in path
     }
     assert len(linux_objects) == 10
+    assert linux_objects["torch/lib/libtorch_cpu.so"].startswith("ba640c16")
     assert {item["path"] for item in component["notices"]} == set(TORCH_NOTICE_NAMES)
     wheel = tmp_path / TORCH_WHEEL
     errors: list[str] = []
