@@ -79,10 +79,11 @@ jobs:
             esac
             curl -fsSL --retry 3 --max-time 180 --proto '=https' --proto-redir '=https' --tlsv1.2 "$url" -o "$RUNNER_TEMP/qpdf-input/$name"
             if command -v sha256sum >/dev/null 2>&1; then
-              printf '%s  %s\n' "$digest" "$RUNNER_TEMP/qpdf-input/$name" | sha256sum --check
+              actual=$(sha256sum "$RUNNER_TEMP/qpdf-input/$name")
             else
-              printf '%s  %s\n' "$digest" "$RUNNER_TEMP/qpdf-input/$name" | shasum -a 256 --check
+              actual=$(shasum -a 256 "$RUNNER_TEMP/qpdf-input/$name")
             fi
+            [ "${actual%% *}" = "$digest" ] || { echo "hash mismatch: $name" >&2; exit 1; }
             count=$((count + 1))
           done < engines/qpdf/pack/build-inputs.txt
           [ "$count" -eq 3 ] || { echo "expected 3 build-inputs entries, got $count" >&2; exit 1; }

@@ -164,15 +164,35 @@ if build_inputs != expected_inputs:
 for needle, count, label in (
     ('done < engines/qpdf/pack/build-inputs.txt', 1, 'workflow build-inputs loop'),
     ("--proto '=https' --proto-redir '=https' --tlsv1.2", 1, 'workflow HTTPS-only curl flags'),
-    ('sha256sum --check', 3, 'workflow sha256sum verification'),
-    ('printf \'%s  %s\\n\' "$digest" "$RUNNER_TEMP/qpdf-input/$name" | sha256sum --check', 1, 'workflow Linux sha256sum verification'),
-    ('printf \'%s  %s\\n\' "$digest" "$RUNNER_TEMP/qpdf-input/$name" | shasum -a 256 --check', 1, 'workflow macOS shasum verification'),
+    ('sha256sum --check', 2, 'workflow Linux-only sha256sum --check verification'),
+    ('shasum -a 256 --check', 0, 'workflow shasum --check prohibition'),
+    ('actual=$(sha256sum "$RUNNER_TEMP/qpdf-input/$name")', 1, 'workflow flag-free sha256sum verification'),
+    ('actual=$(shasum -a 256 "$RUNNER_TEMP/qpdf-input/$name")', 1, 'workflow flag-free shasum verification'),
+    ('[ "${actual%% *}" = "$digest" ]', 1, 'workflow digest comparison'),
     ('cp engines/qpdf/pack/build-inputs.txt "$RUNNER_TEMP/qpdf-output/receipt/build-inputs.txt"', 1, 'workflow receipt copy'),
     ('compile-qpdf.sh /input/qpdf-12.4.2.tar.gz /input/libjpeg-turbo-3.2.1.tar.gz /input/zlib-1.3.2.tar.gz /output', 2, 'workflow Linux compile-qpdf args'),
     ('compile-qpdf.sh "$RUNNER_TEMP/qpdf-input/qpdf-12.4.2.tar.gz"\n          "$RUNNER_TEMP/qpdf-input/libjpeg-turbo-3.2.1.tar.gz" "$RUNNER_TEMP/qpdf-input/zlib-1.3.2.tar.gz"\n          "$RUNNER_TEMP/qpdf-output"', 1, 'workflow macOS compile-qpdf args'),
 ):
     if workflow.count(needle) != count:
         sys.exit(f'{label}: expected {count} occurrence(s) in pack-qpdf.yml')
+
+download_step = re.search(
+    r'^\s*- name: Download pinned inputs\n(.*?)(?=^\s*- name: )',
+    workflow,
+    re.MULTILINE | re.DOTALL,
+)
+if download_step is None:
+    sys.exit('missing Download pinned inputs step in pack-qpdf.yml')
+download_body = download_step.group(1)
+if 'sha256sum --check' in download_body or '--check' in download_body:
+    sys.exit('Download pinned inputs step must not use GNU-only --check flag')
+for needle in (
+    'actual=$(sha256sum "$RUNNER_TEMP/qpdf-input/$name")',
+    'actual=$(shasum -a 256 "$RUNNER_TEMP/qpdf-input/$name")',
+    '[ "${actual%% *}" = "$digest" ]',
+):
+    if needle not in download_body:
+        sys.exit(f'Download pinned inputs step missing portable check: {needle}')
 
 def check(text, accepted, label):
     review_path.write_text(text)
