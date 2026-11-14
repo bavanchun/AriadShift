@@ -138,7 +138,9 @@
     "sidebar": {
       "title": "Trang",
       "placeholder": "Ảnh thu nhỏ của các trang sẽ hiện ở đây.",
-      "page": "Trang {number} trên {total}"
+      "page": "Trang {number} trên {total}",
+      "tools": "Công cụ",
+      "tabs": "Nội dung thanh bên"
     },
     "viewer": {
       "placeholder": "Trình xem trang sẽ hiện ở đây.",
@@ -222,7 +224,16 @@
       "delete": "Xóa các trang đã chọn",
       "move_earlier": "Chuyển lên trước trang liền trước",
       "move_later": "Chuyển ra sau trang liền sau",
-      "drop_end": "Thả vào đây để chuyển xuống cuối"
+      "drop_end": "Thả vào đây để chuyển xuống cuối",
+      "selected": "Đã chọn {count}"
+    },
+    "window": {
+      "pages": "{count, plural, other {# trang}}"
+    },
+    "drop": {
+      "open": "Thả để mở",
+      "insert": "Thả để chèn các trang",
+      "insert_hint": "Giữ ⌥ để chèn các trang vào tài liệu này"
     }
   },
   "web": {

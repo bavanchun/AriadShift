@@ -42,6 +42,15 @@ final class DocumentSession {
         run = ToolRunModel(tool: tool, document: fileURL, client: client)
     }
 
+    /// Presents `tool` with `extraDocuments` already added after this document (pages dropped with Option go
+    /// through Merge this way). The user still sees the parameters and starts the run.
+    func begin(_ tool: ToolEntry, extraDocuments: [URL], client: EngineClient?) {
+        guard run == nil, let fileURL, let client, tool.isAvailable else { return }
+        let model = ToolRunModel(tool: tool, document: fileURL, client: client)
+        model.extraDocuments = Array(extraDocuments.prefix(tool.arity.extraRange.upperBound))
+        run = model
+    }
+
     /// Runs `tool` straight away with parameters the viewer built (a page edit), showing the same
     /// run sheet as the Tools menu: progress, Cancel, errors and the result.
     func begin(_ tool: ToolEntry, paramsJSON: String, client: EngineClient?) {

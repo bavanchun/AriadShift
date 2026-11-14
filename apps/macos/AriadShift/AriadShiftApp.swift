@@ -1,3 +1,4 @@
+import AriadDesignSystem
 import AriadShiftCore
 import SwiftUI
 
@@ -24,7 +25,9 @@ struct AriadShiftApp: App {
         DocumentGroup(viewing: PDFFileDocument.self) { file in
             DocumentWindowView(fileURL: file.fileURL, document: file.document)
                 .environmentObject(engine)
+                .environment(imports)
         }
+        .defaultSize(width: DSSize.documentWindow.width, height: DSSize.documentWindow.height)
         .commands {
             AppCommands(
                 engineState: engine.state,

@@ -1,9 +1,11 @@
 import AppKit
+import AriadDesignSystem
 import AriadShiftCore
 import SwiftUI
 
-/// The window toolbar of the viewer: page grid switch, page navigation, zoom and find. Every
-/// control is a button, menu or field with a label, so it works with the keyboard and VoiceOver.
+/// The window toolbar of the viewer: page grid switch, the page capsule and the zoom capsule, then the find status
+/// next to the search field (`searchable` puts the field itself in the toolbar). Every control is a button, menu or
+/// field with a label, so it works with the keyboard and VoiceOver.
 struct ViewerToolbar: ToolbarContent {
     let viewer: ViewerModel
 
@@ -22,85 +24,77 @@ struct ViewerToolbar: ToolbarContent {
             ZoomControls(viewer: viewer)
         }
         ToolbarItem(placement: .primaryAction) {
-            Button {
-                viewer.find.show()
-            } label: {
-                Label(String(localized: "mac.menu.find"), systemImage: "magnifyingglass")
-            }
-            .help(String(localized: "mac.menu.find"))
-            .accessibilityIdentifier("toolbar.find")
-            .disabled(viewer.loadState != .loaded || viewer.layout != .reader)
+            FindStatus(find: viewer.find)
         }
     }
 }
 
-/// Previous and next page, and a field to type a page number.
+/// The page capsule: previous and next page around a field showing "3 / 20". Typing a number outside the document
+/// goes to the nearest page.
 private struct PageNavigation: View {
     let viewer: ViewerModel
-    @State private var text = ""
-    @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 4) {
-            Button {
-                viewer.previousPage()
-            } label: {
-                Label(String(localized: "mac.toolbar.previous_page"), systemImage: "chevron.up")
-            }
-            .help(String(localized: "mac.toolbar.previous_page"))
-            .accessibilityIdentifier("toolbar.previousPage")
-            .disabled(!viewer.canGoPrevious || viewer.layout != .reader)
-
-            TextField(String(localized: "mac.toolbar.page_field"), text: $text)
-                .textFieldStyle(.roundedBorder)
-                .multilineTextAlignment(.trailing)
-                .monospacedDigit()
-                .frame(minWidth: 40, idealWidth: 52, maxWidth: 80)
-                .fixedSize(horizontal: true, vertical: false)
-                .focused($focused)
-                .onSubmit(commit)
-                .accessibilityIdentifier("toolbar.pageField")
-                .accessibilityLabel(String(localized: "mac.toolbar.page_field"))
-                .accessibilityValue(
-                    String(localized: "mac.sidebar.page", defaultValue: "Page \(viewer.currentPageNumber) of \(viewer.pageCount)")
-                )
-            Text(String(localized: "mac.toolbar.page_of", defaultValue: "of \(viewer.pageCount)"))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .fixedSize()
-
-            Button {
-                viewer.nextPage()
-            } label: {
-                Label(String(localized: "mac.toolbar.next_page"), systemImage: "chevron.down")
-            }
-            .help(String(localized: "mac.toolbar.next_page"))
-            .accessibilityIdentifier("toolbar.nextPage")
-            .disabled(!viewer.canGoNext || viewer.layout != .reader)
-        }
-        .labelStyle(.iconOnly)
-        .disabled(viewer.loadState != .loaded)
-        .onAppear { text = String(viewer.currentPageNumber) }
-        .onChange(of: viewer.currentPageNumber) { _, number in
-            if !focused { text = String(number) }
-        }
-        .onChange(of: viewer.pageFieldFocusRequest) { focused = true }
+        DSToolbarPageField(
+            page: Binding(get: { viewer.currentPageNumber }, set: { viewer.goTo(pageNumber: $0) }),
+            pageCount: viewer.pageCount,
+            previousLabel: Text("mac.toolbar.previous_page"),
+            nextLabel: Text("mac.toolbar.next_page"),
+            fieldLabel: Text("mac.toolbar.page_field"),
+            fieldValue: Text(
+                String(localized: "mac.sidebar.page", defaultValue: "Page \(viewer.currentPageNumber) of \(viewer.pageCount)")
+            ),
+            accessibilityIDs: .init(previous: "toolbar.previousPage", field: "toolbar.pageField", next: "toolbar.nextPage")
+        )
+        .disabled(viewer.loadState != .loaded || viewer.layout != .reader)
         .background(PageFieldFocuser(request: viewer.pageFieldFocusRequest))
-    }
-
-    /// A number outside the document goes to the nearest page; anything else restores the current one.
-    private func commit() {
-        if let number = Int(text.trimmingCharacters(in: .whitespaces)) { viewer.goTo(pageNumber: number) }
-        text = String(viewer.currentPageNumber)
     }
 }
 
-/// Zoom out, a menu with the zoom stops, and zoom in.
+/// While a find query is entered: "3 of 12" and the previous and next match. Return in the search field also steps
+/// to the next match.
+private struct FindStatus: View {
+    let find: ViewerFind
+
+    var body: some View {
+        if find.isVisible && find.hasQuery {
+            HStack(spacing: DSSpacing.xs) {
+                Text(statusText)
+                    .font(DSFont.callout)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .accessibilityLabel(statusText)
+                    .accessibilityIdentifier("find.status")
+                ControlGroup {
+                    Button(String(localized: "mac.menu.find_previous"), systemImage: "chevron.up") { find.previous() }
+                        .accessibilityIdentifier("find.previous")
+                    Button(String(localized: "mac.menu.find_next"), systemImage: "chevron.down") { find.next() }
+                        .accessibilityIdentifier("find.next")
+                }
+                .labelStyle(.iconOnly)
+                .disabled(find.matchCount == 0)
+            }
+            .dsAnimation(.snappy, value: find.currentIndex)
+        }
+    }
+
+    private var statusText: String {
+        if find.isSearching && find.matchCount == 0 { return String(localized: "mac.find.searching") }
+        if find.matchCount == 0 { return String(localized: "mac.find.none") }
+        return String(
+            localized: "mac.find.count",
+            defaultValue: "\((find.currentIndex ?? 0) + 1) of \(find.matchCount)"
+        )
+    }
+}
+
+/// The zoom capsule: zoom out, a menu with the zoom stops showing the current scale, and zoom in.
 private struct ZoomControls: View {
     let viewer: ViewerModel
 
     var body: some View {
-        HStack(spacing: 4) {
+        ControlGroup {
             Button {
                 viewer.zoomOut()
             } label: {
