@@ -6,6 +6,9 @@ targets and macOS require CI verification. `just pack-qpdf <qpdf_dir>` creates
 an unsigned host pack; the upstream Linux development cache is permitted only
 for local use and its additional dependencies are marked as unreviewed.
 
+`build-inputs.txt` pins the immutable upstream archive URLs and SHA-256 digests
+for qpdf, libjpeg-turbo and zlib, verified at download and build time and
+recorded in Linux input receipts.
 `licence-review.toml` records the approved, narrowly scoped libjpeg-turbo 3.2.1
 exception.
 `check-release.sh` fails closed while the owner's approval or the GNU static
