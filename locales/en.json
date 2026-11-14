@@ -128,7 +128,9 @@
       "go_to_page": "Go to Page…",
       "find": "Find…",
       "find_next": "Find Next",
-      "find_previous": "Find Previous"
+      "find_previous": "Find Previous",
+      "find_tool": "Find a Tool…",
+      "find_tool@note": "Tools menu item (⌘K) that opens the tool palette."
     },
     "tools": {
       "group": "{group, select, organize {Organize} convert {Convert} optimize {Optimize} security {Security} overlay {Overlay} ocr {OCR and scans} annotate {Annotate} forms {Forms} sign {Sign} redact {Redact} compare {Compare and validate} edit {Edit} ai {AI} automation {Automation} other {Other tools}}",
@@ -138,7 +140,14 @@
       "loading": "Loading tools…",
       "pro_title": "{title} (Pro)",
       "pro_title@note": "Tools menu item of a Pro tool. {title} is the tool name, for example Sign Token. Keep (Pro) as the plan name.",
-      "pro_hint": "A Pro tool. Running it needs a Pro plan."
+      "pro_hint": "A Pro tool. Running it needs a Pro plan.",
+      "job": "{job, select, organize {Organize} edit {Edit} convert {Convert} secure {Secure} ocr {OCR} ai {AI} other {Other tools}}",
+      "job@note": "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "badge": "{reason, select, later {Later} format {Import} paid {Pro} info {Off} other {Off}}",
+      "badge@note": "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
+      "search": "Search tools",
+      "search@note": "Placeholder of the search field at the top of the sidebar Tools tab.",
+      "clear_search": "Clear search"
     },
     "sidebar": {
       "title": "Pages",
@@ -159,7 +168,10 @@
       "page_grid": "Page Grid",
       "previous_page": "Previous Page",
       "next_page": "Next Page",
-      "page_field": "Page number"
+      "page_field": "Page number",
+      "tools": "Tools",
+      "tools@note": "Toolbar button that opens the tool palette; the ⌘K shortcut is shown next to it.",
+      "tools_help": "Find a tool (⌘K)"
     },
     "inspector": {
       "title": "Document",
@@ -169,8 +181,6 @@
       "warnings": "{count, plural, one {# warning} other {# warnings}}"
     },
     "run": {
-      "title": "Run {tool}",
-      "title@note": "Title of the sheet that runs a document tool. {tool} is the tool name, for example Rotate.",
       "run": "Run",
       "cancel": "Cancel",
       "close": "Done",
@@ -184,9 +194,7 @@
       "failed": "The tool did not finish.",
       "pro_notice": "This is a Pro tool. It needs a Pro plan to run.",
       "upgrade": "This tool needs a Pro plan. Upgrade to run it.",
-      "open": "Open",
       "reveal": "Show in Finder",
-      "result_files": "{count, plural, one {# file created} other {# files created}}",
       "field_error": "{kind, select, missing {{field} is required.} other {{field} is not valid.}}",
       "field_error@note": "Validation message for a tool setting. {kind} is the keyword missing or invalid, {field} is the setting name. Keep the keywords untranslated.",
       "result": "Result",
@@ -197,7 +205,27 @@
       "move_up": "Move up",
       "move_up@note": "Button that moves a row of a tool setting list up.",
       "move_down": "Move down",
-      "move_down@note": "Button that moves a row of a tool setting list down."
+      "move_down@note": "Button that moves a row of a tool setting list down.",
+      "reset": "Reset",
+      "reset@note": "Inspector button that restores the default settings of the open tool.",
+      "run_help": "Run the tool (⌘↩)",
+      "close_tool": "Close tool",
+      "close_tool@note": "Button in the inspector header that closes the open tool and shows the document again.",
+      "details": "Details",
+      "details@note": "Disclosure under a tool error that shows the engine message.",
+      "output": "Output",
+      "save_to": "Save to",
+      "save_to@note": "Inspector row label; the value is the folder the result is written to.",
+      "open_result": "Open the result",
+      "open_result@note": "Switch in the inspector: open a PDF result in a new window when the tool finishes.",
+      "done": "Done",
+      "done@note": "Shown with a check mark when a tool finished and its result is shown in the inspector.",
+      "undo": "Undo",
+      "undo@note": "Toast button that removes the file a tool just created.",
+      "done_sizes": "{tool} · {before} → {after}",
+      "done_sizes@note": "Toast after a tool wrote one file, for example \"Compress · 4.2 MB → 1.1 MB\". {tool} is the tool name, {before} the size of the document and {after} the size of the result, both formatted.",
+      "done_files": "{tool} · {count, plural, one {# file created} other {# files created}}",
+      "done_files@note": "Toast after a tool wrote several files, for example \"Split · 3 files created\". {tool} is the tool name. types: count=int"
     },
     "settings": {
       "output_folder": "Save results in",
@@ -254,6 +282,17 @@
       "insert": "Drop to insert the pages",
       "insert_hint": "Hold ⌥ to insert the pages into this document",
       "insert_hint@note": "Shown while files are dragged over a document window. ⌥ is the Option key symbol."
+    },
+    "palette": {
+      "placeholder": "Search tools",
+      "placeholder@note": "Placeholder of the query field in the ⌘K tool palette.",
+      "dismiss": "esc",
+      "dismiss@note": "Key hint at the trailing end of the palette query field: the Escape key closes the palette.",
+      "empty": "No tools match",
+      "recent": "Recent",
+      "recent@note": "Section title of the tools the user ran most recently, in the palette and the inspector.",
+      "suggested": "Suggested for this file",
+      "suggested@note": "Section title of tools that suit the open document (for example OCR for a scan), in the palette and the inspector."
     }
   },
   "web": {

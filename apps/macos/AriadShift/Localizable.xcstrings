@@ -23516,6 +23516,24 @@
         }
       }
     },
+    "mac.menu.find_tool" : {
+      "comment" : "Tools menu item (⌘K) that opens the tool palette.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find a Tool…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm công cụ…"
+          }
+        }
+      }
+    },
     "mac.menu.fit_width" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27286,6 +27304,95 @@
         }
       }
     },
+    "mac.palette.dismiss" : {
+      "comment" : "Key hint at the trailing end of the palette query field: the Escape key closes the palette.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "esc"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "esc"
+          }
+        }
+      }
+    },
+    "mac.palette.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No tools match"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có công cụ phù hợp"
+          }
+        }
+      }
+    },
+    "mac.palette.placeholder" : {
+      "comment" : "Placeholder of the query field in the ⌘K tool palette.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search tools"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm công cụ"
+          }
+        }
+      }
+    },
+    "mac.palette.recent" : {
+      "comment" : "Section title of the tools the user ran most recently, in the palette and the inspector.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gần đây"
+          }
+        }
+      }
+    },
+    "mac.palette.suggested" : {
+      "comment" : "Section title of tools that suit the open document (for example OCR for a scan), in the palette and the inspector.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested for this file"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gợi ý cho tệp này"
+          }
+        }
+      }
+    },
     "mac.run.add_documents" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28053,6 +28160,114 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "完成"
+          }
+        }
+      }
+    },
+    "mac.run.close_tool" : {
+      "comment" : "Button in the inspector header that closes the open tool and shows the document again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close tool"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đóng công cụ"
+          }
+        }
+      }
+    },
+    "mac.run.details" : {
+      "comment" : "Disclosure under a tool error that shows the engine message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chi tiết"
+          }
+        }
+      }
+    },
+    "mac.run.done" : {
+      "comment" : "Shown with a check mark when a tool finished and its result is shown in the inspector.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xong"
+          }
+        }
+      }
+    },
+    "mac.run.done_files" : {
+      "comment" : "Toast after a tool wrote several files, for example \"Split · 3 files created\". {tool} is the tool name. types: count=int",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%1$@ · %2$lld file created"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%1$@ · %2$lld files created"
+                }
+              }
+            }
+          }
+        },
+        "vi" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%1$@ · Đã tạo %2$lld tệp"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mac.run.done_sizes" : {
+      "comment" : "Toast after a tool wrote one file, for example \"Compress · 4.2 MB → 1.1 MB\". {tool} is the tool name, {before} the size of the document and {after} the size of the result, both formatted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@ → %3$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@ → %3$@"
           }
         }
       }
@@ -30213,253 +30428,37 @@
         }
       }
     },
-    "mac.run.open" : {
+    "mac.run.open_result" : {
+      "comment" : "Switch in the inspector: open a PDF result in a new window when the tool finishes.",
       "extractionState" : "manual",
       "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "فتح"
-          }
-        },
-        "az" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Aç"
-          }
-        },
-        "bg" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Отваряне"
-          }
-        },
-        "bo" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ཁ་ཕྱེ།"
-          }
-        },
-        "ca" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Obre"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Otevřít"
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Åbn"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Öffnen"
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Άνοιγμα"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Abrir"
-          }
-        },
-        "eu" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Ireki"
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "باز کردن"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Ouvrir"
-          }
-        },
-        "ga" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Oscail"
-          }
-        },
-        "gl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Abrir"
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "खोलें"
-          }
-        },
-        "hr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Otvori"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Megnyitás"
-          }
-        },
-        "id" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Buka"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apri"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "開く"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "열기"
-          }
-        },
-        "ml" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "തുറക്കുക"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Åpne"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Open"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Otwórz"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Abrir"
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Abrir"
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Deschide"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Открыть"
-          }
-        },
-        "sk" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Otvoriť"
-          }
-        },
-        "sl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Odpri"
-          }
-        },
-        "sr-Latn" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Otvori"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Öppna"
-          }
-        },
-        "th" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "เปิด"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Aç"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Відкрити"
+            "value" : "Open the result"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mở"
+            "value" : "Mở kết quả"
+          }
+        }
+      }
+    },
+    "mac.run.output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Output"
           }
         },
-        "zh-Hans" : {
+        "vi" : {
           "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "打开"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "打開"
+            "state" : "translated",
+            "value" : "Đầu ra"
           }
         }
       }
@@ -31235,6 +31234,24 @@
         }
       }
     },
+    "mac.run.reset" : {
+      "comment" : "Inspector button that restores the default settings of the open tool.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đặt lại"
+          }
+        }
+      }
+    },
     "mac.run.result" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31482,869 +31499,6 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "結果"
-          }
-        }
-      }
-    },
-    "mac.run.result_files" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "أُنشئت %1$lld ملفات"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "أُنشئ %1$lld ملفًا"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "أُنشئ ملف واحد"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "أُنشئ %1$lld ملف"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "أُنشئ ملفان"
-                }
-              },
-              "zero" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "لم يُنشأ أي ملف"
-                }
-              }
-            }
-          }
-        },
-        "az" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fayl yaradıldı"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fayl yaradıldı"
-                }
-              }
-            }
-          }
-        },
-        "bg" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Създаден е %1$lld файл"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Създадени са %1$lld файла"
-                }
-              }
-            }
-          }
-        },
-        "bo" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "ཡིག་ཆ་ %1$lld བཟོས་ཡོད།"
-                }
-              }
-            }
-          }
-        },
-        "ca" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld de fitxers creats"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fitxer creat"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fitxers creats"
-                }
-              }
-            }
-          }
-        },
-        "cs" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvořeny %1$lld soubory"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvořeno %1$lld souboru"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvořen %1$lld soubor"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvořeno %1$lld souborů"
-                }
-              }
-            }
-          }
-        },
-        "da" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fil oprettet"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld filer oprettet"
-                }
-              }
-            }
-          }
-        },
-        "de" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld Datei erstellt"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld Dateien erstellt"
-                }
-              }
-            }
-          }
-        },
-        "el" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Δημιουργήθηκε %1$lld αρχείο"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Δημιουργήθηκαν %1$lld αρχεία"
-                }
-              }
-            }
-          }
-        },
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$lld file created"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$lld files created"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld de archivos creados"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld archivo creado"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld archivos creados"
-                }
-              }
-            }
-          }
-        },
-        "eu" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Fitxategi %1$lld sortu da"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fitxategi sortu dira"
-                }
-              }
-            }
-          }
-        },
-        "fa" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld پرونده ایجاد شد"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld پرونده ایجاد شد"
-                }
-              }
-            }
-          }
-        },
-        "fr" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld de fichiers créés"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fichier créé"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fichiers créés"
-                }
-              }
-            }
-          }
-        },
-        "ga" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Cruthaíodh %1$lld chomhad"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Cruthaíodh %1$lld gcomhad"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Cruthaíodh %1$lld chomhad"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Cruthaíodh %1$lld comhad"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Cruthaíodh %1$lld chomhad"
-                }
-              }
-            }
-          }
-        },
-        "gl" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld ficheiro creado"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld ficheiros creados"
-                }
-              }
-            }
-          }
-        },
-        "hi" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld फ़ाइल बनाई गई"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld फ़ाइलें बनाई गईं"
-                }
-              }
-            }
-          }
-        },
-        "hr" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Izrađene su %1$lld datoteke"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Izrađena je %1$lld datoteka"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Izrađeno je %1$lld datoteka"
-                }
-              }
-            }
-          }
-        },
-        "hu" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fájl létrehozva"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fájl létrehozva"
-                }
-              }
-            }
-          }
-        },
-        "id" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld file dibuat"
-                }
-              }
-            }
-          }
-        },
-        "it" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld di file creati"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld file creato"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld file creati"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld個のファイルを作成しました"
-                }
-              }
-            }
-          }
-        },
-        "ko" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "파일 %1$lld개를 만들었습니다"
-                }
-              }
-            }
-          }
-        },
-        "ml" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld ഫയൽ സൃഷ്ടിച്ചു"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld ഫയലുകൾ സൃഷ്ടിച്ചു"
-                }
-              }
-            }
-          }
-        },
-        "nb" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fil opprettet"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld filer opprettet"
-                }
-              }
-            }
-          }
-        },
-        "nl" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld bestand aangemaakt"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld bestanden aangemaakt"
-                }
-              }
-            }
-          }
-        },
-        "pl" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Utworzono %1$lld pliki"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Utworzono %1$lld plików"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Utworzono %1$lld plik"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Utworzono %1$lld pliku"
-                }
-              }
-            }
-          }
-        },
-        "pt-BR" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld de arquivos criados"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld arquivo criado"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld arquivos criados"
-                }
-              }
-            }
-          }
-        },
-        "pt-PT" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld de ficheiros criados"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld ficheiro criado"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld ficheiros criados"
-                }
-              }
-            }
-          }
-        },
-        "ro" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fișiere create"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fișier creat"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld de fișiere create"
-                }
-              }
-            }
-          }
-        },
-        "ru" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Создано %1$lld файла"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Создано %1$lld файлов"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Создан %1$lld файл"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Создано %1$lld файла"
-                }
-              }
-            }
-          }
-        },
-        "sk" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvorené %1$lld súbory"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvorené %1$lld súbora"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvorený %1$lld súbor"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Vytvorených %1$lld súborov"
-                }
-              }
-            }
-          }
-        },
-        "sl" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Ustvarjene %1$lld datoteke"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Ustvarjena %1$lld datoteka"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Ustvarjenih %1$lld datotek"
-                }
-              },
-              "two" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Ustvarjeni %1$lld datoteki"
-                }
-              }
-            }
-          }
-        },
-        "sr-Latn" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Napravljene su %1$lld datoteke"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Napravljena je %1$lld datoteka"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Napravljeno je %1$lld datoteka"
-                }
-              }
-            }
-          }
-        },
-        "sv" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld fil skapad"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld filer skapade"
-                }
-              }
-            }
-          }
-        },
-        "th" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "สร้างไฟล์แล้ว %1$lld ไฟล์"
-                }
-              }
-            }
-          }
-        },
-        "tr" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld dosya oluşturuldu"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "%1$lld dosya oluşturuldu"
-                }
-              }
-            }
-          }
-        },
-        "uk" : {
-          "variations" : {
-            "plural" : {
-              "few" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Створено %1$lld файли"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Створено %1$lld файлів"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Створено %1$lld файл"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "Створено %1$lld файла"
-                }
-              }
-            }
-          }
-        },
-        "vi" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Đã tạo %1$lld tệp"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "已创建 %1$lld 个文件"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hant" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "needs_review",
-                  "value" : "已建立 %1$lld 個檔案"
-                }
-              }
-            }
           }
         }
       }
@@ -32851,254 +32005,55 @@
         }
       }
     },
-    "mac.run.title" : {
-      "comment" : "Title of the sheet that runs a document tool. {tool} is the tool name, for example Rotate.",
+    "mac.run.run_help" : {
       "extractionState" : "manual",
       "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "تشغيل %1$@"
-          }
-        },
-        "az" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ alətini işə sal"
-          }
-        },
-        "bg" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Изпълнение на %1$@"
-          }
-        },
-        "bo" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ གཡོག"
-          }
-        },
-        "ca" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Executa %1$@"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Spustit %1$@"
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Kør %1$@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ ausführen"
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Εκτέλεση: %1$@"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Run %1$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Ejecutar %1$@"
-          }
-        },
-        "eu" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Exekutatu %1$@"
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "اجرای %1$@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Exécuter %1$@"
-          }
-        },
-        "ga" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Rith %1$@"
-          }
-        },
-        "gl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Executar %1$@"
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "चलाएँ: %1$@"
-          }
-        },
-        "hr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Pokreni %1$@"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ futtatása"
-          }
-        },
-        "id" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Jalankan %1$@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Esegui %1$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@を実行"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ 실행"
-          }
-        },
-        "ml" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ പ്രവർത്തിപ്പിക്കുക"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Kjør %1$@"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ uitvoeren"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Uruchom: %1$@"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Executar %1$@"
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Executar %1$@"
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Rulează %1$@"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Запустить: %1$@"
-          }
-        },
-        "sk" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Spustiť %1$@"
-          }
-        },
-        "sl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Zaženi %1$@"
-          }
-        },
-        "sr-Latn" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Pokreni %1$@"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Kör %1$@"
-          }
-        },
-        "th" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "เรียกใช้ %1$@"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "%1$@ aracını çalıştır"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Запустити: %1$@"
+            "value" : "Run the tool (⌘↩)"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chạy %1$@"
+            "value" : "Chạy công cụ (⌘↩)"
+          }
+        }
+      }
+    },
+    "mac.run.save_to" : {
+      "comment" : "Inspector row label; the value is the folder the result is written to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save to"
           }
         },
-        "zh-Hans" : {
+        "vi" : {
           "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "运行 %1$@"
+            "state" : "translated",
+            "value" : "Lưu vào"
+          }
+        }
+      }
+    },
+    "mac.run.undo" : {
+      "comment" : "Toast button that removes the file a tool just created.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo"
           }
         },
-        "zh-Hant" : {
+        "vi" : {
           "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "執行 %1$@"
+            "state" : "translated",
+            "value" : "Hoàn tác"
           }
         }
       }
@@ -37168,6 +36123,148 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "上一頁"
+          }
+        }
+      }
+    },
+    "mac.toolbar.tools" : {
+      "comment" : "Toolbar button that opens the tool palette; the ⌘K shortcut is shown next to it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tools"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Công cụ"
+          }
+        }
+      }
+    },
+    "mac.toolbar.tools_help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find a tool (⌘K)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm công cụ (⌘K)"
+          }
+        }
+      }
+    },
+    "mac.tools.badge.format" : {
+      "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập"
+          }
+        }
+      }
+    },
+    "mac.tools.badge.info" : {
+      "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tắt"
+          }
+        }
+      }
+    },
+    "mac.tools.badge.later" : {
+      "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sau"
+          }
+        }
+      }
+    },
+    "mac.tools.badge.other" : {
+      "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tắt"
+          }
+        }
+      }
+    },
+    "mac.tools.badge.paid" : {
+      "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro"
+          }
+        }
+      }
+    },
+    "mac.tools.clear_search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear search"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xóa tìm kiếm"
           }
         }
       }
@@ -42302,6 +41399,132 @@
         }
       }
     },
+    "mac.tools.job.ai" : {
+      "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI"
+          }
+        }
+      }
+    },
+    "mac.tools.job.convert" : {
+      "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convert"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chuyển đổi"
+          }
+        }
+      }
+    },
+    "mac.tools.job.edit" : {
+      "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chỉnh sửa"
+          }
+        }
+      }
+    },
+    "mac.tools.job.ocr" : {
+      "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OCR"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OCR"
+          }
+        }
+      }
+    },
+    "mac.tools.job.organize" : {
+      "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organize"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sắp xếp"
+          }
+        }
+      }
+    },
+    "mac.tools.job.other" : {
+      "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other tools"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Công cụ khác"
+          }
+        }
+      }
+    },
+    "mac.tools.job.secure" : {
+      "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secure"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bảo mật"
+          }
+        }
+      }
+    },
     "mac.tools.loading" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -42584,6 +41807,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ (Pro)"
+          }
+        }
+      }
+    },
+    "mac.tools.search" : {
+      "comment" : "Placeholder of the search field at the top of the sidebar Tools tab.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search tools"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm công cụ"
           }
         }
       }

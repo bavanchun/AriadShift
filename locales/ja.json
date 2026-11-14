@@ -157,7 +157,6 @@
       "warnings": "{count, plural, other {警告 #件}}"
     },
     "run": {
-      "title": "{tool}を実行",
       "run": "実行",
       "cancel": "キャンセル",
       "close": "完了",
@@ -169,9 +168,7 @@
       "remove": "削除",
       "need_documents": "{count, plural, other {このツールを実行するには、あと#件の書類を追加してください。}}",
       "failed": "ツールが完了しませんでした。",
-      "open": "開く",
       "reveal": "Finderで表示",
-      "result_files": "{count, plural, other {#個のファイルを作成しました}}",
       "field_error": "{kind, select, missing {{field}は必須です。} other {{field}が正しくありません。}}",
       "result": "結果",
       "presets": "プリセット"

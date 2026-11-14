@@ -157,7 +157,6 @@
       "warnings": "{count, plural, other {# peringatan}}"
     },
     "run": {
-      "title": "Jalankan {tool}",
       "run": "Jalankan",
       "cancel": "Batal",
       "close": "Selesai",
@@ -169,9 +168,7 @@
       "remove": "Hapus",
       "need_documents": "{count, plural, other {Tambahkan # dokumen lagi untuk menjalankan alat ini.}}",
       "failed": "Alat tidak selesai.",
-      "open": "Buka",
       "reveal": "Tampilkan di Finder",
-      "result_files": "{count, plural, other {# file dibuat}}",
       "field_error": "{kind, select, missing {{field} wajib diisi.} other {{field} tidak valid.}}",
       "result": "Hasil",
       "presets": "Preset"

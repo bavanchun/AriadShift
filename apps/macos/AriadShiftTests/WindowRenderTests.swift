@@ -91,9 +91,14 @@ final class WindowRenderTests: XCTestCase {
             XCTAssertTrue(titles.contains(expected), "missing \(expected) menu in \(titles)")
         }
         let tools = try XCTUnwrap(menu.items.first { $0.title == "Tools" }?.submenu)
-        XCTAssertEqual(tools.items.count, 13, "one submenu per registry group that has tools: \(tools.items.map(\.title))")
-        XCTAssertEqual(tools.items.first?.title, "Organize")
-        let organize = try XCTUnwrap(tools.items.first?.submenu)
+        // "Find a Tool…" (⌘K) and a separator, then one submenu per registry group that has tools.
+        XCTAssertEqual(tools.items.first?.title, "Find a Tool…")
+        XCTAssertEqual(tools.items.first?.keyEquivalent, "k")
+        XCTAssertFalse(tools.items.first?.isEnabled ?? true, "without a document window there is no palette to show")
+        let groups = tools.items.filter { $0.submenu != nil }
+        XCTAssertEqual(groups.count, 13, "one submenu per registry group that has tools: \(tools.items.map(\.title))")
+        XCTAssertEqual(groups.first?.title, "Organize")
+        let organize = try XCTUnwrap(groups.first?.submenu)
         XCTAssertTrue(organize.items.contains { $0.title == "Rotate" })
         // Without a focused document window every tool is disabled.
         XCTAssertTrue(organize.items.allSatisfy { !$0.isEnabled })

@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# चेतावनी} other {# चेतावनियाँ}}"
     },
     "run": {
-      "title": "चलाएँ: {tool}",
       "run": "चलाएँ",
       "cancel": "रद्द करें",
       "close": "हो गया",
@@ -169,9 +168,7 @@
       "remove": "हटाएँ",
       "need_documents": "{count, plural, one {इस टूल को चलाने के लिए # और दस्तावेज़ जोड़ें।} other {इस टूल को चलाने के लिए # और दस्तावेज़ जोड़ें।}}",
       "failed": "टूल पूरा नहीं हुआ।",
-      "open": "खोलें",
       "reveal": "Finder में दिखाएँ",
-      "result_files": "{count, plural, one {# फ़ाइल बनाई गई} other {# फ़ाइलें बनाई गईं}}",
       "field_error": "{kind, select, missing {{field} आवश्यक है।} other {{field} मान्य नहीं है।}}",
       "result": "परिणाम",
       "presets": "प्रीसेट"

@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# avertisment} few {# avertismente} other {# de avertismente}}"
     },
     "run": {
-      "title": "Rulează {tool}",
       "run": "Rulează",
       "cancel": "Anulează",
       "close": "Gata",
@@ -169,9 +168,7 @@
       "remove": "Elimină",
       "need_documents": "{count, plural, one {Adaugă încă # document pentru a rula acest instrument.} few {Adaugă încă # documente pentru a rula acest instrument.} other {Adaugă încă # de documente pentru a rula acest instrument.}}",
       "failed": "Instrumentul nu s-a încheiat.",
-      "open": "Deschide",
       "reveal": "Afișează în Finder",
-      "result_files": "{count, plural, one {# fișier creat} few {# fișiere create} other {# de fișiere create}}",
       "field_error": "{kind, select, missing {{field} este obligatoriu.} other {{field} nu este valid.}}",
       "result": "Rezultat",
       "presets": "Presetări"

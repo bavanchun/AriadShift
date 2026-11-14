@@ -1,23 +1,35 @@
+import AriadDesignSystem
 import AriadShiftCore
 import SwiftUI
 
-/// The generic parameter form of a tool, generated from its registry schema. Field titles and
-/// help text come from the schema, so they are not part of the String Catalog.
+/// The generic parameter form of a tool, generated from its registry schema, as an inspector section: each setting is
+/// a row with its label in the trailing-aligned label column. Field titles and help text come from the schema, so
+/// they are not part of the String Catalog.
 struct ParamFormView: View {
     let form: ParamForm
     @Binding var values: [String: ParamValue]
     let error: (kind: String, field: String)?
 
     var body: some View {
-        Form {
-            ParamFieldsView(fields: form.fields, values: $values)
+        DSInspectorSection(Text("mac.run.parameters")) {
+            if form.fields.isEmpty {
+                Text("mac.run.no_parameters")
+                    .font(DSFont.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ParamFieldsView(fields: form.fields, values: $values)
+            }
             if let error {
                 Text(L10n.branch("mac.run.field_error", error.kind, error.field))
-                    .foregroundStyle(.red)
+                    .font(DSFont.callout)
+                    .foregroundStyle(DSColor.danger)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isStaticText)
+                    .accessibilityIdentifier("run.field_error")
             }
         }
-        .formStyle(.grouped)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "mac.run.parameters"))
     }
 }
 
@@ -69,8 +81,8 @@ struct ParamFieldsView: View {
 
     /// A required field is marked with an asterisk on screen only: VoiceOver would read the
     /// symbol aloud, so it hears the title and the "is required" hint instead.
-    private func title(_ field: ParamField) -> String {
-        field.isRequired ? field.title + " *" : field.title
+    private func label(_ field: ParamField) -> Text {
+        Text(verbatim: field.isRequired ? field.title + " *" : field.title)
     }
 
     private func requiredHint(_ field: ParamField) -> String {
@@ -81,49 +93,83 @@ struct ParamFieldsView: View {
     private func row(for field: ParamField) -> some View {
         switch field.kind {
         case .toggle:
-            Toggle(field.title, isOn: flag(field)).help(field.help ?? "")
-        case let .choice(options):
-            Picker(title(field), selection: index(field)) {
-                if !field.isRequired {
-                    Text(verbatim: "–").tag(Int?.none)
+            // The switch leads and its title follows, as in the mockup's inspector rows.
+            DSInspectorRow(nil) {
+                HStack(spacing: DSSpacing.s) {
+                    Toggle(isOn: flag(field)) { Text(verbatim: field.title) }
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                    Text(verbatim: field.title)
+                        .font(DSFont.body)
+                        .accessibilityHidden(true)
                 }
-                ForEach(options.indices, id: \.self) { position in
-                    Text(verbatim: options[position].displayText).tag(Int?.some(position))
-                }
+                .help(field.help ?? "")
             }
-            .help(field.help ?? "")
-            .announced(as: field, requiredHint: requiredHint(field))
-        case .secret:
-            SecureField(title(field), text: text(field)).help(field.help ?? "")
-                .announced(as: field, requiredHint: requiredHint(field))
-        case let .presets(presets):
-            HStack {
-                TextField(title(field), text: text(field)).help(field.help ?? "")
-                    .announced(as: field, requiredHint: requiredHint(field))
-                Menu(String(localized: "mac.run.presets")) {
-                    ForEach(presets, id: \.self) { preset in
-                        Button(preset) { values[field.name] = .text(preset) }
+        case let .choice(options):
+            labelled(field) {
+                Picker(selection: index(field)) {
+                    if !field.isRequired {
+                        Text(verbatim: "–").tag(Int?.none)
                     }
+                    ForEach(options.indices, id: \.self) { position in
+                        Text(verbatim: options[position].displayText).tag(Int?.some(position))
+                    }
+                } label: {
+                    Text(verbatim: field.title)
                 }
-                .fixedSize()
+                .labelsHidden()
+            }
+        case .secret:
+            labelled(field) {
+                SecureField(text: text(field), prompt: Text(verbatim: "")) { Text(verbatim: field.title) }
+                    .textFieldStyle(.roundedBorder)
+            }
+        case let .presets(presets):
+            labelled(field) {
+                HStack(spacing: DSSpacing.xs) {
+                    TextField(text: text(field), prompt: Text(verbatim: "")) { Text(verbatim: field.title) }
+                        .textFieldStyle(.roundedBorder)
+                    Menu {
+                        ForEach(presets, id: \.self) { preset in
+                            Button(preset) { values[field.name] = .text(preset) }
+                        }
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help(String(localized: "mac.run.presets"))
+                    .accessibilityLabel(String(localized: "mac.run.presets"))
+                }
             }
         case let .group(children):
-            GroupBox(field.title) {
-                VStack(alignment: .leading) { ParamFieldsView(fields: children, values: group(field)) }
+            VStack(alignment: .leading, spacing: DSSpacing.m) {
+                Text(verbatim: field.title)
+                    .font(DSFont.headline)
+                    .accessibilityAddTraits(.isHeader)
+                ParamFieldsView(fields: children, values: group(field))
             }
             .help(field.help ?? "")
+            .accessibilityElement(children: .contain)
         case let .rows(shape):
             ParamRowsEditor(field: field, shape: shape, rows: rows(field))
         case .text, .integer, .number, .list:
-            TextField(title(field), text: text(field)).help(field.help ?? "")
-                .announced(as: field, requiredHint: requiredHint(field))
+            labelled(field) {
+                TextField(text: text(field), prompt: Text(verbatim: "")) { Text(verbatim: field.title) }
+                    .textFieldStyle(.roundedBorder)
+            }
         }
     }
-}
 
-private extension View {
-    /// What VoiceOver says: the plain title (no asterisk) and, for a required field, that it is required.
-    func announced(as field: ParamField, requiredHint: String) -> some View {
-        accessibilityLabel(field.title).accessibilityHint(requiredHint)
+    /// A row with the field title in the label column and the schema help as its tooltip.
+    private func labelled(_ field: ParamField, @ViewBuilder control: () -> some View) -> some View {
+        DSInspectorRow(label(field)) {
+            control()
+                .help(field.help ?? field.title)
+                .accessibilityLabel(field.title)
+                .accessibilityHint(requiredHint(field))
+        }
     }
 }

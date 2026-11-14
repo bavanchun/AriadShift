@@ -157,7 +157,6 @@
       "warnings": "{count, plural, other {# 条警告}}"
     },
     "run": {
-      "title": "运行 {tool}",
       "run": "运行",
       "cancel": "取消",
       "close": "完成",
@@ -169,9 +168,7 @@
       "remove": "移除",
       "need_documents": "{count, plural, other {再添加 # 个文稿即可运行此工具。}}",
       "failed": "工具未完成。",
-      "open": "打开",
       "reveal": "在访达中显示",
-      "result_files": "{count, plural, other {已创建 # 个文件}}",
       "field_error": "{kind, select, missing {{field}为必填项。} other {{field}无效。}}",
       "result": "结果",
       "presets": "预设"

@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# opozorilo} two {# opozorili} few {# opozorila} other {# opozoril}}"
     },
     "run": {
-      "title": "Zaženi {tool}",
       "run": "Zaženi",
       "cancel": "Prekliči",
       "close": "Končano",
@@ -169,9 +168,7 @@
       "remove": "Odstrani",
       "need_documents": "{count, plural, one {Dodajte še # dokument, da zaženete to orodje.} two {Dodajte še # dokumenta, da zaženete to orodje.} few {Dodajte še # dokumente, da zaženete to orodje.} other {Dodajte še # dokumentov, da zaženete to orodje.}}",
       "failed": "Orodje se ni končalo.",
-      "open": "Odpri",
       "reveal": "Pokaži v Finderju",
-      "result_files": "{count, plural, one {Ustvarjena # datoteka} two {Ustvarjeni # datoteki} few {Ustvarjene # datoteke} other {Ustvarjenih # datotek}}",
       "field_error": "{kind, select, missing {Polje {field} je obvezno.} other {Polje {field} ni veljavno.}}",
       "result": "Rezultat",
       "presets": "Prednastavitve"

@@ -157,7 +157,6 @@
       "warnings": "{count, plural, other {คำเตือน # รายการ}}"
     },
     "run": {
-      "title": "เรียกใช้ {tool}",
       "run": "เรียกใช้",
       "cancel": "ยกเลิก",
       "close": "เสร็จสิ้น",
@@ -169,9 +168,7 @@
       "remove": "ลบ",
       "need_documents": "{count, plural, other {เพิ่มเอกสารอีก # รายการเพื่อเรียกใช้เครื่องมือนี้}}",
       "failed": "เครื่องมือทำงานไม่เสร็จสมบูรณ์",
-      "open": "เปิด",
       "reveal": "แสดงใน Finder",
-      "result_files": "{count, plural, other {สร้างไฟล์แล้ว # ไฟล์}}",
       "field_error": "{kind, select, missing {ต้องระบุ {field}} other {{field} ไม่ถูกต้อง}}",
       "result": "ผลลัพธ์",
       "presets": "ค่าที่ตั้งไว้ล่วงหน้า"

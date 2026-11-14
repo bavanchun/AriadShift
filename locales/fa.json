@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# هشدار} other {# هشدار}}"
     },
     "run": {
-      "title": "اجرای {tool}",
       "run": "اجرا",
       "cancel": "لغو",
       "close": "تمام",
@@ -169,9 +168,7 @@
       "remove": "حذف",
       "need_documents": "{count, plural, one {برای اجرای این ابزار # سند دیگر اضافه کنید.} other {برای اجرای این ابزار # سند دیگر اضافه کنید.}}",
       "failed": "ابزار کارش را کامل نکرد.",
-      "open": "باز کردن",
       "reveal": "نمایش در Finder",
-      "result_files": "{count, plural, one {# پرونده ایجاد شد} other {# پرونده ایجاد شد}}",
       "field_error": "{kind, select, missing {{field} الزامی است.} other {{field} معتبر نیست.}}",
       "result": "نتیجه",
       "presets": "پیش‌تنظیم‌ها"

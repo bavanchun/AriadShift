@@ -2,8 +2,8 @@ import AriadShiftCore
 import AppKit
 import Observation
 
-/// One tool run: the parameter form, the running task and its outcome. Cancelling cancels the
-/// Swift task, which cancels the Rust run through the engine bridge.
+/// One tool open in the inspector: its parameter form, the running task and the latest outcome. Cancelling cancels the
+/// Swift task, which cancels the Rust run through the engine bridge. A finished or failed run can run again.
 @MainActor
 @Observable
 final class ToolRunModel: Identifiable {
@@ -26,6 +26,8 @@ final class ToolRunModel: Identifiable {
     private var task: Task<Void, Never>?
     /// Parameters built by the app (a page edit); such a run skips the settings form.
     private let presetParams: String?
+    /// Called on the main actor when a run places its result, before the result opens.
+    @ObservationIgnored var onFinish: ((ToolRunModel, ToolRunResult) -> Void)?
 
     init(tool: ToolEntry, document: URL, client: EngineClient, paramsJSON: String? = nil) {
         self.tool = tool
@@ -41,10 +43,34 @@ final class ToolRunModel: Identifiable {
     /// Additional documents still needed before the tool can run.
     var missingDocuments: Int { max(tool.arity.extraRange.lowerBound - extraDocuments.count, 0) }
     var canAddDocuments: Bool { extraDocuments.count < tool.arity.extraRange.upperBound }
-    var canRun: Bool { missingDocuments == 0 }
+    var canRun: Bool { tool.isAvailable && missingDocuments == 0 && !isRunning }
+
+    var isRunning: Bool {
+        if case .running = phase { true } else { false }
+    }
+
+    /// The share of the work done, from the engine's progress events; 0 until the first event with a total.
+    var fraction: Double {
+        guard let progress, progress.total > 0 else { return 0 }
+        return Double(progress.done) / Double(progress.total)
+    }
+
+    /// Back to the form after an error was read.
+    func dismissError() {
+        if case .failed = phase { phase = .editing }
+    }
+
+    /// Restores the default settings and drops added documents; a running tool keeps going.
+    func reset() {
+        guard !isRunning else { return }
+        values = tool.form.initialValues()
+        extraDocuments = []
+        fieldError = nil
+        phase = .editing
+    }
 
     func start() {
-        guard case .editing = phase, canRun else { return }
+        guard canRun else { return }
         let params: String
         if let presetParams {
             params = presetParams
@@ -89,6 +115,7 @@ final class ToolRunModel: Identifiable {
                     return
                 }
                 phase = .finished(result)
+                onFinish?(self, result)
                 await openResultIfWanted(result)
             } catch EngineError.cancelled {
                 progress = nil
@@ -102,7 +129,7 @@ final class ToolRunModel: Identifiable {
     }
 
     /// Removes result files this run placed (they are new files, never the user's originals).
-    private static func discard(_ files: [URL]) {
+    static func discard(_ files: [URL]) {
         files.forEach { try? FileManager.default.removeItem(at: $0) }
     }
 

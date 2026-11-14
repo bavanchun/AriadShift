@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# advertencia} many {# de advertencias} other {# advertencias}}"
     },
     "run": {
-      "title": "Ejecutar {tool}",
       "run": "Ejecutar",
       "cancel": "Cancelar",
       "close": "Listo",
@@ -169,9 +168,7 @@
       "remove": "Quitar",
       "need_documents": "{count, plural, one {Añade # documento más para ejecutar esta herramienta.} many {Añade # de documentos más para ejecutar esta herramienta.} other {Añade # documentos más para ejecutar esta herramienta.}}",
       "failed": "La herramienta no terminó.",
-      "open": "Abrir",
       "reveal": "Mostrar en el Finder",
-      "result_files": "{count, plural, one {# archivo creado} many {# de archivos creados} other {# archivos creados}}",
       "field_error": "{kind, select, missing {{field} es obligatorio.} other {{field} no es válido.}}",
       "result": "Resultado",
       "presets": "Preajustes"
