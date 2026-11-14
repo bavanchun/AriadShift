@@ -732,7 +732,7 @@ pub(crate) fn preflight_document_content(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     pages: Option<&ariad_core::tools::PageRange>,
-) -> Result<usize, EngineFailure> {
+) -> Result<(), EngineFailure> {
     let max_depth = usize::from(ctx.limits().max_nesting_depth);
     let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
     let mut work = 0;
@@ -754,13 +754,12 @@ pub(crate) fn preflight_document_content(
             &mut execution,
         )?;
     }
-    Ok(execution)
+    Ok(())
 }
 
 pub(crate) fn canonical_content_streams(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
-    _document_execution: usize,
     pages: Option<&ariad_core::tools::PageRange>,
 ) -> Result<BTreeMap<PdfObjectId, Object>, EngineFailure> {
     let doc = pdf_doc.inner();
@@ -1033,7 +1032,7 @@ pub(crate) fn canonical_content_streams(
         };
         for name in invoked {
             if let Some(child) = scope.get(&name) {
-                let (cost, _, _, _) = preflight_xobject(
+                preflight_xobject(
                     ctx,
                     pdf_doc,
                     *child,
@@ -1044,7 +1043,6 @@ pub(crate) fn canonical_content_streams(
                     &scope,
                     &mut budget,
                 )?;
-                let _ = cost;
             }
         }
         remaining = remaining

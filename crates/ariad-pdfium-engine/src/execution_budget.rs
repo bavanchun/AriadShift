@@ -1,7 +1,7 @@
 //! Bound execution of content resources before PDFium opens a document.
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use ariad_core::protocol::ErrorCode;
@@ -27,14 +27,196 @@ pub(crate) struct Facts {
     pub calls: Vec<Call>,
 }
 
-type Categories = BTreeMap<Vec<u8>, Rc<BTreeMap<Vec<u8>, Object>>>;
+fn hash_len(hasher: &mut Sha256, len: usize) {
+    hasher.update(u64::try_from(len).unwrap_or(u64::MAX).to_be_bytes());
+}
 
-struct ScopeHasher(Sha256);
+fn hash_bytes(hasher: &mut Sha256, bytes: &[u8]) {
+    hash_len(hasher, bytes.len());
+    hasher.update(bytes);
+}
 
-impl std::fmt::Write for ScopeHasher {
-    fn write_str(&mut self, value: &str) -> std::fmt::Result {
-        self.0.update(value.as_bytes());
-        Ok(())
+fn hash_object(hasher: &mut Sha256, root: &Object) {
+    enum Step<'a> {
+        Obj(&'a Object),
+        Bytes(&'a [u8]),
+    }
+
+    fn push_dict_entries<'a>(stack: &mut Vec<Step<'a>>, hasher: &mut Sha256, dict: &'a Dictionary) {
+        let mut entries: Vec<(&[u8], &Object)> = dict
+            .iter()
+            .map(|(key, value)| (key.as_slice(), value))
+            .collect();
+        entries.sort_unstable_by_key(|(a, _)| *a);
+        hash_len(hasher, entries.len());
+        for (key, value) in entries.into_iter().rev() {
+            stack.push(Step::Obj(value));
+            stack.push(Step::Bytes(key));
+        }
+    }
+
+    let mut stack = vec![Step::Obj(root)];
+    while let Some(step) = stack.pop() {
+        match step {
+            Step::Bytes(bytes) => hash_bytes(hasher, bytes),
+            Step::Obj(object) => match object {
+                Object::Null => hasher.update([0]),
+                Object::Boolean(value) => hasher.update([1, u8::from(*value)]),
+                Object::Integer(value) => {
+                    hasher.update([2]);
+                    hasher.update(value.to_be_bytes());
+                }
+                Object::Real(value) => {
+                    hasher.update([3]);
+                    hasher.update(value.to_bits().to_be_bytes());
+                }
+                Object::Name(name) => {
+                    hasher.update([4]);
+                    hash_bytes(hasher, name);
+                }
+                Object::String(bytes, _) => {
+                    hasher.update([5]);
+                    hash_bytes(hasher, bytes);
+                }
+                Object::Array(items) => {
+                    hasher.update([6]);
+                    hash_len(hasher, items.len());
+                    for item in items.iter().rev() {
+                        stack.push(Step::Obj(item));
+                    }
+                }
+                Object::Dictionary(dict) => {
+                    hasher.update([7]);
+                    push_dict_entries(&mut stack, hasher, dict);
+                }
+                Object::Stream(stream) => {
+                    hasher.update([8]);
+                    stack.push(Step::Bytes(&stream.content));
+                    push_dict_entries(&mut stack, hasher, &stream.dict);
+                }
+                Object::Reference((number, generation)) => {
+                    hasher.update([9]);
+                    hasher.update(number.to_be_bytes());
+                    hasher.update(generation.to_be_bytes());
+                }
+            },
+        }
+    }
+}
+
+#[derive(Default)]
+struct Category {
+    entries: BTreeMap<Vec<u8>, Object>,
+    digest: OnceCell<[u8; 32]>,
+}
+
+impl Clone for Category {
+    fn clone(&self) -> Self {
+        Self {
+            entries: self.entries.clone(),
+            // Clear cached digest on value clone so future mutations cannot reuse it.
+            digest: OnceCell::new(),
+        }
+    }
+}
+
+impl From<BTreeMap<Vec<u8>, Object>> for Category {
+    fn from(entries: BTreeMap<Vec<u8>, Object>) -> Self {
+        Self {
+            entries,
+            digest: OnceCell::new(),
+        }
+    }
+}
+
+impl FromIterator<(Vec<u8>, Object)> for Category {
+    fn from_iter<T: IntoIterator<Item = (Vec<u8>, Object)>>(iter: T) -> Self {
+        Self::from(BTreeMap::from_iter(iter))
+    }
+}
+
+impl Deref for Category {
+    type Target = BTreeMap<Vec<u8>, Object>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+impl DerefMut for Category {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.digest.take();
+        &mut self.entries
+    }
+}
+
+impl Category {
+    fn digest(&self) -> [u8; 32] {
+        *self.digest.get_or_init(|| {
+            let mut hasher = Sha256::new();
+            hasher.update(b"ariad.execution_budget.category.v1");
+            hash_len(&mut hasher, self.entries.len());
+            for (name, value) in &self.entries {
+                hash_bytes(&mut hasher, name);
+                hash_object(&mut hasher, value);
+            }
+            hasher.finalize().into()
+        })
+    }
+}
+
+#[derive(Default)]
+struct Categories {
+    entries: BTreeMap<Vec<u8>, Rc<Category>>,
+    digest: OnceCell<[u8; 32]>,
+}
+
+impl Clone for Categories {
+    fn clone(&self) -> Self {
+        Self {
+            entries: self.entries.clone(),
+            // Clear cached digest on value clone so child overrides recompute it.
+            digest: OnceCell::new(),
+        }
+    }
+}
+
+impl IntoIterator for Categories {
+    type Item = (Vec<u8>, Rc<Category>);
+    type IntoIter = std::collections::btree_map::IntoIter<Vec<u8>, Rc<Category>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_iter()
+    }
+}
+
+impl Deref for Categories {
+    type Target = BTreeMap<Vec<u8>, Rc<Category>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+impl DerefMut for Categories {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.digest.take();
+        &mut self.entries
+    }
+}
+
+impl Categories {
+    fn digest(&self) -> [u8; 32] {
+        *self.digest.get_or_init(|| {
+            let mut hasher = Sha256::new();
+            hasher.update(b"ariad.execution_budget.categories.v1");
+            hash_len(&mut hasher, self.entries.len());
+            for (name, category) in &self.entries {
+                hash_bytes(&mut hasher, name);
+                hasher.update(category.digest());
+            }
+            hasher.finalize().into()
+        })
     }
 }
 
@@ -87,14 +269,17 @@ impl Scope {
     }
     fn digest(&self) -> [u8; 32] {
         *self.digest.get_or_init(|| {
-            let mut hash = ScopeHasher(Sha256::new());
-            write!(
-                hash,
-                "{:?}|{:?}|{:?}|{:?}",
-                self.page, self.physical_page, self.current, self.inherited_fonts
-            )
-            .expect("hash writer cannot fail");
-            hash.0.finalize().into()
+            let mut hasher = Sha256::new();
+            hasher.update(b"ariad.execution_budget.scope.v1");
+            hasher.update(self.page.digest());
+            hasher.update(self.physical_page.digest());
+            hasher.update(self.current.digest());
+            hash_len(&mut hasher, self.inherited_fonts.len());
+            for (font, resources) in &self.inherited_fonts {
+                hash_object(&mut hasher, font);
+                hasher.update(resources.digest());
+            }
+            hasher.finalize().into()
         })
     }
     fn get(&self, category: &[u8], name: &[u8]) -> Option<&Object> {
@@ -108,7 +293,7 @@ fn categories(
     doc: &lopdf::Document,
     resources: Option<&Object>,
 ) -> Result<Categories, EngineFailure> {
-    let mut out = Categories::new();
+    let mut out = Categories::default();
     let Some(resources) = resources else {
         return Ok(out);
     };
@@ -650,19 +835,19 @@ mod tests {
         let mut scope = Scope::default();
         Rc::make_mut(&mut scope.current).insert(
             b"Pattern".to_vec(),
-            Rc::new(BTreeMap::from([(
+            Rc::new(Category::from(BTreeMap::from([(
                 b"P".to_vec(),
                 Object::Reference(pattern),
-            )])),
+            )]))),
         );
         Rc::make_mut(&mut scope.current).insert(
             b"ExtGState".to_vec(),
-            Rc::new(BTreeMap::from([(
+            Rc::new(Category::from(BTreeMap::from([(
                 b"S".to_vec(),
                 Object::Dictionary(
                     dictionary! { "SMask" => dictionary! { "G" => Object::Reference(child) } },
                 ),
-            )])),
+            )]))),
         );
         scope.page = scope.current.clone();
         scope.physical_page = scope.page.clone();
@@ -702,14 +887,17 @@ mod tests {
         let mut scope = Scope::default();
         Rc::make_mut(&mut scope.page).insert(
             b"XObject".to_vec(),
-            Rc::new(BTreeMap::from([(
+            Rc::new(Category::from(BTreeMap::from([(
                 b"F".to_vec(),
                 Object::Reference(expensive),
-            )])),
+            )]))),
         );
         Rc::make_mut(&mut scope.current).insert(
             b"XObject".to_vec(),
-            Rc::new(BTreeMap::from([(b"F".to_vec(), Object::Reference(cheap))])),
+            Rc::new(Category::from(BTreeMap::from([(
+                b"F".to_vec(),
+                Object::Reference(cheap),
+            )]))),
         );
         scope.physical_page = scope.page.clone();
         // A glyph may replace its fallback without changing the actual page.
@@ -837,6 +1025,132 @@ mod tests {
         assert!(
             calc.stream(child, &Scope::default(), 0, &mut HashSet::new())
                 .is_err()
+        );
+    }
+
+    fn object_digest(object: &Object) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hash_object(&mut hasher, object);
+        hasher.finalize().into()
+    }
+
+    #[test]
+    fn object_digest_is_canonical_and_domain_separated() {
+        let mut dict_a = Dictionary::new();
+        dict_a.set("A", 1i64);
+        dict_a.set("B", Object::Real(2.5));
+        let mut dict_b = Dictionary::new();
+        dict_b.set("B", Object::Real(2.5));
+        dict_b.set("A", 1i64);
+        assert_eq!(
+            object_digest(&Object::Dictionary(dict_a.clone())),
+            object_digest(&Object::Dictionary(dict_b))
+        );
+
+        let stream_a = Object::Stream(lopdf::Stream::new(dict_a.clone(), b"q Q".to_vec()));
+        let stream_b = Object::Stream(lopdf::Stream::new(dict_a.clone(), b"q Q ".to_vec()));
+        assert_ne!(
+            object_digest(&Object::Dictionary(dict_a)),
+            object_digest(&stream_a)
+        );
+        assert_ne!(object_digest(&stream_a), object_digest(&stream_b));
+
+        let variants = [
+            Object::Null,
+            Object::Boolean(false),
+            Object::Boolean(true),
+            Object::Integer(1),
+            Object::Real(1.0),
+            Object::Real(0.0),
+            Object::Real(-0.0),
+            Object::Name(b"ab".to_vec()),
+            Object::String(b"ab".to_vec(), lopdf::StringFormat::Literal),
+            Object::Array(vec![
+                Object::Name(b"ab".to_vec()),
+                Object::Name(b"c".to_vec()),
+            ]),
+            Object::Array(vec![
+                Object::Name(b"a".to_vec()),
+                Object::Name(b"bc".to_vec()),
+            ]),
+            Object::Reference((1, 0)),
+            Object::Reference((2, 0)),
+            Object::Reference((1, 1)),
+        ];
+        let unique: HashSet<[u8; 32]> = variants.iter().map(object_digest).collect();
+        assert_eq!(unique.len(), variants.len());
+    }
+
+    #[test]
+    fn category_and_scope_digests_cache_and_invalidate_on_mutation() {
+        let doc = lopdf::Document::new();
+        let mut category = Rc::new(Category::from(BTreeMap::from([(
+            b"F".to_vec(),
+            Object::Reference((10, 0)),
+        )])));
+        let initial_cat = category.digest();
+        assert!(category.digest.get().is_some());
+
+        let cloned_cat = (*category).clone();
+        assert!(cloned_cat.digest.get().is_none());
+        assert_eq!(cloned_cat.digest(), initial_cat);
+
+        Rc::make_mut(&mut category).insert(b"G".to_vec(), Object::Reference((11, 0)));
+        assert!(category.digest.get().is_none());
+        assert_ne!(category.digest(), initial_cat);
+
+        let page = Object::Dictionary(dictionary! {
+            "Font" => dictionary! { "F0" => Object::Reference((1, 0)) },
+            "Pattern" => dictionary! { "P0" => Object::Reference((2, 0)) },
+        });
+        let parent = Scope::from_page(&doc, Some(&page)).unwrap();
+        let parent_digest = parent.digest();
+        assert!(parent.current.digest.get().is_some());
+        let parent_pattern_rc = Rc::clone(&parent.current[b"Pattern".as_slice()]);
+        assert!(parent_pattern_rc.digest.get().is_some());
+
+        let child_res = Object::Dictionary(dictionary! {
+            "Font" => dictionary! { "F1" => Object::Reference((3, 0)) },
+        });
+        let child = parent.child(&doc, Some(&child_res)).unwrap();
+        assert!(child.current.digest.get().is_none());
+        assert_ne!(child.digest(), parent_digest);
+        // Unchanged sibling categories remain cached and shared across child scopes.
+        assert!(Rc::ptr_eq(
+            &child.current[b"Pattern".as_slice()],
+            &parent_pattern_rc
+        ));
+        assert!(parent_pattern_rc.digest.get().is_some());
+    }
+
+    #[test]
+    fn inherited_fonts_sharing_large_categories_digest_quickly() {
+        let mut doc = lopdf::Document::new();
+        let mut fonts = Dictionary::new();
+        let mut patterns = Dictionary::new();
+        for i in 0..128 {
+            let font_id = doc.add_object(dictionary! { "Subtype" => "Type3" });
+            fonts.set(format!("F{i}"), Object::Reference(font_id));
+            let pat_id = form(&mut doc, dictionary! { "PatternType" => 1 });
+            patterns.set(format!("P{i}"), Object::Reference(pat_id));
+        }
+        let parent_res = Object::Dictionary(dictionary! {
+            "Font" => fonts,
+            "Pattern" => patterns,
+        });
+        let parent = Scope::from_page(&doc, Some(&parent_res)).unwrap();
+        let child_res = Object::Dictionary(dictionary! {
+            "XObject" => dictionary! { "X0" => Object::Reference((999, 0)) },
+        });
+        let start = std::time::Instant::now();
+        let child = parent.child(&doc, Some(&child_res)).unwrap();
+        let digest = child.digest();
+        assert_eq!(child.inherited_fonts.len(), 128);
+        assert_ne!(digest, parent.digest());
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(1),
+            "elapsed: {:?}",
+            start.elapsed()
         );
     }
 }

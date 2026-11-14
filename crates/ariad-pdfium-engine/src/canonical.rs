@@ -257,9 +257,8 @@ pub(crate) fn canonicalize_selected(
         0,
         max_depth,
     )?;
-    let execution = crate::extract_images::preflight_document_content(ctx, doc, pages)?;
-    let content_streams =
-        crate::extract_images::canonical_content_streams(ctx, doc, execution, pages)?;
+    crate::extract_images::preflight_document_content(ctx, doc, pages)?;
+    let content_streams = crate::extract_images::canonical_content_streams(ctx, doc, pages)?;
     let inner = doc
         .inner_mut()
         .map_err(|_| EngineFailure::limit_exceeded())?;
@@ -806,7 +805,7 @@ mod tests {
         assert_eq!(output.windows(5).filter(|w| *w == b"xref\n").count(), 2); // xref and startxref
         assert!(!output.windows(7).any(|w| w == b"/ObjStm"));
         let content_streams =
-            crate::extract_images::canonical_content_streams(&ctx, &doc, 0, None).unwrap();
+            crate::extract_images::canonical_content_streams(&ctx, &doc, None).unwrap();
         check_round_trip_with_streams(doc.inner(), &output, &content_streams).unwrap();
         let mut changed = doc.inner().clone();
         changed.trailer.set("Root", lopdf::Object::Null);
