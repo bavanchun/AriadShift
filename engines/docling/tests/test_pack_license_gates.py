@@ -394,7 +394,19 @@ def test_installed_repacked_torch_wheel_passes_installed_pack_gates(tmp_path):
         if path.is_file()
     )
     subprocess.run(
-        ["uv", "pip", "install", "--python", str(python), "--no-deps", "--offline", str(wheel)],
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            "--no-deps",
+            "--offline",
+            "--no-cache",
+            "--link-mode",
+            "copy",
+            str(wheel),
+        ],
         check=True,
     )
     platlib = Path(

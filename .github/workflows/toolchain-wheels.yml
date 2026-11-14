@@ -303,7 +303,8 @@ jobs:
                           if path.is_file()
                       )
                       subprocess.run([
-                          "uv", "pip", "install", "--python", str(python), "--no-deps", str(wheel),
+                          "uv", "pip", "install", "--python", str(python), "--no-deps",
+                          "--link-mode", "copy", str(wheel),
                       ], check=True)
                       paths_json = subprocess.run(
                           [
