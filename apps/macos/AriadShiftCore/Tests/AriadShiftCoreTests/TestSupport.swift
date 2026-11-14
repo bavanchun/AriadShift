@@ -48,8 +48,8 @@ func helperURL() throws -> URL {
     throw TestSetupError(description: message)
 }
 
-func makeClient() throws -> EngineClient {
-    try EngineClient(helperURL: helperURL())
+func makeClient(planProvider: any PlanProvider = ReleasePlanProvider()) throws -> EngineClient {
+    try EngineClient(helperURL: helperURL(), planProvider: planProvider)
 }
 
 extension XCTestCase {

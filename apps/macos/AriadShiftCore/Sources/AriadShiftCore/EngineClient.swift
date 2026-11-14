@@ -92,15 +92,25 @@ public actor EngineClient {
     /// Location of the `ashift` helper used for out-of-process engines.
     public nonisolated let helperURL: URL
 
+    /// Where runs learn their plan. The Rust host enforces it; this only names the plan.
+    private nonisolated let planProvider: any PlanProvider
+
     /// Points the engine at the helper and returns a client.
     /// - Parameter helperURL: Override for tests and command-line use. Defaults to
     ///   `<App.app>/Contents/Helpers/ashift`.
     /// - Throws: `EngineError.helperMissing` when the helper is not an executable
     ///   file. The process-global engine path is left untouched in that case.
-    public init(helperURL: URL? = nil) throws {
+    public init(helperURL: URL? = nil, planProvider: any PlanProvider = makeDefaultPlanProvider()) throws {
         let url = helperURL ?? Self.bundledHelperURL()
         try Self.configureEngine(helper: url)
         self.helperURL = url
+        self.planProvider = planProvider
+    }
+
+    /// The plan to show in the UI (Pro badges, upgrade hints). A provider that cannot answer
+    /// counts as Free; a run still reports the provider's error.
+    public nonisolated var displayPlan: EntitlementPlan {
+        (try? planProvider.currentPlan()) ?? .free
     }
 
     /// `Contents/Helpers/ashift` inside the running app bundle.
@@ -154,6 +164,7 @@ public actor EngineClient {
         onProgress: (@Sendable (ProgressEvent) -> Void)? = nil
     ) async throws -> ToolOutcome {
         try Self.configureEngine(helper: helperURL)
+        let plan = try planProvider.currentPlan()
         let token = CancelToken()
         let ffiRequest = ToolRunRequest(
             tool: request.tool,
@@ -162,7 +173,8 @@ public actor EngineClient {
             outputPath: request.outputPath,
             paramsJson: request.paramsJSON,
             optionsJson: request.optionsJSON,
-            cancelToken: token
+            cancelToken: token,
+            plan: plan.rawValue
         )
         let listener = onProgress.map { ProgressBridge($0) }
         return try await Self.cancellable(token) {

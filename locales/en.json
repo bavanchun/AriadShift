@@ -135,7 +135,10 @@
       "group@note": "Submenu titles of the Tools menu, one per tool group. {group} is the keyword organize, convert, optimize, security, overlay, ocr, annotate, forms, sign, redact, compare, edit, ai or automation. Keep the keywords untranslated.",
       "disabled": "{reason, select, later {Available in a later release} format {Works on other formats. Use File > Import.} paid {Needs a paid plan} info {Tool details could not be read, so tools stay off.} other {Not available}}",
       "disabled@note": "Tooltip on a disabled Tools menu item. {reason} is the keyword later, format, paid or info. Keep the keywords untranslated.",
-      "loading": "Loading tools…"
+      "loading": "Loading tools…",
+      "pro_title": "{title} (Pro)",
+      "pro_title@note": "Tools menu item of a Pro tool. {title} is the tool name, for example Sign Token. Keep (Pro) as the plan name.",
+      "pro_hint": "A Pro tool. Running it needs a Pro plan."
     },
     "sidebar": {
       "title": "Pages",
@@ -179,6 +182,8 @@
       "remove": "Remove",
       "need_documents": "{count, plural, one {Add # more document to run this tool.} other {Add # more documents to run this tool.}}",
       "failed": "The tool did not finish.",
+      "pro_notice": "This is a Pro tool. It needs a Pro plan to run.",
+      "upgrade": "This tool needs a Pro plan. Upgrade to run it.",
       "open": "Open",
       "reveal": "Show in Finder",
       "result_files": "{count, plural, one {# file created} other {# files created}}",

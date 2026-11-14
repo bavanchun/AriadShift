@@ -29,6 +29,7 @@ fn encrypt_request(
         options_json: None,
         cancel_token: None,
         secrets,
+        plan: None,
     }
 }
 

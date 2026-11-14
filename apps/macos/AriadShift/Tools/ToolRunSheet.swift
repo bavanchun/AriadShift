@@ -17,6 +17,11 @@ struct ToolRunSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if model.tool.isProLocked, case .editing = model.phase {
+                Label(String(localized: "mac.run.pro_notice"), systemImage: "lock")
+                    .font(.callout)
+                    .accessibilityIdentifier("run.pro-notice")
+            }
             content
             buttons
         }

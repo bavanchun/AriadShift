@@ -40,14 +40,20 @@ struct ToolsMenuContent: View {
         }
     }
 
+    /// Pro tools carry a visible "Pro" label, whatever the plan, so the tier is never a surprise.
+    private func menuTitle(_ tool: ToolEntry) -> String {
+        tool.isPro ? String(localized: "mac.tools.pro_title", defaultValue: "\(tool.title) (Pro)") : tool.title
+    }
+
     @ViewBuilder
     private func toolButton(_ tool: ToolEntry) -> some View {
         switch tool.availability {
         case .available:
-            Button(tool.title) { session?.begin(tool, client: client) }
+            Button(menuTitle(tool)) { session?.begin(tool, client: client) }
                 .disabled(session == nil)
+                .help(tool.isProLocked ? String(localized: "mac.tools.pro_hint") : "")
         case let .unavailable(reason):
-            Button(tool.title) {}
+            Button(menuTitle(tool)) {}
                 .disabled(true)
                 .help(L10n.branch("mac.tools.disabled", reason.tooltipBranch))
         }

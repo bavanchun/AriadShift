@@ -145,6 +145,7 @@ async fn run_ffi(id: &str, case: &Case, scratch: &Path) -> Result<Tree, String> 
         options_json: None,
         cancel_token: None,
         secrets: None,
+        plan: None,
     };
     run_tool(request, None).await.map_err(|e| e.to_string())?;
     Ok(read_tree(&out))

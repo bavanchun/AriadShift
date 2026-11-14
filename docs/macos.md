@@ -43,11 +43,19 @@ as `secrets` on `ToolRunRequest` or `RecipeRunRequest`; values never appear in p
 strings (drop semantics); it does not zeroize memory, and the values still cross the UniFFI boundary as ordinary strings. `RecipeRunRequest.imported`
 and `confirmed` are flags set by the caller, not verified by the library, so only the app's own trust decision should set them.
 
+`ToolRunRequest.plan` (`free`, `pro`, `team`, `enterprise`; absent means `free`) sets the plan a tool run executes under. `ariad-host` parses it and
+alone decides tier access, so an unknown value is `InvalidRequest` and a Pro tool on Free fails with `tier_not_allowed`. The app takes the plan from a
+`PlanProvider`: Release builds always answer Free because no purchase or licence system exists yet, and Debug builds read `ASHIFT_PLAN` with the CLI's
+strict values. The plan field is caller-supplied, so it is not an entitlement check; a signed licence is still to be decided. Pro tools show a "(Pro)"
+label in the Tools menu and a notice in the run sheet, and a refused run shows an upgrade message.
+
 ## Tools menu
-The menu comes from `listTools()` grouped by registry group. A tool is enabled when it is free, takes the open PDF, and every required parameter has
-an editor (text, number, switch, enum, list, presets, nested object as a group, array of objects as a row list with add, remove and move, tagged rows
-such as redaction targets with a kind picker): the run sheet generates that form from the tool's JSON Schema. A free-form object map (`pdf.forms_fill`) has no editor yet. Others are listed disabled with
-a tooltip (later release, paid tier, or "use File > Import" for other formats). Input arity and secret parameters come from `ashift tools --json`
+The menu comes from `listTools()` grouped by registry group. A tool is enabled when it ships in this release (not held back in `ToolCatalog`'s
+`laterGroups`/`laterTools`), takes the open PDF, and every required parameter has an editor (text, number, switch, enum, list, presets, nested
+object as a group, array of objects as a row list with add, remove and move, tagged rows such as redaction targets with a kind picker): the run sheet
+generates that form from the tool's JSON Schema. Pro tools stay enabled and `ariad-host` enforces the plan tier at run time. A free-form object map
+(`pdf.forms_fill`) has no editor yet. Others are listed disabled with a tooltip (later release, "use File > Import" for other formats, or missing
+runtime info). Input arity and secret parameters come from `ashift tools --json`
 (stopped after 10 s); if that read fails every tool that needs them stays disabled and the menu says so, because a guess could show a password in a
 plain text field. An engine that fails to start shows its error in the inspector and the Tools menu. A window runs one tool at a time and closing it
 cancels the run. `EngineClient.run` writes into a staging folder, then moves only files found there next to the input (or the folder from Settings)

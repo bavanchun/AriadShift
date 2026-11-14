@@ -51,6 +51,20 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.branch("mac.run.field_error", "invalid", "Angle", bundle: vi), "Angle không hợp lệ.")
     }
 
+    func testProGateStringsResolveInBothLanguages() throws {
+        let en = try localizedBundle("en")
+        let vi = try localizedBundle("vi")
+        let title = "Sign Token"
+        XCTAssertEqual(String(localized: "mac.tools.pro_title", defaultValue: "\(title)", bundle: en), "Sign Token (Pro)")
+        XCTAssertEqual(String(localized: "mac.tools.pro_title", defaultValue: "\(title)", bundle: vi), "Sign Token (Pro)")
+        XCTAssertEqual(String(localized: "mac.run.upgrade", bundle: en), "This tool needs a Pro plan. Upgrade to run it.")
+        XCTAssertEqual(String(localized: "mac.run.upgrade", bundle: vi), "Công cụ này cần gói Pro. Hãy nâng cấp để chạy.")
+        for key in ["mac.tools.pro_hint", "mac.run.pro_notice"] {
+            XCTAssertNotEqual(String(localized: String.LocalizationValue(key), bundle: en), key)
+            XCTAssertNotEqual(String(localized: String.LocalizationValue(key), bundle: vi), key)
+        }
+    }
+
     func testEveryToolGroupHasATitleInBothLanguages() throws {
         for language in ["en", "vi"] {
             let bundle = try localizedBundle(language)
