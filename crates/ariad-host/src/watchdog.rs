@@ -18,7 +18,7 @@ pub struct MemoryWatchdog {
     root: u32,
     limit_bytes: u64,
     #[cfg(any(target_os = "macos", windows))]
-    system: sysinfo::System,
+    system: Option<sysinfo::System>,
 }
 
 impl MemoryWatchdog {
@@ -30,7 +30,7 @@ impl MemoryWatchdog {
             root,
             limit_bytes: u64::from(limit_mb).saturating_mul(1024 * 1024),
             #[cfg(any(target_os = "macos", windows))]
-            system: sysinfo::System::new(),
+            system: sysinfo::System::new().ok(),
         }
     }
 
@@ -48,7 +48,9 @@ impl MemoryWatchdog {
         }
         #[cfg(any(target_os = "macos", windows))]
         {
-            portable::tree_resident_bytes(&mut self.system, self.root)
+            self.system
+                .as_mut()
+                .map_or(0, |system| portable::tree_resident_bytes(system, self.root))
         }
         #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
@@ -69,7 +71,10 @@ pub(crate) fn kill_descendants(root: u32) {
     #[cfg(target_os = "linux")]
     let members = linux::tree_processes(root);
     #[cfg(target_os = "macos")]
-    let members = portable::tree_processes(&mut sysinfo::System::new(), root);
+    let members = sysinfo::System::new().map_or_else(
+        |_| vec![root],
+        |mut system| portable::tree_processes(&mut system, root),
+    );
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let members = vec![root];
     for pid in members.into_iter().rev().filter(|&pid| pid != root) {
