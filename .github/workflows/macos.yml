@@ -5,6 +5,7 @@ on:
     branches: [dev, main]
     paths:
       - "apps/macos/**"
+      - "brand/png/**"
       - "crates/ariad-ffi/**"
       - "crates/**"
       - "Cargo.lock"
@@ -17,6 +18,7 @@ on:
     branches: [dev, main]
     paths:
       - "apps/macos/**"
+      - "brand/png/**"
       - "crates/ariad-ffi/**"
       - "crates/**"
       - "Cargo.lock"
@@ -102,6 +104,8 @@ jobs:
           sudo "${TMP_DIR}/extracted/xcodegen/install.sh" /usr/local
           rm -rf "${TMP_DIR}"
           xcodegen --version
+      - name: Lint macOS design literals and generated assets
+        run: just macos-lint
       - name: Test release helper scripts
         run: |
           bash scripts/macos-check-secrets.test.sh

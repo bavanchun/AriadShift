@@ -478,11 +478,17 @@ macos-build *args:
     just macos-project
     derived_dir="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-target/derived-data}}"
     mkdir -p "$derived_dir"
+    # SWIFTPM_CACHE_PATH, when set, keeps SwiftPM's repository cache out of ~/Library/Caches.
+    xcode_cache_args=()
+    if [[ -n "${SWIFTPM_CACHE_PATH:-}" ]]; then
+        xcode_cache_args=(-packageCachePath "${SWIFTPM_CACHE_PATH}")
+    fi
     xcodebuild -project apps/macos/AriadShift.xcodeproj \
         -scheme AriadShift \
         -configuration Release \
         -destination 'generic/platform=macOS' \
         -derivedDataPath "$derived_dir" \
+        ${xcode_cache_args[@]+"${xcode_cache_args[@]}"} \
         -onlyUsePackageVersionsFromResolvedFile \
         build "$@"
 
@@ -505,13 +511,36 @@ macos-test:
             export ASHIFT_HELPER_PATH="${REPO_ROOT}/target/debug/ashift"
         fi
     fi
+    # SWIFTPM_CACHE_PATH, when set, keeps SwiftPM's repository cache out of ~/Library/Caches.
+    cache_args=()
+    xcode_cache_args=()
+    if [[ -n "${SWIFTPM_CACHE_PATH:-}" ]]; then
+        cache_args=(--cache-path "${SWIFTPM_CACHE_PATH}")
+        xcode_cache_args=(-packageCachePath "${SWIFTPM_CACHE_PATH}")
+    fi
     swift test --package-path apps/macos/AriadShiftCore
+    # Token, model and snapshot tests of the design system (reference images in Tests/**/__Snapshots__).
+    swift test --package-path apps/macos/AriadDesignSystem ${cache_args[@]+"${cache_args[@]}"}
     xcodebuild test \
         -project apps/macos/AriadShift.xcodeproj \
         -scheme AriadShift \
         -destination 'platform=macOS' \
         -derivedDataPath "${DERIVED_DATA}" \
+        ${xcode_cache_args[@]+"${xcode_cache_args[@]}"} \
         -onlyUsePackageVersionsFromResolvedFile
+
+# Fail on literal spacing, frame, color and font values in the macOS app outside AriadDesignSystem (new ones only;
+# design-literals-baseline.txt lists the old ones to drain), and on asset catalogs that differ from their sources.
+[macos]
+macos-lint:
+    python3 apps/macos/scripts/test-check-design-literals.py
+    python3 apps/macos/scripts/check-design-literals.py
+    node apps/macos/scripts/generate-design-assets.mjs --check
+
+# Regenerate the macOS color sets, AccentColor and AppIcon from tokens.json and brand/png.
+[macos]
+macos-assets:
+    node apps/macos/scripts/generate-design-assets.mjs
 
 # Generated IPC types and wrappers come only from Rust.
 desktop-licenses:
