@@ -103,3 +103,15 @@ I checked visuals in headless Chrome over CDP (screenshots at 1×/2×, real key 
 8. **Fuzzy ranking.** Consecutive runs, word starts (including camelCase) and an early first match score higher, and each skipped character costs a point, so "cmp" ranks "Compress PDF" above "Crop margins of PDF". Keyword-only matches rank after every title match and highlight nothing.
 9. **App icon.** The asset catalog uses the pre-macOS 26 template (100px margin and outer shadow) at every size, rendered from the brand geometry. A generated Icon Composer `.icon` for native Liquid Glass icons is left for later, because its file format is not documented for generation.
 10. **Snapshots use the material fallback for glass.** The window server composites Liquid Glass from what lies behind the window, so offscreen capture returns an empty image and could never be a stable reference. The snapshot harness forces the material path (decision 2), which is what macOS 15 users see. The Liquid Glass look is reviewed in Xcode previews and in the running app.
+
+## T2 window shell decisions (2026-11-15)
+
+1. **No `ToolbarSpacer`.** It needs macOS 26, and a second availability branch would break the rule that `adaptiveGlass()` is the only one. The toolbar groups by placement instead (navigation: grid switch; principal: page capsule + zoom capsule; primary: find status, inspector), and macOS 26 already draws each placement as its own glass group.
+2. **View shortcuts.** ⌘1…⌘n already switch the page display mode in the View menu, so the grid keeps ⌥⌘P instead of the spec's ⌘2.
+3. **Grid action bar actions.** Rotate and Delete only, the page edits that exist today. Extract and Duplicate need new page tools, and they belong with the contextual toolbar (tool discovery).
+4. **Grid hint.** The old "drag pages to reorder" line above the grid is now the action bar tooltip and the grid's accessibility hint, so the grid is pages only, as in the mockup.
+5. **Selection ring without a selection.** In the Pages tab the page on screen carries the ring while nothing is selected, so the sidebar always shows where you are.
+6. **Inspector content without a tool.** ⌥⌘I opens the inspector on the document facts (name, format, size, pages, …) in inspector sections; choosing a tool opens it for that tool.
+7. **Drop.** Dropped PDFs open in their own windows and other supported formats are imported. With ⌥, dropped PDFs are inserted through Merge with the files already added, so the run is still confirmed in its parameters (never a silent edit).
+8. **Tools tab.** The shell hosts a plain grouped tool list in the Tools tab; the tool browser (search, job groups, cards) replaces it there.
+9. **Find.** The toolbar search field is the find field: ⌘F focuses it, Return and ⌘G step, Escape ends the search, and "4 of 12" with ↑↓ sits next to it. Searching leaves the page grid for the reader, where matches show.
