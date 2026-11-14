@@ -244,6 +244,36 @@
       "privacy": "AriadShift works on your Mac. It makes no network connections unless you turn on a feature that needs one.",
       "start": "Get Started"
     },
+    "welcome": {
+      "tagline": "Every PDF tool, private on your Mac.",
+      "drop_title": "Drop PDFs or documents here",
+      "drop_or": "or",
+      "open": "Open…",
+      "open_message": "Choose PDFs or documents to open.",
+      "suggested": "Suggested",
+      "suggested@note": "Row label in a 72-point column; keep it short.",
+      "recent": "Recent",
+      "recent@note": "Row label in a 72-point column; keep it short.",
+      "suggest": {
+        "merge": "Merge PDFs",
+        "compress": "Compress",
+        "ocr": "OCR a scan",
+        "to_word": "To Word"
+      },
+      "suggest_message": "Choose PDFs for {tool}.",
+      "suggest_message@note": "{tool} is the name of a suggested task, such as Compress."
+    },
+    "whats_new": {
+      "title": "What’s New in AriadShift {version}",
+      "title@note": "{version} is the app version, such as 0.7.0.",
+      "look_title": "A new look",
+      "look_detail": "A calmer window, with Liquid Glass on macOS 26 and clear spacing everywhere.",
+      "tools_title": "Every tool within reach",
+      "tools_detail": "Suggested tasks on this window, and every tool in the Tools menu.",
+      "private_title": "Still private",
+      "private_detail": "Every tool runs on your Mac. Nothing leaves it unless you choose.",
+      "continue": "Continue"
+    },
     "import": {
       "message": "Choose a document to convert to PDF",
       "running": "Importing {name}…",

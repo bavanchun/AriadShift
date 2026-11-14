@@ -42582,6 +42582,350 @@
         }
       }
     },
+    "mac.welcome.drop_or" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "or"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hoặc"
+          }
+        }
+      }
+    },
+    "mac.welcome.drop_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop PDFs or documents here"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thả tệp PDF hoặc tài liệu vào đây"
+          }
+        }
+      }
+    },
+    "mac.welcome.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở…"
+          }
+        }
+      }
+    },
+    "mac.welcome.open_message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose PDFs or documents to open."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chọn tệp PDF hoặc tài liệu để mở."
+          }
+        }
+      }
+    },
+    "mac.welcome.recent" : {
+      "comment" : "Row label in a 72-point column; keep it short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gần đây"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.compress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nén"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.merge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge PDFs"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gộp PDF"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.ocr" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OCR a scan"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OCR bản quét"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.to_word" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To Word"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sang Word"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest_message" : {
+      "comment" : "{tool} is the name of a suggested task, such as Compress.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose PDFs for %1$@."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chọn tệp PDF để %1$@."
+          }
+        }
+      }
+    },
+    "mac.welcome.suggested" : {
+      "comment" : "Row label in a 72-point column; keep it short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gợi ý"
+          }
+        }
+      }
+    },
+    "mac.welcome.tagline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every PDF tool, private on your Mac."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mọi công cụ PDF, riêng tư ngay trên máy Mac."
+          }
+        }
+      }
+    },
+    "mac.whats_new.continue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiếp tục"
+          }
+        }
+      }
+    },
+    "mac.whats_new.look_detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A calmer window, with Liquid Glass on macOS 26 and clear spacing everywhere."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cửa sổ gọn gàng hơn, có Liquid Glass trên macOS 26 và khoảng cách rõ ràng ở mọi nơi."
+          }
+        }
+      }
+    },
+    "mac.whats_new.look_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new look"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giao diện mới"
+          }
+        }
+      }
+    },
+    "mac.whats_new.private_detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every tool runs on your Mac. Nothing leaves it unless you choose."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mọi công cụ chạy trên máy Mac của bạn. Không gì rời khỏi máy trừ khi bạn chọn."
+          }
+        }
+      }
+    },
+    "mac.whats_new.private_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still private"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vẫn riêng tư"
+          }
+        }
+      }
+    },
+    "mac.whats_new.title" : {
+      "comment" : "{version} is the app version, such as 0.7.0.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What’s New in AriadShift %1$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Có gì mới trong AriadShift %1$@"
+          }
+        }
+      }
+    },
+    "mac.whats_new.tools_detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested tasks on this window, and every tool in the Tools menu."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Các tác vụ gợi ý ngay trên cửa sổ này, và mọi công cụ trong menu Công cụ."
+          }
+        }
+      }
+    },
+    "mac.whats_new.tools_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every tool within reach"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mọi công cụ trong tầm tay"
+          }
+        }
+      }
+    },
     "mac.window.pages" : {
       "comment" : "Toolbar subtitle under the document name, before the file size, for example \"20 pages\". types: count=int",
       "extractionState" : "manual",

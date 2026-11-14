@@ -110,7 +110,10 @@ struct AppCommands: Commands {
         }
 
         CommandGroup(after: .help) {
-            Button(String(localized: "mac.menu.show_welcome")) { openWindow(id: "welcome") }
+            Button(String(localized: "mac.menu.show_welcome")) {
+                WelcomePresentation.shared.requestOnboarding()
+                openWindow(id: "welcome")
+            }
         }
     }
 

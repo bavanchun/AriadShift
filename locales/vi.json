@@ -216,6 +216,32 @@
       "privacy": "AriadShift chạy ngay trên máy Mac của bạn. Ứng dụng không kết nối mạng, trừ khi bạn bật một tính năng cần mạng.",
       "start": "Bắt đầu"
     },
+    "welcome": {
+      "tagline": "Mọi công cụ PDF, riêng tư ngay trên máy Mac.",
+      "drop_title": "Thả tệp PDF hoặc tài liệu vào đây",
+      "drop_or": "hoặc",
+      "open": "Mở…",
+      "open_message": "Chọn tệp PDF hoặc tài liệu để mở.",
+      "suggested": "Gợi ý",
+      "recent": "Gần đây",
+      "suggest": {
+        "merge": "Gộp PDF",
+        "compress": "Nén",
+        "ocr": "OCR bản quét",
+        "to_word": "Sang Word"
+      },
+      "suggest_message": "Chọn tệp PDF để {tool}."
+    },
+    "whats_new": {
+      "title": "Có gì mới trong AriadShift {version}",
+      "look_title": "Giao diện mới",
+      "look_detail": "Cửa sổ gọn gàng hơn, có Liquid Glass trên macOS 26 và khoảng cách rõ ràng ở mọi nơi.",
+      "tools_title": "Mọi công cụ trong tầm tay",
+      "tools_detail": "Các tác vụ gợi ý ngay trên cửa sổ này, và mọi công cụ trong menu Công cụ.",
+      "private_title": "Vẫn riêng tư",
+      "private_detail": "Mọi công cụ chạy trên máy Mac của bạn. Không gì rời khỏi máy trừ khi bạn chọn.",
+      "continue": "Tiếp tục"
+    },
     "import": {
       "message": "Chọn một tài liệu để chuyển sang PDF",
       "running": "Đang nhập {name}…",
