@@ -32,6 +32,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -99,6 +100,71 @@ class TargetBuild:
 def engine_version() -> str:
     with (ENGINE_DIR / "pyproject.toml").open("rb") as handle:
         return tomllib.load(handle)["project"]["version"]
+
+
+_SEMVER_TRIPLET = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+_SEMVER_TRIPLET_RE = re.compile(_SEMVER_TRIPLET)
+_REQUIRES_RANGE_RE = re.compile(
+    rf">= *(?P<lower>{_SEMVER_TRIPLET}) *, *< *(?P<upper>{_SEMVER_TRIPLET})"
+)
+
+
+def _to_triplet(version: str) -> tuple[int, int, int]:
+    major, minor, patch = version.split(".")
+    return (int(major), int(minor), int(patch))
+
+
+def workspace_ashift_version(cargo_toml: Path = REPOSITORY / "Cargo.toml") -> tuple[int, int, int]:
+    """Read ``[workspace.package].version`` as a strict ``(major, minor, patch)`` tuple."""
+    try:
+        with cargo_toml.open("rb") as handle:
+            manifest = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise SystemExit(f"cannot read workspace version from {cargo_toml}: {error}") from error
+    workspace = manifest.get("workspace")
+    package = workspace.get("package") if isinstance(workspace, dict) else None
+    version = package.get("version") if isinstance(package, dict) else None
+    if not isinstance(version, str):
+        raise SystemExit(f"{cargo_toml} is missing a string [workspace.package].version")
+    if _SEMVER_TRIPLET_RE.fullmatch(version) is None:
+        raise SystemExit(
+            f"{cargo_toml} [workspace.package].version {version!r} must be strict "
+            "MAJOR.MINOR.PATCH (no leading zeros, prefix, pre-release, or build metadata)"
+        )
+    return _to_triplet(version)
+
+
+def requires_ashift(
+    cargo_toml: Path = REPOSITORY / "Cargo.toml",
+    *,
+    requires: str = REQUIRES_ASHIFT,
+) -> str:
+    """Verify that the workspace ``ashift`` version satisfies ``requires``."""
+    if not isinstance(requires, str):
+        raise SystemExit(f"requires_ashift must be a string, got {type(requires).__name__}")
+    match = _REQUIRES_RANGE_RE.fullmatch(requires)
+    if match is None:
+        raise SystemExit(
+            f"requires_ashift {requires!r} must have the form "
+            "'>=MAJOR.MINOR.PATCH, <MAJOR.MINOR.PATCH'"
+        )
+    lower = _to_triplet(match.group("lower"))
+    upper = _to_triplet(match.group("upper"))
+    if not lower < upper:
+        raise SystemExit(
+            f"requires_ashift {requires!r} has inverted bounds "
+            f"({match.group('lower')} >= {match.group('upper')})"
+        )
+    workspace = workspace_ashift_version(cargo_toml)
+    if not lower <= workspace < upper:
+        workspace_str = ".".join(str(part) for part in workspace)
+        raise SystemExit(
+            f"{cargo_toml} [workspace.package].version is {workspace_str}, outside "
+            f"requires_ashift {requires!r}; update REQUIRES_ASHIFT in "
+            "engines/docling/pack/build.py only after reviewing protocol compatibility "
+            "(docs/packs.md)"
+        )
+    return requires
 
 
 def is_windows(target: str) -> bool:
@@ -655,6 +721,7 @@ def source_opencv_required(target: str) -> bool:
 def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     if target not in PLATFORMS:
         raise SystemExit(f"unsupported target {target}; known: {', '.join(PLATFORMS)}")
+    requires_ashift(REPOSITORY / "Cargo.toml", requires=REQUIRES_ASHIFT)
     version = engine_version()
     pins = fetch.load_pins()
     native_build.check_opencv_pin(pins)
@@ -828,7 +895,14 @@ def _toml(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def pack_fields(version: str, expression: str) -> str:
+def pack_fields(
+    version: str,
+    expression: str,
+    *,
+    cargo_toml: Path = REPOSITORY / "Cargo.toml",
+    requires: str = REQUIRES_ASHIFT,
+) -> str:
+    checked_requires = requires_ashift(cargo_toml, requires=requires)
     notices = ", ".join(_toml(notice) for notice in NOTICES)
     return "\n".join(
         [
@@ -837,7 +911,7 @@ def pack_fields(version: str, expression: str) -> str:
             f"version = {_toml(version)}",
             f"description = {_toml(DESCRIPTION)}",
             f"license = {_toml(expression)}",
-            f"requires_ashift = {_toml(REQUIRES_ASHIFT)}",
+            f"requires_ashift = {_toml(checked_requires)}",
             f"notices = [{notices}]",
             "",
         ]
@@ -893,7 +967,10 @@ def write_manifest(ashift: str, out: Path, builds: list[TargetBuild]) -> None:
     version = versions.pop()
     manifest = out / "pack.toml"
     base_text = pack_fields(
-        version, licenses.combined_expression(build.license for build in builds)
+        version,
+        licenses.combined_expression(build.license for build in builds),
+        cargo_toml=REPOSITORY / "Cargo.toml",
+        requires=REQUIRES_ASHIFT,
     )
     for build in sorted(builds, key=lambda item: item.triple):
         executables: set[str] = set()
