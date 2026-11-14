@@ -51,11 +51,7 @@ on:
       - 'LICENSE'
       - 'THIRD_PARTY_LICENSES'
   push:
-    tags:
-      - '**[0-9]+.[0-9]+.[0-9]+*'
-      - '!toolchain-torch-*'
-      - '!toolchain-wheels-*'
-      - '!pack-*'
+    tags: ["v*"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

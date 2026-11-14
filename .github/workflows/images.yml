@@ -49,6 +49,17 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # In GitHub Actions expressions, 0 is falsy so `push && 0 || 1` would
+          # always evaluate to 1; invert so tag pushes fetch full history (0).
+          fetch-depth: ${{ github.event_name != 'push' && 1 || 0 }}
+
+      - name: Require tag commit on main
+        if: github.event_name == 'push'
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::Release tag must point to a commit on main."
+            exit 1
+          fi
 
       # The docling image holds LibreOffice, PyTorch and the Docling models on top of
       # the server image; the preinstalled SDKs below are not needed here.
@@ -224,6 +235,7 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
+      contents: read
       packages: write # pushes the image index and its cosign signature
       id-token: write # keyless cosign signing through the GitHub OIDC token
     strategy:
@@ -231,6 +243,19 @@ jobs:
       matrix:
         image: [api, worker-core, worker-office, worker-docling, auth, web]
     steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Require tag commit on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::Release tag must point to a commit on main."
+            exit 1
+          fi
+
       - name: Download image digests
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
