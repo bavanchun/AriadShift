@@ -159,9 +159,23 @@ test-ci-scope:
     uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
 
 licenses:
-    node scripts/generate-licenses.mjs > THIRD_PARTY_LICENSES
-    just desktop-licenses
-    just web-licenses
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="${ARIADSHIFT_ROOT_DIR:-{{justfile_directory()}}}"
+    node scripts/generate-desktop-licenses.mjs --check-preconditions
+    node apps/web/scripts/sync-notices.mjs --check-preconditions
+    node scripts/generate-licenses.mjs --check-preconditions --cargo-about-version "{{cargo_about_version}}"
+    tmp_rust=$(mktemp "$root/.THIRD_PARTY_LICENSES.XXXXXX")
+    tmp_desktop=$(mktemp "$root/apps/desktop/.THIRD_PARTY_JS_LICENSES.XXXXXX")
+    trap 'rm -f "$tmp_rust" "$tmp_desktop"' EXIT
+    node scripts/generate-licenses.mjs --cargo-about-version "{{cargo_about_version}}" > "$tmp_rust"
+    test -s "$tmp_rust"
+    ARIADSHIFT_DESKTOP_LICENSES_OUT="$tmp_desktop" just desktop-licenses
+    test -s "$tmp_desktop"
+    ARIADSHIFT_THIRD_PARTY_LICENSES="$tmp_rust" just web-licenses
+    chmod 0644 "$tmp_rust" "$tmp_desktop"
+    mv -f "$tmp_desktop" "$root/apps/desktop/THIRD_PARTY_JS_LICENSES"
+    mv -f "$tmp_rust" "$root/THIRD_PARTY_LICENSES"
 
 web-licenses:
     node apps/web/scripts/sync-notices.mjs
@@ -196,8 +210,11 @@ licenses-check:
         node apps/web/scripts/sync-notices.mjs --check-graph
     fi
 
+test-licenses-recipes:
+    node --test scripts/licenses-recipes.test.mjs
+
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope test-ci-sccache test-hardening-ci-wiring
+static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-licenses-recipes test-winget-manifest test-ci-scope test-ci-sccache test-hardening-ci-wiring
 
 test-ci-sccache:
     shellcheck -x scripts/ci-sccache.sh
@@ -515,7 +532,17 @@ macos-test:
 
 # Generated IPC types and wrappers come only from Rust.
 desktop-licenses:
-    node scripts/generate-desktop-licenses.mjs > apps/desktop/THIRD_PARTY_JS_LICENSES
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="${ARIADSHIFT_ROOT_DIR:-{{justfile_directory()}}}"
+    out="${ARIADSHIFT_DESKTOP_LICENSES_OUT:-$root/apps/desktop/THIRD_PARTY_JS_LICENSES}"
+    node scripts/generate-desktop-licenses.mjs --check-preconditions
+    tmp=$(mktemp "$(dirname "$out")/.THIRD_PARTY_JS_LICENSES.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+    node scripts/generate-desktop-licenses.mjs > "$tmp"
+    test -s "$tmp"
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "$out"
 
 desktop-bindings:
     cargo run -p ariad-desktop --bin export-bindings
