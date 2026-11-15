@@ -1010,6 +1010,12 @@ fn run_tool_inner(
     }
 
     // 11. Plan and execute atomic multi-artifact publication.
+    let has_companion_report = !emits_json
+        && raw_exec.inline_json.is_none()
+        && raw_exec
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "report_not_inlined");
     let (published, publish_warnings) = publish_tool_outputs(
         &workspace,
         &spec,
@@ -1018,6 +1024,7 @@ fn run_tool_inner(
         emits_json,
         extracts_attachments,
         raw_exec.inline_json.is_some(),
+        has_companion_report,
         &raw_exec.artifacts,
         &input_paths,
         &request.output,
@@ -1060,8 +1067,41 @@ fn run_tool_inner(
 /// `limits.max_decompressed_bytes`).
 pub(super) const MAX_INLINE_JSON_BYTES: u64 = 32 * 1024 * 1024;
 
+thread_local! {
+    static TEST_INLINE_JSON_CAP: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Temporarily lowers `json_inline_cap` on the current thread so tests can verify
+/// oversized companion JSON fallback without allocating >32 MiB payloads.
+#[doc(hidden)]
+pub fn with_inline_json_cap_for_test<T>(cap: u64, f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<u64>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_INLINE_JSON_CAP.with(|cell| cell.set(self.0));
+        }
+    }
+    let previous = TEST_INLINE_JSON_CAP.with(|cell| {
+        let old = cell.get();
+        cell.set(Some(cap));
+        old
+    });
+    let _reset = Reset(previous);
+    f()
+}
+
 pub(super) fn json_inline_cap(limits: &Limits) -> u64 {
-    limits.max_decompressed_bytes.min(MAX_INLINE_JSON_BYTES)
+    let base = limits.max_decompressed_bytes.min(MAX_INLINE_JSON_BYTES);
+    TEST_INLINE_JSON_CAP
+        .with(|cell| cell.get())
+        .map_or(base, |override_cap| base.min(override_cap))
+}
+
+pub(super) fn report_not_inlined_warning() -> ConvertWarning {
+    ConvertWarning {
+        code: "report_not_inlined".into(),
+        message: "JSON report exceeded the inline size limit and was written to a companion .json artifact".into(),
+    }
 }
 
 /// Scrubs `value` and returns `(scrubbed_value, serialized_bytes, inline_json)` where `inline_json`
@@ -1440,6 +1480,7 @@ fn publish_tool_outputs(
     emits_json: bool,
     extracts_attachments: bool,
     has_inline_json: bool,
+    has_companion_report: bool,
     raw_artifacts: &[(PathBuf, String)],
     inputs: &[PathBuf],
     output: &OutputTarget,
@@ -1465,6 +1506,10 @@ fn publish_tool_outputs(
     let is_default_beside_input = matches!(output, OutputTarget::DefaultBesideInput);
     let is_default_compare =
         is_default_beside_input && naming_template.is_none() && spec.id == "pdf.compare";
+    let single_primary_with_companion = has_companion_report
+        && raw_artifacts.len() == 2
+        && !raw_artifacts[0].1.eq_ignore_ascii_case("json")
+        && raw_artifacts[1].1.eq_ignore_ascii_case("json");
 
     let (dest_dir, explicit_single_filename): (PathBuf, Option<String>) = match output {
         OutputTarget::None => return Ok((Vec::new(), Vec::new())),
@@ -1474,6 +1519,14 @@ fn publish_tool_outputs(
             // JSON inline without writing a file next to input unless the JSON exceeded the inline cap.
             if emits_json && naming_template.is_none() && has_inline_json {
                 return Ok((Vec::new(), Vec::new()));
+            }
+            if emits_json
+                && (inputs.is_empty() || spec.inputs == ariad_core::tools::InputArity::None)
+            {
+                return Err(ToolError::Usage(format!(
+                    "tool '{}' result exceeds the inline JSON limit (or uses a naming template) and has no input file to publish beside; pass -o <file> or -o <dir>/",
+                    spec.id
+                )));
             }
             let parent = first_input
                 .parent()
@@ -1500,7 +1553,7 @@ fn publish_tool_outputs(
             if is_dir {
                 (path.clone(), None)
             } else {
-                if raw_artifacts.len() > 1 {
+                if raw_artifacts.len() > 1 && !single_primary_with_companion {
                     return Err(ToolError::Confinement(format!(
                         "tool '{}' produced {} artifacts and requires an output directory (-o <dir>/)",
                         spec.id,
@@ -1555,17 +1608,31 @@ fn publish_tool_outputs(
     let mut staged = Vec::with_capacity(artifacts_to_publish.len());
     for (idx, (staged_path, format)) in artifacts_to_publish.iter().enumerate() {
         let index_1_based = idx + 1;
+        let is_companion =
+            single_primary_with_companion && idx == 1 && format.eq_ignore_ascii_case("json");
         let base_target_name = if let Some(ref single_name) = explicit_single_filename {
-            single_name.clone()
+            if is_companion {
+                default_single_artifact_name(Path::new(single_name), spec.id, format)
+            } else {
+                single_name.clone()
+            }
         } else if let Some(template) = naming_template {
-            super::publish::render_naming_template_with_clock(
+            let template_index = if is_companion { 1 } else { index_1_based };
+            let rendered = super::publish::render_naming_template_with_clock(
                 template,
                 first_stem,
-                index_1_based,
+                template_index,
                 clock,
                 params.get("date").and_then(Value::as_str),
             )
-            .map_err(PublishError::from)?
+            .map_err(PublishError::from)?;
+            if is_companion {
+                companion_name_from_template(&rendered, &artifacts_to_publish[0].1)
+            } else {
+                rendered
+            }
+        } else if is_companion || single_primary_with_companion {
+            default_single_artifact_name(first_input, spec.id, format)
         } else if extracts_attachments || (spec.id == "pdf.forms_import" && multi) {
             staged_path
                 .file_name()
@@ -1620,7 +1687,7 @@ fn publish_tool_outputs(
     if extracts_attachments {
         validate_extracted_artifact_extensions(&staged)?;
     } else {
-        validate_spec_artifact_extensions(spec, params, emits_json, &staged)?;
+        validate_spec_artifact_extensions(spec, params, emits_json, has_companion_report, &staged)?;
     }
 
     let quarantine_warnings = if extracts_attachments {
@@ -1638,6 +1705,26 @@ fn publish_tool_outputs(
         fail_at_index,
     )?;
     Ok((published, quarantine_warnings))
+}
+
+fn companion_name_from_template(rendered: &str, primary_format: &str) -> String {
+    let path = Path::new(rendered);
+    let clean_primary = primary_format.trim_start_matches('.');
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if ext.eq_ignore_ascii_case("json") {
+            return rendered.to_owned();
+        }
+        if ext.eq_ignore_ascii_case(clean_primary)
+            && let Some(json_name) = path
+                .with_extension("json")
+                .file_name()
+                .and_then(|n| n.to_str())
+        {
+            return json_name.to_owned();
+        }
+    }
+    let stem = rendered.trim_end_matches('.');
+    format!("{stem}.json")
 }
 
 static COMPILED_PARAM_SCHEMAS: LazyLock<RwLock<HashMap<String, Arc<jsonschema::Validator>>>> =

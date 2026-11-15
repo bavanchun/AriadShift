@@ -310,6 +310,7 @@ pub(crate) fn execute_with_names_and_clock(
         .iter()
         .any(|artifact| !artifact.format.trim().eq_ignore_ascii_case("json"));
 
+    let mut companion_json_bytes = None;
     if let Some(ref raw_value) = tool_output.json {
         let (scrubbed_value, json_bytes, cap_inline) =
             super::run::scrub_and_cap_inline_json(raw_value.clone(), limits, scrubber)?;
@@ -337,6 +338,8 @@ pub(crate) fn execute_with_names_and_clock(
             fs::write(&staged_out, &json_bytes)
                 .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
             artifacts.push((staged_out, out_format.to_owned()));
+        } else if cap_inline.is_none() {
+            companion_json_bytes = Some(json_bytes);
         }
 
         if let Some(pages) = scrubbed_value.get("page_count") {
@@ -365,6 +368,23 @@ pub(crate) fn execute_with_names_and_clock(
             fs::write(&staged_out, &artifact.bytes)
                 .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
             artifacts.push((staged_out, out_format.to_owned()));
+        }
+        if let Some(json_bytes) = companion_json_bytes {
+            total_out_bytes = total_out_bytes.saturating_add(json_bytes.len() as u64);
+            if total_out_bytes > limits.max_decompressed_bytes {
+                return Err(ToolError::LimitExceeded);
+            }
+            let staged_name = sanitize_staged_artifact_name(
+                "report.json",
+                artifacts.len() + 1,
+                "json",
+                &mut used_names,
+            );
+            let staged_out = workspace.output_dir().join(staged_name);
+            fs::write(&staged_out, &json_bytes)
+                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            artifacts.push((staged_out, "json".to_owned()));
+            warnings.push(super::run::report_not_inlined_warning());
         }
         metrics.insert("outputs".to_owned(), json!(artifacts.len()));
     }

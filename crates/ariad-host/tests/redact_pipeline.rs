@@ -1651,3 +1651,134 @@ fn redact_pipeline_counts_indirect_annotations_and_vector_paths() {
         "vectors_inspected must be > 0 when scope.vectors is true"
     );
 }
+
+#[test]
+fn redact_oversized_companion_report_and_redact_verify_inline_contract() {
+    if !child("redact_oversized_companion_report_and_redact_verify_inline_contract") {
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("doc.pdf");
+    fs::copy(fixture("mixed-sizes.pdf"), &input).unwrap();
+    let targets = json!({
+        "targets": [{ "kind": "exact", "text": "Portfolio" }]
+    });
+
+    // 1. `pdf.redact` with oversized report on `-o custom-redacted.pdf` and DefaultBesideInput:
+    let explicit_pdf = temp.path().join("custom-redacted.pdf");
+    let explicit_json = temp.path().join("custom-redacted.redacted.json");
+    let explicit_req = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(&input)],
+        OutputTarget::Path(explicit_pdf.clone()),
+    )
+    .with_params(targets.clone());
+    let explicit_res =
+        ariad_host::tools::run::with_inline_json_cap_for_test(64, || run_tool(&explicit_req))
+            .expect("pdf.redact -o custom-redacted.pdf with companion report must succeed");
+    assert!(explicit_res.inline_json.is_none());
+    assert!(
+        explicit_res
+            .warnings
+            .iter()
+            .any(|w| w.code == "report_not_inlined")
+    );
+    assert_eq!(explicit_res.artifacts.len(), 2);
+    assert_eq!(
+        fs::canonicalize(&explicit_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(&explicit_pdf).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&explicit_res.artifacts[1].path).unwrap(),
+        fs::canonicalize(&explicit_json).unwrap()
+    );
+    let parsed_explicit: RedactionVerificationReport =
+        serde_json::from_slice(&fs::read(&explicit_json).unwrap()).unwrap();
+    assert_eq!(
+        parsed_explicit.status,
+        RedactionVerificationStatus::Verified
+    );
+
+    let default_req = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(&input)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(targets.clone());
+    let default_res =
+        ariad_host::tools::run::with_inline_json_cap_for_test(64, || run_tool(&default_req))
+            .expect("pdf.redact DefaultBesideInput with companion report must succeed");
+    assert!(default_res.inline_json.is_none());
+    assert_eq!(default_res.artifacts.len(), 2);
+    assert_eq!(
+        fs::canonicalize(&default_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(temp.path().join("doc.redacted.pdf")).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&default_res.artifacts[1].path).unwrap(),
+        fs::canonicalize(temp.path().join("doc.redacted.json")).unwrap()
+    );
+
+    // 2. `pdf.redact_verify` within cap: returns inline_json + empty artifacts across
+    // OutputTarget::None, DefaultBesideInput, Directory, and recipe execution.
+    let verify_dir = temp.path().join("verify-dir");
+    fs::create_dir_all(&verify_dir).unwrap();
+    for target in [
+        OutputTarget::None,
+        OutputTarget::DefaultBesideInput,
+        OutputTarget::Directory(verify_dir.clone()),
+    ] {
+        let res = run_tool(
+            &ToolRequest::new("pdf.redact_verify", vec![InputRef::new(&input)], target)
+                .with_params(targets.clone()),
+        )
+        .expect("in-cap pdf.redact_verify must succeed");
+        assert!(res.inline_json.is_some());
+        assert!(
+            res.artifacts.is_empty(),
+            "in-cap pdf.redact_verify must emit zero artifacts"
+        );
+    }
+    assert_eq!(fs::read_dir(&verify_dir).unwrap().count(), 0);
+    assert!(!temp.path().join("doc.redact-verify.json").exists());
+
+    let recipe = ariad_core::tools::Recipe::from_json_str(
+        &json!({
+            "version": "ariad-recipe/1",
+            "steps": [{"tool": "pdf.redact_verify", "params": targets}]
+        })
+        .to_string(),
+        ariad_core::tools::RecipeOrigin::Trusted,
+    )
+    .unwrap();
+    let recipe_out = temp.path().join("recipe-out");
+    fs::create_dir_all(&recipe_out).unwrap();
+    let recipe_res =
+        ariad_host::tools::recipe::run_recipe(&ariad_host::tools::recipe::RecipeRequest::new(
+            recipe,
+            vec![InputRef::new(&input)],
+            recipe_out,
+        ))
+        .expect("recipe with pdf.redact_verify must succeed");
+    assert!(recipe_res.artifacts.is_empty());
+
+    // 3. `pdf.redact_verify` oversized: publishes `<stem>.redact-verify.json` beside input.
+    let over_verify = ariad_host::tools::run::with_inline_json_cap_for_test(64, || {
+        run_tool(
+            &ToolRequest::new(
+                "pdf.redact_verify",
+                vec![InputRef::new(&input)],
+                OutputTarget::DefaultBesideInput,
+            )
+            .with_params(targets),
+        )
+    })
+    .expect("oversized pdf.redact_verify must publish beside input");
+    assert!(over_verify.inline_json.is_none());
+    assert_eq!(over_verify.artifacts.len(), 1);
+    assert_eq!(
+        fs::canonicalize(&over_verify.artifacts[0].path).unwrap(),
+        fs::canonicalize(temp.path().join("doc.redact-verify.json")).unwrap()
+    );
+}

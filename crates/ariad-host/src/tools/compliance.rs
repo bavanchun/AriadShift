@@ -215,15 +215,14 @@ fn execute_to_pdfa(
 
     fs::rename(&candidate_path, &final_pdf_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
-    let (_, _, inline_json) =
-        crate::tools::run::scrub_and_cap_inline_json(report, limits, scrubber)?;
-
-    Ok(RawToolExecution {
-        artifacts: vec![(final_pdf_path, "pdf".to_string())],
-        warnings: Vec::new(),
-        metrics: exec.metrics,
-        inline_json,
-    })
+    attach_compliance_report(
+        workspace,
+        final_pdf_path,
+        report,
+        exec.metrics,
+        limits,
+        scrubber,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -314,13 +313,42 @@ fn execute_to_pdfua(
 
     fs::copy(input_path, &final_pdf_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
-    let (_, _, inline_json) =
-        crate::tools::run::scrub_and_cap_inline_json(report, limits, scrubber)?;
+    attach_compliance_report(
+        workspace,
+        final_pdf_path,
+        report,
+        exec.metrics,
+        limits,
+        scrubber,
+    )
+}
 
+fn attach_compliance_report(
+    workspace: &Workspace,
+    pdf_path: PathBuf,
+    report: Value,
+    metrics: std::collections::BTreeMap<String, Value>,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+) -> Result<RawToolExecution, ToolError> {
+    let (_, json_bytes, inline_json) =
+        crate::tools::run::scrub_and_cap_inline_json(report, limits, scrubber)?;
+    if (json_bytes.len() as u64) > limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    let mut artifacts = vec![(pdf_path, "pdf".to_string())];
+    let mut warnings = Vec::new();
+    if inline_json.is_none() {
+        let companion_path = workspace.output_dir().join("report.json");
+        fs::write(&companion_path, &json_bytes)
+            .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+        artifacts.push((companion_path, "json".to_string()));
+        warnings.push(crate::tools::run::report_not_inlined_warning());
+    }
     Ok(RawToolExecution {
-        artifacts: vec![(final_pdf_path, "pdf".to_string())],
-        warnings: Vec::new(),
-        metrics: exec.metrics,
+        artifacts,
+        warnings,
+        metrics,
         inline_json,
     })
 }
@@ -376,5 +404,64 @@ mod report_tests {
             report["accessibility"]["issues"][0]["message"],
             "[REDACTED]"
         );
+    }
+
+    #[test]
+    fn attach_compliance_report_stages_companion_json_only_when_not_inlined() {
+        let workspace = Workspace::new().unwrap();
+        let pdf_path = workspace.output_dir().join("output.pdf");
+        fs::write(&pdf_path, b"%PDF-1.7\n").unwrap();
+        let report = json!({"compliant": true, "details": "x".repeat(200)});
+        let mut metrics = std::collections::BTreeMap::new();
+        metrics.insert("pages".to_owned(), json!(1));
+        let scrubber = SecretScrubber::new();
+
+        let in_cap = attach_compliance_report(
+            &workspace,
+            pdf_path.clone(),
+            report.clone(),
+            metrics.clone(),
+            &Limits::local(),
+            &scrubber,
+        )
+        .unwrap();
+        assert!(in_cap.inline_json.is_some());
+        assert_eq!(in_cap.artifacts.len(), 1);
+        assert_eq!(in_cap.artifacts[0].1, "pdf");
+        assert!(in_cap.warnings.is_empty());
+
+        let over_cap = crate::tools::run::with_inline_json_cap_for_test(64, || {
+            attach_compliance_report(
+                &workspace,
+                pdf_path.clone(),
+                report.clone(),
+                metrics.clone(),
+                &Limits::local(),
+                &scrubber,
+            )
+            .unwrap()
+        });
+        assert!(over_cap.inline_json.is_none());
+        assert_eq!(over_cap.artifacts.len(), 2);
+        assert_eq!(over_cap.artifacts[0].1, "pdf");
+        assert_eq!(over_cap.artifacts[1].1, "json");
+        assert!(
+            over_cap
+                .warnings
+                .iter()
+                .any(|w| w.code == "report_not_inlined")
+        );
+        let staged_report: Value =
+            serde_json::from_slice(&fs::read(&over_cap.artifacts[1].0).unwrap()).unwrap();
+        assert_eq!(staged_report, report);
+
+        let tight = Limits {
+            max_decompressed_bytes: 64,
+            ..Limits::local()
+        };
+        let err =
+            attach_compliance_report(&workspace, pdf_path, report, metrics, &tight, &scrubber)
+                .unwrap_err();
+        assert_eq!(err, ToolError::LimitExceeded);
     }
 }

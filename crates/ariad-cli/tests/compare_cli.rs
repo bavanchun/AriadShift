@@ -96,10 +96,17 @@ fn text_mode_runs_in_process_and_detects_seeded_changes() {
         !temp.path().join("compare-before.compare.json").exists(),
         "report.json must remain inline when within cap"
     );
-    let human_stdout = String::from_utf8_lossy(&human_output.stdout);
-    assert_eq!(
-        fs::canonicalize(Path::new(human_stdout.trim())).unwrap(),
-        fs::canonicalize(&expected_diff).unwrap()
+    let human_report: serde_json::Value = serde_json::from_slice(&human_output.stdout)
+        .expect("human mode stdout must print inline compare report JSON");
+    assert!(
+        human_report["summary"].is_object(),
+        "inline compare report must include summary: {human_report}"
+    );
+    let human_stderr = String::from_utf8_lossy(&human_output.stderr);
+    let diff_name = expected_diff.file_name().unwrap().to_str().unwrap();
+    assert!(
+        human_stderr.contains(diff_name),
+        "human mode stderr must list published diff PDF path ({diff_name}), got: {human_stderr}"
     );
 
     // Second run without -o and without --overwrite: exits with code 6 (`destination_exists`),

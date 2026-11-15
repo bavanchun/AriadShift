@@ -1317,7 +1317,7 @@ printf '%s\n' '{"type":"result","ok":true}'
 
 #[cfg(unix)]
 #[test]
-fn default_beside_input_oversized_inputless_tool_falls_back_to_document_json() {
+fn default_beside_input_oversized_inputless_tool_requires_explicit_output() {
     use ariad_core::limits::Limits;
     use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
     use std::{ffi::OsString, process::Command};
@@ -1330,7 +1330,7 @@ fn default_beside_input_oversized_inputless_tool_falls_back_to_document_json() {
             .env(CHILD_ENV, "1")
             .args([
                 "--exact",
-                "default_beside_input_oversized_inputless_tool_falls_back_to_document_json",
+                "default_beside_input_oversized_inputless_tool_requires_explicit_output",
                 "--nocapture",
             ])
             .output()
@@ -1341,74 +1341,89 @@ fn default_beside_input_oversized_inputless_tool_falls_back_to_document_json() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        assert_eq!(
+            fs::read_dir(cwd.path()).unwrap().count(),
+            0,
+            "inputless tool failure must leave CWD completely empty"
+        );
         return;
     }
 
-    let script = r#"
+    // 1. `ai.recipe_from_text` whose wrapped envelope crosses `inline_cap` without `-o`:
+    // must fail with `ToolError::Usage` (exit code 2) and write nothing into CWD.
+    let small_script = r#"
 read -r _
 ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
-{
-  printf '{"version":"ariad-recipe/1","naming":"'
-  head -c 33554432 /dev/zero | tr '\0' 'a'
-  printf '","steps":[{"tool":"pdf.info","params":{}}]}\n'
-} > "$ws_out/output.json"
+printf '{"version":"ariad-recipe/1","steps":[{"tool":"pdf.info","params":{}}]}\n' > "$ws_out/output.json"
 printf '{"type":"artifact","path":"%s/output.json","format":"json"}\n' "$ws_out"
 printf '%s\n' '{"type":"result","ok":true}'
 "#;
-    let cmd = EngineCommand {
+    let small_cmd = EngineCommand {
         engine: "ai".to_owned(),
         program: PathBuf::from("/bin/sh"),
-        args: vec![OsString::from("-c"), OsString::from(script)],
+        args: vec![OsString::from("-c"), OsString::from(small_script)],
         env: Vec::new(),
         install_root: None,
         launcher: None,
         sandbox: Some(SandboxMode::Off),
     };
-    let req = ToolRequest::new(
+    let wrapped_boundary_req = ToolRequest::new(
         "ai.recipe_from_text",
         Vec::new(),
         OutputTarget::DefaultBesideInput,
     )
     .with_params(json!({"prompt": "inspect document"}))
     .with_limits(Limits::local())
-    .with_engine_command(cmd);
-
-    let res1 = run_tool(&req).expect("oversized inputless tool must succeed");
-    assert!(res1.inline_json.is_none());
-    assert_eq!(res1.artifacts.len(), 1);
-    let expected = Path::new("document.recipe-from-text.json");
-    assert_eq!(
-        res1.artifacts[0].path.file_name().and_then(|s| s.to_str()),
-        Some("document.recipe-from-text.json")
-    );
-    assert!(expected.is_file());
-    assert_eq!(
-        fs::canonicalize(&res1.artifacts[0].path).unwrap(),
-        fs::canonicalize(expected).unwrap()
-    );
-    let first_bytes = fs::read(expected).unwrap();
-
-    let err2 =
-        run_tool(&req).expect_err("collision on inputless tool must return DestinationExists");
+    .with_engine_command(small_cmd.clone());
+    // Raw recipe JSON (~110 B) fits inside 140 B, while the wrapped object (~200 B) exceeds 140 B.
+    let err = ariad_host::tools::run::with_inline_json_cap_for_test(140, || {
+        run_tool(&wrapped_boundary_req)
+    })
+    .expect_err("oversized inputless tool without -o must fail with Usage");
     assert!(
-        matches!(err2, ToolError::DestinationExists(_)),
-        "expected DestinationExists, got {err2:?}"
+        matches!(err, ToolError::Usage(_)),
+        "expected ToolError::Usage, got {err:?}"
     );
-    assert_eq!(err2.exit_code(), 6);
-    assert_eq!(err2.code(), "destination_exists");
-    assert_eq!(fs::read(expected).unwrap(), first_bytes);
-    assert!(!Path::new("document.recipe-from-text-2.json").exists());
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "usage");
+    assert_eq!(fs::read_dir(".").unwrap().count(), 0);
 
-    fs::write(expected, b"{\"stale\":true}").unwrap();
-    let res3 = run_tool(&req.with_overwrite(true))
-        .expect("overwrite=true must replace document.recipe-from-text.json");
-    assert!(res3.inline_json.is_none());
-    assert_eq!(res3.artifacts.len(), 1);
-    assert_eq!(
-        fs::canonicalize(&res3.artifacts[0].path).unwrap(),
-        fs::canonicalize(expected).unwrap()
-    );
-    assert!(fs::metadata(expected).unwrap().len() > 32 * 1024 * 1024);
+    // 2. Providing `-o <file>.json` or `-o <dir>/` for the same oversized inputless output
+    // publishes cleanly without writing anything to CWD.
+    let dest_tmp = TempDir::new().unwrap();
+    let out_file = dest_tmp.path().join("explicit-inputless.json");
+    let file_res = ariad_host::tools::run::with_inline_json_cap_for_test(140, || {
+        run_tool(&ToolRequest {
+            output: OutputTarget::Path(out_file.clone()),
+            ..wrapped_boundary_req.clone()
+        })
+    })
+    .expect("oversized inputless tool with -o <file>.json must publish");
+    assert!(file_res.inline_json.is_none());
+    let file_disk: serde_json::Value =
+        serde_json::from_slice(&fs::read(&out_file).unwrap()).unwrap();
+    assert_eq!(file_disk["origin"], "imported");
+    assert_eq!(file_disk["requires_confirmation"], true);
+    assert_eq!(fs::read_dir(".").unwrap().count(), 0);
+
+    let out_dir = dest_tmp.path().join("dir-out");
+    fs::create_dir_all(&out_dir).unwrap();
+    let dir_res = ariad_host::tools::run::with_inline_json_cap_for_test(140, || {
+        run_tool(&ToolRequest {
+            output: OutputTarget::Directory(out_dir.clone()),
+            ..wrapped_boundary_req
+        })
+    })
+    .expect("oversized inputless tool with OutputTarget::Directory must publish");
+    assert!(dir_res.inline_json.is_none());
+    let dir_expected = out_dir.join("document.recipe-from-text.json");
+    assert_eq!(dir_res.artifacts.len(), 1);
+    assert_eq!(dir_res.artifacts[0].path, dir_expected);
+    let dir_disk: serde_json::Value =
+        serde_json::from_slice(&fs::read(&dir_expected).unwrap()).unwrap();
+    assert_eq!(dir_disk["origin"], "imported");
+    assert_eq!(dir_disk["requires_confirmation"], true);
+    assert_eq!(fs::read_dir(".").unwrap().count(), 0);
 }
 
 #[test]
@@ -1691,4 +1706,380 @@ fn default_beside_input_rule_ii_pdf_compare_diff_and_oversized_fallback() {
         serde_json::from_slice(&fs::read(&over_json).unwrap())
             .expect("valid overwritten compare JSON artifact");
     assert_eq!(parsed_overwritten["summary"]["pages_before"], 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn default_beside_input_scrubs_secrets_in_oversized_engine_json() {
+    use ariad_core::limits::Limits;
+    use ariad_host::{runner::EngineCommand, sandbox::SandboxMode, tools::SecretBag};
+    use std::ffi::OsString;
+
+    let tmp = TempDir::new().expect("create tempdir");
+    let input_pdf = tmp.path().join("report.pdf");
+    fs::copy(sample_pdf(), &input_pdf).expect("copy sample pdf");
+
+    let secret_token = "engine-oversized-secret-token-42";
+    let mut spec = *ariad_core::tools::find("pdf.text_layout").expect("registered pdf.text_layout");
+    spec.engine = "qpdf";
+    let script = format!(
+        r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+{{
+  printf '{{"secret":"{secret_token}","pad":"'
+  head -c 33554432 /dev/zero | tr '\0' 'a'
+  printf '"}}\n'
+}} > "$ws_out/output.json"
+printf '{{"type":"artifact","path":"%s/output.json","format":"json"}}\n' "$ws_out"
+printf '%s\n' '{{"type":"result","ok":true}}'
+"#
+    );
+    let cmd = EngineCommand {
+        engine: "qpdf".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+
+    let secrets = SecretBag::new().with("api_key", secret_token).unwrap();
+    let req = ToolRequest::new(
+        "pdf.text_layout",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_spec(spec)
+    .with_limits(Limits::local())
+    .with_secrets(secrets)
+    .with_engine_command(cmd);
+
+    let outcome = run_tool(&req).expect("oversized engine JSON with secret must publish scrubbed");
+    assert!(outcome.inline_json.is_none());
+    assert_eq!(outcome.artifacts.len(), 1);
+    let expected = tmp.path().join("report.text-layout.json");
+    assert_eq!(
+        fs::canonicalize(&outcome.artifacts[0].path).unwrap(),
+        fs::canonicalize(&expected).unwrap()
+    );
+
+    let published_text = fs::read_to_string(&expected).unwrap();
+    assert!(
+        !published_text.contains(secret_token),
+        "raw secret leaked into oversized published JSON"
+    );
+    assert!(
+        published_text.contains("[REDACTED]"),
+        "published JSON must contain [REDACTED]"
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&published_text)
+        .expect("scrubbed oversized output must be valid JSON");
+    assert_eq!(parsed["secret"], "[REDACTED]");
+}
+
+#[cfg(unix)]
+#[test]
+fn ai_recipe_from_text_bounds_ingestion_and_writes_wrapped_artifact() {
+    use ariad_core::limits::Limits;
+    use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
+    use std::{
+        ffi::OsString,
+        io::{Read, Write},
+        net::TcpListener,
+        process::Command,
+        thread,
+    };
+
+    const CLOUD_CHILD_ENV: &str = "ARIAD_TEST_AI_RECIPE_CLOUD_CHILD";
+    if let Some(cloud_url) = std::env::var_os(CLOUD_CHILD_ENV) {
+        let tmp = TempDir::new().unwrap();
+        let req_base = |target: OutputTarget| {
+            ToolRequest::new("ai.recipe_from_text", Vec::new(), target)
+                .with_plan(ariad_core::tools::Plan::Pro)
+                .with_params(json!({
+                    "prompt": "rotate pages",
+                    "provider": "cloud",
+                    "cloud_consent": true
+                }))
+                .with_limits(Limits::local())
+        };
+        assert!(cloud_url.to_str().is_some());
+
+        // 1. Cloud HTTP response exceeding `json_inline_cap` returns `LimitExceeded`.
+        let err = ariad_host::tools::run::with_inline_json_cap_for_test(64, || {
+            run_tool(&req_base(OutputTarget::Path(
+                tmp.path().join("too-big.json"),
+            )))
+        })
+        .expect_err("cloud response > inline_cap must fail with LimitExceeded");
+        assert_eq!(err, ToolError::LimitExceeded);
+        assert!(!tmp.path().join("too-big.json").exists());
+
+        // 2. Cloud `-o out.json` and `OutputTarget::Directory` both write wrapped JSON == inline_json.
+        let out_file = tmp.path().join("cloud-out.json");
+        let file_res = run_tool(&req_base(OutputTarget::Path(out_file.clone()))).unwrap();
+        let file_inline = file_res.inline_json.expect("cloud inline_json present");
+        let file_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(&out_file).unwrap()).unwrap();
+        assert_eq!(file_disk, file_inline);
+        assert_eq!(file_disk["origin"], "imported");
+        assert_eq!(file_disk["requires_confirmation"], true);
+        assert!(file_disk["recipe"]["version"].is_string());
+
+        let out_dir = tmp.path().join("cloud-dir");
+        fs::create_dir_all(&out_dir).unwrap();
+        let dir_res = run_tool(&req_base(OutputTarget::Directory(out_dir.clone()))).unwrap();
+        let dir_inline = dir_res.inline_json.expect("cloud dir inline_json present");
+        let dir_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(&dir_res.artifacts[0].path).unwrap()).unwrap();
+        assert_eq!(dir_disk, dir_inline);
+        assert_eq!(dir_disk["origin"], "imported");
+        assert_eq!(dir_disk["requires_confirmation"], true);
+        return;
+    }
+
+    // Local engine path checks.
+    let script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+printf '{"version":"ariad-recipe/1","steps":[{"tool":"pdf.rotate","params":{"angle":90}}]}\n' > "$ws_out/output.json"
+printf '{"type":"artifact","path":"%s/output.json","format":"json"}\n' "$ws_out"
+printf '%s\n' '{"type":"result","ok":true}'
+"#;
+    let cmd = EngineCommand {
+        engine: "ai".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+
+    let tmp = TempDir::new().unwrap();
+    let local_out = tmp.path().join("local-out.json");
+    let local_req = ToolRequest::new(
+        "ai.recipe_from_text",
+        Vec::new(),
+        OutputTarget::Path(local_out.clone()),
+    )
+    .with_params(json!({"prompt": "rotate pages"}))
+    .with_limits(Limits::local())
+    .with_engine_command(cmd.clone());
+
+    // 1. Local engine output exceeding `inline_cap` returns `LimitExceeded`.
+    let local_err =
+        ariad_host::tools::run::with_inline_json_cap_for_test(32, || run_tool(&local_req))
+            .expect_err("local engine output > inline_cap must return LimitExceeded");
+    assert_eq!(local_err, ToolError::LimitExceeded);
+    assert!(!local_out.exists());
+
+    // 2. Local `-o out.json` and `Directory` publish wrapped payload identical to `inline_json`.
+    let local_res = run_tool(&local_req).unwrap();
+    let local_inline = local_res.inline_json.expect("local inline_json present");
+    let local_disk: serde_json::Value =
+        serde_json::from_slice(&fs::read(&local_out).unwrap()).unwrap();
+    assert_eq!(local_disk, local_inline);
+    assert_eq!(local_disk["origin"], "imported");
+    assert_eq!(local_disk["requires_confirmation"], true);
+    assert_eq!(local_disk["recipe"]["version"], "ariad-recipe/1");
+
+    let local_dir = tmp.path().join("local-dir");
+    fs::create_dir_all(&local_dir).unwrap();
+    let dir_req = ToolRequest::new(
+        "ai.recipe_from_text",
+        Vec::new(),
+        OutputTarget::Directory(local_dir.clone()),
+    )
+    .with_params(json!({"prompt": "rotate pages"}))
+    .with_limits(Limits::local())
+    .with_engine_command(cmd);
+    let local_dir_res = run_tool(&dir_req).unwrap();
+    let local_dir_disk: serde_json::Value =
+        serde_json::from_slice(&fs::read(&local_dir_res.artifacts[0].path).unwrap()).unwrap();
+    assert_eq!(local_dir_disk, local_dir_res.inline_json.unwrap());
+
+    // Cloud path checks in an isolated child process with a loopback mock endpoint (3 responses).
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let recipe_content = serde_json::to_string(&json!({
+            "version": "ariad-recipe/1",
+            "steps": [{"tool": "pdf.rotate", "params": {"angle": 90}}]
+        }))
+        .unwrap();
+        let response_body = serde_json::to_vec(&json!({
+            "choices": [{"message": {"content": recipe_content}}]
+        }))
+        .unwrap();
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(15)));
+            let mut request = Vec::new();
+            let mut req_buf = [0_u8; 4096];
+            loop {
+                let n = stream.read(&mut req_buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&req_buf[..n]);
+                if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    let content_length = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|s| s.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    if request.len() >= end + 4 + content_length {
+                        break;
+                    }
+                }
+            }
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                response_body.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(&response_body);
+            let _ = stream.flush();
+        }
+    });
+    let cloud_url = format!("http://{addr}/chat/completions");
+    let child_out = Command::new(std::env::current_exe().unwrap())
+        .env(CLOUD_CHILD_ENV, &cloud_url)
+        .env("ASHIFT_AI_CLOUD_URL", &cloud_url)
+        .env("ASHIFT_TEST_ALLOW_LOOPBACK_AI", "1")
+        .args([
+            "--exact",
+            "ai_recipe_from_text_bounds_ingestion_and_writes_wrapped_artifact",
+            "--nocapture",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        child_out.status.success(),
+        "cloud child failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&child_out.stdout),
+        String::from_utf8_lossy(&child_out.stderr)
+    );
+    server.join().unwrap();
+}
+
+#[test]
+fn single_pdf_tool_stages_and_publishes_oversized_companion_report() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let src_pdf = repo_root.join("fixtures/pdf-tools/watermark-layer.pdf");
+
+    let detect_res = run_tool(&ToolRequest::new(
+        "pdf.watermark_detect",
+        vec![InputRef::new(&src_pdf)],
+        OutputTarget::None,
+    ))
+    .unwrap();
+    let candidate_id = detect_res.inline_json.unwrap()["candidates"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // 1. DefaultBesideInput when companion JSON exceeds inline cap:
+    // publishes `<stem>.unwatermarked.pdf` + `<stem>.unwatermarked.json` (no `-001`/`-002`)
+    // and emits `report_not_inlined` warning.
+    let tmp_default = TempDir::new().unwrap();
+    let input_default = tmp_default.path().join("watermarked.pdf");
+    fs::copy(&src_pdf, &input_default).unwrap();
+    let default_req = ToolRequest::new(
+        "pdf.watermark_remove",
+        vec![InputRef::new(&input_default)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(json!({"candidates": [candidate_id]}));
+    let default_res =
+        ariad_host::tools::run::with_inline_json_cap_for_test(32, || run_tool(&default_req))
+            .expect("oversized companion report on DefaultBesideInput must succeed");
+    assert!(default_res.inline_json.is_none());
+    assert!(
+        default_res
+            .warnings
+            .iter()
+            .any(|w| w.code == "report_not_inlined")
+    );
+    assert_eq!(default_res.artifacts.len(), 2);
+    let expected_pdf = tmp_default.path().join("watermarked.unwatermarked.pdf");
+    let expected_json = tmp_default.path().join("watermarked.unwatermarked.json");
+    assert_eq!(
+        fs::canonicalize(&default_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(&expected_pdf).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&default_res.artifacts[1].path).unwrap(),
+        fs::canonicalize(&expected_json).unwrap()
+    );
+    assert!(fs::read(&expected_pdf).unwrap().starts_with(b"%PDF-"));
+    let companion_val: serde_json::Value =
+        serde_json::from_slice(&fs::read(&expected_json).unwrap()).unwrap();
+    assert!(companion_val["removed"].is_array());
+
+    // 2. Explicit `-o <file>.pdf` (`OutputTarget::Path`): publishes `<file>.pdf` +
+    // `<file_stem>.unwatermarked.json` in the same parent directory; `-o <file>.json` stays rejected.
+    let tmp_explicit = TempDir::new().unwrap();
+    let explicit_pdf = tmp_explicit.path().join("cleaned.pdf");
+    let explicit_json = tmp_explicit.path().join("cleaned.unwatermarked.json");
+    let explicit_req = ToolRequest::new(
+        "pdf.watermark_remove",
+        vec![InputRef::new(&src_pdf)],
+        OutputTarget::Path(explicit_pdf.clone()),
+    )
+    .with_params(json!({"candidates": [candidate_id]}));
+    let explicit_res =
+        ariad_host::tools::run::with_inline_json_cap_for_test(32, || run_tool(&explicit_req))
+            .expect("explicit -o <file>.pdf with companion report must succeed");
+    assert!(explicit_res.inline_json.is_none());
+    assert_eq!(explicit_res.artifacts.len(), 2);
+    assert_eq!(
+        fs::canonicalize(&explicit_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(&explicit_pdf).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&explicit_res.artifacts[1].path).unwrap(),
+        fs::canonicalize(&explicit_json).unwrap()
+    );
+
+    let rejected_json = tmp_explicit.path().join("cleaned.json");
+    let preflight_err = run_tool(&ToolRequest {
+        output: OutputTarget::Path(rejected_json),
+        ..explicit_req
+    })
+    .expect_err("explicit -o <file>.json on pdf.watermark_remove must stay rejected");
+    assert!(matches!(preflight_err, ToolError::Confinement(_)));
+
+    // 3. Naming template with companion report ensures `.json` extension on companion artifact.
+    let tmp_dir = TempDir::new().unwrap();
+    let templated_req = ToolRequest::new(
+        "pdf.watermark_remove",
+        vec![InputRef::new(&input_default)],
+        OutputTarget::Directory(tmp_dir.path().to_path_buf()),
+    )
+    .with_params(json!({"candidates": [candidate_id]}))
+    .with_naming_template("{stem}-{n}.pdf");
+    let templated_res =
+        ariad_host::tools::run::with_inline_json_cap_for_test(32, || run_tool(&templated_req))
+            .expect("naming template with companion report must keep .json extension");
+    assert_eq!(templated_res.artifacts.len(), 2);
+    assert_eq!(
+        fs::canonicalize(&templated_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(tmp_dir.path().join("watermarked-001.pdf")).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&templated_res.artifacts[1].path).unwrap(),
+        fs::canonicalize(tmp_dir.path().join("watermarked-001.json")).unwrap()
+    );
 }

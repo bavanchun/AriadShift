@@ -569,7 +569,7 @@ fn execute_redact(
         json!(plan.invalidates_signatures()),
     );
 
-    let convert_warnings: Vec<ConvertWarning> = warnings
+    let mut convert_warnings: Vec<ConvertWarning> = warnings
         .into_iter()
         .map(|msg| ConvertWarning {
             code: "signatures_invalidated".into(),
@@ -579,11 +579,22 @@ fn execute_redact(
 
     let report_val = serde_json::to_value(&report)
         .map_err(|e| ToolError::EngineFailure(job.scrubber.scrub(&e.to_string())))?;
-    let (_, _, inline_json) =
+    let (_, json_bytes, inline_json) =
         super::run::scrub_and_cap_inline_json(report_val, job.limits, job.scrubber)?;
+    if (json_bytes.len() as u64) > job.limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    let mut artifacts = vec![(staged_output, "pdf".into())];
+    if inline_json.is_none() {
+        let companion_path = job.workspace.output_dir().join("report.json");
+        fs::write(&companion_path, &json_bytes)
+            .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+        artifacts.push((companion_path, "json".into()));
+        convert_warnings.push(super::run::report_not_inlined_warning());
+    }
 
     Ok(RawToolExecution {
-        artifacts: vec![(staged_output, "pdf".into())],
+        artifacts,
         warnings: convert_warnings,
         metrics,
         inline_json,
@@ -782,12 +793,17 @@ fn execute_verify(
     if (json_bytes.len() as u64) > job.limits.max_decompressed_bytes {
         return Err(ToolError::LimitExceeded);
     }
-    let staged_output = job.workspace.output_dir().join("output.json");
-    fs::write(&staged_output, &json_bytes)
-        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    let artifacts = if inline_json.is_none() {
+        let staged_output = job.workspace.output_dir().join("output.json");
+        fs::write(&staged_output, &json_bytes)
+            .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+        vec![(staged_output, "json".into())]
+    } else {
+        Vec::new()
+    };
 
     Ok(RawToolExecution {
-        artifacts: vec![(staged_output, "json".into())],
+        artifacts,
         warnings: Vec::new(),
         metrics,
         inline_json,
