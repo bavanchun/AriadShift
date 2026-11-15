@@ -62,9 +62,10 @@ js:
 js-licenses:
     node scripts/check-js-licenses.mjs
 
-# Catalogue gate for locales/: ICU syntax, argument parity, completeness; see docs/i18n.md.
+# Catalogue gate for locales/: ICU syntax, argument parity, completeness, and the macOS
+# Localizable.xcstrings (fresh generation, every mac key used in Swift); see docs/i18n.md.
 i18n-check:
-    node --test scripts/i18n-lib.test.mjs
+    node --test scripts/i18n-lib.test.mjs scripts/i18n-xcstrings.test.mjs
     node scripts/i18n-check.mjs
 
 # Biome lint and format check of the JavaScript workspace.
