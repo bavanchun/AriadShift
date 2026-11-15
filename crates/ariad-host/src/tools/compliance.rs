@@ -213,11 +213,6 @@ fn execute_to_pdfa(
     let out_filename = single_output_name(&stem, suffix, "pdf");
     let final_pdf_path = workspace.output_dir().join(&out_filename);
 
-    workspace.remove_artifact(&out_filename).map_err(|e| {
-        ToolError::EngineFailure(scrubber.scrub(&format!(
-            "could not safely clear staged compliance output '{out_filename}': {e}"
-        )))
-    })?;
     fs::rename(&candidate_path, &final_pdf_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
     attach_compliance_report(

@@ -4,8 +4,7 @@
 //! then packages the images into a `.cbz` archive with natural-ordered filenames.
 
 use std::{
-    fs::File,
-    io::{Read, Write},
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -156,13 +155,8 @@ pub fn execute(
     // Sort image entries in natural sort order
     image_entries.sort_by(|(a, _), (b, _)| ariad_pdf::cbz::natural_cmp(a, b));
 
-    // Create the output CBZ archive in workspace output_dir
-    let cbz_rel_path = PathBuf::from("output.cbz");
-    let cbz_abs_path = workspace.output_dir().join(&cbz_rel_path);
-
-    let file = File::create(&cbz_abs_path)
-        .map_err(|e| ToolError::OutputIo(format!("could not create cbz output: {e}")))?;
-    let mut zip = ZipWriter::new(file);
+    // Package images in memory, then stage through the workspace output handle
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     let num_pages = image_entries.len();
@@ -180,8 +174,12 @@ pub fn execute(
             .map_err(|e| ToolError::OutputIo(format!("could not write cbz data: {e}")))?;
     }
 
-    zip.finish()
-        .map_err(|e| ToolError::OutputIo(format!("could not finalize cbz: {e}")))?;
+    let cbz_bytes = zip
+        .finish()
+        .map_err(|e| ToolError::OutputIo(format!("could not finalize cbz: {e}")))?
+        .into_inner();
+    let cbz_abs_path =
+        super::run::write_staged_artifact(workspace, "output.cbz", &cbz_bytes, scrubber)?;
 
     Ok(RawToolExecution {
         artifacts: vec![(cbz_abs_path, "cbz".to_string())],

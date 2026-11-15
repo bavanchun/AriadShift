@@ -590,9 +590,7 @@ fn cloud_artifacts(
                 {
                     return Err(invalid());
                 }
-                let path = workspace
-                    .output_dir()
-                    .join(format!("table_{:03}.{format}", index + 1));
+                let filename = format!("table_{:03}.{format}", index + 1);
                 let rows: Vec<Vec<String>> =
                     serde_json::from_value(table.get("rows").cloned().ok_or_else(invalid)?)
                         .map_err(|_| invalid())?;
@@ -624,8 +622,8 @@ fn cloud_artifacts(
                             .bytes
                     }
                 };
-                fs::write(&path, bytes)
-                    .map_err(|_| ToolError::OutputIo("could not write extracted table".into()))?;
+                let path =
+                    super::run::write_staged_artifact(workspace, &filename, &bytes, scrubber)?;
                 result.artifacts.push((path, format.into()));
             }
             if result.artifacts.len() == 1
