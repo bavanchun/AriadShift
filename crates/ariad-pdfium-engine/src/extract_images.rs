@@ -4908,10 +4908,9 @@ mod corpus_tests {
             .as_dict_mut()
             .unwrap()
             .set("Count", 2);
-        assert!(
-            preflight_page_tree(&doc, 32).is_err(),
-            "incorrect root count"
-        );
+        let err = preflight_page_tree(&doc, 32).expect_err("incorrect root count");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Page tree Count does not match its leaves.");
     }
 
     fn collect_pdfs(dir: &Path, paths: &mut Vec<PathBuf>) {
@@ -5789,16 +5788,17 @@ mod corpus_tests {
         assert!(text.contains("/ColorSpace /DeviceGray "));
         assert!(text.contains("/Filter /ASCIIHexDecode "));
         assert!(text.ends_with("ID 00> EI "));
-        assert!(
-            rewrite_preflighted_content(
-                &ctx,
-                &doc,
-                b"BI /W 1 /H 1 /BPC 8 /CS /G /F (AHx) ID 00> EI",
-                4096,
-                &mut 0
-            )
-            .is_err()
-        );
+        let err = rewrite_preflighted_content(
+            &ctx,
+            &doc,
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F (AHx) ID 00> EI",
+            4096,
+            &mut 0,
+        )
+        .map(|_| ())
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "PDF resource operand is ambiguous.");
     }
 
     #[test]
@@ -5941,7 +5941,12 @@ mod corpus_tests {
         let mut ctx = ToolContext::new("xref", "pdf.render", paths, Limits::local(), &mut sink);
         let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
         assert!(doc.repaired_xref());
-        assert!(check_extraction_xref(&doc).is_err());
+        let err = check_extraction_xref(&doc).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "Image extraction cannot inspect a PDF with a repaired cross-reference table."
+        );
         assert!(ctx.load_validated_pdf_bytes().is_ok());
         drop(ctx);
         assert!(String::from_utf8(sink).unwrap().contains("repaired_xref"));
@@ -6172,7 +6177,9 @@ mod corpus_tests {
             .unwrap();
         assert_eq!(child.xobject_id(&doc, b"X").unwrap(), Some((7, 0)));
         let invalid = Object::Dictionary(dictionary! { "XObject" => 42 });
-        assert!(parent.child(&doc, Some(&invalid)).is_err());
+        let err = parent.child(&doc, Some(&invalid)).map(|_| ()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "A resource limit was exceeded.");
         assert_eq!(
             parent
                 .child(&doc, None)
@@ -6534,7 +6541,10 @@ mod corpus_tests {
                 Object::Dictionary(dictionary! {}),
             ]),
         ] {
-            assert!(count(bad.clone()).is_err(), "expected err for {bad:?}");
+            let err = count(bad.clone()).expect_err("invalid color space");
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{bad:?}");
+            // `color_components` reports every invalid family with the generic reason.
+            assert_eq!(err.message, "A resource limit was exceeded.", "{bad:?}");
         }
     }
 
@@ -6577,18 +6587,18 @@ mod corpus_tests {
 
         let unresolvable = b"BI /W 1 /H 1 /BPC 8 /CS [/I /CsBase 0 <FF>] ID \x00 EI";
         let mut reject_work = 0;
-        assert!(
-            rewrite_preflighted_content_in_scope(
-                &ctx,
-                &doc,
-                unresolvable,
-                4096,
-                &scope,
-                &mut reject_work,
-            )
-            .is_err(),
-            "resource-named Indexed base must fail closed"
-        );
+        let err = rewrite_preflighted_content_in_scope(
+            &ctx,
+            &doc,
+            unresolvable,
+            4096,
+            &scope,
+            &mut reject_work,
+        )
+        .map(|_| ())
+        .expect_err("resource-named Indexed base must fail closed");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "A resource limit was exceeded.");
     }
 
     #[test]
