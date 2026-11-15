@@ -5,7 +5,6 @@
 
 use std::{
     collections::BTreeMap,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -49,6 +48,14 @@ pub type TablesArtifacts = (Vec<(PathBuf, String)>, Vec<ConvertWarning>);
 pub fn tables_to_csv_artifacts(
     document: &Document,
     workspace: &Workspace,
+) -> Result<TablesArtifacts, ToolError> {
+    stage_csv_artifacts(document, workspace, &SecretScrubber::new())
+}
+
+fn stage_csv_artifacts(
+    document: &Document,
+    workspace: &Workspace,
+    scrubber: &SecretScrubber,
 ) -> Result<TablesArtifacts, ToolError> {
     let tables = ariad_core::writer::csv::find_tables(&document.body);
     if tables.is_empty() {
@@ -112,9 +119,12 @@ pub fn tables_to_csv_artifacts(
             }
 
             let file_name = format!("table-{:03}.csv", idx + 1);
-            let path = workspace.output_dir().join(&file_name);
-            fs::write(&path, csv_text.as_bytes())
-                .map_err(|e| ToolError::OutputIo(format!("failed to write CSV artifact: {e}")))?;
+            let path = super::run::write_staged_artifact(
+                workspace,
+                &file_name,
+                csv_text.as_bytes(),
+                scrubber,
+            )?;
             artifacts.push((path, "csv".to_owned()));
         }
     }
@@ -188,7 +198,7 @@ pub(super) fn execute(
     _params: &Value,
     workspace: &Workspace,
     limits: &Limits,
-    _scrubber: &SecretScrubber,
+    scrubber: &SecretScrubber,
     engine_program: Option<&Path>,
     cancel: &CancellationToken,
     _on_event: &mut dyn FnMut(ToolEvent),
@@ -200,7 +210,7 @@ pub(super) fn execute(
 
     let doc = extract_document_with_docling(input_path, workspace, limits, engine_program, cancel)?;
 
-    let (artifacts, warnings) = tables_to_csv_artifacts(&doc, workspace)?;
+    let (artifacts, warnings) = stage_csv_artifacts(&doc, workspace, scrubber)?;
     Ok(RawToolExecution {
         artifacts,
         warnings,
@@ -214,6 +224,7 @@ pub(super) fn execute(
 mod tests {
     use super::*;
     use ariad_core::ir::{Alignment, ColumnSpec, Inline, TableCell};
+    use std::fs;
 
     fn make_cell(text: &str) -> TableCell {
         TableCell {
@@ -376,5 +387,42 @@ mod tests {
         .finalize_import();
         let res = tables_to_csv_artifacts(&doc, &ws);
         assert!(matches!(res, Err(ToolError::LimitExceeded)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tables_to_csv_does_not_follow_planted_symlink() {
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.csv");
+        fs::write(&victim, b"untouched-tables-victim").unwrap();
+
+        let ws = Workspace::new().unwrap();
+        let planted = ws.output_dir().join("table-001.csv");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+        let doc = Document {
+            body: vec![Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: vec![vec![make_cell("Header")]],
+                body: vec![vec![make_cell("value")]],
+                footnotes: Vec::new(),
+            }],
+            ..Default::default()
+        }
+        .finalize_import();
+        let (artifacts, _) =
+            tables_to_csv_artifacts(&doc, &ws).expect("staging replaces the planted link");
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-tables-victim");
+        assert_eq!(artifacts[0].0, planted);
+        let meta = fs::symlink_metadata(&planted).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        assert!(fs::read_to_string(&planted).unwrap().contains("value"));
     }
 }
