@@ -263,6 +263,27 @@ fn destination(
         _ => None,
     }
 }
+/// Whether a value cut at the depth limit still leads to an unread action
+/// dictionary, looking through one reference or array level.
+fn holds_action(doc: &Document, value: &Object, seen: &HashSet<ObjectId>) -> bool {
+    let direct = |value: &Object| match value {
+        Object::Dictionary(_) => true,
+        Object::Reference(id) => {
+            !seen.contains(id) && matches!(doc.get_object(*id), Ok(Object::Dictionary(_)))
+        }
+        _ => false,
+    };
+    match value {
+        Object::Array(items) => items.iter().any(direct),
+        Object::Reference(id) if !seen.contains(id) => match doc.get_object(*id) {
+            Ok(Object::Array(items)) => items.iter().any(direct),
+            Ok(other) => direct(other),
+            Err(_) => false,
+        },
+        other => direct(other),
+    }
+}
+
 /// Summarise an annotation's actions. A chain deeper than the nesting limit is
 /// cut at the limit rather than failing the listing; the returned flag reports
 /// that some actions past the cut were not read.
@@ -287,7 +308,9 @@ fn actions(
                 }));
             }
             if depth > usize::from(limits.max_nesting_depth) {
-                truncated = true;
+                // Report a cut only when an unread action is actually dropped,
+                // not for a cycle back-reference or a non-action value.
+                truncated |= holds_action(doc, value, &seen);
                 continue;
             }
             ctx.check()?;
@@ -689,8 +712,13 @@ pub fn list(
         });
     }
     if truncated_action_chains > 0 {
+        let subject = if truncated_action_chains == 1 {
+            "1 annotation has an action chain".to_owned()
+        } else {
+            format!("{truncated_action_chains} annotations have action chains")
+        };
         output.warnings.push(format!(
-            "action_chain_truncated: {truncated_action_chains} annotations have action chains deeper than the nesting limit; later actions were not read"
+            "action_chain_truncated: {subject} deeper than the nesting limit; later actions were not read"
         ));
     }
     Ok(output)
