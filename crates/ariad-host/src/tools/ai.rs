@@ -1,6 +1,6 @@
 //! Offline engine dispatch and consent-gated, host-brokered cloud AI.
 
-use std::{collections::BTreeMap, fs, path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, fs, io::Read, path::PathBuf, time::Duration};
 
 use ariad_core::{
     format::Format,
@@ -14,7 +14,7 @@ use url::Url;
 use super::{
     engine,
     inprocess::RawToolExecution,
-    run::{ToolError, ToolEvent, ToolRequest},
+    run::{ToolError, ToolEvent, ToolRequest, scrub_and_cap_inline_json},
     secrets::SecretScrubber,
 };
 use crate::{
@@ -146,13 +146,54 @@ pub fn execute(
         on_event,
     )?;
     if spec.id == "ai.recipe_from_text" {
-        let value = result
-            .inline_json
-            .take()
-            .ok_or_else(|| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
+        let inline_cap = super::run::json_inline_cap(&request.limits);
+        let value = if let Some(val) = result.inline_json.take() {
+            val
+        } else {
+            if result.artifacts.len() != 1 {
+                return Err(ToolError::EngineFailure(
+                    "AI recipe output must be JSON".into(),
+                ));
+            }
+            let artifact_path = result
+                .artifacts
+                .first()
+                .filter(|(_, fmt)| fmt.eq_ignore_ascii_case("json"))
+                .map(|(p, _)| p)
+                .ok_or_else(|| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
+            let file = workspace
+                .open_artifact(artifact_path)
+                .map_err(|_| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
+            let mut bytes = Vec::new();
+            file.take(inline_cap.saturating_add(1))
+                .read_to_end(&mut bytes)
+                .map_err(|_| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
+            if (bytes.len() as u64) > inline_cap {
+                return Err(ToolError::LimitExceeded);
+            }
+            let mut parsed: Value = serde_json::from_slice(&bytes)
+                .map_err(|_| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
+            drop(bytes);
+            scrubber.scrub_value_in_place(&mut parsed);
+            parsed
+        };
         validate_recipe_draft(&value)?;
-        result.inline_json =
-            Some(json!({"recipe":value,"origin":"imported","requires_confirmation":true}));
+        let wrapped = json!({"recipe": value, "origin": "imported", "requires_confirmation": true});
+        let (_, wrapped_bytes, cap_inline) =
+            scrub_and_cap_inline_json(wrapped, &request.limits, scrubber)?;
+        if (wrapped_bytes.len() as u64) > request.limits.max_decompressed_bytes {
+            return Err(ToolError::LimitExceeded);
+        }
+        let staged_path = workspace.output_dir().join("result.json");
+        for (old_path, _) in result.artifacts.drain(..) {
+            if old_path != staged_path {
+                let _ = fs::remove_file(old_path);
+            }
+        }
+        let staged_path =
+            super::run::write_staged_artifact(workspace, "result.json", &wrapped_bytes, scrubber)?;
+        result.artifacts.push((staged_path, "json".into()));
+        result.inline_json = cap_inline;
     }
     Ok(result)
 }
@@ -294,7 +335,11 @@ fn cloud(
             Vec::new()
         })
         .max_redirects(0)
-        .max_response_bytes(request.limits.max_ir_json_bytes.min(32 * 1024 * 1024) as usize)
+        .max_response_bytes(if spec.id == "ai.recipe_from_text" {
+            super::run::json_inline_cap(&request.limits).min(request.limits.max_ir_json_bytes)
+        } else {
+            request.limits.max_ir_json_bytes.min(32 * 1024 * 1024)
+        } as usize)
         .total_timeout(timeout)
         .read_timeout(timeout)
         .build()
@@ -314,8 +359,11 @@ fn cloud(
     if request.cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
-    let response = client.send(http).map_err(|e| {
-        ToolError::EngineFailure(scrubber.scrub(&format!("cloud AI request failed: {e}")))
+    let response = client.send(http).map_err(|e| match e {
+        crate::net::NetError::ResponseTooLarge { .. } => ToolError::LimitExceeded,
+        other => {
+            ToolError::EngineFailure(scrubber.scrub(&format!("cloud AI request failed: {other}")))
+        }
     })?;
     if request.cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
@@ -353,6 +401,7 @@ fn cloud(
         &source_pages,
         workspace,
         request,
+        scrubber,
     )
 }
 
@@ -365,6 +414,7 @@ fn cloud_artifacts(
     source_pages: &BTreeMap<u32, String>,
     workspace: &Workspace,
     request: &ToolRequest,
+    scrubber: &SecretScrubber,
 ) -> Result<RawToolExecution, ToolError> {
     let format = params
         .get("format")
@@ -375,15 +425,19 @@ fn cloud_artifacts(
         warnings: Vec::new(),
         metrics: BTreeMap::new(),
         inline_json: None,
+        companion_report: false,
     };
     let invalid =
         || ToolError::EngineFailure("cloud AI output does not match the tool contract".into());
     match spec.id {
         "ai.recipe_from_text" => {
             let recipe = validate_recipe_draft(value.get("recipe").unwrap_or(&value))?;
-            value = serde_json::to_value(recipe).map_err(|_| invalid())?;
-            result.inline_json =
-                Some(json!({"recipe":value,"origin":"imported","requires_confirmation":true}));
+            let recipe_value = serde_json::to_value(recipe).map_err(|_| invalid())?;
+            let recipe_bytes = serde_json::to_vec(&recipe_value).map_err(|_| invalid())?;
+            if (recipe_bytes.len() as u64) > super::run::json_inline_cap(&request.limits) {
+                return Err(ToolError::LimitExceeded);
+            }
+            value = json!({"recipe": recipe_value, "origin": "imported", "requires_confirmation": true});
         }
         "ai.ask" => {
             if !value.get("answer").is_some_and(Value::is_string) {
@@ -444,9 +498,12 @@ fn cloud_artifacts(
                 return Err(invalid());
             }
             if format == "md" {
-                let path = workspace.output_dir().join("summary.md");
-                fs::write(&path, format!("{summary}\n"))
-                    .map_err(|_| ToolError::OutputIo("could not write summary".into()))?;
+                let path = super::run::write_staged_artifact(
+                    workspace,
+                    "summary.md",
+                    format!("{summary}\n").as_bytes(),
+                    scrubber,
+                )?;
                 result.artifacts.push((path, "md".into()));
                 return Ok(result);
             }
@@ -533,9 +590,7 @@ fn cloud_artifacts(
                 {
                     return Err(invalid());
                 }
-                let path = workspace
-                    .output_dir()
-                    .join(format!("table_{:03}.{format}", index + 1));
+                let filename = format!("table_{:03}.{format}", index + 1);
                 let rows: Vec<Vec<String>> =
                     serde_json::from_value(table.get("rows").cloned().ok_or_else(invalid)?)
                         .map_err(|_| invalid())?;
@@ -567,27 +622,29 @@ fn cloud_artifacts(
                             .bytes
                     }
                 };
-                fs::write(&path, bytes)
-                    .map_err(|_| ToolError::OutputIo("could not write extracted table".into()))?;
+                let path =
+                    super::run::write_staged_artifact(workspace, &filename, &bytes, scrubber)?;
                 result.artifacts.push((path, format.into()));
             }
-            if result.artifacts.len() == 1 && format == "json" {
-                result.inline_json = tables.first().cloned();
+            if result.artifacts.len() == 1
+                && format == "json"
+                && let Some(first_table) = tables.first().cloned()
+            {
+                let (_, _, inline) =
+                    scrub_and_cap_inline_json(first_table, &request.limits, scrubber)?;
+                result.inline_json = inline;
             }
             return Ok(result);
         }
         _ => return Err(invalid()),
     }
-    let path = workspace.output_dir().join("result.json");
-    fs::write(
-        &path,
-        serde_json::to_vec_pretty(&value).map_err(|_| invalid())?,
-    )
-    .map_err(|_| ToolError::OutputIo("could not write cloud output".into()))?;
-    result.artifacts.push((path, "json".into()));
-    if result.inline_json.is_none() {
-        result.inline_json = Some(value);
+    let (_, json_bytes, cap_inline) = scrub_and_cap_inline_json(value, &request.limits, scrubber)?;
+    if (json_bytes.len() as u64) > request.limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
     }
+    let path = super::run::write_staged_artifact(workspace, "result.json", &json_bytes, scrubber)?;
+    result.artifacts.push((path, "json".into()));
+    result.inline_json = cap_inline;
     Ok(result)
 }
 

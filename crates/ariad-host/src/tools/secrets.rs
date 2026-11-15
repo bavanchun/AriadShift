@@ -459,6 +459,14 @@ impl SecretScrubber {
         self.patterns.is_empty()
     }
 
+    /// Returns `true` if any registered secret pattern appears in `input`.
+    #[must_use]
+    pub fn contains_pattern(&self, input: &str) -> bool {
+        !self.patterns.is_empty()
+            && !input.is_empty()
+            && self.patterns.iter().any(|p| input.contains(p.as_str()))
+    }
+
     /// Registers a secret string along with its JSON-escaped and URL-encoded forms.
     ///
     /// Empty or whitespace-only strings are ignored to avoid corrupting output formatting.
@@ -543,6 +551,45 @@ impl SecretScrubber {
                 Value::Object(out)
             }
             other => other.clone(),
+        }
+    }
+
+    /// Recursively scrubs all string values and object keys in `value` in place.
+    pub fn scrub_value_in_place(&self, value: &mut Value) {
+        if self.patterns.is_empty() {
+            return;
+        }
+        match value {
+            Value::String(s) => {
+                if self.contains_pattern(s) {
+                    *s = self.scrub(s);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    self.scrub_value_in_place(item);
+                }
+            }
+            Value::Object(map) => {
+                let any_secret_key = map.keys().any(|k| self.contains_pattern(k));
+                if any_secret_key {
+                    let existing = std::mem::take(map);
+                    for (k, mut v) in existing {
+                        self.scrub_value_in_place(&mut v);
+                        let new_k = if self.contains_pattern(&k) {
+                            self.scrub(&k)
+                        } else {
+                            k
+                        };
+                        map.insert(new_k, v);
+                    }
+                } else {
+                    for v in map.values_mut() {
+                        self.scrub_value_in_place(v);
+                    }
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) => {}
         }
     }
 }

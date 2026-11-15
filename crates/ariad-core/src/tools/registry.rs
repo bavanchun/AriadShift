@@ -711,6 +711,39 @@ impl ToolSpec {
         true
     }
 
+    /// Returns `true` when invoking this tool with `params` emits JSON-only output
+    /// (inline on `ToolOutcome::inline_json` when within the inline cap, or published as a `.json`
+    /// artifact beside the input when oversized without `-o`).
+    ///
+    /// Excludes `pdf.compare` (handled separately alongside its visual diff PDF) and multi-format
+    /// tools that always produce non-JSON primary artifacts such as `pdf.thumbnails`,
+    /// `pdf.to_pdfa`, and `pdf.to_pdfua`.
+    #[must_use]
+    pub fn emits_json(&self, params: &serde_json::Value) -> bool {
+        let is_pure_json = self.output_format.eq_ignore_ascii_case("json")
+            && (self.output_formats.is_empty()
+                || (self.output_formats.len() == 1
+                    && self.output_formats[0].eq_ignore_ascii_case("json")));
+        if is_pure_json {
+            return true;
+        }
+        let action = params.get("action").and_then(serde_json::Value::as_str);
+        let format = params.get("format").and_then(serde_json::Value::as_str);
+        match self.id {
+            "pdf.compare" | "pdf.thumbnails" | "pdf.to_pdfa" | "pdf.to_pdfua" => false,
+            "ai.summarize" => format.unwrap_or("json").eq_ignore_ascii_case("json"),
+            "ai.translate" | "ai.extract_tables" | "pdf.annotations_export" => {
+                format.is_some_and(|f| f.eq_ignore_ascii_case("json"))
+            }
+            "pdf.forms_export" => format.unwrap_or("json").eq_ignore_ascii_case("json"),
+            "pdf.outline" => action == Some("export"),
+            "pdf.attachments" | "pdf.portfolio" | "pdf.layers" | "pdf.annotations" => {
+                action == Some("list")
+            }
+            _ => false,
+        }
+    }
+
     /// Returns the engine identifier required to execute this tool with `params`.
     ///
     /// Most tools always use [`Self::engine`]; `pdf.split` with `detect = "pixel"` requires the

@@ -203,23 +203,40 @@ pub fn execute(
         }
     }
 
-    // For JSON-emitting tools, capture the structured JSON payload inline
-    // using the workspace's O_NOFOLLOW handle rather than re-opening by raw path.
+    // For JSON-emitting tools, scrub any staged JSON artifacts when secrets are registered
+    // and capture the structured JSON payload inline when a single JSON output fits `inline_cap`.
     let mut inline_json = None;
-    let inline_cap = limits.max_decompressed_bytes.min(32 * 1024 * 1024);
-    if artifacts.len() == 1
-        && artifacts[0].1.eq_ignore_ascii_case("json")
-        && let Ok(file) = workspace.open_artifact(&artifacts[0].0)
-    {
-        let mut bytes = Vec::new();
-        if file
-            .take(inline_cap.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .is_ok()
-            && (bytes.len() as u64) <= inline_cap
-            && let Ok(parsed) = serde_json::from_slice::<Value>(&bytes)
-        {
-            inline_json = Some(scrubber.scrub_value(&parsed));
+    let inline_cap = super::run::json_inline_cap(limits);
+    let single_json = artifacts.len() == 1 && artifacts[0].1.eq_ignore_ascii_case("json");
+    if scrubber.is_empty() {
+        if single_json && let Ok(file) = workspace.open_artifact(&artifacts[0].0) {
+            let mut bytes = Vec::new();
+            if file
+                .take(inline_cap.saturating_add(1))
+                .read_to_end(&mut bytes)
+                .is_ok()
+                && (bytes.len() as u64) <= inline_cap
+                && let Ok(parsed) = serde_json::from_slice::<Value>(&bytes)
+            {
+                inline_json = Some(parsed);
+            }
+        }
+    } else {
+        for (idx, (path, fmt)) in artifacts.iter().enumerate() {
+            if !fmt.eq_ignore_ascii_case("json") {
+                continue;
+            }
+            let is_inline_candidate = single_json && idx == 0;
+            if let Some(val) = scrub_engine_json_artifact(
+                workspace,
+                path,
+                limits,
+                inline_cap,
+                is_inline_candidate,
+                scrubber,
+            )? {
+                inline_json = Some(val);
+            }
         }
     }
 
@@ -228,6 +245,7 @@ pub fn execute(
         warnings,
         metrics,
         inline_json,
+        companion_report: false,
     })
 }
 
@@ -239,6 +257,81 @@ fn engine_limits(engine: &str, limits: &Limits) -> Limits {
         effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);
     }
     effective
+}
+
+fn scrub_engine_json_artifact(
+    workspace: &Workspace,
+    path: &Path,
+    limits: &Limits,
+    inline_cap: u64,
+    is_inline_candidate: bool,
+    scrubber: &SecretScrubber,
+) -> Result<Option<Value>, ToolError> {
+    let file = workspace.open_artifact(path).map_err(|_| {
+        ToolError::EngineFailure("could not open staged engine JSON artifact".into())
+    })?;
+    let mut raw_bytes = Vec::new();
+    if file
+        .take(limits.max_decompressed_bytes.saturating_add(1))
+        .read_to_end(&mut raw_bytes)
+        .is_err()
+    {
+        return Err(ToolError::OutputIo(
+            "failed to read staged engine JSON artifact".into(),
+        ));
+    }
+    if (raw_bytes.len() as u64) > limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+
+    let raw_within_inline = (raw_bytes.len() as u64) <= inline_cap;
+    let Ok(raw_str) = std::str::from_utf8(&raw_bytes) else {
+        if !scrubber.is_empty() {
+            return Err(ToolError::EngineFailure(
+                "staged engine JSON artifact is not valid UTF-8".into(),
+            ));
+        }
+        return Ok(None);
+    };
+    if !scrubber.contains_pattern(raw_str) {
+        if is_inline_candidate && raw_within_inline {
+            return Ok(serde_json::from_slice::<Value>(&raw_bytes).ok());
+        }
+        return Ok(None);
+    }
+
+    let Ok(mut parsed) = serde_json::from_slice::<Value>(&raw_bytes) else {
+        return Err(ToolError::EngineFailure(
+            "staged engine JSON artifact is not valid JSON".into(),
+        ));
+    };
+    drop(raw_bytes);
+
+    scrubber.scrub_value_in_place(&mut parsed);
+    let scrubbed_bytes = if raw_within_inline {
+        serde_json::to_vec_pretty(&parsed)
+    } else {
+        serde_json::to_vec(&parsed)
+    }
+    .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+
+    if (scrubbed_bytes.len() as u64) > limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    workspace.remove_staged_artifact(path).map_err(|e| {
+        ToolError::EngineFailure(scrubber.scrub(&format!(
+            "could not safely clear staged engine JSON artifact: {e}"
+        )))
+    })?;
+    workspace
+        .write_staged_artifact(path, &scrubbed_bytes)
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+
+    if is_inline_candidate && (scrubbed_bytes.len() as u64) <= inline_cap {
+        Ok(Some(parsed))
+    } else {
+        Ok(None)
+    }
 }
 
 fn validate_engine_artifact(
@@ -481,5 +574,37 @@ mod pdfium_limit_tests {
             assert_eq!(engine_limits(engine, &explicit), explicit);
         }
         assert_eq!(engine_limits("qpdf", &local), local);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scrub_engine_json_artifact_rewrites_via_handle_and_fails_closed_on_non_utf8() {
+        let ws = Workspace::new().unwrap();
+        let sub = ws.output_dir().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let staged = sub.join("output.json");
+        fs::write(&staged, br#"{"secret":"top-secret-42"}"#).unwrap();
+
+        let mut scrubber = SecretScrubber::new();
+        scrubber.register("top-secret-42");
+
+        let inline =
+            scrub_engine_json_artifact(&ws, &staged, &Limits::local(), 1024, true, &scrubber)
+                .unwrap()
+                .expect("scrubbed JSON should remain inline");
+        assert_eq!(inline["secret"], "[REDACTED]");
+        let on_disk = fs::read_to_string(&staged).unwrap();
+        assert!(!on_disk.contains("top-secret-42"));
+        assert!(on_disk.contains("[REDACTED]"));
+
+        // Non-UTF-8 bytes with active scrubber must fail closed.
+        let bad = ws.output_dir().join("bad.json");
+        fs::write(&bad, [0xff_u8, 0xfe, b'{', b'}']).unwrap();
+        let err = scrub_engine_json_artifact(&ws, &bad, &Limits::local(), 1024, true, &scrubber)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ToolError::EngineFailure("staged engine JSON artifact is not valid UTF-8".into())
+        );
     }
 }

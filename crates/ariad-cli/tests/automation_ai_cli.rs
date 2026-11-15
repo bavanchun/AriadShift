@@ -391,10 +391,15 @@ fn offline_ai_pack_formats_citations_translation_tables_and_recipe_confirmation(
     );
     assert_eq!(result["inline_json"]["origin"], "imported");
     assert_eq!(result["inline_json"]["requires_confirmation"], true);
+    let generated: Value = serde_json::from_slice(&fs::read(artifact(&result)).unwrap()).unwrap();
+    assert_eq!(generated, result["inline_json"]);
+    assert_eq!(generated["recipe"]["version"], "ariad-recipe/1");
+    let extracted_recipe = tmp.path().join("extracted-recipe.json");
+    fs::write(&extracted_recipe, generated["recipe"].to_string()).unwrap();
     failure(
         command()
             .args(["recipe", "run"])
-            .arg(artifact(&result))
+            .arg(&extracted_recipe)
             .arg(&input)
             .args(["--origin", "imported", "-o"])
             .arg(tmp.path().join("refused"))
@@ -717,7 +722,10 @@ fn cloud_exports_tables_and_validates_imported_recipe_drafts() {
     let result = success(cmd.output().unwrap());
     assert_eq!(result["inline_json"]["requires_confirmation"], true);
     let draft: Value = serde_json::from_slice(&fs::read(output).unwrap()).unwrap();
-    assert_eq!(draft["version"], "ariad-recipe/1");
+    assert_eq!(draft, result["inline_json"]);
+    assert_eq!(draft["origin"], "imported");
+    assert_eq!(draft["requires_confirmation"], true);
+    assert_eq!(draft["recipe"]["version"], "ariad-recipe/1");
     server.join().unwrap();
     let output = tmp.path().join("invalid.json");
     let (mut cmd, server) = cloud_command(

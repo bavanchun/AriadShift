@@ -541,9 +541,12 @@ fn execute_redact(
     }
 
     // Step 5: Publish candidate to output directory
-    let staged_output = job.workspace.output_dir().join("redacted.pdf");
-    fs::write(&staged_output, &candidate_bytes)
-        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    let staged_output = super::run::write_staged_artifact(
+        job.workspace,
+        "redacted.pdf",
+        &candidate_bytes,
+        job.scrubber,
+    )?;
 
     let mut warnings = Vec::new();
     if plan.invalidates_signatures() {
@@ -569,7 +572,7 @@ fn execute_redact(
         json!(plan.invalidates_signatures()),
     );
 
-    let convert_warnings: Vec<ConvertWarning> = warnings
+    let mut convert_warnings: Vec<ConvertWarning> = warnings
         .into_iter()
         .map(|msg| ConvertWarning {
             code: "signatures_invalidated".into(),
@@ -577,13 +580,32 @@ fn execute_redact(
         })
         .collect();
 
+    let report_val = serde_json::to_value(&report)
+        .map_err(|e| ToolError::EngineFailure(job.scrubber.scrub(&e.to_string())))?;
+    let (_, json_bytes, inline_json) =
+        super::run::scrub_and_cap_inline_json(report_val, job.limits, job.scrubber)?;
+    if (json_bytes.len() as u64) > job.limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    let mut artifacts = vec![(staged_output, "pdf".into())];
+    let companion_report = inline_json.is_none();
+    if companion_report {
+        let companion_path = super::run::write_staged_artifact(
+            job.workspace,
+            "report.json",
+            &json_bytes,
+            job.scrubber,
+        )?;
+        artifacts.push((companion_path, "json".into()));
+        convert_warnings.push(super::run::report_not_inlined_warning());
+    }
+
     Ok(RawToolExecution {
-        artifacts: vec![(staged_output, "pdf".into())],
+        artifacts,
         warnings: convert_warnings,
         metrics,
-        inline_json: Some(
-            serde_json::to_value(&report).map_err(|e| ToolError::EngineFailure(e.to_string()))?,
-        ),
+        inline_json,
+        companion_report,
     })
 }
 
@@ -772,12 +794,60 @@ fn execute_verify(
     metrics.insert("target_count".into(), json!(verify_params.targets.len()));
     metrics.insert("status".into(), json!(overall_status));
 
+    let report_val = serde_json::to_value(&report)
+        .map_err(|e| ToolError::EngineFailure(job.scrubber.scrub(&e.to_string())))?;
+    let (_, json_bytes, inline_json) =
+        super::run::scrub_and_cap_inline_json(report_val, job.limits, job.scrubber)?;
+    if (json_bytes.len() as u64) > job.limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    let artifacts = if inline_json.is_none() {
+        let staged_output = super::run::write_staged_artifact(
+            job.workspace,
+            "output.json",
+            &json_bytes,
+            job.scrubber,
+        )?;
+        vec![(staged_output, "json".into())]
+    } else {
+        Vec::new()
+    };
+
     Ok(RawToolExecution {
-        artifacts: Vec::new(),
+        artifacts,
         warnings: Vec::new(),
         metrics,
-        inline_json: Some(
-            serde_json::to_value(&report).map_err(|e| ToolError::EngineFailure(e.to_string()))?,
-        ),
+        inline_json,
+        companion_report: false,
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redact_staged_report_replaces_planted_symlink_without_touching_target() {
+        let victim_dir = tempfile::tempdir().unwrap();
+        let victim = victim_dir.path().join("victim.txt");
+        fs::write(&victim, b"untouched-redact-victim").unwrap();
+
+        let ws = Workspace::new().unwrap();
+        let report_link = ws.output_dir().join("report.json");
+        std::os::unix::fs::symlink(&victim, &report_link).unwrap();
+
+        let scrubber = SecretScrubber::new();
+        let written = super::super::run::write_staged_artifact(
+            &ws,
+            "report.json",
+            b"{\"status\":\"verified\"}",
+            &scrubber,
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-redact-victim");
+        let meta = fs::symlink_metadata(&written).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        assert_eq!(fs::read(&written).unwrap(), b"{\"status\":\"verified\"}");
+    }
 }

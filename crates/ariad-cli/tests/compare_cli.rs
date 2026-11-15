@@ -20,6 +20,21 @@ fn command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_ashift"))
 }
 
+fn copy_compare_fixtures(reversed: bool) -> (TempDir, PathBuf, PathBuf) {
+    let temp = TempDir::new().unwrap();
+    let src_before = root().join("fixtures/pdf-tools/compare-before.pdf");
+    let src_after = root().join("fixtures/pdf-tools/compare-after.pdf");
+    let dst_before = temp.path().join("compare-before.pdf");
+    let dst_after = temp.path().join("compare-after.pdf");
+    fs::copy(&src_before, &dst_before).unwrap();
+    fs::copy(&src_after, &dst_after).unwrap();
+    if reversed {
+        (temp, dst_after, dst_before)
+    } else {
+        (temp, dst_before, dst_after)
+    }
+}
+
 fn pdfium_pack_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("ASHIFT_PACK_PDFIUM") {
         let path = PathBuf::from(dir);
@@ -47,10 +62,10 @@ fn pdfium_pack_dir() -> Option<PathBuf> {
 
 #[test]
 fn text_mode_runs_in_process_and_detects_seeded_changes() {
-    let before = root().join("fixtures/pdf-tools/compare-before.pdf");
-    let after = root().join("fixtures/pdf-tools/compare-after.pdf");
+    let (temp, before, after) = copy_compare_fixtures(false);
 
-    let output = command()
+    // Without -o and without --json: publishes <stem>.diff.pdf beside first input and prints path.
+    let human_output = command()
         .args([
             "tool",
             "pdf.compare",
@@ -63,14 +78,110 @@ fn text_mode_runs_in_process_and_detects_seeded_changes() {
         .expect("run ashift tool pdf.compare");
 
     assert!(
-        output.status.success(),
+        human_output.status.success(),
         "pdf.compare text mode failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&human_output.stderr)
+    );
+    let expected_diff = temp.path().join("compare-before.diff.pdf");
+    assert!(
+        expected_diff.is_file(),
+        "pdf.compare without -o must write <stem>.diff.pdf beside input"
+    );
+    let first_diff_bytes = fs::read(&expected_diff).unwrap();
+    assert!(
+        first_diff_bytes.starts_with(b"%PDF-"),
+        "published diff file must be a valid PDF"
+    );
+    assert!(
+        !temp.path().join("compare-before.compare.json").exists(),
+        "report.json must remain inline when within cap"
+    );
+    let human_report: serde_json::Value = serde_json::from_slice(&human_output.stdout)
+        .expect("human mode stdout must print inline compare report JSON");
+    assert!(
+        human_report["summary"].is_object(),
+        "inline compare report must include summary: {human_report}"
+    );
+    let human_stderr = String::from_utf8_lossy(&human_output.stderr);
+    let diff_name = expected_diff.file_name().unwrap().to_str().unwrap();
+    assert!(
+        human_stderr.contains(diff_name),
+        "human mode stderr must list published diff PDF path ({diff_name}), got: {human_stderr}"
     );
 
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout_str).expect("valid JSON stdout report");
+    // Second run without -o and without --overwrite: exits with code 6 (`destination_exists`),
+    // leaving compare-before.diff.pdf intact.
+    let collision_output = command()
+        .args([
+            "tool",
+            "pdf.compare",
+            before.to_str().unwrap(),
+            after.to_str().unwrap(),
+            "--param",
+            "mode=text",
+        ])
+        .output()
+        .expect("run ashift tool pdf.compare without --overwrite");
+    assert_eq!(
+        collision_output.status.code(),
+        Some(6),
+        "second run without --overwrite must exit with code 6; stderr: {}",
+        String::from_utf8_lossy(&collision_output.stderr)
+    );
+    let collision_stderr = String::from_utf8_lossy(&collision_output.stderr);
+    assert!(
+        collision_stderr.contains("error[destination_exists]"),
+        "stderr must contain error[destination_exists], got: {collision_stderr}"
+    );
+    assert_eq!(
+        fs::read(&expected_diff).unwrap(),
+        first_diff_bytes,
+        "existing compare-before.diff.pdf must remain intact on collision"
+    );
+    assert!(!temp.path().join("compare-before.diff-2.pdf").exists());
+
+    // Third run with --overwrite and --json: replaces compare-before.diff.pdf and emits ToolOutcome.
+    fs::write(&expected_diff, b"stale-diff-content").unwrap();
+    let output = command()
+        .args([
+            "tool",
+            "pdf.compare",
+            before.to_str().unwrap(),
+            after.to_str().unwrap(),
+            "--param",
+            "mode=text",
+            "--overwrite",
+            "--json",
+        ])
+        .output()
+        .expect("run ashift tool pdf.compare --overwrite --json");
+
+    assert!(
+        output.status.success(),
+        "pdf.compare text mode --overwrite --json failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        expected_diff.is_file(),
+        "compare-before.diff.pdf must exist after --overwrite"
+    );
+    assert!(
+        fs::read(&expected_diff).unwrap().starts_with(b"%PDF-"),
+        "overwritten diff file must be a valid PDF"
+    );
+    assert!(!temp.path().join("compare-before.diff-2.pdf").exists());
+
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid ToolOutcome JSON stdout");
+    let artifact_path = outcome["artifacts"][0]["path"]
+        .as_str()
+        .expect("artifacts[0].path string");
+    assert_eq!(
+        fs::canonicalize(Path::new(artifact_path)).unwrap(),
+        fs::canonicalize(&expected_diff).unwrap()
+    );
+    assert_eq!(outcome["artifacts"][0]["format"], "pdf");
+    let report = &outcome["inline_json"];
 
     let summary = &report["summary"];
     assert_eq!(summary["pages_before"], 2);
@@ -155,6 +266,16 @@ fn output_target_single_pdf_and_json_and_directory() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(out_pdf.is_file(), "report.pdf must be created");
+    let out_pdf_stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        out_pdf_stdout.lines().count(),
+        1,
+        "stdout: {out_pdf_stdout:?}"
+    );
+    assert_eq!(
+        fs::canonicalize(Path::new(out_pdf_stdout.trim())).unwrap(),
+        fs::canonicalize(&out_pdf).unwrap()
+    );
 
     // 2. Single JSON output: writes report.json
     let out_json = temp.path().join("report.json");
@@ -333,8 +454,7 @@ fn visual_mode_with_pdfium_detects_image_tint() {
         }
     };
 
-    let before = root().join("fixtures/pdf-tools/compare-before.pdf");
-    let after = root().join("fixtures/pdf-tools/compare-after.pdf");
+    let (temp, before, after) = copy_compare_fixtures(false);
 
     let output = command()
         .env("ASHIFT_PACK_PDFIUM", &pack_dir)
@@ -345,6 +465,7 @@ fn visual_mode_with_pdfium_detects_image_tint() {
             after.to_str().unwrap(),
             "--param",
             "mode=visual",
+            "--json",
         ])
         .output()
         .expect("run ashift tool pdf.compare mode=visual");
@@ -355,9 +476,11 @@ fn visual_mode_with_pdfium_detects_image_tint() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout_str).expect("valid JSON stdout report");
+    assert!(temp.path().join("compare-before.diff.pdf").is_file());
+    assert!(!temp.path().join("compare-before.compare.json").exists());
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid ToolOutcome JSON stdout");
+    let report = &outcome["inline_json"];
 
     let summary = &report["summary"];
     assert_eq!(summary["pages_before"], 2);
@@ -460,8 +583,7 @@ fn wrong_input_arity_is_rejected_with_exit_10() {
 
 #[test]
 fn reversed_inputs_reports_page_status_removed() {
-    let before = root().join("fixtures/pdf-tools/compare-after.pdf");
-    let after = root().join("fixtures/pdf-tools/compare-before.pdf");
+    let (temp, before, after) = copy_compare_fixtures(true);
 
     let output = command()
         .args([
@@ -471,6 +593,7 @@ fn reversed_inputs_reports_page_status_removed() {
             after.to_str().unwrap(),
             "--param",
             "mode=text",
+            "--json",
         ])
         .output()
         .expect("run ashift tool pdf.compare reversed");
@@ -481,9 +604,11 @@ fn reversed_inputs_reports_page_status_removed() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout_str).expect("valid JSON stdout report");
+    assert!(temp.path().join("compare-after.diff.pdf").is_file());
+    assert!(!temp.path().join("compare-after.compare.json").exists());
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid ToolOutcome JSON stdout");
+    let report = &outcome["inline_json"];
 
     let summary = &report["summary"];
     assert_eq!(summary["pages_before"], 3);
@@ -516,8 +641,7 @@ fn both_mode_with_page_range_detects_text_and_visual_changes() {
         }
     };
 
-    let before = root().join("fixtures/pdf-tools/compare-before.pdf");
-    let after = root().join("fixtures/pdf-tools/compare-after.pdf");
+    let (temp, before, after) = copy_compare_fixtures(false);
 
     let output = command()
         .env("ASHIFT_PACK_PDFIUM", &pack_dir)
@@ -530,6 +654,7 @@ fn both_mode_with_page_range_detects_text_and_visual_changes() {
             "mode=both",
             "--param",
             "pages=1-2",
+            "--json",
         ])
         .output()
         .expect("run ashift tool pdf.compare mode=both pages=1-2");
@@ -540,9 +665,11 @@ fn both_mode_with_page_range_detects_text_and_visual_changes() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout_str).expect("valid JSON stdout report");
+    assert!(temp.path().join("compare-before.diff.pdf").is_file());
+    assert!(!temp.path().join("compare-before.compare.json").exists());
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid ToolOutcome JSON stdout");
+    let report = &outcome["inline_json"];
 
     let summary = &report["summary"];
     assert_eq!(

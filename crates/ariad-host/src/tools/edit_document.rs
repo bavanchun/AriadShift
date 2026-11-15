@@ -302,7 +302,7 @@ pub(crate) fn execute(
         total: None,
     });
     let mut metrics = BTreeMap::new();
-    let (path, format) = if spec.id == "edit.open_document" {
+    let (inline_json, (path, format)) = if spec.id == "edit.open_document" {
         let params: EditOpenDocumentParams = parse_params(params)?;
         if params.pages.is_some() && inputs[0].1 != "pdf" {
             return Err(ToolError::InvalidParams(
@@ -342,9 +342,43 @@ pub(crate) fn execute(
         metrics.insert("fidelity_preview".into(), json!(previews));
         metrics.insert("block_count".into(), json!(document.block_count()));
         metrics.insert("source_map_count".into(), json!(document.source_map.len()));
+        let raw_json = serde_json::to_string_pretty(&document)
+            .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+        drop(document);
+
+        let inline_cap = super::run::json_inline_cap(limits);
+        let (doc_bytes, open_inline_json) =
+            if scrubber.is_empty() || !scrubber.contains_pattern(&raw_json) {
+                let bytes = raw_json.into_bytes();
+                if (bytes.len() as u64) > limits.max_ir_json_bytes {
+                    return Err(ToolError::LimitExceeded);
+                }
+                let inline =
+                    if (bytes.len() as u64) <= inline_cap {
+                        Some(serde_json::from_slice(&bytes).map_err(|e| {
+                            ToolError::EngineFailure(scrubber.scrub(&e.to_string()))
+                        })?)
+                    } else {
+                        None
+                    };
+                (bytes, inline)
+            } else {
+                let mut val: serde_json::Value = serde_json::from_str(&raw_json)
+                    .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+                drop(raw_json);
+                scrubber.scrub_value_in_place(&mut val);
+                let bytes = serde_json::to_vec_pretty(&val)
+                    .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+                if (bytes.len() as u64) > limits.max_ir_json_bytes {
+                    return Err(ToolError::LimitExceeded);
+                }
+                let inline = ((bytes.len() as u64) <= inline_cap).then_some(val);
+                (bytes, inline)
+            };
+
         let path = workspace.output_dir().join("document.json");
-        context.write_ir(&path, &document)?;
-        (path, "json".into())
+        fs::write(&path, &doc_bytes).map_err(|e| ToolError::OutputIo(e.to_string()))?;
+        (open_inline_json, (path, "json".into()))
     } else {
         if normalize_tool_format(&inputs[0].1) != Some("json") {
             return Err(ToolError::WrongInput(
@@ -371,14 +405,15 @@ pub(crate) fn execute(
             .map_or((&document, &readback), |baseline| (baseline, &document));
         metrics.insert("fidelity".into(), json!(report));
         metrics.insert("change_list".into(), json!(changes(before, after)?));
-        (path, params.format.as_str().into())
+        (None, (path, params.format.as_str().into()))
     };
     context.check()?;
     Ok(RawToolExecution {
         artifacts: vec![(path, format)],
         warnings: context.warnings,
         metrics,
-        inline_json: None,
+        inline_json,
+        companion_report: false,
     })
 }
 

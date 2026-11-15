@@ -1419,3 +1419,110 @@ fn redact_and_verify_cli_end_to_end() {
     let val_page: Value = serde_json::from_slice(&page_out.stdout).expect("parse outcome JSON");
     assert_eq!(val_page["inline_json"]["status"], "verified");
 }
+
+#[test]
+fn human_mode_pdf_tool_prints_only_output_path_to_stdout() {
+    let tmp = TempDir::new().unwrap();
+    let watermarked = tmp.path().join("wm.pdf");
+    fs::copy(pdf_fixture("watermark-layer.pdf"), &watermarked).unwrap();
+
+    let detect = ashift_cmd()
+        .args(["tool", "pdf.watermark_detect"])
+        .arg(&watermarked)
+        .arg("--json")
+        .output()
+        .expect("run pdf.watermark_detect");
+    assert!(
+        detect.status.success(),
+        "{}",
+        String::from_utf8_lossy(&detect.stderr)
+    );
+    let detected: Value = serde_json::from_slice(&detect.stdout).unwrap();
+    let candidate_id = detected["candidates"][0]["id"].as_str().unwrap();
+
+    // 1. DefaultBesideInput human mode (no --json) on pdf.watermark_remove prints only output PDF path.
+    let human_default = ashift_cmd()
+        .args(["tool", "pdf.watermark_remove"])
+        .arg(&watermarked)
+        .args(["--param", &format!("candidates=[\"{candidate_id}\"]")])
+        .output()
+        .expect("run pdf.watermark_remove human default");
+    assert!(
+        human_default.status.success(),
+        "{}",
+        String::from_utf8_lossy(&human_default.stderr)
+    );
+    let expected_default = tmp.path().join("wm.unwatermarked.pdf");
+    assert!(expected_default.is_file());
+    let stdout_default = String::from_utf8(human_default.stdout).unwrap();
+    assert_eq!(
+        stdout_default.lines().count(),
+        1,
+        "stdout: {stdout_default:?}"
+    );
+    assert_eq!(
+        fs::canonicalize(Path::new(stdout_default.trim())).unwrap(),
+        fs::canonicalize(&expected_default).unwrap()
+    );
+
+    // 2. Explicit `-o <file>.pdf` human mode on pdf.watermark_remove prints only that path.
+    let explicit_pdf = tmp.path().join("cleaned.pdf");
+    let human_explicit = ashift_cmd()
+        .args(["tool", "pdf.watermark_remove"])
+        .arg(&watermarked)
+        .arg("-o")
+        .arg(&explicit_pdf)
+        .args(["--param", &format!("candidates=[\"{candidate_id}\"]")])
+        .output()
+        .expect("run pdf.watermark_remove human -o");
+    assert!(
+        human_explicit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&human_explicit.stderr)
+    );
+    let stdout_explicit = String::from_utf8(human_explicit.stdout).unwrap();
+    assert_eq!(
+        stdout_explicit.lines().count(),
+        1,
+        "stdout: {stdout_explicit:?}"
+    );
+    assert_eq!(
+        fs::canonicalize(Path::new(stdout_explicit.trim())).unwrap(),
+        fs::canonicalize(&explicit_pdf).unwrap()
+    );
+
+    // 3. When PDFium pack is available, also verify pdf.redact human mode prints only output PDF path.
+    if let Some(pdfium) = std::env::var_os("ASHIFT_PACK_PDFIUM")
+        .or_else(|| std::env::var_os("ARIAD_TEST_PDFIUM_PACK"))
+    {
+        let redacted_pdf = tmp.path().join("redacted-human.pdf");
+        let redact_out = ashift_cmd()
+            .env("ASHIFT_PACK_PDFIUM", &pdfium)
+            .env("ARIAD_TEST_PDFIUM_DIR", &pdfium)
+            .args(["tool", "pdf.redact"])
+            .arg(pdf_fixture("mixed-sizes.pdf"))
+            .arg("-o")
+            .arg(&redacted_pdf)
+            .args([
+                "--param",
+                "targets=[{\"kind\":\"exact\",\"text\":\"Portfolio\"}]",
+            ])
+            .output()
+            .expect("run pdf.redact human mode");
+        assert!(
+            redact_out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&redact_out.stderr)
+        );
+        let redact_stdout = String::from_utf8(redact_out.stdout).unwrap();
+        assert_eq!(
+            redact_stdout.lines().count(),
+            1,
+            "stdout: {redact_stdout:?}"
+        );
+        assert_eq!(
+            fs::canonicalize(Path::new(redact_stdout.trim())).unwrap(),
+            fs::canonicalize(&redacted_pdf).unwrap()
+        );
+    }
+}
