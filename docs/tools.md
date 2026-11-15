@@ -189,7 +189,7 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 
 ### `pdf.compare`
 
-`pdf.compare` performs semantic text diffing and rasterized visual comparison between two PDF documents (`inputs[0]` before, `inputs[1]` after), emitting a structured JSON difference report (`<stem>.compared.json`) and an annotated PDF report (`<stem>.compared.pdf`) highlighting changes.
+`pdf.compare` performs semantic text diffing and rasterized visual comparison between two PDF documents (`inputs[0]` before, `inputs[1]` after), producing a structured JSON difference report and an annotated PDF diff document highlighting changes.
 
 - **Parameters**:
   - `mode` (`"text"` | `"visual"` | `"both"`, default `"text"`): Comparison mode.
@@ -198,7 +198,9 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
     - `"both"`: Executes both semantic text diffing and rasterized visual comparison.
   - `pages` (optional string): Page selection to compare (e.g. `"1-5"`, `"odd"`, `"1,3"`). Defaults to comparing all pages.
 - **Outputs**:
-  - Default: Multi-artifact publication emitting `<stem>.compared.json` and `<stem>.compared.pdf`. When `-o` names a `.json` or `.pdf` file, only the requested artifact is published. When `-o` is omitted and run inline, outputs structured JSON to stdout.
+  - **Without `-o` (default)**: Publishes `<stem>.diff.pdf` beside the first input (`inputs[0]`) and returns the JSON comparison report inline (`inline_json`). Only if the JSON report exceeds the 32 MiB inline cap (`inline_json: null`) is `<stem>.compare.json` also published beside `<stem>.diff.pdf`.
+  - **`-o <dir>/` directory**: Publishes both `<stem>.compared.pdf` and `<stem>.compared.json`.
+  - **`-o <file>.pdf` or `-o <file>.json` single file**: Publishes only the requested PDF or JSON artifact (the JSON report still accompanies `-o <file>.pdf` in `inline_json` when within cap). In CLI human mode (`! --json`), the inline JSON report is printed to `stdout` and published artifact path(s) to `stderr`.
 - **Runtimes**: `wasm (text), local`. On WASM or when the PDFium pack is missing, selecting `"visual"` or `"both"` fails early at preflight with exit code `5` (`engine_unavailable` / `tool_missing`).
 - **Resource Bounds & Limits**:
   - Visual comparison is capped at 200 pages (`MAX_VISUAL_PAGES = 200`). Exceeding this limit in `"visual"` or `"both"` mode fails immediately before rendering with exit code `9` (`invalid_params`) naming the 200-page limit.
@@ -478,10 +480,14 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.sign` → `contract.signed.pdf`
   - `pdf.sign_verify` → `contract.sign-verify.json`
   - `pdf.sign_remove` → `contract.unsigned.pdf`
-  - `pdf.redact` → `contract.redacted.pdf` (plus `contract.redaction-report.json` when verification report is requested)
+  - `pdf.redact` → `contract.redacted.pdf` with verification JSON returned inline (when the report exceeds the 32 MiB inline cap, `report_not_inlined` is emitted and a companion `contract.redacted.json` is written beside the PDF without `-001`/`-002` numbering; with explicit `-o <file>.pdf`, the companion report is written beside `<file>.pdf` as `<file_stem>.redacted.json`).
+  - `pdf.redact_verify` → returns inline `inline_json` only (`artifacts: []`), including under `-o <dir>/` and recipe steps; only when the report exceeds the 32 MiB inline cap does default publication write `<stem>.redact-verify.json` beside the input.
+  - Single-PDF tools carrying an inline report (`pdf.redact`, `pdf.to_pdfa`, `pdf.to_pdfua`, `pdf.watermark_remove`) preserve `<stem>.<suffix>.pdf` (or explicit `<file>.pdf`) if their JSON report exceeds the 32 MiB inline cap, publishing `<stem>.<suffix>.json` (or `<file_stem>.<suffix>.json` next to `<file>.pdf`, or `<rendered>.json` under a naming template) alongside a `report_not_inlined` warning.
   - `pdf.info` → prints structured JSON to stdout on CLI when `--json` is passed (or human summary without `-o`), and writes `report.info.json` when `-o` specifies a directory or file.
-  - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio`, `pdf.layers` and `pdf.annotations`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
+  - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio`, `pdf.layers` and `pdf.annotations`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input (unless the payload exceeds the 32 MiB inline cap, which falls back to `<stem>.<suffix>.json` beside the input); `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
+  - Inputless JSON tools (`InputArity::None`, such as `ai.recipe_from_text`) return inline JSON without writing to the current working directory; if `-o` is omitted and the payload cannot be returned inline (exceeds the inline cap or uses a naming template), execution fails with exit code `2` (`usage`) requiring `-o <file>` or `-o <dir>/`.
 - **Multi-artifact tools**:
+  - Multi-JSON outputs → `<stem>.<suffix>-001.json`, `<stem>.<suffix>-002.json`, ... when a JSON-producing tool emits multiple JSON artifacts.
   - `pdf.forms_import` batches → `<stem>.filled-001.pdf`, `<stem>.filled-002.pdf`, ...; an optional `name_column` supplies sanitized, deduplicated names.
   - `pdf.split` → `<stem>.part-001.pdf`, `<stem>.part-002.pdf`, ... (1-based index, zero-padded to at least 3 digits: `001`..`999`, widening to 4+ digits when parts >= 1,000).
   - `pdf.to_images` / `pdf.render` → `<stem>.page-001.<ext>`, `<stem>.page-002.<ext>`, ... (`combine = "none"`), or `<stem>.pages.<ext>` (`combine = "vertical" | "horizontal"`).
@@ -680,7 +686,7 @@ The opt-in `ai` and `inpaint` engine packs run out of process without network ac
 | `ai.ask` | One document and a nonempty `question`; JSON answer with one-based page citations and exact source quotes. |
 | `ai.translate` | One document and `target_lang`; PDF, DOCX, HTML, Markdown or IR JSON. IR translation preserves structure and IDs. |
 | `ai.extract_tables` | One document; CSV (default), XLSX or JSON, with one artifact per detected table. |
-| `ai.recipe_from_text` | No document input; a nonempty `prompt` produces a validated recipe for review. Inline output marks `origin: "imported"` and `requires_confirmation: true`; the recipe artifact remains executable only after caller confirmation. |
+| `ai.recipe_from_text` | No document input; a nonempty `prompt` produces a validated recipe for review. Both inline output and any published `.json` artifact wrap the validated recipe with `origin: "imported"` and `requires_confirmation: true`; the nested `recipe` object remains executable only after caller confirmation. |
 | `pdf.watermark_remove_raster` | One PDF; inpainted PDF and descriptive `before_page_NNN.png` / `after_page_NNN.png` previews by default. `preview: false` omits previews; an explicit PDF file destination publishes only the PDF. Supports automatic detection or page-specific rectangles, `telea` / `ns`, and radius 1–25. |
 
 For AI tools, `provider: "cloud"` additionally requires `cloud_consent: true` before the host reads document content. Free users must supply their own nonempty `api_key` through the secret channel; Pro, Team and Enterprise may use a configured endpoint without a user key. Configure `ASHIFT_AI_CLOUD_URL` to an HTTPS [Chat Completions endpoint](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) or an Anthropic-compatible [Messages endpoint](https://platform.claude.com/docs/en/api/messages/create) ending in `/messages`, and select its `model`. The trusted host extracts content, performs a bounded SSRF-safe POST and publishes validated artifacts. The local engine pack receives no network access. API keys are scrubbed from errors, warnings, metrics and cloud artifacts. HTTP loopback is restricted to integration tests explicitly setting `ASHIFT_TEST_ALLOW_LOOPBACK_AI=1`.
