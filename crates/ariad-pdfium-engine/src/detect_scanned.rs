@@ -439,8 +439,8 @@ fn collect_image_rects_from_iter<'a>(
     for (idx, obj) in iter.enumerate() {
         *page_visits += 1;
         *document_visits += 1;
-        if *page_visits > 100_000
-            || *document_visits > 1_000_000
+        if *page_visits > crate::execution_budget::MAX_PAGE_WORK
+            || *document_visits > crate::execution_budget::MAX_DOCUMENT_WORK
             || *document_visits > ctx.limits().max_blocks as usize
         {
             return Err(EngineFailure::limit_exceeded());
