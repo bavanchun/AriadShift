@@ -1129,67 +1129,53 @@ pub fn verify_image_pixels(
         return Ok(Unavailable);
     }
     let doc = crate::document::open_with_ctx(bytes, limits, ctx)?;
-    let mut decode_budget = doc.decode_budget();
-    let page_ids = collect_page_ids(doc.inner(), ctx)?;
-    #[allow(clippy::type_complexity)]
-    let mut image_placements: std::collections::BTreeMap<
-        ObjectId,
-        Vec<(Matrix, Vec<[f64; 4]>)>,
-    > = std::collections::BTreeMap::new();
-    for (page_idx, page_id) in page_ids.iter().enumerate() {
-        let page_num = page_idx as u32 + 1;
-        let regions_for_page: Vec<[f64; 4]> = plan
-            .regions()
-            .iter()
-            .filter_map(|r| match r {
-                Region::Page { page } if *page == page_num => {
-                    Some([0.0, 0.0, 100_000.0, 100_000.0])
-                }
-                Region::Rectangle { page, bounds } if *page == page_num => Some(*bounds),
-                _ => None,
-            })
-            .collect();
-        if regions_for_page.is_empty() {
-            continue;
-        }
-        let placements =
-            collect_page_image_placements(doc.inner(), *page_id, &mut decode_budget, ctx)?;
-        for (img_id, ctm) in placements {
-            let img_bbox = image_placement_bbox(ctm);
-            let intersecting: Vec<[f64; 4]> = regions_for_page
-                .iter()
-                .copied()
-                .filter(|r| {
-                    img_bbox[0] < r[2]
-                        && img_bbox[2] > r[0]
-                        && img_bbox[1] < r[3]
-                        && img_bbox[3] > r[1]
-                })
-                .collect();
-            if !intersecting.is_empty() {
-                image_placements
-                    .entry(img_id)
-                    .or_default()
-                    .push((ctm, intersecting));
-            }
-        }
+    let mut budget = doc.decode_budget();
+    let mut image_placements: std::collections::BTreeMap<ObjectId, Vec<(Matrix, Vec<[f64; 4]>)>> =
+        std::collections::BTreeMap::new();
+    for ((_, image_id), placements) in targeted_placements(doc.inner(), plan, &mut budget, ctx)? {
+        image_placements
+            .entry(image_id)
+            .or_default()
+            .extend(placements);
     }
+    // One decode budget and one pixel work counter bound the whole check.
+    let mut work = 0u64;
+    let decode = |id: ObjectId, budget: &mut crate::document::DecodeBudget| {
+        crate::images::decode_with_budget(
+            &doc,
+            id,
+            ctx,
+            budget,
+            limits.max_nesting_depth,
+            false,
+            false,
+        )
+    };
     for (img_id, placements) in image_placements {
         ctx.check()?;
-        let decoded = match crate::images::decode(&doc, img_id, ctx, limits) {
+        let decoded = match decode(img_id, &mut budget) {
             Ok(img) => img,
+            Err(crate::images::ImageError::Pdf(error @ PdfError::LimitExceeded(_))) => {
+                return Err(error);
+            }
             Err(_) => return Ok(Fail),
         };
-        let smask_decoded =
-            if let Ok(s) = doc.inner().get_object(img_id).and_then(Object::as_stream) {
-                if let Ok(smask_id) = s.dict.get(b"SMask").and_then(Object::as_reference) {
-                    crate::images::decode(&doc, smask_id, ctx, limits).ok()
-                } else {
-                    None
+        let smask_decoded = match doc
+            .inner()
+            .get_object(img_id)
+            .and_then(Object::as_stream)
+            .and_then(|s| s.dict.get(b"SMask"))
+            .and_then(Object::as_reference)
+        {
+            Ok(smask_id) => match decode(smask_id, &mut budget) {
+                Ok(img) => Some(img),
+                Err(crate::images::ImageError::Pdf(error @ PdfError::LimitExceeded(_))) => {
+                    return Err(error);
                 }
-            } else {
-                None
-            };
+                Err(_) => return Ok(Fail),
+            },
+            Err(_) => None,
+        };
         let channels = match decoded.color_space {
             crate::images::ColorSpace::Gray => 1usize,
             crate::images::ColorSpace::Rgb => 3,
@@ -1197,7 +1183,6 @@ pub fn verify_image_pixels(
         };
         let stride = channels * usize::from(decoded.bits_per_component / 8);
         for (ctm, regions) in placements {
-            let mut work = 0u64;
             let sel = match pixels::selection(
                 decoded.width,
                 decoded.height,
