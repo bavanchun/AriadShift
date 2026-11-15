@@ -1130,8 +1130,7 @@ pub fn verify_image_pixels(
     }
     let doc = crate::document::open_with_ctx(bytes, limits, ctx)?;
     let mut budget = doc.decode_budget();
-    let mut image_placements: std::collections::BTreeMap<ObjectId, Vec<(Matrix, Vec<[f64; 4]>)>> =
-        std::collections::BTreeMap::new();
+    let mut image_placements = std::collections::BTreeMap::<ObjectId, Vec<_>>::new();
     for ((_, image_id), placements) in targeted_placements(doc.inner(), plan, &mut budget, ctx)? {
         image_placements
             .entry(image_id)
@@ -1479,6 +1478,7 @@ mod tests {
     }
 
     /// Serializes a document whose page tree is `pages` with the given leaf pages.
+    #[cfg(feature = "codecs")]
     fn finish(mut doc: Document, pages: lopdf::ObjectId, kids: &[lopdf::ObjectId]) -> Vec<u8> {
         finish_with(&mut doc, pages, kids, lopdf::Dictionary::new())
     }
