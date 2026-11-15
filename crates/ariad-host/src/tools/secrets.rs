@@ -555,6 +555,9 @@ impl SecretScrubber {
     }
 
     /// Recursively scrubs all string values and object keys in `value` in place.
+    ///
+    /// The `contains_pattern` checks below run on already-decoded Rust strings, so JSON escape
+    /// spellings cannot bypass them.
     pub fn scrub_value_in_place(&self, value: &mut Value) {
         if self.patterns.is_empty() {
             return;
@@ -591,6 +594,80 @@ impl SecretScrubber {
             }
             Value::Null | Value::Bool(_) | Value::Number(_) => {}
         }
+    }
+}
+
+impl SecretScrubber {
+    /// Scrubs every decoded string value and object key of the JSON text `json`.
+    ///
+    /// The whole text is first validated as one JSON value without building a tree. Each string
+    /// token, keys included, is then decoded, so `\uXXXX` and `\/` spellings of a secret are
+    /// matched like the raw secret. A token whose decoded text holds a registered pattern is
+    /// re-encoded from its scrubbed text; every other byte is kept as written. Extra memory is
+    /// the rewritten text plus one decoded token.
+    ///
+    /// Returns `Ok(None)` when nothing was redacted, so the caller can keep the original bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`serde_json::Error`] when `json` is not exactly one valid JSON value, including
+    /// strings with lone surrogate escapes or raw control characters.
+    pub fn scrub_json_text(&self, json: &str) -> Result<Option<String>, serde_json::Error> {
+        serde_json::from_str::<serde::de::IgnoredAny>(json)?;
+        if self.patterns.is_empty() {
+            return Ok(None);
+        }
+        let bytes = json.as_bytes();
+        let mut out: Option<String> = None;
+        let mut copied = 0;
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] != b'"' {
+                i += 1;
+                continue;
+            }
+            // The text is valid JSON, so `"` outside a string always opens one, and inside a
+            // string only an unescaped `"` closes it. Escapes are ASCII.
+            let start = i;
+            let mut j = i + 1;
+            let mut plain = true;
+            loop {
+                let Some(&byte) = bytes.get(j) else {
+                    return Err(<serde_json::Error as serde::de::Error>::custom(
+                        "unterminated JSON string",
+                    ));
+                };
+                if byte == b'"' {
+                    break;
+                }
+                if byte == b'\\' {
+                    plain = false;
+                    j += 2;
+                } else {
+                    plain &= byte >= 0x20;
+                    j += 1;
+                }
+            }
+            let end = j + 1;
+            let token = &json[start..end];
+            let decoded = if plain {
+                std::borrow::Cow::Borrowed(&token[1..token.len() - 1])
+            } else {
+                std::borrow::Cow::Owned(serde_json::from_str::<String>(token)?)
+            };
+            if self.contains_pattern(&decoded) {
+                let encoded = serde_json::to_string(&self.scrub(&decoded))?;
+                let buf = out.get_or_insert_with(|| String::with_capacity(json.len()));
+                buf.push_str(&json[copied..start]);
+                buf.push_str(&encoded);
+                copied = end;
+            }
+            i = end;
+        }
+        Ok(out.map(|mut buf| {
+            buf.push_str(&json[copied..]);
+            buf
+        }))
     }
 }
 
@@ -655,6 +732,47 @@ mod tests {
         let scrubbed_url = scrubber.scrub(&url_msg);
         assert!(!scrubbed_url.contains("s3cr3t"));
         assert!(scrubbed_url.contains(REDACTED));
+    }
+
+    #[test]
+    fn scrub_json_text_redacts_escaped_spellings_and_keeps_other_bytes() {
+        let scrubber = SecretBag::new()
+            .with("password", "ab/c\"d")
+            .unwrap()
+            .scrubber();
+        // `\u0061` is `a`, `\/` is `/`, `\"` is `"`.
+        let text = "{ \"\\u0061b\\/c\\\"d\" : [\"x\\/y\", 1.5e2],\n \"k\":\"pre ab/c\\\"d post\"}";
+        let out = scrubber
+            .scrub_json_text(text)
+            .unwrap()
+            .expect("secret occurrences are rewritten");
+        assert_eq!(
+            out,
+            "{ \"[REDACTED]\" : [\"x\\/y\", 1.5e2],\n \"k\":\"pre [REDACTED] post\"}"
+        );
+        assert_eq!(scrubber.scrub_json_text(r#"{"a":"x\/y"}"#).unwrap(), None);
+    }
+
+    #[test]
+    fn scrub_json_text_rejects_invalid_json() {
+        let scrubber = SecretBag::new()
+            .with("password", "pw-1")
+            .unwrap()
+            .scrubber();
+        for bad in [
+            "",
+            "{",
+            r#"{"a":1} {"b":2}"#,
+            r#"["\ud800"]"#,
+            "[\"raw\u{1}control\"]",
+            r#"["\x"]"#,
+            "[1,]",
+        ] {
+            assert!(scrubber.scrub_json_text(bad).is_err(), "accepted {bad:?}");
+        }
+        let empty = SecretScrubber::new();
+        assert_eq!(empty.scrub_json_text("[1]").unwrap(), None);
+        assert!(empty.scrub_json_text("[1").is_err());
     }
 
     #[test]

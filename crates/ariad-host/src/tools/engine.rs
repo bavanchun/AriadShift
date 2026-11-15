@@ -259,6 +259,13 @@ fn engine_limits(engine: &str, limits: &Limits) -> Limits {
     effective
 }
 
+/// Scrubs one staged engine JSON artifact while secrets are registered.
+///
+/// The artifact is read only up to [`super::run::scrub_json_cap`], so peak memory is bounded by
+/// that cap rather than `limits.max_decompressed_bytes`. Every decoded string value and key is
+/// scrubbed ([`SecretScrubber::scrub_json_text`]); no raw-text pre-check gates it, because JSON
+/// escapes can spell a secret that the raw bytes do not contain. Invalid, non-UTF-8 or
+/// truncated JSON fails closed.
 fn scrub_engine_json_artifact(
     workspace: &Workspace,
     path: &Path,
@@ -267,12 +274,13 @@ fn scrub_engine_json_artifact(
     is_inline_candidate: bool,
     scrubber: &SecretScrubber,
 ) -> Result<Option<Value>, ToolError> {
+    let scrub_cap = super::run::scrub_json_cap(limits);
     let file = workspace.open_artifact(path).map_err(|_| {
         ToolError::EngineFailure("could not open staged engine JSON artifact".into())
     })?;
     let mut raw_bytes = Vec::new();
     if file
-        .take(limits.max_decompressed_bytes.saturating_add(1))
+        .take(scrub_cap.saturating_add(1))
         .read_to_end(&mut raw_bytes)
         .is_err()
     {
@@ -280,54 +288,45 @@ fn scrub_engine_json_artifact(
             "failed to read staged engine JSON artifact".into(),
         ));
     }
-    if (raw_bytes.len() as u64) > limits.max_decompressed_bytes {
+    if (raw_bytes.len() as u64) > scrub_cap {
         return Err(ToolError::LimitExceeded);
     }
 
-    let raw_within_inline = (raw_bytes.len() as u64) <= inline_cap;
     let Ok(raw_str) = std::str::from_utf8(&raw_bytes) else {
-        if !scrubber.is_empty() {
-            return Err(ToolError::EngineFailure(
-                "staged engine JSON artifact is not valid UTF-8".into(),
-            ));
-        }
-        return Ok(None);
+        return Err(ToolError::EngineFailure(
+            "staged engine JSON artifact is not valid UTF-8".into(),
+        ));
     };
-    if !scrubber.contains_pattern(raw_str) {
-        if is_inline_candidate && raw_within_inline {
-            return Ok(serde_json::from_slice::<Value>(&raw_bytes).ok());
-        }
-        return Ok(None);
-    }
-
-    let Ok(mut parsed) = serde_json::from_slice::<Value>(&raw_bytes) else {
+    let Ok(scrubbed) = scrubber.scrub_json_text(raw_str) else {
         return Err(ToolError::EngineFailure(
             "staged engine JSON artifact is not valid JSON".into(),
         ));
     };
-    drop(raw_bytes);
 
-    scrubber.scrub_value_in_place(&mut parsed);
-    let scrubbed_bytes = if raw_within_inline {
-        serde_json::to_vec_pretty(&parsed)
-    } else {
-        serde_json::to_vec(&parsed)
-    }
-    .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+    let final_bytes = match scrubbed {
+        None => raw_bytes,
+        Some(text) => {
+            drop(raw_bytes);
+            let bytes = text.into_bytes();
+            if (bytes.len() as u64) > limits.max_decompressed_bytes {
+                return Err(ToolError::LimitExceeded);
+            }
+            workspace.remove_staged_artifact(path).map_err(|e| {
+                ToolError::EngineFailure(scrubber.scrub(&format!(
+                    "could not safely clear staged engine JSON artifact: {e}"
+                )))
+            })?;
+            workspace
+                .write_staged_artifact(path, &bytes)
+                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            bytes
+        }
+    };
 
-    if (scrubbed_bytes.len() as u64) > limits.max_decompressed_bytes {
-        return Err(ToolError::LimitExceeded);
-    }
-    workspace.remove_staged_artifact(path).map_err(|e| {
-        ToolError::EngineFailure(scrubber.scrub(&format!(
-            "could not safely clear staged engine JSON artifact: {e}"
-        )))
-    })?;
-    workspace
-        .write_staged_artifact(path, &scrubbed_bytes)
-        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
-
-    if is_inline_candidate && (scrubbed_bytes.len() as u64) <= inline_cap {
+    if is_inline_candidate && (final_bytes.len() as u64) <= inline_cap {
+        let parsed = serde_json::from_slice::<Value>(&final_bytes).map_err(|_| {
+            ToolError::EngineFailure("staged engine JSON artifact is not valid JSON".into())
+        })?;
         Ok(Some(parsed))
     } else {
         Ok(None)
