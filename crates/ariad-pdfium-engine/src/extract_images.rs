@@ -639,7 +639,6 @@ pub(crate) fn preflight_document_content(
     let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
     let mut work = 0;
     let mut execution = 0;
-    let mut scoped_execution = 0;
     let all_pages = preflight_page_tree(pdf_doc.inner(), max_depth)?;
     let selected = match pages {
         Some(range) => ctx.resolve_pages(range, all_pages.len())?,
@@ -655,7 +654,7 @@ pub(crate) fn preflight_document_content(
             max_depth,
             &mut work,
             &mut execution,
-            &mut scoped_execution,
+            false,
         )?;
     }
     Ok(())
@@ -1467,7 +1466,7 @@ fn preflight_page_images(
         max_depth,
         document_work,
         &mut 0,
-        &mut 0,
+        true,
     )
 }
 
@@ -1480,7 +1479,7 @@ fn preflight_page_images_inner(
     max_depth: usize,
     document_work: &mut usize,
     document_execution: &mut usize,
-    document_scoped_execution: &mut usize,
+    run_scoped_budget: bool,
 ) -> Result<(), EngineFailure> {
     let mut budget = PreflightBudget {
         scanned: 0,
@@ -1641,50 +1640,53 @@ fn preflight_page_images_inner(
         .filter(|n| *n <= MAX_DOCUMENT_WORK)
         .ok_or_else(EngineFailure::limit_exceeded)?;
 
-    let mut page_contents = HashSet::new();
-    if let Ok(contents) = page.get(b"Contents") {
-        let mut roots = Vec::new();
-        crate::execution_budget::stream_ids(doc, contents, false, 0, &mut roots)?;
-        page_contents.extend(roots);
+    if run_scoped_budget {
+        let mut page_contents = HashSet::new();
+        if let Ok(contents) = page.get(b"Contents") {
+            let mut roots = Vec::new();
+            crate::execution_budget::stream_ids(doc, contents, false, 0, &mut roots)?;
+            page_contents.extend(roots);
+        }
+        let remaining_before = budget.remaining_content(max_bytes)?;
+        let mut state = StreamPreflightState {
+            ctx,
+            doc,
+            max_depth,
+            allowed_ids: None,
+            page_contents: &page_contents,
+            remaining: remaining_before,
+            rewrite: false,
+            visit_declared: false,
+            decoded_cache: HashMap::new(),
+            visited: HashSet::new(),
+            type3_visited: HashSet::new(),
+            out: BTreeMap::new(),
+            facts: BTreeMap::new(),
+            scoped_ops: HashMap::new(),
+            document_work: *budget.document_work,
+            rewrite_memo: HashMap::new(),
+            rewrite_counts: None,
+        };
+        visit_page_execution_streams(&mut state, page_id)?;
+        *budget.document_work = state.document_work;
+        budget.charge_content(remaining_before - state.remaining, max_bytes)?;
+        let page_execution = crate::execution_budget::check_page_with_scoped_ops(
+            ctx,
+            doc,
+            page_id,
+            &state.facts,
+            &state.scoped_ops,
+            &page_contents,
+        )?;
+        if page_execution > MAX_DOCUMENT_WORK {
+            return Err(EngineFailure::owned(
+                ErrorCode::LimitExceeded,
+                format!(
+                    "Content execution cost {page_execution} exceeds limit {MAX_DOCUMENT_WORK}."
+                ),
+            ));
+        }
     }
-    let mut state = StreamPreflightState {
-        ctx,
-        doc,
-        max_depth,
-        allowed_ids: None,
-        page_contents: &page_contents,
-        remaining: max_bytes,
-        rewrite: false,
-        visit_declared: false,
-        decoded_cache: HashMap::new(),
-        visited: HashSet::new(),
-        type3_visited: HashSet::new(),
-        out: BTreeMap::new(),
-        facts: BTreeMap::new(),
-        scoped_ops: HashMap::new(),
-        document_work: 0,
-        rewrite_memo: HashMap::new(),
-        rewrite_counts: None,
-    };
-    visit_page_execution_streams(&mut state, page_id)?;
-    let page_execution = crate::execution_budget::check_page_with_scoped_ops(
-        ctx,
-        doc,
-        page_id,
-        &state.facts,
-        &state.scoped_ops,
-        &page_contents,
-    )?;
-    let next_execution = document_scoped_execution
-        .checked_add(page_execution)
-        .ok_or_else(EngineFailure::limit_exceeded)?;
-    if next_execution > MAX_DOCUMENT_WORK {
-        return Err(EngineFailure::owned(
-            ErrorCode::LimitExceeded,
-            format!("Content execution cost {next_execution} exceeds limit {MAX_DOCUMENT_WORK}."),
-        ));
-    }
-    *document_scoped_execution = next_execution;
     Ok(())
 }
 
@@ -6626,6 +6628,7 @@ mod corpus_tests {
                 "A resource limit was exceeded.",
             ),
             ("content-non-ascii.pdf", "A resource limit was exceeded."),
+            ("forms-cyclic.pdf", "A resource limit was exceeded."),
             (
                 "inline-string-filter.pdf",
                 "PDF resource operand is ambiguous.",
@@ -6933,5 +6936,103 @@ mod corpus_tests {
         let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
         assert_eq!(err.code, ErrorCode::LimitExceeded);
         assert_eq!(err.message, "Page glyph execution work exceeds the limit.");
+    }
+
+    #[test]
+    fn preflight_page_images_threads_work_and_byte_budget_across_scoped_pass() {
+        use lopdf::{Stream, dictionary};
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "scoped-budget",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut raw = lopdf::Document::with_version("1.7");
+        let pages = raw.new_object_id();
+
+        let uninvoked_bytes = b"q Q ".repeat(20);
+        let uninvoked_form_len = uninvoked_bytes.len();
+        let uninvoked_form = raw.add_object(Stream::new(
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()] },
+            uninvoked_bytes,
+        ));
+        let mask_bytes = b"q Q ".repeat(50);
+        let mask_form_len = mask_bytes.len();
+        let mask_form = raw.add_object(Stream::new(
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()] },
+            mask_bytes,
+        ));
+        let pattern_bytes = b"q Q ".repeat(50);
+        let pattern_len = pattern_bytes.len();
+        let pattern = raw.add_object(Stream::new(
+            dictionary! {
+                "Type" => "Pattern",
+                "PatternType" => 1,
+                "PaintType" => 1,
+                "TilingType" => 1,
+                "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+                "XStep" => 10,
+                "YStep" => 10,
+            },
+            pattern_bytes,
+        ));
+        let content_bytes = b"/S gs /P scn".to_vec();
+        let contents_len = content_bytes.len();
+        let contents = raw.add_object(Stream::new(dictionary! {}, content_bytes));
+        let page = raw.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+            "Resources" => dictionary! {
+                "XObject" => dictionary! { "Unused" => uninvoked_form },
+                "ExtGState" => dictionary! { "S" => dictionary! { "SMask" => dictionary! { "S" => "Alpha", "G" => mask_form } } },
+                "Pattern" => dictionary! { "P" => pattern },
+            },
+            "Contents" => contents,
+        });
+        raw.objects.insert(
+            pages,
+            dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }.into(),
+        );
+        let catalog = raw.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        raw.trailer.set("Root", catalog);
+        let mut bytes = Vec::new();
+        raw.save_to(&mut bytes).unwrap();
+        let doc = ariad_pdf::document::open(&bytes, &Limits::local()).unwrap();
+
+        let mut work = 0;
+        let exact_bytes =
+            contents_len + uninvoked_form_len + contents_len + mask_form_len + pattern_len;
+        preflight_page_images(&ctx, &doc, page, exact_bytes, 64, &mut work).unwrap();
+        assert!(
+            work > 200,
+            "expected scoped SMask /G and Pattern ops to accumulate into document_work, got {work}"
+        );
+
+        let mut near_limit_work = MAX_DOCUMENT_WORK - 100;
+        let work_err =
+            preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut near_limit_work)
+                .unwrap_err();
+        assert_eq!(work_err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            work_err.message,
+            "Page or document traversal work exceeds the limit."
+        );
+
+        for tight_max_bytes in [450, exact_bytes - 1] {
+            let bytes_err =
+                preflight_page_images(&ctx, &doc, page, tight_max_bytes, 64, &mut 0).unwrap_err();
+            assert_eq!(bytes_err.code, ErrorCode::LimitExceeded);
+        }
     }
 }
