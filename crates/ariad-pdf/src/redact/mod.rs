@@ -687,6 +687,53 @@ pub fn rewrite_document_with_evidence(
     Ok((output_bytes, carrier_evidence))
 }
 
+/// Refusal raised when the image placement scan cannot account for every image on a page.
+#[cfg(feature = "codecs")]
+fn placement_scan_refused(reason: &str) -> PdfError {
+    PdfError::NotImplemented(format!("image placement scan refused: {reason}"))
+}
+
+/// Reports whether a Flate-filtered stream inflates to a complete zlib stream.
+///
+/// The PDF reader tolerates corrupt or truncated Flate data and returns whatever it could
+/// recover, which would let a scan see only part of the content. Streams without a Flate
+/// filter pass; Flate inside a filter chain is not checked and is refused.
+#[cfg(feature = "codecs")]
+fn flate_is_complete(stream: &Stream, ctx: &ToolCtx) -> Result<bool, PdfError> {
+    let Ok(filters) = stream.filters() else {
+        return Ok(true);
+    };
+    if !filters.iter().any(|f| *f == b"FlateDecode" || *f == b"Fl") {
+        return Ok(true);
+    }
+    if filters.len() != 1 {
+        return Ok(false);
+    }
+    let input = stream.content.as_slice();
+    let mut inflater = flate2::Decompress::new(true);
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        ctx.check()?;
+        let (consumed, produced) = (inflater.total_in(), inflater.total_out());
+        let offset = usize::try_from(consumed).map_err(|_| PdfError::Malformed)?;
+        let status = inflater.decompress(
+            input.get(offset..).ok_or(PdfError::Malformed)?,
+            &mut buffer,
+            flate2::FlushDecompress::Finish,
+        );
+        match status {
+            Ok(flate2::Status::StreamEnd) => return Ok(true),
+            Ok(_) if inflater.total_in() != consumed || inflater.total_out() != produced => {}
+            _ => return Ok(false),
+        }
+    }
+}
+
+/// Lists every image XObject drawn directly by a page's content, with its placement matrix.
+///
+/// The scan fails closed: content that cannot be decoded or parsed, malformed transforms,
+/// unresolvable or non-image XObjects and inline images are refused instead of being
+/// reported as a page without images, so no caller can pass on an incomplete scan.
 #[cfg(feature = "codecs")]
 fn collect_page_image_placements(
     doc: &Document,
@@ -708,29 +755,41 @@ fn collect_page_image_placements(
     let content_streams: Vec<&Object> = match contents_val {
         Object::Array(arr) => arr.iter().collect(),
         Object::Stream(_) => vec![contents_val],
-        _ => return Ok(placements),
+        _ => return Err(placement_scan_refused("page contents are not streams")),
     };
     let mut content_bytes = Vec::new();
     for obj in content_streams {
         ctx.check()?;
         let (_, derefed) = doc.dereference(obj).map_err(|_| PdfError::Malformed)?;
-        if let Ok(stream) = derefed.as_stream()
-            && let Ok(Some(decoded)) = budget.decode(stream)
-        {
-            content_bytes.extend_from_slice(&decoded);
-            content_bytes.push(b'\n');
-        }
+        let stream = derefed
+            .as_stream()
+            .map_err(|_| placement_scan_refused("page contents are not streams"))?;
+        let decoded = budget
+            .decode(stream)?
+            .filter(|_| flate_is_complete(stream, ctx).unwrap_or(false))
+            .ok_or_else(|| placement_scan_refused("undecodable page content"))?;
+        content_bytes.extend_from_slice(&decoded);
+        content_bytes.push(b'\n');
     }
-    if content_bytes.is_empty() {
+    if content_bytes.iter().all(u8::is_ascii_whitespace) {
         return Ok(placements);
     }
-    let parsed = match Content::decode(&content_bytes) {
-        Ok(c) => c,
-        Err(_) => return Ok(placements),
+    let parsed = Content::decode(&content_bytes)
+        .map_err(|_| placement_scan_refused("unparsable page content"))?;
+    let xobjects = match resources.get(b"XObject") {
+        Ok(value) => Some(
+            doc.dereference(value)
+                .and_then(|(_, v)| v.as_dict())
+                .map_err(|_| placement_scan_refused("malformed XObject resources"))?,
+        ),
+        Err(_) => None,
     };
     let mut ctm_stack = Vec::new();
     let mut ctm = Matrix::identity();
-    for op in parsed.operations {
+    for (index, op) in parsed.operations.iter().enumerate() {
+        if index.is_multiple_of(1024) {
+            ctx.check()?;
+        }
         match op.operator.as_str() {
             "q" => ctm_stack.push(ctm),
             "Q" => {
@@ -739,41 +798,43 @@ fn collect_page_image_placements(
                 }
             }
             "cm" => {
-                if op.operands.len() == 6 {
-                    let mut vals = [0.0; 6];
-                    let mut ok = true;
-                    for (i, v) in op.operands.iter().enumerate() {
-                        match v {
-                            Object::Integer(n) => vals[i] = *n as f64,
-                            Object::Real(r) => vals[i] = f64::from(*r),
-                            _ => {
-                                ok = false;
-                                break;
-                            }
-                        }
-                    }
-                    if ok && vals.iter().all(|x| x.is_finite()) {
-                        ctm = Matrix(vals).then(ctm);
-                    }
+                if op.operands.len() != 6 {
+                    return Err(placement_scan_refused("malformed transform"));
                 }
+                let mut vals = [0.0; 6];
+                for (slot, value) in vals.iter_mut().zip(&op.operands) {
+                    *slot = match value {
+                        Object::Integer(n) => *n as f64,
+                        Object::Real(r) => f64::from(*r),
+                        _ => return Err(placement_scan_refused("malformed transform")),
+                    };
+                }
+                if !vals.iter().all(|x| x.is_finite()) {
+                    return Err(placement_scan_refused("malformed transform"));
+                }
+                ctm = Matrix(vals).then(ctm);
             }
             "Do" => {
-                if let Some(name) = op.operands.first().and_then(|v| v.as_name().ok())
-                    && let Ok(xobjs) = resources
-                        .get(b"XObject")
-                        .and_then(|v| doc.dereference(v))
-                        .and_then(|(_, v)| v.as_dict())
-                    && let Ok(xobj_ref) = xobjs.get(name)
-                    && let Ok(id) = xobj_ref.as_reference()
-                    && let Ok(xobj_stream) = doc.get_object(id).and_then(Object::as_stream)
-                    && xobj_stream
-                        .dict
-                        .get(b"Subtype")
-                        .is_ok_and(|s| matches!(s.as_name(), Ok(b"Image")))
-                {
-                    placements.push((id, ctm));
+                let image_id = op
+                    .operands
+                    .first()
+                    .and_then(|v| v.as_name().ok())
+                    .and_then(|name| xobjects?.get(name).ok())
+                    .and_then(|v| v.as_reference().ok())
+                    .ok_or_else(|| placement_scan_refused("unresolvable XObject"))?;
+                let is_image = doc
+                    .get_object(image_id)
+                    .and_then(Object::as_stream)
+                    .map_err(|_| placement_scan_refused("unresolvable XObject"))?
+                    .dict
+                    .get(b"Subtype")
+                    .is_ok_and(|s| matches!(s.as_name(), Ok(b"Image")));
+                if !is_image {
+                    return Err(placement_scan_refused("form XObject"));
                 }
+                placements.push((image_id, ctm));
             }
+            "BI" => return Err(placement_scan_refused("inline image")),
             _ => {}
         }
     }
@@ -1253,6 +1314,161 @@ mod tests {
             overlay_text: None,
             scope: RedactionScope::default(),
             invalidate_signatures: false,
+        }
+    }
+
+    /// Geometry for `pages` blank 100x100 pages with no text.
+    fn blank_geometry(bytes: &[u8], pages: u32) -> RedactGeometry {
+        RedactGeometry {
+            schema: "ariad-redact-geometry/1".into(),
+            source_sha256: crate::writer::sha256_chunks(&[bytes]),
+            page_count: pages as usize,
+            pages: (1..=pages)
+                .map(|page| RedactGeometryPage {
+                    page,
+                    width: 100.0,
+                    height: 100.0,
+                    rotation: 0,
+                    chars: Vec::new(),
+                })
+                .collect(),
+        }
+    }
+
+    fn rectangle(page: u32, rect: [f64; 4]) -> RedactionTarget {
+        RedactionTarget::Rectangle {
+            page,
+            rect: ariad_core::tools::params::CropRect {
+                left: rect[0],
+                bottom: rect[1],
+                right: rect[2],
+                top: rect[3],
+            },
+        }
+    }
+
+    /// Adds an uncompressed 8-bit grey image XObject filled with `value`.
+    fn gray_image(doc: &mut Document, width: u32, height: u32, value: u8) -> lopdf::ObjectId {
+        doc.add_object(lopdf::Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => i64::from(width),
+                "Height" => i64::from(height),
+                "ColorSpace" => "DeviceGray",
+                "BitsPerComponent" => 8,
+            },
+            vec![value; (width * height) as usize],
+        ))
+    }
+
+    /// Serializes a document whose page tree is `pages` with the given leaf pages.
+    fn finish(mut doc: Document, pages: lopdf::ObjectId, kids: &[lopdf::ObjectId]) -> Vec<u8> {
+        doc.objects.insert(
+            pages,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => kids.iter().copied().map(Object::Reference).collect::<Vec<_>>(),
+                "Count" => kids.len() as i64,
+            }),
+        );
+        let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        doc.trailer.set("Root", root);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn rect_plan(
+        bytes: &[u8],
+        pages: u32,
+        targets: Vec<RedactionTarget>,
+    ) -> (RedactParams, RedactionPlan, RedactGeometry) {
+        let geometry = blank_geometry(bytes, pages);
+        let mut request = params();
+        request.targets = targets;
+        let planned = plan(
+            bytes,
+            &request,
+            &geometry,
+            &Limits::local(),
+            &ToolCtx::new(),
+        )
+        .unwrap();
+        (request, planned, geometry)
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn image_pixel_check_refuses_undecodable_page_content() {
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder
+            .write_all(b"q 100 0 0 100 0 0 cm /Im0 Do Q")
+            .unwrap();
+        let mut truncated = encoder.finish().unwrap();
+        truncated.truncate(truncated.len() - 6);
+        for encoded in [b"not a deflate stream".to_vec(), truncated] {
+            let mut doc = Document::with_version("1.7");
+            let pages = doc.new_object_id();
+            let image = gray_image(&mut doc, 2, 2, 200);
+            let contents = doc.add_object(lopdf::Stream::new(
+                dictionary! { "Filter" => "FlateDecode" },
+                encoded,
+            ));
+            let page = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages,
+                "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+                "Contents" => contents,
+            });
+            let bytes = finish(doc, pages, &[page]);
+            let (_, planned, _) = rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+            let err = verify_image_pixels(&bytes, &planned, &Limits::local(), &ToolCtx::new())
+                .unwrap_err();
+            assert!(
+                err.to_string().contains("undecodable page content"),
+                "{err}"
+            );
+        }
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn image_pixel_check_refuses_form_xobjects_and_inline_images() {
+        for content in [
+            &b"/Fm0 Do"[..],
+            b"BI /W 1 /H 1 /BPC 8 /CS /G ID \x00 EI",
+            b"/Missing Do",
+        ] {
+            let mut doc = Document::with_version("1.7");
+            let pages = doc.new_object_id();
+            let form = doc.add_object(lopdf::Stream::new(
+                dictionary! {
+                    "Type" => "XObject",
+                    "Subtype" => "Form",
+                    "BBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                },
+                b"".to_vec(),
+            ));
+            let contents = doc.add_object(lopdf::Stream::new(dictionary! {}, content.to_vec()));
+            let page = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages,
+                "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                "Resources" => dictionary! { "XObject" => dictionary! { "Fm0" => form } },
+                "Contents" => contents,
+            });
+            let bytes = finish(doc, pages, &[page]);
+            let (_, planned, _) = rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+            let err = verify_image_pixels(&bytes, &planned, &Limits::local(), &ToolCtx::new())
+                .unwrap_err();
+            assert!(
+                err.to_string().contains("image placement scan refused"),
+                "{err}"
+            );
         }
     }
 
