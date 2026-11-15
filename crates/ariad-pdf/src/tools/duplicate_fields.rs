@@ -201,7 +201,14 @@ impl RenamePass {
         }
 
         let prefix = parent.map(|id| qualified_name(doc, id)).unwrap_or_default();
-        let mut copy = field.clone();
+        // The source `/Kids` still lists the widgets of every copy until the pass ends, so it is
+        // left out rather than cloned and cleared.
+        let mut copy = Dictionary::new();
+        for (key, value) in field.iter() {
+            if key.as_slice() != b"Kids" {
+                copy.set(key.clone(), value.clone());
+            }
+        }
         let renamed = unique_partial(&mut self.names, &prefix, &partial, ctx)?;
         copy.set("T", encode_pdf_string(&renamed));
         copy.set("Kids", Object::Array(Vec::new()));
