@@ -89,10 +89,19 @@ pub fn read_forms(
     Ok(records)
 }
 
+const FORMULA_TRIGGERS: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
+
+// A value needs a guard when, after any leading apostrophes, it starts with a
+// formula trigger. Guarding apostrophe-prefixed triggers as well keeps a real
+// value such as `'=x` distinct from the guarded form of `=x`.
+fn needs_guard(value: &str) -> bool {
+    value.trim_start_matches('\'').starts_with(FORMULA_TRIGGERS)
+}
+
 // Reverse exactly the apostrophe added by our spreadsheet formula guard.
 fn unguard(value: &str) -> &str {
     match value.strip_prefix('\'') {
-        Some(rest) if rest.starts_with(['=', '+', '-', '@', '\t', '\r']) => rest,
+        Some(rest) if needs_guard(rest) => rest,
         _ => value,
     }
 }
@@ -121,10 +130,16 @@ pub(super) fn detect_delimiter(bytes: &[u8]) -> u8 {
 }
 
 /// Protects against spreadsheet formula injection by prefixing triggering characters
-/// with an apostrophe, delegating to `ariad_core::writer::csv::guard_formula`.
+/// with an apostrophe, like `ariad_core::writer::csv::guard_formula`. A value that
+/// already starts with apostrophes before a trigger gets one more, so the import
+/// side strips exactly one apostrophe and every value round-trips.
 #[must_use]
 pub fn guard_formula(s: &str) -> String {
-    ariad_core::writer::csv::guard_formula(s)
+    if needs_guard(s) {
+        format!("'{s}")
+    } else {
+        s.to_owned()
+    }
 }
 
 /// Serialize one record using CRLF and prefix spreadsheet formulas with an apostrophe.
@@ -175,6 +190,23 @@ mod tests {
         let record = FormRecord::from([("=header".into(), FormValue::Text("+value".into()))]);
         let csv = String::from_utf8(write_forms(&record).unwrap()).unwrap();
         assert_eq!(csv, "'=header\r\n'+value\r\n");
+    }
+
+    #[test]
+    fn apostrophe_prefixed_formulas_round_trip() {
+        let values = [
+            "=x", "'=x", "''=x", "'+1", "'-1", "'@a", "'\tt", "'plain", "'", "''", "plain",
+        ];
+        for value in values {
+            let record = FormRecord::from([("field".into(), FormValue::Text(value.into()))]);
+            let csv = write_forms(&record).unwrap();
+            let records = read_forms(&csv, Some(','), EmptyCell::Skip, 10, &ToolCtx::new())
+                .unwrap();
+            assert_eq!(records[0]["field"], FormValue::Text(value.into()), "{value:?}");
+        }
+        let record = FormRecord::from([("'=header".into(), FormValue::Text("'=value".into()))]);
+        let csv = String::from_utf8(write_forms(&record).unwrap()).unwrap();
+        assert_eq!(csv, "''=header\r\n''=value\r\n");
     }
 
     #[test]
