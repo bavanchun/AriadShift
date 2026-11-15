@@ -577,13 +577,16 @@ fn execute_redact(
         })
         .collect();
 
+    let report_val = serde_json::to_value(&report)
+        .map_err(|e| ToolError::EngineFailure(job.scrubber.scrub(&e.to_string())))?;
+    let (_, _, inline_json) =
+        super::run::scrub_and_cap_inline_json(report_val, job.limits, job.scrubber)?;
+
     Ok(RawToolExecution {
         artifacts: vec![(staged_output, "pdf".into())],
         warnings: convert_warnings,
         metrics,
-        inline_json: Some(
-            serde_json::to_value(&report).map_err(|e| ToolError::EngineFailure(e.to_string()))?,
-        ),
+        inline_json,
     })
 }
 
@@ -772,12 +775,21 @@ fn execute_verify(
     metrics.insert("target_count".into(), json!(verify_params.targets.len()));
     metrics.insert("status".into(), json!(overall_status));
 
+    let report_val = serde_json::to_value(&report)
+        .map_err(|e| ToolError::EngineFailure(job.scrubber.scrub(&e.to_string())))?;
+    let (_, json_bytes, inline_json) =
+        super::run::scrub_and_cap_inline_json(report_val, job.limits, job.scrubber)?;
+    if (json_bytes.len() as u64) > job.limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    let staged_output = job.workspace.output_dir().join("output.json");
+    fs::write(&staged_output, &json_bytes)
+        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+
     Ok(RawToolExecution {
-        artifacts: Vec::new(),
+        artifacts: vec![(staged_output, "json".into())],
         warnings: Vec::new(),
         metrics,
-        inline_json: Some(
-            serde_json::to_value(&report).map_err(|e| ToolError::EngineFailure(e.to_string()))?,
-        ),
+        inline_json,
     })
 }

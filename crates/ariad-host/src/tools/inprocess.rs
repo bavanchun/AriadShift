@@ -311,9 +311,8 @@ pub(crate) fn execute_with_names_and_clock(
         .any(|artifact| !artifact.format.trim().eq_ignore_ascii_case("json"));
 
     if let Some(ref raw_value) = tool_output.json {
-        let scrubbed_value = scrubber.scrub_value(raw_value);
-        let json_bytes = serde_json::to_vec_pretty(&scrubbed_value)
-            .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+        let (scrubbed_value, json_bytes, cap_inline) =
+            super::run::scrub_and_cap_inline_json(raw_value.clone(), limits, scrubber)?;
 
         if (json_bytes.len() as u64) > limits.max_decompressed_bytes {
             return Err(ToolError::LimitExceeded);
@@ -346,7 +345,7 @@ pub(crate) fn execute_with_names_and_clock(
         if let Some(encrypted) = scrubbed_value.get("encrypted") {
             metrics.insert("encrypted".to_owned(), encrypted.clone());
         }
-        inline_json = Some(scrubbed_value);
+        inline_json = cap_inline;
     }
     if tool_output.json.is_none() || has_binary_artifacts {
         let mut total_out_bytes = 0_u64;

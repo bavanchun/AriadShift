@@ -302,7 +302,7 @@ pub(crate) fn execute(
         total: None,
     });
     let mut metrics = BTreeMap::new();
-    let (path, format) = if spec.id == "edit.open_document" {
+    let (inline_json, (path, format)) = if spec.id == "edit.open_document" {
         let params: EditOpenDocumentParams = parse_params(params)?;
         if params.pages.is_some() && inputs[0].1 != "pdf" {
             return Err(ToolError::InvalidParams(
@@ -342,9 +342,24 @@ pub(crate) fn execute(
         metrics.insert("fidelity_preview".into(), json!(previews));
         metrics.insert("block_count".into(), json!(document.block_count()));
         metrics.insert("source_map_count".into(), json!(document.source_map.len()));
+        let raw_bytes = serde_json::to_vec_pretty(&document)
+            .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+        let doc_value = serde_json::to_value(&document)
+            .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+        let (scrubbed_value, _, open_inline_json) =
+            super::run::scrub_and_cap_inline_json(doc_value.clone(), limits, scrubber)?;
+        let doc_bytes = if scrubbed_value == doc_value {
+            raw_bytes
+        } else {
+            serde_json::to_vec_pretty(&scrubbed_value)
+                .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?
+        };
+        if (doc_bytes.len() as u64) > limits.max_ir_json_bytes {
+            return Err(ToolError::LimitExceeded);
+        }
         let path = workspace.output_dir().join("document.json");
-        context.write_ir(&path, &document)?;
-        (path, "json".into())
+        fs::write(&path, &doc_bytes).map_err(|e| ToolError::OutputIo(e.to_string()))?;
+        (open_inline_json, (path, "json".into()))
     } else {
         if normalize_tool_format(&inputs[0].1) != Some("json") {
             return Err(ToolError::WrongInput(
@@ -371,14 +386,14 @@ pub(crate) fn execute(
             .map_or((&document, &readback), |baseline| (baseline, &document));
         metrics.insert("fidelity".into(), json!(report));
         metrics.insert("change_list".into(), json!(changes(before, after)?));
-        (path, params.format.as_str().into())
+        (None, (path, params.format.as_str().into()))
     };
     context.check()?;
     Ok(RawToolExecution {
         artifacts: vec![(path, format)],
         warnings: context.warnings,
         metrics,
-        inline_json: None,
+        inline_json,
     })
 }
 

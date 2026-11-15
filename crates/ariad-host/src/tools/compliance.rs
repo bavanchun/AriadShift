@@ -215,11 +215,14 @@ fn execute_to_pdfa(
 
     fs::rename(&candidate_path, &final_pdf_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
+    let (_, _, inline_json) =
+        crate::tools::run::scrub_and_cap_inline_json(report, limits, scrubber)?;
+
     Ok(RawToolExecution {
         artifacts: vec![(final_pdf_path, "pdf".to_string())],
         warnings: Vec::new(),
         metrics: exec.metrics,
-        inline_json: Some(report),
+        inline_json,
     })
 }
 
@@ -311,11 +314,14 @@ fn execute_to_pdfua(
 
     fs::copy(input_path, &final_pdf_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
+    let (_, _, inline_json) =
+        crate::tools::run::scrub_and_cap_inline_json(report, limits, scrubber)?;
+
     Ok(RawToolExecution {
         artifacts: vec![(final_pdf_path, "pdf".to_string())],
         warnings: Vec::new(),
         metrics: exec.metrics,
-        inline_json: Some(report),
+        inline_json,
     })
 }
 

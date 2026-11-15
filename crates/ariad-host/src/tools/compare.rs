@@ -546,8 +546,10 @@ pub fn execute(
     let report_pdf_bytes = build_report_pdf(&bytes_after, &report, limits, &ctx)
         .map_err(|e| ToolError::EngineFailure(format!("failed to build report PDF: {e}")))?;
 
-    let json_bytes = serde_json::to_vec_pretty(&report)
+    let report_val = serde_json::to_value(&report)
         .map_err(|e| ToolError::EngineFailure(format!("failed to serialize report JSON: {e}")))?;
+    let (_, json_bytes, inline_json) =
+        crate::tools::run::scrub_and_cap_inline_json(report_val, limits, scrubber)?;
 
     let json_path = workspace.output_dir().join("report.json");
     std::fs::write(&json_path, &json_bytes)
@@ -556,8 +558,6 @@ pub fn execute(
     let pdf_path = workspace.output_dir().join("report.pdf");
     std::fs::write(&pdf_path, &report_pdf_bytes)
         .map_err(|e| ToolError::OutputIo(format!("could not write report.pdf: {e}")))?;
-
-    let inline_json = serde_json::to_value(&report).ok();
 
     Ok(RawToolExecution {
         artifacts: vec![(json_path, "json".to_owned()), (pdf_path, "pdf".to_owned())],

@@ -206,7 +206,7 @@ pub fn execute(
     // For JSON-emitting tools, capture the structured JSON payload inline
     // using the workspace's O_NOFOLLOW handle rather than re-opening by raw path.
     let mut inline_json = None;
-    let inline_cap = limits.max_decompressed_bytes.min(32 * 1024 * 1024);
+    let inline_cap = super::run::json_inline_cap(limits);
     if artifacts.len() == 1
         && artifacts[0].1.eq_ignore_ascii_case("json")
         && let Ok(file) = workspace.open_artifact(&artifacts[0].0)

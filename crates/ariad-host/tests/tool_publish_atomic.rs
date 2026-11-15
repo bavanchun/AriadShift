@@ -1202,3 +1202,377 @@ fn publish_atomic_quarantines_risky_extracted_files_and_reports_one_warning_each
         assert!(artifact.path.is_file());
     }
 }
+
+#[test]
+fn default_beside_input_publishes_oversized_engine_json_with_collision_safe_naming() {
+    use ariad_core::limits::Limits;
+    use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
+    use std::ffi::OsString;
+
+    let tmp = TempDir::new().expect("create tempdir");
+    let input_pdf = tmp.path().join("report.pdf");
+    fs::copy(sample_pdf(), &input_pdf).expect("copy sample pdf");
+
+    let mut spec = *ariad_core::tools::find("pdf.text_layout").expect("registered pdf.text_layout");
+    // Use `qpdf` engine key in this mock-script test so `engine_limits` does not inject
+    // a memory limit that requires an external resource-limit launcher under `SandboxMode::Off`.
+    spec.engine = "qpdf";
+    let oversized_script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+{
+  printf '{"big":"'
+  head -c 33554432 /dev/zero | tr '\0' 'a'
+  printf '"}\n'
+} > "$ws_out/output.json"
+printf '{"type":"artifact","path":"%s/output.json","format":"json"}\n' "$ws_out"
+printf '%s\n' '{"type":"result","ok":true}'
+"#;
+    let oversized_cmd = EngineCommand {
+        engine: "qpdf".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(oversized_script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+
+    // 1. Oversized (> 32 MiB) without `-o`: publishes <stem>.<suffix>.json beside input, `inline_json == None`.
+    let req1 = ToolRequest::new(
+        "pdf.text_layout",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_spec(spec)
+    .with_limits(Limits::local())
+    .with_engine_command(oversized_cmd.clone());
+    let res1 = run_tool(&req1).expect("oversized JSON DefaultBesideInput must succeed");
+    assert!(
+        res1.inline_json.is_none(),
+        "oversized JSON must omit inline_json"
+    );
+    let expected1 = tmp.path().join("report.text-layout.json");
+    assert_eq!(res1.artifacts.len(), 1);
+    assert_eq!(res1.artifacts[0].format, "json");
+    assert_eq!(res1.artifacts[0].path, expected1);
+    assert!(fs::metadata(&expected1).unwrap().len() > 32 * 1024 * 1024);
+
+    // 2. Collision with `overwrite == false`: publishes `<stem>.<suffix>-2.json`.
+    let res2 = run_tool(&req1).expect("second oversized run must disambiguate collision");
+    let expected2 = tmp.path().join("report.text-layout-2.json");
+    assert_eq!(res2.artifacts.len(), 1);
+    assert_eq!(res2.artifacts[0].path, expected2);
+    assert!(expected1.is_file() && expected2.is_file());
+
+    // 3. With `overwrite == true`: replaces `<stem>.<suffix>.json`.
+    let res3 = run_tool(&req1.clone().with_overwrite(true))
+        .expect("overwrite=true must replace primary default file");
+    assert_eq!(res3.artifacts.len(), 1);
+    assert_eq!(res3.artifacts[0].path, expected1);
+    assert!(!tmp.path().join("report.text-layout-3.json").exists());
+
+    // 4. Within `inline_cap`: keeps `inline_json` inline and publishes no file beside input.
+    let small_script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+printf '{"small":true}\n' > "$ws_out/output.json"
+printf '{"type":"artifact","path":"%s/output.json","format":"json"}\n' "$ws_out"
+printf '%s\n' '{"type":"result","ok":true}'
+"#;
+    let small_cmd = EngineCommand {
+        args: vec![OsString::from("-c"), OsString::from(small_script)],
+        ..oversized_cmd
+    };
+    let req_small = ToolRequest::new(
+        "pdf.text_layout",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_spec(spec)
+    .with_limits(Limits::local())
+    .with_engine_command(small_cmd);
+    let res_small = run_tool(&req_small).expect("small JSON DefaultBesideInput must succeed");
+    assert!(
+        res_small.artifacts.is_empty(),
+        "small inline JSON must not publish files beside input"
+    );
+    assert_eq!(res_small.inline_json, Some(json!({"small": true})));
+    assert!(!tmp.path().join("report.text-layout-3.json").exists());
+}
+
+#[test]
+fn default_beside_input_oversized_inputless_tool_falls_back_to_document_json() {
+    use ariad_core::limits::Limits;
+    use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
+    use std::{ffi::OsString, process::Command};
+
+    const CHILD_ENV: &str = "ARIAD_TEST_INPUTLESS_RECIPE_CHILD";
+    if std::env::var_os(CHILD_ENV).is_none() {
+        let cwd = TempDir::new().expect("create isolated cwd");
+        let output = Command::new(std::env::current_exe().expect("test binary path"))
+            .current_dir(cwd.path())
+            .env(CHILD_ENV, "1")
+            .args([
+                "--exact",
+                "default_beside_input_oversized_inputless_tool_falls_back_to_document_json",
+                "--nocapture",
+            ])
+            .output()
+            .expect("spawn child test in isolated cwd");
+        assert!(
+            output.status.success(),
+            "child test failed: stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    let script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+{
+  printf '{"version":"ariad-recipe/1","naming":"'
+  head -c 33554432 /dev/zero | tr '\0' 'a'
+  printf '","steps":[{"tool":"pdf.info","params":{}}]}\n'
+} > "$ws_out/output.json"
+printf '{"type":"artifact","path":"%s/output.json","format":"json"}\n' "$ws_out"
+printf '%s\n' '{"type":"result","ok":true}'
+"#;
+    let cmd = EngineCommand {
+        engine: "ai".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+    let req = ToolRequest::new(
+        "ai.recipe_from_text",
+        Vec::new(),
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(json!({"prompt": "inspect document"}))
+    .with_limits(Limits::local())
+    .with_engine_command(cmd);
+
+    let res1 = run_tool(&req).expect("oversized inputless tool must succeed");
+    assert!(res1.inline_json.is_none());
+    assert_eq!(res1.artifacts.len(), 1);
+    assert_eq!(
+        res1.artifacts[0].path.file_name().and_then(|s| s.to_str()),
+        Some("document.recipe-from-text.json")
+    );
+    assert!(Path::new("document.recipe-from-text.json").is_file());
+
+    let res2 = run_tool(&req).expect("collision on inputless tool must use -2");
+    assert_eq!(res2.artifacts.len(), 1);
+    assert_eq!(
+        res2.artifacts[0].path.file_name().and_then(|s| s.to_str()),
+        Some("document.recipe-from-text-2.json")
+    );
+    assert!(Path::new("document.recipe-from-text-2.json").is_file());
+}
+
+#[test]
+fn default_beside_input_inprocess_and_composite_enforce_inline_cap() {
+    use ariad_core::limits::Limits;
+
+    let tmp = TempDir::new().expect("create tempdir");
+    let input_md = tmp.path().join("notes.md");
+    fs::write(
+        &input_md,
+        "# Heading\n\nSome paragraph content for editing.\n",
+    )
+    .unwrap();
+
+    // 1. Within `inline_cap`: `edit.open_document` without `-o` returns `inline_json` and writes no file.
+    let req_inline = ToolRequest::new(
+        "edit.open_document",
+        vec![InputRef::new(&input_md)],
+        OutputTarget::DefaultBesideInput,
+    );
+    let res_inline = run_tool(&req_inline).expect("edit.open_document DefaultBesideInput");
+    assert!(res_inline.artifacts.is_empty());
+    let inline = res_inline.inline_json.expect("inline IR must be present");
+    assert_eq!(inline["version"], "ariad-ir/2");
+    assert!(!tmp.path().join("notes.open-document.json").exists());
+
+    // 2. Exceeding `inline_cap` (`max_decompressed_bytes = 128` while `max_ir_json_bytes` stays large):
+    // writes `<stem>.open-document.json` (and `-2.json` on collision) with `inline_json == None`.
+    let capped_limits = Limits {
+        max_decompressed_bytes: 128,
+        ..Limits::local()
+    };
+    let req_capped = req_inline.with_limits(capped_limits);
+    let res_capped1 =
+        run_tool(&req_capped).expect("oversized open_document must publish beside input");
+    assert!(res_capped1.inline_json.is_none());
+    let expected1 = tmp.path().join("notes.open-document.json");
+    assert_eq!(res_capped1.artifacts.len(), 1);
+    assert_eq!(res_capped1.artifacts[0].path, expected1);
+    let parsed1: serde_json::Value =
+        serde_json::from_slice(&fs::read(&expected1).unwrap()).expect("valid IR JSON file");
+    assert_eq!(parsed1["version"], "ariad-ir/2");
+
+    let res_capped2 = run_tool(&req_capped).expect("collision must produce -2.json");
+    assert_eq!(res_capped2.artifacts.len(), 1);
+    assert_eq!(
+        res_capped2.artifacts[0].path,
+        tmp.path().join("notes.open-document-2.json")
+    );
+}
+
+#[test]
+fn default_beside_input_rule_ii_pdf_compare_diff_and_oversized_fallback() {
+    use ariad_core::limits::Limits;
+
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let src_before = repo_root.join("fixtures/pdf-tools/compare-before.pdf");
+    let src_after = repo_root.join("fixtures/pdf-tools/compare-after.pdf");
+
+    // 1. Inline report fits: publishes `<stem>.diff.pdf` beside first input, keeps report in `inline_json`,
+    // disambiguates collisions to `<stem>.diff-2.pdf`, and replaces `<stem>.diff.pdf` when overwrite=true.
+    let tmp = TempDir::new().expect("create tempdir");
+    let before = tmp.path().join("compare-before.pdf");
+    let after = tmp.path().join("compare-after.pdf");
+    fs::copy(&src_before, &before).unwrap();
+    fs::copy(&src_after, &after).unwrap();
+
+    let req = ToolRequest::new(
+        "pdf.compare",
+        vec![InputRef::new(&before), InputRef::new(&after)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(json!({"mode": "text"}));
+
+    let res1 = run_tool(&req).expect("pdf.compare DefaultBesideInput must succeed");
+    assert_eq!(res1.artifacts.len(), 1);
+    assert_eq!(res1.artifacts[0].format, "pdf");
+    let diff1 = tmp.path().join("compare-before.diff.pdf");
+    assert_eq!(res1.artifacts[0].path, diff1);
+    assert!(fs::read(&diff1).unwrap().starts_with(b"%PDF-"));
+    assert!(res1.inline_json.is_some());
+    assert!(!tmp.path().join("compare-before.compare.json").exists());
+    assert!(!tmp.path().join("compare-before.compared.json").exists());
+
+    let res2 = run_tool(&req).expect("collision must produce diff-2.pdf");
+    assert_eq!(res2.artifacts.len(), 1);
+    assert_eq!(
+        res2.artifacts[0].path,
+        tmp.path().join("compare-before.diff-2.pdf")
+    );
+
+    let res3 = run_tool(&req.with_overwrite(true)).expect("overwrite must replace diff.pdf");
+    assert_eq!(res3.artifacts.len(), 1);
+    assert_eq!(res3.artifacts[0].path, diff1);
+
+    // 2. Oversized JSON report (`inline_json == None`): publishes BOTH `<stem>.diff.pdf` and
+    // `<stem>.compare.json` (and disambiguates both with `-2` when `overwrite == false`).
+    fn build_minimal_text_pdf(lines: &[String]) -> Vec<u8> {
+        let mut stream = String::from("BT /F1 10 Tf 50 750 Td\n");
+        for line in lines {
+            stream.push_str(&format!("({line}) Tj\n0 -14 Td\n"));
+        }
+        stream.push_str("ET");
+        let objects = [
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_string(),
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n".to_string(),
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n".to_string(),
+            "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n".to_string(),
+            format!(
+                "5 0 obj\n<< /Length {} >>\nstream\n{stream}\nendstream\nendobj\n",
+                stream.len()
+            ),
+        ];
+        let mut out = Vec::from(b"%PDF-1.4\n".as_slice());
+        let mut offsets = Vec::with_capacity(objects.len());
+        for obj in &objects {
+            offsets.push(out.len());
+            out.extend_from_slice(obj.as_bytes());
+        }
+        let xref_offset = out.len();
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for off in offsets {
+            out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        out
+    }
+
+    let make_lines = |prefix: &str| -> Vec<String> {
+        (0..30)
+            .map(|row| {
+                (0..6)
+                    .map(|col| format!("k {prefix}{}", row * 6 + col))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .collect()
+    };
+
+    let tmp_over = TempDir::new().expect("create oversized tempdir");
+    let before_over = tmp_over.path().join("tiny-before.pdf");
+    let after_over = tmp_over.path().join("tiny-after.pdf");
+    let before_bytes = build_minimal_text_pdf(&make_lines("a"));
+    let after_bytes = build_minimal_text_pdf(&make_lines("b"));
+    assert!(before_bytes.len() < 4096 && after_bytes.len() < 4096);
+    fs::write(&before_over, before_bytes).unwrap();
+    fs::write(&after_over, after_bytes).unwrap();
+
+    let req_over = ToolRequest::new(
+        "pdf.compare",
+        vec![InputRef::new(&before_over), InputRef::new(&after_over)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(json!({"mode": "text"}))
+    .with_limits(Limits {
+        max_decompressed_bytes: 8192,
+        ..Limits::local()
+    });
+
+    let over1 = run_tool(&req_over).expect("oversized pdf.compare must publish both artifacts");
+    assert!(over1.inline_json.is_none());
+    assert_eq!(over1.artifacts.len(), 2);
+    assert_eq!(
+        over1.artifacts[0].path,
+        tmp_over.path().join("tiny-before.diff.pdf")
+    );
+    assert_eq!(over1.artifacts[0].format, "pdf");
+    assert_eq!(
+        over1.artifacts[1].path,
+        tmp_over.path().join("tiny-before.compare.json")
+    );
+    assert_eq!(over1.artifacts[1].format, "json");
+    assert!(fs::metadata(&over1.artifacts[1].path).unwrap().len() > 8192);
+    let parsed_compare: serde_json::Value =
+        serde_json::from_slice(&fs::read(&over1.artifacts[1].path).unwrap())
+            .expect("valid compare JSON artifact");
+    assert_eq!(parsed_compare["summary"]["pages_before"], 1);
+
+    let over2 = run_tool(&req_over).expect("oversized collision must disambiguate both outputs");
+    assert!(over2.inline_json.is_none());
+    assert_eq!(over2.artifacts.len(), 2);
+    assert_eq!(
+        over2.artifacts[0].path,
+        tmp_over.path().join("tiny-before.diff-2.pdf")
+    );
+    assert_eq!(
+        over2.artifacts[1].path,
+        tmp_over.path().join("tiny-before.compare-2.json")
+    );
+}
