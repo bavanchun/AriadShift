@@ -639,24 +639,37 @@ with open(r"{out_path}", "wb") as f:
     let out_files: Vec<_> = std::fs::read_dir(&out_dir).unwrap().collect();
     assert!(!out_files.is_empty());
 
-    // 4. Negative test: path-valued certificate secret cannot read /private/var or ~/.netrc
+    // 4. Negative test: a path-valued certificate secret is rejected by the
+    // host. Every iteration mints fresh single-use handles so the failure
+    // comes from certificate validation, not handle consumption.
+    let mut next_id = 100_u64;
     for forbidden_path in ["/private/var/test.p12", "~/.netrc"] {
-        send(
-            &mut stdin,
-            json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":forbidden_path,"certificate":true}}}),
-        );
-        let bad_cert_resp = response(&mut stdout, &mut stdin, 5);
-        let bad_cert_handle = bad_cert_resp["result"]["structuredContent"]["handle"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let mut mint = |value: &str, certificate: bool| -> String {
+            next_id += 1;
+            let mut arguments = json!({ "value": value });
+            if certificate {
+                arguments["certificate"] = json!(true);
+            }
+            send(
+                &mut stdin,
+                json!({"jsonrpc":"2.0","id":next_id,"method":"tools/call","params":{"name":"secret_put","arguments":arguments}}),
+            );
+            let resp = response(&mut stdout, &mut stdin, next_id);
+            resp["result"]["structuredContent"]["handle"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let bad_cert_handle = mint(forbidden_path, true);
+        let fresh_pass_handle = mint(&password, false);
 
         let bad_out_dir = dir.path().join("bad_out");
+        next_id += 1;
         send(
             &mut stdin,
             json!({
                 "jsonrpc": "2.0",
-                "id": 6,
+                "id": next_id,
                 "method": "tools/call",
                 "params": {
                     "name": "run_doc_tool",
@@ -666,16 +679,25 @@ with open(r"{out_path}", "wb") as f:
                         "output_dir": bad_out_dir.to_string_lossy(),
                         "params": {
                             "certificate": {"$secret": bad_cert_handle},
-                            "password": {"$secret": pass_handle}
+                            "password": {"$secret": fresh_pass_handle}
                         }
                     }
                 }
             }),
         );
-        let bad_sign_resp = response(&mut stdout, &mut stdin, 6);
+        let bad_sign_resp = response(&mut stdout, &mut stdin, next_id);
         assert_eq!(
             bad_sign_resp["result"]["isError"], true,
             "MCP pdf.sign must fail when certificate is a filesystem path: {forbidden_path}"
+        );
+        let text = bad_sign_resp["result"].to_string();
+        assert!(
+            text.contains("not a filesystem path"),
+            "expected the certificate path rejection for {forbidden_path}, got: {text}"
+        );
+        assert!(
+            !text.contains("unknown or already used secret handle"),
+            "rejection must not come from handle consumption: {text}"
         );
     }
 
