@@ -14,17 +14,44 @@ use crate::{
     output::ToolContext,
 };
 
+/// Maximum execution work units allowed per page before refusing to load.
+pub(crate) const MAX_PAGE_WORK: usize = 100_000;
+/// Maximum execution work units allowed across all selected pages in a document.
+pub(crate) const MAX_DOCUMENT_WORK: usize = 1_000_000;
+/// Maximum nested content-stream call depth (`Do`, `PatternType 1`, `SMask /G`, `CharProcs`).
+pub(crate) const MAX_CONTENT_NESTING_DEPTH: usize = 8;
+
 #[derive(Clone, Debug)]
 pub(crate) struct Call {
     pub op: Vec<u8>,
     pub name: Vec<u8>,
 }
 
-#[derive(Clone, Debug)]
+/// Per-scope operation and inline-image costs for a single content stream.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ScopedStreamFacts {
+    pub ops: usize,
+    pub inline_pixels: u64,
+    pub inline_bytes: u64,
+}
+
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Facts {
     pub ops: usize,
     pub glyphs: usize,
+    pub inline_pixels: u64,
+    pub inline_bytes: u64,
     pub calls: Vec<Call>,
+}
+
+impl Facts {
+    pub(crate) fn scoped(&self) -> ScopedStreamFacts {
+        ScopedStreamFacts {
+            ops: self.ops,
+            inline_pixels: self.inline_pixels,
+            inline_bytes: self.inline_bytes,
+        }
+    }
 }
 
 fn hash_len(hasher: &mut Sha256, len: usize) {
@@ -310,6 +337,44 @@ impl Scope {
         }
         hasher.finalize().into()
     }
+    /// Digest covering only effective and fallback `/XObject` categories.
+    pub(crate) fn xobject_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"ariad.execution_budget.xobject_scope.v1");
+        for categories in [&self.page, &self.physical_page, &self.current] {
+            if let Some(xobjects) = categories.get(b"XObject".as_slice()) {
+                hasher.update([1]);
+                hasher.update(xobjects.digest());
+            } else {
+                hasher.update([0]);
+            }
+        }
+        hasher.finalize().into()
+    }
+    /// Resolves a resource `/XObject` value to its indirect object ID.
+    pub(crate) fn resolve_xobject_id(
+        doc: &lopdf::Document,
+        value: &Object,
+    ) -> Result<ObjectId, EngineFailure> {
+        let (id, _) = resolve(Some(doc), value)?;
+        id.ok_or_else(EngineFailure::limit_exceeded)
+    }
+    /// Resolves a named XObject from the effective resource scope to its indirect object ID.
+    pub(crate) fn xobject_id(
+        &self,
+        doc: &lopdf::Document,
+        name: &[u8],
+    ) -> Result<Option<ObjectId>, EngineFailure> {
+        self.get(b"XObject", name)
+            .map(|value| Self::resolve_xobject_id(doc, value))
+            .transpose()
+    }
+    /// Iterates `(name, value)` pairs declared in the effective `/XObject` category.
+    pub(crate) fn xobject_entries(&self) -> impl Iterator<Item = (&[u8], &Object)> + '_ {
+        self.current_category(b"XObject")
+            .into_iter()
+            .flat_map(|values| values.iter().map(|(name, value)| (name.as_slice(), value)))
+    }
     pub(crate) fn get(&self, category: &[u8], name: &[u8]) -> Option<&Object> {
         self.current
             .get(category)
@@ -468,6 +533,20 @@ fn limit(cost: usize, max: usize) -> Result<usize, EngineFailure> {
     Ok(cost)
 }
 
+fn check_inline_totals(
+    ctx: &ToolContext<'_>,
+    pixels: u64,
+    bytes: u64,
+) -> Result<(), EngineFailure> {
+    if pixels > ctx.max_pixels() || bytes > ctx.max_pixels().saturating_mul(4) {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Page inline image totals exceed the limit.",
+        ));
+    }
+    Ok(())
+}
+
 type MemoKey = (ObjectId, [u8; 32], usize, Vec<ObjectId>, bool);
 type GlyphKey = ([u8; 32], usize, Vec<ObjectId>);
 
@@ -475,20 +554,46 @@ struct Calculator<'a, 'b> {
     ctx: &'a ToolContext<'b>,
     doc: &'a lopdf::Document,
     facts: &'a BTreeMap<ObjectId, Facts>,
-    scoped_ops: Option<&'a HashMap<(ObjectId, [u8; 32]), usize>>,
-    memo: HashMap<MemoKey, usize>,
-    glyph_memo: HashMap<GlyphKey, usize>,
+    scoped_ops: Option<&'a HashMap<(ObjectId, [u8; 32]), ScopedStreamFacts>>,
+    memo: HashMap<MemoKey, ScopedStreamFacts>,
+    glyph_memo: HashMap<GlyphKey, ScopedStreamFacts>,
     page_contents: HashSet<ObjectId>,
 }
 
 impl Calculator<'_, '_> {
+    fn add_cost(
+        &self,
+        base: ScopedStreamFacts,
+        extra: ScopedStreamFacts,
+    ) -> Result<ScopedStreamFacts, EngineFailure> {
+        let ops = limit(
+            base.ops
+                .checked_add(extra.ops)
+                .ok_or_else(EngineFailure::limit_exceeded)?,
+            MAX_PAGE_WORK,
+        )?;
+        let inline_pixels = base
+            .inline_pixels
+            .checked_add(extra.inline_pixels)
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        let inline_bytes = base
+            .inline_bytes
+            .checked_add(extra.inline_bytes)
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        check_inline_totals(self.ctx, inline_pixels, inline_bytes)?;
+        Ok(ScopedStreamFacts {
+            ops,
+            inline_pixels,
+            inline_bytes,
+        })
+    }
     fn stream(
         &mut self,
         id: ObjectId,
         scope: &Scope,
         depth: usize,
         active: &mut HashSet<ObjectId>,
-    ) -> Result<usize, EngineFailure> {
+    ) -> Result<ScopedStreamFacts, EngineFailure> {
         self.stream_inner(id, scope, depth, active, false)
     }
     fn stream_inner(
@@ -498,10 +603,10 @@ impl Calculator<'_, '_> {
         depth: usize,
         active: &mut HashSet<ObjectId>,
         page_contents: bool,
-    ) -> Result<usize, EngineFailure> {
+    ) -> Result<ScopedStreamFacts, EngineFailure> {
         let page_contents = page_contents || self.page_contents.contains(&id);
         self.ctx.check()?;
-        if depth > 8 || !active.insert(id) {
+        if depth > MAX_CONTENT_NESTING_DEPTH || !active.insert(id) {
             return Err(EngineFailure::limit_exceeded());
         }
         let mut ancestors: Vec<_> = active.iter().copied().collect();
@@ -533,8 +638,9 @@ impl Calculator<'_, '_> {
                 .get(&(id, scope.colorspace_digest()))
                 .copied()
                 .ok_or_else(EngineFailure::limit_exceeded)?,
-            None => facts.ops,
+            None => facts.scoped(),
         };
+        check_inline_totals(self.ctx, cost.inline_pixels, cost.inline_bytes)?;
         for call in &facts.calls {
             let extra = match call.op.as_slice() {
                 b"Do" => self.target(scope.get(b"XObject", &call.name), &scope, depth, active)?,
@@ -543,14 +649,10 @@ impl Calculator<'_, '_> {
                 }
                 b"gs" => self.mask(scope.get(b"ExtGState", &call.name), &scope, depth, active)?,
                 // The shading operator itself is already included in `facts.ops`.
-                b"sh" => 0,
-                _ => 0,
+                b"sh" => ScopedStreamFacts::default(),
+                _ => ScopedStreamFacts::default(),
             };
-            cost = limit(
-                cost.checked_add(extra)
-                    .ok_or_else(EngineFailure::limit_exceeded)?,
-                100_000,
-            )?;
+            cost = self.add_cost(cost, extra)?;
         }
         if facts.glyphs > 0 {
             let mut ancestors: Vec<_> = active.iter().copied().collect();
@@ -559,7 +661,7 @@ impl Calculator<'_, '_> {
             let max_glyph = if let Some(&cost) = self.glyph_memo.get(&glyph_key) {
                 cost
             } else {
-                let mut max_glyph = 0usize;
+                let mut max_glyph = ScopedStreamFacts::default();
                 let fonts = scope
                     .current
                     .get(b"Font".as_slice())
@@ -601,22 +703,31 @@ impl Calculator<'_, '_> {
                             depth + 1,
                             active,
                         )?;
-                        max_glyph = max_glyph.max(glyph_cost);
+                        max_glyph.ops = max_glyph.ops.max(glyph_cost.ops);
+                        max_glyph.inline_pixels =
+                            max_glyph.inline_pixels.max(glyph_cost.inline_pixels);
+                        max_glyph.inline_bytes =
+                            max_glyph.inline_bytes.max(glyph_cost.inline_bytes);
                     }
                 }
                 self.glyph_memo.insert(glyph_key, max_glyph);
                 max_glyph
             };
-            cost = limit(
-                cost.checked_add(
-                    facts
-                        .glyphs
-                        .checked_mul(max_glyph)
-                        .ok_or_else(EngineFailure::limit_exceeded)?,
-                )
-                .ok_or_else(EngineFailure::limit_exceeded)?,
-                100_000,
-            )?;
+            let glyph_uses =
+                u64::try_from(facts.glyphs).map_err(|_| EngineFailure::limit_exceeded())?;
+            let glyph_cost = ScopedStreamFacts {
+                ops: facts
+                    .glyphs
+                    .checked_mul(max_glyph.ops)
+                    .ok_or_else(EngineFailure::limit_exceeded)?,
+                inline_pixels: glyph_uses
+                    .checked_mul(max_glyph.inline_pixels)
+                    .ok_or_else(EngineFailure::limit_exceeded)?,
+                inline_bytes: glyph_uses
+                    .checked_mul(max_glyph.inline_bytes)
+                    .ok_or_else(EngineFailure::limit_exceeded)?,
+            };
+            cost = self.add_cost(cost, glyph_cost)?;
         }
         active.remove(&id);
         self.memo.insert(key, cost);
@@ -628,9 +739,9 @@ impl Calculator<'_, '_> {
         scope: &Scope,
         depth: usize,
         active: &mut HashSet<ObjectId>,
-    ) -> Result<usize, EngineFailure> {
+    ) -> Result<ScopedStreamFacts, EngineFailure> {
         let Some(value) = value else {
-            return Ok(0);
+            return Ok(ScopedStreamFacts::default());
         };
         let (id, obj) = resolve(Some(self.doc), value)?;
         let stream = obj
@@ -643,7 +754,7 @@ impl Calculator<'_, '_> {
             .and_then(|v| resolve(Some(self.doc), v).ok())
             .and_then(|(_, v)| v.as_name().ok());
         match subtype {
-            Some(b"Image") => Ok(0),
+            Some(b"Image") => Ok(ScopedStreamFacts::default()),
             Some(b"Form") => self.stream(
                 id.ok_or_else(EngineFailure::limit_exceeded)?,
                 scope,
@@ -659,9 +770,9 @@ impl Calculator<'_, '_> {
         scope: &Scope,
         depth: usize,
         active: &mut HashSet<ObjectId>,
-    ) -> Result<usize, EngineFailure> {
+    ) -> Result<ScopedStreamFacts, EngineFailure> {
         let Some(value) = value else {
-            return Ok(0);
+            return Ok(ScopedStreamFacts::default());
         };
         let (id, obj) = resolve(Some(self.doc), value)?;
         let dict: &Dictionary = match obj {
@@ -681,7 +792,11 @@ impl Calculator<'_, '_> {
                 depth + 1,
                 active,
             ),
-            Some(2) => Ok(1),
+            Some(2) => Ok(ScopedStreamFacts {
+                ops: 1,
+                inline_pixels: 0,
+                inline_bytes: 0,
+            }),
             _ => Err(EngineFailure::limit_exceeded()),
         }
     }
@@ -691,20 +806,20 @@ impl Calculator<'_, '_> {
         scope: &Scope,
         depth: usize,
         active: &mut HashSet<ObjectId>,
-    ) -> Result<usize, EngineFailure> {
+    ) -> Result<ScopedStreamFacts, EngineFailure> {
         let Some(value) = value else {
-            return Ok(0);
+            return Ok(ScopedStreamFacts::default());
         };
         let dict = resolve(Some(self.doc), value)?
             .1
             .as_dict()
             .map_err(|_| EngineFailure::limit_exceeded())?;
         let Ok(mask) = dict.get(b"SMask") else {
-            return Ok(0);
+            return Ok(ScopedStreamFacts::default());
         };
         let mask = resolve(Some(self.doc), mask)?.1;
         if matches!(mask, Object::Name(name) if name == b"None") {
-            return Ok(0);
+            return Ok(ScopedStreamFacts::default());
         }
         let group = mask
             .as_dict()
@@ -713,6 +828,40 @@ impl Calculator<'_, '_> {
             .map_err(|_| EngineFailure::limit_exceeded())?;
         let mask_scope = scope.mask_scope();
         self.target(Some(group), &mask_scope, depth, active)
+    }
+    fn page(&mut self, page_id: ObjectId) -> Result<ScopedStreamFacts, EngineFailure> {
+        let page = self
+            .doc
+            .get_dictionary(page_id)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let scope = Scope::from_page(self.doc, inherited_resources(self.doc, page_id)?)?;
+        let mut roots = Vec::new();
+        if let Ok(contents) = page.get(b"Contents") {
+            stream_ids(self.doc, contents, false, 0, &mut roots)?;
+        }
+        let contents_count = roots.len();
+        if let Ok(annotations) = page.get(b"Annots") {
+            let annotations = resolve(Some(self.doc), annotations)?
+                .1
+                .as_array()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for annotation in annotations {
+                let annotation = resolve(Some(self.doc), annotation)?
+                    .1
+                    .as_dict()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                if let Ok(appearance) = annotation.get(b"AP") {
+                    stream_ids(self.doc, appearance, true, 0, &mut roots)?;
+                }
+            }
+        }
+        let mut page_cost = ScopedStreamFacts::default();
+        for (index, id) in roots.into_iter().enumerate() {
+            let stream_cost =
+                self.stream_inner(id, &scope, 0, &mut HashSet::new(), index < contents_count)?;
+            page_cost = self.add_cost(page_cost, stream_cost)?;
+        }
+        Ok(page_cost)
     }
 }
 
@@ -727,11 +876,31 @@ pub(crate) fn check(
     check_inner(ctx, doc, facts, None, pages, page_contents)
 }
 
+pub(crate) fn check_page_with_scoped_ops(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    page_id: ObjectId,
+    facts: &BTreeMap<ObjectId, Facts>,
+    scoped_ops: &HashMap<(ObjectId, [u8; 32]), ScopedStreamFacts>,
+    page_contents: &HashSet<ObjectId>,
+) -> Result<usize, EngineFailure> {
+    let mut calc = Calculator {
+        ctx,
+        doc,
+        facts,
+        scoped_ops: Some(scoped_ops),
+        memo: HashMap::new(),
+        glyph_memo: HashMap::new(),
+        page_contents: page_contents.clone(),
+    };
+    Ok(calc.page(page_id)?.ops)
+}
+
 pub(crate) fn check_with_scoped_ops(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
     facts: &BTreeMap<ObjectId, Facts>,
-    scoped_ops: &HashMap<(ObjectId, [u8; 32]), usize>,
+    scoped_ops: &HashMap<(ObjectId, [u8; 32]), ScopedStreamFacts>,
     pages: Option<&ariad_core::tools::PageRange>,
     page_contents: &HashSet<ObjectId>,
 ) -> Result<(), EngineFailure> {
@@ -742,7 +911,7 @@ fn check_inner(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
     facts: &BTreeMap<ObjectId, Facts>,
-    scoped_ops: Option<&HashMap<(ObjectId, [u8; 32]), usize>>,
+    scoped_ops: Option<&HashMap<(ObjectId, [u8; 32]), ScopedStreamFacts>>,
     pages: Option<&ariad_core::tools::PageRange>,
     page_contents: &HashSet<ObjectId>,
 ) -> Result<(), EngineFailure> {
@@ -763,50 +932,12 @@ fn check_inner(
     };
     for number in selected {
         let page_id = all_pages[number - 1];
-        let page = doc
-            .get_dictionary(page_id)
-            .map_err(|_| EngineFailure::limit_exceeded())?;
-        let scope = Scope::from_page(doc, inherited_resources(doc, page_id)?)?;
-        let mut roots = Vec::new();
-        if let Ok(contents) = page.get(b"Contents") {
-            stream_ids(doc, contents, false, 0, &mut roots)?;
-        }
-        let contents_count = roots.len();
-        if let Ok(annotations) = page.get(b"Annots") {
-            let annotations = resolve(Some(doc), annotations)?
-                .1
-                .as_array()
-                .map_err(|_| EngineFailure::limit_exceeded())?;
-            for annotation in annotations {
-                let annotation = resolve(Some(doc), annotation)?
-                    .1
-                    .as_dict()
-                    .map_err(|_| EngineFailure::limit_exceeded())?;
-                if let Ok(appearance) = annotation.get(b"AP") {
-                    stream_ids(doc, appearance, true, 0, &mut roots)?;
-                }
-            }
-        }
-        let mut page_cost = 0usize;
-        for (index, id) in roots.into_iter().enumerate() {
-            page_cost = limit(
-                page_cost
-                    .checked_add(calc.stream_inner(
-                        id,
-                        &scope,
-                        0,
-                        &mut HashSet::new(),
-                        index < contents_count,
-                    )?)
-                    .ok_or_else(EngineFailure::limit_exceeded)?,
-                100_000,
-            )?;
-        }
+        let page_cost = calc.page(page_id)?;
         total = limit(
             total
-                .checked_add(page_cost)
+                .checked_add(page_cost.ops)
                 .ok_or_else(EngineFailure::limit_exceeded)?,
-            1_000_000,
+            MAX_DOCUMENT_WORK,
         )?;
     }
     Ok(())
@@ -832,6 +963,8 @@ mod tests {
         Facts {
             ops,
             glyphs: 0,
+            inline_pixels: 0,
+            inline_bytes: 0,
             calls: calls
                 .iter()
                 .map(|(op, name)| Call {
@@ -874,16 +1007,21 @@ mod tests {
         };
         assert_eq!(
             calc.stream_inner(root, &scope, 0, &mut HashSet::new(), true)
-                .unwrap(),
+                .unwrap()
+                .ops,
             18
         );
         assert_eq!(
-            calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
+            calc.stream(root, &scope, 0, &mut HashSet::new())
+                .unwrap()
+                .ops,
             1
         );
         calc.page_contents.insert(root);
         assert_eq!(
-            calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
+            calc.stream(root, &scope, 0, &mut HashSet::new())
+                .unwrap()
+                .ops,
             18
         );
     }
@@ -951,7 +1089,9 @@ mod tests {
             page_contents: HashSet::new(),
         };
         assert_eq!(
-            calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
+            calc.stream(root, &scope, 0, &mut HashSet::new())
+                .unwrap()
+                .ops,
             19
         );
     }
@@ -1001,7 +1141,8 @@ mod tests {
         };
         assert_eq!(
             calc.mask(Some(&gs), &scope, 0, &mut HashSet::new())
-                .unwrap(),
+                .unwrap()
+                .ops,
             502
         );
     }
@@ -1035,7 +1176,7 @@ mod tests {
             Facts {
                 ops: 1,
                 glyphs: 20,
-                calls: Vec::new(),
+                ..Facts::default()
             },
         );
         all.insert(
@@ -1156,8 +1297,7 @@ mod tests {
             content_id,
             Facts {
                 ops: 1,
-                calls: Vec::new(),
-                glyphs: 0,
+                ..Facts::default()
             },
         );
         let mut page_contents = HashSet::new();
@@ -1347,10 +1487,38 @@ mod tests {
             (form_id, facts(30_000, &[])),
         ]);
         let scoped_ops = HashMap::from([
-            ((page1_stream, scope1.colorspace_digest()), 20_000),
-            ((page2_stream, scope2.colorspace_digest()), 11_000),
-            ((form_id, scope1.colorspace_digest()), 30_000),
-            ((form_id, scope2.colorspace_digest()), 90_000),
+            (
+                (page1_stream, scope1.colorspace_digest()),
+                ScopedStreamFacts {
+                    ops: 20_000,
+                    inline_pixels: 0,
+                    inline_bytes: 0,
+                },
+            ),
+            (
+                (page2_stream, scope2.colorspace_digest()),
+                ScopedStreamFacts {
+                    ops: 11_000,
+                    inline_pixels: 0,
+                    inline_bytes: 0,
+                },
+            ),
+            (
+                (form_id, scope1.colorspace_digest()),
+                ScopedStreamFacts {
+                    ops: 30_000,
+                    inline_pixels: 0,
+                    inline_bytes: 0,
+                },
+            ),
+            (
+                (form_id, scope2.colorspace_digest()),
+                ScopedStreamFacts {
+                    ops: 90_000,
+                    inline_pixels: 0,
+                    inline_bytes: 0,
+                },
+            ),
         ]);
 
         let mut sink = Vec::new();
@@ -1370,5 +1538,179 @@ mod tests {
             err.message.contains("Content execution cost"),
             "unexpected error: {err:?}"
         );
+    }
+
+    #[test]
+    fn soft_mask_group_amplifies_inline_pixels_and_bytes_from_physical_page() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut sink = Vec::new();
+        let mut limits = Limits::local();
+        limits.max_asset_bytes = Some(400);
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let ctx = ToolContext::new("smask-inline", "pdf.render", paths, limits, &mut sink);
+
+        let mut doc = lopdf::Document::new();
+        let phys_target = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let shadowed_target = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let group = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let outer = form(
+            &mut doc,
+            dictionary! {
+                "Subtype" => "Form",
+                "Resources" => dictionary! {
+                    "XObject" => dictionary! { "ImForm" => Object::Reference(shadowed_target) },
+                    "ExtGState" => dictionary! {
+                        "GS" => dictionary! { "SMask" => dictionary! { "G" => Object::Reference(group) } }
+                    }
+                }
+            },
+        );
+        let content = form(&mut doc, dictionary! {});
+        let pages_id = doc.new_object_id();
+        let page_res = Object::Dictionary(dictionary! {
+            "XObject" => dictionary! {
+                "Outer" => Object::Reference(outer),
+                "ImForm" => Object::Reference(phys_target),
+            },
+        });
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => Object::Reference(pages_id),
+            "Resources" => page_res,
+            "Contents" => Object::Reference(content),
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![Object::Reference(page_id)],
+                "Count" => 1,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+
+        let table = BTreeMap::from([
+            (content, facts(1, &[(b"Do", b"Outer")])),
+            // 5 * 30 = 150 pixels (> max_pixels = 100), whereas shadowed_target only has 1 pixel
+            (
+                outer,
+                facts(
+                    1,
+                    &[
+                        (b"gs", b"GS"),
+                        (b"gs", b"GS"),
+                        (b"gs", b"GS"),
+                        (b"gs", b"GS"),
+                        (b"gs", b"GS"),
+                    ],
+                ),
+            ),
+            (group, facts(1, &[(b"Do", b"ImForm")])),
+            (
+                phys_target,
+                Facts {
+                    ops: 1,
+                    glyphs: 0,
+                    inline_pixels: 30,
+                    inline_bytes: 90,
+                    calls: Vec::new(),
+                },
+            ),
+            (
+                shadowed_target,
+                Facts {
+                    ops: 1,
+                    glyphs: 0,
+                    inline_pixels: 1,
+                    inline_bytes: 1,
+                    calls: Vec::new(),
+                },
+            ),
+        ]);
+        let page_contents = HashSet::from([content]);
+        let err = check(&ctx, &doc, &table, None, &page_contents)
+            .expect_err("SMask /G inline pixel amplification must exceed max_pixels");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Page inline image totals exceed the limit.");
+    }
+
+    #[test]
+    fn type3_resources_omitting_xobject_fall_back_to_invoking_scope() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut sink = Vec::new();
+        let ctx = context(dir.path(), &mut sink);
+        let mut doc = lopdf::Document::new();
+        let page_form = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let char_proc = form(&mut doc, dictionary! {});
+        // Type3 font has /Resources present, omitting /XObject -> must fall back to selected scope's /XObject.
+        let type3_font = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type3",
+            "CharProcs" => dictionary! { "A" => Object::Reference(char_proc) },
+            "Resources" => dictionary! { "Pattern" => dictionary! {} },
+        });
+        let content = form(&mut doc, dictionary! {});
+        let pages_id = doc.new_object_id();
+        let page_res = Object::Dictionary(dictionary! {
+            "Font" => dictionary! { "T" => Object::Reference(type3_font) },
+            "XObject" => dictionary! { "F" => Object::Reference(page_form) },
+        });
+        let scope = Scope::from_page(&doc, Some(&page_res)).unwrap();
+        let glyph_scope = scope
+            .type3_glyph_scope(
+                &doc,
+                scope.current(),
+                doc.get_dictionary(type3_font).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(glyph_scope.xobject_id(&doc, b"F").unwrap(), Some(page_form));
+
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => Object::Reference(pages_id),
+            "Resources" => page_res,
+            "Contents" => Object::Reference(content),
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![Object::Reference(page_id)],
+                "Count" => 1,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+
+        let table = BTreeMap::from([
+            (
+                content,
+                Facts {
+                    ops: 1,
+                    glyphs: 20,
+                    inline_pixels: 0,
+                    inline_bytes: 0,
+                    calls: Vec::new(),
+                },
+            ),
+            (char_proc, facts(1, &[(b"Do", b"F")])),
+            (page_form, facts(6_000, &[])),
+        ]);
+        let err = check(&ctx, &doc, &table, None, &HashSet::from([content]))
+            .expect_err("20 glyphs * 6_000 ops must exceed 100_000 via inherited XObject");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert!(err.message.contains("Content execution cost"), "{err:?}");
     }
 }
