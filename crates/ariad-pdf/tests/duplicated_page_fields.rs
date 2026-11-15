@@ -426,10 +426,30 @@ fn many_copies_of_a_wide_form_page_stay_fast_and_unique() {
             &ctx,
         )
         .unwrap_or_else(|err| panic!("{tool} failed: {err:?}"));
-        let fields = terminal_fields(&out.artifacts[0].bytes);
-        assert_eq!(fields.len(), COPIES * (text_fields + radio_groups), "{tool}");
-        assert_eq!(fields["radio7"], vec![1, 1], "{tool}");
-        assert_eq!(fields["radio7_2000"], vec![2000, 2000], "{tool}");
-        assert_eq!(fields["text31_2000"], vec![2000], "{tool}");
+        // Every field of this form is top level, so unique `/T` values in `/AcroForm /Fields`
+        // are unique fully qualified names. The small-form tests check the full hierarchy.
+        let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+        let doc = pdf.inner();
+        let acroform = resolve(doc, doc.catalog().unwrap().get(b"AcroForm").unwrap())
+            .as_dict()
+            .unwrap();
+        let fields = resolve(doc, acroform.get(b"Fields").unwrap())
+            .as_array()
+            .unwrap();
+        let mut names = BTreeSet::new();
+        for field in fields {
+            let dict = doc.get_dictionary(field.as_reference().unwrap()).unwrap();
+            assert!(
+                names.insert(partial_name(dict).unwrap()),
+                "{tool}: repeated name"
+            );
+            if dict.has(b"Kids") {
+                assert_eq!(kids(doc, dict).len(), 2, "{tool}: radio group kids");
+            }
+        }
+        assert_eq!(names.len(), COPIES * (text_fields + radio_groups), "{tool}");
+        for name in ["radio7", "radio7_2000", "text31", "text31_2000"] {
+            assert!(names.contains(name), "{tool}: missing {name}");
+        }
     }
 }
