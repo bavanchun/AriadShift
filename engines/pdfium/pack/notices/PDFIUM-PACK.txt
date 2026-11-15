@@ -20,5 +20,5 @@ https://github.com/bblanchon/pdfium-binaries.
 
 notices/ariadshift-THIRD_PARTY_LICENSES lists the Rust crates linked into the engine.
 
-Target notes: the x86_64-unknown-linux-musl and aarch64-unknown-linux-musl pack targets are
-marked "unverified" pending musl-native libpdfium runtime validation (tracked in #132).
+Target notes: the pack targets Linux glibc (x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu)
+and macOS (aarch64-apple-darwin, x86_64-apple-darwin); Linux musl targets are deferred (#132).
