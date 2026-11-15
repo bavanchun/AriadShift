@@ -6,21 +6,12 @@ use crate::{
     format::Format,
     ir::{Block, Document, Inline, ListItem, Metadata},
     limits::{Limits, LimitsError},
-    reader::common::{ReadOutput, nfc},
+    reader::{
+        common::{ReadOutput, nfc},
+        email::strip_bidi_controls,
+    },
     warning::{Warning, WarningCode},
 };
-
-/// Strip bidirectional control characters from filenames or metadata.
-fn strip_bidi_controls(s: &str) -> String {
-    s.chars()
-        .filter(|&c| {
-            !matches!(
-                c,
-                '\u{061c}' | '\u{200e}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
-            )
-        })
-        .collect()
-}
 
 /// Errors that can occur when reading an Outlook MSG file.
 #[derive(Debug, thiserror::Error)]
