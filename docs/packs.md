@@ -234,7 +234,7 @@ The `pdfium` pack provides the PDFium engine (`ariad-engine/2`, stateless per re
 | Item | Value |
 |---|---|
 | Contents | `ariad-pdfium-engine` binary, pinned `libpdfium` (PDFium `chromium/8125`, from `bblanchon/pdfium-binaries`, SHA-256 pinned per target), and the bundled third-party notices (FreeType, ICU, libjpeg-turbo, OpenJPEG, LCMS, libpng, zlib, HarfBuzz, Abseil, AGG) |
-| Targets | `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` (`"unverified"`, [#132](https://github.com/bavanchun/AriadShift/issues/132)), `aarch64-unknown-linux-musl` (`"unverified"`, [#132](https://github.com/bavanchun/AriadShift/issues/132)). Windows packs are deferred because Windows engines have no filesystem or network sandbox |
+| Targets | `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`. Linux musl is deferred ([#132](https://github.com/bavanchun/AriadShift/issues/132)) until musl `libpdfium` is built with Clang/`libc++` or pinned toolchain sources, and Windows packs remain deferred because Windows engines have no filesystem or network sandbox |
 | Manifest | `engine_protocol = "ariad-engine/2"`; `requires_ashift` names the release that adds the field |
 | Library lookup | The engine loads `libpdfium` from the directory of its own binary. The manifest sets no library-path variable, and `ALLOWED_ENV` has none |
 | Sandbox | `sandbox_required`: the pack root is readable and executable but not writable, `/tmp` is private to the job, the job directory is the only writable location and the network is closed. `best-effort` mode refuses to start the engine when isolation is unavailable; only `ASHIFT_SANDBOX=off` runs it unsandboxed |
