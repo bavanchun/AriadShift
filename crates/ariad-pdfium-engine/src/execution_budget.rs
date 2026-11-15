@@ -1231,28 +1231,91 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut sink = Vec::new();
         let ctx = context(dir.path(), &mut sink);
-        let mut doc = lopdf::Document::new();
-        let mut child = form(&mut doc, dictionary! { "Subtype" => "Form" });
-        let mut all = BTreeMap::from([(child, facts(1, &[]))]);
-        for _ in 0..9 {
-            child = form(
-                &mut doc,
-                dictionary! { "Subtype" => "Form", "Resources" => dictionary! { "XObject" => dictionary! { "F" => Object::Reference(child) } } },
-            );
-            all.insert(child, facts(1, &[(b"Do", b"F")]));
-        }
-        let mut calc = Calculator {
-            ctx: &ctx,
-            doc: &doc,
-            facts: &all,
-            scoped_ops: None,
-            memo: HashMap::new(),
-            glyph_memo: HashMap::new(),
-            page_contents: HashSet::new(),
-        };
-        assert!(
+        let run = |wraps: usize| {
+            let mut doc = lopdf::Document::new();
+            let mut child = form(&mut doc, dictionary! { "Subtype" => "Form" });
+            let mut all = BTreeMap::from([(child, facts(1, &[]))]);
+            for _ in 0..wraps {
+                child = form(
+                    &mut doc,
+                    dictionary! { "Subtype" => "Form", "Resources" => dictionary! { "XObject" => dictionary! { "F" => Object::Reference(child) } } },
+                );
+                all.insert(child, facts(1, &[(b"Do", b"F")]));
+            }
+            let mut calc = Calculator {
+                ctx: &ctx,
+                doc: &doc,
+                facts: &all,
+                scoped_ops: None,
+                memo: HashMap::new(),
+                glyph_memo: HashMap::new(),
+                page_contents: HashSet::new(),
+            };
             calc.stream(child, &Scope::default(), 0, &mut HashSet::new())
-                .is_err()
+        };
+        // Eight nested invocations reach depth eight and stay within the limit.
+        assert_eq!(run(MAX_CONTENT_NESTING_DEPTH).unwrap().ops, 9);
+        // One more level is refused by the depth check, not by the cost budget.
+        let err = run(MAX_CONTENT_NESTING_DEPTH + 1).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "A resource limit was exceeded.");
+    }
+    #[test]
+    fn form_resources_without_category_fall_back_to_page_not_parent() {
+        // PDFium `CPDF_StreamContentParser::FindResourceHolder` looks up the
+        // form's own category, then the page's; the invoking form is skipped.
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = Vec::new();
+        let ctx = context(dir.path(), &mut sink);
+        let run = |inner_resources: Option<Dictionary>| {
+            let mut doc = lopdf::Document::new();
+            let expensive = form(&mut doc, dictionary! { "Subtype" => "Form" });
+            let cheap = form(&mut doc, dictionary! { "Subtype" => "Form" });
+            let mut inner_dict = dictionary! { "Subtype" => "Form" };
+            if let Some(resources) = inner_resources {
+                inner_dict.set("Resources", resources);
+            }
+            let inner = form(&mut doc, inner_dict);
+            let outer = form(
+                &mut doc,
+                dictionary! {
+                    "Subtype" => "Form",
+                    "Resources" => dictionary! { "XObject" => dictionary! {
+                        "X" => Object::Reference(cheap),
+                        "H" => Object::Reference(inner),
+                    } },
+                },
+            );
+            let page = Object::Dictionary(dictionary! {
+                "XObject" => dictionary! { "X" => Object::Reference(expensive) },
+            });
+            let scope = Scope::from_page(&doc, Some(&page)).unwrap();
+            let table = BTreeMap::from([
+                (outer, facts(1, &[(b"Do", b"H")])),
+                (inner, facts(1, &[(b"Do", b"X"), (b"Do", b"X")])),
+                (expensive, facts(50_000, &[])),
+                (cheap, facts(1, &[])),
+            ]);
+            let mut calc = Calculator {
+                ctx: &ctx,
+                doc: &doc,
+                facts: &table,
+                scoped_ops: None,
+                memo: HashMap::new(),
+                glyph_memo: HashMap::new(),
+                page_contents: HashSet::new(),
+            };
+            calc.stream(outer, &scope, 0, &mut HashSet::new())
+        };
+        // Without /Resources the inner form reuses the outer dictionary: cheap /X.
+        assert_eq!(run(None).unwrap().ops, 4);
+        // /Resources without /XObject resolves /X from the page; the inner form
+        // alone costs 1 + 2 * 50_000.
+        let err = run(Some(dictionary! { "Font" => dictionary! {} })).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "Content execution cost 100001 exceeds limit 100000."
         );
     }
 
