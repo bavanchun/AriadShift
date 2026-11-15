@@ -1225,8 +1225,7 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
     };
     let is_json = args.json;
     let renders_info_human = args.tool == "pdf.info";
-    let emits_json =
-        ariad_core::tools::find(&args.tool).is_some_and(|spec| spec.emits_json(&params));
+    let prints_inline_compare_human = args.tool == "pdf.compare" && args.output.is_none();
     let stderr_is_terminal = io::stderr().is_terminal();
     let inputs: Vec<InputRef> = args.inputs.into_iter().map(InputRef::new).collect();
     let output = match args.output {
@@ -1279,7 +1278,8 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
                     render::render_json(inline_json)
                 }
                 .map_err(|err| ToolError::OutputIo(err.to_string()))
-            } else if !emits_json && let Some(ref inline_json) = outcome.inline_json {
+            } else if prints_inline_compare_human && let Some(ref inline_json) = outcome.inline_json
+            {
                 render::render_json(inline_json)
                     .map_err(|err| ToolError::OutputIo(err.to_string()))?;
                 let mut stderr = io::stderr().lock();

@@ -266,6 +266,16 @@ fn output_target_single_pdf_and_json_and_directory() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(out_pdf.is_file(), "report.pdf must be created");
+    let out_pdf_stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        out_pdf_stdout.lines().count(),
+        1,
+        "stdout: {out_pdf_stdout:?}"
+    );
+    assert_eq!(
+        fs::canonicalize(Path::new(out_pdf_stdout.trim())).unwrap(),
+        fs::canonicalize(&out_pdf).unwrap()
+    );
 
     // 2. Single JSON output: writes report.json
     let out_json = temp.path().join("report.json");

@@ -200,7 +200,7 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 - **Outputs**:
   - **Without `-o` (default)**: Publishes `<stem>.diff.pdf` beside the first input (`inputs[0]`) and returns the JSON comparison report inline (`inline_json`). Only if the JSON report exceeds the 32 MiB inline cap (`inline_json: null`) is `<stem>.compare.json` also published beside `<stem>.diff.pdf`.
   - **`-o <dir>/` directory**: Publishes both `<stem>.compared.pdf` and `<stem>.compared.json`.
-  - **`-o <file>.pdf` or `-o <file>.json` single file**: Publishes only the requested PDF or JSON artifact (the JSON report still accompanies `-o <file>.pdf` in `inline_json` when within cap). In CLI human mode (`! --json`), the inline JSON report is printed to `stdout` and published artifact path(s) to `stderr`.
+  - **`-o <file>.pdf` or `-o <file>.json` single file**: Publishes only the requested PDF or JSON artifact (the JSON report still accompanies `-o <file>.pdf` in `inline_json` when within cap), and CLI human mode prints the published artifact path to `stdout`.
 - **Runtimes**: `wasm (text), local`. On WASM or when the PDFium pack is missing, selecting `"visual"` or `"both"` fails early at preflight with exit code `5` (`engine_unavailable` / `tool_missing`).
 - **Resource Bounds & Limits**:
   - Visual comparison is capped at 200 pages (`MAX_VISUAL_PAGES = 200`). Exceeding this limit in `"visual"` or `"both"` mode fails immediately before rendering with exit code `9` (`invalid_params`) naming the 200-page limit.
