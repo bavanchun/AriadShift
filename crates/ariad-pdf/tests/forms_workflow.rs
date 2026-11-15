@@ -758,3 +758,43 @@ fn fills_a_field_with_a_missing_default_font_resource() {
             .has(b"Helv")
     );
 }
+
+#[test]
+fn flatten_page_filter_targets_duplicate_name_field_on_that_page() {
+    use lopdf::Object;
+    let mut pdf = open(&fixture("forms-all-types.pdf"));
+    let limits = Limits::local();
+    let ctx = ToolCtx::new();
+    let fields: Vec<NewField> = serde_json::from_value(json!([
+        {"type":"text","name":"twin","page":1,"rect":[60,60,200,80]},
+        {"type":"text","name":"twin-later","page":2,"rect":[60,60,200,80]}
+    ]))
+    .unwrap();
+    create::create(&mut pdf, &fields, false, &limits, &ctx).unwrap();
+    let later = pdf
+        .inner_mut()
+        .unwrap()
+        .objects
+        .values_mut()
+        .find_map(|obj| {
+            let dict = obj.as_dict_mut().ok()?;
+            (dict.get(b"T").ok()?.as_str().ok()? == b"twin-later").then_some(dict)
+        })
+        .unwrap();
+    later.set("T", Object::string_literal("twin"));
+    let on_page = |pdf: &ariad_pdf::PdfDoc, page: u32| {
+        list::list(pdf, &[page], false, &limits, &ctx)
+            .unwrap()
+            .fields
+            .iter()
+            .filter(|field| field.name == "twin")
+            .count()
+    };
+    assert_eq!((on_page(&pdf, 1), on_page(&pdf, 2)), (1, 1));
+    let report = flatten::flatten(&mut pdf, &[2], Some(&["twin".into()]), &limits, &ctx).unwrap();
+    assert_eq!(report.affected, vec!["twin"]);
+    assert!(report.warnings.contains(
+        &"duplicate_field_name: only the first field with each name is edited".to_owned()
+    ));
+    assert_eq!((on_page(&pdf, 1), on_page(&pdf, 2)), (1, 0));
+}

@@ -212,21 +212,24 @@ pub fn flatten(
             "page is outside the document".into(),
         ));
     }
-    let chosen_pages: Vec<ObjectId> = all_pages
+    let chosen_pages: Vec<(u32, ObjectId)> = all_pages
         .iter()
         .enumerate()
-        .filter_map(|(index, id)| selected.contains(&((index + 1) as u32)).then_some(*id))
+        .map(|(index, id)| ((index + 1) as u32, *id))
+        .filter(|(page, _)| selected.contains(page))
         .collect();
     let listing = list::list(&edited, pages, true, limits, ctx)?;
-    let (refs, _, duplicate_names) = fill::locate(edited.inner(), limits, ctx)?;
+    let (first_refs, duplicate_refs, _, duplicate_names) =
+        fill::locate_all(edited.inner(), limits, ctx)?;
     let requested = names.map(|names| names.iter().cloned().collect::<HashSet<_>>());
-    let mut infos = HashMap::new();
+    // Every listed field on the selected pages, grouped by name in listing order.
+    let mut infos: HashMap<&str, Vec<&FieldInfo>> = HashMap::new();
     for field in &listing.fields {
         if requested
             .as_ref()
             .is_none_or(|set| set.contains(&field.name))
         {
-            infos.entry(field.name.clone()).or_insert(field);
+            infos.entry(field.name.as_str()).or_default().push(field);
         }
     }
     let mut report = EditReport {
@@ -239,14 +242,14 @@ pub fn flatten(
             .push("duplicate_field_name: only the first field with each name is edited".into());
     }
     if let Some(names) = requested.as_ref()
-        && names.iter().any(|name| !infos.contains_key(name))
+        && names.iter().any(|name| !infos.contains_key(name.as_str()))
     {
         report
             .warnings
             .push("unknown_field: selected field was not found on the selected pages".into());
     }
-    let mut page_widgets = HashSet::new();
-    for &page in &chosen_pages {
+    let mut page_widgets = HashMap::new();
+    for &(number, page) in &chosen_pages {
         ctx.check()?;
         let d = edited
             .inner()
@@ -263,28 +266,51 @@ pub fn flatten(
                     ctx.check()?;
                 }
                 if let Ok(id) = annotation.as_reference() {
-                    page_widgets.insert(id);
+                    page_widgets.entry(id).or_insert(number);
                 }
             }
         }
     }
+    // Pair each field (including later fields with a repeated name) that has a
+    // widget on a selected page with the listed field on that page, so a
+    // duplicate name never redirects the flatten to a field on another page.
+    let mut entries: Vec<(&str, &fill::FieldRef, &FieldInfo)> = Vec::new();
     let mut target = HashSet::new();
-    for name in infos.keys() {
-        if let Some(reference) = refs.get(name) {
-            for id in &reference.widgets {
-                if page_widgets.contains(id) {
-                    target.insert(*id);
-                }
-            }
-        }
+    let all_refs = first_refs
+        .iter()
+        .map(|(name, reference)| (name.as_str(), reference))
+        .chain(
+            duplicate_refs
+                .iter()
+                .map(|(name, reference)| (name.as_str(), reference)),
+        );
+    for (name, reference) in all_refs {
+        let Some(candidates) = infos.get(name) else {
+            continue;
+        };
+        let Some(page) = reference
+            .widgets
+            .iter()
+            .find_map(|id| page_widgets.get(id).copied())
+        else {
+            continue;
+        };
+        let info = candidates
+            .iter()
+            .find(|info| info.widgets.iter().any(|widget| widget.page == page))
+            .unwrap_or(&candidates[0]);
+        target.extend(
+            reference
+                .widgets
+                .iter()
+                .filter(|id| page_widgets.contains_key(id)),
+        );
+        entries.push((name, reference, info));
     }
     let marker = unique_marker(edited.inner(), limits, ctx)?;
     {
         let doc = edited.inner_mut()?;
-        for (name, info) in &infos {
-            let Some(reference) = refs.get(name) else {
-                continue;
-            };
+        for &(_, reference, info) in &entries {
             for &id in &reference.widgets {
                 if !target.contains(&id) {
                     continue;
@@ -312,9 +338,10 @@ pub fn flatten(
                     .set(marker.as_bytes(), true);
             }
         }
+        let chosen_page_ids: Vec<ObjectId> = chosen_pages.iter().map(|(_, id)| *id).collect();
         let flattened = flatten::flatten_appearances(
             doc,
-            &chosen_pages,
+            &chosen_page_ids,
             FlattenFilter {
                 select: |d: &Dictionary| {
                     d.get(marker.as_bytes())
@@ -344,22 +371,19 @@ pub fn flatten(
                 .push("appearance_unavailable: some widgets were retained".into());
         }
         let done: HashSet<_> = flattened.flattened.iter().copied().collect();
-        for (name, info) in &infos {
-            if let Some(reference) = refs.get(name) {
-                if reference.widgets.iter().any(|id| done.contains(id)) {
-                    report.affected.push(name.clone());
-                }
-                if info.actions.has_javascript
-                    && reference.widgets.iter().all(|id| done.contains(id))
-                {
-                    report
-                        .warnings
-                        .push("javascript_removed: flattened field actions were removed".into());
-                }
+        for &(name, reference, info) in &entries {
+            if reference.widgets.iter().any(|id| done.contains(id)) {
+                report.affected.push(name.to_owned());
+            }
+            if info.actions.has_javascript && reference.widgets.iter().all(|id| done.contains(id)) {
+                report
+                    .warnings
+                    .push("javascript_removed: flattened field actions were removed".into());
             }
         }
     }
     report.affected.sort();
+    report.affected.dedup();
     *pdf = edited;
     Ok(report)
 }
