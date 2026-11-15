@@ -155,3 +155,122 @@ fn reports_javascript_in_cyclic_next_action_chain() {
     let listing = read::list(&pdf, &selector(), &limits, &ToolCtx::new()).unwrap();
     assert!(listing.annotations[0].actions.has_javascript);
 }
+
+#[test]
+fn long_next_action_chain_is_cut_with_a_warning() {
+    use lopdf::{Object, dictionary};
+    let limits = Limits::local();
+    let mut pdf = document::open(&fixture("forms-all-types.pdf"), &limits).unwrap();
+    let doc = pdf.inner_mut().unwrap();
+    let page = *doc.get_pages().values().next().unwrap();
+    let ids: Vec<_> = (0..200).map(|_| doc.new_object_id()).collect();
+    for (index, id) in ids.iter().enumerate() {
+        let mut action = dictionary! {
+            "S" => if index == 1 { "JavaScript" } else { "Named" }
+        };
+        if let Some(next) = ids.get(index + 1) {
+            action.set("Next", Object::Reference(*next));
+        }
+        doc.objects.insert(*id, Object::Dictionary(action));
+    }
+    let annotation = dictionary! {
+        "Subtype" => "Text", "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+        "A" => Object::Reference(ids[0])
+    };
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Annots", vec![Object::Dictionary(annotation)]);
+    let listing = read::list(&pdf, &selector(), &limits, &ToolCtx::new()).unwrap();
+    assert_eq!(listing.annotations.len(), 1);
+    assert!(listing.annotations[0].actions.has_javascript);
+    assert_eq!(listing.annotations[0].actions.kinds, vec!["action"]);
+    assert_eq!(
+        listing.warnings,
+        vec![
+            "action_chain_truncated: 1 annotation has an action chain deeper than the nesting limit; later actions were not read"
+        ]
+    );
+}
+
+#[test]
+fn short_next_action_chain_has_no_truncation_warning() {
+    use lopdf::{Object, dictionary};
+    let limits = Limits::local();
+    let mut pdf = document::open(&fixture("forms-all-types.pdf"), &limits).unwrap();
+    let doc = pdf.inner_mut().unwrap();
+    let page = *doc.get_pages().values().next().unwrap();
+    let second = doc.add_object(dictionary! { "S" => "JavaScript" });
+    let first = doc.add_object(dictionary! { "S" => "Named", "Next" => second });
+    let annotation = dictionary! {
+        "Subtype" => "Text", "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+        "A" => Object::Reference(first)
+    };
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Annots", vec![Object::Dictionary(annotation)]);
+    let listing = read::list(&pdf, &selector(), &limits, &ToolCtx::new()).unwrap();
+    assert!(listing.annotations[0].actions.has_javascript);
+    assert!(listing.warnings.is_empty());
+}
+
+// Builds a reference chain that reaches the depth limit exactly and ends in the
+// given `/Next` array, then returns the listing warnings.
+fn warnings_for_chain_tail(
+    tail: impl FnOnce(&mut lopdf::Document, lopdf::ObjectId) -> lopdf::Object,
+) -> Vec<String> {
+    use lopdf::{Object, dictionary};
+    let limits = Limits::local();
+    let mut pdf = document::open(&fixture("forms-all-types.pdf"), &limits).unwrap();
+    let doc = pdf.inner_mut().unwrap();
+    let page = *doc.get_pages().values().next().unwrap();
+    // Each hop adds a reference and a dictionary level, so the last action sits
+    // just below the limit and the items of its `/Next` array sit just above it.
+    let hops = usize::from(limits.max_nesting_depth) / 2;
+    let ids: Vec<_> = (0..hops).map(|_| doc.new_object_id()).collect();
+    let tail = tail(doc, ids[0]);
+    for (index, id) in ids.iter().enumerate() {
+        let next = ids
+            .get(index + 1)
+            .map_or_else(|| tail.clone(), |next| Object::Reference(*next));
+        doc.objects.insert(
+            *id,
+            Object::Dictionary(dictionary! { "S" => "Named", "Next" => next }),
+        );
+    }
+    let annotation = dictionary! {
+        "Subtype" => "Text", "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+        "A" => Object::Reference(ids[0])
+    };
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Annots", vec![Object::Dictionary(annotation)]);
+    read::list(&pdf, &selector(), &limits, &ToolCtx::new())
+        .unwrap()
+        .warnings
+}
+
+#[test]
+fn cycle_or_non_action_at_the_depth_limit_is_not_reported_as_truncated() {
+    use lopdf::Object;
+    assert!(warnings_for_chain_tail(|_, first| vec![Object::Reference(first)].into()).is_empty());
+    assert!(
+        warnings_for_chain_tail(|_, _| vec![Object::Integer(5), Object::Null].into()).is_empty()
+    );
+}
+
+#[test]
+fn unread_action_at_the_depth_limit_is_reported_as_truncated() {
+    use lopdf::{Object, dictionary};
+    let warnings = warnings_for_chain_tail(|doc, _| {
+        vec![Object::Reference(
+            doc.add_object(dictionary! { "S" => "JavaScript" }),
+        )]
+        .into()
+    });
+    assert_eq!(
+        warnings,
+        vec![
+            "action_chain_truncated: 1 annotation has an action chain deeper than the nesting limit; later actions were not read"
+        ]
+    );
+}

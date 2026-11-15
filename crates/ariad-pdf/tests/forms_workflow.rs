@@ -758,3 +758,86 @@ fn fills_a_field_with_a_missing_default_font_resource() {
             .has(b"Helv")
     );
 }
+
+#[test]
+fn flatten_page_filter_targets_duplicate_name_field_on_that_page() {
+    use lopdf::Object;
+    let mut pdf = open(&fixture("forms-all-types.pdf"));
+    let limits = Limits::local();
+    let ctx = ToolCtx::new();
+    let fields: Vec<NewField> = serde_json::from_value(json!([
+        {"type":"text","name":"twin","page":1,"rect":[60,60,200,80]},
+        {"type":"text","name":"twin-later","page":2,"rect":[60,60,200,80]}
+    ]))
+    .unwrap();
+    create::create(&mut pdf, &fields, false, &limits, &ctx).unwrap();
+    let later = pdf
+        .inner_mut()
+        .unwrap()
+        .objects
+        .values_mut()
+        .find_map(|obj| {
+            let dict = obj.as_dict_mut().ok()?;
+            (dict.get(b"T").ok()?.as_str().ok()? == b"twin-later").then_some(dict)
+        })
+        .unwrap();
+    later.set("T", Object::string_literal("twin"));
+    let on_page = |pdf: &ariad_pdf::PdfDoc, page: u32| {
+        list::list(pdf, &[page], false, &limits, &ctx)
+            .unwrap()
+            .fields
+            .iter()
+            .filter(|field| field.name == "twin")
+            .count()
+    };
+    assert_eq!((on_page(&pdf, 1), on_page(&pdf, 2)), (1, 1));
+    let report = flatten::flatten(&mut pdf, &[2], Some(&["twin".into()]), &limits, &ctx).unwrap();
+    assert_eq!(report.affected, vec!["twin"]);
+    assert!(report.warnings.contains(
+        &"duplicate_field_name: fields sharing a name are flattened per page".to_owned()
+    ));
+    assert_eq!((on_page(&pdf, 1), on_page(&pdf, 2)), (1, 0));
+}
+
+#[test]
+fn flatten_pairs_thousands_of_same_name_fields_quickly() {
+    use lopdf::{Object, Stream, dictionary};
+    let mut pdf = open(&fixture("forms-all-types.pdf"));
+    let limits = Limits::local();
+    let ctx = ToolCtx::new();
+    let doc = pdf.inner_mut().unwrap();
+    let pages: Vec<_> = doc.get_pages().values().copied().collect();
+    let appearance = doc.add_object(Stream::new(
+        dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()] },
+        b"0 0 10 10 re f".to_vec(),
+    ));
+    let per_page = 2_000;
+    let mut fields = Vec::new();
+    for &page in &pages[..2] {
+        let mut annots = Vec::new();
+        for _ in 0..per_page {
+            let id = doc.add_object(dictionary! {
+                "FT" => "Tx", "T" => Object::string_literal("x"), "Subtype" => "Widget",
+                "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()], "P" => page,
+                "AP" => dictionary! { "N" => appearance }
+            });
+            annots.push(Object::Reference(id));
+            fields.push(Object::Reference(id));
+        }
+        doc.get_dictionary_mut(page).unwrap().set("Annots", annots);
+    }
+    let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    let form = doc.add_object(dictionary! { "Fields" => fields });
+    doc.get_dictionary_mut(catalog)
+        .unwrap()
+        .set("AcroForm", form);
+    let started = std::time::Instant::now();
+    let report = flatten::flatten(&mut pdf, &[2], Some(&["x".into()]), &limits, &ctx).unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    assert_eq!(report.affected, vec!["x"]);
+    let remaining = list::list(&pdf, &[1, 2], false, &limits, &ctx)
+        .unwrap()
+        .fields;
+    assert_eq!(remaining.len(), per_page);
+    assert!(remaining.iter().all(|field| field.page == 1));
+}
