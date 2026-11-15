@@ -211,10 +211,36 @@
     },
     "onboarding": {
       "title": "Chào mừng đến với AriadShift",
-      "about": "Mở, xem thông tin và xử lý tài liệu PDF bằng cùng bộ máy với dòng lệnh AriadShift. Chuyển Markdown, HTML, Word, EPUB và ảnh sang PDF bằng Tệp > Nhập.",
-      "packs": "Các gói bộ máy tùy chọn (OCR, ký số, kiểm tra) được lưu trong {path}.",
+      "about": "Mở, xem thông tin và xử lý tài liệu PDF bằng cùng bộ xử lý với công cụ dòng lệnh AriadShift. Chuyển Markdown, HTML, Word, EPUB và ảnh sang PDF bằng Tệp > Nhập.",
+      "packs": "Các gói xử lý tùy chọn (OCR, ký số, kiểm tra) được lưu trong {path}.",
       "privacy": "AriadShift chạy ngay trên máy Mac của bạn. Ứng dụng không kết nối mạng, trừ khi bạn bật một tính năng cần mạng.",
       "start": "Bắt đầu"
+    },
+    "welcome": {
+      "tagline": "Mọi công cụ PDF, riêng tư ngay trên máy Mac.",
+      "drop_title": "Thả tệp PDF hoặc tài liệu vào đây",
+      "drop_or": "hoặc",
+      "open": "Mở…",
+      "open_message": "Chọn tệp PDF hoặc tài liệu để mở.",
+      "suggested": "Gợi ý",
+      "recent": "Gần đây",
+      "suggest": {
+        "merge": "Gộp PDF",
+        "compress": "Nén",
+        "ocr": "OCR bản quét",
+        "split": "Tách PDF"
+      },
+      "suggest_message": "Chọn tệp PDF cho {tool}."
+    },
+    "whats_new": {
+      "title": "Có gì mới trong AriadShift {version}",
+      "look_title": "Giao diện mới",
+      "look_detail": "Cửa sổ thoáng hơn với Liquid Glass trên macOS 26, thanh trang bên cạnh và bảng thông tin chỉ mở khi bạn cần.",
+      "tools_title": "Mọi công cụ trong tầm tay",
+      "tools_detail": "Nhấn ⌘K để tìm mọi công cụ và chạy ngay bên cạnh tài liệu.",
+      "private_title": "Vẫn riêng tư",
+      "private_detail": "Mọi công cụ chạy ngay trên máy Mac. Tài liệu của bạn ở lại trên máy, trừ khi bạn chọn khác.",
+      "continue": "Tiếp tục"
     },
     "import": {
       "message": "Chọn một tài liệu để chuyển sang PDF",
@@ -233,7 +259,7 @@
     },
     "grid": {
       "hint": "Kéo các trang để sắp xếp lại. Mỗi thay đổi được lưu thành một tệp mới cạnh bản gốc.",
-      "unavailable": "Chưa thể chỉnh sửa trang cho đến khi bộ máy sẵn sàng.",
+      "unavailable": "Chưa thể chỉnh sửa trang cho đến khi bộ xử lý sẵn sàng.",
       "rotate": "Xoay các trang đã chọn",
       "delete": "Xóa các trang đã chọn",
       "move_earlier": "Chuyển lên trước trang liền trước",

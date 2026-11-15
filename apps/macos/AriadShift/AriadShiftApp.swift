@@ -19,6 +19,8 @@ struct AriadShiftApp: App {
         let engine = EngineModel()
         engine.start()
         _engine = StateObject(wrappedValue: engine)
+        // Loads the opening's hero clip in the background; the opening uses it only if it is ready in time.
+        OpeningHero.shared.prepare()
     }
 
     var body: some Scene {
@@ -40,11 +42,14 @@ struct AriadShiftApp: App {
             )
         }
 
+        // Shown on every launch without a document; the opening plays in it and onboarding is a sheet over it.
         Window(String(localized: "mac.onboarding.title"), id: "welcome") {
-            OnboardingView()
+            WelcomeWindow(imports: imports)
+                .environmentObject(engine)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .defaultLaunchBehavior(AppSettings().needsOnboarding ? .presented : .suppressed)
+        .defaultLaunchBehavior(.presented)
 
         Window(String(localized: "mac.menu.import"), id: "import") {
             ImportStatusView(model: imports)

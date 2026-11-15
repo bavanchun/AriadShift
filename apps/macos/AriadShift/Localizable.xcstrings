@@ -17099,7 +17099,7 @@
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chưa thể chỉnh sửa trang cho đến khi bộ máy sẵn sàng."
+            "value" : "Chưa thể chỉnh sửa trang cho đến khi bộ xử lý sẵn sàng."
           }
         },
         "zh-Hans" : {
@@ -26282,7 +26282,7 @@
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mở, xem thông tin và xử lý tài liệu PDF bằng cùng bộ máy với dòng lệnh AriadShift. Chuyển Markdown, HTML, Word, EPUB và ảnh sang PDF bằng Tệp > Nhập."
+            "value" : "Mở, xem thông tin và xử lý tài liệu PDF bằng cùng bộ xử lý với công cụ dòng lệnh AriadShift. Chuyển Markdown, HTML, Word, EPUB và ảnh sang PDF bằng Tệp > Nhập."
           }
         },
         "zh-Hans" : {
@@ -26534,7 +26534,7 @@
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Các gói bộ máy tùy chọn (OCR, ký số, kiểm tra) được lưu trong %1$@."
+            "value" : "Các gói xử lý tùy chọn (OCR, ký số, kiểm tra) được lưu trong %1$@."
           }
         },
         "zh-Hans" : {
@@ -42578,6 +42578,350 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "頁面檢視器"
+          }
+        }
+      }
+    },
+    "mac.welcome.drop_or" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "or"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hoặc"
+          }
+        }
+      }
+    },
+    "mac.welcome.drop_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop PDFs or documents here"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thả tệp PDF hoặc tài liệu vào đây"
+          }
+        }
+      }
+    },
+    "mac.welcome.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở…"
+          }
+        }
+      }
+    },
+    "mac.welcome.open_message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose PDFs or documents to open."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chọn tệp PDF hoặc tài liệu để mở."
+          }
+        }
+      }
+    },
+    "mac.welcome.recent" : {
+      "comment" : "Row label in a 72-point column; keep it short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gần đây"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.compress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nén"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.merge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge PDFs"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gộp PDF"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.ocr" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OCR a scan"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OCR bản quét"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest.split" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split a PDF"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tách PDF"
+          }
+        }
+      }
+    },
+    "mac.welcome.suggest_message" : {
+      "comment" : "{tool} is the name of a suggested task, such as Compress.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose PDFs for %1$@."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chọn tệp PDF cho %1$@."
+          }
+        }
+      }
+    },
+    "mac.welcome.suggested" : {
+      "comment" : "Row label in a 72-point column; keep it short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gợi ý"
+          }
+        }
+      }
+    },
+    "mac.welcome.tagline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every PDF tool, private on your Mac."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mọi công cụ PDF, riêng tư ngay trên máy Mac."
+          }
+        }
+      }
+    },
+    "mac.whats_new.continue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiếp tục"
+          }
+        }
+      }
+    },
+    "mac.whats_new.look_detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A calmer window with Liquid Glass on macOS 26, a page sidebar and an inspector that opens when you need it."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cửa sổ thoáng hơn với Liquid Glass trên macOS 26, thanh trang bên cạnh và bảng thông tin chỉ mở khi bạn cần."
+          }
+        }
+      }
+    },
+    "mac.whats_new.look_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new look"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giao diện mới"
+          }
+        }
+      }
+    },
+    "mac.whats_new.private_detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every tool runs on your Mac. Your documents stay on it unless you choose otherwise."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mọi công cụ chạy ngay trên máy Mac. Tài liệu của bạn ở lại trên máy, trừ khi bạn chọn khác."
+          }
+        }
+      }
+    },
+    "mac.whats_new.private_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still private"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vẫn riêng tư"
+          }
+        }
+      }
+    },
+    "mac.whats_new.title" : {
+      "comment" : "{version} is the app version, such as 0.7.0.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What’s New in AriadShift %1$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Có gì mới trong AriadShift %1$@"
+          }
+        }
+      }
+    },
+    "mac.whats_new.tools_detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press ⌘K to find any tool and run it right beside your document."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn ⌘K để tìm mọi công cụ và chạy ngay bên cạnh tài liệu."
+          }
+        }
+      }
+    },
+    "mac.whats_new.tools_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every tool within reach"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mọi công cụ trong tầm tay"
           }
         }
       }

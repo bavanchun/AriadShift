@@ -53,7 +53,7 @@ final class WindowRenderTests: XCTestCase {
     }
 
     func testWelcomeWindowRenders() async throws {
-        let window = NSWindow(contentViewController: NSHostingController(rootView: OnboardingView()))
+        let window = NSWindow(contentViewController: NSHostingController(rootView: WelcomeView(model: WelcomeModel(recents: []), director: .settled())))
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         window.contentView?.layoutSubtreeIfNeeded()
