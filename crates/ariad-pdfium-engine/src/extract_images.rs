@@ -3092,23 +3092,7 @@ fn preflight_content_inner(
             data_cap =
                 data_cap.min(usize::try_from(u64::from(mb) * 1024 * 1024).unwrap_or(usize::MAX));
         }
-        let predictor_rows = dict
-            .get(b"DP")
-            .or_else(|_| dict.get(b"DecodeParms"))
-            .ok()
-            .into_iter()
-            .flat_map(|value| match value {
-                Object::Array(items) => items.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .any(|value| {
-                value
-                    .as_dict()
-                    .ok()
-                    .and_then(|d| d.get(b"Predictor").ok())
-                    .and_then(|v| v.as_i64().ok())
-                    .is_some_and(|n| n >= 10)
-            });
+        let predictor_rows = png_predictor_enabled(dict);
         let height = dict
             .get(b"Height")
             .or_else(|_| dict.get(b"H"))
@@ -4105,6 +4089,27 @@ fn scan_do_operators(
         }
     }
     Ok(names)
+}
+
+/// Reports whether an inline image's decode parameters enable a PNG predictor.
+///
+/// PDFium's `CPDF_StreamParser::ReadInlineStream` reads `/DecodeParms` as a
+/// dictionary when `/Filter` is a name, and only its first element when
+/// `/Filter` is an array. A PNG predictor (`/Predictor >= 10`) adds exactly
+/// one tag byte per row to the raw decoder output; parameters PDFium ignores
+/// must not grant that overhead.
+fn png_predictor_enabled(dict: &Dictionary) -> bool {
+    let get = |long: &[u8], short: &[u8]| dict.get(long).or_else(|_| dict.get(short)).ok();
+    let params = match (get(b"Filter", b"F"), get(b"DecodeParms", b"DP")) {
+        (Some(Object::Array(_)), Some(Object::Array(items))) => items.first(),
+        (Some(Object::Array(_)), _) | (_, Some(Object::Array(_))) | (None, _) => None,
+        (Some(_), params) => params,
+    };
+    params
+        .and_then(|params| params.as_dict().ok())
+        .and_then(|params| params.get(b"Predictor").ok())
+        .and_then(|v| v.as_i64().ok())
+        .is_some_and(|n| n >= 10)
 }
 
 const fn is_pdf_ws(b: u8) -> bool {
@@ -5560,6 +5565,98 @@ mod corpus_tests {
                 (b"sh", b"H")
             ]
         );
+    }
+
+    #[test]
+    fn inline_png_predictor_overhead_follows_pdfium_decode_params() {
+        use std::io::Write as _;
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "predictor",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let rows = 1500;
+        let run = |filter: &str, params: &str, raw: &[u8]| {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(raw).unwrap();
+            let mut content =
+                format!("BI /W 1 /H {rows} /BPC 8 /CS /G /F {filter} /DP {params} ID ")
+                    .into_bytes();
+            content.extend_from_slice(&encoder.finish().unwrap());
+            content.extend_from_slice(b" EI");
+            rewrite_preflighted_content(&ctx, &doc, &content, 1 << 20, &mut 0).map(|_| ())
+        };
+        let refused = |result: Result<(), EngineFailure>| {
+            let err = result.unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, "Decoded inline image data exceeds the limit.");
+        };
+        // One tag byte plus one sample byte per row.
+        let tagged = b"\x00\x7f".repeat(rows);
+        let png = "<< /Predictor 15 /Columns 1 >>";
+        run("/Fl", png, &tagged).unwrap();
+        // The allowance is exactly one byte per row.
+        refused(run("/Fl", png, &[tagged.as_slice(), b"\x00"].concat()));
+        // PDFium ignores a /DecodeParms dictionary when /Filter is an array.
+        refused(run("[/Fl]", png, &tagged));
+        // PDFium ignores a /DecodeParms array when /Filter is a name.
+        refused(run("/Fl", &format!("[{png}]"), &tagged));
+        // A single-entry filter array with parameter dictionaries is still
+        // refused by the later bounded decode, as before this check.
+        let err = run("[/Fl]", &format!("[{png}]"), &tagged).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "A resource limit was exceeded.");
+        // TIFF predictor 2 adds no per-row tag byte.
+        refused(run("/Fl", "<< /Predictor 2 /Columns 1 >>", &tagged));
+        // Without a predictor the cap is the declared image size.
+        run("/Fl", "<< >>", &b"\x7f".repeat(rows)).unwrap();
+        refused(run("/Fl", "<< >>", &b"\x7f".repeat(rows + 1)));
+    }
+
+    #[test]
+    fn png_predictor_parameters_follow_the_filter_shape() {
+        use lopdf::dictionary;
+        let png = || Object::Dictionary(dictionary! { "Predictor" => 12 });
+        let cases = [
+            (dictionary! { "F" => "Fl", "DP" => png() }, true),
+            (
+                dictionary! { "Filter" => "FlateDecode", "DecodeParms" => png() },
+                true,
+            ),
+            (
+                dictionary! { "F" => vec![Object::Name(b"Fl".to_vec())], "DP" => vec![png()] },
+                true,
+            ),
+            (
+                dictionary! { "F" => vec![Object::Name(b"Fl".to_vec())], "DP" => vec![Object::Null, png()] },
+                false,
+            ),
+            (
+                dictionary! { "F" => vec![Object::Name(b"Fl".to_vec())], "DP" => png() },
+                false,
+            ),
+            (dictionary! { "F" => "Fl", "DP" => vec![png()] }, false),
+            (dictionary! { "DP" => png() }, false),
+            (
+                dictionary! { "F" => "Fl", "DP" => dictionary! { "Predictor" => 2 } },
+                false,
+            ),
+        ];
+        for (dict, expected) in cases {
+            assert_eq!(png_predictor_enabled(&dict), expected, "{dict:?}");
+        }
     }
 
     #[test]
