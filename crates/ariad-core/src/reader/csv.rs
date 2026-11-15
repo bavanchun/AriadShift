@@ -159,6 +159,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         });
     }
 
+    // Backstop only: the per-row grid check above already bounds both counts.
     if total_cells > cell_limit {
         return Err(ReadError::TooManyCells {
             actual: total_cells,
@@ -365,10 +366,16 @@ mod tests {
         limits.max_blocks = 5; // Table (1) + 4 cells = 5 max blocks
         let data = b"A,B\n1,2\n3,4\n"; // 2x3 = 6 cells -> 7 blocks
         let err = read(data, &limits).unwrap_err();
-        assert!(matches!(
-            err,
-            ReadError::TooManyBlocks { .. } | ReadError::TooManyCells { .. }
-        ));
+        assert!(
+            matches!(
+                err,
+                ReadError::TooManyCells {
+                    actual: 6,
+                    limit: 4
+                }
+            ),
+            "{err:?}"
+        );
     }
 
     #[test]
