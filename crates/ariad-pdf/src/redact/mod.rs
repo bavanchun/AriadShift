@@ -30,7 +30,7 @@ use ariad_core::{
 use crate::{PdfError, ToolCtx, tools::rotate::collect_page_ids};
 use lopdf::Object;
 #[cfg(feature = "codecs")]
-use lopdf::{Document, ObjectId, Stream, content::Content, dictionary};
+use lopdf::{Document, ObjectId, Stream, content::Content};
 use matching::{MatchBudget, Matchers};
 use std::collections::BTreeSet;
 
@@ -855,6 +855,130 @@ fn image_placement_bbox(ctm: Matrix) -> [f64; 4] {
     [min_x, min_y, max_x, max_y]
 }
 
+/// Regions of `plan` on one-based page `page`; a whole-page region covers any page box.
+#[cfg(feature = "codecs")]
+fn regions_on_page(plan: &RedactionPlan, page: u32) -> Vec<[f64; 4]> {
+    plan.regions()
+        .iter()
+        .filter_map(|r| match r {
+            Region::Page { page: p } if *p == page => Some([0.0, 0.0, 100_000.0, 100_000.0]),
+            Region::Rectangle { page: p, bounds } if *p == page => Some(*bounds),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The subset of `regions` overlapping the page-space bounding box of an image placement.
+#[cfg(feature = "codecs")]
+fn intersecting_regions(ctm: Matrix, regions: &[[f64; 4]]) -> Vec<[f64; 4]> {
+    let bbox = image_placement_bbox(ctm);
+    regions
+        .iter()
+        .copied()
+        .filter(|r| bbox[0] < r[2] && bbox[2] > r[0] && bbox[1] < r[3] && bbox[3] > r[1])
+        .collect()
+}
+
+/// Placements of one image on one page that overlap that page's redaction regions.
+#[cfg(feature = "codecs")]
+type PlacementGroups =
+    std::collections::BTreeMap<(ObjectId, ObjectId), Vec<(Matrix, Vec<[f64; 4]>)>>;
+
+/// Collects, for every page with regions, the image placements those regions touch.
+#[cfg(feature = "codecs")]
+fn targeted_placements(
+    doc: &Document,
+    plan: &RedactionPlan,
+    budget: &mut crate::document::DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<PlacementGroups, PdfError> {
+    let page_ids = collect_page_ids(doc, ctx)?;
+    let mut groups = PlacementGroups::new();
+    for (page_idx, page_id) in page_ids.iter().enumerate() {
+        let regions = regions_on_page(plan, page_idx as u32 + 1);
+        if regions.is_empty() {
+            continue;
+        }
+        for (image_id, ctm) in collect_page_image_placements(doc, *page_id, budget, ctx)? {
+            let intersecting = intersecting_regions(ctm, &regions);
+            if !intersecting.is_empty() {
+                groups
+                    .entry((*page_id, image_id))
+                    .or_default()
+                    .push((ctm, intersecting));
+            }
+        }
+    }
+    Ok(groups)
+}
+
+/// Decoded images shared by several page rewrites, each decoded once under one budget.
+#[cfg(feature = "codecs")]
+struct ImageCache {
+    images: std::collections::BTreeMap<ObjectId, crate::images::DecodedImage>,
+    /// Page rewrites still needing each image; the last one takes the cached pixels.
+    pending: std::collections::BTreeMap<ObjectId, usize>,
+}
+
+#[cfg(feature = "codecs")]
+impl ImageCache {
+    /// Returns a private, mutable copy of the image `id`, charging copies to `budget`.
+    fn working_copy(
+        &mut self,
+        doc: &crate::PdfDoc,
+        id: ObjectId,
+        budget: &mut crate::document::DecodeBudget,
+        limits: &Limits,
+        ctx: &ToolCtx,
+    ) -> Result<crate::images::DecodedImage, PdfError> {
+        let pending = self.pending.get_mut(&id).ok_or(PdfError::Malformed)?;
+        *pending = pending.checked_sub(1).ok_or(PdfError::Malformed)?;
+        let last = *pending == 0;
+        if let Some(cached) = self.images.get(&id) {
+            if last {
+                return self.images.remove(&id).ok_or(PdfError::Malformed);
+            }
+            let copy = cached.clone();
+            budget.charge(copy.pixels.len())?;
+            return Ok(copy);
+        }
+        let decoded = crate::images::decode_with_budget(
+            doc,
+            id,
+            ctx,
+            budget,
+            limits.max_nesting_depth,
+            false,
+            false,
+        )
+        .map_err(|error| match error {
+            crate::images::ImageError::Pdf(error @ PdfError::LimitExceeded(_)) => error,
+            _ => PdfError::NotImplemented("image decode for redaction".into()),
+        })?;
+        if !last {
+            budget.charge(decoded.pixels.len())?;
+            self.images.insert(id, decoded.clone());
+        }
+        Ok(decoded)
+    }
+}
+
+/// A cleared private copy of one image for one page, with freshly encoded masks.
+#[cfg(feature = "codecs")]
+struct ImageRewrite {
+    page_id: ObjectId,
+    image_id: ObjectId,
+    image: Stream,
+    soft_mask: Option<Stream>,
+    mask: Option<Stream>,
+}
+
+/// Clears image pixels beneath redaction regions.
+///
+/// Each targeted page receives its own cleared copy of an image and its masks, and only that
+/// page's resources are repointed to it, so a shared image keeps its original pixels wherever
+/// it is not redacted. Each image is decoded once, and decoding, copying and encoding draw
+/// from one cumulative budget, as does pixel selection.
 #[cfg(feature = "codecs")]
 fn rewrite_image_pixels(
     doc: &mut crate::PdfDoc,
@@ -862,115 +986,122 @@ fn rewrite_image_pixels(
     limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<usize, PdfError> {
-    let page_ids = collect_page_ids(doc.inner(), ctx)?;
-    let mut decode_budget = doc.decode_budget();
-    let mut modified_count = 0usize;
-    for (page_idx, page_id) in page_ids.iter().enumerate() {
-        let page_num = page_idx as u32 + 1;
-        let mut regions_on_page: Vec<[f64; 4]> = Vec::new();
-        for r in plan.regions() {
-            match r {
-                Region::Page { page } if *page == page_num => {
-                    regions_on_page.push([0.0, 0.0, 100_000.0, 100_000.0]);
-                }
-                Region::Rectangle { page, bounds } if *page == page_num => {
-                    regions_on_page.push(*bounds);
-                }
-                _ => {}
-            }
+    let mut budget = doc.decode_budget();
+    let groups = targeted_placements(doc.inner(), plan, &mut budget, ctx)?;
+    let mut cache = ImageCache {
+        images: std::collections::BTreeMap::new(),
+        pending: std::collections::BTreeMap::new(),
+    };
+    let mut masks = Vec::with_capacity(groups.len());
+    for (_, image_id) in groups.keys() {
+        let dict = &doc
+            .inner()
+            .get_object(*image_id)
+            .and_then(Object::as_stream)
+            .map_err(|_| PdfError::Malformed)?
+            .dict;
+        let reference = |key: &[u8]| dict.get(key).ok().and_then(|v| v.as_reference().ok());
+        let ids = (reference(b"SMask"), reference(b"Mask"));
+        for id in [Some(*image_id), ids.0, ids.1].into_iter().flatten() {
+            *cache.pending.entry(id).or_default() += 1;
         }
-        if regions_on_page.is_empty() {
-            continue;
-        }
-        let placements =
-            collect_page_image_placements(doc.inner(), *page_id, &mut decode_budget, ctx)?;
-        for (img_id, ctm) in placements {
-            ctx.check()?;
-            let img_bbox = image_placement_bbox(ctm);
-            let intersects = regions_on_page.iter().any(|r| {
-                img_bbox[0] < r[2] && img_bbox[2] > r[0] && img_bbox[1] < r[3] && img_bbox[3] > r[1]
-            });
-            if !intersects {
-                continue;
-            }
-            let mut decoded_img = crate::images::decode(doc, img_id, ctx, limits)
-                .map_err(|_| PdfError::NotImplemented("image decode for redaction".into()))?;
-            let smask_id = doc
-                .inner()
-                .get_object(img_id)
-                .and_then(Object::as_stream)
-                .ok()
-                .and_then(|s| s.dict.get(b"SMask").ok())
-                .and_then(|v| v.as_reference().ok());
-            let mut smask_img = if let Some(sid) = smask_id {
-                Some(crate::images::decode(doc, sid, ctx, limits).map_err(|_| {
-                    PdfError::NotImplemented("image smask decode for redaction".into())
-                })?)
-            } else {
-                None
-            };
-            let mask_id = doc
-                .inner()
-                .get_object(img_id)
-                .and_then(Object::as_stream)
-                .ok()
-                .and_then(|s| s.dict.get(b"Mask").ok())
-                .and_then(|v| v.as_reference().ok());
-            let mut mask_img = if let Some(mid) = mask_id {
-                Some(crate::images::decode(doc, mid, ctx, limits).map_err(|_| {
-                    PdfError::NotImplemented("image mask decode for redaction".into())
-                })?)
-            } else {
-                None
-            };
-            let cleared = pixels::clear_pixels(
-                &mut decoded_img,
-                smask_img.as_mut(),
-                mask_img.as_mut(),
-                ctm,
-                &regions_on_page,
+        masks.push(ids);
+    }
+    let mut work = 0u64;
+    let mut rewrites = Vec::new();
+    for (((page_id, image_id), placements), (smask_id, mask_id)) in groups.into_iter().zip(masks) {
+        ctx.check()?;
+        let mut image = cache.working_copy(doc, image_id, &mut budget, limits, ctx)?;
+        let mut soft_mask = smask_id
+            .map(|id| cache.working_copy(doc, id, &mut budget, limits, ctx))
+            .transpose()?;
+        let mut mask = mask_id
+            .map(|id| cache.working_copy(doc, id, &mut budget, limits, ctx))
+            .transpose()?;
+        let mut cleared = 0usize;
+        for (ctm, regions) in &placements {
+            cleared = cleared.saturating_add(pixels::clear_pixels_with_work(
+                &mut image,
+                soft_mask.as_mut(),
+                mask.as_mut(),
+                *ctm,
+                regions,
                 limits,
                 ctx,
-            )?;
-            if cleared > 0 {
-                modified_count += 1;
-                if let (Some(sid), Some(simg)) = (smask_id, smask_img) {
-                    let new_smask_stream = pixels::encode_unmasked_image(&simg, ctx)?;
-                    doc.inner_mut()?.set_object(sid, new_smask_stream);
-                }
-                if let (Some(mid), Some(mimg)) = (mask_id, mask_img) {
-                    let new_mask_stream = pixels::encode_unmasked_image(&mimg, ctx)?;
-                    doc.inner_mut()?.set_object(mid, new_mask_stream);
-                }
-                let (encoded, parameters) = crate::images::encode_flate(&decoded_img, 6)
-                    .map_err(|_| PdfError::NotImplemented("image encoding".into()))?;
-                let color_space = match decoded_img.color_space {
-                    crate::images::ColorSpace::Gray => "DeviceGray",
-                    crate::images::ColorSpace::Rgb => "DeviceRGB",
-                    crate::images::ColorSpace::Cmyk => "DeviceCMYK",
-                };
-                let mut dict = lopdf::dictionary! {
-                    "Type" => "XObject",
-                    "Subtype" => "Image",
-                    "Width" => i64::from(decoded_img.width),
-                    "Height" => i64::from(decoded_img.height),
-                    "ColorSpace" => color_space,
-                    "BitsPerComponent" => i64::from(decoded_img.bits_per_component),
-                    "Filter" => "FlateDecode",
-                    "DecodeParms" => parameters,
-                };
-                if let Some(sid) = smask_id {
-                    dict.set("SMask", Object::Reference(sid));
-                }
-                if let Some(mid) = mask_id {
-                    dict.set("Mask", Object::Reference(mid));
-                }
-                doc.inner_mut()?
-                    .set_object(img_id, Stream::new(dict, encoded));
-            }
+                &mut work,
+            )?);
+        }
+        if cleared == 0 {
+            continue;
+        }
+        let mut encode = |pixels: &crate::images::DecodedImage| {
+            let stream = pixels::encode_lossless(pixels, ctx)?;
+            budget.charge(stream.content.len())?;
+            Ok::<_, PdfError>(stream)
+        };
+        rewrites.push(ImageRewrite {
+            page_id,
+            image_id,
+            soft_mask: soft_mask.as_ref().map(&mut encode).transpose()?,
+            mask: mask.as_ref().map(&mut encode).transpose()?,
+            image: encode(&image)?,
+        });
+    }
+    let modified = rewrites.len();
+    let inner = doc.inner_mut()?;
+    for rewrite in rewrites {
+        ctx.check()?;
+        let mut image = rewrite.image;
+        if let Some(stream) = rewrite.soft_mask {
+            image
+                .dict
+                .set("SMask", Object::Reference(inner.add_object(stream)));
+        }
+        if let Some(stream) = rewrite.mask {
+            image
+                .dict
+                .set("Mask", Object::Reference(inner.add_object(stream)));
+        }
+        let copy_id = inner.add_object(image);
+        repoint_page_image(inner, rewrite.page_id, rewrite.image_id, copy_id)?;
+    }
+    Ok(modified)
+}
+
+/// Gives a page its own resource dictionary whose image entries for `from` point to `to`.
+///
+/// The page's effective (inherited and merged) resources are copied into the page, so sibling
+/// pages sharing a resource dictionary or inheriting it from the page tree are not affected.
+#[cfg(feature = "codecs")]
+fn repoint_page_image(
+    doc: &mut Document,
+    page_id: ObjectId,
+    from: ObjectId,
+    to: ObjectId,
+) -> Result<(), PdfError> {
+    let mut resources = crate::xobject::resolve_page_resources(doc, page_id);
+    let mut xobjects = resources
+        .get(b"XObject")
+        .and_then(|v| doc.dereference(v))
+        .and_then(|(_, v)| v.as_dict())
+        .cloned()
+        .map_err(|_| PdfError::Malformed)?;
+    let mut repointed = false;
+    for (_, value) in xobjects.iter_mut() {
+        if value.as_reference().is_ok_and(|id| id == from) {
+            *value = Object::Reference(to);
+            repointed = true;
         }
     }
-    Ok(modified_count)
+    if !repointed {
+        return Err(PdfError::Malformed);
+    }
+    resources.set("XObject", Object::Dictionary(xobjects));
+    doc.get_object_mut(page_id)
+        .and_then(Object::as_dict_mut)
+        .map_err(|_| PdfError::Malformed)?
+        .set("Resources", Object::Dictionary(resources));
+    Ok(())
 }
 
 /// Whole-object-graph scan across all reachable objects and decoded streams.
@@ -1364,14 +1495,23 @@ mod tests {
 
     /// Serializes a document whose page tree is `pages` with the given leaf pages.
     fn finish(mut doc: Document, pages: lopdf::ObjectId, kids: &[lopdf::ObjectId]) -> Vec<u8> {
-        doc.objects.insert(
-            pages,
-            Object::Dictionary(dictionary! {
-                "Type" => "Pages",
-                "Kids" => kids.iter().copied().map(Object::Reference).collect::<Vec<_>>(),
-                "Count" => kids.len() as i64,
-            }),
-        );
+        finish_with(&mut doc, pages, kids, lopdf::Dictionary::new())
+    }
+
+    /// Like [`finish`], adding `inherited` entries such as `Resources` to the page tree node.
+    fn finish_with(
+        doc: &mut Document,
+        pages: lopdf::ObjectId,
+        kids: &[lopdf::ObjectId],
+        inherited: lopdf::Dictionary,
+    ) -> Vec<u8> {
+        let mut node = dictionary! {
+            "Type" => "Pages",
+            "Kids" => kids.iter().copied().map(Object::Reference).collect::<Vec<_>>(),
+            "Count" => kids.len() as i64,
+        };
+        node.extend(&inherited);
+        doc.objects.insert(pages, Object::Dictionary(node));
         let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
         doc.trailer.set("Root", root);
         let mut bytes = Vec::new();
@@ -1470,6 +1610,133 @@ mod tests {
                 "{err}"
             );
         }
+    }
+
+    /// The image object a page draws under the resource name `Im0`.
+    #[cfg(feature = "codecs")]
+    fn page_image(pdf: &crate::PdfDoc, page: lopdf::ObjectId) -> lopdf::ObjectId {
+        let resources = crate::xobject::resolve_page_resources(pdf.inner(), page);
+        let (_, xobjects) = pdf
+            .inner()
+            .dereference(resources.get(b"XObject").unwrap())
+            .unwrap();
+        xobjects
+            .as_dict()
+            .unwrap()
+            .get(b"Im0")
+            .unwrap()
+            .as_reference()
+            .unwrap()
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn redacting_one_page_leaves_a_shared_image_intact_on_other_pages() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        for inherited in [false, true] {
+            let mut doc = Document::with_version("1.7");
+            let pages = doc.new_object_id();
+            let image = gray_image(&mut doc, 4, 4, 200);
+            let resources =
+                doc.add_object(dictionary! { "XObject" => dictionary! { "Im0" => image } });
+            let mut kids = Vec::new();
+            for _ in 0..2 {
+                let contents = doc.add_object(lopdf::Stream::new(
+                    dictionary! {},
+                    b"q 100 0 0 100 0 0 cm /Im0 Do Q".to_vec(),
+                ));
+                let mut page = dictionary! {
+                    "Type" => "Page",
+                    "Parent" => pages,
+                    "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                    "Contents" => contents,
+                };
+                if !inherited {
+                    page.set("Resources", resources);
+                }
+                kids.push(doc.add_object(page));
+            }
+            let tree = if inherited {
+                dictionary! { "Resources" => resources }
+            } else {
+                lopdf::Dictionary::new()
+            };
+            let bytes = finish_with(&mut doc, pages, &kids, tree);
+            let (request, planned, geometry) =
+                rect_plan(&bytes, 2, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+            let output = rewrite_document(
+                &bytes,
+                &request,
+                &planned,
+                &geometry,
+                &Limits::local(),
+                &ToolCtx::new(),
+            )
+            .unwrap();
+            assert_eq!(
+                verify_image_pixels(&output, &planned, &Limits::local(), &ToolCtx::new()).unwrap(),
+                RedactionCheckStatus::Pass
+            );
+            let pdf = crate::document::open(&output, &Limits::local()).unwrap();
+            let page_ids = collect_page_ids(pdf.inner(), &ToolCtx::new()).unwrap();
+            let (redacted, untouched) =
+                (page_image(&pdf, page_ids[0]), page_image(&pdf, page_ids[1]));
+            assert_ne!(redacted, untouched);
+            let pixels = |id| {
+                crate::images::decode(&pdf, id, &ToolCtx::new(), &Limits::local())
+                    .unwrap()
+                    .pixels
+            };
+            let redacted = pixels(redacted);
+            assert!(redacted.contains(&0) && redacted.contains(&200));
+            assert!(pixels(untouched).iter().all(|&p| p == 200));
+        }
+    }
+
+    /// One page drawing each listed image at the given translations, scaled to 50x50.
+    #[cfg(feature = "codecs")]
+    fn placed_images(images: &[(u8, &[(i32, i32)])]) -> Vec<u8> {
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let mut xobjects = lopdf::Dictionary::new();
+        let mut content = String::new();
+        for (index, (value, offsets)) in images.iter().enumerate() {
+            let name = format!("Im{index}");
+            xobjects.set(name.as_bytes(), gray_image(&mut doc, 64, 64, *value));
+            for (x, y) in *offsets {
+                content.push_str(&format!("q 50 0 0 50 {x} {y} cm /{name} Do Q\n"));
+            }
+        }
+        let contents = doc.add_object(lopdf::Stream::new(dictionary! {}, content.into_bytes()));
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+            "Resources" => dictionary! { "XObject" => xobjects },
+            "Contents" => contents,
+        });
+        finish(doc, pages, &[page])
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn image_rewrite_decodes_each_image_once_under_one_budget() {
+        let mut limits = Limits::local();
+        // One 64x64 grey image costs about 8 KiB to decode (its inflated stream and its
+        // unpacked pixels); this leaves room for one decode and its re-encoding, not two.
+        limits.max_decompressed_bytes = 12_000;
+        let rewrite = |bytes: &[u8]| {
+            let (_, planned, _) = rect_plan(bytes, 1, vec![rectangle(1, [0.0, 0.0, 90.0, 90.0])]);
+            let mut pdf = crate::document::open(bytes, &limits).unwrap();
+            rewrite_image_pixels(&mut pdf, &planned, &limits, &ToolCtx::new())
+        };
+        let repeated = placed_images(&[(200, &[(0, 0), (10, 10), (20, 20)])]);
+        assert_eq!(rewrite(&repeated).unwrap(), 1);
+        let distinct = placed_images(&[(200, &[(0, 0)]), (100, &[(20, 20)])]);
+        assert!(matches!(
+            rewrite(&distinct).unwrap_err(),
+            PdfError::LimitExceeded(_)
+        ));
     }
 
     #[test]
