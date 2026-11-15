@@ -24,7 +24,7 @@
     "@better-auth/api-key": "catalog:",
     "@better-auth/passkey": "catalog:",
     "@bjorn3/browser_wasi_shim": "catalog:",
-    "@embedpdf/core": "2.15.1",
+    "@embedpdf/core": "3.1.0",
     "@embedpdf/engines": "2.15.1",
     "@embedpdf/models": "2.15.1",
     "@embedpdf/pdfium": "2.15.1",
