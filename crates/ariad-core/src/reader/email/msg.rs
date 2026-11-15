@@ -259,20 +259,76 @@ pub fn strip_rtf(rtf: &[u8]) -> String {
     text
 }
 
+/// A stream that exists but is larger than the reader's cap.
+struct StreamTooLarge;
+
+/// Reads a stream into a `Vec<u8>`, reading at most `max_bytes + 1` bytes.
+///
+/// Returns `Ok(None)` when the stream is missing or unreadable.
+fn read_stream_checked<F: Read + std::io::Seek>(
+    comp: &mut cfb::CompoundFile<F>,
+    path: &str,
+    max_bytes: usize,
+) -> Result<Option<Vec<u8>>, StreamTooLarge> {
+    let Ok(mut stream) = comp.open_stream(path) else {
+        return Ok(None);
+    };
+    let mut buf = Vec::new();
+    let mut take = (&mut stream).take(max_bytes as u64 + 1);
+    if take.read_to_end(&mut buf).is_err() {
+        return Ok(None);
+    }
+    if buf.len() > max_bytes {
+        Err(StreamTooLarge)
+    } else {
+        Ok(Some(buf))
+    }
+}
+
 /// Helper to read a stream into a Vec<u8> with size bounds.
 fn read_stream_bounded<F: Read + std::io::Seek>(
     comp: &mut cfb::CompoundFile<F>,
     path: &str,
     max_bytes: usize,
 ) -> Option<Vec<u8>> {
-    let mut stream = comp.open_stream(path).ok()?;
-    let mut buf = Vec::new();
-    let mut take = (&mut stream).take(max_bytes as u64 + 1);
-    take.read_to_end(&mut buf).ok()?;
-    if buf.len() > max_bytes {
-        None
+    read_stream_checked(comp, path, max_bytes).ok().flatten()
+}
+
+/// Reads string from either UTF-16LE (`*001F`) or String8 (`*001E`) stream,
+/// reporting a stream that exceeds `max_bytes` when no variant is usable.
+fn read_string_property_checked<F: Read + std::io::Seek>(
+    comp: &mut cfb::CompoundFile<F>,
+    parent: &str,
+    prop_id: &str,
+    max_bytes: usize,
+) -> Result<Option<String>, StreamTooLarge> {
+    let prefix = if parent == "/" {
+        format!("/__substg1.0_{prop_id}")
     } else {
-        Some(buf)
+        format!("{parent}/__substg1.0_{prop_id}")
+    };
+
+    let mut too_large = false;
+    for (suffix, decode) in [
+        ("001F", decode_utf16le as fn(&[u8]) -> String),
+        ("001E", decode_string8),
+    ] {
+        match read_stream_checked(comp, &format!("{prefix}{suffix}"), max_bytes) {
+            Ok(Some(bytes)) => {
+                let s = decode(&bytes);
+                if !s.is_empty() {
+                    return Ok(Some(s));
+                }
+            }
+            Ok(None) => {}
+            Err(StreamTooLarge) => too_large = true,
+        }
+    }
+
+    if too_large {
+        Err(StreamTooLarge)
+    } else {
+        Ok(None)
     }
 }
 
@@ -283,30 +339,13 @@ fn read_string_property<F: Read + std::io::Seek>(
     prop_id: &str,
     max_bytes: usize,
 ) -> Option<String> {
-    let prefix = if parent == "/" {
-        format!("/__substg1.0_{prop_id}")
-    } else {
-        format!("{parent}/__substg1.0_{prop_id}")
-    };
-
-    let u16_path = format!("{prefix}001F");
-    if let Some(bytes) = read_stream_bounded(comp, &u16_path, max_bytes) {
-        let s = decode_utf16le(&bytes);
-        if !s.is_empty() {
-            return Some(s);
-        }
-    }
-
-    let a_path = format!("{prefix}001E");
-    if let Some(bytes) = read_stream_bounded(comp, &a_path, max_bytes) {
-        let s = decode_string8(&bytes);
-        if !s.is_empty() {
-            return Some(s);
-        }
-    }
-
-    None
+    read_string_property_checked(comp, parent, prop_id, max_bytes)
+        .ok()
+        .flatten()
 }
+
+/// Maximum size of a recipient or attachment `__properties_version1.0` stream.
+const MAX_SUB_PROPERTIES_BYTES: usize = 4096;
 
 /// Parse date from `__properties_version1.0` stream.
 fn parse_date_from_properties<F: Read + std::io::Seek>(
@@ -403,13 +442,34 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut bcc_recipients = Vec::new();
 
     for r_path in &recip_storages {
-        let r_name = read_string_property(&mut comp, r_path, "3001", max_stream_bytes);
-        let r_email = read_string_property(&mut comp, r_path, "3003", max_stream_bytes);
+        let mut too_large = false;
+        let mut string_property = |comp: &mut cfb::CompoundFile<_>, prop_id| {
+            read_string_property_checked(comp, r_path, prop_id, max_stream_bytes).unwrap_or_else(
+                |StreamTooLarge| {
+                    too_large = true;
+                    None
+                },
+            )
+        };
+        let r_name = string_property(&mut comp, "3001");
+        let r_email = string_property(&mut comp, "3003");
 
         // Check recipient type from properties if available
         let mut recip_type = 1u32; // Default MAPI_TO
         let prop_path = format!("{r_path}/__properties_version1.0");
-        if let Some(prop_bytes) = read_stream_bounded(&mut comp, &prop_path, 4096)
+        let prop_bytes = read_stream_checked(&mut comp, &prop_path, MAX_SUB_PROPERTIES_BYTES)
+            .unwrap_or_else(|StreamTooLarge| {
+                too_large = true;
+                None
+            });
+        if too_large {
+            // Never include recipient data: name only the condition.
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                "MSG recipient stream exceeds the size limit and was ignored",
+            ));
+        }
+        if let Some(prop_bytes) = prop_bytes
             && prop_bytes.len() >= 8
         {
             let (chunks, _) = prop_bytes[8..].as_chunks::<16>();
@@ -538,8 +598,12 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
                 warnings.extend(html_out.warnings);
                 body_read = true;
             }
-            Err(_) => {
-                // If HTML reading fails, fall through to text or RTF
+            Err(error) => {
+                // The error reports only limits and counts, never body text.
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!("MSG HTML body could not be converted: {error}; trying other bodies"),
+                ));
             }
         }
     }
@@ -590,7 +654,8 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             // Check PR_ATTACH_SIZE (0x0E20) in attachment properties stream
             let mut prop_size = 0usize;
             let prop_path = format!("{a_path}/__properties_version1.0");
-            if let Some(prop_bytes) = read_stream_bounded(&mut comp, &prop_path, 4096)
+            if let Some(prop_bytes) =
+                read_stream_bounded(&mut comp, &prop_path, MAX_SUB_PROPERTIES_BYTES)
                 && prop_bytes.len() >= 8
             {
                 let (chunks, _) = prop_bytes[8..].as_chunks::<16>();
@@ -1072,6 +1137,99 @@ mod tests {
         let out = read(&bytes, &Limits::local()).unwrap();
         assert_eq!(out.document.meta.date, None);
     }
+
+    #[test]
+    fn oversized_recipient_stream_warns_without_contents() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        comp.create_storage("/__recip_version1.0_#00000000")
+            .unwrap();
+        {
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000000/__substg1.0_3001001F")
+                .unwrap();
+            s.write_all(&encode_utf16le("Secret Recipient")).unwrap();
+        }
+        {
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000000/__properties_version1.0")
+                .unwrap();
+            s.write_all(&vec![0u8; MAX_SUB_PROPERTIES_BYTES + 1])
+                .unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG recipient stream exceeds the size limit and was ignored"
+        );
+        assert!(!out.warnings[0].message.contains("Secret"));
+    }
+
+    #[test]
+    fn oversized_recipient_string_stream_is_reported() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        comp.create_storage("/__recip_version1.0_#00000000")
+            .unwrap();
+        {
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000000/__substg1.0_3001001F")
+                .unwrap();
+            s.write_all(&encode_utf16le("Recipient")).unwrap();
+        }
+        let path = "/__recip_version1.0_#00000000";
+        let name = encode_utf16le("Recipient");
+        assert!(matches!(
+            read_string_property_checked(&mut comp, path, "3001", name.len() - 1),
+            Err(StreamTooLarge)
+        ));
+        assert!(matches!(
+            read_string_property_checked(&mut comp, path, "3001", name.len()),
+            Ok(Some(ref text)) if text == "Recipient"
+        ));
+        assert!(matches!(
+            read_string_property_checked(&mut comp, path, "3003", 1),
+            Ok(None)
+        ));
+    }
+
+    #[test]
+    fn html_body_failure_warns_and_falls_back_to_plain_text() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__substg1.0_10130102").unwrap();
+            let html = "<p>secret</p>".repeat(8);
+            stream.write_all(html.as_bytes()).unwrap();
+        }
+        {
+            let mut stream = comp.create_stream("/__substg1.0_1000001F").unwrap();
+            stream.write_all(&encode_utf16le("Plain body")).unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let limits = Limits {
+            max_blocks: 3,
+            ..Limits::local()
+        };
+        let out = read(&bytes, &limits).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG HTML body could not be converted: HTML contains more than the configured \
+             3 block limit; trying other bodies"
+        );
+        assert!(!out.warnings[0].message.contains("secret"));
+        let plain = out.document.body.iter().any(|b| match b {
+            Block::Paragraph { content, .. } => content
+                .iter()
+                .any(|c| matches!(c, Inline::Text { text } if text == "Plain body")),
+            _ => false,
+        });
+        assert!(plain, "plain text body must replace the failed HTML body");
     }
 
     #[test]
