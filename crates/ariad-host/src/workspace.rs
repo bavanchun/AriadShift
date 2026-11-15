@@ -137,9 +137,24 @@ impl Workspace {
         Ok(())
     }
 
-    /// Opens an artifact relative to the output handle captured before the engine starts.
-    /// Directory replacements cannot redirect this read outside that original directory.
-    pub fn open_artifact(&self, artifact: &Path) -> Result<fs::File, WorkspaceError> {
+    fn validate_single_artifact_name(name: &str) -> Result<&Path, WorkspaceError> {
+        let mut parts = Path::new(name).components();
+        if !matches!(parts.next(), Some(Component::Normal(_))) || parts.next().is_some() {
+            return Err(WorkspaceError::ArtifactOutsideOutput);
+        }
+        Ok(Path::new(name))
+    }
+
+    fn output_handle_ref(&self) -> Result<&cap_std::fs::Dir, WorkspaceError> {
+        self.output_handle
+            .as_ref()
+            .ok_or_else(|| WorkspaceError::Io(io::Error::other("workspace is closed")))
+    }
+
+    fn resolve_relative_in_output(
+        &self,
+        artifact: &Path,
+    ) -> Result<(PathBuf, std::ffi::OsString), WorkspaceError> {
         if !artifact.is_absolute()
             || artifact
                 .components()
@@ -153,16 +168,58 @@ impl Workspace {
         let name = artifact
             .file_name()
             .ok_or(WorkspaceError::ArtifactOutsideOutput)?;
+        let mut parts = Path::new(name).components();
+        if !matches!(parts.next(), Some(Component::Normal(_))) || parts.next().is_some() {
+            return Err(WorkspaceError::ArtifactOutsideOutput);
+        }
         let canonical_output = fs::canonicalize(&self.output_dir)?;
         let canonical_parent = fs::canonicalize(parent)?;
         let relative_parent = canonical_parent
             .strip_prefix(&canonical_output)
-            .map_err(|_| WorkspaceError::ArtifactOutsideOutput)?;
+            .map_err(|_| WorkspaceError::ArtifactOutsideOutput)?
+            .to_path_buf();
+        Ok((relative_parent, name.to_os_string()))
+    }
+
+    fn remove_entry_in_dir(
+        directory: &cap_std::fs::Dir,
+        name: &Path,
+    ) -> Result<(), WorkspaceError> {
+        match directory.symlink_metadata(name) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(WorkspaceError::Io(error)),
+            Ok(meta) => {
+                if meta.is_dir() && !meta.is_symlink() {
+                    return Err(WorkspaceError::ArtifactNotFile);
+                }
+            }
+        }
+        match directory.remove_file(name) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(WorkspaceError::Io(error)),
+        }
+    }
+
+    fn write_new_in_dir(
+        directory: &cap_std::fs::Dir,
+        name: &Path,
+        bytes: &[u8],
+    ) -> Result<(), WorkspaceError> {
+        use std::io::Write;
+        let mut options = cap_std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        let mut file = directory.open_with(name, &options)?;
+        file.write_all(bytes)?;
+        Ok(())
+    }
+
+    /// Opens an artifact relative to the output handle captured before the engine starts.
+    /// Directory replacements cannot redirect this read outside that original directory.
+    pub fn open_artifact(&self, artifact: &Path) -> Result<fs::File, WorkspaceError> {
+        let (relative_parent, name) = self.resolve_relative_in_output(artifact)?;
         let relative = relative_parent.join(name);
-        let directory = self
-            .output_handle
-            .as_ref()
-            .ok_or_else(|| io::Error::other("workspace is closed"))?;
+        let directory = self.output_handle_ref()?;
         let file = crate::confine::open_file_nofollow(directory, &relative)?;
         if !file.metadata()?.is_file() {
             return Err(WorkspaceError::ArtifactNotFile);
@@ -170,22 +227,52 @@ impl Workspace {
         Ok(file)
     }
 
+    /// Removes any pre-existing file or symlink named `name` inside the captured output directory
+    /// without following symlinks. Returns `Ok(())` when nothing of that name exists.
+    pub fn remove_artifact(&self, name: &str) -> Result<(), WorkspaceError> {
+        let relative = Self::validate_single_artifact_name(name)?;
+        let directory = self.output_handle_ref()?;
+        Self::remove_entry_in_dir(directory, relative)
+    }
+
+    /// Removes a staged file or symlink at `artifact` beneath `<workspace>/out/` through the
+    /// captured output directory handle without following symlinks.
+    pub fn remove_staged_artifact(&self, artifact: &Path) -> Result<(), WorkspaceError> {
+        let (relative_parent, name) = self.resolve_relative_in_output(artifact)?;
+        let directory = self.output_handle_ref()?;
+        if relative_parent.as_os_str().is_empty() {
+            Self::remove_entry_in_dir(directory, Path::new(&name))
+        } else {
+            let parent_dir = crate::confine::open_dir_nofollow(directory, &relative_parent)?;
+            Self::remove_entry_in_dir(&parent_dir, Path::new(&name))
+        }
+    }
+
     /// Create a new artifact through the captured output directory capability.
     pub fn write_artifact(&self, name: &str, bytes: &[u8]) -> Result<PathBuf, WorkspaceError> {
-        use std::io::Write;
-        let mut parts = Path::new(name).components();
-        if !matches!(parts.next(), Some(Component::Normal(_))) || parts.next().is_some() {
-            return Err(WorkspaceError::ArtifactOutsideOutput);
-        }
-        let directory = self
-            .output_handle
-            .as_ref()
-            .ok_or_else(|| io::Error::other("workspace is closed"))?;
-        let mut options = cap_std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        let mut file = directory.open_with(name, &options)?;
-        file.write_all(bytes)?;
+        let relative = Self::validate_single_artifact_name(name)?;
+        let directory = self.output_handle_ref()?;
+        Self::write_new_in_dir(directory, relative, bytes)?;
         Ok(self.output_dir.join(name))
+    }
+
+    /// Creates a new artifact at `artifact` beneath `<workspace>/out/` through the captured output
+    /// directory capability without following symlinks in intermediate directories.
+    pub fn write_staged_artifact(
+        &self,
+        artifact: &Path,
+        bytes: &[u8],
+    ) -> Result<PathBuf, WorkspaceError> {
+        let (relative_parent, name) = self.resolve_relative_in_output(artifact)?;
+        let directory = self.output_handle_ref()?;
+        if relative_parent.as_os_str().is_empty() {
+            Self::write_new_in_dir(directory, Path::new(&name), bytes)?;
+            Ok(self.output_dir.join(name))
+        } else {
+            let parent_dir = crate::confine::open_dir_nofollow(directory, &relative_parent)?;
+            Self::write_new_in_dir(&parent_dir, Path::new(&name), bytes)?;
+            Ok(self.output_dir.join(relative_parent).join(name))
+        }
     }
 
     /// Atomically promotes a completed output artifact into the destination directory.
@@ -675,5 +762,49 @@ pub(crate) fn remove_workspace(path: &Path) -> io::Result<()> {
                 backoff = backoff.saturating_mul(2).min(Duration::from_millis(500));
             }
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod symlink_tests {
+    use super::*;
+
+    #[test]
+    fn remove_and_write_artifact_replace_planted_symlink_without_touching_target() {
+        let victim_dir = tempfile::tempdir().unwrap();
+        let victim = victim_dir.path().join("victim.txt");
+        fs::write(&victim, b"untouched-workspace-victim").unwrap();
+
+        let ws = Workspace::new().unwrap();
+        let link = ws.output_dir().join("report.json");
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+
+        ws.remove_artifact("report.json").unwrap();
+        let written = ws.write_artifact("report.json", b"{\"ok\":true}").unwrap();
+        assert_eq!(written, link);
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-workspace-victim");
+        let meta = fs::symlink_metadata(&link).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        assert_eq!(fs::read(&link).unwrap(), b"{\"ok\":true}");
+
+        // Nested subpath replacement keeps subdirectory path and never follows symlinked parent.
+        let sub = ws.output_dir().join("nested");
+        fs::create_dir(&sub).unwrap();
+        let nested_link = sub.join("nested.json");
+        std::os::unix::fs::symlink(&victim, &nested_link).unwrap();
+        ws.remove_staged_artifact(&nested_link).unwrap();
+        let nested_written = ws
+            .write_staged_artifact(&nested_link, b"{\"nested\":true}")
+            .unwrap();
+        assert_eq!(nested_written, nested_link);
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-workspace-victim");
+        let nested_meta = fs::symlink_metadata(&nested_link).unwrap();
+        assert!(!nested_meta.file_type().is_symlink() && nested_meta.file_type().is_file());
+        assert_eq!(fs::read(&nested_link).unwrap(), b"{\"nested\":true}");
+
+        // A directory at the artifact path cannot be unlinked as a file.
+        fs::create_dir(ws.output_dir().join("dir.json")).unwrap();
+        let dir_err = ws.remove_artifact("dir.json").unwrap_err();
+        assert!(matches!(dir_err, WorkspaceError::ArtifactNotFile));
     }
 }

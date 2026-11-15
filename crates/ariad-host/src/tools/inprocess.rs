@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, HashSet},
-    fs,
     path::PathBuf,
     sync::{
         Arc,
@@ -41,6 +40,8 @@ pub struct RawToolExecution {
     pub metrics: BTreeMap<String, Value>,
     /// Structured JSON payload for JSON-emitting tools such as `pdf.info`.
     pub inline_json: Option<Value>,
+    /// Whether the host itself staged an overflow companion JSON report alongside a primary artifact.
+    pub companion_report: bool,
 }
 
 struct ThreadWaker(Thread);
@@ -334,9 +335,8 @@ pub(crate) fn execute_with_names_and_clock(
                 .unwrap_or("json");
             let staged_name =
                 sanitize_staged_artifact_name(raw_name, 1, out_format, &mut used_names);
-            let staged_out = workspace.output_dir().join(staged_name);
-            fs::write(&staged_out, &json_bytes)
-                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            let staged_out =
+                super::run::write_staged_artifact(workspace, &staged_name, &json_bytes, scrubber)?;
             artifacts.push((staged_out, out_format.to_owned()));
         } else if cap_inline.is_none() {
             companion_json_bytes = Some(json_bytes);
@@ -350,6 +350,7 @@ pub(crate) fn execute_with_names_and_clock(
         }
         inline_json = cap_inline;
     }
+    let companion_report = companion_json_bytes.is_some();
     if tool_output.json.is_none() || has_binary_artifacts {
         let mut total_out_bytes = 0_u64;
         for (idx, artifact) in tool_output.artifacts.iter().enumerate() {
@@ -364,9 +365,12 @@ pub(crate) fn execute_with_names_and_clock(
             };
             let staged_name =
                 sanitize_staged_artifact_name(&artifact.name, idx + 1, out_format, &mut used_names);
-            let staged_out = workspace.output_dir().join(staged_name);
-            fs::write(&staged_out, &artifact.bytes)
-                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            let staged_out = super::run::write_staged_artifact(
+                workspace,
+                &staged_name,
+                &artifact.bytes,
+                scrubber,
+            )?;
             artifacts.push((staged_out, out_format.to_owned()));
         }
         if let Some(json_bytes) = companion_json_bytes {
@@ -380,9 +384,8 @@ pub(crate) fn execute_with_names_and_clock(
                 "json",
                 &mut used_names,
             );
-            let staged_out = workspace.output_dir().join(staged_name);
-            fs::write(&staged_out, &json_bytes)
-                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            let staged_out =
+                super::run::write_staged_artifact(workspace, &staged_name, &json_bytes, scrubber)?;
             artifacts.push((staged_out, "json".to_owned()));
             warnings.push(super::run::report_not_inlined_warning());
         }
@@ -400,6 +403,7 @@ pub(crate) fn execute_with_names_and_clock(
         warnings,
         metrics,
         inline_json,
+        companion_report,
     })
 }
 
@@ -488,7 +492,7 @@ pub fn map_pdf_error(err: PdfError, scrubber: &SecretScrubber) -> ToolError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{fs, path::Path};
 
     use ariad_core::tools::{
         InputArity, Tier, ToolGroup, ToolRuntime,

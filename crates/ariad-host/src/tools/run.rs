@@ -1010,12 +1010,8 @@ fn run_tool_inner(
     }
 
     // 11. Plan and execute atomic multi-artifact publication.
-    let has_companion_report = !emits_json
-        && raw_exec.inline_json.is_none()
-        && raw_exec
-            .warnings
-            .iter()
-            .any(|warning| warning.code == "report_not_inlined");
+    let has_companion_report =
+        !emits_json && raw_exec.inline_json.is_none() && raw_exec.companion_report;
     let (published, publish_warnings) = publish_tool_outputs(
         &workspace,
         &spec,
@@ -1067,12 +1063,14 @@ fn run_tool_inner(
 /// `limits.max_decompressed_bytes`).
 pub(super) const MAX_INLINE_JSON_BYTES: u64 = 32 * 1024 * 1024;
 
+#[cfg(any(test, feature = "test-probe"))]
 thread_local! {
     static TEST_INLINE_JSON_CAP: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
 /// Temporarily lowers `json_inline_cap` on the current thread so tests can verify
 /// oversized companion JSON fallback without allocating >32 MiB payloads.
+#[cfg(any(test, feature = "test-probe"))]
 #[doc(hidden)]
 pub fn with_inline_json_cap_for_test<T>(cap: u64, f: impl FnOnce() -> T) -> T {
     struct Reset(Option<u64>);
@@ -1092,9 +1090,11 @@ pub fn with_inline_json_cap_for_test<T>(cap: u64, f: impl FnOnce() -> T) -> T {
 
 pub(super) fn json_inline_cap(limits: &Limits) -> u64 {
     let base = limits.max_decompressed_bytes.min(MAX_INLINE_JSON_BYTES);
-    TEST_INLINE_JSON_CAP
-        .with(|cell| cell.get())
-        .map_or(base, |override_cap| base.min(override_cap))
+    #[cfg(any(test, feature = "test-probe"))]
+    if let Some(override_cap) = TEST_INLINE_JSON_CAP.with(|cell| cell.get()) {
+        return base.min(override_cap);
+    }
+    base
 }
 
 pub(super) fn report_not_inlined_warning() -> ConvertWarning {
@@ -1102,6 +1102,24 @@ pub(super) fn report_not_inlined_warning() -> ConvertWarning {
         code: "report_not_inlined".into(),
         message: "JSON report exceeded the inline size limit and was written to a companion .json artifact".into(),
     }
+}
+
+/// Safely replaces any pre-existing staged file or symlink named `name` inside `<workspace>/out/`
+/// through the workspace's capability handle and creates the new artifact with `create_new(true)`.
+pub(super) fn write_staged_artifact(
+    workspace: &Workspace,
+    name: &str,
+    bytes: &[u8],
+    scrubber: &SecretScrubber,
+) -> Result<PathBuf, ToolError> {
+    workspace.remove_artifact(name).map_err(|e| {
+        ToolError::EngineFailure(scrubber.scrub(&format!(
+            "could not safely clear staged artifact '{name}': {e}"
+        )))
+    })?;
+    workspace
+        .write_artifact(name, bytes)
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))
 }
 
 /// Scrubs `value` and returns `(scrubbed_value, serialized_bytes, inline_json)` where `inline_json`

@@ -754,6 +754,7 @@ pub(super) fn execute(
         warnings: job.warnings,
         metrics: result.metrics,
         inline_json: None,
+        companion_report: false,
     })
 }
 

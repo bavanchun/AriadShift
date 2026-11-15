@@ -413,6 +413,7 @@ pub(crate) fn execute(
         warnings: context.warnings,
         metrics,
         inline_json,
+        companion_report: false,
     })
 }
 

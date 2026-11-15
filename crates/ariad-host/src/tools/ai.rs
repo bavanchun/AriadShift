@@ -190,8 +190,8 @@ pub fn execute(
                 let _ = fs::remove_file(old_path);
             }
         }
-        fs::write(&staged_path, &wrapped_bytes)
-            .map_err(|_| ToolError::OutputIo("could not write recipe output".into()))?;
+        let staged_path =
+            super::run::write_staged_artifact(workspace, "result.json", &wrapped_bytes, scrubber)?;
         result.artifacts.push((staged_path, "json".into()));
         result.inline_json = cap_inline;
     }
@@ -425,6 +425,7 @@ fn cloud_artifacts(
         warnings: Vec::new(),
         metrics: BTreeMap::new(),
         inline_json: None,
+        companion_report: false,
     };
     let invalid =
         || ToolError::EngineFailure("cloud AI output does not match the tool contract".into());
@@ -497,9 +498,12 @@ fn cloud_artifacts(
                 return Err(invalid());
             }
             if format == "md" {
-                let path = workspace.output_dir().join("summary.md");
-                fs::write(&path, format!("{summary}\n"))
-                    .map_err(|_| ToolError::OutputIo("could not write summary".into()))?;
+                let path = super::run::write_staged_artifact(
+                    workspace,
+                    "summary.md",
+                    format!("{summary}\n").as_bytes(),
+                    scrubber,
+                )?;
                 result.artifacts.push((path, "md".into()));
                 return Ok(result);
             }
@@ -640,9 +644,7 @@ fn cloud_artifacts(
     if (json_bytes.len() as u64) > request.limits.max_decompressed_bytes {
         return Err(ToolError::LimitExceeded);
     }
-    let path = workspace.output_dir().join("result.json");
-    fs::write(&path, &json_bytes)
-        .map_err(|_| ToolError::OutputIo("could not write cloud output".into()))?;
+    let path = super::run::write_staged_artifact(workspace, "result.json", &json_bytes, scrubber)?;
     result.artifacts.push((path, "json".into()));
     result.inline_json = cap_inline;
     Ok(result)

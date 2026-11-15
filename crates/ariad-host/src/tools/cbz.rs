@@ -188,6 +188,7 @@ pub fn execute(
         warnings: render_exec.warnings,
         metrics: render_exec.metrics,
         inline_json: None,
+        companion_report: false,
     })
 }
 

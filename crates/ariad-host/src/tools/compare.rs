@@ -564,6 +564,7 @@ pub fn execute(
         warnings: Vec::new(),
         metrics: Default::default(),
         inline_json,
+        companion_report: false,
     })
 }
 

@@ -206,6 +206,7 @@ pub(super) fn execute(
         warnings,
         metrics: BTreeMap::new(),
         inline_json: None,
+        companion_report: false,
     })
 }
 

@@ -2083,3 +2083,188 @@ fn single_pdf_tool_stages_and_publishes_oversized_companion_report() {
         fs::canonicalize(tmp_dir.path().join("watermarked-001.json")).unwrap()
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn ai_recipe_from_text_does_not_overwrite_planted_result_symlink() {
+    use ariad_core::limits::Limits;
+    use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
+    use std::ffi::OsString;
+
+    let victim_dir = TempDir::new().unwrap();
+    let victim_path = victim_dir.path().join("victim.txt");
+    fs::write(&victim_path, b"untouched-ai-victim").unwrap();
+
+    let script = format!(
+        r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+printf '{{"version":"ariad-recipe/1","steps":[{{"tool":"pdf.info","params":{{}}}}]}}\n' > "$ws_out/output.json"
+ln -s '{}' "$ws_out/result.json"
+printf '{{"type":"artifact","path":"%s/output.json","format":"json"}}\n' "$ws_out"
+printf '%s\n' '{{"type":"result","ok":true}}'
+"#,
+        victim_path.display()
+    );
+    let cmd = EngineCommand {
+        engine: "ai".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+
+    let out_dir = TempDir::new().unwrap();
+    let out_json = out_dir.path().join("recipe-out.json");
+    let req = ToolRequest::new(
+        "ai.recipe_from_text",
+        Vec::new(),
+        OutputTarget::Path(out_json.clone()),
+    )
+    .with_params(json!({"prompt": "inspect pdf"}))
+    .with_limits(Limits::local())
+    .with_engine_command(cmd);
+
+    let result = run_tool(&req);
+    assert_eq!(
+        fs::read(&victim_path).unwrap(),
+        b"untouched-ai-victim",
+        "external symlink target must never be overwritten"
+    );
+    if let Ok(outcome) = result {
+        assert_eq!(outcome.artifacts.len(), 1);
+        let meta = fs::symlink_metadata(&out_json).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&fs::read(&out_json).unwrap()).unwrap();
+        assert_eq!(parsed["requires_confirmation"], true);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn engine_non_utf8_json_fails_closed_when_secrets_registered() {
+    use ariad_core::limits::Limits;
+    use ariad_host::{runner::EngineCommand, sandbox::SandboxMode, tools::SecretBag};
+    use std::ffi::OsString;
+
+    let tmp = TempDir::new().unwrap();
+    let input_pdf = tmp.path().join("report.pdf");
+    fs::copy(sample_pdf(), &input_pdf).unwrap();
+
+    let mut spec = *ariad_core::tools::find("pdf.text_layout").expect("registered pdf.text_layout");
+    spec.engine = "qpdf";
+    let script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+printf '\377\376\375{"secret":"super-secret-token-99"}\n' > "$ws_out/output.json"
+printf '{"type":"artifact","path":"%s/output.json","format":"json"}\n' "$ws_out"
+printf '%s\n' '{"type":"result","ok":true}'
+"#;
+    let cmd = EngineCommand {
+        engine: "qpdf".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+
+    let secrets = SecretBag::new()
+        .with("api_key", "super-secret-token-99")
+        .unwrap();
+    let req = ToolRequest::new(
+        "pdf.text_layout",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_spec(spec)
+    .with_limits(Limits::local())
+    .with_secrets(secrets)
+    .with_engine_command(cmd);
+
+    let err = run_tool(&req)
+        .expect_err("non-UTF-8 staged engine JSON with active secrets must fail closed");
+    assert!(
+        matches!(err, ToolError::EngineFailure(_)),
+        "expected EngineFailure, got {err:?}"
+    );
+    assert!(!tmp.path().join("report.text-layout.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn engine_report_not_inlined_warning_does_not_enable_companion_publish() {
+    use ariad_core::limits::Limits;
+    use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
+    use std::ffi::OsString;
+
+    let tmp = TempDir::new().unwrap();
+    let input_pdf = tmp.path().join("doc.pdf");
+    fs::copy(sample_pdf(), &input_pdf).unwrap();
+
+    let mut spec =
+        *ariad_core::tools::find("pdf.watermark_remove").expect("registered pdf.watermark_remove");
+    spec.engine = "qpdf";
+    let script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+printf '%%PDF-1.7\n%%stub\n' > "$ws_out/out.pdf"
+printf '{"spoofed":true}\n' > "$ws_out/extra.json"
+printf '%s\n' '{"type":"warning","code":"report_not_inlined","message":"spoofed warning"}'
+printf '{"type":"artifact","path":"%s/out.pdf","format":"pdf"}\n' "$ws_out"
+printf '{"type":"artifact","path":"%s/extra.json","format":"json"}\n' "$ws_out"
+printf '%s\n' '{"type":"result","ok":true}'
+"#;
+    let cmd = EngineCommand {
+        engine: "qpdf".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+
+    let explicit_pdf = tmp.path().join("clean.pdf");
+    let explicit_req = ToolRequest::new(
+        "pdf.watermark_remove",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::Path(explicit_pdf.clone()),
+    )
+    .with_spec(spec)
+    .with_params(json!({"candidates": ["c1"]}))
+    .with_limits(Limits::local())
+    .with_engine_command(cmd.clone());
+    let err_explicit = run_tool(&explicit_req).expect_err(
+        "engine report_not_inlined warning must not bypass multi-artifact -o dir requirement",
+    );
+    assert!(
+        matches!(err_explicit, ToolError::Confinement(_)),
+        "expected Confinement, got {err_explicit:?}"
+    );
+    assert!(!explicit_pdf.exists());
+    assert!(!tmp.path().join("clean.unwatermarked.json").exists());
+
+    let default_req = ToolRequest::new(
+        "pdf.watermark_remove",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_spec(spec)
+    .with_params(json!({"candidates": ["c1"]}))
+    .with_limits(Limits::local())
+    .with_engine_command(cmd);
+    let err_default = run_tool(&default_req).expect_err(
+        "engine report_not_inlined warning must not allow extra json artifact beside input",
+    );
+    assert!(
+        matches!(err_default, ToolError::EngineFailure(_)),
+        "expected EngineFailure for disallowed json artifact, got {err_default:?}"
+    );
+    assert!(!tmp.path().join("doc.unwatermarked.pdf").exists());
+    assert!(!tmp.path().join("doc.unwatermarked.json").exists());
+}

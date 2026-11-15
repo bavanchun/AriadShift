@@ -213,6 +213,11 @@ fn execute_to_pdfa(
     let out_filename = single_output_name(&stem, suffix, "pdf");
     let final_pdf_path = workspace.output_dir().join(&out_filename);
 
+    workspace.remove_artifact(&out_filename).map_err(|e| {
+        ToolError::EngineFailure(scrubber.scrub(&format!(
+            "could not safely clear staged compliance output '{out_filename}': {e}"
+        )))
+    })?;
     fs::rename(&candidate_path, &final_pdf_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
 
     attach_compliance_report(
@@ -309,9 +314,8 @@ fn execute_to_pdfua(
     let stem = sanitize_stem(input_name);
     let suffix = tool_suffix(spec.id);
     let out_filename = single_output_name(&stem, suffix, "pdf");
-    let final_pdf_path = workspace.output_dir().join(&out_filename);
-
-    fs::copy(input_path, &final_pdf_path).map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    let final_pdf_path =
+        crate::tools::run::write_staged_artifact(workspace, &out_filename, &input_bytes, scrubber)?;
 
     attach_compliance_report(
         workspace,
@@ -338,10 +342,14 @@ fn attach_compliance_report(
     }
     let mut artifacts = vec![(pdf_path, "pdf".to_string())];
     let mut warnings = Vec::new();
-    if inline_json.is_none() {
-        let companion_path = workspace.output_dir().join("report.json");
-        fs::write(&companion_path, &json_bytes)
-            .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+    let companion_report = inline_json.is_none();
+    if companion_report {
+        let companion_path = crate::tools::run::write_staged_artifact(
+            workspace,
+            "report.json",
+            &json_bytes,
+            scrubber,
+        )?;
         artifacts.push((companion_path, "json".to_string()));
         warnings.push(crate::tools::run::report_not_inlined_warning());
     }
@@ -350,6 +358,7 @@ fn attach_compliance_report(
         warnings,
         metrics,
         inline_json,
+        companion_report,
     })
 }
 
@@ -463,5 +472,44 @@ mod report_tests {
             attach_compliance_report(&workspace, pdf_path, report, metrics, &tight, &scrubber)
                 .unwrap_err();
         assert_eq!(err, ToolError::LimitExceeded);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn attach_compliance_report_does_not_overwrite_planted_symlink() {
+        let victim_dir = tempfile::tempdir().unwrap();
+        let victim_path = victim_dir.path().join("victim.txt");
+        fs::write(&victim_path, b"untouched-compliance-victim").unwrap();
+
+        let workspace = Workspace::new().unwrap();
+        let pdf_path = workspace.output_dir().join("output.pdf");
+        fs::write(&pdf_path, b"%PDF-1.7\n").unwrap();
+        std::os::unix::fs::symlink(&victim_path, workspace.output_dir().join("report.json"))
+            .unwrap();
+
+        let report = json!({"compliant": true, "details": "x".repeat(200)});
+        let scrubber = SecretScrubber::new();
+        let outcome = crate::tools::run::with_inline_json_cap_for_test(64, || {
+            attach_compliance_report(
+                &workspace,
+                pdf_path,
+                report,
+                std::collections::BTreeMap::new(),
+                &Limits::local(),
+                &scrubber,
+            )
+        });
+
+        assert_eq!(
+            fs::read(&victim_path).unwrap(),
+            b"untouched-compliance-victim"
+        );
+        if let Ok(exec) = outcome {
+            let report_path = &exec.artifacts[1].0;
+            let meta = fs::symlink_metadata(report_path).unwrap();
+            assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+            let parsed: Value = serde_json::from_slice(&fs::read(report_path).unwrap()).unwrap();
+            assert_eq!(parsed["compliant"], true);
+        }
     }
 }

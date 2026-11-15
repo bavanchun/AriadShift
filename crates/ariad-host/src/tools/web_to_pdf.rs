@@ -794,6 +794,7 @@ pub(crate) fn execute_with_client_deadline(
             warnings,
             metrics: std::collections::BTreeMap::new(),
             inline_json: None,
+            companion_report: false,
         })
     }
 }
