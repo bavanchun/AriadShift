@@ -126,14 +126,19 @@
       "go_to_page": "Đến trang…",
       "find": "Tìm…",
       "find_next": "Tìm tiếp",
-      "find_previous": "Tìm trước"
+      "find_previous": "Tìm trước",
+      "find_tool": "Tìm công cụ…"
     },
     "tools": {
       "group": "{group, select, organize {Sắp xếp} convert {Chuyển đổi} optimize {Tối ưu} security {Bảo mật} overlay {Lớp phủ} ocr {OCR và bản quét} annotate {Chú thích} forms {Biểu mẫu} sign {Ký} redact {Che dữ liệu} compare {So sánh và kiểm tra} edit {Chỉnh sửa} ai {AI} automation {Tự động hóa} other {Công cụ khác}}",
       "disabled": "{reason, select, later {Sẽ có trong bản phát hành sau} format {Dùng cho định dạng khác. Hãy dùng Tệp > Nhập.} paid {Cần gói trả phí} info {Không đọc được thông tin công cụ nên các công cụ đang tắt.} other {Không khả dụng}}",
       "loading": "Đang tải công cụ…",
       "pro_title": "{title} (Pro)",
-      "pro_hint": "Công cụ Pro. Cần gói Pro để chạy."
+      "pro_hint": "Công cụ Pro. Cần gói Pro để chạy.",
+      "job": "{job, select, organize {Sắp xếp} edit {Chỉnh sửa} convert {Chuyển đổi} secure {Bảo mật} ocr {OCR} ai {AI} other {Công cụ khác}}",
+      "badge": "{reason, select, later {Sau} format {Nhập} paid {Pro} info {Tắt} other {Tắt}}",
+      "search": "Tìm công cụ",
+      "clear_search": "Xóa tìm kiếm"
     },
     "sidebar": {
       "title": "Trang",
@@ -152,7 +157,9 @@
       "page_grid": "Lưới trang",
       "previous_page": "Trang trước",
       "next_page": "Trang sau",
-      "page_field": "Số trang"
+      "page_field": "Số trang",
+      "tools": "Công cụ",
+      "tools_help": "Tìm công cụ (⌘K)"
     },
     "inspector": {
       "title": "Tài liệu",
@@ -161,7 +168,6 @@
       "warnings": "{count, plural, other {# cảnh báo}}"
     },
     "run": {
-      "title": "Chạy {tool}",
       "run": "Chạy",
       "cancel": "Hủy",
       "close": "Xong",
@@ -175,15 +181,24 @@
       "failed": "Công cụ chưa chạy xong.",
       "pro_notice": "Đây là công cụ Pro. Cần gói Pro để chạy.",
       "upgrade": "Công cụ này cần gói Pro. Hãy nâng cấp để chạy.",
-      "open": "Mở",
       "reveal": "Hiện trong Finder",
-      "result_files": "{count, plural, other {Đã tạo # tệp}}",
       "field_error": "{kind, select, missing {Cần nhập {field}.} other {{field} không hợp lệ.}}",
       "result": "Kết quả",
       "presets": "Mẫu có sẵn",
       "add_row": "Thêm",
       "move_up": "Chuyển lên",
-      "move_down": "Chuyển xuống"
+      "move_down": "Chuyển xuống",
+      "reset": "Đặt lại",
+      "run_help": "Chạy công cụ (⌘↩)",
+      "close_tool": "Đóng công cụ",
+      "details": "Chi tiết",
+      "output": "Đầu ra",
+      "save_to": "Lưu vào",
+      "open_result": "Mở kết quả",
+      "done": "Xong",
+      "undo": "Hoàn tác",
+      "done_sizes": "{tool} · {before} → {after}",
+      "done_files": "{tool} · {count, plural, other {Đã tạo # tệp}}"
     },
     "settings": {
       "output_folder": "Lưu kết quả vào",
@@ -233,6 +248,13 @@
       "open": "Thả để mở",
       "insert": "Thả để chèn các trang",
       "insert_hint": "Giữ ⌥ để chèn các trang vào tài liệu này"
+    },
+    "palette": {
+      "placeholder": "Tìm công cụ",
+      "dismiss": "esc",
+      "empty": "Không có công cụ phù hợp",
+      "recent": "Gần đây",
+      "suggested": "Gợi ý cho tệp này"
     }
   },
   "web": {

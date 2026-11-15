@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# advarsel} other {# advarsler}}"
     },
     "run": {
-      "title": "Kør {tool}",
       "run": "Kør",
       "cancel": "Annuller",
       "close": "Færdig",
@@ -169,9 +168,7 @@
       "remove": "Fjern",
       "need_documents": "{count, plural, one {Tilføj # dokument mere for at køre dette værktøj.} other {Tilføj # dokumenter mere for at køre dette værktøj.}}",
       "failed": "Værktøjet blev ikke færdigt.",
-      "open": "Åbn",
       "reveal": "Vis i Finder",
-      "result_files": "{count, plural, one {# fil oprettet} other {# filer oprettet}}",
       "field_error": "{kind, select, missing {{field} er påkrævet.} other {{field} er ikke gyldigt.}}",
       "result": "Resultat",
       "presets": "Forudindstillinger"

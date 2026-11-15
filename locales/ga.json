@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# rabhadh} two {# rabhadh} few {# rabhadh} many {# rabhadh} other {# rabhadh}}"
     },
     "run": {
-      "title": "Rith {tool}",
       "run": "Rith",
       "cancel": "Cealaigh",
       "close": "Déanta",
@@ -169,9 +168,7 @@
       "remove": "Bain",
       "need_documents": "{count, plural, one {Cuir # cháipéis eile leis chun an uirlis seo a rith.} two {Cuir # cháipéis eile leis chun an uirlis seo a rith.} few {Cuir # cháipéis eile leis chun an uirlis seo a rith.} many {Cuir # gcáipéis eile leis chun an uirlis seo a rith.} other {Cuir # cáipéis eile leis chun an uirlis seo a rith.}}",
       "failed": "Níor chríochnaigh an uirlis.",
-      "open": "Oscail",
       "reveal": "Taispeáin sa Finder",
-      "result_files": "{count, plural, one {Cruthaíodh # chomhad} two {Cruthaíodh # chomhad} few {Cruthaíodh # chomhad} many {Cruthaíodh # gcomhad} other {Cruthaíodh # comhad}}",
       "field_error": "{kind, select, missing {Tá {field} riachtanach.} other {Níl {field} bailí.}}",
       "result": "Toradh",
       "presets": "Réamhshocruithe"

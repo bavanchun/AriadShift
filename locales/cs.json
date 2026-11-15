@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# upozornění} few {# upozornění} many {# upozornění} other {# upozornění}}"
     },
     "run": {
-      "title": "Spustit {tool}",
       "run": "Spustit",
       "cancel": "Zrušit",
       "close": "Hotovo",
@@ -169,9 +168,7 @@
       "remove": "Odebrat",
       "need_documents": "{count, plural, one {Přidejte ještě # dokument, abyste mohli tento nástroj spustit.} few {Přidejte ještě # dokumenty, abyste mohli tento nástroj spustit.} many {Přidejte ještě # dokumentu, abyste mohli tento nástroj spustit.} other {Přidejte ještě # dokumentů, abyste mohli tento nástroj spustit.}}",
       "failed": "Nástroj nedokončil práci.",
-      "open": "Otevřít",
       "reveal": "Zobrazit ve Finderu",
-      "result_files": "{count, plural, one {Vytvořen # soubor} few {Vytvořeny # soubory} many {Vytvořeno # souboru} other {Vytvořeno # souborů}}",
       "field_error": "{kind, select, missing {Položka {field} je povinná.} other {Položka {field} není platná.}}",
       "result": "Výsledek",
       "presets": "Předvolby"

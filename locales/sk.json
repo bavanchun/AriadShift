@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# upozornenie} few {# upozornenia} many {# upozornenia} other {# upozornení}}"
     },
     "run": {
-      "title": "Spustiť {tool}",
       "run": "Spustiť",
       "cancel": "Zrušiť",
       "close": "Hotovo",
@@ -169,9 +168,7 @@
       "remove": "Odstrániť",
       "need_documents": "{count, plural, one {Pridajte ešte # dokument, aby ste mohli spustiť tento nástroj.} few {Pridajte ešte # dokumenty, aby ste mohli spustiť tento nástroj.} many {Pridajte ešte # dokumentu, aby ste mohli spustiť tento nástroj.} other {Pridajte ešte # dokumentov, aby ste mohli spustiť tento nástroj.}}",
       "failed": "Nástroj sa nedokončil.",
-      "open": "Otvoriť",
       "reveal": "Zobraziť vo Finderi",
-      "result_files": "{count, plural, one {Vytvorený # súbor} few {Vytvorené # súbory} many {Vytvorené # súbora} other {Vytvorených # súborov}}",
       "field_error": "{kind, select, missing {Položka {field} je povinná.} other {Položka {field} nie je platná.}}",
       "result": "Výsledok",
       "presets": "Predvoľby"

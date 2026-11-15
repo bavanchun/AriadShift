@@ -157,7 +157,6 @@
       "warnings": "{count, plural, other {ཉེན་བརྡ་ #}}"
     },
     "run": {
-      "title": "{tool} གཡོག",
       "run": "གཡོག",
       "cancel": "འདོར།",
       "close": "ཚར།",
@@ -169,9 +168,7 @@
       "remove": "སུབ།",
       "need_documents": "{count, plural, other {ལག་ཆ་འདི་གཡོག་ཆེད་ཡིག་ཆ་ # ཁ་སྣོན་བྱོས།}}",
       "failed": "ལག་ཆ་མ་ཚར།",
-      "open": "ཁ་ཕྱེ།",
       "reveal": "Finder ནང་སྟོན།",
-      "result_files": "{count, plural, other {ཡིག་ཆ་ # བཟོས་ཡོད།}}",
       "field_error": "{kind, select, missing {{field} དགོས་ངེས།} other {{field} ནུས་མེད།}}",
       "result": "གྲུབ་འབྲས།",
       "presets": "སྔོན་སྒྲིག"

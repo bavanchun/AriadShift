@@ -80,7 +80,10 @@ targets:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - AriadShiftTests
+      - path: AriadShiftTests
+        # Snapshot reference images are read from the source tree, not from the test bundle.
+        excludes:
+          - "**/__Snapshots__/**"
     dependencies:
       - target: AriadShift
       - package: AriadShiftCore

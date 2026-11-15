@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# xəbərdarlıq} other {# xəbərdarlıq}}"
     },
     "run": {
-      "title": "{tool} alətini işə sal",
       "run": "İşə sal",
       "cancel": "Ləğv et",
       "close": "Hazırdır",
@@ -169,9 +168,7 @@
       "remove": "Sil",
       "need_documents": "{count, plural, one {Bu aləti işə salmaq üçün daha # sənəd əlavə edin.} other {Bu aləti işə salmaq üçün daha # sənəd əlavə edin.}}",
       "failed": "Alət tamamlanmadı.",
-      "open": "Aç",
       "reveal": "Finder-də göstər",
-      "result_files": "{count, plural, one {# fayl yaradıldı} other {# fayl yaradıldı}}",
       "field_error": "{kind, select, missing {{field} tələb olunur.} other {{field} etibarlı deyil.}}",
       "result": "Nəticə",
       "presets": "Hazır parametrlər"

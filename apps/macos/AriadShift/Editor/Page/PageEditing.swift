@@ -15,7 +15,7 @@ struct PageEditing {
     }
 
     func canPerform(_ edit: PageEdit, pageCount: Int) -> Bool {
-        guard session.run == nil, session.fileURL != nil, engine.client != nil,
+        guard !session.isRunning, session.fileURL != nil, engine.client != nil,
             let request = edit.request(pageCount: pageCount)
         else { return false }
         return tool(request.toolID) != nil
@@ -23,7 +23,7 @@ struct PageEditing {
 
     /// Whether editing can be offered at all (the drag handles and buttons enable from this).
     var isAvailable: Bool {
-        session.run == nil && session.fileURL != nil && engine.client != nil && tool("pdf.reorder") != nil
+        !session.isRunning && session.fileURL != nil && engine.client != nil && tool("pdf.reorder") != nil
     }
 
     func perform(_ edit: PageEdit, pageCount: Int) {

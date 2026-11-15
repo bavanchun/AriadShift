@@ -107,8 +107,10 @@ final class DocumentSessionTests: XCTestCase {
 
         let (url, _) = try copyOfFixture()
         let tools = menu(for: engine, session: DocumentSession(fileURL: url))
-        XCTAssertEqual(tools.items.first?.title, L10n.branch("mac.tools.disabled", "info"), "the note comes first")
-        XCTAssertEqual(tools.items.first?.isEnabled, false)
+        // After "Find a Tool…" and its separator, the note comes before the tool groups.
+        let note = tools.items.dropFirst(2).first
+        XCTAssertEqual(note?.title, L10n.branch("mac.tools.disabled", "info"), "the note comes first")
+        XCTAssertEqual(note?.isEnabled, false)
         let groupMenus = tools.items.compactMap(\.submenu)
         XCTAssertFalse(groupMenus.isEmpty)
         XCTAssertTrue(groupMenus.flatMap(\.items).allSatisfy { !$0.isEnabled }, "no tool can be started")
@@ -116,17 +118,128 @@ final class DocumentSessionTests: XCTestCase {
 
     // MARK: - A tool run belongs to its window
 
-    func testSecondBeginKeepsTheFirstRun() async throws {
+    func testPickingAnotherToolReplacesAToolThatIsNotRunning() async throws {
         let engine = try await readyEngine()
         let (url, _) = try copyOfFixture()
         let session = DocumentSession(fileURL: url)
 
         session.begin(try tool("pdf.rotate", in: engine), client: engine.client)
         let first = try XCTUnwrap(session.run)
-        session.begin(try tool("pdf.info", in: engine), client: engine.client)
+        session.begin(try tool("pdf.rotate", in: engine), client: engine.client)
+        XCTAssertTrue(session.run === first, "picking the open tool again keeps its settings")
 
-        XCTAssertTrue(session.run === first, "a second pick must not replace the run that is showing")
-        XCTAssertEqual(session.run?.tool.id, "pdf.rotate")
+        session.begin(try tool("pdf.info", in: engine), client: engine.client)
+        XCTAssertEqual(session.run?.tool.id, "pdf.info", "the inspector swaps to the new tool")
+        session.closeTool()
+        XCTAssertNil(session.run, "closing the tool shows the document again")
+    }
+
+    func testARunningToolKeepsTheInspector() async throws {
+        let engine = try await readyEngine()
+        let (url, directory) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+
+        session.begin(try tool("pdf.rotate", in: engine), client: engine.client)
+        let first = try XCTUnwrap(session.run)
+        first.values["angle"] = .index(0)
+        first.start()
+        XCTAssertTrue(session.isRunning)
+        session.begin(try tool("pdf.info", in: engine), client: engine.client)
+        session.closeTool()
+
+        XCTAssertTrue(session.run === first, "a second pick must not replace the run that is going on")
+        first.cancel()
+        await first.waitUntilFinished()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"], "nothing was placed")
+    }
+
+    func testARequestedToolOpensOnceTheCatalogueIsReady() async throws {
+        let engine = try await readyEngine()
+        let (url, _) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+
+        session.requestTool(id: "pdf.rotate")
+        session.openRequestedTool(groups: [], client: nil, state: .loading)
+        XCTAssertNil(session.run, "nothing opens while the catalogue loads")
+        XCTAssertEqual(session.requestedToolID, "pdf.rotate", "the request waits")
+
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: engine.state)
+        XCTAssertEqual(session.run?.tool.id, "pdf.rotate", "the tool opens once the catalogue is ready")
+        XCTAssertNil(session.requestedToolID, "a request opens once")
+    }
+
+    func testAnUnknownOrFailedRequestIsDroppedAndARunningToolIsKept() async throws {
+        let engine = try await readyEngine()
+        let (url, directory) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+
+        session.requestTool(id: "convert:pdf→docx")
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: engine.state)
+        XCTAssertNil(session.run, "an id the catalogue does not have opens nothing")
+        XCTAssertNil(session.requestedToolID)
+
+        session.requestTool(id: "pdf.rotate")
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: .failed("no helper"))
+        XCTAssertNil(session.run, "a failed engine opens nothing")
+        XCTAssertNil(session.requestedToolID, "and drops the request")
+
+        session.begin(try tool("pdf.rotate", in: engine), client: engine.client)
+        let running = try XCTUnwrap(session.run)
+        running.values["angle"] = .index(0)
+        running.start()
+        session.requestTool(id: "pdf.info")
+        session.openRequestedTool(groups: engine.groups, client: engine.client, state: engine.state)
+        XCTAssertTrue(session.run === running, "a request never replaces a running tool")
+        running.cancel()
+        await running.waitUntilFinished()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"])
+    }
+
+    func testAToolThatCannotRunOpensButDoesNotStart() async throws {
+        let engine = try await readyEngine()
+        let (url, _) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+        let unavailable = try XCTUnwrap(engine.groups.flatMap(\.tools).first { !$0.isAvailable })
+
+        session.begin(unavailable, client: engine.client)
+        let run = try XCTUnwrap(session.run, "the inspector opens to say why the tool cannot run")
+        XCTAssertFalse(run.canRun)
+        run.start()
+        XCTAssertFalse(run.isRunning)
+    }
+
+    func testAFinishedRunAnnouncesItsResultAndJoinsRecent() async throws {
+        let engine = try await readyEngine()
+        let (url, directory) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "ashift-recents-\(UUID().uuidString)"))
+        let recents = ToolRecents(defaults: defaults)
+        session.tools.recents = recents
+        // Finishing a run would open the result in a new window; this test reads the file instead.
+        let key = SettingsKey.openResultAfterRun
+        let previous = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.set(false, forKey: key)
+        addTeardownBlock {
+            if let previous { UserDefaults.standard.set(previous, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+
+        session.begin(try tool("pdf.rotate", in: engine), client: engine.client)
+        let run = try XCTUnwrap(session.run)
+        run.values["angle"] = .index(0)
+        run.start()
+        await wait(60) { if case .finished = run.phase { true } else { false } }
+        guard case let .finished(result) = run.phase else { return XCTFail("the run did not finish: \(run.phase)") }
+
+        XCTAssertTrue(session.run === run, "the tool stays open after its run")
+        let toast = try XCTUnwrap(session.tools.toast, "a toast announces the result")
+        XCTAssertTrue(toast.message.hasPrefix("Rotate · "), toast.message)
+        XCTAssertEqual(toast.actions.map(\.id), [ToolPresentation.revealAction, ToolPresentation.undoAction])
+        XCTAssertEqual(recents.ids.first, "pdf.rotate")
+
+        // Undo removes the placed result, never the original.
+        session.tools.perform(try XCTUnwrap(toast.actions.last))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: result.files[0].path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"])
     }
 
     func testCancelRunEndsTheRunAndPlacesNothing() async throws {

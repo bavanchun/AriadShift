@@ -94,7 +94,7 @@ final class ViewerUITests: UITestCase {
         second.click()
         app.typeKey(.leftArrow, modifierFlags: .option)  // page 2 moves in front of page 1
 
-        XCTAssertTrue(element("run.sheet").waitForExistence(timeout: 10), "the edit runs through the sheet")
+        // The edit runs inline in the inspector, which closes again when the file is placed.
         waitUntil("a reordered file is written", timeout: 60) { !self.resultFiles().isEmpty }
         let result = try XCTUnwrap(resultFiles().first)
         XCTAssertEqual(try printedNumbers(result), [2, 1] + Array(3...20))

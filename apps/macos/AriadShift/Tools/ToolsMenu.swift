@@ -1,8 +1,8 @@
 import AriadShiftCore
 import SwiftUI
 
-/// The items of the Tools menu. It is a plain view of its inputs so the menu can be built
-/// and inspected without a running scene.
+/// The items of the Tools menu: "Find a Tool…" (⌘K, the palette of the focused window), then every tool by registry
+/// group. It is a plain view of its inputs so the menu can be built and inspected without a running scene.
 ///
 /// An engine that failed to start shows its reason as a disabled item instead of a menu that
 /// claims to be loading; registry facts that failed to load say so above the tool groups.
@@ -25,6 +25,10 @@ struct ToolsMenuContent: View {
             }
             .disabled(true)
         case .ready:
+            Button(String(localized: "mac.menu.find_tool")) { session?.tools.togglePalette() }
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(session == nil)
+            Divider()
             if runtimeInfoFailed {
                 Button(L10n.branch("mac.tools.disabled", UnavailableReason.infoUnavailable.tooltipBranch)) {}
                     .disabled(true)

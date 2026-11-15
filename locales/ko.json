@@ -157,7 +157,6 @@
       "warnings": "{count, plural, other {경고 #개}}"
     },
     "run": {
-      "title": "{tool} 실행",
       "run": "실행",
       "cancel": "취소",
       "close": "완료",
@@ -169,9 +168,7 @@
       "remove": "제거",
       "need_documents": "{count, plural, other {이 도구를 실행하려면 문서를 #개 더 추가하세요.}}",
       "failed": "도구가 완료되지 않았습니다.",
-      "open": "열기",
       "reveal": "Finder에서 보기",
-      "result_files": "{count, plural, other {파일 #개를 만들었습니다}}",
       "field_error": "{kind, select, missing {{field}은(는) 필수입니다.} other {{field}이(가) 올바르지 않습니다.}}",
       "result": "결과",
       "presets": "프리셋"

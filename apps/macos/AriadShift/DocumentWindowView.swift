@@ -28,7 +28,7 @@ struct DocumentWindowView: View {
     var body: some View {
         NavigationSplitView {
             DocumentSidebar(viewer: viewer, editing: editing) {
-                SidebarToolsList(state: engine.state, groups: engine.groups) { tool in
+                ToolsTab(state: engine.state, groups: engine.groups) { tool in
                     session.begin(tool, client: engine.client)
                 }
             }
@@ -41,7 +41,7 @@ struct DocumentWindowView: View {
                 // controller made the hosting view report a different minimum width on every layout pass
                 // until AppKit gave up with "needing another Update Constraints in Window pass".
                 .inspector(isPresented: $showInspector) {
-                    InspectorView(session: session)
+                    ToolInspectorHost(session: session, engine: engine) { InspectorView(session: session) }
                         .inspectorColumnWidth(
                             min: DSSize.inspectorWidthRange.lowerBound,
                             ideal: DSSize.inspectorWidth,
@@ -52,6 +52,7 @@ struct DocumentWindowView: View {
         .navigationSubtitle(subtitle)
         .toolbar {
             ViewerToolbar(viewer: viewer)
+            ToolbarToolActions(session: session, engine: engine)
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     setInspector(!showInspector)
@@ -80,9 +81,7 @@ struct DocumentWindowView: View {
         .focusedSceneValue(\.documentSession, session)
         .focusedSceneValue(\.viewerModel, viewer)
         .task { await viewer.open(data: document.data) }
-        .sheet(item: $session.run) { run in
-            ToolRunSheet(model: run) { session.run = nil }
-        }
+        .toolRunPresentation(session: session, engine: engine)
         // Choosing a tool opens the inspector, where its parameters and progress belong.
         .onChange(of: session.run != nil) { _, running in
             if running { setInspector(true) }

@@ -12,6 +12,8 @@ public struct DSPaletteItem: Identifiable, Hashable, Sendable {
     public let shortcut: String?
     /// Extra words that match without being highlighted (for example "shrink" for Compress).
     public let keywords: [String]
+    /// A short badge such as "Pro" for a tool that cannot run yet, or nil.
+    public let badge: String?
 
     public init(
         id: String,
@@ -20,7 +22,8 @@ public struct DSPaletteItem: Identifiable, Hashable, Sendable {
         systemImage: String,
         tint: DSIconWell.Tint = .accent,
         shortcut: String? = nil,
-        keywords: [String] = []
+        keywords: [String] = [],
+        badge: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -29,6 +32,7 @@ public struct DSPaletteItem: Identifiable, Hashable, Sendable {
         self.tint = tint
         self.shortcut = shortcut
         self.keywords = keywords
+        self.badge = badge
     }
 }
 

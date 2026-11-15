@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# ostrzeżenie} few {# ostrzeżenia} many {# ostrzeżeń} other {# ostrzeżenia}}"
     },
     "run": {
-      "title": "Uruchom: {tool}",
       "run": "Uruchom",
       "cancel": "Anuluj",
       "close": "Gotowe",
@@ -169,9 +168,7 @@
       "remove": "Usuń",
       "need_documents": "{count, plural, one {Dodaj jeszcze # dokument, aby uruchomić to narzędzie.} few {Dodaj jeszcze # dokumenty, aby uruchomić to narzędzie.} many {Dodaj jeszcze # dokumentów, aby uruchomić to narzędzie.} other {Dodaj jeszcze # dokumentu, aby uruchomić to narzędzie.}}",
       "failed": "Narzędzie nie zakończyło pracy.",
-      "open": "Otwórz",
       "reveal": "Pokaż w Finderze",
-      "result_files": "{count, plural, one {Utworzono # plik} few {Utworzono # pliki} many {Utworzono # plików} other {Utworzono # pliku}}",
       "field_error": "{kind, select, missing {Pole {field} jest wymagane.} other {Pole {field} jest nieprawidłowe.}}",
       "result": "Wynik",
       "presets": "Ustawienia predefiniowane"

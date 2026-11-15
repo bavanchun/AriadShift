@@ -157,7 +157,6 @@
       "warnings": "{count, plural, one {# varning} other {# varningar}}"
     },
     "run": {
-      "title": "Kör {tool}",
       "run": "Kör",
       "cancel": "Avbryt",
       "close": "Klar",
@@ -169,9 +168,7 @@
       "remove": "Ta bort",
       "need_documents": "{count, plural, one {Lägg till # dokument till för att köra det här verktyget.} other {Lägg till # dokument till för att köra det här verktyget.}}",
       "failed": "Verktyget slutfördes inte.",
-      "open": "Öppna",
       "reveal": "Visa i Finder",
-      "result_files": "{count, plural, one {# fil skapad} other {# filer skapade}}",
       "field_error": "{kind, select, missing {{field} måste anges.} other {{field} är inte giltigt.}}",
       "result": "Resultat",
       "presets": "Förinställningar"
