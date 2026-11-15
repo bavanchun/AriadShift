@@ -135,10 +135,13 @@ struct ToolDirectory: Sendable {
         ToolJob.of(registryGroup: tool.info.group) == .ai ? .thread : .accent
     }
 
-    /// The badge of a tool that cannot run here, or nil when it can.
+    /// The badge of a tool that cannot run here (Later, Import, Off), or Pro for a Pro tool whatever the plan, so the
+    /// tier is never a surprise; nil for a free tool that runs.
     static func badge(for tool: ToolEntry) -> String? {
-        guard case let .unavailable(reason) = tool.availability else { return nil }
-        return L10n.branch("mac.tools.badge", reason.tooltipBranch)
+        if case let .unavailable(reason) = tool.availability {
+            return L10n.branch("mac.tools.badge", reason.tooltipBranch)
+        }
+        return tool.isPro ? L10n.branch("mac.tools.badge", "paid") : nil
     }
 
     /// Words that find a tool without being part of its title: the words of its id and its job.
@@ -260,14 +263,14 @@ struct ToolDirectory: Sendable {
     static let largeFileBytes: UInt64 = 10_000_000
 
     /// Tools that suit the open document, from facts the engine read from it: a document without a text layer gets
-    /// OCR, a large one Compress, and one without a title Metadata. Only tools that can run are suggested, at most
-    /// three, and nothing is suggested before the facts arrive.
+    /// OCR, a large one Compress, and one without a title Metadata. Only tools that can run on this plan are suggested,
+    /// at most three, and nothing is suggested before the facts arrive.
     func suggestions(for report: InspectReport?) -> [String] {
         guard let report else { return [] }
         var ids: [String] = []
         if let words = report.wordCount, words == 0, (report.pageCount ?? 0) > 0 { ids.append("pdf.ocr") }
         if report.bytes >= Self.largeFileBytes { ids.append("pdf.compress") }
         if (report.title ?? "").trimmingCharacters(in: .whitespaces).isEmpty { ids.append("pdf.metadata") }
-        return Array(ids.filter { entry(id: $0)?.isAvailable == true }.prefix(3))
+        return Array(ids.filter { id in entry(id: id).map { $0.isAvailable && !$0.isProLocked } == true }.prefix(3))
     }
 }

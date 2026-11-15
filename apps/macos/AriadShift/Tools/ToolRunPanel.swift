@@ -1,4 +1,5 @@
 import AriadDesignSystem
+import AriadShiftCore
 import SwiftUI
 
 /// What the pinned footer of a tool in the inspector shows.
@@ -131,14 +132,31 @@ struct ToolRunPanel<Content: View>: View {
     }
 }
 
-/// A note at the top of a tool that cannot run here, saying why (a later release, Pro, another format).
-struct ToolUnavailableNote: View {
+/// A note at the top of a tool in the inspector: why it cannot run here (a later release, another format), or that a
+/// Pro tool needs a Pro plan.
+struct ToolNote: View {
+    let systemImage: String
     let message: String
+    let identifier: String
+
+    /// The note of a tool that cannot run here.
+    static func unavailable(_ reason: UnavailableReason) -> ToolNote {
+        ToolNote(
+            systemImage: "info.circle",
+            message: L10n.branch("mac.tools.disabled", reason.tooltipBranch),
+            identifier: "run.unavailable"
+        )
+    }
+
+    /// The note of a Pro tool on a plan that does not grant Pro: it opens, and the host refuses the run.
+    static let proLocked = ToolNote(
+        systemImage: "lock", message: String(localized: "mac.run.pro_notice"), identifier: "run.pro-notice"
+    )
 
     var body: some View {
         DSInspectorSection {
             HStack(alignment: .firstTextBaseline, spacing: DSSpacing.s) {
-                Image(systemName: "info.circle")
+                Image(systemName: systemImage)
                     .foregroundStyle(DSColor.accent)
                     .accessibilityHidden(true)
                 Text(verbatim: message)
@@ -149,7 +167,7 @@ struct ToolUnavailableNote: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(DSColor.accentSoft, in: RoundedRectangle(cornerRadius: DSRadius.control, style: .continuous))
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("run.unavailable")
+            .accessibilityIdentifier(identifier)
         }
     }
 }

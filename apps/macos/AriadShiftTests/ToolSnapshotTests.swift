@@ -86,7 +86,13 @@ final class ToolSnapshotTests: DSSnapshotTestCase {
 
     func testRunPanelForAToolThatCannotRun() {
         assertAppearances(size: Self.inspectorSize) {
-            PanelHost(tool: ToolFixtures.entry("pdf.validate_pdfa"), footer: .buttons(canRun: false))
+            PanelHost(tool: ToolFixtures.entry("ai.summarize"), footer: .buttons(canRun: false))
+        }
+    }
+
+    func testRunPanelForAProToolOnTheFreePlan() {
+        assertAppearances(size: Self.inspectorSize) {
+            PanelHost(tool: ToolFixtures.entry("pdf.validate_pdfa"), footer: .buttons(canRun: true))
         }
     }
 
@@ -155,7 +161,9 @@ final class ToolSnapshotTests: DSSnapshotTestCase {
                 onClose: {}, onReset: {}, onRun: {}, onCancel: {}, onDismissError: {}
             ) {
                 if case let .unavailable(reason) = tool.availability {
-                    ToolUnavailableNote(message: L10n.branch("mac.tools.disabled", reason.tooltipBranch))
+                    ToolNote.unavailable(reason)
+                } else if tool.isProLocked, footer == .buttons(canRun: true) {
+                    ToolNote.proLocked
                 }
                 ParamFormView(form: tool.form, values: $values, error: error)
             }

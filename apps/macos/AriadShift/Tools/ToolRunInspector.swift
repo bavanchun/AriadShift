@@ -66,7 +66,9 @@ struct ToolRunInspector: View {
     @ViewBuilder
     private var sections: some View {
         if case let .unavailable(reason) = model.tool.availability {
-            ToolUnavailableNote(message: L10n.branch("mac.tools.disabled", reason.tooltipBranch))
+            ToolNote.unavailable(reason)
+        } else if model.tool.isProLocked, case .editing = model.phase {
+            ToolNote.proLocked
         }
         if !model.isPrepared {
             ParamFormView(form: model.tool.form, values: $model.values, error: model.fieldError)

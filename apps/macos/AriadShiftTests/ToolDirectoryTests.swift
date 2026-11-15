@@ -52,15 +52,27 @@ final class ToolDirectoryTests: XCTestCase {
         XCTAssertTrue(directory.browserSections(query: "zzzz").isEmpty)
     }
 
-    func testUnavailableToolsCarryABadgeAndAIUsesTheThreadTint() {
+    func testUnavailableAndProToolsCarryABadgeAndAIUsesTheThreadTint() {
         let validate = ToolFixtures.entry("pdf.validate_pdfa")
-        XCTAssertEqual(validate.availability, .unavailable(.paid))
+        XCTAssertTrue(validate.isAvailable, "a Pro tool opens; the host refuses the run on the free plan")
+        XCTAssertTrue(validate.isProLocked)
         XCTAssertEqual(ToolDirectory.badge(for: validate), "Pro")
         XCTAssertEqual(ToolDirectory.paletteItem(validate).badge, "Pro")
         XCTAssertNil(ToolDirectory.badge(for: ToolFixtures.entry("pdf.compress")))
         XCTAssertEqual(ToolDirectory.badge(for: ToolFixtures.entry("ai.summarize")), "Later")
         XCTAssertEqual(ToolDirectory.tint(for: ToolFixtures.entry("ai.summarize")), .thread)
         XCTAssertEqual(ToolDirectory.tint(for: ToolFixtures.entry("pdf.ocr")), .accent)
+    }
+
+    func testSuggestionsSkipProToolsThePlanDoesNotGrant() {
+        let tools = ToolFixtures.tools.map { tool in
+            tool.id == "pdf.ocr" ? ToolFixtures.info(tool.id, group: tool.group, summary: tool.summary, tier: "pro") : tool
+        }
+        let scan = ToolFixtures.report(words: 0)
+        let free = ToolDirectory(groups: ToolCatalog.build(tools: tools, runtimeInfo: ToolFixtures.runtimeInfo))
+        XCTAssertFalse(free.suggestions(for: scan).contains("pdf.ocr"))
+        let pro = ToolDirectory(groups: ToolCatalog.build(tools: tools, runtimeInfo: ToolFixtures.runtimeInfo, plan: .pro))
+        XCTAssertEqual(pro.suggestions(for: scan).first, "pdf.ocr")
     }
 
     func testPaletteItemsUseTheRegistrySummaryAsTheOutcome() {
