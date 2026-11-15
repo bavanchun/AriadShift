@@ -33,6 +33,7 @@ NOTICES = [
     "notices/Python-LICENSE.txt",
     "notices/OpenSSL-LICENSE.txt",
     "notices/libxml2-libxslt-LICENSES.txt",
+    "notices/libiconv-LICENSE.txt",
     "notices/libyaml-LICENSE.txt",
 ]
 
