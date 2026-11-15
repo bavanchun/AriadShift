@@ -282,7 +282,7 @@ pub fn flatten(
         for &info in fields {
             for widget in &info.widgets {
                 indexed += 1;
-                if indexed % 256 == 0 {
+                if indexed.is_multiple_of(256) {
                     ctx.check()?;
                 }
                 by_page.entry((name, widget.page)).or_insert(info);
