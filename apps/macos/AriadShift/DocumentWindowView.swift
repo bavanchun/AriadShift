@@ -28,7 +28,7 @@ struct DocumentWindowView: View {
     var body: some View {
         NavigationSplitView {
             DocumentSidebar(viewer: viewer, editing: editing) {
-                SidebarToolsList(state: engine.state, groups: engine.groups) { tool in
+                ToolsTab(state: engine.state, groups: engine.groups) { tool in
                     session.begin(tool, client: engine.client)
                 }
             }

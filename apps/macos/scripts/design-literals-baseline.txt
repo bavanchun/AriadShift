@@ -11,16 +11,3 @@ apps/macos/AriadShift/OnboardingView.swift	padding	.padding(28)
 apps/macos/AriadShift/OnboardingView.swift	spacing	VStack(alignment: .leading, spacing: 14) {
 apps/macos/AriadShift/SettingsView.swift	frame	.frame(width: 480)
 apps/macos/AriadShift/SettingsView.swift	spacing	VStack(alignment: .trailing, spacing: 6) {
-apps/macos/AriadShift/Tools/ParamFormView.swift	color	.foregroundStyle(.red)
-apps/macos/AriadShift/Tools/ParamRowsEditor.swift	spacing	VStack(alignment: .leading, spacing: 8) {
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	color	.foregroundStyle(.red)
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	frame	.frame(maxHeight: 260)
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	frame	.frame(minHeight: 120, maxHeight: 340)
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	frame	.frame(minWidth: 440, idealWidth: 480)
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	padding	.padding(20)
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	spacing	VStack(alignment: .leading, spacing: 10) {
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	spacing	VStack(alignment: .leading, spacing: 12) {
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	spacing	VStack(alignment: .leading, spacing: 6) {
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	spacing	VStack(alignment: .leading, spacing: 6) {
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	spacing	VStack(alignment: .leading, spacing: 8) {
-apps/macos/AriadShift/Tools/ToolRunSheet.swift	spacing	VStack(alignment: .leading, spacing: 8) {

@@ -2,9 +2,30 @@ import AriadDesignSystem
 import AriadShiftCore
 import SwiftUI
 
+/// The sidebar's Tools tab as the window shell hosts it: the tool browser once the catalogue is ready, a spinner while
+/// it loads, and the engine's message when it failed.
+struct ToolsTab: View {
+    let state: EngineModel.State
+    let groups: [ToolGroup]
+    let onChoose: (ToolEntry) -> Void
+
+    var body: some View {
+        switch state {
+        case .loading:
+            ProgressView(String(localized: "mac.tools.loading"))
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case let .failed(message):
+            DSEmptyState(systemImage: "exclamationmark.triangle", title: Text(verbatim: message))
+        case .ready:
+            ToolBrowserView(directory: ToolDirectory(groups: groups), onChoose: onChoose)
+        }
+    }
+}
+
 /// The content of the sidebar's Tools tab: a search field, then every tool by job (Organize, Edit, Convert, Secure,
-/// OCR, AI) in 28pt rows. A tool that cannot run here keeps its normal look and shows a badge. Choosing a row opens
-/// the tool in the inspector.
+/// OCR, AI) in 28pt rows. A tool that cannot run here, or a Pro tool, keeps its normal look and shows a badge.
+/// Choosing a row opens the tool in the inspector.
 struct ToolBrowserView: View {
     let directory: ToolDirectory
     let onChoose: (ToolEntry) -> Void
@@ -26,9 +47,9 @@ struct ToolBrowserView: View {
                             .frame(maxWidth: .infinity, minHeight: DSControlHeight.paletteRow)
                     }
                     ForEach(sections, id: \.job) { section in
-                        ToolBrowserGroupHeader(Text(verbatim: section.job.title))
+                        DSSidebarGroupHeader(Text(verbatim: section.job.title))
                         ForEach(section.tools) { tool in
-                            ToolBrowserRow(
+                            DSSidebarToolRow(
                                 systemImage: ToolDirectory.systemImage(for: tool),
                                 tint: ToolDirectory.tint(for: tool),
                                 title: Text(verbatim: tool.title),
@@ -82,83 +103,5 @@ struct ToolSearchField: View {
                 .strokeBorder(DSColor.separator, lineWidth: DSSize.hairline)
         )
         .accessibilityIdentifier("tools.search")
-    }
-}
-
-/// A job header in the Tools tab (caption, secondary, capitals), like an inspector section header.
-struct ToolBrowserGroupHeader: View {
-    let title: Text
-
-    init(_ title: Text) {
-        self.title = title
-    }
-
-    var body: some View {
-        title
-            .textCase(.uppercase)
-            .font(DSFont.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, DSSpacing.s)
-            .padding(.top, DSSpacing.m)
-            .padding(.bottom, DSSpacing.xs)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// A tool row in the Tools tab: a 16pt icon (gold for AI) and the title on a 28pt row, with a badge when the tool
-/// cannot run here. Hover fades an `accentSoft` fill in over 120ms without moving anything.
-struct ToolBrowserRow: View {
-    let systemImage: String
-    let tint: DSIconWell.Tint
-    let title: Text
-    let badge: Text?
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: DSSpacing.s) {
-                Image(systemName: systemImage)
-                    .font(DSFont.body)
-                    .foregroundStyle(tint == .thread ? DSColor.thread : DSColor.accent)
-                    .frame(width: DSSize.icon, height: DSSize.icon)
-                    .accessibilityHidden(true)
-                title
-                    .font(DSFont.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if let badge { DSBadge(badge) }
-            }
-            .padding(.horizontal, DSSpacing.s)
-            .frame(height: DSControlHeight.regular)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(RowStyle())
-    }
-
-    private struct RowStyle: ButtonStyle {
-        func makeBody(configuration: Configuration) -> some View {
-            RowBody(configuration: configuration)
-        }
-    }
-
-    private struct RowBody: View {
-        let configuration: ButtonStyleConfiguration
-        @State private var isHovered = false
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            configuration.label
-                .background {
-                    RoundedRectangle(cornerRadius: DSRadius.control, style: .continuous)
-                        .fill(DSColor.accentSoft)
-                        .opacity(configuration.isPressed ? 1 : (isHovered ? 0.6 : 0))
-                        .animation(.easeOut(duration: DSMotion.hoverFadeDuration), value: isHovered)
-                }
-                .scaleEffect(configuration.isPressed && !reduceMotion ? DSMotion.pressScale : 1)
-                .dsAnimation(.snappy, value: configuration.isPressed)
-                .onHover { isHovered = $0 }
-        }
     }
 }
