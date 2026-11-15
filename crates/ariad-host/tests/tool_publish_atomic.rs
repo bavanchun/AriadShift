@@ -1418,7 +1418,10 @@ printf '%s\n' '{"type":"result","ok":true}'
     assert!(dir_res.inline_json.is_none());
     let dir_expected = out_dir.join("document.recipe-from-text.json");
     assert_eq!(dir_res.artifacts.len(), 1);
-    assert_eq!(dir_res.artifacts[0].path, dir_expected);
+    assert_eq!(
+        fs::canonicalize(&dir_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(&dir_expected).unwrap()
+    );
     let dir_disk: serde_json::Value =
         serde_json::from_slice(&fs::read(&dir_expected).unwrap()).unwrap();
     assert_eq!(dir_disk["origin"], "imported");
