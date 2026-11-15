@@ -200,9 +200,13 @@ mod tests {
         for value in values {
             let record = FormRecord::from([("field".into(), FormValue::Text(value.into()))]);
             let csv = write_forms(&record).unwrap();
-            let records = read_forms(&csv, Some(','), EmptyCell::Skip, 10, &ToolCtx::new())
-                .unwrap();
-            assert_eq!(records[0]["field"], FormValue::Text(value.into()), "{value:?}");
+            let records =
+                read_forms(&csv, Some(','), EmptyCell::Skip, 10, &ToolCtx::new()).unwrap();
+            assert_eq!(
+                records[0]["field"],
+                FormValue::Text(value.into()),
+                "{value:?}"
+            );
         }
         let record = FormRecord::from([("'=header".into(), FormValue::Text("'=value".into()))]);
         let csv = String::from_utf8(write_forms(&record).unwrap()).unwrap();
