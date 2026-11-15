@@ -3092,23 +3092,7 @@ fn preflight_content_inner(
             data_cap =
                 data_cap.min(usize::try_from(u64::from(mb) * 1024 * 1024).unwrap_or(usize::MAX));
         }
-        let predictor_rows = dict
-            .get(b"DP")
-            .or_else(|_| dict.get(b"DecodeParms"))
-            .ok()
-            .into_iter()
-            .flat_map(|value| match value {
-                Object::Array(items) => items.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .any(|value| {
-                value
-                    .as_dict()
-                    .ok()
-                    .and_then(|d| d.get(b"Predictor").ok())
-                    .and_then(|v| v.as_i64().ok())
-                    .is_some_and(|n| n >= 10)
-            });
+        let predictor_rows = png_predictor_enabled(dict);
         let height = dict
             .get(b"Height")
             .or_else(|_| dict.get(b"H"))
@@ -4107,6 +4091,27 @@ fn scan_do_operators(
     Ok(names)
 }
 
+/// Reports whether an inline image's decode parameters enable a PNG predictor.
+///
+/// PDFium's `CPDF_StreamParser::ReadInlineStream` reads `/DecodeParms` as a
+/// dictionary when `/Filter` is a name, and only its first element when
+/// `/Filter` is an array. A PNG predictor (`/Predictor >= 10`) adds exactly
+/// one tag byte per row to the raw decoder output; parameters PDFium ignores
+/// must not grant that overhead.
+fn png_predictor_enabled(dict: &Dictionary) -> bool {
+    let get = |long: &[u8], short: &[u8]| dict.get(long).or_else(|_| dict.get(short)).ok();
+    let params = match (get(b"Filter", b"F"), get(b"DecodeParms", b"DP")) {
+        (Some(Object::Array(_)), Some(Object::Array(items))) => items.first(),
+        (Some(Object::Array(_)), _) | (_, Some(Object::Array(_))) | (None, _) => None,
+        (Some(_), params) => params,
+    };
+    params
+        .and_then(|params| params.as_dict().ok())
+        .and_then(|params| params.get(b"Predictor").ok())
+        .and_then(|v| v.as_i64().ok())
+        .is_some_and(|n| n >= 10)
+}
+
 const fn is_pdf_ws(b: u8) -> bool {
     matches!(b, b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
 }
@@ -4903,10 +4908,9 @@ mod corpus_tests {
             .as_dict_mut()
             .unwrap()
             .set("Count", 2);
-        assert!(
-            preflight_page_tree(&doc, 32).is_err(),
-            "incorrect root count"
-        );
+        let err = preflight_page_tree(&doc, 32).expect_err("incorrect root count");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Page tree Count does not match its leaves.");
     }
 
     fn collect_pdfs(dir: &Path, paths: &mut Vec<PathBuf>) {
@@ -5563,6 +5567,197 @@ mod corpus_tests {
     }
 
     #[test]
+    fn inline_png_predictor_overhead_follows_pdfium_decode_params() {
+        use std::io::Write as _;
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "predictor",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let rows = 1500;
+        let run = |filter: &str, params: &str, raw: &[u8]| {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(raw).unwrap();
+            let mut content =
+                format!("BI /W 1 /H {rows} /BPC 8 /CS /G /F {filter} /DP {params} ID ")
+                    .into_bytes();
+            content.extend_from_slice(&encoder.finish().unwrap());
+            content.extend_from_slice(b" EI");
+            rewrite_preflighted_content(&ctx, &doc, &content, 1 << 20, &mut 0).map(|_| ())
+        };
+        let refused = |result: Result<(), EngineFailure>| {
+            let err = result.unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, "Decoded inline image data exceeds the limit.");
+        };
+        // One tag byte plus one sample byte per row.
+        let tagged = b"\x00\x7f".repeat(rows);
+        let png = "<< /Predictor 15 /Columns 1 >>";
+        run("/Fl", png, &tagged).unwrap();
+        // The allowance is exactly one byte per row.
+        refused(run("/Fl", png, &[tagged.as_slice(), b"\x00"].concat()));
+        // PDFium ignores a /DecodeParms dictionary when /Filter is an array.
+        refused(run("[/Fl]", png, &tagged));
+        // PDFium ignores a /DecodeParms array when /Filter is a name.
+        refused(run("/Fl", &format!("[{png}]"), &tagged));
+        // A single-entry filter array with parameter dictionaries is still
+        // refused by the later bounded decode, as before this check.
+        let err = run("[/Fl]", &format!("[{png}]"), &tagged).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "A resource limit was exceeded.");
+        // TIFF predictor 2 adds no per-row tag byte.
+        refused(run("/Fl", "<< /Predictor 2 /Columns 1 >>", &tagged));
+        // Without a predictor the cap is the declared image size.
+        run("/Fl", "<< >>", &b"\x7f".repeat(rows)).unwrap();
+        refused(run("/Fl", "<< >>", &b"\x7f".repeat(rows + 1)));
+    }
+
+    #[test]
+    fn content_names_stop_at_pdfium_word_buffer() {
+        // `CPDF_StreamParser::kMaxWordLength` is 255 bytes including the
+        // slash, so PDFium keeps 254 name bytes. Longer names are refused.
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "names",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let content = |len: usize| [b"/".as_slice(), &vec![b'A'; len], b" Do"].concat();
+        let mut document_work = 0;
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut document_work,
+        };
+        let names = preflight_content(&ctx, &doc, &content(254), 4096, &mut budget).unwrap();
+        assert_eq!(names, vec![vec![b'A'; 254]]);
+        let err = preflight_content(&ctx, &doc, &content(255), 4096, &mut budget).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF content name exceeds the safe token length."
+        );
+    }
+
+    #[test]
+    fn png_predictor_parameters_follow_the_filter_shape() {
+        use lopdf::dictionary;
+        let png = || Object::Dictionary(dictionary! { "Predictor" => 12 });
+        let cases = [
+            (dictionary! { "F" => "Fl", "DP" => png() }, true),
+            (
+                dictionary! { "Filter" => "FlateDecode", "DecodeParms" => png() },
+                true,
+            ),
+            (
+                dictionary! { "F" => vec![Object::Name(b"Fl".to_vec())], "DP" => vec![png()] },
+                true,
+            ),
+            (
+                dictionary! { "F" => vec![Object::Name(b"Fl".to_vec())], "DP" => vec![Object::Null, png()] },
+                false,
+            ),
+            (
+                dictionary! { "F" => vec![Object::Name(b"Fl".to_vec())], "DP" => png() },
+                false,
+            ),
+            (dictionary! { "F" => "Fl", "DP" => vec![png()] }, false),
+            (dictionary! { "DP" => png() }, false),
+            (
+                dictionary! { "F" => "Fl", "DP" => dictionary! { "Predictor" => 2 } },
+                false,
+            ),
+        ];
+        for (dict, expected) in cases {
+            assert_eq!(png_predictor_enabled(&dict), expected, "{dict:?}");
+        }
+    }
+
+    #[test]
+    fn inline_dictionaries_never_resolve_indirect_references() {
+        // PDFium's `CPDF_StreamParser::ReadNextObject` has no reference
+        // grammar: `7 0 R` is read as numbers and a keyword, never resolved.
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline-ref",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut doc = lopdf::Document::new();
+        doc.objects.insert((7, 0), Object::Integer(1));
+        let run = |content: &[u8]| {
+            rewrite_preflighted_content(&ctx, &doc, content, 4096, &mut 0)
+                .map(|_| ())
+                .unwrap_err()
+        };
+        for (content, reason) in [
+            (
+                b"BI /W 7 0 R /H 1 /BPC 8 /CS /G ID \x00 EI".as_slice(),
+                "Inline image has invalid or duplicate keys.",
+            ),
+            (
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /DP << /Columns 7 0 R >> ID \x00 EI",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+            (
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /D [0 7 0 R] ID \x00 EI",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+        ] {
+            let err = run(content);
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, reason, "{}", String::from_utf8_lossy(content));
+        }
+        // The same dictionary without references is accepted.
+        rewrite_preflighted_content(
+            &ctx,
+            &doc,
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /DP << /Columns 1 >> /D [0 1] ID \x00 EI",
+            4096,
+            &mut 0,
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn reemits_inline_names_and_rejects_string_filters() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunToolPaths {
@@ -5593,16 +5788,17 @@ mod corpus_tests {
         assert!(text.contains("/ColorSpace /DeviceGray "));
         assert!(text.contains("/Filter /ASCIIHexDecode "));
         assert!(text.ends_with("ID 00> EI "));
-        assert!(
-            rewrite_preflighted_content(
-                &ctx,
-                &doc,
-                b"BI /W 1 /H 1 /BPC 8 /CS /G /F (AHx) ID 00> EI",
-                4096,
-                &mut 0
-            )
-            .is_err()
-        );
+        let err = rewrite_preflighted_content(
+            &ctx,
+            &doc,
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F (AHx) ID 00> EI",
+            4096,
+            &mut 0,
+        )
+        .map(|_| ())
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "PDF resource operand is ambiguous.");
     }
 
     #[test]
@@ -5745,7 +5941,12 @@ mod corpus_tests {
         let mut ctx = ToolContext::new("xref", "pdf.render", paths, Limits::local(), &mut sink);
         let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
         assert!(doc.repaired_xref());
-        assert!(check_extraction_xref(&doc).is_err());
+        let err = check_extraction_xref(&doc).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "Image extraction cannot inspect a PDF with a repaired cross-reference table."
+        );
         assert!(ctx.load_validated_pdf_bytes().is_ok());
         drop(ctx);
         assert!(String::from_utf8(sink).unwrap().contains("repaired_xref"));
@@ -5976,7 +6177,9 @@ mod corpus_tests {
             .unwrap();
         assert_eq!(child.xobject_id(&doc, b"X").unwrap(), Some((7, 0)));
         let invalid = Object::Dictionary(dictionary! { "XObject" => 42 });
-        assert!(parent.child(&doc, Some(&invalid)).is_err());
+        let err = parent.child(&doc, Some(&invalid)).map(|_| ()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "A resource limit was exceeded.");
         assert_eq!(
             parent
                 .child(&doc, None)
@@ -6338,7 +6541,10 @@ mod corpus_tests {
                 Object::Dictionary(dictionary! {}),
             ]),
         ] {
-            assert!(count(bad.clone()).is_err(), "expected err for {bad:?}");
+            let err = count(bad.clone()).expect_err("invalid color space");
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{bad:?}");
+            // `color_components` reports every invalid family with the generic reason.
+            assert_eq!(err.message, "A resource limit was exceeded.", "{bad:?}");
         }
     }
 
@@ -6381,18 +6587,18 @@ mod corpus_tests {
 
         let unresolvable = b"BI /W 1 /H 1 /BPC 8 /CS [/I /CsBase 0 <FF>] ID \x00 EI";
         let mut reject_work = 0;
-        assert!(
-            rewrite_preflighted_content_in_scope(
-                &ctx,
-                &doc,
-                unresolvable,
-                4096,
-                &scope,
-                &mut reject_work,
-            )
-            .is_err(),
-            "resource-named Indexed base must fail closed"
-        );
+        let err = rewrite_preflighted_content_in_scope(
+            &ctx,
+            &doc,
+            unresolvable,
+            4096,
+            &scope,
+            &mut reject_work,
+        )
+        .map(|_| ())
+        .expect_err("resource-named Indexed base must fail closed");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "A resource limit was exceeded.");
     }
 
     #[test]
