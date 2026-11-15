@@ -119,7 +119,10 @@ fn validate_nested_references(
     depth: usize,
 ) -> Result<(), EngineFailure> {
     if depth > 16 {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF reference nesting exceeds the depth limit.",
+        ));
     }
     match resolve(Some(doc), object)?.1 {
         Object::Array(items) => {
@@ -143,7 +146,10 @@ fn resolve_tree(
     depth: usize,
 ) -> Result<Object, EngineFailure> {
     if depth > 16 {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF object resolution nesting exceeds the depth limit.",
+        ));
     }
     let value = resolve(Some(doc), value)?.1;
     match value {
@@ -879,7 +885,10 @@ fn visit_stream(
         .allowed_ids
         .is_some_and(|allowed| !allowed.contains(&id))
     {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF stream is outside the inspected execution scope.",
+        ));
     }
     if depth > state.max_depth {
         return Err(EngineFailure::new(
@@ -3000,13 +3009,19 @@ fn preflight_content_inner(
                 b"[" | b"<<" => {
                     nesting += 1;
                     if nesting >= 63 {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image dictionary nesting exceeds the limit.",
+                        ));
                     }
                 }
                 b"]" | b">>" => {
-                    nesting = nesting
-                        .checked_sub(1)
-                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    nesting = nesting.checked_sub(1).ok_or_else(|| {
+                        EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image dictionary has an unmatched closing delimiter.",
+                        )
+                    })?;
                     if nesting == 0 {
                         filter_array = false;
                         color_array = false;
@@ -3332,14 +3347,28 @@ fn preflight_content_inner(
                 let early = match inline_decode_params(dict)
                     .and_then(|params| params.get(b"EarlyChange").ok())
                 {
-                    Some(value) => resolve(Some(doc), value)?
+                    Some(value) => resolve(Some(doc), value)
+                        .map_err(|_| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Inline LZWDecode EarlyChange cannot be resolved.",
+                            )
+                        })?
                         .1
                         .as_i64()
-                        .map_err(|_| EngineFailure::limit_exceeded())?,
+                        .map_err(|_| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Inline LZWDecode EarlyChange is not an integer.",
+                            )
+                        })?,
                     None => 1,
                 };
                 if !matches!(early, 0 | 1) {
-                    return Err(EngineFailure::limit_exceeded());
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline LZWDecode EarlyChange must be 0 or 1.",
+                    ));
                 }
                 cursor += inline_lzw_len(ctx, &bytes[cursor..], decoded_cap, early as usize)?;
             }
@@ -3347,8 +3376,12 @@ fn preflight_content_inner(
                 // Group 4's vertical-zero code (1) emits a row identical to the
                 // preceding all-white row. Restrict this decoder to that subset,
                 // with a declared row count and no end-of-block marker.
-                let params =
-                    inline_decode_params(dict).ok_or_else(EngineFailure::limit_exceeded)?;
+                let params = inline_decode_params(dict).ok_or_else(|| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline CCITTFaxDecode requires DecodeParms.",
+                    )
+                })?;
                 let integer = |key: &[u8]| params.get(key).ok().and_then(|v| v.as_i64().ok());
                 let flag = |key: &[u8]| params.get(key).ok().and_then(|v| v.as_bool().ok());
                 let width = dict
@@ -3356,29 +3389,53 @@ fn preflight_content_inner(
                     .or_else(|_| dict.get(b"W"))
                     .ok()
                     .and_then(|v| v.as_i64().ok());
-                if integer(b"K") != Some(-1)
-                    || integer(b"Columns") != width
-                    || integer(b"Rows") != i64::try_from(height).ok()
-                    || flag(b"EndOfBlock") != Some(false)
-                    || flag(b"EncodedByteAlign").unwrap_or(false)
-                    || flag(b"EndOfLine").unwrap_or(false)
-                {
-                    return Err(EngineFailure::limit_exceeded());
+                let unsupported =
+                    |message: &'static str| EngineFailure::new(ErrorCode::LimitExceeded, message);
+                if integer(b"K") != Some(-1) {
+                    return Err(unsupported("Inline CCITTFaxDecode K must be -1."));
                 }
-                let length = height
-                    .checked_add(7)
-                    .ok_or_else(EngineFailure::limit_exceeded)?
-                    / 8;
+                if integer(b"Columns") != width {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode Columns must match the image width.",
+                    ));
+                }
+                if integer(b"Rows") != i64::try_from(height).ok() {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode Rows must match the image height.",
+                    ));
+                }
+                if flag(b"EndOfBlock") != Some(false) {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode EndOfBlock must be false.",
+                    ));
+                }
+                if flag(b"EncodedByteAlign").unwrap_or(false) {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode EncodedByteAlign is unsupported.",
+                    ));
+                }
+                if flag(b"EndOfLine").unwrap_or(false) {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode EndOfLine is unsupported.",
+                    ));
+                }
+                let length = height.checked_add(7).ok_or_else(|| {
+                    unsupported("Inline CCITTFaxDecode row count overflows the data length.")
+                })? / 8;
                 let end = cursor
                     .checked_add(length)
                     .filter(|end| *end <= bytes.len())
-                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                    .ok_or_else(|| {
+                        unsupported("Inline CCITTFaxDecode data is shorter than its row count.")
+                    })?;
                 for row in 0..height {
                     if row.is_multiple_of(1024) {
                         ctx.check()?;
                     }
                     if bytes[cursor + row / 8] & (0x80 >> (row % 8)) == 0 {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(unsupported(
+                            "Inline CCITTFaxDecode row is not a vertical-zero code.",
+                        ));
                     }
                 }
                 cursor = end;
@@ -5418,6 +5475,134 @@ mod corpus_tests {
         }
     }
 
+    fn inline_preflight_error(content: &[u8]) -> EngineFailure {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline-reason",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut document_work = 0;
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut document_work,
+        };
+        preflight_content(
+            &ctx,
+            &lopdf::Document::new(),
+            content,
+            1024 * 1024,
+            &mut budget,
+        )
+        .unwrap_err()
+    }
+
+    #[test]
+    fn inline_refusals_name_their_reason() {
+        let deep = format!("{}0{}", "[".repeat(63), "]".repeat(63));
+        let ccitt = |params: &str, data: &[u8]| {
+            let mut content =
+                format!("BI /W 8 /H 8 /IM true /F /CCF /DP << {params} >> ID ").into_bytes();
+            content.extend_from_slice(data);
+            content.extend_from_slice(b" EI");
+            content
+        };
+        let good = "/K -1 /Columns 8 /Rows 8 /EndOfBlock false";
+        let cases: Vec<(Vec<u8>, &str)> = vec![
+            (
+                format!("BI /W 1 /H 1 /BPC 8 /CS /G /X {deep} ID x EI").into_bytes(),
+                "Inline image dictionary nesting exceeds the limit.",
+            ),
+            (
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /X ] ID x EI".to_vec(),
+                "Inline image dictionary has an unmatched closing delimiter.",
+            ),
+            (
+                b"BI /W 8 /H 8 /IM true /F /LZW /DP << /EarlyChange /A >> ID x EI".to_vec(),
+                "Inline LZWDecode EarlyChange is not an integer.",
+            ),
+            (
+                b"BI /W 8 /H 8 /IM true /F /LZW /DP << /EarlyChange 2 >> ID x EI".to_vec(),
+                "Inline LZWDecode EarlyChange must be 0 or 1.",
+            ),
+            (
+                b"BI /W 8 /H 8 /IM true /F /CCF ID x EI".to_vec(),
+                "Inline CCITTFaxDecode requires DecodeParms.",
+            ),
+            (
+                ccitt("/K 0 /Columns 8 /Rows 8 /EndOfBlock false", &[0xff]),
+                "Inline CCITTFaxDecode K must be -1.",
+            ),
+            (
+                ccitt("/K -1 /Columns 9 /Rows 8 /EndOfBlock false", &[0xff]),
+                "Inline CCITTFaxDecode Columns must match the image width.",
+            ),
+            (
+                ccitt("/K -1 /Columns 8 /Rows 9 /EndOfBlock false", &[0xff]),
+                "Inline CCITTFaxDecode Rows must match the image height.",
+            ),
+            (
+                ccitt("/K -1 /Columns 8 /Rows 8 /EndOfBlock true", &[0xff]),
+                "Inline CCITTFaxDecode EndOfBlock must be false.",
+            ),
+            (
+                ccitt(&format!("{good} /EncodedByteAlign true"), &[0xff]),
+                "Inline CCITTFaxDecode EncodedByteAlign is unsupported.",
+            ),
+            (
+                ccitt(&format!("{good} /EndOfLine true"), &[0xff]),
+                "Inline CCITTFaxDecode EndOfLine is unsupported.",
+            ),
+            (
+                ccitt(good, &[0x00]),
+                "Inline CCITTFaxDecode row is not a vertical-zero code.",
+            ),
+        ];
+        for (content, message) in cases {
+            let err = inline_preflight_error(&content);
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{message}");
+            assert_eq!(err.message, message);
+        }
+    }
+
+    #[test]
+    fn nested_depth_refusals_name_their_reason() {
+        let doc = lopdf::Document::new();
+        let mut nested = Object::Integer(0);
+        for _ in 0..18 {
+            nested = Object::Array(vec![nested]);
+        }
+        let err = validate_nested_references(&doc, &nested, 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF reference nesting exceeds the depth limit."
+        );
+        let err = resolve_tree(&doc, &nested, 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF object resolution nesting exceeds the depth limit."
+        );
+    }
+
     #[test]
     fn inline_masks_and_supported_filter_chains_are_checked() {
         use std::io::Write;
@@ -6334,7 +6519,14 @@ mod corpus_tests {
         assert_eq!(err.code, ErrorCode::LimitExceeded);
         assert_eq!(
             err.message,
-            crate::execution_budget::RESOURCES_NOT_DICTIONARY
+            crate::execution_budget::RESOURCES_DANGLING_REFERENCE
+        );
+        let dangling = Object::Dictionary(dictionary! { "XObject" => Object::Reference((999, 0)) });
+        let err = parent.child(&doc, Some(&dangling)).map(|_| ()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            crate::execution_budget::RESOURCE_CATEGORY_DANGLING_REFERENCE
         );
         assert_eq!(
             parent
