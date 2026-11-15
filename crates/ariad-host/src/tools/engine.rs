@@ -31,7 +31,7 @@ use crate::{
     tools::{
         inprocess::RawToolExecution,
         run::{ToolError, ToolEvent},
-        secrets::SecretScrubber,
+        secrets::{ScrubJsonError, SecretScrubber},
     },
     workspace::Workspace,
 };
@@ -261,8 +261,10 @@ fn engine_limits(engine: &str, limits: &Limits) -> Limits {
 
 /// Scrubs one staged engine JSON artifact while secrets are registered.
 ///
-/// The artifact is read only up to [`super::run::scrub_json_cap`], so peak memory is bounded by
-/// that cap rather than `limits.max_decompressed_bytes`. Every decoded string value and key is
+/// The artifact is read only up to [`super::run::scrub_json_cap`], and the scrubbed output is
+/// bounded by the same cap, so peak memory depends on that cap rather than
+/// `limits.max_decompressed_bytes`. Input or output over the cap fails with
+/// [`ToolError::LimitExceeded`]. Every decoded string value and key is
 /// scrubbed ([`SecretScrubber::scrub_json_text`]); no raw-text pre-check gates it, because JSON
 /// escapes can spell a secret that the raw bytes do not contain. Invalid, non-UTF-8 or
 /// truncated JSON fails closed.
@@ -278,7 +280,18 @@ fn scrub_engine_json_artifact(
     let file = workspace.open_artifact(path).map_err(|_| {
         ToolError::EngineFailure("could not open staged engine JSON artifact".into())
     })?;
+    // `Take<File>::read_to_end` gets no size hint, so size the buffer from the metadata and
+    // refuse an artifact already known to be over the cap before reading it. The file can
+    // still grow after the metadata call, so the `take` bound and length check stay.
+    let metadata_len = file.metadata().ok().map(|m| m.len());
+    if metadata_len.is_some_and(|len| len > scrub_cap) {
+        return Err(ToolError::LimitExceeded);
+    }
     let mut raw_bytes = Vec::new();
+    let initial = metadata_len.unwrap_or(0).min(scrub_cap).saturating_add(1);
+    raw_bytes
+        .try_reserve_exact(usize::try_from(initial).map_err(|_| ToolError::LimitExceeded)?)
+        .map_err(|_| ToolError::LimitExceeded)?;
     if file
         .take(scrub_cap.saturating_add(1))
         .read_to_end(&mut raw_bytes)
@@ -297,10 +310,14 @@ fn scrub_engine_json_artifact(
             "staged engine JSON artifact is not valid UTF-8".into(),
         ));
     };
-    let Ok(scrubbed) = scrubber.scrub_json_text(raw_str) else {
-        return Err(ToolError::EngineFailure(
-            "staged engine JSON artifact is not valid JSON".into(),
-        ));
+    let scrubbed = match scrubber.scrub_json_text(raw_str, scrub_cap) {
+        Ok(scrubbed) => scrubbed,
+        Err(ScrubJsonError::LimitExceeded) => return Err(ToolError::LimitExceeded),
+        Err(ScrubJsonError::InvalidJson(_)) => {
+            return Err(ToolError::EngineFailure(
+                "staged engine JSON artifact is not valid JSON".into(),
+            ));
+        }
     };
 
     let final_bytes = match scrubbed {
@@ -308,7 +325,9 @@ fn scrub_engine_json_artifact(
         Some(text) => {
             drop(raw_bytes);
             let bytes = text.into_bytes();
-            if (bytes.len() as u64) > limits.max_decompressed_bytes {
+            // `scrub_json_text` already bounds the output by `scrub_cap`; keep the check as a
+            // backstop.
+            if (bytes.len() as u64) > scrub_cap {
                 return Err(ToolError::LimitExceeded);
             }
             workspace.remove_staged_artifact(path).map_err(|e| {
