@@ -1100,8 +1100,11 @@ pub(super) fn json_inline_cap(limits: &Limits) -> u64 {
 /// Maximum size of a staged engine JSON artifact the host scrubs when secrets are registered
 /// (`64 MiB`, further bounded by `limits.max_decompressed_bytes`).
 ///
-/// The scrub holds the staged bytes and the rewritten bytes at the same time and decodes one
-/// string token at a time, so its peak memory is roughly three times this cap, about 192 MiB,
+/// The cap bounds both the staged input and the scrubbed output: redaction can grow the text
+/// (a one-byte secret becomes the ten-byte `[REDACTED]`), and any token or output expansion
+/// past the cap fails with `limit_exceeded` before the oversized text is allocated. The scrub
+/// holds the staged bytes, the output buffer, one decoded string token and one scrubbed copy of
+/// it, each at most this cap, so its peak memory stays under four times the cap (256 MiB)
 /// whatever `max_decompressed_bytes` allows and whatever the JSON shape. The cap is twice
 /// [`MAX_INLINE_JSON_BYTES`], so every JSON payload small enough to inline, and companion JSON
 /// up to twice that size, can still be scrubbed and published.
