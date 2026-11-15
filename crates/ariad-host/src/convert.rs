@@ -764,21 +764,58 @@ pub fn open_regular_input(path: &Path) -> Result<fs::File, ConvertError> {
 
 /// Reads a regular file up to `max_bytes`.
 pub fn read_bounded_file(path: &Path, max_bytes: Option<u64>) -> Result<Vec<u8>, ConvertError> {
-    let mut file = open_regular_input(path)?;
-    if let Ok(metadata) = file.metadata()
-        && max_bytes.is_some_and(|max| metadata.len() > max)
-    {
+    let file = open_regular_input(path)?;
+    let size_hint = file.metadata().ok().map(|metadata| metadata.len());
+    if size_hint.is_some_and(|len| max_bytes.is_some_and(|max| len > max)) {
         return Err(ConvertError::LimitExceeded);
     }
+    read_bounded(file, size_hint, max_bytes)
+}
+
+/// Reads `reader` to the end, refusing more than `max_bytes`.
+///
+/// `size_hint` (the file length when it was opened) only pre-sizes the
+/// buffer, clamped to `max_bytes`; the stream may still be shorter or longer.
+/// Growth never reserves past `max_bytes`, so the buffer's capacity stays
+/// within the cap, and an allocation failure is reported as
+/// [`ConvertError::LimitExceeded`] instead of aborting.
+fn read_bounded<R: Read>(
+    mut reader: R,
+    size_hint: Option<u64>,
+    max_bytes: Option<u64>,
+) -> Result<Vec<u8>, ConvertError> {
+    let cap = max_bytes.map(|max| usize::try_from(max).unwrap_or(usize::MAX));
+    let initial = usize::try_from(size_hint.unwrap_or(0))
+        .unwrap_or(usize::MAX)
+        .min(cap.unwrap_or(usize::MAX));
     let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(initial)
+        .map_err(|_| ConvertError::LimitExceeded)?;
     let mut buffer = [0u8; 64 * 1024];
     loop {
-        let n = file.read(&mut buffer).map_err(|_| ConvertError::InputIo)?;
+        let n = reader
+            .read(&mut buffer)
+            .map_err(|_| ConvertError::InputIo)?;
         if n == 0 {
             break;
         }
-        if max_bytes.is_some_and(|max| (bytes.len() as u64).saturating_add(n as u64) > max) {
+        let needed = bytes
+            .len()
+            .checked_add(n)
+            .ok_or(ConvertError::LimitExceeded)?;
+        if cap.is_some_and(|cap| needed > cap) {
             return Err(ConvertError::LimitExceeded);
+        }
+        if needed > bytes.capacity() {
+            // Grow geometrically, but never beyond the cap.
+            let target = needed
+                .max(bytes.len().saturating_mul(2))
+                .min(cap.unwrap_or(usize::MAX))
+                .max(needed);
+            bytes
+                .try_reserve_exact(target - bytes.len())
+                .map_err(|_| ConvertError::LimitExceeded)?;
         }
         bytes.extend_from_slice(&buffer[..n]);
     }
@@ -2441,8 +2478,8 @@ mod tests {
 
     use super::{
         ConvertError, detect_format_from_path, is_supported_route, open_regular_input,
-        paths_refer_to_same_file, read_bounded_file, read_document_to_ir, safe_warning,
-        sanitize_warning,
+        paths_refer_to_same_file, read_bounded, read_bounded_file, read_document_to_ir,
+        safe_warning, sanitize_warning,
     };
     use ariad_core::{
         format::Format,
@@ -3095,6 +3132,106 @@ for line in sys.stdin:
 
         let data = read_bounded_file(&file_path, Some(2048)).unwrap();
         assert_eq!(data.len(), 1024);
+    }
+
+    #[test]
+    fn read_bounded_file_capacity_stays_within_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("data.bin");
+        let cap = 300_000u64;
+        std::fs::write(&file_path, vec![7u8; 299_999]).unwrap();
+        let data = read_bounded_file(&file_path, Some(cap)).unwrap();
+        assert_eq!(data.len(), 299_999);
+        assert!(
+            data.capacity() as u64 <= cap,
+            "capacity {}",
+            data.capacity()
+        );
+
+        let exact = temp.path().join("exact.bin");
+        std::fs::write(&exact, vec![7u8; 300_000]).unwrap();
+        let data = read_bounded_file(&exact, Some(cap)).unwrap();
+        assert_eq!(data.len(), 300_000);
+        assert!(
+            data.capacity() as u64 <= cap,
+            "capacity {}",
+            data.capacity()
+        );
+        assert_eq!(
+            read_bounded_file(&exact, Some(cap - 1)).unwrap_err(),
+            ConvertError::LimitExceeded
+        );
+    }
+
+    /// Yields `len` bytes in uneven chunks, whatever size was claimed.
+    struct ChunkedReader {
+        remaining: usize,
+    }
+
+    impl std::io::Read for ChunkedReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.remaining.min(buf.len()).min(40_000);
+            buf[..n].fill(1);
+            self.remaining -= n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn read_bounded_ignores_a_lying_size_hint() {
+        let cap = 250_000u64;
+        // The stream is longer than its hint but within the cap.
+        let data = read_bounded(ChunkedReader { remaining: 200_000 }, Some(10), Some(cap)).unwrap();
+        assert_eq!(data.len(), 200_000);
+        assert!(
+            data.capacity() as u64 <= cap,
+            "capacity {}",
+            data.capacity()
+        );
+        // The stream grows past the cap after a small hint.
+        assert_eq!(
+            read_bounded(ChunkedReader { remaining: 250_001 }, Some(10), Some(cap)).unwrap_err(),
+            ConvertError::LimitExceeded
+        );
+        // A hint above the cap pre-sizes only up to the cap.
+        let data = read_bounded(
+            ChunkedReader { remaining: 1_000 },
+            Some(u64::MAX),
+            Some(cap),
+        )
+        .unwrap();
+        assert_eq!(data.len(), 1_000);
+        assert!(
+            data.capacity() as u64 <= cap,
+            "capacity {}",
+            data.capacity()
+        );
+        // A shorter stream than its hint is returned as read.
+        let data = read_bounded(ChunkedReader { remaining: 5 }, Some(100), Some(cap)).unwrap();
+        assert_eq!(data, vec![1u8; 5]);
+    }
+
+    #[test]
+    fn read_bounded_without_cap_reads_past_the_hint() {
+        let data = read_bounded(ChunkedReader { remaining: 300_000 }, Some(1), None).unwrap();
+        assert_eq!(data.len(), 300_000);
+        assert!(data.iter().all(|b| *b == 1));
+        let data = read_bounded(ChunkedReader { remaining: 0 }, None, None).unwrap();
+        assert!(data.is_empty());
+    }
+
+    #[test]
+    fn read_bounded_maps_read_errors_to_input_io() {
+        struct Failing;
+        impl std::io::Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("boom"))
+            }
+        }
+        assert_eq!(
+            read_bounded(Failing, Some(10), Some(100)).unwrap_err(),
+            ConvertError::InputIo
+        );
     }
 
     #[test]
