@@ -770,6 +770,65 @@ mod tests {
         assert_eq!(out, b"{\\rtf1\\ansi\\ansicpg1252\\pard test}");
     }
 
+    /// MS-OXRTFCP 3.1.1, "Example 1: Simple Compressed RTF".
+    const OXRTFCP_EXAMPLE_1: &[u8] = &[
+        0x2d, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x00, 0x00, 0x4c, 0x5a, 0x46, 0x75, 0xf1, 0xc5, 0xc7,
+        0xa7, 0x03, 0x00, 0x0a, 0x00, 0x72, 0x63, 0x70, 0x67, 0x31, 0x32, 0x35, 0x42, 0x32, 0x0a,
+        0xf3, 0x20, 0x68, 0x65, 0x6c, 0x09, 0x00, 0x20, 0x62, 0x77, 0x05, 0xb0, 0x6c, 0x64, 0x7d,
+        0x0a, 0x80, 0x0f, 0xa0,
+    ];
+
+    /// MS-OXRTFCP 3.1.2, "Reading a Token from the Dictionary that Crosses
+    /// WritePosition".
+    const OXRTFCP_EXAMPLE_2: &[u8] = &[
+        0x1a, 0x00, 0x00, 0x00, 0x1c, 0x00, 0x00, 0x00, 0x4c, 0x5a, 0x46, 0x75, 0xe2, 0xd4, 0x4b,
+        0x51, 0x41, 0x00, 0x04, 0x20, 0x57, 0x58, 0x59, 0x5a, 0x0d, 0x6e, 0x7d, 0x01, 0x0e, 0xb0,
+    ];
+
+    #[test]
+    fn lzfu_decompresses_ms_oxrtfcp_examples() {
+        assert_eq!(
+            decompress_rtf(OXRTFCP_EXAMPLE_1).unwrap(),
+            b"{\\rtf1\\ansi\\ansicpg1252\\pard hello world}\r\n"
+        );
+        assert_eq!(
+            decompress_rtf(OXRTFCP_EXAMPLE_2).unwrap(),
+            b"{\\rtf1 WXYZWXYZWXYZWXYZWXYZ}"
+        );
+    }
+
+    #[test]
+    fn mela_follows_ms_oxrtfcp_uncompressed_layout() {
+        // MS-OXRTFCP 2.1.3.1.1 and 2.3.3.1: COMPSIZE = content length + 12,
+        // RAWSIZE = content length, COMPTYPE = "MELA", CRC = 0, raw CONTENTS.
+        // The specification gives no byte example for this layout.
+        let content = b"{\\rtf1\\ansi\\ansicpg1252\\pard hello world}\r\n";
+        let mut mela = Vec::new();
+        mela.extend_from_slice(&(content.len() as u32 + 12).to_le_bytes());
+        mela.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        mela.extend_from_slice(b"MELA");
+        mela.extend_from_slice(&0u32.to_le_bytes());
+        mela.extend_from_slice(content);
+        assert_eq!(decompress_rtf(&mela).unwrap(), content);
+        // 2.2.3.1: a reader MUST NOT validate the CRC of uncompressed input.
+        mela[12..16].copy_from_slice(&0xdead_beefu32.to_le_bytes());
+        assert_eq!(decompress_rtf(&mela).unwrap(), content);
+    }
+
+    #[test]
+    fn lzfu_rejects_short_and_unknown_headers() {
+        assert_eq!(
+            decompress_rtf(&OXRTFCP_EXAMPLE_1[..15]).unwrap_err(),
+            "RTF compressed data too short"
+        );
+        let mut unknown = OXRTFCP_EXAMPLE_1.to_vec();
+        unknown[8..12].copy_from_slice(b"ABCD");
+        assert_eq!(
+            decompress_rtf(&unknown).unwrap_err(),
+            "unknown RTF compression magic: 0x44434241"
+        );
+    }
+
     #[test]
     fn uncompressed_rtf_mema_and_mela() {
         // MEMA
