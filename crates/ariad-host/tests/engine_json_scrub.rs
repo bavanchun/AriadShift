@@ -205,6 +205,60 @@ fn engine_json_at_scrub_cap_is_scrubbed() {
     assert_eq!(parsed["s"], "[REDACTED]");
 }
 
+/// One-character secret that appears in no fake-engine path or protocol line, so only the
+/// staged JSON grows when it is redacted.
+const SHORT_SECRET: &str = "~";
+
+/// Staged JSON `{"s":"~~…~"}` with `n` secret occurrences; scrubbed it is `8 + 10 * n` bytes.
+fn short_secret_json(n: usize) -> String {
+    format!(r#"{{"s":"{}"}}"#, SHORT_SECRET.repeat(n))
+}
+
+#[test]
+fn engine_json_scrub_expansion_over_cap_is_limit_exceeded() {
+    let tmp = TempDir::new().unwrap();
+    let staged = short_secret_json(100);
+    let cap = 512;
+    assert!((staged.len() as u64) < cap, "input itself fits the cap");
+    let err = ariad_host::tools::run::with_scrub_json_cap_for_test(cap, || {
+        run_fake_json_engine(&tmp, &staged, SHORT_SECRET)
+    })
+    .expect_err("scrubbed output above the scrub cap must fail");
+    assert!(
+        matches!(err, ToolError::LimitExceeded),
+        "expected LimitExceeded, got {err:?}"
+    );
+    assert!(!tmp.path().join(PUBLISHED_NAME).exists());
+}
+
+#[test]
+fn engine_json_scrub_expansion_exactly_at_cap_is_published() {
+    let n = 20;
+    let staged = short_secret_json(n);
+    let scrubbed_len = (8 + 10 * n) as u64;
+
+    let tmp = TempDir::new().unwrap();
+    let outcome = ariad_host::tools::run::with_scrub_json_cap_for_test(scrubbed_len, || {
+        run_fake_json_engine(&tmp, &staged, SHORT_SECRET)
+    })
+    .expect("scrubbed output exactly at the scrub cap must publish");
+    let parsed = assert_scrubbed(&tmp, &outcome, SHORT_SECRET, &[]);
+    assert_eq!(parsed["s"], "[REDACTED]".repeat(n));
+    let published = fs::read(tmp.path().join(PUBLISHED_NAME)).unwrap();
+    assert_eq!(published.len() as u64, scrubbed_len);
+
+    let tmp = TempDir::new().unwrap();
+    let err = ariad_host::tools::run::with_scrub_json_cap_for_test(scrubbed_len - 1, || {
+        run_fake_json_engine(&tmp, &staged, SHORT_SECRET)
+    })
+    .expect_err("scrubbed output one byte over the scrub cap must fail");
+    assert!(
+        matches!(err, ToolError::LimitExceeded),
+        "expected LimitExceeded, got {err:?}"
+    );
+    assert!(!tmp.path().join(PUBLISHED_NAME).exists());
+}
+
 #[test]
 fn engine_json_malformed_fails_closed_when_secrets_registered() {
     for staged in [
