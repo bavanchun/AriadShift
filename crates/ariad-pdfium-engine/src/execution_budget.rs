@@ -1,4 +1,14 @@
 //! Bound execution of content resources before PDFium opens a document.
+//!
+//! The pre-flight charges content operators, form, pattern and soft-mask
+//! invocations, Type3 glyph procedures and inline image data. It does not
+//! decode the auxiliary streams PDFium reads while it parses a page:
+//! embedded font programs (`/FontFile`, `/FontFile2`, `/FontFile3`),
+//! `/ICCBased` profiles, `/Indexed` lookup streams, and sampled or
+//! PostScript function streams (shadings, `/Separation` and `/DeviceN` tint
+//! transforms). Their CPU and memory use is bounded only by PDFium's own
+//! decoder limits and the engine process ceiling (memory and time limits
+//! applied by the host launcher).
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
