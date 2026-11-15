@@ -390,6 +390,44 @@ fn read_string_property<F: Read + std::io::Seek>(
 /// Maximum size of a recipient or attachment `__properties_version1.0` stream.
 const MAX_SUB_PROPERTIES_BYTES: usize = 4096;
 
+/// Header label for recipients whose To, Cc or Bcc type cannot be trusted.
+const UNKNOWN_RECIPIENTS_LABEL: &str = "Recipients (type unknown): ";
+
+/// Header bucket of one MSG recipient.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecipientType {
+    To,
+    Cc,
+    Bcc,
+    /// The properties stream exceeds its cap, so the type was not read.
+    Unknown,
+    /// `PR_RECIPIENT_TYPE` holds a value other than To, Cc or Bcc.
+    Unrecognized,
+}
+
+/// Reads `PR_RECIPIENT_TYPE` (0x0C15, PT_LONG) from a recipient
+/// `__properties_version1.0` stream.
+///
+/// A missing stream or property keeps the historical To default.
+fn recipient_type(prop_bytes: Option<&[u8]>) -> RecipientType {
+    let Some(records) = prop_bytes.and_then(|bytes| bytes.get(8..)) else {
+        return RecipientType::To;
+    };
+    let (chunks, _) = records.as_chunks::<16>();
+    let value = chunks.iter().find_map(|chunk| {
+        let prop_type = u16::from_le_bytes([chunk[0], chunk[1]]);
+        let prop_id = u16::from_le_bytes([chunk[2], chunk[3]]);
+        (prop_id == 0x0C15 && prop_type == 0x0003)
+            .then(|| u32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]))
+    });
+    match value {
+        None | Some(1) => RecipientType::To,
+        Some(2) => RecipientType::Cc,
+        Some(3) => RecipientType::Bcc,
+        Some(_) => RecipientType::Unrecognized,
+    }
+}
+
 /// Parse date from `__properties_version1.0` stream.
 fn parse_date_from_properties<F: Read + std::io::Seek>(
     comp: &mut cfb::CompoundFile<F>,
@@ -483,48 +521,39 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut to_recipients = Vec::new();
     let mut cc_recipients = Vec::new();
     let mut bcc_recipients = Vec::new();
+    let mut unknown_recipients = Vec::new();
+    let mut oversized_properties = 0usize;
+    let mut unrecognized_types = 0usize;
+    let mut oversized_strings = 0usize;
 
     for r_path in &recip_storages {
-        let mut too_large = false;
+        let mut string_too_large = false;
         let mut string_property = |comp: &mut cfb::CompoundFile<_>, prop_id| {
             read_string_property_checked(comp, r_path, prop_id, max_stream_bytes).unwrap_or_else(
                 |StreamTooLarge| {
-                    too_large = true;
+                    string_too_large = true;
                     None
                 },
             )
         };
         let r_name = string_property(&mut comp, "3001");
         let r_email = string_property(&mut comp, "3003");
-
-        // Check recipient type from properties if available
-        let mut recip_type = 1u32; // Default MAPI_TO
-        let prop_path = format!("{r_path}/__properties_version1.0");
-        let prop_bytes = read_stream_checked(&mut comp, &prop_path, MAX_SUB_PROPERTIES_BYTES)
-            .unwrap_or_else(|StreamTooLarge| {
-                too_large = true;
-                None
-            });
-        if too_large {
-            // Never include recipient data: name only the condition.
-            warnings.push(Warning::new(
-                WarningCode::UnsupportedNode,
-                "MSG recipient stream exceeds the size limit and was ignored",
-            ));
+        if string_too_large {
+            oversized_strings += 1;
         }
-        if let Some(prop_bytes) = prop_bytes
-            && prop_bytes.len() >= 8
+
+        let prop_path = format!("{r_path}/__properties_version1.0");
+        let recip_type = match read_stream_checked(&mut comp, &prop_path, MAX_SUB_PROPERTIES_BYTES)
         {
-            let (chunks, _) = prop_bytes[8..].as_chunks::<16>();
-            for chunk in chunks {
-                let prop_type_val = u16::from_le_bytes([chunk[0], chunk[1]]);
-                let prop_id = u16::from_le_bytes([chunk[2], chunk[3]]);
-                // 0x0C15 = PR_RECIPIENT_TYPE (PT_LONG = 0x0003)
-                if prop_id == 0x0C15 && prop_type_val == 0x0003 {
-                    recip_type = u32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
-                    break;
-                }
+            Ok(prop_bytes) => recipient_type(prop_bytes.as_deref()),
+            // The type cannot be read, so the recipient may be Cc or Bcc.
+            Err(StreamTooLarge) => {
+                oversized_properties += 1;
+                RecipientType::Unknown
             }
+        };
+        if recip_type == RecipientType::Unrecognized {
+            unrecognized_types += 1;
         }
 
         let formatted = match (r_name, r_email) {
@@ -535,15 +564,47 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         };
 
         match recip_type {
-            2 => cc_recipients.push(formatted),
-            3 => bcc_recipients.push(formatted),
-            _ => to_recipients.push(formatted),
+            RecipientType::To => to_recipients.push(formatted),
+            RecipientType::Cc => cc_recipients.push(formatted),
+            RecipientType::Bcc => bcc_recipients.push(formatted),
+            RecipientType::Unknown | RecipientType::Unrecognized => {
+                unknown_recipients.push(formatted)
+            }
+        }
+    }
+
+    // Never include recipient data: name only the condition and a count.
+    for (count, condition) in [
+        (
+            oversized_properties,
+            "properties stream exceeds the size limit; recipient type is unknown",
+        ),
+        (
+            unrecognized_types,
+            "type value is not recognized; recipient type is unknown",
+        ),
+        (
+            oversized_strings,
+            "name or address stream exceeds the size limit and was ignored",
+        ),
+    ] {
+        if count > 0 {
+            let noun = if count == 1 {
+                "recipient"
+            } else {
+                "recipients"
+            };
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                format!("MSG recipient {condition} ({count} {noun})"),
+            ));
         }
     }
 
     let to_str = (!to_recipients.is_empty()).then(|| to_recipients.join(", "));
     let cc_str = (!cc_recipients.is_empty()).then(|| cc_recipients.join(", "));
     let bcc_str = (!bcc_recipients.is_empty()).then(|| bcc_recipients.join(", "));
+    let unknown_str = (!unknown_recipients.is_empty()).then(|| unknown_recipients.join(", "));
 
     let mut blocks = Vec::new();
 
@@ -585,6 +646,17 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             }],
         });
         header_inlines.push(Inline::Text { text: nfc(bcc_val) });
+        header_inlines.push(Inline::LineBreak {});
+    }
+    if let Some(ref unknown_val) = unknown_str {
+        header_inlines.push(Inline::Strong {
+            content: vec![Inline::Text {
+                text: UNKNOWN_RECIPIENTS_LABEL.to_owned(),
+            }],
+        });
+        header_inlines.push(Inline::Text {
+            text: nfc(unknown_val),
+        });
         header_inlines.push(Inline::LineBreak {});
     }
     if let Some(ref date_val) = date_str {
@@ -1276,24 +1348,170 @@ mod tests {
         assert_eq!(out.document.meta.date, None);
     }
 
-    #[test]
-    fn oversized_recipient_stream_warns_without_contents() {
+    /// A recipient `__properties_version1.0` stream holding only
+    /// `PR_RECIPIENT_TYPE`, padded with zero bytes to `len` when longer.
+    fn recipient_properties(recip_type: u32, len: usize) -> Vec<u8> {
+        let mut p = vec![0u8; 8];
+        p.extend_from_slice(&0x0003u16.to_le_bytes());
+        p.extend_from_slice(&0x0C15u16.to_le_bytes());
+        p.extend_from_slice(&0u32.to_le_bytes());
+        p.extend_from_slice(&recip_type.to_le_bytes());
+        p.extend_from_slice(&0u32.to_le_bytes());
+        p.resize(p.len().max(len), 0);
+        p
+    }
+
+    /// Adds recipient storage `index` with a display name, an address and a
+    /// properties stream.
+    fn add_recipient(
+        comp: &mut cfb::CompoundFile<Cursor<Vec<u8>>>,
+        index: u32,
+        name: &str,
+        email: &str,
+        properties: &[u8],
+    ) {
         use std::io::Write;
-        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
-        comp.create_storage("/__recip_version1.0_#00000000")
-            .unwrap();
-        {
+        let storage = format!("/__recip_version1.0_#{index:08X}");
+        comp.create_storage(&storage).unwrap();
+        for (prop_id, value) in [("3001001F", name), ("3003001F", email)] {
             let mut s = comp
-                .create_stream("/__recip_version1.0_#00000000/__substg1.0_3001001F")
+                .create_stream(format!("{storage}/__substg1.0_{prop_id}"))
                 .unwrap();
-            s.write_all(&encode_utf16le("Secret Recipient")).unwrap();
+            s.write_all(&encode_utf16le(value)).unwrap();
         }
-        {
-            let mut s = comp
-                .create_stream("/__recip_version1.0_#00000000/__properties_version1.0")
-                .unwrap();
-            s.write_all(&vec![0u8; MAX_SUB_PROPERTIES_BYTES + 1])
-                .unwrap();
+        let mut s = comp
+            .create_stream(format!("{storage}/__properties_version1.0"))
+            .unwrap();
+        s.write_all(properties).unwrap();
+    }
+
+    /// Header label to value pairs of the first body paragraph.
+    fn header_fields(document: &Document) -> Vec<(String, String)> {
+        let Block::Paragraph { content, .. } = &document.body[0] else {
+            panic!("expected the header paragraph, got {:?}", document.body);
+        };
+        let mut fields = Vec::new();
+        let mut label = None;
+        for inline in content {
+            match inline {
+                Inline::Strong { content } => {
+                    if let Some(Inline::Text { text }) = content.first() {
+                        label = Some(text.clone());
+                    }
+                }
+                Inline::Text { text } => {
+                    if let Some(label) = label.take() {
+                        fields.push((label, text.clone()));
+                    }
+                }
+                _ => {}
+            }
+        }
+        fields
+    }
+
+    #[test]
+    fn oversized_bcc_properties_stream_is_never_to() {
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        add_recipient(
+            &mut comp,
+            0,
+            "To Person",
+            "to@example.com",
+            &recipient_properties(1, 0),
+        );
+        add_recipient(
+            &mut comp,
+            1,
+            "Cc Person",
+            "cc@example.com",
+            &recipient_properties(2, 0),
+        );
+        add_recipient(
+            &mut comp,
+            2,
+            "Bcc Person",
+            "bcc@example.com",
+            &recipient_properties(3, 0),
+        );
+        add_recipient(
+            &mut comp,
+            3,
+            "Hidden Bcc",
+            "hidden@example.com",
+            &recipient_properties(3, MAX_SUB_PROPERTIES_BYTES + 1),
+        );
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+
+        assert_eq!(
+            header_fields(&out.document),
+            vec![
+                ("To: ".to_owned(), "To Person <to@example.com>".to_owned()),
+                ("Cc: ".to_owned(), "Cc Person <cc@example.com>".to_owned()),
+                (
+                    "Bcc: ".to_owned(),
+                    "Bcc Person <bcc@example.com>".to_owned()
+                ),
+                (
+                    UNKNOWN_RECIPIENTS_LABEL.to_owned(),
+                    "Hidden Bcc <hidden@example.com>".to_owned()
+                ),
+            ]
+        );
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG recipient properties stream exceeds the size limit; \
+             recipient type is unknown (1 recipient)"
+        );
+        assert!(!out.warnings[0].message.contains("Hidden"));
+        assert!(!out.warnings[0].message.contains("hidden@"));
+
+        // Every writer keeps the recipient on the unknown-type line only.
+        let typst = crate::writer::typst::write(
+            &out.document,
+            &crate::writer::typst::TypstOptions::default(),
+        )
+        .markup;
+        let json = serde_json::to_string(&out.document).unwrap();
+        for (writer, rendered) in [
+            (
+                "markdown",
+                crate::writer::markdown::write(&out.document).content,
+            ),
+            ("html", crate::writer::html::write(&out.document).content),
+            ("text", crate::writer::text::write(&out.document).content),
+            ("typst", typst),
+            ("json", json),
+        ] {
+            let hidden = rendered
+                .find("Hidden Bcc")
+                .unwrap_or_else(|| panic!("{writer} drops the recipient: {rendered}"));
+            // Markdown moves the colon outside the strong span.
+            let label = rendered
+                .find("Recipients (type unknown)")
+                .unwrap_or_else(|| panic!("{writer} drops the label: {rendered}"));
+            let bcc = rendered.find("Bcc Person").unwrap();
+            // The recipient follows the unknown label, which follows every
+            // To, Cc and Bcc value, so it cannot render under any of them.
+            assert!(bcc < label && label < hidden, "{writer}: {rendered}");
+            assert_eq!(rendered.matches("Hidden Bcc").count(), 1, "{writer}");
+        }
+    }
+
+    #[test]
+    fn oversized_properties_streams_share_one_warning() {
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        for (index, recip_type) in [(0, 1), (1, 2), (2, 3)] {
+            add_recipient(
+                &mut comp,
+                index,
+                "Secret Recipient",
+                "secret@example.com",
+                &recipient_properties(recip_type, MAX_SUB_PROPERTIES_BYTES + 1),
+            );
         }
         let bytes = comp.into_inner().into_inner();
         let out = read(&bytes, &Limits::local()).unwrap();
@@ -1301,9 +1519,60 @@ mod tests {
         assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
         assert_eq!(
             out.warnings[0].message,
-            "MSG recipient stream exceeds the size limit and was ignored"
+            "MSG recipient properties stream exceeds the size limit; \
+             recipient type is unknown (3 recipients)"
         );
         assert!(!out.warnings[0].message.contains("Secret"));
+        assert!(!out.warnings[0].message.contains("secret@"));
+        let fields = header_fields(&out.document);
+        assert_eq!(fields.len(), 1, "{fields:?}");
+        assert_eq!(fields[0].0, UNKNOWN_RECIPIENTS_LABEL);
+        assert_eq!(fields[0].1.matches("Secret Recipient").count(), 3);
+    }
+
+    #[test]
+    fn unrecognized_recipient_type_is_unknown() {
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        add_recipient(
+            &mut comp,
+            0,
+            "Origin",
+            "origin@example.com",
+            &recipient_properties(0, 0),
+        );
+        add_recipient(
+            &mut comp,
+            1,
+            "Odd",
+            "odd@example.com",
+            &recipient_properties(7, 0),
+        );
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(
+            header_fields(&out.document),
+            vec![(
+                UNKNOWN_RECIPIENTS_LABEL.to_owned(),
+                "Origin <origin@example.com>, Odd <odd@example.com>".to_owned()
+            )]
+        );
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG recipient type value is not recognized; \
+             recipient type is unknown (2 recipients)"
+        );
+    }
+
+    #[test]
+    fn missing_recipient_type_keeps_to_default() {
+        assert_eq!(recipient_type(None), RecipientType::To);
+        assert_eq!(recipient_type(Some(&[0; 7])), RecipientType::To);
+        assert_eq!(recipient_type(Some(&[0; 24])), RecipientType::To);
+        assert_eq!(
+            recipient_type(Some(&recipient_properties(2, 0))),
+            RecipientType::Cc
+        );
     }
 
     #[test]
