@@ -224,7 +224,10 @@ pub fn flatten(
     let requested = names.map(|names| names.iter().cloned().collect::<HashSet<_>>());
     // Every listed field on the selected pages, grouped by name in listing order.
     let mut infos: HashMap<&str, Vec<&FieldInfo>> = HashMap::new();
-    for field in &listing.fields {
+    for (index, field) in listing.fields.iter().enumerate() {
+        if index % 256 == 0 {
+            ctx.check()?;
+        }
         if requested
             .as_ref()
             .is_none_or(|set| set.contains(&field.name))
@@ -239,7 +242,7 @@ pub fn flatten(
     if duplicate_names {
         report
             .warnings
-            .push("duplicate_field_name: only the first field with each name is edited".into());
+            .push("duplicate_field_name: fields sharing a name are flattened per page".into());
     }
     if let Some(names) = requested.as_ref()
         && names.iter().any(|name| !infos.contains_key(name.as_str()))
@@ -271,11 +274,31 @@ pub fn flatten(
             }
         }
     }
+    // Index the listed fields by name and widget page once, so pairing below
+    // stays linear even when thousands of fields share one name.
+    let mut by_page: HashMap<(&str, u32), &FieldInfo> = HashMap::new();
+    let mut indexed = 0usize;
+    for (&name, fields) in &infos {
+        for &info in fields {
+            for widget in &info.widgets {
+                indexed += 1;
+                if indexed % 256 == 0 {
+                    ctx.check()?;
+                }
+                by_page.entry((name, widget.page)).or_insert(info);
+            }
+        }
+    }
+    let repeated: HashSet<&str> = duplicate_refs
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
     // Pair each field (including later fields with a repeated name) that has a
     // widget on a selected page with the listed field on that page, so a
     // duplicate name never redirects the flatten to a field on another page.
     let mut entries: Vec<(&str, &fill::FieldRef, &FieldInfo)> = Vec::new();
     let mut target = HashSet::new();
+    let mut unmatched = false;
     let all_refs = first_refs
         .iter()
         .map(|(name, reference)| (name.as_str(), reference))
@@ -284,7 +307,10 @@ pub fn flatten(
                 .iter()
                 .map(|(name, reference)| (name.as_str(), reference)),
         );
-    for (name, reference) in all_refs {
+    for (index, (name, reference)) in all_refs.enumerate() {
+        if index % 256 == 0 {
+            ctx.check()?;
+        }
         let Some(candidates) = infos.get(name) else {
             continue;
         };
@@ -295,10 +321,16 @@ pub fn flatten(
         else {
             continue;
         };
-        let info = candidates
-            .iter()
-            .find(|info| info.widgets.iter().any(|widget| widget.page == page))
-            .unwrap_or(&candidates[0]);
+        // Only a name that is not repeated may fall back to its single listed
+        // field; a repeated name never borrows another twin's value.
+        let info = match by_page.get(&(name, page)) {
+            Some(info) => *info,
+            None if !repeated.contains(name) => candidates[0],
+            None => {
+                unmatched = true;
+                continue;
+            }
+        };
         target.extend(
             reference
                 .widgets
@@ -307,10 +339,19 @@ pub fn flatten(
         );
         entries.push((name, reference, info));
     }
+    if unmatched {
+        report.warnings.push(
+            "unmatched_field: a field sharing a name was not found on its page and was retained"
+                .into(),
+        );
+    }
     let marker = unique_marker(edited.inner(), limits, ctx)?;
     {
         let doc = edited.inner_mut()?;
-        for &(_, reference, info) in &entries {
+        for (index, &(_, reference, info)) in entries.iter().enumerate() {
+            if index % 256 == 0 {
+                ctx.check()?;
+            }
             for &id in &reference.widgets {
                 if !target.contains(&id) {
                     continue;
@@ -371,7 +412,10 @@ pub fn flatten(
                 .push("appearance_unavailable: some widgets were retained".into());
         }
         let done: HashSet<_> = flattened.flattened.iter().copied().collect();
-        for &(name, reference, info) in &entries {
+        for (index, &(name, reference, info)) in entries.iter().enumerate() {
+            if index % 256 == 0 {
+                ctx.check()?;
+            }
             if reference.widgets.iter().any(|id| done.contains(id)) {
                 report.affected.push(name.to_owned());
             }

@@ -794,7 +794,50 @@ fn flatten_page_filter_targets_duplicate_name_field_on_that_page() {
     let report = flatten::flatten(&mut pdf, &[2], Some(&["twin".into()]), &limits, &ctx).unwrap();
     assert_eq!(report.affected, vec!["twin"]);
     assert!(report.warnings.contains(
-        &"duplicate_field_name: only the first field with each name is edited".to_owned()
+        &"duplicate_field_name: fields sharing a name are flattened per page".to_owned()
     ));
     assert_eq!((on_page(&pdf, 1), on_page(&pdf, 2)), (1, 0));
+}
+
+#[test]
+fn flatten_pairs_thousands_of_same_name_fields_quickly() {
+    use lopdf::{Object, Stream, dictionary};
+    let mut pdf = open(&fixture("forms-all-types.pdf"));
+    let limits = Limits::local();
+    let ctx = ToolCtx::new();
+    let doc = pdf.inner_mut().unwrap();
+    let pages: Vec<_> = doc.get_pages().values().copied().collect();
+    let appearance = doc.add_object(Stream::new(
+        dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()] },
+        b"0 0 10 10 re f".to_vec(),
+    ));
+    let per_page = 2_000;
+    let mut fields = Vec::new();
+    for &page in &pages[..2] {
+        let mut annots = Vec::new();
+        for _ in 0..per_page {
+            let id = doc.add_object(dictionary! {
+                "FT" => "Tx", "T" => Object::string_literal("x"), "Subtype" => "Widget",
+                "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()], "P" => page,
+                "AP" => dictionary! { "N" => appearance }
+            });
+            annots.push(Object::Reference(id));
+            fields.push(Object::Reference(id));
+        }
+        doc.get_dictionary_mut(page).unwrap().set("Annots", annots);
+    }
+    let catalog = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    let form = doc.add_object(dictionary! { "Fields" => fields });
+    doc.get_dictionary_mut(catalog)
+        .unwrap()
+        .set("AcroForm", form);
+    let started = std::time::Instant::now();
+    let report = flatten::flatten(&mut pdf, &[2], Some(&["x".into()]), &limits, &ctx).unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    assert_eq!(report.affected, vec!["x"]);
+    let remaining = list::list(&pdf, &[1, 2], false, &limits, &ctx)
+        .unwrap()
+        .fields;
+    assert_eq!(remaining.len(), per_page);
+    assert!(remaining.iter().all(|field| field.page == 1));
 }
