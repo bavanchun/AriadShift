@@ -81,6 +81,12 @@ struct DocumentWindowView: View {
         .focusedSceneValue(\.documentSession, session)
         .focusedSceneValue(\.viewerModel, viewer)
         .task { await viewer.open(data: document.data) }
+        // A suggested task chosen on the welcome window opens its tool in the first window of its documents.
+        .onAppear {
+            if let url = session.fileURL, let id = WelcomeToolHandoff.shared.take(for: url) {
+                session.requestTool(id: id)
+            }
+        }
         .toolRunPresentation(session: session, engine: engine)
         // Choosing a tool opens the inspector, where its parameters and progress belong.
         .onChange(of: session.run != nil) { _, running in

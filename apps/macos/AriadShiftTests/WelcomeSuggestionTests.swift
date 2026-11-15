@@ -1,4 +1,6 @@
+import AppKit
 import AriadShiftCore
+import SwiftUI
 import XCTest
 
 @testable import AriadShift
@@ -32,5 +34,35 @@ final class WelcomeSuggestionTests: XCTestCase {
         XCTAssertNil(handoff.take(for: folder.appendingPathComponent("other.pdf")), "another document does not take it")
         XCTAssertEqual(handoff.take(for: document), "pdf.compress")
         XCTAssertNil(handoff.take(for: document), "it is taken once")
+    }
+
+    /// A document window that opens for a chosen file takes the hand-off and opens the suggested tool.
+    func testTheDocumentWindowOpensTheSuggestedTool() async throws {
+        let engine = EngineModel()
+        engine.start()
+        await pump(30) { engine.state == .ready }
+        XCTAssertEqual(engine.state, .ready)
+
+        let url = try fixtureURL("pdf/pd-vi-qd-1922-2026.pdf")
+        let document = try PDFFileDocument(data: Data(contentsOf: url))
+        let session = DocumentSession(fileURL: url)
+        WelcomeToolHandoff.shared.request("pdf.compress", documents: [url])
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 580),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false  // ARC owns the window; the legacy release-on-close would over-release it
+        window.contentViewController = NSHostingController(
+            rootView: DocumentWindowView(session: session, document: document).environmentObject(engine)
+        )
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+
+        await pump(10) { session.run != nil }
+        XCTAssertEqual(session.run?.tool.id, "pdf.compress", "the suggested tool opens in the document window")
+        XCTAssertNil(WelcomeToolHandoff.shared.pending, "the window took the request")
+        session.cancelRun()
     }
 }
