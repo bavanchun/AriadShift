@@ -1025,14 +1025,53 @@ mod tests {
             p.extend_from_slice(&0x0040u16.to_le_bytes());
             p.extend_from_slice(&0x0039u16.to_le_bytes());
             p.extend_from_slice(&0u32.to_le_bytes()); // flags
-            // 2026-11-04T12:00:00Z in FILETIME (approx 133752336000000000)
-            let ft: i64 = 133_752_336_000_000_000;
+            // 2026-11-04T12:00:00Z: (1_793_793_600 s + 11_644_473_600 s) * 10^7.
+            let ft: i64 = 134_382_672_000_000_000;
             p.extend_from_slice(&ft.to_le_bytes());
             stream.write_all(&p).unwrap();
         }
         let bytes = comp.into_inner().into_inner();
         let out = read(&bytes, &Limits::local()).unwrap();
-        assert!(out.document.meta.date.is_some());
+        assert_eq!(
+            out.document.meta.date.as_deref(),
+            Some("2026-11-04T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn filetime_boundaries_format_exactly() {
+        const UNIX_EPOCH: i64 = 116_444_736_000_000_000;
+        assert_eq!(
+            format_filetime_rfc3339(UNIX_EPOCH).as_deref(),
+            Some("1970-01-01T00:00:00Z")
+        );
+        // Instants before 1970 are not formatted.
+        assert_eq!(format_filetime_rfc3339(UNIX_EPOCH - 1), None);
+        assert_eq!(format_filetime_rfc3339(0), None);
+        // Leap day, with the sub-second remainder truncated.
+        assert_eq!(
+            format_filetime_rfc3339(133_537_247_999_999_999).as_deref(),
+            Some("2024-02-29T23:59:59Z")
+        );
+    }
+
+    #[test]
+    fn pre_1970_filetime_leaves_date_unset() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__properties_version1.0").unwrap();
+            let mut p = vec![0u8; 32];
+            p.extend_from_slice(&0x0040u16.to_le_bytes());
+            p.extend_from_slice(&0x0039u16.to_le_bytes());
+            p.extend_from_slice(&0u32.to_le_bytes());
+            p.extend_from_slice(&(116_444_736_000_000_000i64 - 1).to_le_bytes());
+            stream.write_all(&p).unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(out.document.meta.date, None);
+    }
     }
 
     #[test]
