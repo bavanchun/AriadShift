@@ -342,21 +342,40 @@ pub(crate) fn execute(
         metrics.insert("fidelity_preview".into(), json!(previews));
         metrics.insert("block_count".into(), json!(document.block_count()));
         metrics.insert("source_map_count".into(), json!(document.source_map.len()));
-        let raw_bytes = serde_json::to_vec_pretty(&document)
+        let raw_json = serde_json::to_string_pretty(&document)
             .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
-        let doc_value = serde_json::to_value(&document)
-            .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
-        let (scrubbed_value, _, open_inline_json) =
-            super::run::scrub_and_cap_inline_json(doc_value.clone(), limits, scrubber)?;
-        let doc_bytes = if scrubbed_value == doc_value {
-            raw_bytes
-        } else {
-            serde_json::to_vec_pretty(&scrubbed_value)
-                .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?
-        };
-        if (doc_bytes.len() as u64) > limits.max_ir_json_bytes {
-            return Err(ToolError::LimitExceeded);
-        }
+        drop(document);
+
+        let inline_cap = super::run::json_inline_cap(limits);
+        let (doc_bytes, open_inline_json) =
+            if scrubber.is_empty() || !scrubber.contains_pattern(&raw_json) {
+                let bytes = raw_json.into_bytes();
+                if (bytes.len() as u64) > limits.max_ir_json_bytes {
+                    return Err(ToolError::LimitExceeded);
+                }
+                let inline =
+                    if (bytes.len() as u64) <= inline_cap {
+                        Some(serde_json::from_slice(&bytes).map_err(|e| {
+                            ToolError::EngineFailure(scrubber.scrub(&e.to_string()))
+                        })?)
+                    } else {
+                        None
+                    };
+                (bytes, inline)
+            } else {
+                let mut val: serde_json::Value = serde_json::from_str(&raw_json)
+                    .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+                drop(raw_json);
+                scrubber.scrub_value_in_place(&mut val);
+                let bytes = serde_json::to_vec_pretty(&val)
+                    .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+                if (bytes.len() as u64) > limits.max_ir_json_bytes {
+                    return Err(ToolError::LimitExceeded);
+                }
+                let inline = ((bytes.len() as u64) <= inline_cap).then_some(val);
+                (bytes, inline)
+            };
+
         let path = workspace.output_dir().join("document.json");
         fs::write(&path, &doc_bytes).map_err(|e| ToolError::OutputIo(e.to_string()))?;
         (open_inline_json, (path, "json".into()))

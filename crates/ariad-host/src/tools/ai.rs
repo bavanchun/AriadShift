@@ -146,9 +146,15 @@ pub fn execute(
         on_event,
     )?;
     if spec.id == "ai.recipe_from_text" {
+        let inline_cap = super::run::json_inline_cap(&request.limits);
         let value = if let Some(val) = result.inline_json.take() {
             val
         } else {
+            if result.artifacts.len() != 1 {
+                return Err(ToolError::EngineFailure(
+                    "AI recipe output must be JSON".into(),
+                ));
+            }
             let artifact_path = result
                 .artifacts
                 .first()
@@ -159,20 +165,35 @@ pub fn execute(
                 .open_artifact(artifact_path)
                 .map_err(|_| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
             let mut bytes = Vec::new();
-            file.take(request.limits.max_decompressed_bytes.saturating_add(1))
+            file.take(inline_cap.saturating_add(1))
                 .read_to_end(&mut bytes)
                 .map_err(|_| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
-            if (bytes.len() as u64) > request.limits.max_decompressed_bytes {
+            if (bytes.len() as u64) > inline_cap {
                 return Err(ToolError::LimitExceeded);
             }
-            let parsed: Value = serde_json::from_slice(&bytes)
+            let mut parsed: Value = serde_json::from_slice(&bytes)
                 .map_err(|_| ToolError::EngineFailure("AI recipe output must be JSON".into()))?;
-            scrubber.scrub_value(&parsed)
+            drop(bytes);
+            scrubber.scrub_value_in_place(&mut parsed);
+            parsed
         };
         validate_recipe_draft(&value)?;
         let wrapped = json!({"recipe": value, "origin": "imported", "requires_confirmation": true});
-        let (_, _, inline) = scrub_and_cap_inline_json(wrapped, &request.limits, scrubber)?;
-        result.inline_json = inline;
+        let (_, wrapped_bytes, cap_inline) =
+            scrub_and_cap_inline_json(wrapped, &request.limits, scrubber)?;
+        if (wrapped_bytes.len() as u64) > request.limits.max_decompressed_bytes {
+            return Err(ToolError::LimitExceeded);
+        }
+        let staged_path = workspace.output_dir().join("result.json");
+        for (old_path, _) in result.artifacts.drain(..) {
+            if old_path != staged_path {
+                let _ = fs::remove_file(old_path);
+            }
+        }
+        fs::write(&staged_path, &wrapped_bytes)
+            .map_err(|_| ToolError::OutputIo("could not write recipe output".into()))?;
+        result.artifacts.push((staged_path, "json".into()));
+        result.inline_json = cap_inline;
     }
     Ok(result)
 }
@@ -314,7 +335,11 @@ fn cloud(
             Vec::new()
         })
         .max_redirects(0)
-        .max_response_bytes(request.limits.max_ir_json_bytes.min(32 * 1024 * 1024) as usize)
+        .max_response_bytes(if spec.id == "ai.recipe_from_text" {
+            super::run::json_inline_cap(&request.limits).min(request.limits.max_ir_json_bytes)
+        } else {
+            request.limits.max_ir_json_bytes.min(32 * 1024 * 1024)
+        } as usize)
         .total_timeout(timeout)
         .read_timeout(timeout)
         .build()
@@ -334,8 +359,11 @@ fn cloud(
     if request.cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
-    let response = client.send(http).map_err(|e| {
-        ToolError::EngineFailure(scrubber.scrub(&format!("cloud AI request failed: {e}")))
+    let response = client.send(http).map_err(|e| match e {
+        crate::net::NetError::ResponseTooLarge { .. } => ToolError::LimitExceeded,
+        other => {
+            ToolError::EngineFailure(scrubber.scrub(&format!("cloud AI request failed: {other}")))
+        }
     })?;
     if request.cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
@@ -403,11 +431,12 @@ fn cloud_artifacts(
     match spec.id {
         "ai.recipe_from_text" => {
             let recipe = validate_recipe_draft(value.get("recipe").unwrap_or(&value))?;
-            value = serde_json::to_value(recipe).map_err(|_| invalid())?;
-            let wrapped =
-                json!({"recipe": value, "origin": "imported", "requires_confirmation": true});
-            let (_, _, inline) = scrub_and_cap_inline_json(wrapped, &request.limits, scrubber)?;
-            result.inline_json = inline;
+            let recipe_value = serde_json::to_value(recipe).map_err(|_| invalid())?;
+            let recipe_bytes = serde_json::to_vec(&recipe_value).map_err(|_| invalid())?;
+            if (recipe_bytes.len() as u64) > super::run::json_inline_cap(&request.limits) {
+                return Err(ToolError::LimitExceeded);
+            }
+            value = json!({"recipe": recipe_value, "origin": "imported", "requires_confirmation": true});
         }
         "ai.ask" => {
             if !value.get("answer").is_some_and(Value::is_string) {
@@ -615,9 +644,7 @@ fn cloud_artifacts(
     fs::write(&path, &json_bytes)
         .map_err(|_| ToolError::OutputIo("could not write cloud output".into()))?;
     result.artifacts.push((path, "json".into()));
-    if spec.id != "ai.recipe_from_text" {
-        result.inline_json = cap_inline;
-    }
+    result.inline_json = cap_inline;
     Ok(result)
 }
 
