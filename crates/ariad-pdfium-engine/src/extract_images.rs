@@ -5626,6 +5626,50 @@ mod corpus_tests {
     }
 
     #[test]
+    fn content_names_stop_at_pdfium_word_buffer() {
+        // `CPDF_StreamParser::kMaxWordLength` is 255 bytes including the
+        // slash, so PDFium keeps 254 name bytes. Longer names are refused.
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "names",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let content = |len: usize| [b"/".as_slice(), &vec![b'A'; len], b" Do"].concat();
+        let mut document_work = 0;
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut document_work,
+        };
+        let names = preflight_content(&ctx, &doc, &content(254), 4096, &mut budget).unwrap();
+        assert_eq!(names, vec![vec![b'A'; 254]]);
+        let err = preflight_content(&ctx, &doc, &content(255), 4096, &mut budget).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF content name exceeds the safe token length."
+        );
+    }
+
+    #[test]
     fn png_predictor_parameters_follow_the_filter_shape() {
         use lopdf::dictionary;
         let png = || Object::Dictionary(dictionary! { "Predictor" => 12 });
@@ -5657,6 +5701,61 @@ mod corpus_tests {
         for (dict, expected) in cases {
             assert_eq!(png_predictor_enabled(&dict), expected, "{dict:?}");
         }
+    }
+
+    #[test]
+    fn inline_dictionaries_never_resolve_indirect_references() {
+        // PDFium's `CPDF_StreamParser::ReadNextObject` has no reference
+        // grammar: `7 0 R` is read as numbers and a keyword, never resolved.
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline-ref",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut doc = lopdf::Document::new();
+        doc.objects.insert((7, 0), Object::Integer(1));
+        let run = |content: &[u8]| {
+            rewrite_preflighted_content(&ctx, &doc, content, 4096, &mut 0)
+                .map(|_| ())
+                .unwrap_err()
+        };
+        for (content, reason) in [
+            (
+                b"BI /W 7 0 R /H 1 /BPC 8 /CS /G ID \x00 EI".as_slice(),
+                "Inline image has invalid or duplicate keys.",
+            ),
+            (
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /DP << /Columns 7 0 R >> ID \x00 EI",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+            (
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /D [0 7 0 R] ID \x00 EI",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+        ] {
+            let err = run(content);
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, reason, "{}", String::from_utf8_lossy(content));
+        }
+        // The same dictionary without references is accepted.
+        rewrite_preflighted_content(
+            &ctx,
+            &doc,
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /DP << /Columns 1 >> /D [0 1] ID \x00 EI",
+            4096,
+            &mut 0,
+        )
+        .unwrap();
     }
 
     #[test]
