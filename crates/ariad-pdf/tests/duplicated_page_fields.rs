@@ -1,7 +1,10 @@
 //! Integration tests for the form fields of pages that `pdf.reorder` and `pdf.extract_pages` place
 //! more than once: every copy must get a unique fully qualified name.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    time::{Duration, Instant},
+};
 
 use ariad_core::limits::Limits;
 use ariad_pdf::{InputDoc, ToolCtx, document::open, run_tool};
@@ -338,4 +341,95 @@ fn pages_without_repeats_keep_their_field_names() {
         terminal_fields(&run("pdf.extract_pages", &json!({ "pages": "2,1" }))),
         original
     );
+}
+
+/// Builds a one-page form with `text_fields` top-level text fields and `radio_groups` radio groups
+/// of two buttons each.
+fn wide_form_pdf(text_fields: usize, radio_groups: usize) -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page = doc.new_object_id();
+    let rect = Object::Array(vec![0.into(), 0.into(), 80.into(), 18.into()]);
+    let mut annots = Vec::new();
+    let mut fields = Vec::new();
+    for idx in 0..text_fields {
+        let id = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx",
+            "T" => Object::string_literal(format!("text{idx}")), "Rect" => rect.clone(), "P" => page,
+        });
+        annots.push(Object::Reference(id));
+        fields.push(Object::Reference(id));
+    }
+    for idx in 0..radio_groups {
+        let group = doc.new_object_id();
+        let mut kids = Vec::new();
+        for state in ["a", "b"] {
+            let id = doc.add_object(dictionary! {
+                "Type" => "Annot", "Subtype" => "Widget", "Parent" => group, "AS" => "Off",
+                "AP" => dictionary! { "N" => dictionary! { state => Object::Null, "Off" => Object::Null } },
+                "Rect" => rect.clone(), "P" => page,
+            });
+            annots.push(Object::Reference(id));
+            kids.push(Object::Reference(id));
+        }
+        doc.objects.insert(
+            group,
+            Object::Dictionary(dictionary! {
+                "FT" => "Btn", "Ff" => 49_152,
+                "T" => Object::string_literal(format!("radio{idx}")), "Kids" => kids,
+            }),
+        );
+        fields.push(Object::Reference(group));
+    }
+    let content = doc.add_object(Stream::new(dictionary! {}, b"BT (P1) Tj ET".to_vec()));
+    doc.objects.insert(
+        page,
+        Object::Dictionary(dictionary! {
+            "Type" => "Page", "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => content, "Annots" => annots,
+        }),
+    );
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1,
+        }),
+    );
+    let acroform = doc.add_object(dictionary! { "Fields" => fields });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => acroform,
+    });
+    doc.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save wide form pdf");
+    bytes
+}
+
+#[test]
+fn many_copies_of_a_wide_form_page_stay_fast_and_unique() {
+    const COPIES: usize = 2_000;
+    let (text_fields, radio_groups) = (32, 8);
+    let bytes = wide_form_pdf(text_fields, radio_groups);
+    let sequence = vec!["1"; COPIES].join(",");
+    for (tool, params) in [
+        ("pdf.reorder", json!({ "order": sequence })),
+        ("pdf.extract_pages", json!({ "pages": sequence })),
+    ] {
+        // A generous bound: the rename work is linear in fields times copies, so this only
+        // trips on a quadratic regression.
+        let ctx = ToolCtx::with_deadline(Instant::now() + Duration::from_secs(120));
+        let out = run_tool(
+            tool,
+            &[InputDoc::new("wide.pdf", bytes.clone())],
+            &params,
+            &ctx,
+        )
+        .unwrap_or_else(|err| panic!("{tool} failed: {err:?}"));
+        let fields = terminal_fields(&out.artifacts[0].bytes);
+        assert_eq!(fields.len(), COPIES * (text_fields + radio_groups), "{tool}");
+        assert_eq!(fields["radio7"], vec![1, 1], "{tool}");
+        assert_eq!(fields["radio7_2000"], vec![2000, 2000], "{tool}");
+        assert_eq!(fields["text31_2000"], vec![2000], "{tool}");
+    }
 }

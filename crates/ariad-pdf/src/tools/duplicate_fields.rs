@@ -42,9 +42,20 @@ pub(crate) fn rename_duplicated_fields(
     if occurrences.iter().all(Vec::is_empty) {
         return Ok(());
     }
-    let mut names = reserve_existing_names(doc, ctx)?;
+    let mut pass = RenamePass {
+        names: reserve_existing_names(doc, ctx)?,
+        holder_members: HashMap::new(),
+        moved: HashMap::new(),
+    };
     for widgets in occurrences {
-        rename_occurrence(doc, widgets, &mut names, ctx)?;
+        pass.rename_occurrence(doc, widgets, ctx)?;
+    }
+    // Every source `/Kids` array is filtered once, after all occurrences moved their widgets out.
+    for (field_id, moved) in pass.moved {
+        ctx.check()?;
+        if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(field_id), b"Kids") {
+            kids.retain(|kid| kid.as_reference().map_or(true, |id| !moved.contains(&id)));
+        }
     }
     Ok(())
 }
@@ -89,98 +100,117 @@ fn reserve_existing_names(doc: &Document, ctx: &ToolCtx) -> Result<FieldNames, P
     Ok(names)
 }
 
-/// Gives the cloned widgets of one page occurrence their own fields.
-fn rename_occurrence(
-    doc: &mut Document,
-    widgets: &[ObjectId],
-    names: &mut FieldNames,
-    ctx: &ToolCtx,
-) -> Result<(), PdfError> {
-    // Terminal fields copied for this occurrence, in first-seen order, with the widgets moved
-    // from the source field into the copy.
-    let mut splits: Vec<(ObjectId, ObjectId, HashSet<ObjectId>)> = Vec::new();
-    let mut split_of: HashMap<ObjectId, usize> = HashMap::new();
-    for &widget_id in widgets {
-        ctx.check()?;
-        let Ok(widget) = doc.get_dictionary(widget_id) else {
-            continue;
-        };
-        let parent = parent_id(widget);
-        if let Some(partial) = partial_name(widget) {
-            // The widget is itself a terminal field: rename it where it already sits.
-            let prefix = parent.map(|id| qualified_name(doc, id)).unwrap_or_default();
-            let renamed = unique_partial(names, &prefix, &partial, ctx)?;
-            if let Ok(widget) = doc.get_dictionary_mut(widget_id) {
-                widget.set("T", encode_pdf_string(&renamed));
-            }
-            continue;
-        }
-        let Some(field_id) = parent else {
-            continue;
-        };
-        let idx = if let Some(&idx) = split_of.get(&field_id) {
-            idx
-        } else {
-            let Some(copy_id) = copy_terminal_field(doc, field_id, names, ctx)? else {
-                continue;
-            };
-            split_of.insert(field_id, splits.len());
-            splits.push((field_id, copy_id, HashSet::new()));
-            splits.len() - 1
-        };
-        let (_, copy_id, moved) = &mut splits[idx];
-        moved.insert(widget_id);
-        let copy_id = *copy_id;
-        if let Ok(widget) = doc.get_dictionary_mut(widget_id) {
-            widget.set("Parent", Object::Reference(copy_id));
-        }
-        if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(copy_id), b"Kids") {
-            kids.push(Object::Reference(widget_id));
-        }
-    }
-    for (field_id, _, moved) in splits {
-        if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(field_id), b"Kids") {
-            kids.retain(|kid| kid.as_reference().map_or(true, |id| !moved.contains(&id)));
-        }
-    }
-    Ok(())
+/// State shared by every occurrence so the pass stays linear in fields times copies.
+struct RenamePass {
+    /// Taken fully qualified names.
+    names: FieldNames,
+    /// Members of each field holder as it was before the pass: the `/Kids` of a parent field, or
+    /// `/AcroForm /Fields` under `None`. Copies pushed later are never looked up here.
+    holder_members: HashMap<Option<ObjectId>, HashSet<ObjectId>>,
+    /// Widgets moved out of each source terminal field.
+    moved: HashMap<ObjectId, HashSet<ObjectId>>,
 }
 
-/// Adds a copy of the terminal field `field_id` with a unique partial name and no kids, registered
-/// next to the source field (under its parent, or in `/AcroForm /Fields` for a top-level field).
-/// Returns `None` when the field has no partial name to derive a new one from.
-fn copy_terminal_field(
-    doc: &mut Document,
-    field_id: ObjectId,
-    names: &mut FieldNames,
-    ctx: &ToolCtx,
-) -> Result<Option<ObjectId>, PdfError> {
-    let Ok(field) = doc.get_dictionary(field_id) else {
-        return Ok(None);
-    };
-    let Some(partial) = partial_name(field) else {
-        return Ok(None);
-    };
-    let parent = parent_id(field);
-    let prefix = parent.map(|id| qualified_name(doc, id)).unwrap_or_default();
-    let mut copy = field.clone();
-    let renamed = unique_partial(names, &prefix, &partial, ctx)?;
-    copy.set("T", encode_pdf_string(&renamed));
-    copy.set("Kids", Object::Array(Vec::new()));
-    let copy_id = doc.add_object(Object::Dictionary(copy));
-
-    let source_ref = Object::Reference(field_id);
-    let holder = match parent {
-        Some(parent_id) => Some((DictLoc::Id(parent_id), &b"Kids"[..])),
-        None => acroform_loc(doc).map(|form| (form, &b"Fields"[..])),
-    };
-    if let Some((loc, key)) = holder
-        && let Some(items) = array_entry_mut(doc, &loc, key)
-        && items.contains(&source_ref)
-    {
-        items.push(Object::Reference(copy_id));
+impl RenamePass {
+    /// Gives the cloned widgets of one page occurrence their own fields.
+    fn rename_occurrence(
+        &mut self,
+        doc: &mut Document,
+        widgets: &[ObjectId],
+        ctx: &ToolCtx,
+    ) -> Result<(), PdfError> {
+        // Terminal field copies made for this occurrence, keyed by source field.
+        let mut copies: HashMap<ObjectId, Option<ObjectId>> = HashMap::new();
+        for &widget_id in widgets {
+            ctx.check()?;
+            let Ok(widget) = doc.get_dictionary(widget_id) else {
+                continue;
+            };
+            let parent = parent_id(widget);
+            if let Some(partial) = partial_name(widget) {
+                // The widget is itself a terminal field: rename it where it already sits.
+                let prefix = parent.map(|id| qualified_name(doc, id)).unwrap_or_default();
+                let renamed = unique_partial(&mut self.names, &prefix, &partial, ctx)?;
+                if let Ok(widget) = doc.get_dictionary_mut(widget_id) {
+                    widget.set("T", encode_pdf_string(&renamed));
+                }
+                continue;
+            }
+            let Some(field_id) = parent else {
+                continue;
+            };
+            let copy_id = match copies.get(&field_id) {
+                Some(&copy_id) => copy_id,
+                None => {
+                    let copy_id = self.copy_terminal_field(doc, field_id, ctx)?;
+                    copies.insert(field_id, copy_id);
+                    copy_id
+                }
+            };
+            let Some(copy_id) = copy_id else {
+                continue;
+            };
+            self.moved.entry(field_id).or_default().insert(widget_id);
+            if let Ok(widget) = doc.get_dictionary_mut(widget_id) {
+                widget.set("Parent", Object::Reference(copy_id));
+            }
+            if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(copy_id), b"Kids") {
+                kids.push(Object::Reference(widget_id));
+            }
+        }
+        Ok(())
     }
-    Ok(Some(copy_id))
+
+    /// Adds a copy of the terminal field `field_id` with a unique partial name and no kids,
+    /// registered next to the source field (under its parent, or in `/AcroForm /Fields` for a
+    /// top-level field). Returns `None`, leaving the widgets in the source field, when the field
+    /// has no partial name to derive a new one from or its holder does not list it.
+    fn copy_terminal_field(
+        &mut self,
+        doc: &mut Document,
+        field_id: ObjectId,
+        ctx: &ToolCtx,
+    ) -> Result<Option<ObjectId>, PdfError> {
+        let Ok(field) = doc.get_dictionary(field_id) else {
+            return Ok(None);
+        };
+        let Some(partial) = partial_name(field) else {
+            return Ok(None);
+        };
+        let parent = parent_id(field);
+        let loc = match parent {
+            Some(parent_id) => DictLoc::Id(parent_id),
+            None => match acroform_loc(doc) {
+                Some(form) => form,
+                None => return Ok(None),
+            },
+        };
+        let key: &[u8] = if parent.is_some() { b"Kids" } else { b"Fields" };
+        let members = self.holder_members.entry(parent).or_insert_with(|| {
+            array_entry(doc, &loc, key)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_reference().ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
+        if !members.contains(&field_id) {
+            return Ok(None);
+        }
+
+        let prefix = parent.map(|id| qualified_name(doc, id)).unwrap_or_default();
+        let mut copy = field.clone();
+        let renamed = unique_partial(&mut self.names, &prefix, &partial, ctx)?;
+        copy.set("T", encode_pdf_string(&renamed));
+        copy.set("Kids", Object::Array(Vec::new()));
+        let copy_id = doc.add_object(Object::Dictionary(copy));
+        if let Some(items) = array_entry_mut(doc, &loc, key) {
+            items.push(Object::Reference(copy_id));
+        }
+        Ok(Some(copy_id))
+    }
 }
 
 /// Returns `partial` with the lowest `_N` suffix whose fully qualified name under `prefix` is free,
