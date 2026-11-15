@@ -148,8 +148,7 @@
       "page_grid": "Səhifə şəbəkəsi",
       "previous_page": "Əvvəlki səhifə",
       "next_page": "Növbəti səhifə",
-      "page_field": "Səhifə nömrəsi",
-      "page_of": "/ {total}"
+      "page_field": "Səhifə nömrəsi"
     },
     "inspector": {
       "title": "Sənəd",

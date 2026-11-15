@@ -148,8 +148,7 @@
       "page_grid": "頁面格狀檢視",
       "previous_page": "上一頁",
       "next_page": "下一頁",
-      "page_field": "頁碼",
-      "page_of": "/ {total}"
+      "page_field": "頁碼"
     },
     "inspector": {
       "title": "文件",

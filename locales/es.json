@@ -148,8 +148,7 @@
       "page_grid": "Cuadrícula de páginas",
       "previous_page": "Página anterior",
       "next_page": "Página siguiente",
-      "page_field": "Número de página",
-      "page_of": "de {total}"
+      "page_field": "Número de página"
     },
     "inspector": {
       "title": "Documento",

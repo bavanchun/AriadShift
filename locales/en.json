@@ -159,9 +159,7 @@
       "page_grid": "Page Grid",
       "previous_page": "Previous Page",
       "next_page": "Next Page",
-      "page_field": "Page number",
-      "page_of": "of {total}",
-      "page_of@note": "Next to the page number field in the toolbar, for example \"of 20\". types: total=int"
+      "page_field": "Page number"
     },
     "inspector": {
       "title": "Document",

@@ -148,8 +148,7 @@
       "page_grid": "Siatka stron",
       "previous_page": "Poprzednia strona",
       "next_page": "Następna strona",
-      "page_field": "Numer strony",
-      "page_of": "z {total}"
+      "page_field": "Numer strony"
     },
     "inspector": {
       "title": "Dokument",

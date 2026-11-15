@@ -148,8 +148,7 @@
       "page_grid": "Mriežka strán",
       "previous_page": "Predchádzajúca strana",
       "next_page": "Ďalšia strana",
-      "page_field": "Číslo strany",
-      "page_of": "z {total}"
+      "page_field": "Číslo strany"
     },
     "inspector": {
       "title": "Dokument",

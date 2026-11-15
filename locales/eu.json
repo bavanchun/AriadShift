@@ -148,8 +148,7 @@
       "page_grid": "Orrien saretak",
       "previous_page": "Aurreko orria",
       "next_page": "Hurrengo orria",
-      "page_field": "Orri zenbakia",
-      "page_of": "guztira {total}"
+      "page_field": "Orri zenbakia"
     },
     "inspector": {
       "title": "Dokumentua",

@@ -152,8 +152,7 @@
       "page_grid": "Lưới trang",
       "previous_page": "Trang trước",
       "next_page": "Trang sau",
-      "page_field": "Số trang",
-      "page_of": "/ {total}"
+      "page_field": "Số trang"
     },
     "inspector": {
       "title": "Tài liệu",

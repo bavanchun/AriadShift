@@ -148,8 +148,7 @@
       "page_grid": "പേജ് ഗ്രിഡ്",
       "previous_page": "മുമ്പത്തെ പേജ്",
       "next_page": "അടുത്ത പേജ്",
-      "page_field": "പേജ് നമ്പർ",
-      "page_of": "/ {total}"
+      "page_field": "പേജ് നമ്പർ"
     },
     "inspector": {
       "title": "ഡോക്യുമെന്റ്",

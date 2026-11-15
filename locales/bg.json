@@ -148,8 +148,7 @@
       "page_grid": "Мрежа от страници",
       "previous_page": "Предишна страница",
       "next_page": "Следваща страница",
-      "page_field": "Номер на страница",
-      "page_of": "от {total}"
+      "page_field": "Номер на страница"
     },
     "inspector": {
       "title": "Документ",

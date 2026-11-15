@@ -148,8 +148,7 @@
       "page_grid": "Grille de pages",
       "previous_page": "Page précédente",
       "next_page": "Page suivante",
-      "page_field": "Numéro de page",
-      "page_of": "sur {total}"
+      "page_field": "Numéro de page"
     },
     "inspector": {
       "title": "Document",

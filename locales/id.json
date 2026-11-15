@@ -148,8 +148,7 @@
       "page_grid": "Kisi Halaman",
       "previous_page": "Halaman Sebelumnya",
       "next_page": "Halaman Berikutnya",
-      "page_field": "Nomor halaman",
-      "page_of": "dari {total}"
+      "page_field": "Nomor halaman"
     },
     "inspector": {
       "title": "Dokumen",

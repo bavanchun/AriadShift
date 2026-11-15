@@ -148,8 +148,7 @@
       "page_grid": "페이지 격자",
       "previous_page": "이전 페이지",
       "next_page": "다음 페이지",
-      "page_field": "페이지 번호",
-      "page_of": "/ {total}"
+      "page_field": "페이지 번호"
     },
     "inspector": {
       "title": "문서",

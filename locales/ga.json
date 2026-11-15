@@ -148,8 +148,7 @@
       "page_grid": "Greille Leathanach",
       "previous_page": "An Leathanach Roimhe Seo",
       "next_page": "An Chéad Leathanach Eile",
-      "page_field": "Uimhir leathanaigh",
-      "page_of": "as {total}"
+      "page_field": "Uimhir leathanaigh"
     },
     "inspector": {
       "title": "Cáipéis",

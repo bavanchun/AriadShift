@@ -148,8 +148,7 @@
       "page_grid": "ページグリッド",
       "previous_page": "前のページ",
       "next_page": "次のページ",
-      "page_field": "ページ番号",
-      "page_of": "/ {total}"
+      "page_field": "ページ番号"
     },
     "inspector": {
       "title": "書類",

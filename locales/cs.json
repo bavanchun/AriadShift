@@ -148,8 +148,7 @@
       "page_grid": "Mřížka stránek",
       "previous_page": "Předchozí stránka",
       "next_page": "Další stránka",
-      "page_field": "Číslo stránky",
-      "page_of": "z {total}"
+      "page_field": "Číslo stránky"
     },
     "inspector": {
       "title": "Dokument",

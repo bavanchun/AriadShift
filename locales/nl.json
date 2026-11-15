@@ -148,8 +148,7 @@
       "page_grid": "Paginaraster",
       "previous_page": "Vorige pagina",
       "next_page": "Volgende pagina",
-      "page_field": "Paginanummer",
-      "page_of": "van {total}"
+      "page_field": "Paginanummer"
     },
     "inspector": {
       "title": "Document",

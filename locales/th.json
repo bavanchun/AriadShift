@@ -148,8 +148,7 @@
       "page_grid": "ตารางหน้า",
       "previous_page": "หน้าก่อนหน้า",
       "next_page": "หน้าถัดไป",
-      "page_field": "หมายเลขหน้า",
-      "page_of": "จาก {total}"
+      "page_field": "หมายเลขหน้า"
     },
     "inspector": {
       "title": "เอกสาร",
