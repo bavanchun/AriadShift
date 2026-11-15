@@ -263,14 +263,18 @@ fn destination(
         _ => None,
     }
 }
+/// Summarise an annotation's actions. A chain deeper than the nesting limit is
+/// cut at the limit rather than failing the listing; the returned flag reports
+/// that some actions past the cut were not read.
 fn actions(
     doc: &Document,
     dictionary: &Dictionary,
     limits: &Limits,
     ctx: &ToolCtx,
-) -> Result<ActionSummary, PdfError> {
+) -> Result<(ActionSummary, bool), PdfError> {
     let mut names = Vec::new();
     let mut javascript = false;
+    let mut truncated = false;
     let mut visits = 0usize;
     let mut inspect = |key: &str, value: &Object| -> Result<(), PdfError> {
         let mut pending = vec![(value, 0usize)];
@@ -283,9 +287,8 @@ fn actions(
                 }));
             }
             if depth > usize::from(limits.max_nesting_depth) {
-                return Err(PdfError::LimitExceeded(ReadError::NestingTooDeep {
-                    limit: limits.max_nesting_depth,
-                }));
+                truncated = true;
+                continue;
             }
             ctx.check()?;
             match value {
@@ -344,10 +347,13 @@ fn actions(
         }
     }
     names.sort();
-    Ok(ActionSummary {
-        has_javascript: javascript,
-        kinds: names,
-    })
+    Ok((
+        ActionSummary {
+            has_javascript: javascript,
+            kinds: names,
+        },
+        truncated,
+    ))
 }
 fn flags(raw: i64) -> AnnotationFlags {
     AnnotationFlags {
@@ -515,6 +521,7 @@ pub fn list(
         warnings,
         ..AnnotationListing::default()
     };
+    let mut truncated_action_chains = 0usize;
     for location in locations {
         let page = location.page;
         let id = location.id.clone();
@@ -642,6 +649,10 @@ pub fn list(
                 .and_then(|id| ids.get(&id).cloned())
         };
         let contents = string(doc, dictionary, b"Contents", limits);
+        let (actions, actions_truncated) = actions(doc, dictionary, limits, ctx)?;
+        if actions_truncated {
+            truncated_action_chains += 1;
+        }
         output.annotations.push(AnnotationInfo {
             id,
             page,
@@ -674,8 +685,13 @@ pub fn list(
             has_appearance,
             popup_of: related(b"Parent"),
             reply_to: related(b"IRT"),
-            actions: actions(doc, dictionary, limits, ctx)?,
+            actions,
         });
+    }
+    if truncated_action_chains > 0 {
+        output.warnings.push(format!(
+            "action_chain_truncated: {truncated_action_chains} annotations have action chains deeper than the nesting limit; later actions were not read"
+        ));
     }
     Ok(output)
 }

@@ -155,3 +155,60 @@ fn reports_javascript_in_cyclic_next_action_chain() {
     let listing = read::list(&pdf, &selector(), &limits, &ToolCtx::new()).unwrap();
     assert!(listing.annotations[0].actions.has_javascript);
 }
+
+#[test]
+fn long_next_action_chain_is_cut_with_a_warning() {
+    use lopdf::{Object, dictionary};
+    let limits = Limits::local();
+    let mut pdf = document::open(&fixture("forms-all-types.pdf"), &limits).unwrap();
+    let doc = pdf.inner_mut().unwrap();
+    let page = *doc.get_pages().values().next().unwrap();
+    let ids: Vec<_> = (0..200).map(|_| doc.new_object_id()).collect();
+    for (index, id) in ids.iter().enumerate() {
+        let mut action = dictionary! {
+            "S" => if index == 1 { "JavaScript" } else { "Named" }
+        };
+        if let Some(next) = ids.get(index + 1) {
+            action.set("Next", Object::Reference(*next));
+        }
+        doc.objects.insert(*id, Object::Dictionary(action));
+    }
+    let annotation = dictionary! {
+        "Subtype" => "Text", "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+        "A" => Object::Reference(ids[0])
+    };
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Annots", vec![Object::Dictionary(annotation)]);
+    let listing = read::list(&pdf, &selector(), &limits, &ToolCtx::new()).unwrap();
+    assert_eq!(listing.annotations.len(), 1);
+    assert!(listing.annotations[0].actions.has_javascript);
+    assert_eq!(listing.annotations[0].actions.kinds, vec!["action"]);
+    assert_eq!(
+        listing.warnings,
+        vec![
+            "action_chain_truncated: 1 annotations have action chains deeper than the nesting limit; later actions were not read"
+        ]
+    );
+}
+
+#[test]
+fn short_next_action_chain_has_no_truncation_warning() {
+    use lopdf::{Object, dictionary};
+    let limits = Limits::local();
+    let mut pdf = document::open(&fixture("forms-all-types.pdf"), &limits).unwrap();
+    let doc = pdf.inner_mut().unwrap();
+    let page = *doc.get_pages().values().next().unwrap();
+    let second = doc.add_object(dictionary! { "S" => "JavaScript" });
+    let first = doc.add_object(dictionary! { "S" => "Named", "Next" => second });
+    let annotation = dictionary! {
+        "Subtype" => "Text", "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+        "A" => Object::Reference(first)
+    };
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Annots", vec![Object::Dictionary(annotation)]);
+    let listing = read::list(&pdf, &selector(), &limits, &ToolCtx::new()).unwrap();
+    assert!(listing.annotations[0].actions.has_javascript);
+    assert!(listing.warnings.is_empty());
+}
