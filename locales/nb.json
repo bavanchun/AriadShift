@@ -148,8 +148,7 @@
       "page_grid": "Sideoversikt",
       "previous_page": "Forrige side",
       "next_page": "Neste side",
-      "page_field": "Sidenummer",
-      "page_of": "av {total}"
+      "page_field": "Sidenummer"
     },
     "inspector": {
       "title": "Dokument",

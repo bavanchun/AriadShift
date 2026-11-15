@@ -148,8 +148,7 @@
       "page_grid": "页面网格",
       "previous_page": "上一页",
       "next_page": "下一页",
-      "page_field": "页码",
-      "page_of": "/ {total}"
+      "page_field": "页码"
     },
     "inspector": {
       "title": "文稿",

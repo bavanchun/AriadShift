@@ -148,8 +148,7 @@
       "page_grid": "Сетка страниц",
       "previous_page": "Предыдущая страница",
       "next_page": "Следующая страница",
-      "page_field": "Номер страницы",
-      "page_of": "из {total}"
+      "page_field": "Номер страницы"
     },
     "inspector": {
       "title": "Документ",

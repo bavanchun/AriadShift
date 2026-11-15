@@ -148,8 +148,7 @@
       "page_grid": "شبکه صفحه‌ها",
       "previous_page": "صفحه قبلی",
       "next_page": "صفحه بعدی",
-      "page_field": "شماره صفحه",
-      "page_of": "از {total}"
+      "page_field": "شماره صفحه"
     },
     "inspector": {
       "title": "سند",

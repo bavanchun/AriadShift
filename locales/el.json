@@ -148,8 +148,7 @@
       "page_grid": "Πλέγμα σελίδων",
       "previous_page": "Προηγούμενη σελίδα",
       "next_page": "Επόμενη σελίδα",
-      "page_field": "Αριθμός σελίδας",
-      "page_of": "από {total}"
+      "page_field": "Αριθμός σελίδας"
     },
     "inspector": {
       "title": "Έγγραφο",

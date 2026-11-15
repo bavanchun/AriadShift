@@ -148,8 +148,7 @@
       "page_grid": "Grilă de pagini",
       "previous_page": "Pagina anterioară",
       "next_page": "Pagina următoare",
-      "page_field": "Numărul paginii",
-      "page_of": "din {total}"
+      "page_field": "Numărul paginii"
     },
     "inspector": {
       "title": "Document",

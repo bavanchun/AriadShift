@@ -148,8 +148,7 @@
       "page_grid": "Seitenraster",
       "previous_page": "Vorherige Seite",
       "next_page": "Nächste Seite",
-      "page_field": "Seitenzahl",
-      "page_of": "von {total}"
+      "page_field": "Seitenzahl"
     },
     "inspector": {
       "title": "Dokument",

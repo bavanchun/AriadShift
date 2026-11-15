@@ -148,8 +148,7 @@
       "page_grid": "Sayfa Izgarası",
       "previous_page": "Önceki Sayfa",
       "next_page": "Sonraki Sayfa",
-      "page_field": "Sayfa numarası",
-      "page_of": "/ {total}"
+      "page_field": "Sayfa numarası"
     },
     "inspector": {
       "title": "Belge",

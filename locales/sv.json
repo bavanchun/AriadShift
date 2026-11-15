@@ -148,8 +148,7 @@
       "page_grid": "Sidrutnät",
       "previous_page": "Föregående sida",
       "next_page": "Nästa sida",
-      "page_field": "Sidnummer",
-      "page_of": "av {total}"
+      "page_field": "Sidnummer"
     },
     "inspector": {
       "title": "Dokument",

@@ -148,8 +148,7 @@
       "page_grid": "Mreža strani",
       "previous_page": "Prejšnja stran",
       "next_page": "Naslednja stran",
-      "page_field": "Številka strani",
-      "page_of": "od {total}"
+      "page_field": "Številka strani"
     },
     "inspector": {
       "title": "Dokument",

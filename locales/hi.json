@@ -148,8 +148,7 @@
       "page_grid": "पृष्ठ ग्रिड",
       "previous_page": "पिछला पृष्ठ",
       "next_page": "अगला पृष्ठ",
-      "page_field": "पृष्ठ संख्या",
-      "page_of": "/ {total}"
+      "page_field": "पृष्ठ संख्या"
     },
     "inspector": {
       "title": "दस्तावेज़",

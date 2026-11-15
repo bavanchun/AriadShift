@@ -148,8 +148,7 @@
       "page_grid": "Sideoversigt",
       "previous_page": "Forrige side",
       "next_page": "Næste side",
-      "page_field": "Sidetal",
-      "page_of": "af {total}"
+      "page_field": "Sidetal"
     },
     "inspector": {
       "title": "Dokument",

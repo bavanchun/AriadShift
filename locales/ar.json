@@ -148,8 +148,7 @@
       "page_grid": "شبكة الصفحات",
       "previous_page": "الصفحة السابقة",
       "next_page": "الصفحة التالية",
-      "page_field": "رقم الصفحة",
-      "page_of": "من {total}"
+      "page_field": "رقم الصفحة"
     },
     "inspector": {
       "title": "المستند",

@@ -148,8 +148,7 @@
       "page_grid": "Oldalrács",
       "previous_page": "Előző oldal",
       "next_page": "Következő oldal",
-      "page_field": "Oldalszám",
-      "page_of": "/ {total}"
+      "page_field": "Oldalszám"
     },
     "inspector": {
       "title": "Dokumentum",
