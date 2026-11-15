@@ -989,6 +989,61 @@ mod tests {
     }
 
     #[test]
+    fn lzfu_wraps_write_offset_past_dictionary_end() {
+        // write_offset starts at RTF_PREBUF.len() == 207.
+        // Emit 3887 'a' bytes to reach write_offset = 4094, then "WXYZ" so
+        // dict[4094..4096] = "WX" and write_offset wraps (4095 + 1) % 4096 -> 0,
+        // overwriting dict[0..2] ("{\\" in RTF_PREBUF) with "YZ" (write_offset = 2).
+        // Emit 204 'b' bytes to reach write_offset = 206 (4095 literals total).
+        let mut literals = Vec::with_capacity(4095);
+        literals.extend(std::iter::repeat_n(b'a', 3887));
+        literals.extend_from_slice(b"WXYZ");
+        literals.extend(std::iter::repeat_n(b'b', 204));
+        assert_eq!(literals.len(), 4095);
+
+        let mut contents = Vec::new();
+        for chunk in literals.chunks(8) {
+            if chunk.len() == 8 {
+                contents.push(0x00);
+                contents.extend_from_slice(chunk);
+            } else {
+                // 7 literals (bits 0..7 = 0) + 1 copy token at bit 7 (0x80).
+                assert_eq!(chunk.len(), 7);
+                contents.push(0x80);
+                contents.extend_from_slice(chunk);
+                // Copy 4 bytes from offset 4094 across the 4095 -> 0 boundary.
+                let copy_token: u16 = (4094 << 4) | (4 - 2);
+                contents.extend_from_slice(&copy_token.to_be_bytes());
+            }
+        }
+        // Explicit end-of-stream marker: offset == write_offset (206 + 4 = 210).
+        contents.push(0x01);
+        let eos_token: u16 = 210 << 4;
+        contents.extend_from_slice(&eos_token.to_be_bytes());
+
+        let mut expected = literals;
+        expected.extend_from_slice(b"WXYZ");
+        assert_eq!(expected.len(), 4099);
+
+        let comp_size = (contents.len() + 12) as u32;
+        // Set uncomp_size larger than expected.len() so termination relies on EOS.
+        let uncomp_size = (expected.len() + 16) as u32;
+        let crc = rtf_crc(&contents);
+
+        let mut compressed = Vec::with_capacity(16 + contents.len());
+        compressed.extend_from_slice(&comp_size.to_le_bytes());
+        compressed.extend_from_slice(&uncomp_size.to_le_bytes());
+        compressed.extend_from_slice(b"LZFu");
+        compressed.extend_from_slice(&crc.to_le_bytes());
+        compressed.extend_from_slice(&contents);
+
+        let out = decompress_rtf(&compressed).unwrap();
+        assert!(out.len() > 4096);
+        assert_eq!(&out[out.len() - 4..], b"WXYZ");
+        assert_eq!(out, expected);
+    }
+
+    #[test]
     fn rtf_crc_matches_ms_oxrtfcp() {
         // 2.1.2.2.1 table entries and the 3.3.1 worked example.
         assert_eq!(RTF_CRC_TABLE[1], 0x7707_3096);
