@@ -1724,6 +1724,221 @@ mod tests {
         ));
     }
 
+    /// A one-page document drawing `content` with `resources`, plus extra page entries.
+    fn single_page(
+        doc: &mut Document,
+        content: &[u8],
+        resources: lopdf::Dictionary,
+        extra: lopdf::Dictionary,
+    ) -> Vec<u8> {
+        let pages = doc.new_object_id();
+        let contents = doc.add_object(lopdf::Stream::new(dictionary! {}, content.to_vec()));
+        let mut page = dictionary! {
+            "Type" => "Page",
+            "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+            "Resources" => resources,
+            "Contents" => contents,
+        };
+        page.extend(&extra);
+        let page = doc.add_object(page);
+        finish_with(doc, pages, &[page], lopdf::Dictionary::new())
+    }
+
+    fn rewrite_rect(bytes: &[u8], overlay: Option<&str>) -> Result<Vec<u8>, PdfError> {
+        let (mut request, _, _) = rect_plan(bytes, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+        request.overlay_text = overlay.map(str::to_owned);
+        let geometry = blank_geometry(bytes, 1);
+        let planned = plan(
+            bytes,
+            &request,
+            &geometry,
+            &Limits::local(),
+            &ToolCtx::new(),
+        )?;
+        rewrite_document(
+            bytes,
+            &request,
+            &planned,
+            &geometry,
+            &Limits::local(),
+            &ToolCtx::new(),
+        )
+    }
+
+    #[test]
+    fn redacted_pages_lose_their_thumbnails() {
+        let mut doc = Document::with_version("1.7");
+        let thumb = gray_image(&mut doc, 2, 2, 7);
+        let bytes = single_page(
+            &mut doc,
+            b"q Q",
+            lopdf::Dictionary::new(),
+            dictionary! { "Thumb" => thumb },
+        );
+        let output = rewrite_rect(&bytes, None).unwrap();
+        let pdf = crate::document::open(&output, &Limits::local()).unwrap();
+        let page = collect_page_ids(pdf.inner(), &ToolCtx::new()).unwrap()[0];
+        assert!(!pdf.inner().get_dictionary(page).unwrap().has(b"Thumb"));
+    }
+
+    #[test]
+    fn rewrite_refuses_form_xobjects_and_extgstate_fonts() {
+        let mut doc = Document::with_version("1.7");
+        let form = doc.add_object(lopdf::Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Form",
+                "BBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+            },
+            Vec::new(),
+        ));
+        let bytes = single_page(
+            &mut doc,
+            b"/Fm0 Do",
+            dictionary! { "XObject" => dictionary! { "Fm0" => form } },
+            lopdf::Dictionary::new(),
+        );
+        let err = rewrite_rect(&bytes, None).unwrap_err();
+        assert!(err.to_string().contains("form_xobject"), "{err}");
+
+        let mut doc = Document::with_version("1.7");
+        let font = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+        });
+        let bytes = single_page(
+            &mut doc,
+            b"/GS0 gs",
+            dictionary! {
+                "ExtGState" => dictionary! {
+                    "GS0" => dictionary! { "Font" => vec![Object::Reference(font), 12.into()] },
+                },
+            },
+            lopdf::Dictionary::new(),
+        );
+        let err = rewrite_rect(&bytes, None).unwrap_err();
+        assert!(err.to_string().contains("ext_gstate_font"), "{err}");
+    }
+
+    #[test]
+    fn object_graph_check_fails_on_undecodable_streams_and_utf16_xmp() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        let mut request = params();
+        request.targets = vec![RedactionTarget::Exact {
+            text: "secret".into(),
+        }];
+        let utf16: Vec<u8> = "<x:xmpmeta>secret</x:xmpmeta>"
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect();
+        for (dict, content) in [
+            (
+                dictionary! { "Type" => "Metadata", "Subtype" => "XML" },
+                utf16,
+            ),
+            (dictionary! { "Filter" => "JPXDecode" }, b"opaque".to_vec()),
+        ] {
+            let mut doc = Document::with_version("1.7");
+            let carrier = doc.add_object(lopdf::Stream::new(dict, content));
+            let bytes = single_page(
+                &mut doc,
+                b"q Q",
+                lopdf::Dictionary::new(),
+                dictionary! { "Metadata" => carrier },
+            );
+            assert_eq!(
+                verify_object_graph(&bytes, &request, &Limits::local(), &ToolCtx::new()).unwrap(),
+                RedactionCheckStatus::Fail
+            );
+        }
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn overlay_on_inherited_resources_keeps_images_and_adds_its_font() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let image = gray_image(&mut doc, 4, 4, 200);
+        let contents = doc.add_object(lopdf::Stream::new(
+            dictionary! {},
+            b"q 100 0 0 100 0 0 cm /Im0 Do Q".to_vec(),
+        ));
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+            "Contents" => contents,
+        });
+        let bytes = finish_with(
+            &mut doc,
+            pages,
+            &[page],
+            dictionary! { "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } } },
+        );
+        let output = rewrite_rect(&bytes, Some("REDACTED")).unwrap();
+        let pdf = crate::document::open(&output, &Limits::local()).unwrap();
+        let page = collect_page_ids(pdf.inner(), &ToolCtx::new()).unwrap()[0];
+        let resources = crate::xobject::resolve_page_resources(pdf.inner(), page);
+        let (_, fonts) = pdf
+            .inner()
+            .dereference(resources.get(b"Font").unwrap())
+            .unwrap();
+        assert!(fonts.as_dict().unwrap().has(b"AriadRedactFont"));
+        let image = crate::images::decode(
+            &pdf,
+            page_image(&pdf, page),
+            &ToolCtx::new(),
+            &Limits::local(),
+        )
+        .unwrap();
+        assert!(image.pixels.contains(&0) && image.pixels.contains(&200));
+        let (_, planned, _) = rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+        assert_eq!(
+            verify_image_pixels(&output, &planned, &Limits::local(), &ToolCtx::new()).unwrap(),
+            RedactionCheckStatus::Pass
+        );
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn soft_mask_is_made_opaque_beneath_the_region() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        let mut doc = Document::with_version("1.7");
+        let mask = gray_image(&mut doc, 4, 4, 128);
+        let image = gray_image(&mut doc, 4, 4, 200);
+        doc.get_object_mut(image)
+            .and_then(Object::as_stream_mut)
+            .unwrap()
+            .dict
+            .set("SMask", mask);
+        let bytes = single_page(
+            &mut doc,
+            b"q 100 0 0 100 0 0 cm /Im0 Do Q",
+            dictionary! { "XObject" => dictionary! { "Im0" => image } },
+            lopdf::Dictionary::new(),
+        );
+        let output = rewrite_rect(&bytes, None).unwrap();
+        let (_, planned, _) = rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+        assert_eq!(
+            verify_image_pixels(&output, &planned, &Limits::local(), &ToolCtx::new()).unwrap(),
+            RedactionCheckStatus::Pass
+        );
+        let pdf = crate::document::open(&output, &Limits::local()).unwrap();
+        let page = collect_page_ids(pdf.inner(), &ToolCtx::new()).unwrap()[0];
+        let smask = pdf
+            .inner()
+            .get_object(page_image(&pdf, page))
+            .and_then(Object::as_stream)
+            .unwrap()
+            .dict
+            .get(b"SMask")
+            .and_then(Object::as_reference)
+            .unwrap();
+        let smask = crate::images::decode(&pdf, smask, &ToolCtx::new(), &Limits::local()).unwrap();
+        assert!(smask.pixels.contains(&255) && smask.pixels.contains(&128));
+    }
+
     #[test]
     fn maps_all_combining_glyphs_and_refuses_mismatched_evidence() {
         let bytes = source(false);
