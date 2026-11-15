@@ -545,50 +545,6 @@ pub fn default_input_stem(input_path: &Path) -> String {
     )
 }
 
-/// Resolves a collision-safe filename for `DefaultBesideInput` outputs inside `dest_dir`.
-///
-/// When `overwrite` is `false` and `base_name` already exists in `dest_dir` (or was already
-/// claimed in the current publication batch), appends `-2`, `-3`, ... before the extension
-/// (`<stem>.<suffix>-2.<ext>`).
-#[must_use]
-pub fn resolve_default_filename(
-    dest_dir: &Dir,
-    base_name: &str,
-    overwrite: bool,
-    used_names: &mut HashSet<String>,
-) -> String {
-    let available = |candidate: &str| -> bool {
-        if used_names.contains(candidate) {
-            return false;
-        }
-        overwrite || dest_dir.symlink_metadata(candidate).is_err()
-    };
-
-    if available(base_name) {
-        used_names.insert(base_name.to_owned());
-        return base_name.to_owned();
-    }
-
-    let (stem, ext) = match base_name.rsplit_once('.') {
-        Some((s, e)) if !s.is_empty() && !e.is_empty() => (s, Some(e)),
-        _ => (base_name, None),
-    };
-
-    for idx in 2..=10_000_usize {
-        let candidate = match ext {
-            Some(ext) => format!("{stem}-{idx}.{ext}"),
-            None => format!("{stem}-{idx}"),
-        };
-        if available(&candidate) {
-            used_names.insert(candidate.clone());
-            return candidate;
-        }
-    }
-
-    used_names.insert(base_name.to_owned());
-    base_name.to_owned()
-}
-
 /// Computes the default multi-artifact filename `<stem>.<suffix>-<NNN>.<ext>` (`docs/tools.md` §6).
 #[must_use]
 pub fn default_multi_artifact_name(

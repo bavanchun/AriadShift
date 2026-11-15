@@ -1203,8 +1203,9 @@ fn publish_atomic_quarantines_risky_extracted_files_and_reports_one_warning_each
     }
 }
 
+#[cfg(unix)]
 #[test]
-fn default_beside_input_publishes_oversized_engine_json_with_collision_safe_naming() {
+fn default_beside_input_publishes_oversized_engine_json() {
     use ariad_core::limits::Limits;
     use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
     use std::ffi::OsString;
@@ -1255,22 +1256,36 @@ printf '%s\n' '{"type":"result","ok":true}'
     let expected1 = tmp.path().join("report.text-layout.json");
     assert_eq!(res1.artifacts.len(), 1);
     assert_eq!(res1.artifacts[0].format, "json");
-    assert_eq!(res1.artifacts[0].path, expected1);
-    assert!(fs::metadata(&expected1).unwrap().len() > 32 * 1024 * 1024);
+    assert_eq!(
+        fs::canonicalize(&res1.artifacts[0].path).unwrap(),
+        fs::canonicalize(&expected1).unwrap()
+    );
+    let first_bytes = fs::read(&expected1).unwrap();
+    assert!(first_bytes.len() > 32 * 1024 * 1024);
 
-    // 2. Collision with `overwrite == false`: publishes `<stem>.<suffix>-2.json`.
-    let res2 = run_tool(&req1).expect("second oversized run must disambiguate collision");
-    let expected2 = tmp.path().join("report.text-layout-2.json");
-    assert_eq!(res2.artifacts.len(), 1);
-    assert_eq!(res2.artifacts[0].path, expected2);
-    assert!(expected1.is_file() && expected2.is_file());
+    // 2. Collision with `overwrite == false`: fails with `DestinationExists` (exit code 6).
+    let err2 = run_tool(&req1).expect_err("second oversized run with overwrite=false must fail");
+    assert!(
+        matches!(err2, ToolError::DestinationExists(_)),
+        "expected DestinationExists, got {err2:?}"
+    );
+    assert_eq!(err2.exit_code(), 6);
+    assert_eq!(err2.code(), "destination_exists");
+    assert_eq!(fs::read(&expected1).unwrap(), first_bytes);
+    assert!(!tmp.path().join("report.text-layout-2.json").exists());
 
     // 3. With `overwrite == true`: replaces `<stem>.<suffix>.json`.
+    fs::write(&expected1, b"{\"stale\":true}").unwrap();
     let res3 = run_tool(&req1.clone().with_overwrite(true))
         .expect("overwrite=true must replace primary default file");
+    assert!(res3.inline_json.is_none());
     assert_eq!(res3.artifacts.len(), 1);
-    assert_eq!(res3.artifacts[0].path, expected1);
-    assert!(!tmp.path().join("report.text-layout-3.json").exists());
+    assert_eq!(
+        fs::canonicalize(&res3.artifacts[0].path).unwrap(),
+        fs::canonicalize(&expected1).unwrap()
+    );
+    assert!(fs::metadata(&expected1).unwrap().len() > 32 * 1024 * 1024);
+    assert!(!tmp.path().join("report.text-layout-2.json").exists());
 
     // 4. Within `inline_cap`: keeps `inline_json` inline and publishes no file beside input.
     let small_script = r#"
@@ -1298,9 +1313,9 @@ printf '%s\n' '{"type":"result","ok":true}'
         "small inline JSON must not publish files beside input"
     );
     assert_eq!(res_small.inline_json, Some(json!({"small": true})));
-    assert!(!tmp.path().join("report.text-layout-3.json").exists());
 }
 
+#[cfg(unix)]
 #[test]
 fn default_beside_input_oversized_inputless_tool_falls_back_to_document_json() {
     use ariad_core::limits::Limits;
@@ -1361,19 +1376,39 @@ printf '%s\n' '{"type":"result","ok":true}'
     let res1 = run_tool(&req).expect("oversized inputless tool must succeed");
     assert!(res1.inline_json.is_none());
     assert_eq!(res1.artifacts.len(), 1);
+    let expected = Path::new("document.recipe-from-text.json");
     assert_eq!(
         res1.artifacts[0].path.file_name().and_then(|s| s.to_str()),
         Some("document.recipe-from-text.json")
     );
-    assert!(Path::new("document.recipe-from-text.json").is_file());
-
-    let res2 = run_tool(&req).expect("collision on inputless tool must use -2");
-    assert_eq!(res2.artifacts.len(), 1);
+    assert!(expected.is_file());
     assert_eq!(
-        res2.artifacts[0].path.file_name().and_then(|s| s.to_str()),
-        Some("document.recipe-from-text-2.json")
+        fs::canonicalize(&res1.artifacts[0].path).unwrap(),
+        fs::canonicalize(expected).unwrap()
     );
-    assert!(Path::new("document.recipe-from-text-2.json").is_file());
+    let first_bytes = fs::read(expected).unwrap();
+
+    let err2 =
+        run_tool(&req).expect_err("collision on inputless tool must return DestinationExists");
+    assert!(
+        matches!(err2, ToolError::DestinationExists(_)),
+        "expected DestinationExists, got {err2:?}"
+    );
+    assert_eq!(err2.exit_code(), 6);
+    assert_eq!(err2.code(), "destination_exists");
+    assert_eq!(fs::read(expected).unwrap(), first_bytes);
+    assert!(!Path::new("document.recipe-from-text-2.json").exists());
+
+    fs::write(expected, b"{\"stale\":true}").unwrap();
+    let res3 = run_tool(&req.with_overwrite(true))
+        .expect("overwrite=true must replace document.recipe-from-text.json");
+    assert!(res3.inline_json.is_none());
+    assert_eq!(res3.artifacts.len(), 1);
+    assert_eq!(
+        fs::canonicalize(&res3.artifacts[0].path).unwrap(),
+        fs::canonicalize(expected).unwrap()
+    );
+    assert!(fs::metadata(expected).unwrap().len() > 32 * 1024 * 1024);
 }
 
 #[test]
@@ -1401,7 +1436,8 @@ fn default_beside_input_inprocess_and_composite_enforce_inline_cap() {
     assert!(!tmp.path().join("notes.open-document.json").exists());
 
     // 2. Exceeding `inline_cap` (`max_decompressed_bytes = 128` while `max_ir_json_bytes` stays large):
-    // writes `<stem>.open-document.json` (and `-2.json` on collision) with `inline_json == None`.
+    // writes `<stem>.open-document.json` with `inline_json == None`, returns `DestinationExists` on
+    // collision when `overwrite == false`, and replaces it when `overwrite == true`.
     let capped_limits = Limits {
         max_decompressed_bytes: 128,
         ..Limits::local()
@@ -1412,17 +1448,37 @@ fn default_beside_input_inprocess_and_composite_enforce_inline_cap() {
     assert!(res_capped1.inline_json.is_none());
     let expected1 = tmp.path().join("notes.open-document.json");
     assert_eq!(res_capped1.artifacts.len(), 1);
-    assert_eq!(res_capped1.artifacts[0].path, expected1);
+    assert_eq!(
+        fs::canonicalize(&res_capped1.artifacts[0].path).unwrap(),
+        fs::canonicalize(&expected1).unwrap()
+    );
+    let first_bytes = fs::read(&expected1).unwrap();
     let parsed1: serde_json::Value =
-        serde_json::from_slice(&fs::read(&expected1).unwrap()).expect("valid IR JSON file");
+        serde_json::from_slice(&first_bytes).expect("valid IR JSON file");
     assert_eq!(parsed1["version"], "ariad-ir/2");
 
-    let res_capped2 = run_tool(&req_capped).expect("collision must produce -2.json");
-    assert_eq!(res_capped2.artifacts.len(), 1);
-    assert_eq!(
-        res_capped2.artifacts[0].path,
-        tmp.path().join("notes.open-document-2.json")
+    let err_capped2 = run_tool(&req_capped).expect_err("collision with overwrite=false must fail");
+    assert!(
+        matches!(err_capped2, ToolError::DestinationExists(_)),
+        "expected DestinationExists, got {err_capped2:?}"
     );
+    assert_eq!(err_capped2.exit_code(), 6);
+    assert_eq!(err_capped2.code(), "destination_exists");
+    assert_eq!(fs::read(&expected1).unwrap(), first_bytes);
+    assert!(!tmp.path().join("notes.open-document-2.json").exists());
+
+    fs::write(&expected1, b"{\"stale\":true}").unwrap();
+    let res_capped3 = run_tool(&req_capped.with_overwrite(true))
+        .expect("overwrite=true must replace notes.open-document.json");
+    assert!(res_capped3.inline_json.is_none());
+    assert_eq!(res_capped3.artifacts.len(), 1);
+    assert_eq!(
+        fs::canonicalize(&res_capped3.artifacts[0].path).unwrap(),
+        fs::canonicalize(&expected1).unwrap()
+    );
+    let parsed3: serde_json::Value =
+        serde_json::from_slice(&fs::read(&expected1).unwrap()).expect("valid replaced IR JSON");
+    assert_eq!(parsed3["version"], "ariad-ir/2");
 }
 
 #[test]
@@ -1438,7 +1494,7 @@ fn default_beside_input_rule_ii_pdf_compare_diff_and_oversized_fallback() {
     let src_after = repo_root.join("fixtures/pdf-tools/compare-after.pdf");
 
     // 1. Inline report fits: publishes `<stem>.diff.pdf` beside first input, keeps report in `inline_json`,
-    // disambiguates collisions to `<stem>.diff-2.pdf`, and replaces `<stem>.diff.pdf` when overwrite=true.
+    // returns `DestinationExists` when `overwrite == false`, and replaces `<stem>.diff.pdf` when `overwrite == true`.
     let tmp = TempDir::new().expect("create tempdir");
     let before = tmp.path().join("compare-before.pdf");
     let after = tmp.path().join("compare-after.pdf");
@@ -1456,25 +1512,38 @@ fn default_beside_input_rule_ii_pdf_compare_diff_and_oversized_fallback() {
     assert_eq!(res1.artifacts.len(), 1);
     assert_eq!(res1.artifacts[0].format, "pdf");
     let diff1 = tmp.path().join("compare-before.diff.pdf");
-    assert_eq!(res1.artifacts[0].path, diff1);
-    assert!(fs::read(&diff1).unwrap().starts_with(b"%PDF-"));
+    assert_eq!(
+        fs::canonicalize(&res1.artifacts[0].path).unwrap(),
+        fs::canonicalize(&diff1).unwrap()
+    );
+    let first_diff_bytes = fs::read(&diff1).unwrap();
+    assert!(first_diff_bytes.starts_with(b"%PDF-"));
     assert!(res1.inline_json.is_some());
     assert!(!tmp.path().join("compare-before.compare.json").exists());
     assert!(!tmp.path().join("compare-before.compared.json").exists());
 
-    let res2 = run_tool(&req).expect("collision must produce diff-2.pdf");
-    assert_eq!(res2.artifacts.len(), 1);
-    assert_eq!(
-        res2.artifacts[0].path,
-        tmp.path().join("compare-before.diff-2.pdf")
+    let err2 = run_tool(&req).expect_err("collision with overwrite=false must fail");
+    assert!(
+        matches!(err2, ToolError::DestinationExists(_)),
+        "expected DestinationExists, got {err2:?}"
     );
+    assert_eq!(err2.exit_code(), 6);
+    assert_eq!(err2.code(), "destination_exists");
+    assert_eq!(fs::read(&diff1).unwrap(), first_diff_bytes);
+    assert!(!tmp.path().join("compare-before.diff-2.pdf").exists());
 
+    fs::write(&diff1, b"stale-diff-content").unwrap();
     let res3 = run_tool(&req.with_overwrite(true)).expect("overwrite must replace diff.pdf");
     assert_eq!(res3.artifacts.len(), 1);
-    assert_eq!(res3.artifacts[0].path, diff1);
+    assert_eq!(
+        fs::canonicalize(&res3.artifacts[0].path).unwrap(),
+        fs::canonicalize(&diff1).unwrap()
+    );
+    assert!(fs::read(&diff1).unwrap().starts_with(b"%PDF-"));
 
     // 2. Oversized JSON report (`inline_json == None`): publishes BOTH `<stem>.diff.pdf` and
-    // `<stem>.compare.json` (and disambiguates both with `-2` when `overwrite == false`).
+    // `<stem>.compare.json`, returns `DestinationExists` on collision (with atomic rollback if only
+    // `<stem>.compare.json` exists), and replaces both when `overwrite == true`.
     fn build_minimal_text_pdf(lines: &[String]) -> Vec<u8> {
         let mut stream = String::from("BT /F1 10 Tf 50 750 Td\n");
         for line in lines {
@@ -1545,17 +1614,19 @@ fn default_beside_input_rule_ii_pdf_compare_diff_and_oversized_fallback() {
         ..Limits::local()
     });
 
+    let over_diff = tmp_over.path().join("tiny-before.diff.pdf");
+    let over_json = tmp_over.path().join("tiny-before.compare.json");
     let over1 = run_tool(&req_over).expect("oversized pdf.compare must publish both artifacts");
     assert!(over1.inline_json.is_none());
     assert_eq!(over1.artifacts.len(), 2);
     assert_eq!(
-        over1.artifacts[0].path,
-        tmp_over.path().join("tiny-before.diff.pdf")
+        fs::canonicalize(&over1.artifacts[0].path).unwrap(),
+        fs::canonicalize(&over_diff).unwrap()
     );
     assert_eq!(over1.artifacts[0].format, "pdf");
     assert_eq!(
-        over1.artifacts[1].path,
-        tmp_over.path().join("tiny-before.compare.json")
+        fs::canonicalize(&over1.artifacts[1].path).unwrap(),
+        fs::canonicalize(&over_json).unwrap()
     );
     assert_eq!(over1.artifacts[1].format, "json");
     assert!(fs::metadata(&over1.artifacts[1].path).unwrap().len() > 8192);
@@ -1564,15 +1635,60 @@ fn default_beside_input_rule_ii_pdf_compare_diff_and_oversized_fallback() {
             .expect("valid compare JSON artifact");
     assert_eq!(parsed_compare["summary"]["pages_before"], 1);
 
-    let over2 = run_tool(&req_over).expect("oversized collision must disambiguate both outputs");
-    assert!(over2.inline_json.is_none());
-    assert_eq!(over2.artifacts.len(), 2);
-    assert_eq!(
-        over2.artifacts[0].path,
-        tmp_over.path().join("tiny-before.diff-2.pdf")
+    // Collision when both files exist and `overwrite == false`: fails with `DestinationExists`.
+    let err_both =
+        run_tool(&req_over).expect_err("oversized collision with overwrite=false must fail");
+    assert!(
+        matches!(err_both, ToolError::DestinationExists(_)),
+        "expected DestinationExists, got {err_both:?}"
+    );
+    assert_eq!(err_both.exit_code(), 6);
+    assert_eq!(err_both.code(), "destination_exists");
+    assert!(!tmp_over.path().join("tiny-before.diff-2.pdf").exists());
+    assert!(!tmp_over.path().join("tiny-before.compare-2.json").exists());
+
+    // Atomic all-or-nothing rollback: remove `tiny-before.diff.pdf` while keeping
+    // `tiny-before.compare.json`; running with `overwrite == false` must fail with
+    // `DestinationExists` and roll back `tiny-before.diff.pdf` so it does not remain on disk.
+    fs::remove_file(&over_diff).unwrap();
+    let kept_json_bytes = fs::read(&over_json).unwrap();
+    let err_rollback =
+        run_tool(&req_over).expect_err("compare.json collision must fail and roll back diff.pdf");
+    assert!(
+        matches!(err_rollback, ToolError::DestinationExists(ref name) if name == "tiny-before.compare.json"),
+        "expected DestinationExists(\"tiny-before.compare.json\"), got {err_rollback:?}"
+    );
+    assert_eq!(err_rollback.exit_code(), 6);
+    assert_eq!(err_rollback.code(), "destination_exists");
+    assert!(
+        !over_diff.exists(),
+        "tiny-before.diff.pdf must be rolled back when tiny-before.compare.json fails with DestinationExists"
     );
     assert_eq!(
-        over2.artifacts[1].path,
-        tmp_over.path().join("tiny-before.compare-2.json")
+        fs::read(&over_json).unwrap(),
+        kept_json_bytes,
+        "pre-existing tiny-before.compare.json must remain untouched"
     );
+
+    // With `overwrite == true`: replaces both existing outputs cleanly.
+    fs::write(&over_diff, b"stale-diff").unwrap();
+    fs::write(&over_json, b"{\"stale\":true}").unwrap();
+    let over_overwrite = run_tool(&req_over.with_overwrite(true))
+        .expect("oversized pdf.compare with overwrite=true must succeed");
+    assert!(over_overwrite.inline_json.is_none());
+    assert_eq!(over_overwrite.artifacts.len(), 2);
+    assert_eq!(
+        fs::canonicalize(&over_overwrite.artifacts[0].path).unwrap(),
+        fs::canonicalize(&over_diff).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&over_overwrite.artifacts[1].path).unwrap(),
+        fs::canonicalize(&over_json).unwrap()
+    );
+    assert!(fs::read(&over_diff).unwrap().starts_with(b"%PDF-"));
+    assert!(fs::metadata(&over_json).unwrap().len() > 8192);
+    let parsed_overwritten: serde_json::Value =
+        serde_json::from_slice(&fs::read(&over_json).unwrap())
+            .expect("valid overwritten compare JSON artifact");
+    assert_eq!(parsed_overwritten["summary"]["pages_before"], 1);
 }

@@ -10,7 +10,7 @@
 //! 7. Atomic multi-artifact publication via [`super::publish::publish_atomic`] (`destination_exists`, exit code `6`).
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     fs,
     io::{self, Read, Write},
     path::{Path, PathBuf},
@@ -42,9 +42,9 @@ use crate::{
             PublishError, PublishedArtifact, StagedArtifact, default_input_stem,
             default_multi_artifact_name, default_single_artifact_name, ensure_no_parent_traversal,
             extracted_quarantine_warnings, is_safe_extracted_extension, open_confined_output_dir,
-            publish_atomic, replace_staged_input_stem, resolve_default_filename,
-            validate_extracted_artifact_extensions, validate_output_path_for_spec,
-            validate_spec_artifact_extensions, validate_target_filename,
+            publish_atomic, replace_staged_input_stem, validate_extracted_artifact_extensions,
+            validate_output_path_for_spec, validate_spec_artifact_extensions,
+            validate_target_filename,
         },
         secrets::{SecretBag, SecretScrubber},
     },
@@ -1551,14 +1551,6 @@ fn publish_tool_outputs(
         return Ok((Vec::new(), Vec::new()));
     }
 
-    let default_dest_cap = if is_default_beside_input && naming_template.is_none() {
-        let (_, cap_dir) = open_confined_output_dir(&dest_dir, allowed_dirs)?;
-        Some(cap_dir)
-    } else {
-        None
-    };
-    let mut used_default_names = HashSet::with_capacity(artifacts_to_publish.len());
-
     let multi = artifacts_to_publish.len() > 1;
     let mut staged = Vec::with_capacity(artifacts_to_publish.len());
     for (idx, (staged_path, format)) in artifacts_to_publish.iter().enumerate() {
@@ -1618,20 +1610,10 @@ fn publish_tool_outputs(
         } else {
             default_single_artifact_name(first_input, spec.id, format)
         };
-        let target_name = if let Some(ref dest_cap_dir) = default_dest_cap {
-            resolve_default_filename(
-                dest_cap_dir,
-                &base_target_name,
-                overwrite,
-                &mut used_default_names,
-            )
-        } else {
-            base_target_name
-        };
         staged.push(StagedArtifact::new(
             staged_path.clone(),
             format.clone(),
-            target_name,
+            base_target_name,
         ));
     }
 

@@ -87,8 +87,9 @@ fn text_mode_runs_in_process_and_detects_seeded_changes() {
         expected_diff.is_file(),
         "pdf.compare without -o must write <stem>.diff.pdf beside input"
     );
+    let first_diff_bytes = fs::read(&expected_diff).unwrap();
     assert!(
-        fs::read(&expected_diff).unwrap().starts_with(b"%PDF-"),
+        first_diff_bytes.starts_with(b"%PDF-"),
         "published diff file must be a valid PDF"
     );
     assert!(
@@ -96,9 +97,44 @@ fn text_mode_runs_in_process_and_detects_seeded_changes() {
         "report.json must remain inline when within cap"
     );
     let human_stdout = String::from_utf8_lossy(&human_output.stdout);
-    assert_eq!(human_stdout.trim(), expected_diff.to_string_lossy());
+    assert_eq!(
+        fs::canonicalize(Path::new(human_stdout.trim())).unwrap(),
+        fs::canonicalize(&expected_diff).unwrap()
+    );
 
-    // Without -o and with --json: collision-safe <stem>.diff-2.pdf + ToolOutcome on stdout.
+    // Second run without -o and without --overwrite: exits with code 6 (`destination_exists`),
+    // leaving compare-before.diff.pdf intact.
+    let collision_output = command()
+        .args([
+            "tool",
+            "pdf.compare",
+            before.to_str().unwrap(),
+            after.to_str().unwrap(),
+            "--param",
+            "mode=text",
+        ])
+        .output()
+        .expect("run ashift tool pdf.compare without --overwrite");
+    assert_eq!(
+        collision_output.status.code(),
+        Some(6),
+        "second run without --overwrite must exit with code 6; stderr: {}",
+        String::from_utf8_lossy(&collision_output.stderr)
+    );
+    let collision_stderr = String::from_utf8_lossy(&collision_output.stderr);
+    assert!(
+        collision_stderr.contains("error[destination_exists]"),
+        "stderr must contain error[destination_exists], got: {collision_stderr}"
+    );
+    assert_eq!(
+        fs::read(&expected_diff).unwrap(),
+        first_diff_bytes,
+        "existing compare-before.diff.pdf must remain intact on collision"
+    );
+    assert!(!temp.path().join("compare-before.diff-2.pdf").exists());
+
+    // Third run with --overwrite and --json: replaces compare-before.diff.pdf and emits ToolOutcome.
+    fs::write(&expected_diff, b"stale-diff-content").unwrap();
     let output = command()
         .args([
             "tool",
@@ -107,27 +143,35 @@ fn text_mode_runs_in_process_and_detects_seeded_changes() {
             after.to_str().unwrap(),
             "--param",
             "mode=text",
+            "--overwrite",
             "--json",
         ])
         .output()
-        .expect("run ashift tool pdf.compare --json");
+        .expect("run ashift tool pdf.compare --overwrite --json");
 
     assert!(
         output.status.success(),
-        "pdf.compare text mode --json failed: {}",
+        "pdf.compare text mode --overwrite --json failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let expected_diff_2 = temp.path().join("compare-before.diff-2.pdf");
     assert!(
-        expected_diff_2.is_file(),
-        "second run without --overwrite must use collision-safe <stem>.diff-2.pdf"
+        expected_diff.is_file(),
+        "compare-before.diff.pdf must exist after --overwrite"
     );
+    assert!(
+        fs::read(&expected_diff).unwrap().starts_with(b"%PDF-"),
+        "overwritten diff file must be a valid PDF"
+    );
+    assert!(!temp.path().join("compare-before.diff-2.pdf").exists());
 
     let outcome: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("valid ToolOutcome JSON stdout");
+    let artifact_path = outcome["artifacts"][0]["path"]
+        .as_str()
+        .expect("artifacts[0].path string");
     assert_eq!(
-        outcome["artifacts"][0]["path"].as_str(),
-        Some(expected_diff_2.to_string_lossy().as_ref())
+        fs::canonicalize(Path::new(artifact_path)).unwrap(),
+        fs::canonicalize(&expected_diff).unwrap()
     );
     assert_eq!(outcome["artifacts"][0]["format"], "pdf");
     let report = &outcome["inline_json"];
