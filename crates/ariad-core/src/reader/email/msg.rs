@@ -71,7 +71,41 @@ fn format_filetime_rfc3339(filetime: i64) -> Option<String> {
     Some(format!("{y:04}-{m:02}-{d:02}T{hour:02}:{min:02}:{sec:02}Z"))
 }
 
+/// CRC lookup table of MS-OXRTFCP 2.1.2.2.1 (reflected polynomial 0xEDB88320).
+const RTF_CRC_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut n = 0;
+    while n < 256 {
+        let mut value = n as u32;
+        let mut bit = 0;
+        while bit < 8 {
+            value = if value & 1 == 1 {
+                (value >> 1) ^ 0xEDB8_8320
+            } else {
+                value >> 1
+            };
+            bit += 1;
+        }
+        table[n] = value;
+        n += 1;
+    }
+    table
+};
+
+/// CRC of MS-OXRTFCP 2.1.3.2: initial value 0, no final inversion.
+fn rtf_crc(bytes: &[u8]) -> u32 {
+    bytes.iter().fold(0, |crc, &byte| {
+        RTF_CRC_TABLE[((crc ^ u32::from(byte)) & 0xff) as usize] ^ (crc >> 8)
+    })
+}
+
+/// Error text for a compressed RTF stream whose CRC does not match.
+const RTF_CRC_MISMATCH: &str = "RTF CRC mismatch";
+
 /// Decompresses LZFu-compressed RTF data per MS-OXRTFCP specification.
+///
+/// For compressed input the CRC of every CONTENTS byte (MS-OXRTFCP
+/// 2.2.3.2) must match the header, or the input is treated as corrupt.
 pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
     if compressed.len() < 16 {
         return Err("RTF compressed data too short".to_string());
@@ -103,6 +137,16 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
         return Err(format!("unknown RTF compression magic: 0x{magic:08x}"));
     }
 
+    let max_in = 4usize.saturating_add(comp_size).min(compressed.len());
+    let stored_crc = u32::from_le_bytes(
+        compressed[12..16]
+            .try_into()
+            .map_err(|_| "invalid header".to_string())?,
+    );
+    if rtf_crc(&compressed[16..max_in.max(16)]) != stored_crc {
+        return Err(RTF_CRC_MISMATCH.to_string());
+    }
+
     const RTF_PREBUF: &[u8; 207] = b"{\\rtf1\\ansi\\mac\\deff0\\deftab720{\\fonttbl;}{\\f0\\fnil \\froman \\fswiss \\fmodern \\fscript \\fdecor MS Sans SerifSymbolArialTimes New RomanCourier{\\colortbl\\red0\\green0\\blue0\r\n\\par \\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx";
 
     let mut dict = [b' '; 4096];
@@ -111,7 +155,6 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
 
     let mut output = Vec::with_capacity(uncomp_size.min(10 * 1024 * 1024));
     let mut in_pos = 16;
-    let max_in = 4usize.saturating_add(comp_size).min(compressed.len());
 
     while in_pos < max_in && output.len() < uncomp_size {
         let flag_byte = compressed[in_pos];
@@ -622,10 +665,21 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if !body_read {
         // Try RTF-compressed (0x1009)
-        if let Some(rtf_comp_data) =
-            read_stream_bounded(&mut comp, "/__substg1.0_10090102", max_stream_bytes)
-            && let Ok(decompressed) = decompress_rtf(&rtf_comp_data)
-        {
+        let decompressed =
+            read_stream_bounded(&mut comp, "/__substg1.0_10090102", max_stream_bytes).and_then(
+                |data| match decompress_rtf(&data) {
+                    Ok(decompressed) => Some(decompressed),
+                    Err(error) => {
+                        // The error names only the header condition, never body text.
+                        warnings.push(Warning::new(
+                            WarningCode::UnsupportedNode,
+                            format!("MSG RTF body was dropped: {error}"),
+                        ));
+                        None
+                    }
+                },
+            );
+        if let Some(decompressed) = decompressed {
             let stripped = strip_rtf(&decompressed);
             warnings.push(Warning::new(
                 WarningCode::UnsupportedNode,
@@ -863,6 +917,48 @@ mod tests {
     }
 
     #[test]
+    fn rtf_crc_matches_ms_oxrtfcp() {
+        // 2.1.2.2.1 table entries and the 3.3.1 worked example.
+        assert_eq!(RTF_CRC_TABLE[1], 0x7707_3096);
+        assert_eq!(RTF_CRC_TABLE[3], 0x9909_51ba);
+        assert_eq!(RTF_CRC_TABLE[255], 0x2d02_ef8d);
+        assert_eq!(rtf_crc(&[0x03]), 0x9909_51ba);
+        assert_eq!(rtf_crc(&OXRTFCP_EXAMPLE_1[16..]), 0xa7c7_c5f1);
+        assert_eq!(rtf_crc(&OXRTFCP_EXAMPLE_2[16..]), 0x514b_d4e2);
+    }
+
+    #[test]
+    fn lzfu_rejects_crc_mismatch() {
+        for example in [OXRTFCP_EXAMPLE_1, OXRTFCP_EXAMPLE_2] {
+            let mut corrupt = example.to_vec();
+            corrupt[12] ^= 0x01;
+            assert_eq!(decompress_rtf(&corrupt).unwrap_err(), RTF_CRC_MISMATCH);
+            // A changed CONTENTS byte is caught as well.
+            let mut corrupt = example.to_vec();
+            *corrupt.last_mut().unwrap() ^= 0x01;
+            assert_eq!(decompress_rtf(&corrupt).unwrap_err(), RTF_CRC_MISMATCH);
+        }
+    }
+
+    #[test]
+    fn rtf_fuzz_seeds_cover_valid_and_mismatched_crc() {
+        let valid = include_bytes!("../../../../../fuzz/seeds/reader_msg/rtf.msg");
+        let out = read(valid, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(
+            out.warnings[0].message,
+            "RTF-compressed body converted to plain text"
+        );
+        let bad = include_bytes!("../../../../../fuzz/seeds/reader_msg/rtf-bad-crc.msg");
+        let out = read(bad, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG RTF body was dropped: RTF CRC mismatch"
+        );
+    }
+
+    #[test]
     fn mela_follows_ms_oxrtfcp_uncompressed_layout() {
         // MS-OXRTFCP 2.1.3.1.1 and 2.3.3.1: COMPSIZE = content length + 12,
         // RAWSIZE = content length, COMPTYPE = "MELA", CRC = 0, raw CONTENTS.
@@ -1077,6 +1173,48 @@ mod tests {
             _ => false,
         });
         assert!(found, "RTF body content should be extracted");
+    }
+
+    #[test]
+    fn rtf_crc_mismatch_drops_body_with_warning() {
+        use std::io::Write;
+        let mut stream_bytes = OXRTFCP_EXAMPLE_1.to_vec();
+        stream_bytes[12..16].copy_from_slice(&0u32.to_le_bytes());
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__substg1.0_0037001F").unwrap();
+            stream.write_all(&encode_utf16le("Subject line")).unwrap();
+        }
+        {
+            let mut stream = comp.create_stream("/__substg1.0_10090102").unwrap();
+            stream.write_all(&stream_bytes).unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG RTF body was dropped: RTF CRC mismatch"
+        );
+        // No other body exists, so only the header paragraph remains.
+        assert_eq!(out.document.body.len(), 1);
+        let Block::Paragraph { content, .. } = &out.document.body[0] else {
+            panic!("expected the header paragraph, got {:?}", out.document.body);
+        };
+        assert_eq!(
+            content,
+            &vec![
+                Inline::Strong {
+                    content: vec![Inline::Text {
+                        text: "Subject: ".to_owned()
+                    }]
+                },
+                Inline::Text {
+                    text: "Subject line".to_owned()
+                },
+            ]
+        );
     }
 
     #[test]

@@ -87,6 +87,29 @@ def generate_eml():
     eml_seed.parent.mkdir(parents=True, exist_ok=True)
     eml_seed.write_bytes(data)
 
+# LZFu stream from the MSG reader's unit test; CRC 0x74e85c33 matches its CONTENTS.
+RTF_LZFU = (
+    b'#\x00\x00\x00"\x00\x00\x00LZFu3\\\xe8t\x03\x00\n\x00rcpg125\x922\n\xf3 t\x07\x90t}\x0f\x10'
+)
+RTF_STREAM_NAME = "__substg1.0_10090102".encode("utf-16-le")
+
+
+def with_rtf_stream(container, stream):
+    """Replace the RTF body stream of an MSG compound file in place.
+
+    The stream lives in a single 64-byte mini sector, so the new bytes are
+    written at its offset and the directory entry's 32-bit size is updated.
+    """
+    data = bytearray(container)
+    start = data.index(RTF_LZFU[:16])
+    assert len(stream) <= 64 and start % 64 == 0
+    data[start:start + 64] = stream.ljust(64, b"\x00")
+    entry = data.index(RTF_STREAM_NAME)
+    assert entry % 128 == 0
+    data[entry + 0x78:entry + 0x7C] = len(stream).to_bytes(4, "little")
+    return bytes(data)
+
+
 def generate_msg():
     sample_data = zlib.decompress(base64.b64decode(SAMPLE_MSG))
     msg_fixture = ROOT / "fixtures/email/sample.msg"
@@ -103,6 +126,13 @@ def generate_msg():
     seed_dir.mkdir(parents=True, exist_ok=True)
     for filename, b64_payload in seeds.items():
         (seed_dir / filename).write_bytes(zlib.decompress(base64.b64decode(b64_payload)))
+
+    # The stored RTF seed truncates its LZFu stream; write the full stream and
+    # a twin that differs only by a wrong CRC.
+    rtf_base = zlib.decompress(base64.b64decode(RTF_MSG))
+    bad_crc = RTF_LZFU[:12] + bytes(b ^ 0xFF for b in RTF_LZFU[12:16]) + RTF_LZFU[16:]
+    (seed_dir / "rtf.msg").write_bytes(with_rtf_stream(rtf_base, RTF_LZFU))
+    (seed_dir / "rtf-bad-crc.msg").write_bytes(with_rtf_stream(rtf_base, bad_crc))
 
 def generate_svg():
     content = (
