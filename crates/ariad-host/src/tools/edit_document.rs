@@ -347,6 +347,10 @@ pub(crate) fn execute(
         drop(document);
 
         let inline_cap = super::run::json_inline_cap(limits);
+        // A raw-text gate is sound here: `raw_json` is serde_json's own serialization of host
+        // data, which escapes only `"`, `\\` and control characters, never `/` or printable
+        // characters, exactly as the registered JSON-escaped pattern does. A secret in any
+        // decoded string therefore appears in `raw_json` as a registered pattern.
         let (doc_bytes, open_inline_json) =
             if scrubber.is_empty() || !scrubber.contains_pattern(&raw_json) {
                 let bytes = raw_json.into_bytes();
