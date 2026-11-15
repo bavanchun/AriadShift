@@ -3169,3 +3169,177 @@ fn rejects_transformed_huge_inline_image_with_unresolvable_or_cal_colorspace() {
         assert_eq!(outcome.images.len(), 1);
     }
 }
+
+#[test]
+fn extract_images_does_not_double_charge_document_work_across_pages() {
+    let lib_dir = require_pdfium!();
+    let jpeg_bytes = make_test_jpeg(24, 24);
+    let pages = 80usize;
+    let first_page_id = 4usize;
+
+    let mut objects: Vec<Vec<u8>> = Vec::with_capacity(3 + pages * 2);
+    objects.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
+    let kids: String = (0..pages)
+        .map(|i| format!("{} 0 R", first_page_id + i * 2))
+        .collect::<Vec<_>>()
+        .join(" ");
+    objects.push(format!("<< /Type /Pages /Kids [{kids}] /Count {pages} >>").into_bytes());
+    objects.push(stream_object(
+        "/Type /XObject /Subtype /Image /Width 24 /Height 24 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode",
+        &jpeg_bytes,
+    ));
+
+    // 80 pages * 7,500 PDF operators = 600,000 ops total (60% of MAX_DOCUMENT_WORK = 1_000_000,
+    // with < MAX_PAGE_WORK = 100_000 per page). Double-charging in extract_document_images_with
+    // would reach 1,200,000 > 1,000_000 and fail with LimitExceeded.
+    let filler_7500 = b"q Q ".repeat(3_750);
+    let mut last_page_content = b"q Q ".repeat(3_748);
+    last_page_content.extend_from_slice(b"q 24 0 0 24 50 500 cm /Im1 Do Q");
+
+    for i in 0..pages {
+        let page_id = first_page_id + i * 2;
+        let content_id = page_id + 1;
+        let (resources, payload): (&str, &[u8]) = if i + 1 == pages {
+            (
+                "/Resources << /XObject << /Im1 3 0 R >> >> ",
+                &last_page_content,
+            )
+        } else {
+            ("", &filler_7500)
+        };
+        objects.push(
+            format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] {resources}/Contents {content_id} 0 R >>"
+            )
+            .into_bytes(),
+        );
+        objects.push(stream_object("", payload));
+    }
+
+    let pdf_bytes = assemble_pdf(&objects);
+    let ws = TestWorkspace::from_bytes("doc_work_60pct.pdf", &pdf_bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "doc-work-60pct",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+
+    let params = ExtractImagesParams {
+        pages: PageRange::all(),
+        format: ExtractFormat::Original,
+        min_px: 16,
+    };
+    let outcome = extract_images::extract_document_images(&mut ctx, &params)
+        .expect("80 pages * 7,500 ops (600,000 total) must not exceed MAX_DOCUMENT_WORK");
+    assert_eq!(outcome.pages_inspected, pages);
+    assert_eq!(outcome.images.len(), 1);
+    assert_eq!(outcome.images[0].page, u32::try_from(pages).unwrap());
+    assert_eq!(outcome.images[0].bytes, jpeg_bytes);
+}
+
+#[test]
+fn extract_images_resolves_only_nearest_inherited_resources_dictionary() {
+    let lib_dir = require_pdfium!();
+    let jpeg_bytes = make_test_jpeg(24, 24);
+    let objects = vec![
+        // 1: Catalog
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        // 2: Pages node declaring /ImAncestor in /Resources /XObject
+        b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /Resources << /XObject << /ImAncestor 5 0 R >> >> >>".to_vec(),
+        // 3: Page 1 defines its own /Resources with /Font and no /XObject -> shadows /Pages /Resources
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents 6 0 R >>".to_vec(),
+        // 4: Page 2 omits /Resources -> inherits /Pages /Resources as a whole
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R >>".to_vec(),
+        // 5: 24x24 JPEG image XObject
+        stream_object(
+            "/Type /XObject /Subtype /Image /Width 24 /Height 24 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode",
+            &jpeg_bytes,
+        ),
+        // 6: Page 1 invokes /ImAncestor Do
+        stream_object("", b"q 24 0 0 24 50 500 cm /ImAncestor Do Q"),
+        // 7: Page 2 invokes /ImAncestor Do
+        stream_object("", b"q 24 0 0 24 50 500 cm /ImAncestor Do Q"),
+    ];
+    let pdf_bytes = assemble_pdf(&objects);
+
+    // Page 1 defines its own /Resources without /XObject -> /ImAncestor must not be extracted.
+    {
+        let ws = TestWorkspace::from_bytes("nearest_resources_p1.pdf", &pdf_bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "nearest-resources-p1",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let params = ExtractImagesParams {
+            pages: PageRange::parse("1").expect("valid page 1"),
+            format: ExtractFormat::Original,
+            min_px: 16,
+        };
+        let outcome = extract_images::extract_document_images(&mut ctx, &params)
+            .expect("page 1 extraction succeeds with 0 images");
+        assert_eq!(outcome.pages_inspected, 1);
+        assert!(
+            outcome.images.is_empty(),
+            "page 1 /Resources without /XObject must shadow /Pages /Resources, got {} images",
+            outcome.images.len()
+        );
+    }
+
+    // Page 2 omits /Resources -> inherits /Pages /Resources as a whole and extracts /ImAncestor.
+    {
+        let ws = TestWorkspace::from_bytes("nearest_resources_p2.pdf", &pdf_bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "nearest-resources-p2",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let params = ExtractImagesParams {
+            pages: PageRange::parse("2").expect("valid page 2"),
+            format: ExtractFormat::Original,
+            min_px: 16,
+        };
+        let outcome = extract_images::extract_document_images(&mut ctx, &params)
+            .expect("page 2 extraction succeeds");
+        assert_eq!(outcome.pages_inspected, 1);
+        assert_eq!(outcome.images.len(), 1);
+        assert_eq!(outcome.images[0].page, 2);
+        assert_eq!(outcome.images[0].bytes, jpeg_bytes);
+    }
+
+    // Inspecting all pages extracts only Page 2's image.
+    {
+        let ws = TestWorkspace::from_bytes("nearest_resources_all.pdf", &pdf_bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "nearest-resources-all",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let params = ExtractImagesParams {
+            pages: PageRange::all(),
+            format: ExtractFormat::Original,
+            min_px: 16,
+        };
+        let outcome = extract_images::extract_document_images(&mut ctx, &params)
+            .expect("full document extraction succeeds");
+        assert_eq!(outcome.pages_inspected, 2);
+        assert_eq!(outcome.images.len(), 1);
+        assert_eq!(outcome.images[0].page, 2);
+        assert_eq!(outcome.images[0].bytes, jpeg_bytes);
+    }
+}

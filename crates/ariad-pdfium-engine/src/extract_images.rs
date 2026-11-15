@@ -358,13 +358,16 @@ fn extract_document_images_with(
         let page_obj_id = *lopdf_pages
             .get(&page_num)
             .ok_or_else(EngineFailure::limit_exceeded)?;
-        preflight_page_images(
+        // Canonicalization above already ran the scoped content-stream budget pass.
+        preflight_page_images_inner(
             ctx,
             &pdf_doc,
             page_obj_id,
             max_decompressed,
             max_depth,
             &mut preflight_document_work,
+            &mut 0,
+            false,
         )?;
         let mut page_image_refs = Vec::new();
         if let Some(&page_obj_id) = lopdf_pages.get(&page_num) {
@@ -1450,6 +1453,7 @@ fn canonical_content_streams_inner(
     Ok(out)
 }
 
+#[cfg(test)]
 fn preflight_page_images(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
@@ -1670,7 +1674,7 @@ fn preflight_page_images_inner(
         visit_page_execution_streams(&mut state, page_id)?;
         *budget.document_work = state.document_work;
         budget.charge_content(remaining_before - state.remaining, max_bytes)?;
-        let page_execution = crate::execution_budget::check_page_with_scoped_ops(
+        crate::execution_budget::check_page_with_scoped_ops(
             ctx,
             doc,
             page_id,
@@ -1678,14 +1682,6 @@ fn preflight_page_images_inner(
             &state.scoped_ops,
             &page_contents,
         )?;
-        if page_execution > MAX_DOCUMENT_WORK {
-            return Err(EngineFailure::owned(
-                ErrorCode::LimitExceeded,
-                format!(
-                    "Content execution cost {page_execution} exceeds limit {MAX_DOCUMENT_WORK}."
-                ),
-            ));
-        }
     }
     Ok(())
 }

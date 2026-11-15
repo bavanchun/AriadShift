@@ -883,7 +883,7 @@ pub(crate) fn check_page_with_scoped_ops(
     facts: &BTreeMap<ObjectId, Facts>,
     scoped_ops: &HashMap<(ObjectId, [u8; 32]), ScopedStreamFacts>,
     page_contents: &HashSet<ObjectId>,
-) -> Result<usize, EngineFailure> {
+) -> Result<(), EngineFailure> {
     let mut calc = Calculator {
         ctx,
         doc,
@@ -893,7 +893,8 @@ pub(crate) fn check_page_with_scoped_ops(
         glyph_memo: HashMap::new(),
         page_contents: page_contents.clone(),
     };
-    Ok(calc.page(page_id)?.ops)
+    calc.page(page_id)?;
+    Ok(())
 }
 
 pub(crate) fn check_with_scoped_ops(
