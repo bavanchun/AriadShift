@@ -164,15 +164,10 @@ fn process_font(
     let encoding = encoding_font
         .get_font_encoding(doc)
         .map_err(|_| PdfError::Malformed)?;
-    let face = ttf_parser::Face::parse(bytes, 0).map_err(|_| PdfError::Malformed)?;
+    let face = crate::font_face::Face::parse(bytes).ok_or(PdfError::Malformed)?;
     let units = f64::from(face.units_per_em());
     let scale = |value: i16| (f64::from(value) * 1000.0 / units).round() as i64;
-    let postscript_name = face
-        .names()
-        .into_iter()
-        .filter(|name| name.name_id == ttf_parser::name_id::POST_SCRIPT_NAME)
-        .find_map(|name| name.to_string())
-        .ok_or(PdfError::Malformed)?;
+    let postscript_name = face.postscript_name().ok_or(PdfError::Malformed)?;
     let mut widths = Vec::new();
     let mut differences = vec![Object::Integer(0)];
     let mut mappings = Vec::new();
