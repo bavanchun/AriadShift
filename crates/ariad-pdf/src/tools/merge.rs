@@ -1,8 +1,8 @@
 //! Implementation of the `pdf.merge` tool.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::DefaultHasher},
-    hash::{Hash, Hasher},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::RandomState},
+    hash::{BuildHasher, Hash, Hasher},
 };
 
 use ariad_core::{
@@ -730,7 +730,7 @@ fn split_attachment_name(raw: &[u8]) -> (String, String) {
     }
 }
 
-fn name_disambiguation_exhausted() -> PdfError {
+pub(crate) fn name_disambiguation_exhausted() -> PdfError {
     PdfError::LimitExceeded(ReadError::TooManyObjects {
         limit: usize::try_from(u32::MAX).unwrap_or(usize::MAX),
     })
@@ -739,7 +739,7 @@ fn name_disambiguation_exhausted() -> PdfError {
 /// Tracks seen names alongside monotonic per-base suffix counters so repeated name
 /// disambiguation performs $O(N)$ probes total across $N$ inputs.
 #[derive(Debug)]
-struct NameDisambiguator<K> {
+pub(crate) struct NameDisambiguator<K> {
     seen: HashSet<Vec<u8>>,
     next_counters: HashMap<K, Option<u32>>,
     #[cfg(test)]
@@ -762,7 +762,7 @@ impl<K> Default for NameDisambiguator<K> {
 }
 
 impl<K: Eq + Hash> NameDisambiguator<K> {
-    fn disambiguate<F, G>(
+    pub(crate) fn disambiguate<F, G>(
         &mut self,
         raw: &[u8],
         ctx: &ToolCtx,
@@ -811,11 +811,23 @@ impl<K: Eq + Hash> NameDisambiguator<K> {
 
 /// Deduplicates catalog `/AF` entries in $O(1)$ amortized time while preserving insertion order
 /// and matching `Object::PartialEq` semantics.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct MergedAf {
     entries: Vec<Object>,
     seen_refs: HashSet<ObjectId>,
     inline_buckets: HashMap<u64, Vec<usize>>,
+    hash_builder: RandomState,
+}
+
+impl Default for MergedAf {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            seen_refs: HashSet::new(),
+            inline_buckets: HashMap::new(),
+            hash_builder: RandomState::new(),
+        }
+    }
 }
 
 impl MergedAf {
@@ -829,7 +841,7 @@ impl MergedAf {
             }
             return;
         }
-        let hash = hash_pdf_object(&obj);
+        let hash = hash_pdf_object(&obj, &self.hash_builder);
         let bucket = self.inline_buckets.entry(hash).or_default();
         if bucket.iter().any(|&idx| self.entries[idx] == obj) {
             return;
@@ -840,13 +852,18 @@ impl MergedAf {
     }
 }
 
-fn hash_pdf_object(obj: &Object) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    hash_pdf_object_into(obj, &mut hasher, 0);
+fn hash_pdf_object(obj: &Object, hash_builder: &impl BuildHasher) -> u64 {
+    let mut hasher = hash_builder.build_hasher();
+    hash_pdf_object_into(obj, &mut hasher, hash_builder, 0);
     hasher.finish()
 }
 
-fn hash_pdf_object_into(obj: &Object, hasher: &mut impl Hasher, depth: usize) {
+fn hash_pdf_object_into(
+    obj: &Object,
+    hasher: &mut impl Hasher,
+    hash_builder: &impl BuildHasher,
+    depth: usize,
+) {
     if depth > 128 {
         0xff_u8.hash(hasher);
         return;
@@ -883,16 +900,16 @@ fn hash_pdf_object_into(obj: &Object, hasher: &mut impl Hasher, depth: usize) {
             6_u8.hash(hasher);
             items.len().hash(hasher);
             for item in items {
-                hash_pdf_object_into(item, hasher, depth + 1);
+                hash_pdf_object_into(item, hasher, hash_builder, depth + 1);
             }
         }
         Object::Dictionary(dict) => {
             7_u8.hash(hasher);
-            hash_pdf_dict_into(dict, hasher, depth + 1);
+            hash_pdf_dict_into(dict, hasher, hash_builder, depth + 1);
         }
         Object::Stream(stream) => {
             8_u8.hash(hasher);
-            hash_pdf_dict_into(&stream.dict, hasher, depth + 1);
+            hash_pdf_dict_into(&stream.dict, hasher, hash_builder, depth + 1);
             stream.content.hash(hasher);
             stream.allows_compression.hash(hasher);
             stream.start_position.hash(hasher);
@@ -904,15 +921,22 @@ fn hash_pdf_object_into(obj: &Object, hasher: &mut impl Hasher, depth: usize) {
     }
 }
 
-fn hash_pdf_dict_into(dict: &Dictionary, hasher: &mut impl Hasher, depth: usize) {
+fn hash_pdf_dict_into(
+    dict: &Dictionary,
+    hasher: &mut impl Hasher,
+    hash_builder: &impl BuildHasher,
+    depth: usize,
+) {
     dict.len().hash(hasher);
     // Dictionary equality in lopdf is key-order-independent, so combine per-entry hashes
     // commutatively.
     let mut acc = 0_u64;
     for (k, v) in dict.iter() {
-        let mut entry_hasher = DefaultHasher::new();
+        let mut entry_hasher = hash_builder.build_hasher();
+        0_u8.hash(&mut entry_hasher);
         k.hash(&mut entry_hasher);
-        hash_pdf_object_into(v, &mut entry_hasher, depth);
+        1_u8.hash(&mut entry_hasher);
+        hash_pdf_object_into(v, &mut entry_hasher, hash_builder, depth);
         acc = acc.wrapping_add(entry_hasher.finish());
     }
     acc.hash(hasher);
@@ -1182,5 +1206,61 @@ mod tests {
         assert_eq!(af.entries[3], Object::Real(-0.0));
         assert!(matches!(af.entries[4], Object::Real(v) if v.is_nan()));
         assert!(matches!(af.entries[5], Object::Real(v) if v.is_nan()));
+    }
+
+    #[test]
+    fn merged_af_distinguishes_swapped_dict_values_and_uses_per_instance_random_state() {
+        let mut swapped_a = Dictionary::new();
+        swapped_a.set(b"A".to_vec(), Object::Integer(1));
+        swapped_a.set(b"B".to_vec(), Object::Integer(2));
+
+        let mut swapped_b = Dictionary::new();
+        swapped_b.set(b"A".to_vec(), Object::Integer(2));
+        swapped_b.set(b"B".to_vec(), Object::Integer(1));
+
+        let obj_a = Object::Dictionary(swapped_a);
+        let obj_b = Object::Dictionary(swapped_b);
+
+        let mut af = MergedAf::default();
+        let hash_a = hash_pdf_object(&obj_a, &af.hash_builder);
+        let hash_b = hash_pdf_object(&obj_b, &af.hash_builder);
+        assert_ne!(hash_a, hash_b);
+
+        // Nested dictionaries with swapped key/value bindings also stay in separate buckets.
+        let mut nested_a = Dictionary::new();
+        nested_a.set(b"Inner".to_vec(), obj_a.clone());
+        let mut nested_b = Dictionary::new();
+        nested_b.set(b"Inner".to_vec(), obj_b.clone());
+        assert_ne!(
+            hash_pdf_object(&Object::Dictionary(nested_a), &af.hash_builder),
+            hash_pdf_object(&Object::Dictionary(nested_b), &af.hash_builder)
+        );
+
+        af.push_unique(obj_a.clone());
+        af.push_unique(obj_b.clone());
+        assert_eq!(af.entries, vec![obj_a, obj_b]);
+        assert_eq!(af.inline_buckets.len(), 2);
+
+        // Two separately constructed MergedAf instances must use independent RandomState seeds.
+        let probes: Vec<Object> = (0_i64..8)
+            .map(|idx| {
+                let mut d = Dictionary::new();
+                d.set(b"F".to_vec(), Object::Integer(idx));
+                d.set(b"Type".to_vec(), Object::Name(b"Filespec".to_vec()));
+                Object::Dictionary(d)
+            })
+            .collect();
+
+        let af1 = MergedAf::default();
+        let af2 = MergedAf::default();
+        let hashes1: Vec<u64> = probes
+            .iter()
+            .map(|obj| hash_pdf_object(obj, &af1.hash_builder))
+            .collect();
+        let hashes2: Vec<u64> = probes
+            .iter()
+            .map(|obj| hash_pdf_object(obj, &af2.hash_builder))
+            .collect();
+        assert_ne!(hashes1, hashes2);
     }
 }
