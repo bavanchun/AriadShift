@@ -1562,6 +1562,161 @@ fn redact_pipeline_rect_overlay_runs_clean_candidate_branch() {
     assert!(!no_rectangle.iter().any(|s| s == "redact:clean-candidate"));
 }
 
+/// One page with "Hello World" at (72, 712) and two annotations: one overlapping the
+/// rectangle used by the tests below and one far away from it.
+fn write_annotated_pdf(path: &Path, indirect_annots: bool, rotation: Option<i64>) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let content = doc.add_object(Stream::new(
+        Dictionary::new(),
+        b"BT /F1 12 Tf 72 712 Td (Hello World) Tj ET\n".to_vec(),
+    ));
+    let mut annot = |name: &str, rect: [f32; 4]| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot",
+            "Subtype" => "Text",
+            "Contents" => Object::string_literal(name),
+            "Rect" => rect.iter().map(|v| Object::Real(*v)).collect::<Vec<_>>(),
+        })
+    };
+    let near = annot("near", [100.0, 700.0, 140.0, 730.0]);
+    let far = annot("far", [400.0, 100.0, 440.0, 140.0]);
+    let refs = vec![Object::Reference(near), Object::Reference(far)];
+    let annots = if indirect_annots {
+        Object::Reference(doc.add_object(Object::Array(refs)))
+    } else {
+        Object::Array(refs)
+    };
+    let font = doc.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica"
+    });
+    let mut page = dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => content,
+        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } },
+        "Annots" => annots,
+    };
+    if let Some(angle) = rotation {
+        page.set("Rotate", angle);
+    }
+    let page_id = doc.add_object(page);
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page_id)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+fn redact_annotated(indirect: bool) -> ariad_core::tools::params::redact::RedactionCarrierEvidence {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("annotated.pdf");
+    write_annotated_pdf(&input, indirect, None);
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(input)],
+        OutputTarget::Path(temp.path().join("out.pdf")),
+    )
+    .with_params(json!({
+        "targets": [{
+            "kind": "rectangle", "page": 1,
+            "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 }
+        }]
+    }));
+    let outcome = run_tool(&request).expect("rectangle redaction over an annotation");
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    report.carriers.expect("carrier evidence")
+}
+
+#[test]
+fn redact_pipeline_rectangle_removes_intersecting_direct_annotation() {
+    if !child("redact_pipeline_rectangle_removes_intersecting_direct_annotation") {
+        return;
+    }
+    // Only the annotation under the rectangle goes; the distant one is kept.
+    assert_eq!(redact_annotated(false).annotations_removed, 1);
+}
+
+#[test]
+fn redact_pipeline_rectangle_removes_intersecting_indirect_annotation() {
+    if !child("redact_pipeline_rectangle_removes_intersecting_indirect_annotation") {
+        return;
+    }
+    assert_eq!(redact_annotated(true).annotations_removed, 1);
+}
+
+#[test]
+fn redact_pipeline_rect_overlay_on_all_page_rotations() {
+    if !child("redact_pipeline_rect_overlay_on_all_page_rotations") {
+        return;
+    }
+    for angle in [0_i64, 90, 180, 270] {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("rotated.pdf");
+        let out_path = temp.path().join("out.pdf");
+        write_annotated_pdf(&input, false, Some(angle));
+        let request = ToolRequest::new(
+            "pdf.redact",
+            vec![InputRef::new(input)],
+            OutputTarget::Path(out_path.clone()),
+        )
+        .with_params(json!({
+            "targets": [{
+                "kind": "rectangle", "page": 1,
+                "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 }
+            }],
+            "overlay_text": "REDACTED"
+        }));
+        let outcome = run_tool(&request)
+            .unwrap_or_else(|e| panic!("rectangle + overlay on /Rotate {angle}: {e:?}"));
+        let report: RedactionVerificationReport =
+            serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+        assert_eq!(
+            report.status,
+            RedactionVerificationStatus::Verified,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.pdfium_text,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.core_text,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.region_render,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        let oracle = Command::new("pdftotext")
+            .arg(&out_path)
+            .arg("-")
+            .output()
+            .expect("run pdftotext oracle");
+        assert!(oracle.status.success());
+        let extracted = String::from_utf8_lossy(&oracle.stdout);
+        assert!(
+            !extracted.contains("Hello"),
+            "{angle}: original text must be gone"
+        );
+        assert!(
+            extracted.contains("REDACTED"),
+            "{angle}: overlay must be present"
+        );
+    }
+}
+
 #[test]
 fn redact_pipeline_counts_indirect_annotations_and_vector_paths() {
     if !child("redact_pipeline_counts_indirect_annotations_and_vector_paths") {
