@@ -5547,6 +5547,12 @@ mod corpus_tests {
                 "Inline CCITTFaxDecode requires DecodeParms.",
             ),
             (
+                b"BI /W 8 /H 64 /IM true /F /CCF /DP << /K -1 /Columns 8 /Rows 64 \
+                  /EndOfBlock false >> ID x EI"
+                    .to_vec(),
+                "Inline CCITTFaxDecode data is shorter than its row count.",
+            ),
+            (
                 ccitt("/K 0 /Columns 8 /Rows 8 /EndOfBlock false", &[0xff]),
                 "Inline CCITTFaxDecode K must be -1.",
             ),
@@ -5580,6 +5586,60 @@ mod corpus_tests {
             assert_eq!(err.code, ErrorCode::LimitExceeded, "{message}");
             assert_eq!(err.message, message);
         }
+    }
+
+    #[test]
+    fn out_of_scope_stream_refusal_names_its_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "scope-reason",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let allowed = HashSet::from([(1, 0)]);
+        let page_contents = HashSet::new();
+        let mut state = StreamPreflightState {
+            ctx: &ctx,
+            doc: &doc,
+            max_depth: 8,
+            allowed_ids: Some(&allowed),
+            page_contents: &page_contents,
+            remaining: 1024,
+            rewrite: false,
+            visit_declared: false,
+            decoded_cache: HashMap::new(),
+            visited: HashSet::new(),
+            type3_visited: HashSet::new(),
+            out: BTreeMap::new(),
+            facts: BTreeMap::new(),
+            scoped_ops: HashMap::new(),
+            document_work: 0,
+            rewrite_memo: HashMap::new(),
+            rewrite_counts: None,
+        };
+        let err = visit_stream(
+            &mut state,
+            (2, 0),
+            &crate::execution_budget::Scope::default(),
+            0,
+            &mut HashSet::new(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF stream is outside the inspected execution scope."
+        );
     }
 
     #[test]
@@ -6519,14 +6579,14 @@ mod corpus_tests {
         assert_eq!(err.code, ErrorCode::LimitExceeded);
         assert_eq!(
             err.message,
-            crate::execution_budget::RESOURCES_DANGLING_REFERENCE
+            crate::execution_budget::RESOURCES_CANNOT_BE_RESOLVED
         );
         let dangling = Object::Dictionary(dictionary! { "XObject" => Object::Reference((999, 0)) });
         let err = parent.child(&doc, Some(&dangling)).map(|_| ()).unwrap_err();
         assert_eq!(err.code, ErrorCode::LimitExceeded);
         assert_eq!(
             err.message,
-            crate::execution_budget::RESOURCE_CATEGORY_DANGLING_REFERENCE
+            crate::execution_budget::RESOURCE_CATEGORY_CANNOT_BE_RESOLVED
         );
         assert_eq!(
             parent

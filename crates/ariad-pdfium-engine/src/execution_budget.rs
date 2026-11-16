@@ -436,9 +436,9 @@ pub(crate) const ANNOTS_NOT_ARRAY: &str = "Page Annots entry is not an array.";
 pub(crate) const ANNOTATION_NOT_DICTIONARY: &str = "Page annotation is not a dictionary.";
 pub(crate) const RESOURCES_NOT_DICTIONARY: &str = "Resources entry is not a dictionary.";
 pub(crate) const RESOURCE_CATEGORY_NOT_DICTIONARY: &str = "Resource category is not a dictionary.";
-pub(crate) const RESOURCES_DANGLING_REFERENCE: &str = "Resources entry is a dangling reference.";
-pub(crate) const RESOURCE_CATEGORY_DANGLING_REFERENCE: &str =
-    "Resource category is a dangling reference.";
+pub(crate) const RESOURCES_CANNOT_BE_RESOLVED: &str = "Resources entry cannot be resolved.";
+pub(crate) const RESOURCE_CATEGORY_CANNOT_BE_RESOLVED: &str =
+    "Resource category cannot be resolved.";
 
 fn categories(
     doc: &lopdf::Document,
@@ -449,7 +449,7 @@ fn categories(
         return Ok(out);
     };
     let dict = resolve(Some(doc), resources)
-        .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, RESOURCES_DANGLING_REFERENCE))?
+        .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, RESOURCES_CANNOT_BE_RESOLVED))?
         .1
         .as_dict()
         .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, RESOURCES_NOT_DICTIONARY))?;
@@ -466,7 +466,7 @@ fn categories(
                 .map_err(|_| {
                     EngineFailure::new(
                         ErrorCode::LimitExceeded,
-                        RESOURCE_CATEGORY_DANGLING_REFERENCE,
+                        RESOURCE_CATEGORY_CANNOT_BE_RESOLVED,
                     )
                 })?
                 .1
