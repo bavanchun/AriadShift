@@ -716,5 +716,20 @@ mod tests {
             map_pdf_error(PdfError::NotImplemented("pdf.future".to_owned()), &scrubber);
         assert_eq!(missing_err.code(), "tool_missing");
         assert_eq!(missing_err.exit_code(), 5);
+
+        // Every redaction refusal is a `NotImplemented` carrying the `redaction refused:`
+        // prefix, so it keeps the public contract `tool_missing` / exit 5.
+        let refused = map_pdf_error(
+            PdfError::NotImplemented("redaction refused: original image remains reachable".into()),
+            &scrubber,
+        );
+        assert_eq!(refused.code(), "tool_missing");
+        assert_eq!(refused.exit_code(), 5);
+        assert!(
+            refused
+                .to_string()
+                .contains("redaction refused: original image"),
+            "{refused}"
+        );
     }
 }

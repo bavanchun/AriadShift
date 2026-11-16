@@ -7,20 +7,38 @@ use unicode_normalization::{
 
 const MAX_NORMALIZED_BYTES: usize = 16 * 1024 * 1024;
 
-fn map_char(c: char) -> char {
+/// Maps a scalar to its search form, or `None` for an invisible formatting character.
+///
+/// Fullwidth and Arabic-Indic digits become ASCII digits, the no-break space a space and
+/// hyphen and dash variants an ASCII hyphen. Soft hyphens and zero-width characters are
+/// dropped, so they cannot split a target; the original range of a match still spans any
+/// dropped scalar between its first and last matched scalar.
+fn map_char(c: char) -> Option<char> {
+    let digit = |zero: char| char::from_digit(c as u32 - zero as u32, 10);
     match c {
-        '\u{FF10}'..='\u{FF19}' => (b'0' + (c as u32 - 0xFF10) as u8) as char,
-        '\u{00A0}' => ' ',
-        '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2212}' => '-',
-        _ => c,
+        '\u{FF10}'..='\u{FF19}' => digit('\u{FF10}'),
+        '\u{0660}'..='\u{0669}' => digit('\u{0660}'),
+        '\u{06F0}'..='\u{06F9}' => digit('\u{06F0}'),
+        '\u{00A0}' => Some(' '),
+        '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2212}' => Some('-'),
+        '\u{00AD}' | '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}' => None,
+        _ => Some(c),
     }
 }
 
 fn needs_mapping(c: char) -> bool {
-    matches!(
-        c,
-        '\u{FF10}'..='\u{FF19}' | '\u{00A0}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2212}'
-    )
+    map_char(c) != Some(c)
+}
+
+/// The NFC search form of `input` with the custom mappings of [`map_char`] applied.
+/// Literal targets use it so they compare equal to normalized page text.
+pub(super) fn search_form(input: &str) -> String {
+    input
+        .chars()
+        .filter_map(map_char)
+        .collect::<String>()
+        .nfc()
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -53,7 +71,9 @@ impl Normalized {
         let mut parts = Vec::new();
         for (start, character) in input.char_indices() {
             let end = start + character.len_utf8();
-            let mapped = map_char(character);
+            let Some(mapped) = map_char(character) else {
+                continue;
+            };
             decompose_canonical(mapped, |c| {
                 parts.push(Part {
                     character: c,
@@ -66,8 +86,7 @@ impl Normalized {
             }
         }
         canonical_order(&mut parts);
-        let mapped_input: String = input.chars().map(map_char).collect();
-        let text: String = mapped_input.nfc().collect();
+        let text = search_form(input);
         if text.len() > MAX_NORMALIZED_BYTES {
             return Err("normalized text limit exceeded");
         }
@@ -201,6 +220,28 @@ mod tests {
         assert_eq!(&original[from..to], "\u{FF11}\u{FF12}\u{FF13}");
         let (from_dash, to_dash) = value.original_range(7, 8).unwrap();
         assert_eq!(&original[from_dash..to_dash], "\u{2013}");
+    }
+
+    #[test]
+    fn maps_arabic_indic_digits_and_non_breaking_hyphen() {
+        let original = "\u{0661}\u{0662}\u{0663}\u{2011}\u{06F4}\u{06F5}";
+        let value = Normalized::new(original).unwrap();
+        assert_eq!(value.text, "123-45");
+        let (from, to) = value.original_range(0, 3).unwrap();
+        assert_eq!(&original[from..to], "\u{0661}\u{0662}\u{0663}");
+    }
+
+    #[test]
+    fn drops_soft_hyphens_and_zero_width_characters_inside_matches() {
+        let original = "a 12\u{200B}3\u{00AD}4\u{200D}5\u{FEFF}6\u{2060}7 b";
+        let value = Normalized::new(original).unwrap();
+        assert_eq!(value.text, "a 1234567 b");
+        let (from, to) = value.original_range(2, 9).unwrap();
+        assert_eq!(
+            &original[from..to],
+            "12\u{200B}3\u{00AD}4\u{200D}5\u{FEFF}6\u{2060}7"
+        );
+        assert_eq!(search_form("1\u{200C}2\u{00AD}3"), "123");
     }
 
     #[test]
