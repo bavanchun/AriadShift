@@ -13,6 +13,12 @@ on:
       - engines/pdfium/**
       - scripts/pack/**
       - crates/ariad-pdfium-engine/**
+      # The redaction pipeline tests only run for real here (with ARIAD_REQUIRE_PDFIUM_PACK),
+      # so changes to the redaction code must trigger this workflow.
+      - crates/ariad-host/src/tools/redact.rs
+      - crates/ariad-host/tests/redact_pipeline.rs
+      - crates/ariad-pdf/src/redact/**
+      - crates/ariad-core/src/tools/params/redact*
       - justfile
       - .github/workflows/pack-pdfium.yml
   push:
