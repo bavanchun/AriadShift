@@ -351,13 +351,23 @@ pub fn verify_rect_overlay_text_gates(
     Ok((pdfium_text, core_text))
 }
 
+/// Test-only launcher for the private PDFium geometry evidence of one PDF.
+///
+/// Compiled only with the `test-probe` feature and hidden from the documentation. The input is
+/// read through the same bounded reader as `pdf.redact`, so `limits.max_input_bytes` applies.
+#[cfg(feature = "test-probe")]
+#[doc(hidden)]
 pub fn inspect_geometry_for_test(
     pdf_path: &Path,
     limits: &Limits,
 ) -> Result<RedactGeometry, ToolError> {
+    let bytes = read_bounded_file(pdf_path, limits.max_input_bytes).map_err(|e| match e {
+        crate::convert::ConvertError::LimitExceeded => ToolError::LimitExceeded,
+        other => ToolError::InputIo(other.to_string()),
+    })?;
     let ws = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
     let staged_path = ws.input_dir().join("input.pdf");
-    fs::copy(pdf_path, &staged_path).map_err(|e| ToolError::InputIo(e.to_string()))?;
+    fs::write(&staged_path, &bytes).map_err(|e| ToolError::InputIo(e.to_string()))?;
     let scrubber = SecretScrubber::default();
     let cancel = CancellationToken::new();
     let deadline = Instant::now() + Duration::from_secs(30);

@@ -1718,6 +1718,21 @@ fn redact_pipeline_rect_overlay_on_all_page_rotations() {
 }
 
 #[test]
+fn redact_geometry_test_helper_refuses_input_over_the_limit() {
+    use ariad_core::limits::Limits;
+    use ariad_host::tools::redact::inspect_geometry_for_test;
+
+    // No PDFium pack is needed: the size cap applies before any engine runs.
+    let mut limits = Limits::local();
+    limits.max_input_bytes = Some(64);
+    match inspect_geometry_for_test(&fixture("mixed-sizes.pdf"), &limits) {
+        Err(ToolError::LimitExceeded) => {}
+        Err(other) => panic!("expected limit_exceeded, got {other:?}"),
+        Ok(_) => panic!("a PDF over max_input_bytes must be refused"),
+    }
+}
+
+#[test]
 fn redact_pipeline_counts_indirect_annotations_and_vector_paths() {
     if !child("redact_pipeline_counts_indirect_annotations_and_vector_paths") {
         return;
