@@ -97,7 +97,7 @@ fn assert_value_free_of(value: &Value, secret: &str, what: &str) {
     let mut strings = Vec::new();
     collect_strings(value, &mut strings);
     for s in strings {
-        assert!(!s.contains(secret), "{what} leaked secret in {s:?}");
+        assert!(!s.contains(secret), "{what} leaked the secret");
     }
 }
 
@@ -112,10 +112,11 @@ fn assert_scrubbed(
     let published = tmp.path().join(PUBLISHED_NAME);
     let text = fs::read_to_string(&published).expect("published JSON is UTF-8");
     assert!(!text.contains(secret), "raw secret in published bytes");
-    for spelling in spellings {
+    // Name spellings by index so a failure never prints secret material.
+    for (index, spelling) in spellings.iter().enumerate() {
         assert!(
             !text.contains(spelling),
-            "escaped secret spelling {spelling:?} in published bytes"
+            "escaped secret spelling #{index} in published bytes"
         );
     }
     let parsed: Value = serde_json::from_str(&text).expect("published JSON stays valid");
