@@ -309,5 +309,19 @@ mod tests {
             hint: "redaction refused: /home/someone/secret".into(),
         };
         assert!(!sanitize_error(spoof).to_string().contains("secret"));
+        // The in-process engine with a hint that is not a refusal is blanked too.
+        for hint in [
+            "/home/someone/secret",
+            "tool `x` is not implemented: secret",
+            "xredaction refused: secret",
+        ] {
+            let spoof = ToolError::ToolMissing {
+                engine: "ariad-pdf".into(),
+                hint: hint.into(),
+            };
+            let safe = sanitize_error(spoof);
+            assert!(!safe.to_string().contains("secret"), "{hint}: {safe}");
+            assert!(!safe.is_safety_refusal());
+        }
     }
 }

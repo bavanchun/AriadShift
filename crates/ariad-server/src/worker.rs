@@ -9,6 +9,7 @@ use std::{
 
 use ariad_core::limits::Limits;
 use ariad_host::convert::{ConvertError, ConvertEvent, ConvertRequest};
+use ariad_host::tools::ToolError;
 use chrono::Utc;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -95,6 +96,24 @@ impl Failure {
             code,
             message: message.to_owned(),
             transient: true,
+        }
+    }
+
+    /// Maps a document-tool error to a failure.
+    ///
+    /// A redaction safety refusal keeps its message (a fixed reason without document
+    /// content, already filtered by the tool helper) and is permanent: the same input is
+    /// refused again, so retrying only delays the answer. Every other `tool_missing`,
+    /// `sandbox_unavailable` and `engine_failure` stays transient with a fixed text.
+    fn from_tool(error: &ToolError) -> Self {
+        if error.is_safety_refusal() {
+            return Self::permanent("tool_missing", error.to_string());
+        }
+        match error.code() {
+            "tool_missing" | "sandbox_unavailable" | "engine_failure" => {
+                Self::transient(error.code(), "document tool failed")
+            }
+            code => Self::permanent(code, "the document tool could not finish"),
         }
     }
 
@@ -571,7 +590,7 @@ impl Worker {
         dir: &FsPath,
         cancel: &CancellationToken,
     ) -> Result<Done, Outcome> {
-        use ariad_host::tools::{InputRef, ToolError};
+        use ariad_host::tools::InputRef;
         if let Err(err) = tokio::fs::remove_dir_all(dir).await
             && err.kind() != std::io::ErrorKind::NotFound
         {
@@ -660,13 +679,7 @@ impl Worker {
             Ok(Ok(report)) => report,
             Ok(Err(ToolError::Interrupted)) => return Err(Outcome::Canceled),
             Ok(Err(error)) => {
-                let failure = match error.code() {
-                    "tool_missing" | "sandbox_unavailable" | "engine_failure" => {
-                        Failure::transient(error.code(), "document tool failed")
-                    }
-                    code => Failure::permanent(code, "the document tool could not finish"),
-                };
-                return Err(Outcome::Failed(failure, Vec::new()));
+                return Err(Outcome::Failed(Failure::from_tool(&error), Vec::new()));
             }
             Err(_) => return Err(Outcome::transient("failed", "tool helper failed")),
         };
@@ -1148,6 +1161,47 @@ mod tests {
             Failure::from_convert(&ConvertError::LimitExceeded).code,
             "limit_exceeded"
         );
+    }
+
+    #[test]
+    fn redaction_refusals_keep_their_reason_and_are_never_retried() {
+        let refusal = ToolError::ToolMissing {
+            engine: "ariad-pdf".into(),
+            hint: "redaction refused: original image remains reachable".into(),
+        };
+        let failure = Failure::from_tool(&refusal);
+        assert_eq!(failure.code, "tool_missing");
+        assert_eq!(
+            failure.message,
+            "redaction refused: original image remains reachable"
+        );
+        assert!(
+            !failure.transient,
+            "a refusal fails again, so it must not retry"
+        );
+    }
+
+    #[test]
+    fn other_tool_missing_failures_stay_transient_and_blanked() {
+        // Same hint text from a different engine, and a non-refusal hint from `ariad-pdf`.
+        for (engine, hint) in [
+            ("qpdf", "redaction refused: /home/someone/secret"),
+            ("ariad-pdf", "/home/someone/secret"),
+            ("pdfium", ""),
+        ] {
+            let failure = Failure::from_tool(&ToolError::ToolMissing {
+                engine: engine.into(),
+                hint: hint.into(),
+            });
+            assert!(failure.transient, "{engine}: {hint}");
+            assert_eq!(failure.code, "tool_missing");
+            assert_eq!(
+                failure.message,
+                "a required engine is missing on the worker"
+            );
+        }
+        let sandbox = Failure::from_tool(&ToolError::SandboxUnavailable("x".into()));
+        assert!(sandbox.transient);
     }
 
     #[test]

@@ -388,3 +388,89 @@ async fn metadata_pruning_retains_secondary_uploads_until_their_jobs_are_removed
     );
     h.stop().await;
 }
+
+/// A one-page PDF whose content stream holds an inline image, which `pdf.redact` refuses.
+fn inline_image_pdf() -> Vec<u8> {
+    let content = b"q BI /W 1 /H 1 /BPC 8 /CS /G ID \x00 EI Q";
+    let objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>".to_vec(),
+        [
+            format!("<< /Length {} >>\nstream\n", content.len()).as_bytes(),
+            content,
+            b"\nendstream",
+        ]
+        .concat(),
+    ];
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, body) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+        pdf.extend_from_slice(body);
+        pdf.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .as_bytes(),
+    );
+    pdf
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn redaction_refusals_reach_the_client_and_are_not_retried() {
+    let Some((mut h, auth)) = start("tool_redact_refusal").await else {
+        return;
+    };
+    // Retries are allowed, so a wrongly transient refusal would show up as attempts > 1.
+    h.start_worker_with(&[("ARIAD_WORKER_MAX_ATTEMPTS", "3")]);
+    let upload = h.upload(&auth, "inline.pdf", &inline_image_pdf()).await;
+    let response = h
+        .post(
+            &auth,
+            "/v1/jobs",
+            &json!({
+                "tool": "pdf.redact",
+                "upload_id": upload["id"],
+                "params": {"targets": [{
+                    "kind": "rectangle",
+                    "page": 1,
+                    "rect": {"left": 10.0, "bottom": 10.0, "right": 100.0, "top": 100.0}
+                }]}
+            }),
+        )
+        .await;
+    assert_eq!(response.status(), 202);
+    let job: Value = response.json().await.unwrap();
+    let id = job["id"].as_str().unwrap();
+    let finished = h.wait_final(&auth, id, Duration::from_secs(60)).await;
+    assert_eq!(finished["status"], "failed", "{finished}");
+    assert_eq!(finished["error"]["code"], "tool_missing", "{finished}");
+    assert_eq!(
+        finished["error"]["message"], "uninspected carrier refused: inline_image",
+        "{finished}"
+    );
+    assert_eq!(
+        finished["attempts"], 1,
+        "a refusal is permanent: {finished}"
+    );
+    let kinds: Vec<String> =
+        sqlx::query_scalar("SELECT kind FROM job_events WHERE job_id = $1::uuid ORDER BY id")
+            .bind(id)
+            .fetch_all(&h.db.pool)
+            .await
+            .unwrap();
+    assert!(!kinds.contains(&"retrying".to_owned()), "{kinds:?}");
+    h.stop().await;
+}
