@@ -9,8 +9,11 @@ use std::{thread, time::Instant};
 
 use tempfile::{NamedTempFile, TempDir};
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 
 const WORKSPACE_PREFIX: &str = "ariadshift-";
+/// Chunk size for streamed artifact copies; cancellation is checked once per chunk.
+const COPY_CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
@@ -206,11 +209,41 @@ impl Workspace {
         name: &Path,
         bytes: &[u8],
     ) -> Result<(), WorkspaceError> {
-        use std::io::Write;
+        Self::copy_new_in_dir(directory, name, &mut &*bytes, &CancellationToken::new())
+    }
+
+    /// Streams `reader` into a new file in bounded chunks, checking `cancel` between chunks.
+    /// A partial file is removed if the copy fails or is cancelled (`ErrorKind::Interrupted`).
+    fn copy_new_in_dir(
+        directory: &cap_std::fs::Dir,
+        name: &Path,
+        reader: &mut dyn io::Read,
+        cancel: &CancellationToken,
+    ) -> Result<(), WorkspaceError> {
+        use io::Write;
         let mut options = cap_std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         let mut file = directory.open_with(name, &options)?;
-        file.write_all(bytes)?;
+        let mut buffer = vec![0u8; COPY_CHUNK_BYTES];
+        let result = (|| -> io::Result<()> {
+            loop {
+                if cancel.is_cancelled() {
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                let read = match reader.read(&mut buffer) {
+                    Ok(0) => return Ok(()),
+                    Ok(read) => read,
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) => return Err(error),
+                };
+                file.write_all(&buffer[..read])?;
+            }
+        })();
+        if let Err(error) = result {
+            drop(file);
+            let _ = directory.remove_file(name);
+            return Err(error.into());
+        }
         Ok(())
     }
 
@@ -253,6 +286,21 @@ impl Workspace {
         let relative = Self::validate_single_artifact_name(name)?;
         let directory = self.output_handle_ref()?;
         Self::write_new_in_dir(directory, relative, bytes)?;
+        Ok(self.output_dir.join(name))
+    }
+
+    /// Create a new artifact by streaming `reader` through the captured output directory
+    /// capability, so memory use stays bounded by the copy buffer rather than the artifact size.
+    /// Cancellation is observed between chunks and removes the partial file.
+    pub fn write_artifact_from_reader(
+        &self,
+        name: &str,
+        reader: &mut dyn io::Read,
+        cancel: &CancellationToken,
+    ) -> Result<PathBuf, WorkspaceError> {
+        let relative = Self::validate_single_artifact_name(name)?;
+        let directory = self.output_handle_ref()?;
+        Self::copy_new_in_dir(directory, relative, reader, cancel)?;
         Ok(self.output_dir.join(name))
     }
 
@@ -806,5 +854,50 @@ mod symlink_tests {
         fs::create_dir(ws.output_dir().join("dir.json")).unwrap();
         let dir_err = ws.remove_artifact("dir.json").unwrap_err();
         assert!(matches!(dir_err, WorkspaceError::ArtifactNotFile));
+    }
+}
+
+#[cfg(test)]
+mod copy_tests {
+    use super::*;
+
+    /// Yields one chunk of data per read, cancelling the token after the first read.
+    struct CancelAfterFirstRead(CancellationToken, bool);
+
+    impl io::Read for CancelAfterFirstRead {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.0.cancel();
+            self.1 = true;
+            buf[..4].copy_from_slice(b"data");
+            Ok(4)
+        }
+    }
+
+    #[test]
+    fn cancelled_streaming_copy_is_interrupted_and_removes_partial_file() {
+        let workspace = Workspace::new().unwrap();
+        let cancel = CancellationToken::new();
+        let mut reader = CancelAfterFirstRead(cancel.clone(), false);
+        let error = workspace
+            .write_artifact_from_reader("partial.bin", &mut reader, &cancel)
+            .expect_err("a cancelled copy fails");
+        assert!(reader.1, "the first chunk was read before cancellation");
+        assert!(
+            matches!(&error, WorkspaceError::Io(e) if e.kind() == io::ErrorKind::Interrupted),
+            "{error:?}"
+        );
+        assert!(!workspace.output_dir().join("partial.bin").exists());
+    }
+
+    #[test]
+    fn pre_cancelled_copy_writes_nothing() {
+        let workspace = Workspace::new().unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let error = workspace
+            .write_artifact_from_reader("none.bin", &mut &b"abc"[..], &cancel)
+            .expect_err("cancelled before the first chunk");
+        assert!(matches!(&error, WorkspaceError::Io(e) if e.kind() == io::ErrorKind::Interrupted));
+        assert!(!workspace.output_dir().join("none.bin").exists());
     }
 }

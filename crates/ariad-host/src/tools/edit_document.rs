@@ -56,20 +56,21 @@ pub(super) fn read_for_tool(
     limits: &Limits,
     cancel: &CancellationToken,
     engine_program: Option<&Path>,
+    scrubber: &SecretScrubber,
 ) -> Result<Document, ToolError> {
-    let scrubber = SecretScrubber::new();
     EditContext {
         workspace,
         limits,
         cancel,
         engine_program,
-        scrubber: &scrubber,
+        scrubber,
         #[cfg(feature = "typst")]
         clock: inprocess::capture_clock()?,
         started: Instant::now(),
         warnings: Vec::new(),
     }
     .read(input, false)
+    .map_err(|error| error.scrubbed(scrubber))
 }
 
 /// Shared document export using the same writers and out-of-process conversions.
@@ -80,20 +81,22 @@ pub(super) fn write_for_tool(
     limits: &Limits,
     cancel: &CancellationToken,
     engine_program: Option<&Path>,
+    scrubber: &SecretScrubber,
 ) -> Result<(PathBuf, Vec<ConvertWarning>), ToolError> {
-    let scrubber = SecretScrubber::new();
     let mut context = EditContext {
         workspace,
         limits,
         cancel,
         engine_program,
-        scrubber: &scrubber,
+        scrubber,
         #[cfg(feature = "typst")]
         clock: inprocess::capture_clock()?,
         started: Instant::now(),
         warnings: Vec::new(),
     };
-    let path = context.write(document, format)?;
+    let path = context
+        .write(document, format)
+        .map_err(|error| error.scrubbed(scrubber))?;
     Ok((path, context.warnings))
 }
 
@@ -198,7 +201,7 @@ impl EditContext<'_> {
                 let input = self.workspace.work_dir().join("edited.ir.json");
                 self.write_ir(&input, document)?;
                 self.workspace.remove_artifact(&name).map_err(|e| {
-                    ToolError::EngineFailure(self.scrubber.scrub(&format!(
+                    ToolError::OutputIo(self.scrubber.scrub(&format!(
                         "could not safely clear staged artifact '{name}': {e}"
                     )))
                 })?;
@@ -677,12 +680,109 @@ mod tests {
             &Limits::local(),
             &CancellationToken::new(),
             None,
+            &SecretScrubber::new(),
         )
         .expect("export replaces the planted link");
 
         assert_eq!(fs::read(&victim).unwrap(), b"untouched-edit-victim");
         assert_regular_file(&path, &planted);
         assert!(!fs::read(&path).unwrap().is_empty());
+    }
+
+    /// Docx is the one export route that clears the name and lets Pandoc write the output, so
+    /// it needs its own planted-link check. Skips when Pandoc or the engine probe is missing.
+    #[test]
+    fn export_docx_does_not_follow_planted_symlink() {
+        if crate::pandoc_bin::resolve_path().is_none() {
+            eprintln!("skipping: Pandoc is unavailable");
+            return;
+        }
+        let probe = std::env::current_exe()
+            .ok()
+            .and_then(|exe| Some(exe.parent()?.parent()?.join("engine-probe")))
+            .filter(|path| path.is_file());
+        let Some(probe) = probe else {
+            eprintln!("skipping: engine-probe is not built next to the test binary");
+            return;
+        };
+        let workspace = Workspace::new().unwrap();
+        let (_outside, victim, planted) = plant(&workspace, "document.docx");
+
+        let (path, _) = write_for_tool(
+            &sample_document(),
+            EditExportFormat::Docx,
+            &workspace,
+            &Limits::local(),
+            &CancellationToken::new(),
+            Some(&probe),
+            &SecretScrubber::new(),
+        )
+        .expect("export replaces the planted link");
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-edit-victim");
+        assert_regular_file(&path, &planted);
+        assert!(fs::read(&path).unwrap().starts_with(b"PK"));
+    }
+
+    #[test]
+    fn read_and_write_scrub_secrets_from_errors() {
+        // Mapped errors are already generic, so register a fragment of the real read error as the
+        // "secret": it proves the caller's scrubber reaches the error rather than a fresh empty one.
+        const SECRET: &str = "could not be read";
+        let mut scrubber = SecretScrubber::new();
+        scrubber.register(SECRET);
+        let workspace = Workspace::new().unwrap();
+
+        // A staged directory under the export name makes clearing fail with an output error.
+        let blocked = workspace.output_dir().join("document.md");
+        fs::create_dir(&blocked).unwrap();
+        // The write error text carries this fragment; the caller's scrubber must remove it.
+        const WRITE_SECRET: &str = "could not safely clear";
+        let write = |scrubber: &SecretScrubber| {
+            write_for_tool(
+                &sample_document(),
+                EditExportFormat::Md,
+                &workspace,
+                &Limits::local(),
+                &CancellationToken::new(),
+                None,
+                scrubber,
+            )
+            .expect_err("a directory cannot be cleared as an artifact")
+        };
+        let raw_write = write(&SecretScrubber::new());
+        assert!(matches!(raw_write, ToolError::OutputIo(_)), "{raw_write:?}");
+        assert!(
+            format!("{raw_write:?}").contains(WRITE_SECRET),
+            "{raw_write:?}"
+        );
+        let mut write_scrubber = SecretScrubber::new();
+        write_scrubber.register(WRITE_SECRET);
+        let error = write(&write_scrubber);
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+        assert!(!format!("{error:?}").contains(WRITE_SECRET), "{error:?}");
+
+        let outside = tempfile::tempdir().unwrap();
+        let input = outside.path().join("input.docx");
+        fs::write(&input, b"not a real docx").unwrap();
+        let program = outside.path().join("missing-engine");
+        let read = |scrubber: &SecretScrubber| {
+            read_for_tool(
+                &(input.clone(), "docx".into()),
+                &workspace,
+                &Limits::local(),
+                &CancellationToken::new(),
+                Some(&program),
+                scrubber,
+            )
+            .expect_err("a missing engine fails")
+        };
+        // The unscrubbed error carries the secret, so the scrubbed assertion is not vacuous.
+        let raw = format!("{:?}", read(&SecretScrubber::new()));
+        assert!(raw.contains(SECRET), "{raw}");
+        let error = read(&scrubber);
+        let rendered = format!("{error:?}");
+        assert!(!rendered.contains(SECRET), "{rendered}");
     }
 
     #[test]

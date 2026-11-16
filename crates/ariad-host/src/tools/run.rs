@@ -48,7 +48,7 @@ use crate::{
         },
         secrets::{SecretBag, SecretScrubber},
     },
-    workspace::Workspace,
+    workspace::{Workspace, WorkspaceError},
 };
 
 /// Input file reference for a [`ToolRequest`].
@@ -1161,13 +1161,65 @@ pub(super) fn write_staged_artifact(
     scrubber: &SecretScrubber,
 ) -> Result<PathBuf, ToolError> {
     workspace.remove_artifact(name).map_err(|e| {
-        ToolError::EngineFailure(scrubber.scrub(&format!(
+        ToolError::OutputIo(scrubber.scrub(&format!(
             "could not safely clear staged artifact '{name}': {e}"
         )))
     })?;
     workspace
         .write_artifact(name, bytes)
         .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))
+}
+
+/// Streams the regular file at `source` into the staged artifact `name` without buffering it,
+/// with the same link-safe clearing and creation as [`write_staged_artifact`].
+pub(super) fn write_staged_artifact_from_file(
+    workspace: &Workspace,
+    name: &str,
+    source: &Path,
+    scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
+) -> Result<PathBuf, ToolError> {
+    let mut file = open_staged_source(source)
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+    if !file
+        .metadata()
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?
+        .is_file()
+    {
+        return Err(ToolError::OutputIo(
+            "staged source is not a regular file".into(),
+        ));
+    }
+    workspace.remove_artifact(name).map_err(|e| {
+        ToolError::OutputIo(scrubber.scrub(&format!(
+            "could not safely clear staged artifact '{name}': {e}"
+        )))
+    })?;
+    workspace
+        .write_artifact_from_reader(name, &mut file, cancel)
+        .map_err(|e| match e {
+            WorkspaceError::Io(io) if io.kind() == std::io::ErrorKind::Interrupted => {
+                ToolError::Interrupted
+            }
+            other => ToolError::OutputIo(scrubber.scrub(&other.to_string())),
+        })
+}
+
+/// Opens a staged source without following a symlink at the final component, so a link planted
+/// at the source path is refused instead of exposing the file it points to.
+fn open_staged_source(source: &Path) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(not(unix))]
+    if fs::symlink_metadata(source)?.file_type().is_symlink() {
+        return Err(std::io::Error::other("staged source is a symlink"));
+    }
+    options.open(source)
 }
 
 /// Scrubs `value` and returns `(scrubbed_value, serialized_bytes, inline_json)` where `inline_json`
@@ -2151,5 +2203,72 @@ mod annotation_form_routing_tests {
             scrub_and_cap_inline_json(value, &too_small, &scrubber).unwrap();
         assert_eq!(bytes_over, expected_bytes);
         assert!(inline_over.is_none());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod staged_artifact_error_tests {
+    use super::*;
+
+    #[test]
+    fn clearing_an_unremovable_artifact_reports_output_io() {
+        let workspace = Workspace::new().unwrap();
+        std::fs::create_dir(workspace.output_dir().join("result.json")).unwrap();
+
+        let error = write_staged_artifact(&workspace, "result.json", b"{}", &SecretScrubber::new())
+            .expect_err("a directory cannot be cleared as an artifact");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+
+        let source = workspace.work_dir().join("source.json");
+        std::fs::write(&source, b"{}").unwrap();
+        let error = write_staged_artifact_from_file(
+            &workspace,
+            "result.json",
+            &source,
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect_err("a directory cannot be cleared as an artifact");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+    }
+
+    #[test]
+    fn symlink_source_is_refused_with_output_io() {
+        let workspace = Workspace::new().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("target.bin");
+        std::fs::write(&target, b"secret-bytes").unwrap();
+        let link = workspace.work_dir().join("link.bin");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let error = write_staged_artifact_from_file(
+            &workspace,
+            "final.bin",
+            &link,
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect_err("a symlink source is refused");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+        assert!(!workspace.output_dir().join("final.bin").exists());
+    }
+
+    #[test]
+    fn cancelled_stage_reports_interrupted() {
+        let workspace = Workspace::new().unwrap();
+        let source = workspace.work_dir().join("source.bin");
+        std::fs::write(&source, vec![7u8; 200 * 1024]).unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let error = write_staged_artifact_from_file(
+            &workspace,
+            "final.bin",
+            &source,
+            &SecretScrubber::new(),
+            &cancel,
+        )
+        .expect_err("cancelled");
+        assert!(matches!(error, ToolError::Interrupted), "{error:?}");
+        assert!(!workspace.output_dir().join("final.bin").exists());
     }
 }

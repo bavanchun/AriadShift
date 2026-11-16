@@ -261,6 +261,7 @@ fn cloud(
                 &request.limits,
                 &request.cancel,
                 request.engine_program.as_deref(),
+                scrubber,
             )
         })
         .transpose()?;
@@ -549,6 +550,7 @@ fn cloud_artifacts(
                     &request.limits,
                     &request.cancel,
                     request.engine_program.as_deref(),
+                    scrubber,
                 )?;
                 result.artifacts.push((path, format.into()));
                 result.warnings = warnings;

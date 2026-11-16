@@ -305,10 +305,9 @@ fn stage_final_item(
     source: &Path,
     staged_name: &str,
     scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
 ) -> Result<PathBuf, ToolError> {
-    let bytes =
-        fs::read(source).map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
-    super::run::write_staged_artifact(workspace, staged_name, &bytes, scrubber)
+    super::run::write_staged_artifact_from_file(workspace, staged_name, source, scrubber, cancel)
 }
 
 fn run_recipe_inner(
@@ -711,7 +710,13 @@ fn run_recipe_inner(
     for (idx, item) in current_items.iter().enumerate() {
         let index_1_based = idx + 1;
         let staged_name = format!("final-{idx:03}.{}", item.format);
-        let staged_file = stage_final_item(&workspace, &item.path, &staged_name, &scrubber)?;
+        let staged_file = stage_final_item(
+            &workspace,
+            &item.path,
+            &staged_name,
+            &scrubber,
+            &request.cancel,
+        )?;
 
         let target_name = if let Some(ref template) = request.recipe.naming {
             let title = if template.contains("{title}") {
@@ -928,13 +933,57 @@ mod tests {
         let planted = workspace.output_dir().join("final-000.pdf");
         std::os::unix::fs::symlink(&victim, &planted).unwrap();
 
-        let staged = stage_final_item(&workspace, &source, "final-000.pdf", &SecretScrubber::new())
-            .expect("staging replaces the planted link");
+        let staged = stage_final_item(
+            &workspace,
+            &source,
+            "final-000.pdf",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect("staging replaces the planted link");
 
         assert_eq!(fs::read(&victim).unwrap(), b"untouched-recipe-victim");
         assert_eq!(staged, planted);
         let meta = fs::symlink_metadata(&staged).unwrap();
         assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
         assert_eq!(fs::read(&staged).unwrap(), b"%PDF-1.7\nfinal");
+    }
+
+    #[test]
+    fn stage_final_item_streams_a_large_file_intact() {
+        let outside = tempfile::tempdir().unwrap();
+        let source = outside.path().join("big.bin");
+        let payload: Vec<u8> = (0..(3 * 1024 * 1024 + 17))
+            .map(|i| (i % 251) as u8)
+            .collect();
+        fs::write(&source, &payload).unwrap();
+
+        let workspace = Workspace::new().unwrap();
+        let staged = stage_final_item(
+            &workspace,
+            &source,
+            "final-001.bin",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect("large file stages");
+
+        assert_eq!(fs::read(&staged).unwrap(), payload);
+    }
+
+    #[test]
+    fn stage_final_item_rejects_a_non_regular_source() {
+        let outside = tempfile::tempdir().unwrap();
+        let workspace = Workspace::new().unwrap();
+        let error = stage_final_item(
+            &workspace,
+            outside.path(),
+            "final-002.bin",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect_err("a directory is not a stageable output");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+        assert!(!workspace.output_dir().join("final-002.bin").exists());
     }
 }
