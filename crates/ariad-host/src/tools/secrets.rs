@@ -511,16 +511,44 @@ impl SecretScrubber {
     /// Replaces every occurrence of any registered secret pattern in `input` with `[REDACTED]`.
     #[must_use]
     pub fn scrub(&self, input: &str) -> String {
-        if self.patterns.is_empty() || input.is_empty() {
-            return input.to_owned();
-        }
-        let mut out = input.to_owned();
+        // Unbounded scrubbing cannot fail; still fail closed rather than return `input`.
+        self.scrub_bounded(input.to_owned(), usize::MAX)
+            .unwrap_or_else(|| REDACTED.to_owned())
+    }
+
+    /// Like [`Self::scrub`], but returns `None` as soon as the rewritten text would exceed
+    /// `max_len` bytes.
+    ///
+    /// Each pattern pass sizes its output exactly before allocating it, so no pass output grows
+    /// past `max_len`. Patterns run longest first, so passes that shrink the text (patterns
+    /// longer than [`REDACTED`]) all come before passes that grow it: once a pass would exceed
+    /// `max_len`, the final text would too.
+    fn scrub_bounded(&self, input: String, max_len: usize) -> Option<String> {
+        let mut out = input;
         for pattern in &self.patterns {
-            if out.contains(pattern.as_str()) {
-                out = out.replace(pattern.as_str(), REDACTED);
+            if out.is_empty() {
+                break;
             }
+            let count = out.matches(pattern.as_str()).count();
+            if count == 0 {
+                continue;
+            }
+            let new_len = (out.len() - count * pattern.len())
+                .saturating_add(count.saturating_mul(REDACTED.len()));
+            if new_len > max_len {
+                return None;
+            }
+            let mut next = String::with_capacity(new_len);
+            let mut last = 0;
+            for (at, matched) in out.match_indices(pattern.as_str()) {
+                next.push_str(&out[last..at]);
+                next.push_str(REDACTED);
+                last = at + matched.len();
+            }
+            next.push_str(&out[last..]);
+            out = next;
         }
-        out
+        (out.len() <= max_len).then_some(out)
     }
 
     /// Returns a copy of `warning` with its `code` and `message` scrubbed.
@@ -555,6 +583,9 @@ impl SecretScrubber {
     }
 
     /// Recursively scrubs all string values and object keys in `value` in place.
+    ///
+    /// The `contains_pattern` checks below run on already-decoded Rust strings, so JSON escape
+    /// spellings cannot bypass them.
     pub fn scrub_value_in_place(&self, value: &mut Value) {
         if self.patterns.is_empty() {
             return;
@@ -591,6 +622,168 @@ impl SecretScrubber {
             }
             Value::Null | Value::Bool(_) | Value::Number(_) => {}
         }
+    }
+}
+
+/// Error from [`SecretScrubber::scrub_json_text`].
+#[derive(Debug, thiserror::Error)]
+pub enum ScrubJsonError {
+    /// The text is not exactly one valid JSON value.
+    #[error("invalid JSON: {0}")]
+    InvalidJson(#[from] serde_json::Error),
+    /// The input or the scrubbed output would exceed the byte limit.
+    #[error("scrubbed JSON exceeds the byte limit")]
+    LimitExceeded,
+}
+
+/// Output buffer that never grows its allocation past `limit` bytes.
+struct BoundedBuf {
+    bytes: Vec<u8>,
+    limit: usize,
+}
+
+impl BoundedBuf {
+    fn remaining(&self) -> usize {
+        self.limit - self.bytes.len()
+    }
+
+    fn push(&mut self, piece: &[u8]) -> Result<(), ScrubJsonError> {
+        if piece.len() > self.remaining() {
+            return Err(ScrubJsonError::LimitExceeded);
+        }
+        let needed = self.bytes.len() + piece.len();
+        if needed > self.bytes.capacity() {
+            // Amortized growth, clamped so capacity never exceeds the limit.
+            let target = needed.max(self.bytes.capacity().saturating_mul(2).min(self.limit));
+            self.bytes
+                .try_reserve_exact(target - self.bytes.len())
+                .map_err(|_| ScrubJsonError::LimitExceeded)?;
+        }
+        self.bytes.extend_from_slice(piece);
+        Ok(())
+    }
+}
+
+impl std::io::Write for BoundedBuf {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.push(buf)
+            .map_err(|_| std::io::Error::other(ScrubJsonError::LimitExceeded))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl SecretScrubber {
+    /// Scrubs every decoded string value and object key of the JSON text `json`.
+    ///
+    /// The whole text is first validated as one JSON value without building a tree. Each string
+    /// token, keys included, is then decoded, so `\uXXXX` and `\/` spellings of a secret are
+    /// matched like the raw secret. A token whose decoded text holds a registered pattern is
+    /// re-encoded from its scrubbed text; every other byte is kept as written.
+    ///
+    /// Both the input and the rewritten text are bounded by `max_output_bytes`: the output
+    /// buffer never grows past it, and a token whose scrubbed or re-encoded form would push the
+    /// output over it fails before that form is allocated in full. Besides `json`, memory is at
+    /// most the output buffer (capacity `<= max_output_bytes`), one decoded token and one
+    /// scrubbed copy of it (each `<= max_output_bytes`).
+    ///
+    /// Returns `Ok(None)` when nothing was redacted, so the caller can keep the original bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScrubJsonError::LimitExceeded`] when `json` or its scrubbed form is longer than
+    /// `max_output_bytes`, and [`ScrubJsonError::InvalidJson`] when `json` is not exactly one
+    /// valid JSON value, including strings with lone surrogate escapes or raw control characters.
+    pub fn scrub_json_text(
+        &self,
+        json: &str,
+        max_output_bytes: u64,
+    ) -> Result<Option<String>, ScrubJsonError> {
+        let limit = usize::try_from(max_output_bytes).unwrap_or(usize::MAX);
+        if json.len() > limit {
+            return Err(ScrubJsonError::LimitExceeded);
+        }
+        serde_json::from_str::<serde::de::IgnoredAny>(json)?;
+        if self.patterns.is_empty() {
+            return Ok(None);
+        }
+        let bytes = json.as_bytes();
+        let mut out: Option<BoundedBuf> = None;
+        let mut copied = 0;
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] != b'"' {
+                i += 1;
+                continue;
+            }
+            // The text is valid JSON, so `"` outside a string always opens one, and inside a
+            // string only an unescaped `"` closes it. Escapes are ASCII.
+            let start = i;
+            let mut j = i + 1;
+            let mut plain = true;
+            loop {
+                let Some(&byte) = bytes.get(j) else {
+                    return Err(ScrubJsonError::InvalidJson(
+                        <serde_json::Error as serde::de::Error>::custom("unterminated JSON string"),
+                    ));
+                };
+                if byte == b'"' {
+                    break;
+                }
+                if byte == b'\\' {
+                    plain = false;
+                    j += 2;
+                } else {
+                    plain &= byte >= 0x20;
+                    j += 1;
+                }
+            }
+            let end = j + 1;
+            let token = &json[start..end];
+            let decoded = if plain {
+                std::borrow::Cow::Borrowed(&token[1..token.len() - 1])
+            } else {
+                std::borrow::Cow::Owned(serde_json::from_str::<String>(token)?)
+            };
+            if self.contains_pattern(&decoded) {
+                let buf = out.get_or_insert_with(|| BoundedBuf {
+                    bytes: Vec::with_capacity(json.len()),
+                    limit,
+                });
+                buf.push(&bytes[copied..start])?;
+                // The re-encoded token needs its two quotes plus at least the scrubbed text.
+                let budget = buf
+                    .remaining()
+                    .checked_sub(2)
+                    .ok_or(ScrubJsonError::LimitExceeded)?;
+                let scrubbed = self
+                    .scrub_bounded(decoded.into_owned(), budget)
+                    .ok_or(ScrubJsonError::LimitExceeded)?;
+                // Escaping can still expand the text, so encode straight into the bounded
+                // buffer, which refuses any byte past the limit.
+                if let Err(err) = serde_json::to_writer(&mut *buf, &scrubbed) {
+                    return Err(if err.is_io() {
+                        ScrubJsonError::LimitExceeded
+                    } else {
+                        ScrubJsonError::InvalidJson(err)
+                    });
+                }
+                copied = end;
+            }
+            i = end;
+        }
+        let Some(mut buf) = out else {
+            return Ok(None);
+        };
+        buf.push(&bytes[copied..])?;
+        String::from_utf8(buf.bytes).map(Some).map_err(|_| {
+            ScrubJsonError::InvalidJson(<serde_json::Error as serde::de::Error>::custom(
+                "scrubbed JSON is not valid UTF-8",
+            ))
+        })
     }
 }
 
@@ -655,6 +848,160 @@ mod tests {
         let scrubbed_url = scrubber.scrub(&url_msg);
         assert!(!scrubbed_url.contains("s3cr3t"));
         assert!(scrubbed_url.contains(REDACTED));
+    }
+
+    #[test]
+    fn scrub_json_text_redacts_escaped_spellings_and_keeps_other_bytes() {
+        let scrubber = SecretBag::new()
+            .with("password", "ab/c\"d")
+            .unwrap()
+            .scrubber();
+        // `\u0061` is `a`, `\/` is `/`, `\"` is `"`.
+        let text = "{ \"\\u0061b\\/c\\\"d\" : [\"x\\/y\", 1.5e2],\n \"k\":\"pre ab/c\\\"d post\"}";
+        let out = scrubber
+            .scrub_json_text(text, u64::MAX)
+            .unwrap()
+            .expect("secret occurrences are rewritten");
+        assert_eq!(
+            out,
+            "{ \"[REDACTED]\" : [\"x\\/y\", 1.5e2],\n \"k\":\"pre [REDACTED] post\"}"
+        );
+        assert_eq!(
+            scrubber
+                .scrub_json_text(r#"{"a":"x\/y"}"#, u64::MAX)
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn scrub_json_text_rejects_invalid_json() {
+        let scrubber = SecretBag::new()
+            .with("password", "pw-1")
+            .unwrap()
+            .scrubber();
+        for bad in [
+            "",
+            "{",
+            r#"{"a":1} {"b":2}"#,
+            r#"["\ud800"]"#,
+            "[\"raw\u{1}control\"]",
+            r#"["\x"]"#,
+            "[1,]",
+        ] {
+            assert!(
+                matches!(
+                    scrubber.scrub_json_text(bad, u64::MAX),
+                    Err(ScrubJsonError::InvalidJson(_))
+                ),
+                "accepted {bad:?}"
+            );
+        }
+        let empty = SecretScrubber::new();
+        assert_eq!(empty.scrub_json_text("[1]", u64::MAX).unwrap(), None);
+        assert!(matches!(
+            empty.scrub_json_text("[1", u64::MAX),
+            Err(ScrubJsonError::InvalidJson(_))
+        ));
+    }
+
+    fn short_secret_scrubber() -> SecretScrubber {
+        SecretBag::new().with("password", "~").unwrap().scrubber()
+    }
+
+    #[test]
+    fn scrub_json_text_rejects_input_over_limit() {
+        let scrubber = short_secret_scrubber();
+        let text = r#"{"a":"plain"}"#;
+        let len = text.len() as u64;
+        assert!(matches!(
+            scrubber.scrub_json_text(text, len - 1),
+            Err(ScrubJsonError::LimitExceeded)
+        ));
+        assert_eq!(scrubber.scrub_json_text(text, len).unwrap(), None);
+    }
+
+    #[test]
+    fn scrub_json_text_rejects_single_token_expansion_before_encoding() {
+        let scrubber = short_secret_scrubber();
+        // 1000 one-byte secrets in one token would scrub to 10000 bytes.
+        let text = format!(r#"["{}"]"#, "~".repeat(1000));
+        assert!(matches!(
+            scrubber.scrub_json_text(&text, 2048),
+            Err(ScrubJsonError::LimitExceeded)
+        ));
+        // The bounded scrub itself gives up without building the oversized text.
+        assert_eq!(scrubber.scrub_bounded("~".repeat(1000), 9999), None);
+        assert_eq!(
+            scrubber
+                .scrub_bounded("~".repeat(1000), 10_000)
+                .map(|s| s.len()),
+            Some(10_000)
+        );
+    }
+
+    #[test]
+    fn scrub_json_text_rejects_multi_token_and_trailing_expansion() {
+        let scrubber = short_secret_scrubber();
+        // Each token alone fits, but together they do not.
+        let text = r#"["~~","~~","~~","~~"]"#;
+        // Scrubbed: `["` + 4 * `[REDACTED][REDACTED]` joined by `","` + `"]`.
+        let scrubbed_len = 2 + 4 * 20 + 3 * 3 + 2;
+        assert!(matches!(
+            scrubber.scrub_json_text(text, scrubbed_len - 1),
+            Err(ScrubJsonError::LimitExceeded)
+        ));
+        // Trailing bytes after the last redacted token push the output over the limit.
+        let trailing = format!(r#"["~",{}]"#, "1,".repeat(20) + "1");
+        let trailing_len = (trailing.len() - 1 + REDACTED.len()) as u64;
+        assert!(matches!(
+            scrubber.scrub_json_text(&trailing, trailing_len - 1),
+            Err(ScrubJsonError::LimitExceeded)
+        ));
+        let out = scrubber
+            .scrub_json_text(&trailing, trailing_len)
+            .unwrap()
+            .expect("redacted");
+        assert_eq!(out.len() as u64, trailing_len);
+    }
+
+    #[test]
+    fn scrub_json_text_accepts_output_exactly_at_limit() {
+        let scrubber = short_secret_scrubber();
+        let text = r#"{"k":"a~b","~":["~~"]}"#;
+        let expected = r#"{"k":"a[REDACTED]b","[REDACTED]":["[REDACTED][REDACTED]"]}"#;
+        let limit = expected.len() as u64;
+        assert_eq!(
+            scrubber.scrub_json_text(text, limit).unwrap().as_deref(),
+            Some(expected)
+        );
+        assert!(matches!(
+            scrubber.scrub_json_text(text, limit - 1),
+            Err(ScrubJsonError::LimitExceeded)
+        ));
+    }
+
+    #[test]
+    fn scrub_json_text_bounds_escape_expansion_of_scrubbed_token() {
+        // The scrubbed text fits the budget, but re-encoding its control characters as
+        // `\u00XX` does not.
+        let scrubber = SecretBag::new().with("password", "pw").unwrap().scrubber();
+        let ctrl = "\\u0001".repeat(10);
+        let text = format!(r#"["pw{ctrl}"]"#);
+        // Encoded output: `["[REDACTED]` + 10 * `\u0001` + `"]`.
+        let encoded_len = (2 + 10 + 60 + 2) as u64;
+        assert_eq!(
+            scrubber
+                .scrub_json_text(&text, encoded_len)
+                .unwrap()
+                .map(|s| s.len() as u64),
+            Some(encoded_len)
+        );
+        // Decoded and scrubbed, the token is only 10 + 10 bytes, well inside this limit.
+        assert!(matches!(
+            scrubber.scrub_json_text(&text, encoded_len - 1),
+            Err(ScrubJsonError::LimitExceeded)
+        ));
     }
 
     #[test]

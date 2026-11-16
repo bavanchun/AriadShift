@@ -882,6 +882,7 @@ Before running any tool that has one or more resolved secrets in `SecretBag`:
 1. `ariad-host` registers every non-empty secret string (along with its JSON-escaped and URL-encoded forms) in a per-job output scrubber.
 2. Every byte of captured engine `stderr`, every protocol `warning.message`, every `error.message`, every tracing/diagnostic log line, and the final CLI/MCP JSON report is passed through the scrubber.
 3. Any occurrence of a secret value is replaced with `[REDACTED]` before the message is written to stderr, stdout, MCP responses, or error types. Automated tests assert that forced engine failures with secret inputs never leak the secret string in stdout, stderr, or returned errors.
+4. Every JSON artifact staged by an out-of-process engine is scrubbed on its decoded string values and object keys, so `\uXXXX` or `\/` escape spellings of a secret are redacted too. Strings without a secret keep their original bytes. A staged JSON artifact that is not valid UTF-8 JSON fails with `engine_failure`, and one larger than 64 MiB (or `max_decompressed_bytes`, if lower) fails with `limit_exceeded`. The same cap bounds the scrubbed output: if redaction would grow the artifact past it (each match becomes the 10-byte `[REDACTED]`, so short secrets expand the text), the scrub stops before allocating the oversized text and fails with `limit_exceeded`. Peak scrub memory therefore stays under four times the cap (256 MiB). Nothing is published in any of these cases.
 
 ---
 
