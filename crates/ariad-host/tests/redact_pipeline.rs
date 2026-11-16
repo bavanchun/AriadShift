@@ -1302,6 +1302,18 @@ fn redact_pipeline_rect_overlay_noop_rewrite_fails() {
             },
         ],
     };
+    // mixed-sizes.pdf has three pages; the evidence must describe all of them.
+    let mut geom = geom;
+    geom.page_count = 3;
+    geom.pages.extend((2..=3).map(|page| {
+        ariad_core::tools::params::redact_internal::RedactGeometryPage {
+            page,
+            width: 595.0,
+            height: 842.0,
+            rotation: 0,
+            chars: Vec::new(),
+        }
+    }));
     let status = verify_pdfium_text(&input_bytes, &params, &geom, &Limits::local(), &ctx).unwrap();
     assert_eq!(
         status,
@@ -1369,6 +1381,18 @@ fn redact_pipeline_rect_overlay_fails_when_covered_glyph_remains() {
             },
         ],
     };
+    // mixed-sizes.pdf has three pages; the evidence must describe all of them.
+    let mut geom = geom;
+    geom.page_count = 3;
+    geom.pages.extend((2..=3).map(|page| {
+        ariad_core::tools::params::redact_internal::RedactGeometryPage {
+            page,
+            width: 595.0,
+            height: 842.0,
+            rotation: 0,
+            chars: Vec::new(),
+        }
+    }));
     let status = verify_pdfium_text(&input_bytes, &params, &geom, &Limits::local(), &ctx).unwrap();
     assert_eq!(
         status,
