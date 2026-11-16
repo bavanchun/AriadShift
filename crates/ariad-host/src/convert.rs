@@ -2467,6 +2467,7 @@ fn safe_warning_message(code: &str) -> String {
         "no_tables_found" => {
             "No tables were found in the document; output was formatted as a text dump."
         }
+        "output_truncated" => "The converted output was truncated at the configured limit.",
         _ => "The document could not be converted without a warning.",
     };
     msg.to_owned()
@@ -2486,6 +2487,16 @@ mod tests {
         limits::Limits,
         warning::{Warning, WarningCode},
     };
+
+    #[test]
+    fn output_truncated_warning_has_a_specific_message() {
+        let message = super::safe_warning_message("output_truncated");
+        assert_eq!(
+            message,
+            "The converted output was truncated at the configured limit."
+        );
+        assert_ne!(message, super::safe_warning_message("unknown_code"));
+    }
 
     #[test]
     fn generic_engine_failure_keeps_conversion_code_with_memory_hint() {
