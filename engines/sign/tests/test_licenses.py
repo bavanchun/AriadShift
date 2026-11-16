@@ -440,6 +440,106 @@ def test_unreadable_lockfile_rejected(tmp_path):
     assert any("cannot read locked wheels" in f.reason for f in findings)
 
 
+def _load_pack_build():
+    path = Path(__file__).resolve().parents[1] / "pack" / "build.py"
+    spec = importlib.util.spec_from_file_location("sign_pack_build", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load sign pack build from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_prune_bundled_installers_removes_pip_launchers(tmp_path):
+    """prune_bundled_installers strips pre-installed pip, its distlib EXEs, and scripts."""
+    pack_build = _load_pack_build()
+    py_env = tmp_path / "python-env"
+    site = py_env / "lib" / "python3.14" / "site-packages"
+    bin_dir = py_env / "bin"
+    site.mkdir(parents=True)
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python3").write_bytes(b"#!/bin/sh\n")
+    (bin_dir / "pip").write_bytes(b"#!/bin/sh\n")
+    (bin_dir / "pip3.14").write_bytes(b"#!/bin/sh\n")
+
+    pip_files = {"pip/__init__.py": b""}
+    for exe in ("t32.exe", "t64.exe", "t64-arm.exe", "w32.exe", "w64.exe", "w64-arm.exe"):
+        pip_files[f"pip/_vendor/distlib/{exe}"] = b"MZ\x90\x00launcher"
+    _make_dist(site, "pip", "26.2.2", "MIT", pip_files)
+    record = site / "pip-26.2.2.dist-info" / "RECORD"
+    record.write_text(
+        record.read_text(encoding="utf-8") + "../../../bin/pip,,\n",
+        encoding="utf-8",
+    )
+
+    pack_build.prune_bundled_installers(py_env, site)
+
+    assert not (site / "pip").exists()
+    assert not (site / "pip-26.2.2.dist-info").exists()
+    assert not (bin_dir / "pip").exists()
+    assert not (bin_dir / "pip3.14").exists()
+    assert (bin_dir / "python3").is_file()
+    assert _tree_findings(site) == []
+
+
+def test_drop_build_records_removes_target_bin_wrappers(tmp_path):
+    """drop_build_records strips `--target` console script EXEs and provenance metadata."""
+    pack_build = _load_pack_build()
+    site = tmp_path / "site"
+    site.mkdir()
+
+    _make_dist(
+        site,
+        "idna",
+        "3.11",
+        "BSD-3-Clause",
+        {"idna/__init__.py": b"", "bin/idna.exe": b"MZ\x90\x00cli"},
+    )
+    _make_dist(
+        site,
+        "cffi",
+        "2.1.1",
+        "MIT-0",
+        {
+            "_cffi_backend.cp314-win_amd64.pyd": b"MZ\x90\x00pyd",
+            "bin/cffi-gen-src.exe": b"MZ\x90\x00cli",
+        },
+    )
+    cffi_info = site / "cffi-2.1.1.dist-info"
+    (cffi_info / "METADATA").write_text(
+        "Name: cffi\nVersion: 2.1.1\nLicense-Expression: MIT-0\n",
+        encoding="utf-8",
+    )
+    (cffi_info / "direct_url.json").write_text('{"url": "file:///tmp/cffi.whl"}', encoding="utf-8")
+    (cffi_info / "uv_cache.json").write_text("{}", encoding="utf-8")
+    record = cffi_info / "RECORD"
+    record.write_text(
+        record.read_text(encoding="utf-8")
+        + "cffi-2.1.1.dist-info/direct_url.json,,\n"
+        + "cffi-2.1.1.dist-info/uv_cache.json,,\n",
+        encoding="utf-8",
+    )
+
+    pack_build.drop_build_records(site)
+
+    assert not (site / "bin").exists()
+    assert not (cffi_info / "direct_url.json").exists()
+    assert not (cffi_info / "uv_cache.json").exists()
+    assert "bin/" not in (site / "idna-3.11.dist-info" / "RECORD").read_text(encoding="utf-8")
+    cffi_record = record.read_text(encoding="utf-8")
+    assert "bin/" not in cffi_record
+    assert "direct_url.json" not in cffi_record
+    assert "uv_cache.json" not in cffi_record
+
+    inv = licenses.load_reviewed_inventory()
+    findings = []
+    for dist in md.distributions(path=[str(site)]):
+        findings.extend(licenses.check_distribution(dist, inv, site_root=site))
+    findings.extend(_tree_findings(site))
+    assert findings == []
+
+
 def test_extension_suffixes_accept_every_pack_target():
     cases = {
         "lxml/etree.cpython-314-x86_64-linux-gnu.so": "lxml/etree",
