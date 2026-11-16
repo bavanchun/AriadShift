@@ -428,33 +428,66 @@ fn inline_image_pdf() -> Vec<u8> {
     pdf
 }
 
+/// The PDFium engine pack the worker can launch, if the environment names one.
+///
+/// `pdf.redact` first runs the out-of-process `redact.inspect` op, so without this pack a
+/// request fails with a transient `tool_missing` before any refusal can happen.
+fn pdfium_pack() -> Option<std::path::PathBuf> {
+    let dir = std::path::PathBuf::from(std::env::var_os("ASHIFT_PACK_PDFIUM")?);
+    dir.join("pack.toml").is_file().then_some(dir)
+}
+
+fn redact_body(upload: &Value) -> Value {
+    json!({
+        "tool": "pdf.redact",
+        "upload_id": upload["id"],
+        "params": {"targets": [{
+            "kind": "rectangle",
+            "page": 1,
+            "rect": {"left": 10.0, "bottom": 10.0, "right": 100.0, "top": 100.0}
+        }]}
+    })
+}
+
+/// Submits `body`, waits for the job to end and returns it with its recorded event kinds.
+async fn run_job(h: &Harness, auth: &Auth, body: &Value) -> (Value, Vec<String>) {
+    let response = h.post(auth, "/v1/jobs", body).await;
+    assert_eq!(response.status(), 202);
+    let job: Value = response.json().await.unwrap();
+    let id = job["id"].as_str().unwrap();
+    let finished = h.wait_final(auth, id, Duration::from_secs(60)).await;
+    let kinds: Vec<String> =
+        sqlx::query_scalar("SELECT kind FROM job_events WHERE job_id = $1::uuid ORDER BY id")
+            .bind(id)
+            .fetch_all(&h.db.pool)
+            .await
+            .unwrap();
+    (finished, kinds)
+}
+
+/// Real end to end: needs the PDFium pack, because `redact.inspect` runs before the
+/// in-process refusal. Skips loudly without it; the fake-helper tests below always run and
+/// cover the worker, job record, API response and retry accounting.
 #[tokio::test(flavor = "multi_thread")]
 async fn redaction_refusals_reach_the_client_and_are_not_retried() {
+    let Some(pack) = pdfium_pack() else {
+        eprintln!(
+            "SKIPPED redaction_refusals_reach_the_client_and_are_not_retried: set \
+             ASHIFT_PACK_PDFIUM to a PDFium pack to run the real pdf.redact path; NOT covered \
+             here: PDFium inspection, the in-process refusal and the helper process"
+        );
+        return;
+    };
     let Some((mut h, auth)) = start("tool_redact_refusal").await else {
         return;
     };
     // Retries are allowed, so a wrongly transient refusal would show up as attempts > 1.
-    h.start_worker_with(&[("ARIAD_WORKER_MAX_ATTEMPTS", "3")]);
+    h.start_worker_with(&[
+        ("ARIAD_WORKER_MAX_ATTEMPTS", "3"),
+        ("ASHIFT_PACK_PDFIUM", &pack.display().to_string()),
+    ]);
     let upload = h.upload(&auth, "inline.pdf", &inline_image_pdf()).await;
-    let response = h
-        .post(
-            &auth,
-            "/v1/jobs",
-            &json!({
-                "tool": "pdf.redact",
-                "upload_id": upload["id"],
-                "params": {"targets": [{
-                    "kind": "rectangle",
-                    "page": 1,
-                    "rect": {"left": 10.0, "bottom": 10.0, "right": 100.0, "top": 100.0}
-                }]}
-            }),
-        )
-        .await;
-    assert_eq!(response.status(), 202);
-    let job: Value = response.json().await.unwrap();
-    let id = job["id"].as_str().unwrap();
-    let finished = h.wait_final(&auth, id, Duration::from_secs(60)).await;
+    let (finished, kinds) = run_job(&h, &auth, &redact_body(&upload)).await;
     assert_eq!(finished["status"], "failed", "{finished}");
     assert_eq!(finished["error"]["code"], "tool_missing", "{finished}");
     assert_eq!(
@@ -465,12 +498,105 @@ async fn redaction_refusals_reach_the_client_and_are_not_retried() {
         finished["attempts"], 1,
         "a refusal is permanent: {finished}"
     );
-    let kinds: Vec<String> =
-        sqlx::query_scalar("SELECT kind FROM job_events WHERE job_id = $1::uuid ORDER BY id")
-            .bind(id)
-            .fetch_all(&h.db.pool)
-            .await
-            .unwrap();
     assert!(!kinds.contains(&"retrying".to_owned()), "{kinds:?}");
     h.stop().await;
+}
+
+/// Writes an executable stand-in for `ashift __tool` that answers with `error` exactly as the
+/// real helper does (`Event::Result` carrying `tool_job: Err(error)` in its metrics).
+#[cfg(unix)]
+fn fake_helper(dir: &std::path::Path, error: &ariad_host::tools::ToolError) -> std::path::PathBuf {
+    use ariad_core::protocol::{EngineError, ErrorCode, Event};
+    use std::os::unix::fs::PermissionsExt;
+    let event = Event::Result {
+        ok: false,
+        error: Some(EngineError {
+            code: ErrorCode::EngineFailure,
+            message: error.code().into(),
+        }),
+        metrics: Some(std::collections::BTreeMap::from([(
+            "tool_job".to_owned(),
+            json!(Result::<Value, _>::Err(error)),
+        )])),
+    };
+    let reply = dir.join("reply.json");
+    std::fs::write(
+        &reply,
+        format!("{}\n", serde_json::to_string(&event).unwrap()),
+    )
+    .unwrap();
+    let script = dir.join("fake-helper.sh");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\nread -r _request\ncat '{}'\n", reply.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+#[cfg(unix)]
+async fn fake_helper_job(
+    test: &str,
+    error: &ariad_host::tools::ToolError,
+    max_attempts: &str,
+) -> Option<(Value, Vec<String>)> {
+    let (mut h, auth) = start(test).await?;
+    let dir = tempfile::tempdir().unwrap();
+    let script = fake_helper(dir.path(), error);
+    h.start_worker_with(&[
+        ("ARIAD_WORKER_MAX_ATTEMPTS", max_attempts),
+        ("ARIAD_CONVERSION_PROGRAM", &script.display().to_string()),
+    ]);
+    let upload = h.upload(&auth, "input.pdf", PDF).await;
+    let result = run_job(&h, &auth, &redact_body(&upload)).await;
+    h.stop().await;
+    Some(result)
+}
+
+/// The helper reports a redaction refusal: the reason reaches the HTTP body, the job is
+/// failed on the first attempt and no retry is recorded. Needs no PDFium pack.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn helper_refusal_reaches_the_http_body_without_retry() {
+    let refusal = ariad_host::tools::ToolError::ToolMissing {
+        engine: "ariad-pdf".into(),
+        hint: "uninspected carrier refused: inline_image".into(),
+    };
+    let Some((finished, kinds)) = fake_helper_job("tool_helper_refusal", &refusal, "3").await
+    else {
+        return;
+    };
+    assert_eq!(finished["status"], "failed", "{finished}");
+    assert_eq!(finished["error"]["code"], "tool_missing", "{finished}");
+    assert_eq!(
+        finished["error"]["message"], "uninspected carrier refused: inline_image",
+        "{finished}"
+    );
+    assert_eq!(finished["attempts"], 1, "{finished}");
+    assert!(!kinds.contains(&"retrying".to_owned()), "{kinds:?}");
+}
+
+/// Any other `tool_missing` (the PDFium pack is absent, hint carries a path) keeps its fixed
+/// text and is retried until the attempts run out.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn helper_missing_engine_stays_blanked_and_retried() {
+    let missing = ariad_host::tools::ToolError::ToolMissing {
+        engine: "pdfium".into(),
+        hint: "/home/someone/secret/pack".into(),
+    };
+    let Some((finished, kinds)) = fake_helper_job("tool_helper_missing", &missing, "2").await
+    else {
+        return;
+    };
+    assert_eq!(finished["status"], "failed", "{finished}");
+    assert_eq!(finished["error"]["code"], "tool_missing", "{finished}");
+    assert_eq!(
+        finished["error"]["message"], "a required engine is missing on the worker",
+        "{finished}"
+    );
+    assert!(!finished.to_string().contains("secret"), "{finished}");
+    assert_eq!(finished["attempts"], 2, "{finished}");
+    assert!(kinds.contains(&"retrying".to_owned()), "{kinds:?}");
 }

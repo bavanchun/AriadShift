@@ -295,6 +295,55 @@ mod tests {
         }
     }
 
+    /// The helper writes `json!(Result<Report, ToolError>)` into the result event's
+    /// `tool_job` metric and `run` parses it back; the refusal must survive that trip.
+    #[test]
+    fn redaction_refusal_survives_the_helper_json_round_trip() {
+        for reason in [
+            "redaction refused: original image remains reachable",
+            "uninspected carrier refused: inline_image",
+        ] {
+            let sent: Result<Report, ToolError> = Err(sanitize_error(refusal(reason)));
+            let metrics = BTreeMap::from([("tool_job".to_owned(), json!(sent))]);
+            let line = serde_json::to_string(&Event::Result {
+                ok: false,
+                error: None,
+                metrics: Some(metrics),
+            })
+            .unwrap();
+            let Event::Result {
+                metrics: Some(mut metrics),
+                ..
+            } = serde_json::from_str(&line).unwrap()
+            else {
+                panic!("not a result event: {line}");
+            };
+            let received = serde_json::from_value::<Result<Report, ToolError>>(
+                metrics.remove("tool_job").unwrap(),
+            )
+            .unwrap();
+            let error = received.expect_err("an error result");
+            assert!(error.is_safety_refusal(), "{error:?}");
+            assert_eq!(error.to_string(), reason);
+        }
+    }
+
+    /// A blanked `tool_missing` keeps its code across the round trip and is not a refusal.
+    #[test]
+    fn blanked_tool_missing_round_trips_as_a_plain_failure() {
+        let sent: Result<Report, ToolError> = Err(sanitize_error(ToolError::ToolMissing {
+            engine: "pdfium".into(),
+            hint: "/home/someone/secret".into(),
+        }));
+        let value = json!(sent);
+        let error = serde_json::from_value::<Result<Report, ToolError>>(value)
+            .unwrap()
+            .expect_err("an error result");
+        assert_eq!(error.code(), "tool_missing");
+        assert!(!error.is_safety_refusal());
+        assert!(!error.to_string().contains("secret"), "{error}");
+    }
+
     #[test]
     fn other_tool_missing_messages_are_still_blanked() {
         let leaky = ToolError::ToolMissing {
