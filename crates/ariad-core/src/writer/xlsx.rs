@@ -344,11 +344,20 @@ fn render_worksheet_xml_with_limit(
     sheet: &SheetData,
     max_bytes: usize,
 ) -> Result<String, XlsxError> {
+    render_worksheet_rows(sheet, sheet.rows.iter(), max_bytes)
+}
+
+/// Renders `rows` of `sheet`, pulling them lazily so a test can observe where rendering stops.
+fn render_worksheet_rows<'a>(
+    sheet: &SheetData,
+    rows: impl Iterator<Item = &'a RowData>,
+    max_bytes: usize,
+) -> Result<String, XlsxError> {
     let mut xml = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n<sheetData>\n",
     );
 
-    for row in &sheet.rows {
+    for row in rows {
         xml.push_str(&format!("<row r=\"{}\">\n", row.row_num));
         for cell in &row.cells {
             let cell_ref = format!("{}{}", col_name(cell.col), row.row_num);
@@ -1120,5 +1129,27 @@ mod tests {
         // Passing max_bytes = 100 will fail during row rendering and report limit 100
         let err = render_worksheet_xml_with_limit(&sheet, 100).unwrap_err();
         assert!(matches!(err, XlsxError::OutputTooLarge { limit: 100 }));
+    }
+
+    #[test]
+    fn worksheet_rendering_stops_at_the_first_row_over_the_limit() {
+        let row = |row_num| RowData {
+            row_num,
+            cells: vec![CellData {
+                col: 0,
+                value: CellValue::String("A".repeat(500)),
+            }],
+        };
+        let sheet = SheetData {
+            name: "Sheet1".to_string(),
+            rows: (1..=10).map(row).collect(),
+            merge_cells: vec![],
+        };
+        let pulled = std::cell::Cell::new(0_usize);
+        let rows = sheet.rows.iter().inspect(|_| pulled.set(pulled.get() + 1));
+        let err = render_worksheet_rows(&sheet, rows, 100).unwrap_err();
+        assert!(matches!(err, XlsxError::OutputTooLarge { limit: 100 }));
+        // Without the check inside the row loop every row would be rendered first.
+        assert_eq!(pulled.get(), 1);
     }
 }
