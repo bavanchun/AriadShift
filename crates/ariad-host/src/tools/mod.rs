@@ -18,7 +18,13 @@ mod ocr_pool;
 mod ocr_text;
 pub mod publish;
 pub mod recipe;
+// Redaction composites. The module is public only for host tests, which reach the clean-candidate
+// text gates and a PDFium geometry launcher through it; a normal build keeps it private.
+#[cfg(feature = "test-probe")]
+#[doc(hidden)]
 pub mod redact;
+#[cfg(not(feature = "test-probe"))]
+mod redact;
 pub mod run;
 pub mod secrets;
 pub mod sign;

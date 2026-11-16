@@ -1302,6 +1302,18 @@ fn redact_pipeline_rect_overlay_noop_rewrite_fails() {
             },
         ],
     };
+    // mixed-sizes.pdf has three pages; the evidence must describe all of them.
+    let mut geom = geom;
+    geom.page_count = 3;
+    geom.pages.extend((2..=3).map(|page| {
+        ariad_core::tools::params::redact_internal::RedactGeometryPage {
+            page,
+            width: 595.0,
+            height: 842.0,
+            rotation: 0,
+            chars: Vec::new(),
+        }
+    }));
     let status = verify_pdfium_text(&input_bytes, &params, &geom, &Limits::local(), &ctx).unwrap();
     assert_eq!(
         status,
@@ -1369,6 +1381,18 @@ fn redact_pipeline_rect_overlay_fails_when_covered_glyph_remains() {
             },
         ],
     };
+    // mixed-sizes.pdf has three pages; the evidence must describe all of them.
+    let mut geom = geom;
+    geom.page_count = 3;
+    geom.pages.extend((2..=3).map(|page| {
+        ariad_core::tools::params::redact_internal::RedactGeometryPage {
+            page,
+            width: 595.0,
+            height: 842.0,
+            rotation: 0,
+            chars: Vec::new(),
+        }
+    }));
     let status = verify_pdfium_text(&input_bytes, &params, &geom, &Limits::local(), &ctx).unwrap();
     assert_eq!(
         status,
@@ -1506,6 +1530,230 @@ fn redact_pipeline_rect_overlay_guard_rejects_unredacted_clean_candidate() {
         RedactionCheckStatus::Fail,
         "clean candidate containing original target text must fail core text gate"
     );
+}
+
+fn redact_stages(params: serde_json::Value, file: &str) -> Vec<String> {
+    use ariad_host::tools::{ToolEvent, run_tool_with_events};
+    let temp = tempfile::tempdir().unwrap();
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(fixture(file))],
+        OutputTarget::Path(temp.path().join("out.pdf")),
+    )
+    .with_params(params);
+    let mut stages = Vec::new();
+    run_tool_with_events(&request, |event| {
+        let ToolEvent::Progress { stage, .. } = event;
+        stages.push(stage);
+    })
+    .expect("pdf.redact should succeed");
+    stages
+}
+
+#[test]
+fn redact_pipeline_rect_overlay_runs_clean_candidate_branch() {
+    if !child("redact_pipeline_rect_overlay_runs_clean_candidate_branch") {
+        return;
+    }
+    let rect = json!({ "left": 70.0, "bottom": 745.0, "right": 320.0, "top": 765.0 });
+    // Wiring guard: the clean-candidate comparison is the only defence against an overlay
+    // that spells the removed text. If `execute_redact` stops building the clean candidate
+    // for rectangle + overlay requests, this stage disappears and the test fails.
+    let with_overlay = redact_stages(
+        json!({
+            "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }],
+            "overlay_text": "REDACTED"
+        }),
+        "mixed-sizes.pdf",
+    );
+    assert!(
+        with_overlay.iter().any(|s| s == "redact:clean-candidate"),
+        "rectangle + overlay must build and verify a clean candidate: {with_overlay:?}"
+    );
+    // Neither a rectangle without overlay nor an overlay without a rectangle needs it.
+    let no_overlay = redact_stages(
+        json!({ "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }] }),
+        "mixed-sizes.pdf",
+    );
+    assert!(!no_overlay.iter().any(|s| s == "redact:clean-candidate"));
+    let no_rectangle = redact_stages(
+        json!({
+            "targets": [{ "kind": "exact", "text": "Portfolio" }],
+            "overlay_text": "REDACTED"
+        }),
+        "mixed-sizes.pdf",
+    );
+    assert!(!no_rectangle.iter().any(|s| s == "redact:clean-candidate"));
+}
+
+/// One page with "Hello World" at (72, 712) and two annotations: one overlapping the
+/// rectangle used by the tests below and one far away from it.
+fn write_annotated_pdf(path: &Path, indirect_annots: bool, rotation: Option<i64>) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let content = doc.add_object(Stream::new(
+        Dictionary::new(),
+        b"BT /F1 12 Tf 72 712 Td (Hello World) Tj ET\n".to_vec(),
+    ));
+    let mut annot = |name: &str, rect: [f32; 4]| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot",
+            "Subtype" => "Text",
+            "Contents" => Object::string_literal(name),
+            "Rect" => rect.iter().map(|v| Object::Real(*v)).collect::<Vec<_>>(),
+        })
+    };
+    let near = annot("near", [100.0, 700.0, 140.0, 730.0]);
+    let far = annot("far", [400.0, 100.0, 440.0, 140.0]);
+    let refs = vec![Object::Reference(near), Object::Reference(far)];
+    let annots = if indirect_annots {
+        Object::Reference(doc.add_object(Object::Array(refs)))
+    } else {
+        Object::Array(refs)
+    };
+    let font = doc.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica"
+    });
+    let mut page = dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => content,
+        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } },
+        "Annots" => annots,
+    };
+    if let Some(angle) = rotation {
+        page.set("Rotate", angle);
+    }
+    let page_id = doc.add_object(page);
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page_id)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+fn redact_annotated(indirect: bool) -> ariad_core::tools::params::redact::RedactionCarrierEvidence {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("annotated.pdf");
+    write_annotated_pdf(&input, indirect, None);
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(input)],
+        OutputTarget::Path(temp.path().join("out.pdf")),
+    )
+    .with_params(json!({
+        "targets": [{
+            "kind": "rectangle", "page": 1,
+            "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 }
+        }]
+    }));
+    let outcome = run_tool(&request).expect("rectangle redaction over an annotation");
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    report.carriers.expect("carrier evidence")
+}
+
+#[test]
+fn redact_pipeline_rectangle_removes_intersecting_direct_annotation() {
+    if !child("redact_pipeline_rectangle_removes_intersecting_direct_annotation") {
+        return;
+    }
+    // Only the annotation under the rectangle goes; the distant one is kept.
+    assert_eq!(redact_annotated(false).annotations_removed, 1);
+}
+
+#[test]
+fn redact_pipeline_rectangle_removes_intersecting_indirect_annotation() {
+    if !child("redact_pipeline_rectangle_removes_intersecting_indirect_annotation") {
+        return;
+    }
+    assert_eq!(redact_annotated(true).annotations_removed, 1);
+}
+
+#[test]
+fn redact_pipeline_rect_overlay_on_all_page_rotations() {
+    if !child("redact_pipeline_rect_overlay_on_all_page_rotations") {
+        return;
+    }
+    for angle in [0_i64, 90, 180, 270] {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("rotated.pdf");
+        let out_path = temp.path().join("out.pdf");
+        write_annotated_pdf(&input, false, Some(angle));
+        let request = ToolRequest::new(
+            "pdf.redact",
+            vec![InputRef::new(input)],
+            OutputTarget::Path(out_path.clone()),
+        )
+        .with_params(json!({
+            "targets": [{
+                "kind": "rectangle", "page": 1,
+                "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 }
+            }],
+            "overlay_text": "REDACTED"
+        }));
+        let outcome = run_tool(&request)
+            .unwrap_or_else(|e| panic!("rectangle + overlay on /Rotate {angle}: {e:?}"));
+        let report: RedactionVerificationReport =
+            serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+        assert_eq!(
+            report.status,
+            RedactionVerificationStatus::Verified,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.pdfium_text,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.core_text,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.region_render,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        let oracle = Command::new("pdftotext")
+            .arg(&out_path)
+            .arg("-")
+            .output()
+            .expect("run pdftotext oracle");
+        assert!(oracle.status.success());
+        let extracted = String::from_utf8_lossy(&oracle.stdout);
+        assert!(
+            !extracted.contains("Hello"),
+            "{angle}: original text must be gone"
+        );
+        assert!(
+            extracted.contains("REDACTED"),
+            "{angle}: overlay must be present"
+        );
+    }
+}
+
+#[test]
+fn redact_geometry_test_helper_refuses_input_over_the_limit() {
+    use ariad_core::limits::Limits;
+    use ariad_host::tools::redact::inspect_geometry_for_test;
+
+    // No PDFium pack is needed: the size cap applies before any engine runs.
+    let mut limits = Limits::local();
+    limits.max_input_bytes = Some(64);
+    match inspect_geometry_for_test(&fixture("mixed-sizes.pdf"), &limits) {
+        Err(ToolError::LimitExceeded) => {}
+        Err(other) => panic!("expected limit_exceeded, got {other:?}"),
+        Ok(_) => panic!("a PDF over max_input_bytes must be refused"),
+    }
 }
 
 #[test]

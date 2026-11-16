@@ -2,6 +2,13 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
+## Unreleased
+
+### Changed
+
+- **Redaction test API is gated.** The test-only `ariad_host::tools::redact` items, including the module and `inspect_geometry_for_test`, now sit behind the `test-probe` feature and are `#[doc(hidden)]`. They are not part of the supported public API. (#393)
+- **Redaction text verification refuses foreign evidence.** `verify_pdfium_text` rejects geometry whose `source_sha256` does not match the bytes under check, with the same `InvalidParams` refusal that `plan()` uses. (#393)
+
 ## 0.6.0 (2026-11-11)
 
 Conditional recipes, watch-folder automation and cloud tool jobs join a browser workspace with localised tool discovery, visual studios, batch processing and three editing modes. Opt-in offline AI and raster watermark removal share the existing tool contracts. (#266, #271, #273, #275)

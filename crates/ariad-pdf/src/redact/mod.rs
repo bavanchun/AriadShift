@@ -123,7 +123,7 @@ pub fn verify_pdfium_text(
     bytes: &[u8],
     params: &RedactParams,
     geometry: &RedactGeometry,
-    _limits: &Limits,
+    limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<ariad_core::tools::params::redact_internal::RedactionCheckStatus, PdfError> {
     use ariad_core::tools::params::redact_internal::RedactionCheckStatus::{
@@ -132,13 +132,31 @@ pub fn verify_pdfium_text(
     if geometry.schema != "ariad-redact-geometry/1" {
         return Err(PdfError::Malformed);
     }
-    let computed_sha256 = crate::writer::sha256_chunks(&[bytes]);
-    if geometry.source_sha256 != computed_sha256 {
-        return Err(PdfError::Malformed);
+    // Evidence from another document must never vouch for these bytes: same error as `plan()`.
+    if geometry.source_sha256 != crate::writer::sha256_chunks(&[bytes]) {
+        return Err(PdfError::InvalidParams(
+            "incomplete redaction geometry evidence".into(),
+        ));
     }
     params
         .validate()
         .map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    // Fail closed: a page the evidence does not cover would otherwise be skipped silently and
+    // count as clean. The evidence must describe every page of these exact bytes, in order.
+    let doc = crate::document::open_with_ctx(bytes, limits, ctx)?;
+    let count = crate::tools::rotate::collect_page_ids(doc.inner(), ctx)?.len();
+    if geometry.page_count != count
+        || geometry.pages.len() != count
+        || geometry
+            .pages
+            .iter()
+            .enumerate()
+            .any(|(index, page)| page.page as usize != index + 1)
+    {
+        return Err(PdfError::InvalidParams(
+            "incomplete redaction geometry evidence".into(),
+        ));
+    }
     if !params.scope.text {
         return Ok(Unavailable);
     }
@@ -1714,6 +1732,69 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    fn page_target_params(target: RedactionTarget) -> RedactParams {
+        RedactParams {
+            targets: vec![target],
+            ..params()
+        }
+    }
+
+    #[test]
+    fn pdfium_text_check_refuses_incomplete_geometry_evidence() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        let bytes = source(false);
+        let ctx = ToolCtx::new();
+        let limits = Limits::local();
+        let spatial = [
+            page_target_params(RedactionTarget::Page { page: 1 }),
+            page_target_params(rectangle(1, [0.0, 0.0, 50.0, 50.0])),
+            page_target_params(RedactionTarget::Exact { text: "zzz".into() }),
+        ];
+        // The matching evidence is accepted, so each refusal below comes from the mutation.
+        for request in &spatial {
+            let ok = verify_pdfium_text(&bytes, request, &blank_geometry(&bytes, 1), &limits, &ctx);
+            assert_eq!(ok.unwrap(), RedactionCheckStatus::Pass);
+        }
+        type Mutation = fn(&mut RedactGeometry);
+        let mutations: [(&str, Mutation); 4] = [
+            ("page missing", |g| g.pages.clear()),
+            ("page_count too large", |g| g.page_count = 2),
+            ("page_count too small", |g| g.page_count = 0),
+            ("wrong page number", |g| g.pages[0].page = 2),
+        ];
+        for (name, mutate) in mutations {
+            for request in &spatial {
+                let mut geometry = blank_geometry(&bytes, 1);
+                mutate(&mut geometry);
+                let result = verify_pdfium_text(&bytes, request, &geometry, &limits, &ctx);
+                assert!(
+                    matches!(result, Err(PdfError::InvalidParams(_))),
+                    "{name} must be refused, got {result:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pdfium_text_check_refuses_evidence_from_another_pdf() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        let pdf_a = source(false);
+        let mut pdf_b = pdf_a.clone();
+        pdf_b.extend_from_slice(b"\n%different bytes, same page count\n");
+        assert_ne!(pdf_a, pdf_b);
+        let ctx = ToolCtx::new();
+        let limits = Limits::local();
+        let request = page_target_params(RedactionTarget::Page { page: 1 });
+        let evidence_a = blank_geometry(&pdf_a, 1);
+        let ok = verify_pdfium_text(&pdf_a, &request, &evidence_a, &limits, &ctx);
+        assert_eq!(ok.unwrap(), RedactionCheckStatus::Pass);
+        let result = verify_pdfium_text(&pdf_b, &request, &evidence_a, &limits, &ctx);
+        assert!(
+            matches!(result, Err(PdfError::InvalidParams(_))),
+            "evidence for another PDF must be refused, got {result:?}"
+        );
     }
 
     fn rectangle(page: u32, rect: [f64; 4]) -> RedactionTarget {
