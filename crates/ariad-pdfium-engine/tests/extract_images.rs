@@ -24,11 +24,14 @@ use pdfium_render::prelude::*;
 use serde_json::Value;
 
 fn pdfium_dir() -> Option<PathBuf> {
-    let raw = std::env::var_os("ARIAD_TEST_PDFIUM_DIR")?;
-    if raw.is_empty() {
-        return None;
-    }
-    Some(PathBuf::from(raw))
+    let dir = std::env::var_os("ARIAD_TEST_PDFIUM_DIR")
+        .filter(|raw| !raw.is_empty())
+        .map(PathBuf::from);
+    assert!(
+        dir.is_some() || std::env::var_os("ARIAD_REQUIRE_PDFIUM_PACK").is_none(),
+        "ARIAD_TEST_PDFIUM_DIR is required"
+    );
+    dir
 }
 
 macro_rules! require_pdfium {

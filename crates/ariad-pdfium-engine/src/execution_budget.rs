@@ -436,6 +436,9 @@ pub(crate) const ANNOTS_NOT_ARRAY: &str = "Page Annots entry is not an array.";
 pub(crate) const ANNOTATION_NOT_DICTIONARY: &str = "Page annotation is not a dictionary.";
 pub(crate) const RESOURCES_NOT_DICTIONARY: &str = "Resources entry is not a dictionary.";
 pub(crate) const RESOURCE_CATEGORY_NOT_DICTIONARY: &str = "Resource category is not a dictionary.";
+pub(crate) const RESOURCES_CANNOT_BE_RESOLVED: &str = "Resources entry cannot be resolved.";
+pub(crate) const RESOURCE_CATEGORY_CANNOT_BE_RESOLVED: &str =
+    "Resource category cannot be resolved.";
 
 fn categories(
     doc: &lopdf::Document,
@@ -446,12 +449,10 @@ fn categories(
         return Ok(out);
     };
     let dict = resolve(Some(doc), resources)
-        .ok()
-        .and_then(|(_, value)| value.as_dict().ok())
-        .ok_or(EngineFailure::new(
-            ErrorCode::LimitExceeded,
-            RESOURCES_NOT_DICTIONARY,
-        ))?;
+        .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, RESOURCES_CANNOT_BE_RESOLVED))?
+        .1
+        .as_dict()
+        .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, RESOURCES_NOT_DICTIONARY))?;
     for category in [
         b"XObject".as_slice(),
         b"Pattern",
@@ -462,12 +463,17 @@ fn categories(
     ] {
         if let Ok(value) = dict.get(category) {
             let values = resolve(Some(doc), value)
-                .ok()
-                .and_then(|(_, value)| value.as_dict().ok())
-                .ok_or(EngineFailure::new(
-                    ErrorCode::LimitExceeded,
-                    RESOURCE_CATEGORY_NOT_DICTIONARY,
-                ))?;
+                .map_err(|_| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        RESOURCE_CATEGORY_CANNOT_BE_RESOLVED,
+                    )
+                })?
+                .1
+                .as_dict()
+                .map_err(|_| {
+                    EngineFailure::new(ErrorCode::LimitExceeded, RESOURCE_CATEGORY_NOT_DICTIONARY)
+                })?;
             out.insert(
                 category.to_vec(),
                 Rc::new(
