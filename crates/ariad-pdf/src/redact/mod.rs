@@ -868,10 +868,41 @@ fn collect_page_image_placements(
                 placements.push((image_id, ctm));
             }
             "BI" => return Err(placement_scan_refused("inline image")),
+            "gs" => {
+                if let Some(Ok(name)) = op.operands.first().map(Object::as_name)
+                    && graphics_state_has_soft_mask(doc, &resources, name)
+                {
+                    return Err(placement_scan_refused("ExtGState soft mask group"));
+                }
+            }
             _ => {}
         }
     }
     Ok(placements)
+}
+
+/// Whether the named `ExtGState` sets a soft mask other than `/None`.
+///
+/// A soft mask is a transparency group form that can draw images the placement scan would
+/// not see, so a page that selects one cannot be fully scanned.
+#[cfg(feature = "codecs")]
+fn graphics_state_has_soft_mask(
+    doc: &Document,
+    resources: &lopdf::Dictionary,
+    name: &[u8],
+) -> bool {
+    let state = resources
+        .get(b"ExtGState")
+        .ok()
+        .and_then(|v| doc.dereference(v).ok())
+        .and_then(|(_, v)| v.as_dict().ok())
+        .and_then(|states| states.get(name).ok())
+        .and_then(|v| doc.dereference(v).ok())
+        .and_then(|(_, v)| v.as_dict().ok());
+    state
+        .and_then(|d| d.get(b"SMask").ok())
+        .and_then(|v| doc.dereference(v).ok())
+        .is_some_and(|(_, v)| !matches!(v.as_name(), Ok(b"None")))
 }
 
 #[cfg(feature = "codecs")]
@@ -2715,6 +2746,86 @@ mod tests {
         // A stroke is clipped like a fill, so a wide stroke clipped away is not refused.
         rewrite_vector_page("0 60 100 40 re W n 60 w 70 25 m 70 40 l S", None)
             .expect("clipped wide stroke");
+    }
+
+    /// An `ExtGState` named `G` whose soft mask is `mask` (a group dictionary or `/None`).
+    fn smask_state(doc: &mut Document, mask: Object) -> lopdf::Dictionary {
+        let _ = doc;
+        dictionary! { "G" => dictionary! { "Type" => "ExtGState", "SMask" => mask } }
+    }
+
+    /// A luminosity soft mask whose transparency group is a form XObject.
+    fn smask_group(doc: &mut Document) -> Object {
+        let form = doc.add_object(lopdf::Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Form",
+                "BBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                "Group" => dictionary! { "S" => "Transparency", "CS" => "DeviceGray" },
+            },
+            b"1 g 0 0 100 100 re f".to_vec(),
+        ));
+        Object::Dictionary(dictionary! { "Type" => "Mask", "S" => "Luminosity", "G" => form })
+    }
+
+    #[test]
+    fn soft_mask_group_in_a_graphics_state_is_an_uninspected_carrier() {
+        let mut doc = Document::with_version("1.7");
+        let mask = smask_group(&mut doc);
+        let states = smask_state(&mut doc, mask);
+        // The group paints outside the rectangle, so only the soft mask itself can refuse.
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs 70 70 20 20 re f",
+            dictionary! { "ExtGState" => states },
+            lopdf::Dictionary::new(),
+        );
+        let error = rewrite_rect(&bytes, None).expect_err("soft mask group must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("uninspected carrier refused: ext_gstate_smask"),
+            "{error}"
+        );
+
+        // `/SMask /None` switches masking off and carries nothing.
+        let mut doc = Document::with_version("1.7");
+        let states = smask_state(&mut doc, Object::Name(b"None".to_vec()));
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs 70 70 20 20 re f",
+            dictionary! { "ExtGState" => states },
+            lopdf::Dictionary::new(),
+        );
+        rewrite_rect(&bytes, None).expect("SMask /None is not a carrier");
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn image_scans_refuse_a_soft_mask_group_in_a_graphics_state() {
+        let mut doc = Document::with_version("1.7");
+        let image = gray_image(&mut doc, 8, 8, 200);
+        let mask = smask_group(&mut doc);
+        let states = smask_state(&mut doc, mask);
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q",
+            dictionary! {
+                "XObject" => dictionary! { "Im0" => image },
+                "ExtGState" => states,
+            },
+            lopdf::Dictionary::new(),
+        );
+        let (_, planned, _) = rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 90.0, 90.0])]);
+        let limits = Limits::local();
+        let ctx = ToolCtx::new();
+        // The group can draw images the placement scan never sees, so neither the rewriter
+        // nor the verifier may pass on an incomplete scan.
+        let mut pdf = crate::document::open(&bytes, &limits).unwrap();
+        let error = rewrite_image_pixels(&mut pdf, &planned, &limits, &ctx).unwrap_err();
+        assert!(error.to_string().contains("soft mask group"), "{error}");
+        let error = verify_image_pixels(&bytes, &planned, &limits, &ctx).unwrap_err();
+        assert!(error.to_string().contains("soft mask group"), "{error}");
     }
 
     /// Distinct 4x4 grey samples, so the original pixels are recognizable in any output.

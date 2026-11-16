@@ -360,6 +360,25 @@ pub fn trace(
                             walker.graphics.line_join = join as i64;
                         }
                     }
+                    // A soft mask group is a transparency group form that paints content this
+                    // trace never walks.
+                    let has_soft_mask = state.is_some_and(|d| {
+                        d.get(b"SMask")
+                            .ok()
+                            .and_then(|v| resolved(walker.doc, v).ok())
+                            .is_some_and(|v| !matches!(v.as_name(), Ok(b"None")))
+                    });
+                    if has_soft_mask {
+                        walker.trace.uninspected_objects = walker
+                            .trace
+                            .uninspected_objects
+                            .checked_add(1)
+                            .ok_or(PdfError::Malformed)?;
+                        walker
+                            .trace
+                            .uninspected_carrier
+                            .get_or_insert_with(|| "ext_gstate_smask".into());
+                    }
                     let has_font = state.is_some_and(|d| d.has(b"Font"));
                     if has_font {
                         walker.trace.uninspected_objects = walker
