@@ -375,6 +375,66 @@ pub fn inspect_geometry_for_test(
     job.inspect_geometry(&staged_path, &mut |_| {})
 }
 
+/// Stage name emitted when the clean-candidate comparison runs. Host tests use it to prove the
+/// comparison stays wired into `execute_redact`.
+const CLEAN_CANDIDATE_STAGE: &str = "redact:clean-candidate";
+
+/// Whether a request needs the clean-candidate comparison: a rectangle target with an overlay.
+///
+/// An overlay may spell exactly the text it covers, so the text gates alone cannot tell a
+/// removed glyph from a repainted one. The same plan is rewritten without the overlay and must
+/// pass the text gates on its own.
+fn needs_clean_candidate(params: &RedactParams) -> bool {
+    params.overlay_text.is_some()
+        && params
+            .targets
+            .iter()
+            .any(|t| matches!(t, RedactionTarget::Rectangle { .. }))
+}
+
+type CleanCandidate = (Option<Vec<u8>>, Option<RedactGeometry>);
+
+fn build_clean_candidate(
+    job: &mut RedactJob<'_>,
+    input_bytes: &[u8],
+    params: &RedactParams,
+    geometry: &RedactGeometry,
+    events: &mut dyn FnMut(ToolEvent),
+) -> Result<CleanCandidate, ToolError> {
+    if !needs_clean_candidate(params) {
+        return Ok((None, None));
+    }
+    events(ToolEvent::Progress {
+        stage: CLEAN_CANDIDATE_STAGE.into(),
+        done: None,
+        total: None,
+    });
+    let mut unoverlayed_params = params.clone();
+    unoverlayed_params.overlay_text = None;
+    let unoverlayed_plan = ariad_pdf::redact::plan(
+        input_bytes,
+        &unoverlayed_params,
+        geometry,
+        job.limits,
+        &job.ctx,
+    )
+    .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+    let (unoverlayed_bytes, _) = rewrite_document_with_evidence(
+        input_bytes,
+        &unoverlayed_params,
+        &unoverlayed_plan,
+        geometry,
+        job.limits,
+        &job.ctx,
+    )
+    .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+    let unoverlayed_path = job.workspace.input_dir().join("clean_candidate.pdf");
+    fs::write(&unoverlayed_path, &unoverlayed_bytes)
+        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    let unoverlayed_geom = job.inspect_geometry(&unoverlayed_path, events)?;
+    Ok((Some(unoverlayed_bytes), Some(unoverlayed_geom)))
+}
+
 fn execute_redact(
     job: &mut RedactJob<'_>,
     input_path: &Path,
@@ -427,41 +487,8 @@ fn execute_redact(
         .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
 
     // Step 4: Run mandatory verification gates on the candidate
-    // If an overlay is specified on rectangle targets, produce a clean candidate without overlay text
-    // to strictly verify that original text content was removed under every rectangle.
-    let has_rectangles = redact_params
-        .targets
-        .iter()
-        .any(|t| matches!(t, RedactionTarget::Rectangle { .. }));
     let (clean_candidate_bytes, clean_geometry) =
-        if redact_params.overlay_text.is_some() && has_rectangles {
-            let mut unoverlayed_params = redact_params.clone();
-            unoverlayed_params.overlay_text = None;
-            let unoverlayed_plan = ariad_pdf::redact::plan(
-                input_bytes,
-                &unoverlayed_params,
-                &geometry,
-                job.limits,
-                &job.ctx,
-            )
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
-            let (unoverlayed_bytes, _) = rewrite_document_with_evidence(
-                input_bytes,
-                &unoverlayed_params,
-                &unoverlayed_plan,
-                &geometry,
-                job.limits,
-                &job.ctx,
-            )
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
-            let unoverlayed_path = job.workspace.input_dir().join("clean_candidate.pdf");
-            fs::write(&unoverlayed_path, &unoverlayed_bytes)
-                .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
-            let unoverlayed_geom = job.inspect_geometry(&unoverlayed_path, events)?;
-            (Some(unoverlayed_bytes), Some(unoverlayed_geom))
-        } else {
-            (None, None)
-        };
+        build_clean_candidate(job, input_bytes, &redact_params, &geometry, events)?;
 
     // Gate 1: PDFium text re-extraction check & Gate 2: Core reader text check
     let candidate_geometry = job.inspect_geometry(&candidate_path, events)?;

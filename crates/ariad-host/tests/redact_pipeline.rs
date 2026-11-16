@@ -1508,6 +1508,60 @@ fn redact_pipeline_rect_overlay_guard_rejects_unredacted_clean_candidate() {
     );
 }
 
+fn redact_stages(params: serde_json::Value, file: &str) -> Vec<String> {
+    use ariad_host::tools::{ToolEvent, run_tool_with_events};
+    let temp = tempfile::tempdir().unwrap();
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(fixture(file))],
+        OutputTarget::Path(temp.path().join("out.pdf")),
+    )
+    .with_params(params);
+    let mut stages = Vec::new();
+    run_tool_with_events(&request, |event| {
+        let ToolEvent::Progress { stage, .. } = event;
+        stages.push(stage);
+    })
+    .expect("pdf.redact should succeed");
+    stages
+}
+
+#[test]
+fn redact_pipeline_rect_overlay_runs_clean_candidate_branch() {
+    if !child("redact_pipeline_rect_overlay_runs_clean_candidate_branch") {
+        return;
+    }
+    let rect = json!({ "left": 70.0, "bottom": 745.0, "right": 320.0, "top": 765.0 });
+    // Wiring guard: the clean-candidate comparison is the only defence against an overlay
+    // that spells the removed text. If `execute_redact` stops building the clean candidate
+    // for rectangle + overlay requests, this stage disappears and the test fails.
+    let with_overlay = redact_stages(
+        json!({
+            "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }],
+            "overlay_text": "REDACTED"
+        }),
+        "mixed-sizes.pdf",
+    );
+    assert!(
+        with_overlay.iter().any(|s| s == "redact:clean-candidate"),
+        "rectangle + overlay must build and verify a clean candidate: {with_overlay:?}"
+    );
+    // Neither a rectangle without overlay nor an overlay without a rectangle needs it.
+    let no_overlay = redact_stages(
+        json!({ "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }] }),
+        "mixed-sizes.pdf",
+    );
+    assert!(!no_overlay.iter().any(|s| s == "redact:clean-candidate"));
+    let no_rectangle = redact_stages(
+        json!({
+            "targets": [{ "kind": "exact", "text": "Portfolio" }],
+            "overlay_text": "REDACTED"
+        }),
+        "mixed-sizes.pdf",
+    );
+    assert!(!no_rectangle.iter().any(|s| s == "redact:clean-candidate"));
+}
+
 #[test]
 fn redact_pipeline_counts_indirect_annotations_and_vector_paths() {
     if !child("redact_pipeline_counts_indirect_annotations_and_vector_paths") {
