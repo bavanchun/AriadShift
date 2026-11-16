@@ -732,17 +732,31 @@ mod tests {
         // A staged directory under the export name makes clearing fail with an output error.
         let blocked = workspace.output_dir().join("document.md");
         fs::create_dir(&blocked).unwrap();
-        let error = write_for_tool(
-            &sample_document(),
-            EditExportFormat::Md,
-            &workspace,
-            &Limits::local(),
-            &CancellationToken::new(),
-            None,
-            &scrubber,
-        )
-        .expect_err("a directory cannot be cleared as an artifact");
+        // The write error text carries this fragment; the caller's scrubber must remove it.
+        const WRITE_SECRET: &str = "could not safely clear";
+        let write = |scrubber: &SecretScrubber| {
+            write_for_tool(
+                &sample_document(),
+                EditExportFormat::Md,
+                &workspace,
+                &Limits::local(),
+                &CancellationToken::new(),
+                None,
+                scrubber,
+            )
+            .expect_err("a directory cannot be cleared as an artifact")
+        };
+        let raw_write = write(&SecretScrubber::new());
+        assert!(matches!(raw_write, ToolError::OutputIo(_)), "{raw_write:?}");
+        assert!(
+            format!("{raw_write:?}").contains(WRITE_SECRET),
+            "{raw_write:?}"
+        );
+        let mut write_scrubber = SecretScrubber::new();
+        write_scrubber.register(WRITE_SECRET);
+        let error = write(&write_scrubber);
         assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+        assert!(!format!("{error:?}").contains(WRITE_SECRET), "{error:?}");
 
         let outside = tempfile::tempdir().unwrap();
         let input = outside.path().join("input.docx");

@@ -305,8 +305,9 @@ fn stage_final_item(
     source: &Path,
     staged_name: &str,
     scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
 ) -> Result<PathBuf, ToolError> {
-    super::run::write_staged_artifact_from_file(workspace, staged_name, source, scrubber)
+    super::run::write_staged_artifact_from_file(workspace, staged_name, source, scrubber, cancel)
 }
 
 fn run_recipe_inner(
@@ -709,7 +710,13 @@ fn run_recipe_inner(
     for (idx, item) in current_items.iter().enumerate() {
         let index_1_based = idx + 1;
         let staged_name = format!("final-{idx:03}.{}", item.format);
-        let staged_file = stage_final_item(&workspace, &item.path, &staged_name, &scrubber)?;
+        let staged_file = stage_final_item(
+            &workspace,
+            &item.path,
+            &staged_name,
+            &scrubber,
+            &request.cancel,
+        )?;
 
         let target_name = if let Some(ref template) = request.recipe.naming {
             let title = if template.contains("{title}") {
@@ -926,8 +933,14 @@ mod tests {
         let planted = workspace.output_dir().join("final-000.pdf");
         std::os::unix::fs::symlink(&victim, &planted).unwrap();
 
-        let staged = stage_final_item(&workspace, &source, "final-000.pdf", &SecretScrubber::new())
-            .expect("staging replaces the planted link");
+        let staged = stage_final_item(
+            &workspace,
+            &source,
+            "final-000.pdf",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect("staging replaces the planted link");
 
         assert_eq!(fs::read(&victim).unwrap(), b"untouched-recipe-victim");
         assert_eq!(staged, planted);
@@ -946,8 +959,14 @@ mod tests {
         fs::write(&source, &payload).unwrap();
 
         let workspace = Workspace::new().unwrap();
-        let staged = stage_final_item(&workspace, &source, "final-001.bin", &SecretScrubber::new())
-            .expect("large file stages");
+        let staged = stage_final_item(
+            &workspace,
+            &source,
+            "final-001.bin",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect("large file stages");
 
         assert_eq!(fs::read(&staged).unwrap(), payload);
     }
@@ -961,6 +980,7 @@ mod tests {
             outside.path(),
             "final-002.bin",
             &SecretScrubber::new(),
+            &CancellationToken::new(),
         )
         .expect_err("a directory is not a stageable output");
         assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
