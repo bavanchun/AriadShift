@@ -5,7 +5,7 @@ use crate::{
     tools::{
         engine,
         inprocess::{self, CancelBridge, RawToolExecution},
-        ocr_text,
+        ocr_pool, ocr_text,
         run::{ToolError, ToolEvent},
         secrets::SecretScrubber,
     },
@@ -32,7 +32,7 @@ use std::{
     fs,
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
@@ -45,7 +45,7 @@ struct Job<'a> {
     cancel: &'a CancellationToken,
     deadline: Instant,
     ctx: ToolCtx,
-    _bridge: CancelBridge,
+    _bridge: Option<CancelBridge>,
     warnings: Vec<ConvertWarning>,
 }
 
@@ -87,6 +87,24 @@ impl Job<'_> {
         }
         Ok(bytes)
     }
+    /// A job view for one parallel lane: same limits, deadline and cancellation flag, but its
+    /// own workspace (engines write fixed artifact names), cancel token and warning buffer.
+    fn lane<'b>(&self, workspace: &'b Workspace, cancel: &'b CancellationToken) -> Job<'b>
+    where
+        Self: 'b,
+    {
+        Job {
+            workspace,
+            limits: self.limits,
+            scrubber: self.scrubber,
+            engine_program: self.engine_program,
+            cancel,
+            deadline: self.deadline,
+            ctx: self.ctx.clone(),
+            _bridge: None,
+            warnings: Vec::new(),
+        }
+    }
     fn check(&self) -> Result<(), ToolError> {
         self.ctx
             .check()
@@ -114,18 +132,16 @@ impl Job<'_> {
                 .saturating_add(u64::from(remaining.subsec_nanos() != 0))
                 .max(1),
         );
-        let result = engine::execute(
+        // Extra language models were staged once for the whole job (`stage_job_models`).
+        let result = engine::execute_prestaged(
             spec,
             spec.engine,
             inputs,
             &params,
-            false,
             self.workspace,
             &limits,
             self.scrubber,
-            &crate::tools::secrets::SecretBag::new(),
             self.engine_program,
-            None,
             self.cancel.clone(),
             events,
         )?;
@@ -293,6 +309,44 @@ fn rotate(
     }
 }
 
+/// Verify and stage the extra OCR models once for the whole job, then give every additional
+/// lane workspace its own copy of the already verified files (the engine re-verifies each page).
+fn stage_job_models<'a>(
+    languages: &[String],
+    engine_program: Option<&Path>,
+    workspace: &Workspace,
+    lanes: impl Iterator<Item = &'a Workspace>,
+    cancel: &CancellationToken,
+) -> Result<(), ToolError> {
+    if languages.is_empty() {
+        return Ok(());
+    }
+    let command = engine::resolve_engine_command("tesseract", engine_program, None)?;
+    let directory = workspace.work_dir().join(engine::OCR_MODELS_DIR);
+    engine::stage_ocr_models(languages, &command, &directory, cancel)?;
+    for lane in lanes {
+        copy_staged_models(&directory, &lane.work_dir().join(engine::OCR_MODELS_DIR))?;
+    }
+    Ok(())
+}
+
+/// Copy staged model files without hashing them again.
+fn copy_staged_models(from: &Path, to: &Path) -> Result<(), ToolError> {
+    let entries = match fs::read_dir(from) {
+        Ok(entries) => entries,
+        // Nothing was staged: every requested model ships inside the engine pack.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(ToolError::OutputIo("could not stage OCR model".into())),
+    };
+    fs::create_dir_all(to).map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+    for entry in entries {
+        let entry = entry.map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+        fs::copy(entry.path(), to.join(entry.file_name()))
+            .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+    }
+    Ok(())
+}
+
 /// Verify both engines before staging an OCR composite.
 pub(super) fn preflight(
     id: &str,
@@ -339,7 +393,7 @@ pub(super) fn execute(
         cancel,
         deadline,
         ctx,
-        _bridge: bridge,
+        _bridge: Some(bridge),
         warnings: Vec::new(),
     };
     let mut sidecar = Vec::new();
@@ -559,151 +613,231 @@ pub(super) fn execute(
         write_pdf(&job, doc.as_mut().expect("PDF input"), &staged_pdf)?;
     }
     let total = selected.len() as u64;
+    // Every page needs one PDFium and one Tesseract process, so lanes run pages concurrently
+    // (at most `workers` processes at a time) while results are applied strictly in page order.
+    let workers = ocr_pool::worker_count(selected.len());
+    let stop = cancel.child_token();
+    let mut extra_workspaces = Vec::new();
+    for _ in 1..workers {
+        extra_workspaces.push(
+            Workspace::new().map_err(|_| {
+                ToolError::OutputIo("could not create an OCR worker workspace".into())
+            })?,
+        );
+    }
+    let lane_workspace = |lane: usize| {
+        if lane == 0 {
+            workspace
+        } else {
+            &extra_workspaces[lane - 1]
+        }
+    };
+    if spec.id != "pdf.auto_rotate" && !selected.is_empty() {
+        stage_job_models(
+            &languages,
+            engine_program,
+            workspace,
+            extra_workspaces.iter(),
+            cancel,
+        )?;
+    }
+    let lanes: Vec<Mutex<Job<'_>>> = (0..workers)
+        .map(|lane| Mutex::new(job.lane(lane_workspace(lane), &stop)))
+        .collect();
+    let lock_lane = |lane: usize| lanes[lane].lock().unwrap_or_else(|p| p.into_inner());
     if auto_rotate {
         let mut rotated = false;
-        for (index, &page) in selected.iter().enumerate() {
-            let image = job.scan(&staged_pdf, page, dpi, clean, events)?;
-            let osd: OcrOrientation =
-                job.json("ocr.orientation", &image, "png", json!({"dpi":dpi}), events)?;
-            fs::remove_file(&image)
-                .map_err(|_| ToolError::OutputIo("could not remove scan intermediate".into()))?;
-            if !matches!(osd.rotation_cw, 0 | 90 | 180 | 270)
-                || !osd.confidence.is_finite()
-                || osd.confidence < 0.0
-            {
-                return Err(ToolError::EngineFailure(
-                    "OCR engine returned invalid orientation".into(),
-                ));
-            }
-            if osd.confidence > 0.0 && osd.confidence >= min_confidence && osd.rotation_cw != 0 {
-                doc = Some(
-                    rotate(
-                        doc.take().expect("PDF input"),
-                        page,
-                        osd.rotation_cw,
-                        &job.ctx,
-                    )
-                    .map_err(|e| pdf_error(&job, e))?,
-                );
-                rotated = true;
-            } else if osd.confidence <= 0.0 || osd.confidence < min_confidence {
-                job.warn(
-                    "orientation_uncertain",
-                    "No reliable page orientation was detected.",
-                );
-            }
-            if spec.id == "pdf.auto_rotate" {
-                events(ToolEvent::Progress {
-                    stage: "ocr".into(),
-                    done: Some(index as u64 + 1),
-                    total: Some(total),
-                });
-            }
-        }
+        ocr_pool::run_ordered(
+            selected.len(),
+            workers,
+            &stop,
+            |lane, index| {
+                let page = selected[index];
+                let mut lane = lock_lane(lane);
+                let image = lane.scan(&staged_pdf, page, dpi, clean, &mut |_| {})?;
+                let osd: OcrOrientation = lane.json(
+                    "ocr.orientation",
+                    &image,
+                    "png",
+                    json!({"dpi":dpi}),
+                    &mut |_| {},
+                )?;
+                fs::remove_file(&image).map_err(|_| {
+                    ToolError::OutputIo("could not remove scan intermediate".into())
+                })?;
+                if !matches!(osd.rotation_cw, 0 | 90 | 180 | 270)
+                    || !osd.confidence.is_finite()
+                    || osd.confidence < 0.0
+                {
+                    return Err(ToolError::EngineFailure(
+                        "OCR engine returned invalid orientation".into(),
+                    ));
+                }
+                Ok((osd, std::mem::take(&mut lane.warnings)))
+            },
+            |index, (osd, warnings)| {
+                let page = selected[index];
+                job.check()?;
+                job.warnings.extend(warnings);
+                if osd.confidence > 0.0 && osd.confidence >= min_confidence && osd.rotation_cw != 0
+                {
+                    doc = Some(
+                        rotate(
+                            doc.take().expect("PDF input"),
+                            page,
+                            osd.rotation_cw,
+                            &job.ctx,
+                        )
+                        .map_err(|e| pdf_error(&job, e))?,
+                    );
+                    rotated = true;
+                } else if osd.confidence <= 0.0 || osd.confidence < min_confidence {
+                    job.warn(
+                        "orientation_uncertain",
+                        "No reliable page orientation was detected.",
+                    );
+                }
+                if spec.id == "pdf.auto_rotate" {
+                    events(ToolEvent::Progress {
+                        stage: "ocr".into(),
+                        done: Some(index as u64 + 1),
+                        total: Some(total),
+                    });
+                }
+                Ok(())
+            },
+        )?;
         if rotated && spec.id == "pdf.ocr" {
-            write_pdf(&job, doc.as_mut().expect("PDF input"), &staged_pdf)?;
+            write_pdf(&job, doc.as_mut().expect("PDF output"), &staged_pdf)?;
         }
     }
-    for (index, page) in selected.into_iter().enumerate() {
-        if spec.id == "pdf.auto_rotate" {
-            continue;
-        }
-        job.check()?;
-        let image = if spec.id == "image.ocr" {
-            inputs[(page - 1) as usize].0.clone()
-        } else {
-            job.scan(&staged_pdf, page, dpi, clean, events)?
-        };
-        let format = if spec.id == "image.ocr" {
-            inputs[(page - 1) as usize].1.clone()
-        } else {
-            "png".into()
-        };
-        if spec.id != "pdf.auto_rotate" {
-            let result: OcrPage = job.json(
-                "ocr.recognize",
-                &image,
-                &format,
-                json!({"languages":languages, "dpi":dpi}),
-                events,
-            )?;
-            result.validate().map_err(|_| {
-                ToolError::EngineFailure("OCR engine returned invalid page data".into())
-            })?;
-            if result.dpi != dpi || result.rotation_cw != 0 || result.languages != languages {
-                return Err(ToolError::EngineFailure(
-                    "OCR engine returned data for a different request".into(),
-                ));
-            }
-            if result.paragraphs.is_empty() {
-                job.warn("ocr_no_text", "No text was recognized on a selected page.");
-            }
-            if clean && spec.id == "pdf.ocr" {
-                let decoded = crate::engines::tesseract_image::decode(&image, limits, job.deadline)
-                    .map_err(|e| match e.code {
-                        ariad_core::protocol::ErrorCode::LimitExceeded => ToolError::LimitExceeded,
-                        _ => ToolError::EngineFailure("invalid cleaned scan".into()),
+    if spec.id != "pdf.auto_rotate" {
+        let clean_pages = clean && spec.id == "pdf.ocr";
+        ocr_pool::run_ordered(
+            selected.len(),
+            workers,
+            &stop,
+            |lane, index| {
+                let page = selected[index];
+                let mut lane = lock_lane(lane);
+                lane.check()?;
+                let is_image = spec.id == "image.ocr";
+                let (image, format) = if is_image {
+                    inputs[(page - 1) as usize].clone()
+                } else {
+                    (
+                        lane.scan(&staged_pdf, page, dpi, clean, &mut |_| {})?,
+                        "png".into(),
+                    )
+                };
+                let result: OcrPage = lane.json(
+                    "ocr.recognize",
+                    &image,
+                    &format,
+                    json!({"languages":languages, "dpi":dpi}),
+                    &mut |_| {},
+                )?;
+                result.validate().map_err(|_| {
+                    ToolError::EngineFailure("OCR engine returned invalid page data".into())
+                })?;
+                if result.dpi != dpi || result.rotation_cw != 0 || result.languages != languages {
+                    return Err(ToolError::EngineFailure(
+                        "OCR engine returned data for a different request".into(),
+                    ));
+                }
+                // The engine-written cleaned PNG is decoded here, in the host. It cannot move into
+                // PDFium without changing the `scan.render` artifact contract (PNG today), so the
+                // same decoder the Tesseract engine uses applies the same image limits (encoded
+                // size, 16,384 px sides, 100 Mpx, allocation cap) and this job's deadline
+                // (docs/ocr.md, "Cleaned page images").
+                // Holding the decoded raster is bounded by the lane window: at most `workers`
+                // pages are in flight or waiting to be applied.
+                let cleaned = if clean_pages {
+                    Some(
+                        crate::engines::tesseract_image::decode(&image, limits, lane.deadline)
+                            .map_err(|e| match e.code {
+                                ariad_core::protocol::ErrorCode::LimitExceeded => {
+                                    ToolError::LimitExceeded
+                                }
+                                _ => ToolError::EngineFailure("invalid cleaned scan".into()),
+                            })?,
+                    )
+                } else {
+                    None
+                };
+                if !is_image {
+                    fs::remove_file(image).map_err(|_| {
+                        ToolError::OutputIo("could not remove scan intermediate".into())
                     })?;
-                if !ariad_pdf::scan_pages::replace_with_cleaned_image(
-                    doc.as_mut().expect("PDF input"),
-                    page,
-                    decoded.width(),
-                    decoded.height(),
-                    decoded.as_raw(),
-                    &job.ctx,
-                )
-                .map_err(|e| pdf_error(&job, e))?
+                }
+                Ok((result, cleaned, std::mem::take(&mut lane.warnings)))
+            },
+            |index, (result, cleaned, warnings)| {
+                let page = selected[index];
+                job.check()?;
+                job.warnings.extend(warnings);
+                if result.paragraphs.is_empty() {
+                    job.warn("ocr_no_text", "No text was recognized on a selected page.");
+                }
+                if let Some(decoded) = cleaned
+                    && !ariad_pdf::scan_pages::replace_with_cleaned_image(
+                        doc.as_mut().expect("PDF input"),
+                        page,
+                        decoded.width(),
+                        decoded.height(),
+                        decoded.as_raw(),
+                        &job.ctx,
+                    )
+                    .map_err(|e| pdf_error(&job, e))?
                 {
                     job.warn(
                         "clean_preserved_page",
                         "A page with non-image content was preserved without cleaning.",
                     );
                 }
-            }
-            if matches!(output_kind, "pdf" | "pdf+txt" | "pdf+hocr") {
-                ariad_pdf::ocr_layer::add_text_layer_in_place(
-                    doc.as_mut().expect("PDF output"),
-                    page,
-                    &result,
-                    &job.ctx,
-                )
-                .map_err(|e| pdf_error(&job, e))?;
-            }
-            if matches!(output_kind, "txt" | "pdf+txt") {
-                ocr_text::text_page(
-                    &result,
-                    &mut Sidecar {
-                        bytes: &mut sidecar,
-                        cap: sidecar_cap,
-                    },
-                )
-                .map_err(|_| ToolError::LimitExceeded)?;
-            }
-            if matches!(output_kind, "hocr" | "pdf+hocr") {
-                ocr_text::hocr_page(
-                    &result,
-                    page as usize,
-                    &mut Sidecar {
-                        bytes: &mut sidecar,
-                        cap: sidecar_cap,
-                    },
-                )
-                .map_err(sidecar_error)?;
-            }
-            if sidecar.len() as u64 > limits.max_decompressed_bytes {
-                return Err(ToolError::LimitExceeded);
-            }
-        }
-        if spec.id != "image.ocr" {
-            fs::remove_file(image)
-                .map_err(|_| ToolError::OutputIo("could not remove scan intermediate".into()))?;
-        }
-        events(ToolEvent::Progress {
-            stage: "ocr".into(),
-            done: Some(index as u64 + 1),
-            total: Some(total),
-        });
+                if matches!(output_kind, "pdf" | "pdf+txt" | "pdf+hocr") {
+                    ariad_pdf::ocr_layer::add_text_layer_in_place(
+                        doc.as_mut().expect("PDF output"),
+                        page,
+                        &result,
+                        &job.ctx,
+                    )
+                    .map_err(|e| pdf_error(&job, e))?;
+                }
+                if matches!(output_kind, "txt" | "pdf+txt") {
+                    ocr_text::text_page(
+                        &result,
+                        &mut Sidecar {
+                            bytes: &mut sidecar,
+                            cap: sidecar_cap,
+                        },
+                    )
+                    .map_err(|_| ToolError::LimitExceeded)?;
+                }
+                if matches!(output_kind, "hocr" | "pdf+hocr") {
+                    ocr_text::hocr_page(
+                        &result,
+                        page as usize,
+                        &mut Sidecar {
+                            bytes: &mut sidecar,
+                            cap: sidecar_cap,
+                        },
+                    )
+                    .map_err(sidecar_error)?;
+                }
+                if sidecar.len() as u64 > limits.max_decompressed_bytes {
+                    return Err(ToolError::LimitExceeded);
+                }
+                events(ToolEvent::Progress {
+                    stage: "ocr".into(),
+                    done: Some(index as u64 + 1),
+                    total: Some(total),
+                });
+                Ok(())
+            },
+        )?;
     }
+    drop(lanes);
     if output_kind == "hocr" || output_kind == "pdf+hocr" {
         Sidecar {
             bytes: &mut sidecar,

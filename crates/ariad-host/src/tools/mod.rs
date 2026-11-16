@@ -14,6 +14,7 @@ pub mod engine;
 pub mod fidelity;
 pub mod inprocess;
 mod ocr;
+mod ocr_pool;
 mod ocr_text;
 pub mod publish;
 pub mod recipe;

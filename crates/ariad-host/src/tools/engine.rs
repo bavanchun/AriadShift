@@ -36,6 +36,73 @@ use crate::{
     workspace::Workspace,
 };
 
+/// Directory under a workspace's `work_dir` where the host stages verified extra OCR models.
+pub(super) const OCR_MODELS_DIR: &str = "ocr-models";
+
+/// Verifies and stages every extra OCR language model that the engine pack does not bundle.
+///
+/// Each model is hashed against its pinned digest and copied exactly once into `directory`;
+/// the Tesseract engine re-verifies the staged copy inside its sandbox. An OCR job calls this
+/// once and then reuses the staged files for every page (see [`execute_prestaged`]).
+pub(super) fn stage_ocr_models(
+    languages: &[String],
+    command: &EngineCommand,
+    directory: &Path,
+    cancel: &CancellationToken,
+) -> Result<(), ToolError> {
+    stage_models_with(
+        languages,
+        |language| {
+            command.install_root.as_ref().is_some_and(|root| {
+                root.join("tessdata")
+                    .join(format!("{language}.traineddata"))
+                    .is_file()
+            })
+        },
+        |language| {
+            let context =
+                crate::packs::PackContext::from_env().map_err(|_| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: "OCR language cache is unavailable".into(),
+                })?;
+            crate::packs::languages::verified_path(&context, language, cancel)
+                .map_err(|error| match error {
+                    crate::packs::PackError::Interrupted => ToolError::Interrupted,
+                    _ => ToolError::ToolMissing {
+                        engine: "tesseract".into(),
+                        hint: format!("OCR language '{language}' could not be verified"),
+                    },
+                })?
+                .ok_or_else(|| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: format!("OCR language '{language}' is not installed; run 'ashift engines languages install {language}'"),
+                })
+        },
+        directory,
+    )
+}
+
+/// Core of [`stage_ocr_models`], with the bundled-model test and the verified-source lookup
+/// injected so the once-per-model behaviour can be tested without a real pack.
+fn stage_models_with(
+    languages: &[String],
+    bundled: impl Fn(&str) -> bool,
+    mut verified_source: impl FnMut(&str) -> Result<PathBuf, ToolError>,
+    directory: &Path,
+) -> Result<(), ToolError> {
+    for language in languages {
+        if bundled(language) {
+            continue;
+        }
+        let source = verified_source(language)?;
+        fs::create_dir_all(directory)
+            .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+        fs::copy(source, directory.join(format!("{language}.traineddata")))
+            .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+    }
+    Ok(())
+}
+
 /// Executes an out-of-process tool over `ariad-engine/2` (`RequestV2::RunTool`).
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
@@ -53,6 +120,74 @@ pub fn execute(
     cancel: CancellationToken,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
+    execute_inner(
+        spec,
+        effective_engine,
+        staged_inputs,
+        engine_params,
+        has_secrets,
+        workspace,
+        limits,
+        scrubber,
+        secrets,
+        engine_program,
+        engine_command_override,
+        cancel,
+        on_event,
+        true,
+    )
+}
+
+/// Like [`execute`], but the caller has already placed the extra OCR models under
+/// `<work_dir>/ocr-models` with [`stage_ocr_models`], so none are hashed or copied here.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn execute_prestaged(
+    spec: &ToolSpec,
+    effective_engine: &str,
+    staged_inputs: &[(PathBuf, String)],
+    engine_params: &Value,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    engine_program: Option<&Path>,
+    cancel: CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+) -> Result<RawToolExecution, ToolError> {
+    execute_inner(
+        spec,
+        effective_engine,
+        staged_inputs,
+        engine_params,
+        false,
+        workspace,
+        limits,
+        scrubber,
+        &super::secrets::SecretBag::new(),
+        engine_program,
+        None,
+        cancel,
+        on_event,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_inner(
+    spec: &ToolSpec,
+    effective_engine: &str,
+    staged_inputs: &[(PathBuf, String)],
+    engine_params: &Value,
+    has_secrets: bool,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    secrets: &super::secrets::SecretBag,
+    engine_program: Option<&Path>,
+    engine_command_override: Option<&EngineCommand>,
+    cancel: CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+    stage_models: bool,
+) -> Result<RawToolExecution, ToolError> {
     if cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
@@ -60,41 +195,16 @@ pub fn execute(
     let command =
         resolve_engine_command(effective_engine, engine_program, engine_command_override)?;
 
-    if effective_engine == "tesseract" && spec.id == "ocr.recognize" {
+    if stage_models && effective_engine == "tesseract" && spec.id == "ocr.recognize" {
         let params: ariad_core::tools::params::OcrRecognizeParams =
             serde_json::from_value(engine_params.clone())
                 .map_err(|_| ToolError::EngineFailure("invalid OCR parameters".into()))?;
-        for language in params.languages {
-            if command.install_root.as_ref().is_some_and(|root| {
-                root.join("tessdata")
-                    .join(format!("{language}.traineddata"))
-                    .is_file()
-            }) {
-                continue;
-            }
-            let context =
-                crate::packs::PackContext::from_env().map_err(|_| ToolError::ToolMissing {
-                    engine: "tesseract".into(),
-                    hint: "OCR language cache is unavailable".into(),
-                })?;
-            let source = crate::packs::languages::verified_path(&context, &language, &cancel)
-                .map_err(|error| match error {
-                    crate::packs::PackError::Interrupted => ToolError::Interrupted,
-                    _ => ToolError::ToolMissing {
-                        engine: "tesseract".into(),
-                        hint: format!("OCR language '{language}' could not be verified"),
-                    },
-                })?
-                .ok_or_else(|| ToolError::ToolMissing {
-                    engine: "tesseract".into(),
-                    hint: format!("OCR language '{language}' is not installed; run 'ashift engines languages install {language}'"),
-                })?;
-            let directory = workspace.work_dir().join("ocr-models");
-            fs::create_dir_all(&directory)
-                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
-            fs::copy(source, directory.join(format!("{language}.traineddata")))
-                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
-        }
+        stage_ocr_models(
+            &params.languages,
+            &command,
+            &workspace.work_dir().join(OCR_MODELS_DIR),
+            &cancel,
+        )?;
     }
 
     let _cert_guard =
@@ -624,5 +734,54 @@ mod pdfium_limit_tests {
             err,
             ToolError::EngineFailure("staged engine JSON artifact is not valid UTF-8".into())
         );
+    }
+}
+
+#[cfg(test)]
+mod ocr_model_staging_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn stages_each_extra_model_once_and_skips_bundled_ones() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("fra.traineddata"), b"fra").unwrap();
+        fs::write(source.path().join("deu.traineddata"), b"deu").unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let directory = target.path().join(OCR_MODELS_DIR);
+        let lookups = Cell::new(0);
+        let languages = ["eng", "fra", "deu"].map(String::from);
+        stage_models_with(
+            &languages,
+            |language| language == "eng",
+            |language| {
+                lookups.set(lookups.get() + 1);
+                Ok(source.path().join(format!("{language}.traineddata")))
+            },
+            &directory,
+        )
+        .unwrap();
+        assert_eq!(lookups.get(), 2, "one verification per extra model");
+        assert_eq!(fs::read(directory.join("fra.traineddata")).unwrap(), b"fra");
+        assert_eq!(fs::read(directory.join("deu.traineddata")).unwrap(), b"deu");
+        assert!(!directory.join("eng.traineddata").exists());
+    }
+
+    #[test]
+    fn missing_model_is_reported_as_tool_missing() {
+        let target = tempfile::tempdir().unwrap();
+        let error = stage_models_with(
+            &["fra".to_owned()],
+            |_| false,
+            |language| {
+                Err(ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: format!("{language} missing"),
+                })
+            },
+            &target.path().join(OCR_MODELS_DIR),
+        )
+        .unwrap_err();
+        assert!(matches!(error, ToolError::ToolMissing { .. }));
     }
 }
