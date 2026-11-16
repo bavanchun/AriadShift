@@ -965,18 +965,33 @@ impl Resolver for SleepingResolver {
 
 #[test]
 fn test_dns_resolver_budget_sleep_timeout() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    // The resolver and transport are both injected, and the host is under the
+    // reserved `.invalid` TLD, so no OS DNS lookup and no TCP connect can run.
+    let connected = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&connected);
+    let transport = Arc::new(MockTransport::new(move |_, _| {
+        seen.store(true, Ordering::SeqCst);
+        Err(NetError::Timeout)
+    }));
     let resolver = Arc::new(SleepingResolver(Duration::from_millis(200)));
     let client = Client::builder()
         .resolver(resolver)
+        .transport(transport)
         .connect_timeout(Duration::from_millis(30))
         .build()
         .unwrap();
 
-    let url = Url::parse("https://example.com/test-dns-timeout").unwrap();
+    let url = Url::parse("https://dns-budget.invalid/test-dns-timeout").unwrap();
     let err = client.get(url).expect_err("DNS timeout should fail");
     assert!(
         matches!(err, NetError::Timeout),
         "expected NetError::Timeout, got {err:?}"
+    );
+    assert!(
+        !connected.load(Ordering::SeqCst),
+        "no connection may be attempted after the DNS budget expires"
     );
 }
 

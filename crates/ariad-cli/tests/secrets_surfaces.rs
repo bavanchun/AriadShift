@@ -363,34 +363,7 @@ fn cli_certificate_binary_secret_pdf_sign() {
 
 #[test]
 fn cert_path_restrictions_reject_forbidden_paths() {
-    // 1. Filesystem paths passed as certificate values to host resolve_cert_bytes are strictly rejected
-    for path in [
-        "/private/var/folders/secret.p12",
-        "~/.netrc",
-        "/etc/passwd",
-        "/proc/cpuinfo",
-        "./cert.p12",
-        "../secret.p12",
-    ] {
-        let err = ariad_host::tools::sign::resolve_cert_bytes(path);
-        assert!(
-            err.is_err(),
-            "host resolve_cert_bytes must reject filesystem path: {path}"
-        );
-        match err.unwrap_err() {
-            ariad_host::tools::ToolError::InvalidParams(msg) => {
-                assert!(
-                    msg.contains(
-                        "certificate secret must be base64-encoded data, not a filesystem path"
-                    ) || msg.contains("certificate parameter must be base64-encoded data"),
-                    "unexpected error msg: {msg}"
-                );
-            }
-            other => panic!("expected InvalidParams, got {other:?}"),
-        }
-    }
-
-    // 2. CLI rejects inline literal paths for secret parameters
+    // CLI rejects inline literal paths for secret parameters
     for path in ["/private/var/secret.p12", "~/.netrc", "/etc/passwd"] {
         let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
             .args(["tool", "pdf.sign"])

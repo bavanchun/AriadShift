@@ -175,3 +175,427 @@ def test_license_gate_native_in_non_native_package_rejected(tmp_path):
     inv = licenses.load_reviewed_inventory()
     findings = licenses.check_distribution(dists[0], inv, site_root=tmp_path)
     assert any("unexpected native binary object in non-native package" in f.reason for f in findings)
+
+
+# --- Site-packages tree scan and explicit native approvals -------------------------------------
+
+import base64
+import hashlib
+import importlib.metadata as md
+
+
+def _make_dist(site: Path, name: str, version: str, spdx: str, files: dict[str, bytes]) -> None:
+    """Writes a minimal installed distribution with a correct RECORD for every file."""
+    dist_info = site / f"{name}-{version}.dist-info"
+    dist_info.mkdir()
+    (dist_info / "METADATA").write_text(
+        f"Name: {name}\nVersion: {version}\nLicense: {spdx}\n", encoding="utf-8"
+    )
+    (dist_info / "LICENSE").write_text("notice text\n", encoding="utf-8")
+    rows = []
+    for rel, data in files.items():
+        target = site / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+        rows.append(f"{rel},sha256={digest},{len(data)}")
+    rows += [f"{name}-{version}.dist-info/LICENSE,,", f"{name}-{version}.dist-info/RECORD,,"]
+    (dist_info / "RECORD").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def _tree_findings(site: Path) -> list:
+    return licenses.check_site_tree(site, licenses.load_reviewed_inventory())
+
+
+def _reasons(findings) -> str:
+    return "\n".join(f.reason for f in findings)
+
+
+def test_pth_archive_reference_rejected(tmp_path):
+    (tmp_path / "evil.pth").write_text("# comment\n/opt/libs/bundle.zip\n", encoding="utf-8")
+    assert "archive reference in site-packages path file: evil.pth" in _reasons(
+        _tree_findings(tmp_path)
+    )
+
+
+def test_pth_executable_import_line_rejected(tmp_path):
+    (tmp_path / "hook.pth").write_text("import os; os.system('true')\n", encoding="utf-8")
+    assert "executable import line in site-packages path file: hook.pth" in _reasons(
+        _tree_findings(tmp_path)
+    )
+
+
+def test_pth_plain_path_lines_and_comments_accepted(tmp_path):
+    (tmp_path / "paths.pth").write_text("# note\n\nvendor\n", encoding="utf-8")
+    assert _tree_findings(tmp_path) == []
+
+
+def test_archive_suffix_rejected(tmp_path):
+    for name in ("bundle.zip", "legacy.egg", "pkg.whl"):
+        (tmp_path / name).write_bytes(b"x")
+    reasons = _reasons(_tree_findings(tmp_path))
+    for name in ("bundle.zip", "legacy.egg", "pkg.whl"):
+        assert f"uninspected site-packages archive: {name}" in reasons
+
+
+def test_zip_magic_in_disguised_file_rejected(tmp_path):
+    (tmp_path / "data.bin").write_bytes(b"PK\x03\x04rest-of-zip")
+    (tmp_path / "weights.npz").write_bytes(b"PK\x03\x04rest-of-zip")
+    reasons = _reasons(_tree_findings(tmp_path))
+    assert "uninspected site-packages ZIP archive: data.bin" in reasons
+    assert "weights.npz" not in reasons
+
+
+def test_unsafe_symlinks_rejected(tmp_path):
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("x", encoding="utf-8")
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "escape.txt").symlink_to(outside / "secret.txt")
+    (site / "escape-dir").symlink_to(outside, target_is_directory=True)
+    reasons = _reasons(_tree_findings(site))
+    assert "unsafe site-packages symlink: escape.txt" in reasons
+    assert "unsafe site-packages symlink: escape-dir" in reasons
+
+
+def test_pip_vendored_launcher_executables_rejected(tmp_path):
+    """pip is skipped by the metadata audit, but its launcher executables must not pass."""
+    _make_dist(
+        tmp_path,
+        "pip",
+        "26.0",
+        "MIT",
+        {"pip/_vendor/distlib/t64.exe": b"MZ\x90\x00launcher", "pip/__init__.py": b""},
+    )
+    reasons = _reasons(_tree_findings(tmp_path))
+    assert "native file not owned by a reviewed package: pip/_vendor/distlib/t64.exe" in reasons
+
+
+def test_unowned_executable_and_magic_only_binary_rejected(tmp_path):
+    (tmp_path / "tool.exe").write_bytes(b"MZ\x90\x00")
+    (tmp_path / "hidden-binary").write_bytes(b"\x7fELF\x02\x01\x01")
+    reasons = _reasons(_tree_findings(tmp_path))
+    assert "native file not owned by a reviewed package: tool.exe" in reasons
+    assert "native file not owned by a reviewed package: hidden-binary" in reasons
+
+
+def test_magic_only_binary_in_reviewed_pure_package_rejected(tmp_path):
+    _make_dist(tmp_path, "asn1crypto", "1.5.1", "MIT", {"asn1crypto/blob": b"\xcf\xfa\xed\xfe\x00"})
+    assert "unapproved native object (detected by file magic): asn1crypto/blob" in _reasons(
+        _tree_findings(tmp_path)
+    )
+
+
+def test_native_hard_link_rejected(tmp_path):
+    (tmp_path / "a.so").write_bytes(b"\x7fELFx")
+    (tmp_path / "b.so").hardlink_to(tmp_path / "a.so")
+    assert "native file is a hard link" in _reasons(_tree_findings(tmp_path))
+
+
+def test_check_environment_runs_tree_scan_for_site_root(tmp_path):
+    (tmp_path / "bundle.zip").write_bytes(b"x")
+    findings = licenses.check_environment([], site_root=tmp_path)
+    assert any("uninspected site-packages archive" in f.reason for f in findings)
+
+
+def test_lxml_libiconv_notice_recorded_and_bundled():
+    lxml = licenses.load_reviewed_inventory()["lxml"]
+    assert "libiconv-LICENSE.txt" in lxml["notices"]
+    assert "libxml2-libxslt-LICENSES.txt" in lxml["notices"]
+    text = (licenses.NOTICES_DIR / "libiconv-LICENSE.txt").read_text(encoding="utf-8")
+    assert "GNU LESSER GENERAL PUBLIC LICENSE" in text
+    assert "Version 2.1" in text
+    assert "https://ftp.gnu.org/gnu/libiconv/" in text
+    wheel_notice = (licenses.NOTICES_DIR / "libxml2-libxslt-LICENSES.txt").read_text(encoding="utf-8")
+    assert "**iconv**: LGPL 2.1" in wheel_notice
+    pack_script = (Path(__file__).resolve().parents[1] / "pack" / "build.py").read_text(
+        encoding="utf-8"
+    )
+    assert "notices/libiconv-LICENSE.txt" in pack_script
+
+
+def test_missing_bundled_notice_rejected(tmp_path, monkeypatch):
+    monkeypatch.setattr(licenses, "NOTICES_DIR", tmp_path / "no-notices")
+    site = tmp_path / "site"
+    site.mkdir()
+    _make_dist(site, "lxml", "6.1.3", "BSD-3-Clause", {})
+    inv = licenses.load_reviewed_inventory()
+    (found,) = md.distributions(path=[str(site)])
+    findings = licenses.check_distribution(found, inv, site_root=site)
+    assert "missing or empty bundled notice: libiconv-LICENSE.txt" in _reasons(findings)
+
+
+def test_reviewed_inventory_has_no_wildcard_native_approvals():
+    for name, pkg in licenses.load_reviewed_inventory().items():
+        for entry in pkg.get("native_files", []):
+            assert not any(ch in entry for ch in "*?["), f"{name}: wildcard approval {entry}"
+
+
+def test_native_entry_requires_exact_stem_and_extension_suffix():
+    match = licenses.native_entry_matches
+    stem = "aiohttp/_http_parser"
+    assert match(f"{stem}.cpython-314-x86_64-linux-gnu.so", stem)
+    assert match(f"{stem}.cpython-314t-darwin.so", stem)
+    assert match(f"{stem}.cp314-win_amd64.pyd", stem)
+    assert match("cryptography/hazmat/bindings/_rust.abi3.so", "cryptography/hazmat/bindings/_rust")
+    assert match("cryptography/hazmat/bindings/_rust.pyd", "cryptography/hazmat/bindings/_rust")
+    # Arbitrary files that merely share the stem are not approved.
+    for bad in (
+        f"{stem}.so",
+        f"{stem}.evil",
+        f"{stem}.py",
+        f"{stem}.cpython-314-x86_64-linux-gnu.so.bak",
+        f"{stem}_extra.cpython-314-x86_64-linux-gnu.so",
+        "aiohttp/other.cpython-314-x86_64-linux-gnu.so",
+    ):
+        assert not match(bad, stem), bad
+    # A wildcard entry never matches anything.
+    assert not match(f"{stem}.cpython-314-x86_64-linux-gnu.so", "aiohttp/_http_parser.*")
+    assert not match("anything.cpython-314-x86_64-linux-gnu.so", "*")
+
+
+def test_check_distribution_rejects_glob_style_sibling_of_reviewed_native(tmp_path):
+    so = "aiohttp/_http_parser.evil.so"
+    _make_dist(tmp_path, "aiohttp", "3.14.5", "Apache-2.0 AND MIT", {so: b"\x7fELFpayload"})
+    inv = licenses.load_reviewed_inventory()
+    (found,) = md.distributions(path=[str(tmp_path)])
+    findings = licenses.check_distribution(found, inv, site_root=tmp_path)
+    assert f"unapproved native object '{so}' in package 'aiohttp'" in _reasons(findings)
+
+
+def test_check_distribution_accepts_abi_tagged_reviewed_native(tmp_path):
+    so = "aiohttp/_http_parser.cpython-314-x86_64-linux-gnu.so"
+    _make_dist(tmp_path, "aiohttp", "3.14.5", "Apache-2.0 AND MIT", {so: b"\x7fELFpayload"})
+    inv = licenses.load_reviewed_inventory()
+    (found,) = md.distributions(path=[str(tmp_path)])
+    findings = licenses.check_distribution(found, inv, site_root=tmp_path)
+    assert not any("native" in f.reason for f in findings), _reasons(findings)
+
+
+def _lock_with_lxml_edit(tmp_path, edit):
+    text = licenses.UV_LOCK_PATH.read_text(encoding="utf-8")
+    path = tmp_path / "uv.lock"
+    path.write_text(edit(text), encoding="utf-8")
+    return path
+
+
+def test_lxml_libiconv_review_records_exact_source():
+    entry = licenses.load_reviewed_inventory()["lxml"]["libiconv"]
+    assert entry["version"] == "1.18"
+    assert entry["modified"] is False
+    assert entry["source"] == "https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz"
+    assert entry["source_sha256"] == (
+        "3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8"
+    )
+    notice = (licenses.NOTICES_DIR / "libiconv-LICENSE.txt").read_text(encoding="utf-8")
+    assert entry["source"] in notice
+    assert entry["source_sha256"] in notice
+
+
+def test_real_uv_lock_matches_lxml_locked_wheels():
+    inv = licenses.load_reviewed_inventory()
+    assert licenses.check_locked_wheels(inv) == []
+    locked = licenses.load_locked_wheels()[("lxml", "6.1.3")]
+    assert locked == inv["lxml"]["libiconv"]["locked_wheels"]
+
+
+def test_changed_lxml_wheel_hash_rejected(tmp_path):
+    wheels = licenses.load_reviewed_inventory()["lxml"]["libiconv"]["locked_wheels"]
+    wheel_hash = next(iter(wheels.values()))
+    lock = _lock_with_lxml_edit(tmp_path, lambda t: t.replace(wheel_hash, "0" * 64, 1))
+    findings = licenses.check_locked_wheels(licenses.load_reviewed_inventory(), lock)
+    assert any("SHA-256 differs from review" in f.reason for f in findings)
+    assert any(f.distribution == "lxml" for f in findings)
+    assert licenses.check_environment([], lock_path=lock)
+
+
+def test_unreviewed_lxml_wheel_rejected(tmp_path):
+    marker = "lxml-6.1.3-cp314-cp314-win_arm64.whl"
+    extra = marker.replace("win_arm64", "win_riscv64")
+
+    def add_wheel(text):
+        line = next(item for item in text.splitlines() if marker in item)
+        return text.replace(line, line + "\n" + line.replace(marker, extra), 1)
+
+    lock = _lock_with_lxml_edit(tmp_path, add_wheel)
+    findings = licenses.check_locked_wheels(licenses.load_reviewed_inventory(), lock)
+    assert any(f"unreviewed locked wheel {extra}" in f.reason for f in findings)
+
+
+def test_missing_locked_lxml_wheel_rejected(tmp_path):
+    marker = "lxml-6.1.3-cp314-cp314-win_arm64.whl"
+    lock = _lock_with_lxml_edit(
+        tmp_path,
+        lambda t: "\n".join(row for row in t.splitlines() if marker not in row) + "\n",
+    )
+    findings = licenses.check_locked_wheels(licenses.load_reviewed_inventory(), lock)
+    assert any(f"reviewed wheel not locked in uv.lock: {marker}" in f.reason for f in findings)
+
+
+def test_unreadable_lockfile_rejected(tmp_path):
+    findings = licenses.check_locked_wheels(
+        licenses.load_reviewed_inventory(), tmp_path / "absent.lock"
+    )
+    assert any("cannot read locked wheels" in f.reason for f in findings)
+
+
+def _load_pack_build():
+    path = Path(__file__).resolve().parents[1] / "pack" / "build.py"
+    spec = importlib.util.spec_from_file_location("sign_pack_build", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load sign pack build from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_prune_bundled_installers_removes_pip_launchers(tmp_path, monkeypatch):
+    """prune_bundled_installers strips pre-installed pip, its distlib EXEs, and scripts."""
+    pack_build = _load_pack_build()
+    py_env = tmp_path / "python-env"
+    site = py_env / "lib" / "python3.14" / "site-packages"
+    bin_dir = py_env / "bin"
+    site.mkdir(parents=True)
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python3").write_bytes(b"#!/bin/sh\n")
+    (bin_dir / "pip").write_bytes(b"#!/bin/sh\n")
+    (bin_dir / "pip3.14").write_bytes(b"#!/bin/sh\n")
+
+    pip_files = {"pip/__init__.py": b""}
+    for exe in ("t32.exe", "t64.exe", "t64-arm.exe", "w32.exe", "w64.exe", "w64-arm.exe"):
+        pip_files[f"pip/_vendor/distlib/{exe}"] = b"MZ\x90\x00launcher"
+    _make_dist(site, "pip", "26.2.2", "MIT", pip_files)
+    record = site / "pip-26.2.2.dist-info" / "RECORD"
+    record.write_text(
+        record.read_text(encoding="utf-8") + "../../../bin/pip,,\n",
+        encoding="utf-8",
+    )
+
+    # Simulate Windows file-locking semantics: refuse unlinking RECORD while it is open.
+    open_records: set[Path] = set()
+    real_open = Path.open
+    real_unlink = Path.unlink
+
+    class _TrackedFile:
+        def __init__(self, inner, tracked_path: Path):
+            self._inner = inner
+            self._tracked_path = tracked_path
+
+        def __enter__(self):
+            open_records.add(self._tracked_path)
+            return self._inner.__enter__()
+
+        def __exit__(self, *exc):
+            try:
+                return self._inner.__exit__(*exc)
+            finally:
+                open_records.discard(self._tracked_path)
+
+        def __getattr__(self, item):
+            return getattr(self._inner, item)
+
+    def guarded_open(self: Path, *args, **kwargs):
+        handle = real_open(self, *args, **kwargs)
+        resolved = self.resolve()
+        if resolved == record.resolve():
+            return _TrackedFile(handle, resolved)
+        return handle
+
+    def guarded_unlink(self: Path, *args, **kwargs):
+        if self.resolve() in open_records:
+            raise PermissionError(f"WinError 32 simulation: {self} is open")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    monkeypatch.setattr(Path, "unlink", guarded_unlink)
+
+    pack_build.prune_bundled_installers(py_env, site)
+
+    assert not (site / "pip").exists()
+    assert not (site / "pip-26.2.2.dist-info").exists()
+    assert not (bin_dir / "pip").exists()
+    assert not (bin_dir / "pip3.14").exists()
+    assert (bin_dir / "python3").is_file()
+    assert _tree_findings(site) == []
+
+
+def test_drop_build_records_removes_target_bin_wrappers(tmp_path):
+    """drop_build_records strips `--target` console script EXEs and provenance metadata."""
+    pack_build = _load_pack_build()
+    site = tmp_path / "site"
+    site.mkdir()
+
+    _make_dist(
+        site,
+        "idna",
+        "3.11",
+        "BSD-3-Clause",
+        {"idna/__init__.py": b"", "bin/idna.exe": b"MZ\x90\x00cli"},
+    )
+    _make_dist(
+        site,
+        "cffi",
+        "2.1.1",
+        "MIT-0",
+        {
+            "_cffi_backend.cp314-win_amd64.pyd": b"MZ\x90\x00pyd",
+            "bin/cffi-gen-src.exe": b"MZ\x90\x00cli",
+        },
+    )
+    cffi_info = site / "cffi-2.1.1.dist-info"
+    (cffi_info / "METADATA").write_text(
+        "Name: cffi\nVersion: 2.1.1\nLicense-Expression: MIT-0\n",
+        encoding="utf-8",
+    )
+    (cffi_info / "direct_url.json").write_text('{"url": "file:///tmp/cffi.whl"}', encoding="utf-8")
+    (cffi_info / "uv_cache.json").write_text("{}", encoding="utf-8")
+    record = cffi_info / "RECORD"
+    record.write_text(
+        record.read_text(encoding="utf-8")
+        + "cffi-2.1.1.dist-info/direct_url.json,,\n"
+        + "cffi-2.1.1.dist-info/uv_cache.json,,\n",
+        encoding="utf-8",
+    )
+
+    pack_build.drop_build_records(site)
+
+    assert not (site / "bin").exists()
+    assert not (cffi_info / "direct_url.json").exists()
+    assert not (cffi_info / "uv_cache.json").exists()
+    assert "bin/" not in (site / "idna-3.11.dist-info" / "RECORD").read_text(encoding="utf-8")
+    cffi_record = record.read_text(encoding="utf-8")
+    assert "bin/" not in cffi_record
+    assert "direct_url.json" not in cffi_record
+    assert "uv_cache.json" not in cffi_record
+
+    inv = licenses.load_reviewed_inventory()
+    findings = []
+    for dist in md.distributions(path=[str(site)]):
+        findings.extend(licenses.check_distribution(dist, inv, site_root=site))
+    findings.extend(_tree_findings(site))
+    assert findings == []
+
+
+def test_extension_suffixes_accept_every_pack_target():
+    cases = {
+        "lxml/etree.cpython-314-x86_64-linux-gnu.so": "lxml/etree",
+        "lxml/etree.cpython-314-aarch64-linux-gnu.so": "lxml/etree",
+        "lxml/etree.cpython-314-darwin.so": "lxml/etree",
+        "lxml/etree.cp314-win_amd64.pyd": "lxml/etree",
+        "_cffi_backend.cpython-314-darwin.so": "_cffi_backend",
+        "_cffi_backend.cp314-win_amd64.pyd": "_cffi_backend",
+        "cryptography/hazmat/bindings/_rust.abi3.so": "cryptography/hazmat/bindings/_rust",
+        "cryptography/hazmat/bindings/_rust.pyd": "cryptography/hazmat/bindings/_rust",
+        "yaml/_yaml.cpython-314-x86_64-linux-gnu.so": "yaml/_yaml",
+        "yaml/_yaml.cp314-win_amd64.pyd": "yaml/_yaml",
+        "aiohttp/_http_parser.cpython-314-aarch64-linux-gnu.so": "aiohttp/_http_parser",
+        "multidict/_multidict.cp314-win_amd64.pyd": "multidict/_multidict",
+        "yarl/_quoting_c.cpython-314-darwin.so": "yarl/_quoting_c",
+        "propcache/_helpers_c.cpython-314-darwin.so": "propcache/_helpers_c",
+        "frozenlist/_frozenlist.cp314-win_amd64.pyd": "frozenlist/_frozenlist",
+    }
+    for relative, entry in cases.items():
+        assert licenses._native_name(relative.rsplit("/", 1)[-1]), relative
+        assert licenses.native_entry_matches(relative, entry), relative
