@@ -20,7 +20,7 @@ pub use crate::xobject::Matrix;
 #[cfg(feature = "codecs")]
 pub use pixels::{verify_rendered_pixels, verify_rendered_pixels_with_overlay};
 #[cfg(feature = "codecs")]
-pub use probe::{MAX_PROBE_PAGES, ProbePage, probe_pages, verify_probe_render};
+pub use probe::{ProbePage, max_probe_pages, probe_pages, verify_probe_render};
 pub use signatures::has_signatures;
 
 use ariad_core::{
@@ -758,6 +758,12 @@ fn placement_scan_refused(reason: &str) -> PdfError {
     redaction_refused(&format!("image placement scan refused: {reason}"))
 }
 
+/// Refusal naming an uninspected carrier, the same text the content trace raises for it.
+#[cfg(feature = "codecs")]
+fn carrier_refused(carrier: &str) -> PdfError {
+    PdfError::NotImplemented(format!("uninspected carrier refused: {carrier}"))
+}
+
 /// Safety refusal: the redaction cannot be carried out without risking a leak or damage.
 ///
 /// Uses [`PdfError::NotImplemented`], the variant the uninspected-carrier refusal in
@@ -919,7 +925,7 @@ fn collect_page_image_placements(
                 if let Some(Ok(name)) = op.operands.first().map(Object::as_name)
                     && graphics_state_has_soft_mask(doc, &resources, name)
                 {
-                    return Err(placement_scan_refused("ExtGState soft mask group"));
+                    return Err(carrier_refused("ext_gstate_smask"));
                 }
             }
             _ => {}
@@ -2879,9 +2885,42 @@ mod tests {
         // nor the verifier may pass on an incomplete scan.
         let mut pdf = crate::document::open(&bytes, &limits).unwrap();
         let error = rewrite_image_pixels(&mut pdf, &planned, &limits, &ctx).unwrap_err();
-        assert!(error.to_string().contains("soft mask group"), "{error}");
+        let expected = "uninspected carrier refused: ext_gstate_smask";
+        assert_eq!(error.to_string(), expected);
         let error = verify_image_pixels(&bytes, &planned, &limits, &ctx).unwrap_err();
-        assert!(error.to_string().contains("soft mask group"), "{error}");
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn soft_mask_carrier_is_named_on_pages_with_and_without_images() {
+        // The refusal reads the same wherever it is raised: the content trace, the rewriter's
+        // placement scan and the verifier's scan all name `ext_gstate_smask`.
+        let mut doc = Document::with_version("1.7");
+        let image = gray_image(&mut doc, 8, 8, 200);
+        let mask = smask_group(&mut doc);
+        let states = smask_state(&mut doc, mask);
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q",
+            dictionary! {
+                "XObject" => dictionary! { "Im0" => image },
+                "ExtGState" => states,
+            },
+            lopdf::Dictionary::new(),
+        );
+        let (request, planned, geometry) =
+            rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 90.0, 90.0])]);
+        let (limits, ctx) = (Limits::local(), ToolCtx::new());
+        let expected = "uninspected carrier refused: ext_gstate_smask";
+        let error =
+            rewrite_document(&bytes, &request, &planned, &geometry, &limits, &ctx).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        let mut pdf = crate::document::open(&bytes, &limits).unwrap();
+        let error = rewrite_image_pixels(&mut pdf, &planned, &limits, &ctx).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        let error = verify_image_pixels(&bytes, &planned, &limits, &ctx).unwrap_err();
+        assert_eq!(error.to_string(), expected);
     }
 
     /// Distinct 4x4 grey samples, so the original pixels are recognizable in any output.

@@ -30,9 +30,28 @@ use crate::{PdfError, ToolCtx, tools::rotate::collect_page_ids, xobject::Matrix}
 
 use super::{RedactionPlan, Region, pixels, redaction_refused, targeted_placements};
 
-/// Most pages the render check accepts. A larger job is refused instead of rendered, which
-/// bounds the engine work and the memory of the comparison.
-pub const MAX_PROBE_PAGES: usize = 64;
+/// Seconds of the job's time budget one rendered page of the check is assumed to cost: two
+/// engine renders (original and probe), their comparison and the engine's own validation.
+const SECONDS_PER_PROBE_PAGE: u64 = 3;
+/// The check may use at most this share of the time budget (one over the divisor); the text,
+/// region render and object gates need the rest.
+const PROBE_BUDGET_DIVISOR: u64 = 2;
+
+/// Most pages the render check accepts under `limits`, or `None` when the job has no time
+/// budget.
+///
+/// A larger job is refused instead of rendered, so the engine work and the memory of the
+/// comparison stay bounded by the job's own budget (`timeout_s`) and not by a constant. The
+/// cloud's 600 s budget allows 100 pages; a smaller plan budget allows proportionally fewer
+/// (never fewer than one). The check also runs under the job deadline, which ends it with
+/// `limit_exceeded` if the estimate was too generous.
+#[must_use]
+pub fn max_probe_pages(limits: &Limits) -> Option<usize> {
+    limits.timeout_s.map(|seconds| {
+        let pages = seconds / PROBE_BUDGET_DIVISOR / SECONDS_PER_PROBE_PAGE;
+        usize::try_from(pages).unwrap_or(usize::MAX).max(1)
+    })
+}
 
 /// Largest per-channel difference that still counts as "unchanged" between two renders.
 const TOLERANCE: i16 = 8;
@@ -148,7 +167,7 @@ fn annotation_rects(doc: &Document, page: ObjectId) -> Vec<[f64; 4]> {
 /// images the rewrite cleared, the only place the scan is used: to size a margin, never to
 /// find leftovers.
 ///
-/// Refuses a job with more than [`MAX_PROBE_PAGES`] pages.
+/// Refuses a job with more pages than [`max_probe_pages`] allows.
 pub fn probe_pages(
     input: &[u8],
     candidate: &[u8],
@@ -210,7 +229,7 @@ pub fn probe_pages(
             drift: Vec::new(),
         });
     }
-    if pages.len() > MAX_PROBE_PAGES {
+    if max_probe_pages(limits).is_some_and(|max| pages.len() > max) {
         return Err(redaction_refused(
             "too many pages to verify image pixels by rendering",
         ));
@@ -737,5 +756,106 @@ mod tests {
             ],
             "the cover is one opaque fill with its overlay text"
         );
+    }
+
+    /// `count` pages, each drawing a gray image under `[10, 10, 50, 50]`.
+    fn image_pages_document(count: usize) -> Vec<u8> {
+        use lopdf::{Document, Stream, dictionary};
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let image = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => 4, "Height" => 4,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            },
+            vec![200; 16],
+        ));
+        let mut kids = Vec::new();
+        for _ in 0..count {
+            let contents = doc.add_object(Stream::new(
+                dictionary! {},
+                b"q 40 0 0 40 10 10 cm /Im0 Do Q".to_vec(),
+            ));
+            kids.push(Object::Reference(doc.add_object(dictionary! {
+                "Type" => "Page", "Parent" => pages,
+                "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+                "Contents" => contents,
+            })));
+        }
+        doc.objects.insert(
+            pages,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => kids, "Count" => count as i64
+            }),
+        );
+        let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        doc.trailer.set("Root", root);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn page_cap_follows_the_time_budget_in_the_limits() {
+        use ariad_core::tools::params::{
+            CropRect,
+            redact::{RedactParams, RedactionScope, RedactionTarget},
+            redact_internal::{RedactGeometry, RedactGeometryPage},
+        };
+        assert_eq!(max_probe_pages(&Limits::local()), None);
+        assert_eq!(max_probe_pages(&Limits::cloud()), Some(100));
+        let mut tiny = Limits::local();
+        tiny.timeout_s = Some(1);
+        assert_eq!(max_probe_pages(&tiny), Some(1));
+
+        let count = 5;
+        let bytes = image_pages_document(count);
+        let geometry = RedactGeometry {
+            schema: "ariad-redact-geometry/1".into(),
+            source_sha256: crate::writer::sha256_chunks(&[&bytes]),
+            page_count: count,
+            pages: (1..=count as u32)
+                .map(|page| RedactGeometryPage {
+                    page,
+                    width: 100.0,
+                    height: 100.0,
+                    rotation: 0,
+                    chars: Vec::new(),
+                })
+                .collect(),
+        };
+        let params = RedactParams {
+            targets: (1..=count as u32)
+                .map(|page| RedactionTarget::Rectangle {
+                    page,
+                    rect: CropRect {
+                        left: 0.0,
+                        bottom: 0.0,
+                        right: 30.0,
+                        top: 30.0,
+                    },
+                })
+                .collect(),
+            color: None,
+            overlay_text: None,
+            scope: RedactionScope::default(),
+            invalidate_signatures: false,
+        };
+        let ctx = ToolCtx::new();
+        let run = |timeout_s: Option<u64>| {
+            let mut limits = Limits::local();
+            limits.timeout_s = timeout_s;
+            let plan = super::super::plan(&bytes, &params, &geometry, &limits, &ctx).unwrap();
+            probe_pages(&bytes, &bytes, &plan, &geometry, &limits, &ctx)
+        };
+        // 30 s allows 5 pages, 29 s allows 4: one page over the cap is refused.
+        assert_eq!(run(Some(30)).unwrap().len(), count);
+        let error = run(Some(29)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "redaction refused: too many pages to verify image pixels by rendering"
+        );
+        assert_eq!(run(None).unwrap().len(), count);
     }
 }
