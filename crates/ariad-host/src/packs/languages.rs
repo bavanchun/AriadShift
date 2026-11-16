@@ -139,14 +139,25 @@ fn install_from(
 
 /// Remove a selected cached language without touching the signed engine pack.
 pub fn remove(context: &PackContext, language: &str) -> Result<(), PackError> {
-    let (language, _, _) = entry(language)?;
+    remove_status(context, language).map(|_| ())
+}
+
+/// Like [`remove`], but returns the resulting model status for machine-readable output. Removing
+/// a model that is not cached succeeds; the status always has `installed: false`.
+pub fn remove_status(context: &PackContext, language: &str) -> Result<LanguageStatus, PackError> {
+    let (language, _, size) = entry(language)?;
     let _lock = super::install::tesseract_lock(context)?;
     let path = directory(context).join(format!("{language}.traineddata"));
     match fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(PackError::io("could not remove", &path, error)),
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(PackError::io("could not remove", &path, error)),
     }
+    Ok(LanguageStatus {
+        language,
+        installed: false,
+        size,
+    })
 }
 
 /// Return a cached model only after rechecking its pinned digest and size.
@@ -304,5 +315,27 @@ mod tests {
         remove(&context, "eng").unwrap();
         assert!(!model.exists());
         assert_eq!(fs::read_to_string(unrelated).unwrap(), "keep");
+    }
+
+    #[test]
+    fn remove_status_reports_not_installed_for_missing_and_present_models() {
+        let temp = tempfile::tempdir().unwrap();
+        let context = PackContext {
+            data_dir: temp.path().to_owned(),
+            keys: super::super::TrustedKeys::compiled(),
+            targets: vec![],
+            fetch: super::super::FetchPolicy::default(),
+        };
+        let missing = remove_status(&context, "fra").unwrap();
+        assert_eq!(missing.language, "fra");
+        assert!(!missing.installed);
+        let dir = directory(&context);
+        fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("fra.traineddata");
+        fs::write(&model, b"x").unwrap();
+        let removed = remove_status(&context, "fra").unwrap();
+        assert!(!removed.installed);
+        assert!(!model.exists());
+        remove(&context, "fra").unwrap();
     }
 }
