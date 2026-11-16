@@ -322,15 +322,16 @@ impl Harness {
             ),
         ];
         pairs.extend(self.storage_env.clone());
+        // Pushed before `extra` so a test can substitute the helper program.
+        pairs.push((
+            "ARIAD_CONVERSION_PROGRAM".to_owned(),
+            env!("CARGO_BIN_EXE_ariad-server").to_owned(),
+        ));
         pairs.extend(
             extra
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
         );
-        pairs.push((
-            "ARIAD_CONVERSION_PROGRAM".to_owned(),
-            env!("CARGO_BIN_EXE_ariad-server").to_owned(),
-        ));
         let config = WorkerConfig::from_env(&Env::from_pairs(pairs), &["core".to_owned()])
             .expect("worker config");
         let token = self.shutdown.child_token();

@@ -961,6 +961,14 @@ fn map_pdf_error(tool_id: &str, error: PdfError) -> ApiError {
         )
         .with("tool", tool_id)
         .with("exit_code", 9u8),
+        // A redaction safety refusal keeps the machine-readable code and exit code, but its
+        // text is the fixed refusal reason, not a "not implemented" sentence.
+        PdfError::NotImplemented(reason) if ariad_pdf::error::is_refusal_message(&reason) => {
+            ApiError::new("engine_unavailable", reason.clone())
+                .with("tool", tool_id)
+                .with("reason", reason)
+                .with("exit_code", 5u8)
+        }
         PdfError::NotImplemented(tool) => ApiError::new(
             "engine_unavailable",
             format!("tool `{tool}` is not implemented"),
@@ -1794,6 +1802,22 @@ mod tests {
         );
         assert_eq!(unimpl_err.code(), "engine_unavailable");
         assert_eq!(unimpl_err.detail("exit_code"), Some(&serde_json::json!(5)));
+        assert_eq!(
+            unimpl_err.detail("message"),
+            Some(&serde_json::json!("tool `pdf.future` is not implemented"))
+        );
+
+        // A redaction refusal keeps the code and exit code but reads as a refusal.
+        let reason = "redaction refused: original image remains reachable";
+        let refused = map_pdf_error("pdf.redact", PdfError::NotImplemented(reason.to_owned()));
+        assert_eq!(refused.code(), "engine_unavailable");
+        assert_eq!(refused.detail("exit_code"), Some(&serde_json::json!(5)));
+        assert_eq!(refused.detail("message"), Some(&serde_json::json!(reason)));
+        assert_eq!(
+            refused.detail("tool"),
+            Some(&serde_json::json!("pdf.redact"))
+        );
+        assert_eq!(refused.detail("reason"), Some(&serde_json::json!(reason)));
 
         // Owner-password-only PDF is rejected on structural mutating tools with `pdf.decrypt` hint.
         let plaintext = read_pdf_fixture("encrypted-owner-only.plaintext.pdf");

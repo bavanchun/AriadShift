@@ -377,7 +377,10 @@ pub enum ToolError {
     #[error("tool resource limit exceeded")]
     LimitExceeded,
     /// Exit code `5` (`tool_missing`): required engine pack is not installed or failed verification.
-    #[error("the {engine} engine is not available; {hint}")]
+    ///
+    /// A redaction safety refusal from the in-process PDF engine also uses this variant (same
+    /// code and exit code) but displays as its `redaction refused: ...` reason alone.
+    #[error("{}", tool_missing_text(engine, hint))]
     ToolMissing {
         /// Missing engine identifier.
         engine: String,
@@ -408,6 +411,19 @@ pub enum ToolError {
         standard: String,
         report: Box<Value>,
     },
+}
+
+fn tool_missing_text(engine: &str, hint: &str) -> String {
+    if is_safety_refusal(engine, hint) {
+        hint.to_owned()
+    } else {
+        format!("the {engine} engine is not available; {hint}")
+    }
+}
+
+/// Reports whether a `ToolMissing` payload is a redaction safety refusal from `ariad-pdf`.
+fn is_safety_refusal(engine: &str, hint: &str) -> bool {
+    engine == super::inprocess::INPROCESS_PDF_ENGINE && ariad_pdf::error::is_refusal_message(hint)
 }
 
 fn format_encrypted_error(needs_password: bool) -> String {
@@ -462,6 +478,15 @@ impl ToolError {
             Self::EncryptedInput { .. } => "encrypted_input",
             Self::Interrupted => "interrupted",
         }
+    }
+
+    /// Reports whether this is a redaction safety refusal (`tool_missing`, exit 5).
+    ///
+    /// The reason is a fixed string without document content, so it is safe to show to
+    /// remote clients.
+    #[must_use]
+    pub fn is_safety_refusal(&self) -> bool {
+        matches!(self, Self::ToolMissing { engine, hint } if is_safety_refusal(engine, hint))
     }
 
     /// Constructs a [`ToolError::ToolMissing`] with the install hint from [`crate::engines`].
