@@ -415,8 +415,30 @@ jobs:
       - name: Build the engine program
         run: cargo build -p ariad-cli --bin ashift
 
+      # The pack is built from this commit, unsigned, as the PDFium pack workflow's
+      # development route does, so no signing key or published pack is involved.
+      - name: Install pack build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
+      - name: Build the PDFium engine
+        run: cargo build -p ariad-pdfium-engine --bin ariad-pdfium-engine
+
+      - name: Build the source-matched PDFium pack
+        run: >-
+          bash engines/pdfium/pack/make.sh dev
+          --engine "$GITHUB_WORKSPACE/target/debug/ariad-pdfium-engine"
+          --ashift "$GITHUB_WORKSPACE/target/debug/ashift"
+          --out "$RUNNER_TEMP/pdfium-dist" --unpack-dir "$RUNNER_TEMP/pdfium-pack"
+
+      # The pass line for cloud_tool_jobs redaction_refusals_reach_the_client_and_are_not_retried
+      # appears in this step's log; a missing pack fails it instead of skipping.
       - name: Run server tests
-        run: cargo nextest run -p ariad-server
+        env:
+          ASHIFT_PACK_PDFIUM: ${{ runner.temp }}/pdfium-pack
+          ARIAD_REQUIRE_PDFIUM_PACK: "1"
+        run: cargo nextest run -p ariad-server --status-level pass --final-status-level pass
 
       - name: Check required sandbox failure through the helper
         env:

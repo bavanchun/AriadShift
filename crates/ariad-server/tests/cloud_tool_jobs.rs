@@ -467,10 +467,15 @@ async fn run_job(h: &Harness, auth: &Auth, body: &Value) -> (Value, Vec<String>)
 
 /// Real end to end: needs the PDFium pack, because `redact.inspect` runs before the
 /// in-process refusal. Skips loudly without it; the fake-helper tests below always run and
-/// cover the worker, job record, API response and retry accounting.
+/// cover the worker, job record, API response and retry accounting. With
+/// `ARIAD_REQUIRE_PDFIUM_PACK` set, a missing pack fails the test instead of skipping it.
 #[tokio::test(flavor = "multi_thread")]
 async fn redaction_refusals_reach_the_client_and_are_not_retried() {
     let Some(pack) = pdfium_pack() else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_PDFIUM_PACK").is_none(),
+            "ARIAD_REQUIRE_PDFIUM_PACK is set but ASHIFT_PACK_PDFIUM does not point to a PDFium pack"
+        );
         eprintln!(
             "SKIPPED redaction_refusals_reach_the_client_and_are_not_retried: set \
              ASHIFT_PACK_PDFIUM to a PDFium pack to run the real pdf.redact path; NOT covered \
