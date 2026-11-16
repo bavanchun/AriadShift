@@ -206,11 +206,23 @@ impl Workspace {
         name: &Path,
         bytes: &[u8],
     ) -> Result<(), WorkspaceError> {
-        use std::io::Write;
+        Self::copy_new_in_dir(directory, name, &mut &*bytes)
+    }
+
+    /// Streams `reader` into a new file; a partial file is removed if the copy fails.
+    fn copy_new_in_dir(
+        directory: &cap_std::fs::Dir,
+        name: &Path,
+        reader: &mut dyn io::Read,
+    ) -> Result<(), WorkspaceError> {
         let mut options = cap_std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         let mut file = directory.open_with(name, &options)?;
-        file.write_all(bytes)?;
+        if let Err(error) = io::copy(reader, &mut file) {
+            drop(file);
+            let _ = directory.remove_file(name);
+            return Err(error.into());
+        }
         Ok(())
     }
 
@@ -253,6 +265,19 @@ impl Workspace {
         let relative = Self::validate_single_artifact_name(name)?;
         let directory = self.output_handle_ref()?;
         Self::write_new_in_dir(directory, relative, bytes)?;
+        Ok(self.output_dir.join(name))
+    }
+
+    /// Create a new artifact by streaming `reader` through the captured output directory
+    /// capability, so memory use stays bounded by the copy buffer rather than the artifact size.
+    pub fn write_artifact_from_reader(
+        &self,
+        name: &str,
+        reader: &mut dyn io::Read,
+    ) -> Result<PathBuf, WorkspaceError> {
+        let relative = Self::validate_single_artifact_name(name)?;
+        let directory = self.output_handle_ref()?;
+        Self::copy_new_in_dir(directory, relative, reader)?;
         Ok(self.output_dir.join(name))
     }
 

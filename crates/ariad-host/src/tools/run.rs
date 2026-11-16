@@ -1113,12 +1113,41 @@ pub(super) fn write_staged_artifact(
     scrubber: &SecretScrubber,
 ) -> Result<PathBuf, ToolError> {
     workspace.remove_artifact(name).map_err(|e| {
-        ToolError::EngineFailure(scrubber.scrub(&format!(
+        ToolError::OutputIo(scrubber.scrub(&format!(
             "could not safely clear staged artifact '{name}': {e}"
         )))
     })?;
     workspace
         .write_artifact(name, bytes)
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))
+}
+
+/// Streams the regular file at `source` into the staged artifact `name` without buffering it,
+/// with the same link-safe clearing and creation as [`write_staged_artifact`].
+pub(super) fn write_staged_artifact_from_file(
+    workspace: &Workspace,
+    name: &str,
+    source: &Path,
+    scrubber: &SecretScrubber,
+) -> Result<PathBuf, ToolError> {
+    let mut file =
+        fs::File::open(source).map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+    if !file
+        .metadata()
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?
+        .is_file()
+    {
+        return Err(ToolError::OutputIo(
+            "staged source is not a regular file".into(),
+        ));
+    }
+    workspace.remove_artifact(name).map_err(|e| {
+        ToolError::OutputIo(scrubber.scrub(&format!(
+            "could not safely clear staged artifact '{name}': {e}"
+        )))
+    })?;
+    workspace
+        .write_artifact_from_reader(name, &mut file)
         .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))
 }
 
@@ -2103,5 +2132,31 @@ mod annotation_form_routing_tests {
             scrub_and_cap_inline_json(value, &too_small, &scrubber).unwrap();
         assert_eq!(bytes_over, expected_bytes);
         assert!(inline_over.is_none());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod staged_artifact_error_tests {
+    use super::*;
+
+    #[test]
+    fn clearing_an_unremovable_artifact_reports_output_io() {
+        let workspace = Workspace::new().unwrap();
+        std::fs::create_dir(workspace.output_dir().join("result.json")).unwrap();
+
+        let error = write_staged_artifact(&workspace, "result.json", b"{}", &SecretScrubber::new())
+            .expect_err("a directory cannot be cleared as an artifact");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+
+        let source = workspace.work_dir().join("source.json");
+        std::fs::write(&source, b"{}").unwrap();
+        let error = write_staged_artifact_from_file(
+            &workspace,
+            "result.json",
+            &source,
+            &SecretScrubber::new(),
+        )
+        .expect_err("a directory cannot be cleared as an artifact");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
     }
 }
