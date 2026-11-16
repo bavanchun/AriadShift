@@ -695,12 +695,13 @@ fn placement_scan_refused(reason: &str) -> PdfError {
 
 /// Safety refusal: the redaction cannot be carried out without risking a leak or damage.
 ///
-/// Reuses [`PdfError::InvalidParams`] (CLI/MCP code `invalid_input`, exit 2) because the
-/// document, not the tool, is what cannot be processed safely; the message is always
-/// prefixed `redaction refused:`.
+/// Uses [`PdfError::NotImplemented`], the variant the uninspected-carrier refusal in
+/// `flat.rs` already uses, so every redaction refusal keeps the same public contract
+/// (`tool_missing`, exit 5 through `map_pdf_error`). The message is always prefixed
+/// `redaction refused:`.
 #[cfg(feature = "codecs")]
 fn redaction_refused(reason: &str) -> PdfError {
-    PdfError::InvalidParams(format!("redaction refused: {reason}"))
+    PdfError::NotImplemented(format!("redaction refused: {reason}"))
 }
 
 /// Reports whether a Flate-filtered stream inflates to a complete zlib stream.
@@ -1070,7 +1071,7 @@ fn rewrite_image_pixels(
         *rewrite_counts.entry(rewrite.image_id).or_default() += 1;
     }
     let inner = doc.inner_mut()?;
-    let mut originals = Vec::new();
+    let mut originals: Vec<(Option<ObjectId>, Option<ObjectId>)> = Vec::new();
     let mut replacements = BTreeSet::new();
     for rewrite in rewrites {
         ctx.check()?;
@@ -1082,17 +1083,22 @@ fn rewrite_image_pixels(
         }
         let in_place = rewrite_counts.get(&rewrite.image_id) == Some(&1)
             && !drawers.contains(&rewrite.image_id);
-        replacements.insert(rewrite.image_id);
         if in_place {
             // Nothing else draws the image, so its original pixels are overwritten in place.
+            // The object now carries the new mask, so it is a replacement; its original mask
+            // must become unreachable unless another stream still references it.
+            replacements.insert(rewrite.image_id);
             inner
                 .objects
                 .insert(rewrite.image_id, Object::Stream(image));
+            originals.push((None, rewrite.original_soft_mask));
         } else {
+            // The original stays as another page's image and legitimately keeps its own mask,
+            // so it is deliberately not a replacement.
             let copy_id = inner.add_object(image);
             replacements.insert(copy_id);
             repoint_page_image(inner, rewrite.page_id, rewrite.image_id, copy_id)?;
-            originals.push((rewrite.image_id, rewrite.original_soft_mask));
+            originals.push((Some(rewrite.image_id), rewrite.original_soft_mask));
         }
     }
     ensure_originals_unreachable(inner, &originals, &replacements, &drawers, ctx)?;
@@ -1176,7 +1182,7 @@ impl ReachWalk {
     /// resources or annotations.
     ///
     /// Page tree nodes and page objects met on the way (annotation destinations) are not
-    /// entered, and `/P` and `/Parent` links are not followed. Reaching a watched image
+    /// entered (so `/P` and `/Parent` links to them go nowhere). Reaching a watched image
     /// already refuses, so the visited set is shared across pages.
     fn page(
         &mut self,
@@ -1248,11 +1254,9 @@ impl ReachWalk {
     }
 
     fn push_dict<'a>(dict: &'a lopdf::Dictionary, stack: &mut Vec<&'a Object>) {
-        for (key, value) in dict.iter() {
-            if key != b"P" && key != b"Parent" {
-                stack.push(value);
-            }
-        }
+        // No key is skipped: `/P` and `/Parent` may be resource names, and links to page tree
+        // nodes are already cut by the page-type check in `page`.
+        stack.extend(dict.iter().map(|(_, value)| value));
     }
 }
 
@@ -1264,7 +1268,7 @@ impl ReachWalk {
 #[cfg(feature = "codecs")]
 fn ensure_originals_unreachable(
     doc: &Document,
-    originals: &[(ObjectId, Option<ObjectId>)],
+    originals: &[(Option<ObjectId>, Option<ObjectId>)],
     replacements: &BTreeSet<ObjectId>,
     drawers: &std::collections::BTreeSet<ObjectId>,
     ctx: &ToolCtx,
@@ -1291,7 +1295,10 @@ fn ensure_originals_unreachable(
         }
     }
     for (image_id, soft_mask) in originals {
-        if reachable.contains(image_id) && !drawers.contains(image_id) {
+        if let Some(image_id) = image_id
+            && reachable.contains(image_id)
+            && !drawers.contains(image_id)
+        {
             return Err(original_image_retained());
         }
         for mask in soft_mask.iter() {
@@ -2676,6 +2683,68 @@ mod tests {
 
     #[cfg(feature = "codecs")]
     #[test]
+    fn shared_image_with_soft_mask_drawn_by_another_page_is_cloned_not_refused() {
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let soft = gray_image(&mut doc, 4, 4, 128);
+        let image = marker_image(&mut doc);
+        doc.get_object_mut(image)
+            .and_then(Object::as_stream_mut)
+            .unwrap()
+            .dict
+            .set("SMask", soft);
+        let resources = doc.add_object(dictionary! { "XObject" => dictionary! { "Im0" => image } });
+        let mut kids = Vec::new();
+        for _ in 0..2 {
+            let contents = doc.add_object(lopdf::Stream::new(
+                dictionary! {},
+                b"q 100 0 0 100 0 0 cm /Im0 Do Q".to_vec(),
+            ));
+            kids.push(doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages,
+                "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                "Resources" => resources,
+                "Contents" => contents,
+            }));
+        }
+        let bytes = finish(doc, pages, &kids);
+        let output = redact_pages(&bytes, 2).expect("another page drawing the image is not a leak");
+        let pdf = crate::document::open(&output, &Limits::local()).unwrap();
+        let page_ids = collect_page_ids(pdf.inner(), &ToolCtx::new()).unwrap();
+        let (redacted, untouched) = (page_image(&pdf, page_ids[0]), page_image(&pdf, page_ids[1]));
+        assert_ne!(redacted, untouched);
+        let stream = |id| {
+            pdf.inner()
+                .get_object(id)
+                .unwrap()
+                .as_stream()
+                .unwrap()
+                .clone()
+        };
+        let smask = |s: &lopdf::Stream| s.dict.get(b"SMask").unwrap().as_reference().unwrap();
+        // The other page keeps the original image and its original soft mask.
+        let kept = stream(untouched);
+        let kept_content = kept
+            .decompressed_content()
+            .unwrap_or_else(|_| kept.content.clone());
+        assert_eq!(kept_content, MARKER.to_vec());
+        let kept_mask = stream(smask(&kept));
+        let kept_mask_content = kept_mask
+            .decompressed_content()
+            .unwrap_or_else(|_| kept_mask.content.clone());
+        assert!(kept_mask_content.iter().all(|&p| p == 128));
+        // The redacted page carries a copy with no original pixels and its own mask.
+        let copy = stream(redacted);
+        let copy_content = copy
+            .decompressed_content()
+            .unwrap_or_else(|_| copy.content.clone());
+        assert!(!copy_content.windows(MARKER.len()).any(|w| w == MARKER));
+        assert_ne!(smask(&copy), smask(&kept));
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
     fn original_image_still_reachable_after_rewrite_is_refused() {
         // Both pages are redacted and share inherited resources, so a per-page copy cannot
         // remove the original from the page tree; the rewrite must fail closed.
@@ -2858,6 +2927,7 @@ mod tests {
     #[cfg(feature = "codecs")]
     fn assert_refused(result: Result<Vec<u8>, PdfError>) {
         let err = result.expect_err("the redaction must be refused");
+        assert!(matches!(err, PdfError::NotImplemented(_)), "{err:?}");
         assert!(err.to_string().contains("redaction refused"), "{err}");
     }
 
