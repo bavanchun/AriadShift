@@ -12,8 +12,9 @@ use std::{
 /// Path to the `engine-probe` test binary beside the `ashift` binary under test.
 ///
 /// The probe lives in `ariad-host`, so Cargo does not build it for this package's
-/// tests. When it is missing, build it once into the same target directory that
-/// produced `ashift`, and fail loudly if that build does not succeed.
+/// tests. Build it once per test process into the same target directory that
+/// produced `ashift` (a no-op when fresh, a rebuild when `ariad-host` changed), and
+/// fail loudly if that build does not succeed.
 pub fn engine_probe_path() -> PathBuf {
     static PROBE: OnceLock<PathBuf> = OnceLock::new();
     PROBE.get_or_init(build_engine_probe).clone()
@@ -22,9 +23,6 @@ pub fn engine_probe_path() -> PathBuf {
 fn build_engine_probe() -> PathBuf {
     let ashift = Path::new(env!("CARGO_BIN_EXE_ashift"));
     let probe = ashift.with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
-    if probe.exists() {
-        return probe;
-    }
     // `<target dir>/<profile dir>/ashift`
     let profile_dir = ashift
         .parent()
@@ -45,7 +43,7 @@ fn build_engine_probe() -> PathBuf {
             "--bin",
             "engine-probe",
             "--features",
-            "ariad-host/test-probe",
+            "test-probe",
             "--profile",
             profile,
         ])

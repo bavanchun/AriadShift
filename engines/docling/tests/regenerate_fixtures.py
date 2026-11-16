@@ -5,8 +5,9 @@ the development environment after ``just docling-dev``::
 
     .tools/docling/python-env/bin/python engines/docling/tests/regenerate_fixtures.py
 
-It builds the source-less formula fixture directly and converts each source fixture through the engine exactly as the host does (a cleared
-environment, a fresh workspace) and refreshes the SHA-256 values in ``fixtures/manifest.toml``.
+It builds the source-less formula fixture directly and converts each source fixture through the
+engine exactly as the host does (a cleared environment, a fresh workspace) and refreshes the
+SHA-256 values in ``fixtures/manifest.toml``.
 """
 
 from __future__ import annotations
