@@ -609,12 +609,30 @@ ashift engines verify <NAME> [--version <VERSION>] [--json]
 List, install or remove pinned extra Tesseract language models:
 
 ```bash
-ashift engines languages list
-ashift engines languages install fra
-ashift engines languages remove fra
+ashift engines languages list [--json]
+ashift engines languages install fra [--json]
+ashift engines languages remove fra [--json]
 ```
 
 Only explicit installation downloads a model. See [packs.md](packs.md#the-tesseract-pack) for verification and cache behavior.
+
+Each action takes `--json`, which replaces the tab-separated human output (`<language>\t<installed|available>\t<size> bytes`) with JSON on stdout:
+
+- `list --json` prints an array with one entry per catalogue model.
+- `install <LANGUAGE> --json` and `remove <LANGUAGE> --json` print the single model's status. After `remove` it always has `"installed": false`, even when the model was not cached. Without `--json`, `remove` prints nothing.
+- `installed` is true only when the cached file still matches its pinned size and SHA-256. `size` is the pinned model size in bytes. No local paths are included.
+- Errors (for example an unknown language, exit code 2, or a failed download) go to stderr with nothing on stdout, as for the other `engines` subcommands.
+
+```json
+[
+  { "language": "fra", "installed": true, "size": 1234567 },
+  { "language": "deu", "installed": false, "size": 2345678 }
+]
+```
+
+```json
+{ "language": "fra", "installed": false, "size": 1234567 }
+```
 
 ---
 
