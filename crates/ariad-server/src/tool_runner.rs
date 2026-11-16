@@ -232,6 +232,11 @@ fn execute(body: RequestBody, progress: &mut impl FnMut(ToolEvent)) -> Result<Re
 
 fn sanitize_error(error: ToolError) -> ToolError {
     use ToolError::*;
+    // A redaction refusal carries a fixed reason string (never document content), so HTTP
+    // clients keep it, as `docs/tools.md` promises.
+    if error.is_safety_refusal() {
+        return error;
+    }
     match error {
         UnknownTool(_) => UnknownTool(String::new()),
         TierNotAllowed { tier, plan, .. } => TierNotAllowed {
@@ -265,4 +270,44 @@ fn emit(output: &mut impl Write, event: &Event) -> io::Result<()> {
     serde_json::to_writer(&mut *output, event)?;
     writeln!(output)?;
     output.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn refusal(reason: &str) -> ToolError {
+        ToolError::ToolMissing {
+            engine: "ariad-pdf".into(),
+            hint: reason.into(),
+        }
+    }
+
+    #[test]
+    fn redaction_refusal_text_survives_sanitising_with_the_same_contract() {
+        for reason in [
+            "redaction refused: original image remains reachable",
+            "uninspected carrier refused: inline_image",
+        ] {
+            let safe = sanitize_error(refusal(reason));
+            assert_eq!(safe.to_string(), reason);
+            assert_eq!((safe.code(), safe.exit_code()), ("tool_missing", 5));
+        }
+    }
+
+    #[test]
+    fn other_tool_missing_messages_are_still_blanked() {
+        let leaky = ToolError::ToolMissing {
+            engine: "pdfium".into(),
+            hint: "/home/someone/secret/path".into(),
+        };
+        let safe = sanitize_error(leaky);
+        assert!(!safe.to_string().contains("secret"), "{safe}");
+        // An unrelated engine cannot smuggle text through the refusal prefix.
+        let spoof = ToolError::ToolMissing {
+            engine: "qpdf".into(),
+            hint: "redaction refused: /home/someone/secret".into(),
+        };
+        assert!(!sanitize_error(spoof).to_string().contains("secret"));
+    }
 }

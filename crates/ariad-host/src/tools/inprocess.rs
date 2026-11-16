@@ -483,6 +483,14 @@ pub fn map_pdf_error(err: PdfError, scrubber: &SecretScrubber) -> ToolError {
         PdfError::Malformed => {
             ToolError::EngineFailure("the file is not a readable PDF".to_owned())
         }
+        PdfError::NotImplemented(message) if ariad_pdf::error::is_refusal_message(&message) => {
+            // Safety refusal: same `tool_missing` code and exit 5, but the hint is the
+            // refusal reason itself so the user does not read "tool ... is not implemented".
+            ToolError::ToolMissing {
+                engine: INPROCESS_PDF_ENGINE.to_owned(),
+                hint: scrubber.scrub(&message),
+            }
+        }
         PdfError::NotImplemented(tool) => ToolError::ToolMissing {
             engine: INPROCESS_PDF_ENGINE.to_owned(),
             hint: scrubber.scrub(&format!("tool '{tool}' is not implemented")),
@@ -725,11 +733,20 @@ mod tests {
         );
         assert_eq!(refused.code(), "tool_missing");
         assert_eq!(refused.exit_code(), 5);
-        assert!(
-            refused
-                .to_string()
-                .contains("redaction refused: original image"),
-            "{refused}"
+        assert_eq!(
+            refused.to_string(),
+            "redaction refused: original image remains reachable"
+        );
+        let carrier = map_pdf_error(
+            PdfError::NotImplemented("uninspected carrier refused: shading".into()),
+            &scrubber,
+        );
+        assert_eq!(carrier.to_string(), "uninspected carrier refused: shading");
+        assert_eq!((carrier.code(), carrier.exit_code()), ("tool_missing", 5));
+        // A plain missing tool keeps the engine prefix.
+        assert_eq!(
+            missing_err.to_string(),
+            "the ariad-pdf engine is not available; tool 'pdf.future' is not implemented"
         );
     }
 }

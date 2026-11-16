@@ -809,10 +809,10 @@ fn redact_pipeline_refuses_inline_image() {
     }));
 
     let err = run_tool(&request).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("uninspected carrier refused: inline_image")
-    );
+    // The text reads as a safety refusal; the machine contract stays tool_missing / exit 5.
+    assert_eq!(err.to_string(), "uninspected carrier refused: inline_image");
+    assert_eq!((err.code(), err.exit_code()), ("tool_missing", 5));
+    assert!(err.is_safety_refusal());
 }
 
 #[test]

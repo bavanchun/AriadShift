@@ -1156,11 +1156,12 @@ fn other_drawers(
                         .filter(|id| candidates.contains(id)),
                 );
             }
-            Err(error) => {
+            Err(_) => {
                 ctx.check()?;
-                return Err(redaction_refused(&format!(
-                    "another page naming a redacted image cannot be scanned ({error})"
-                )));
+                // The reason stays a fixed string: it can reach HTTP clients.
+                return Err(redaction_refused(
+                    "another page naming a redacted image cannot be scanned",
+                ));
             }
         }
     }
@@ -2783,6 +2784,46 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("original image"), "{err}");
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn in_place_rewrite_leaving_original_soft_mask_reachable_is_refused() {
+        // One image with a soft mask, drawn only by the redacted page, so it is rewritten in
+        // place with a fresh mask. The original mask object is also named by a page entry, so
+        // it would still be saved with its unredacted alpha unless the run is refused.
+        let build = |leak: bool| {
+            let mut doc = Document::with_version("1.7");
+            let pages = doc.new_object_id();
+            let soft = gray_image(&mut doc, 4, 4, 128);
+            let image = marker_image(&mut doc);
+            doc.get_object_mut(image)
+                .and_then(Object::as_stream_mut)
+                .unwrap()
+                .dict
+                .set("SMask", soft);
+            let page = drawing_page(&mut doc, pages, b"q 100 0 0 100 0 0 cm /Im0 Do Q");
+            let page_dict = doc
+                .get_object_mut(page)
+                .and_then(Object::as_dict_mut)
+                .unwrap();
+            page_dict.set(
+                "Resources",
+                dictionary! { "XObject" => dictionary! { "Im0" => image } },
+            );
+            if leak {
+                page_dict.set("OriginalAlpha", soft);
+            }
+            finish(doc, pages, &[page])
+        };
+        // Control: without the extra reference the original mask is dropped and the run works.
+        redact_pages(&build(false), 1).expect("an unreferenced original soft mask is dropped");
+        let err = redact_pages(&build(true), 1).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("redaction refused: original image remains reachable"),
+            "{err}"
+        );
     }
 
     #[cfg(feature = "codecs")]

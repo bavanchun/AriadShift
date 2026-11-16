@@ -1494,3 +1494,53 @@ fn human_mode_pdf_tool_prints_only_output_path_to_stdout() {
         );
     }
 }
+
+#[test]
+fn redact_refusal_reads_as_a_refusal_and_exits_5() {
+    let Some(pdfium) = std::env::var_os("ASHIFT_PACK_PDFIUM")
+        .or_else(|| std::env::var_os("ARIAD_TEST_PDFIUM_PACK"))
+    else {
+        if std::env::var_os("ARIAD_REQUIRE_PDFIUM_PACK").is_some() {
+            panic!("ARIAD_REQUIRE_PDFIUM_PACK is set but PDFium pack was not resolved");
+        }
+        eprintln!("skipping: PDFium pack not configured");
+        return;
+    };
+    let tmp = TempDir::new().unwrap();
+    let mut doc = lopdf::Document::load(pdf_fixture("mixed-sizes.pdf")).unwrap();
+    let page = doc.get_pages()[&1];
+    let content = doc.add_object(lopdf::Stream::new(
+        lopdf::dictionary! {},
+        b"q BI /W 1 /H 1 /BPC 8 /CS /G ID \x00 EI Q".to_vec(),
+    ));
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Contents", content);
+    let input = tmp.path().join("inline.pdf");
+    doc.save(&input).unwrap();
+    let out = tmp.path().join("out.pdf");
+
+    let mut cmd = ashift_cmd();
+    cmd.env("ASHIFT_PACK_PDFIUM", &pdfium);
+    cmd.env("ARIAD_TEST_PDFIUM_DIR", &pdfium);
+    let output = cmd
+        .args(["tool", "pdf.redact"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&out)
+        .args([
+            "--param",
+            "targets=[{\"kind\":\"rectangle\",\"page\":1,\"rect\":{\"left\":10.0,\"bottom\":10.0,\"right\":100.0,\"top\":100.0}}]",
+        ])
+        .output()
+        .expect("run ashift tool pdf.redact");
+    assert_eq!(output.status.code(), Some(5));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error[tool_missing]: uninspected carrier refused: inline_image"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("not implemented"), "{stderr}");
+    assert!(!stderr.contains("engine is not available"), "{stderr}");
+    assert!(!out.exists());
+}
