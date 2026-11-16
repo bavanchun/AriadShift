@@ -25,13 +25,62 @@ use sha2::{Digest, Sha256};
 
 const FIXTURE_BYTES: &[u8] = include_bytes!("../../fixtures/pdf-tools/rotated-pages.pdf");
 
-/// Applies `(offset, value)` triples from `data` to a copy of the fixture, or uses `data` as
-/// the whole document when it already looks like one.
+/// Two pages sharing one image through resources inherited from the page tree, so mutated
+/// inputs reach the image rewrite and its clone-and-repoint path.
+fn image_fixture() -> Vec<u8> {
+    use lopdf::{Document, Object, Stream, dictionary};
+    let mut doc = Document::with_version("1.7");
+    let pages = doc.new_object_id();
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => 8,
+            "Height" => 8,
+            "ColorSpace" => "DeviceGray",
+            "BitsPerComponent" => 8,
+        },
+        (0..64u8).map(|n| n.wrapping_mul(4)).collect::<Vec<u8>>(),
+    ));
+    let mut kids = Vec::new();
+    for content in ["q 612 0 0 792 0 0 cm /Im0 Do Q", "q 100 0 0 100 0 0 cm /Im0 Do Q"] {
+        let contents = doc.add_object(Stream::new(dictionary! {}, content.as_bytes().to_vec()));
+        kids.push(Object::Reference(doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => contents,
+        })));
+    }
+    doc.objects.insert(
+        pages,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => kids,
+            "Count" => 2,
+            "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+        }),
+    );
+    let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+    doc.trailer.set("Root", root);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("serialize the image fixture");
+    bytes
+}
+
+/// Applies `(offset, value)` triples from `data` to a copy of a fixture, or uses `data` as
+/// the whole document when it already looks like one. The first byte picks the fixture: the
+/// rotated-pages document, or the image fixture when it is odd.
 fn mutate(data: &[u8]) -> Vec<u8> {
     if data.starts_with(b"%PDF-") {
         return data.to_vec();
     }
-    let mut bytes = FIXTURE_BYTES.to_vec();
+    let (selector, data) = data.split_first().unwrap_or((&0, &[]));
+    let mut bytes = if selector & 1 == 1 {
+        image_fixture()
+    } else {
+        FIXTURE_BYTES.to_vec()
+    };
     for &[low, high, value] in data.as_chunks::<3>().0 {
         let position = usize::from(u16::from_le_bytes([low, high]));
         let offset = (position * bytes.len()) >> 16;

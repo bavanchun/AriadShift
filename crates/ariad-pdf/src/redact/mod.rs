@@ -696,17 +696,21 @@ fn placement_scan_refused(reason: &str) -> PdfError {
 /// Reports whether a Flate-filtered stream inflates to a complete zlib stream.
 ///
 /// The PDF reader tolerates corrupt or truncated Flate data and returns whatever it could
-/// recover, which would let a scan see only part of the content. Streams without a Flate
-/// filter pass; Flate inside a filter chain is not checked and is refused.
+/// recover, which would let a scan see only part of the content. Only unfiltered streams and
+/// a single Flate filter can be checked for completeness; any other filter, any filter chain
+/// and an unreadable `/Filter` entry are refused.
 #[cfg(feature = "codecs")]
 fn flate_is_complete(stream: &Stream, ctx: &ToolCtx) -> Result<bool, PdfError> {
-    let Ok(filters) = stream.filters() else {
-        return Ok(true);
-    };
-    if !filters.iter().any(|f| *f == b"FlateDecode" || *f == b"Fl") {
+    if !stream.dict.has(b"Filter") {
         return Ok(true);
     }
-    if filters.len() != 1 {
+    let Ok(filters) = stream.filters() else {
+        return Ok(false);
+    };
+    if filters.is_empty() {
+        return Ok(true);
+    }
+    if filters.len() != 1 || !(filters[0] == b"FlateDecode" || filters[0] == b"Fl") {
         return Ok(false);
     }
     let input = stream.content.as_slice();
@@ -968,6 +972,8 @@ impl ImageCache {
 struct ImageRewrite {
     page_id: ObjectId,
     image_id: ObjectId,
+    /// The original soft mask and explicit mask objects of `image_id`.
+    original_masks: [Option<ObjectId>; 2],
     image: Stream,
     soft_mask: Option<Stream>,
     mask: Option<Stream>,
@@ -1042,30 +1048,184 @@ fn rewrite_image_pixels(
         rewrites.push(ImageRewrite {
             page_id,
             image_id,
+            original_masks: [smask_id, mask_id],
             soft_mask: soft_mask.as_ref().map(&mut encode).transpose()?,
             mask: mask.as_ref().map(&mut encode).transpose()?,
             image: encode(&image)?,
         });
     }
     let modified = rewrites.len();
+    let drawers = other_drawers(doc.inner(), &rewrites, doc.decode_budget(), ctx)?;
+    let mut rewrite_counts = std::collections::BTreeMap::<ObjectId, usize>::new();
+    for rewrite in &rewrites {
+        *rewrite_counts.entry(rewrite.image_id).or_default() += 1;
+    }
     let inner = doc.inner_mut()?;
+    let mut originals = Vec::new();
+    let mut replacements = BTreeSet::new();
     for rewrite in rewrites {
         ctx.check()?;
         let mut image = rewrite.image;
         if let Some(stream) = rewrite.soft_mask {
-            image
-                .dict
-                .set("SMask", Object::Reference(inner.add_object(stream)));
+            let id = inner.add_object(stream);
+            replacements.insert(id);
+            image.dict.set("SMask", Object::Reference(id));
         }
         if let Some(stream) = rewrite.mask {
-            image
-                .dict
-                .set("Mask", Object::Reference(inner.add_object(stream)));
+            let id = inner.add_object(stream);
+            replacements.insert(id);
+            image.dict.set("Mask", Object::Reference(id));
         }
-        let copy_id = inner.add_object(image);
-        repoint_page_image(inner, rewrite.page_id, rewrite.image_id, copy_id)?;
+        let in_place = rewrite_counts.get(&rewrite.image_id) == Some(&1)
+            && !drawers.contains(&rewrite.image_id);
+        replacements.insert(rewrite.image_id);
+        if in_place {
+            // Nothing else draws the image, so its original pixels are overwritten in place.
+            inner
+                .objects
+                .insert(rewrite.image_id, Object::Stream(image));
+        } else {
+            let copy_id = inner.add_object(image);
+            replacements.insert(copy_id);
+            repoint_page_image(inner, rewrite.page_id, rewrite.image_id, copy_id)?;
+            originals.push((rewrite.image_id, rewrite.original_masks));
+        }
     }
+    ensure_originals_unreachable(inner, &originals, &replacements, &drawers, ctx)?;
     Ok(modified)
+}
+
+/// Refusal raised when a rewritten image's original object would still be saved.
+#[cfg(feature = "codecs")]
+fn original_image_retained() -> PdfError {
+    PdfError::NotImplemented("redaction refused: original image remains reachable".into())
+}
+
+/// Finds rewritten images that a page other than the rewritten ones may still draw.
+///
+/// A page counts when its effective resources name the image and a scan of its content
+/// either draws it or cannot rule it out, so an unscannable page keeps the original.
+#[cfg(feature = "codecs")]
+fn other_drawers(
+    doc: &Document,
+    rewrites: &[ImageRewrite],
+    mut budget: crate::document::DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<BTreeSet<ObjectId>, PdfError> {
+    let mut drawers = BTreeSet::new();
+    if rewrites.is_empty() {
+        return Ok(drawers);
+    }
+    for page_id in collect_page_ids(doc, ctx)? {
+        ctx.check()?;
+        let resources = crate::xobject::resolve_page_resources(doc, page_id);
+        let Some(xobjects) = resources
+            .get(b"XObject")
+            .ok()
+            .and_then(|v| doc.dereference(v).ok())
+            .and_then(|(_, v)| v.as_dict().ok())
+        else {
+            continue;
+        };
+        let candidates: BTreeSet<ObjectId> = rewrites
+            .iter()
+            .map(|rewrite| rewrite.image_id)
+            .filter(|id| {
+                !rewrites
+                    .iter()
+                    .any(|r| r.image_id == *id && r.page_id == page_id)
+            })
+            .filter(|id| {
+                xobjects
+                    .iter()
+                    .any(|(_, v)| v.as_reference().is_ok_and(|r| r == *id))
+            })
+            .collect();
+        if candidates.is_empty() {
+            continue;
+        }
+        match collect_page_image_placements(doc, page_id, &mut budget, ctx) {
+            Ok(placements) => {
+                drawers.extend(
+                    placements
+                        .iter()
+                        .map(|(id, _)| *id)
+                        .filter(|id| candidates.contains(id)),
+                );
+            }
+            Err(_) => {
+                ctx.check()?;
+                drawers.extend(candidates);
+            }
+        }
+    }
+    Ok(drawers)
+}
+
+/// Fails closed when an original image, or a mask only it used, would survive in the output.
+///
+/// Reachability is computed as the writer's garbage collection does. An original image may
+/// remain only when another page really draws it, and an original mask only while another
+/// reachable stream still references it.
+#[cfg(feature = "codecs")]
+fn ensure_originals_unreachable(
+    doc: &Document,
+    originals: &[(ObjectId, [Option<ObjectId>; 2])],
+    replacements: &BTreeSet<ObjectId>,
+    drawers: &std::collections::BTreeSet<ObjectId>,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    use std::collections::{HashSet, VecDeque};
+    if originals.is_empty() {
+        return Ok(());
+    }
+    let mut reachable = HashSet::new();
+    let mut queue = VecDeque::new();
+    for (key, value) in doc.trailer.iter() {
+        if key != b"Prev" && key != b"Encrypt" && key != b"XRefStm" {
+            crate::gc::collect_references_in_object(value, &mut reachable, &mut queue);
+        }
+    }
+    let mut steps = 0usize;
+    while let Some(id) = queue.pop_front() {
+        steps = steps.wrapping_add(1);
+        if steps.is_multiple_of(128) {
+            ctx.check()?;
+        }
+        if let Some(object) = doc.objects.get(&id) {
+            crate::gc::collect_references_in_object(object, &mut reachable, &mut queue);
+        }
+    }
+    for (image_id, masks) in originals {
+        if reachable.contains(image_id) && !drawers.contains(image_id) {
+            return Err(original_image_retained());
+        }
+        for mask in masks.iter().flatten() {
+            if !reachable.contains(mask) {
+                continue;
+            }
+            let shared = reachable.iter().any(|id| {
+                !replacements.contains(id)
+                    && doc
+                        .objects
+                        .get(id)
+                        .and_then(|o| o.as_stream().ok())
+                        .is_some_and(|stream| {
+                            [b"SMask".as_slice(), b"Mask"].iter().any(|key| {
+                                stream
+                                    .dict
+                                    .get(key)
+                                    .and_then(Object::as_reference)
+                                    .is_ok_and(|r| r == *mask)
+                            })
+                        })
+            });
+            if !shared {
+                return Err(original_image_retained());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Gives a page its own resource dictionary whose image entries for `from` point to `to`.
@@ -1159,22 +1319,26 @@ pub fn verify_image_pixels(
             }
             Err(_) => return Ok(Fail),
         };
-        let smask_decoded = match doc
-            .inner()
-            .get_object(img_id)
-            .and_then(Object::as_stream)
-            .and_then(|s| s.dict.get(b"SMask"))
-            .and_then(Object::as_reference)
-        {
-            Ok(smask_id) => match decode(smask_id, &mut budget) {
-                Ok(img) => Some(img),
-                Err(crate::images::ImageError::Pdf(error @ PdfError::LimitExceeded(_))) => {
-                    return Err(error);
+        // The soft mask and an explicit `/Mask` stream are verified alike; an undecodable
+        // mask fails the check.
+        let mut mask_images = Vec::new();
+        for key in [b"SMask".as_slice(), b"Mask"] {
+            if let Ok(mask_id) = doc
+                .inner()
+                .get_object(img_id)
+                .and_then(Object::as_stream)
+                .and_then(|s| s.dict.get(key))
+                .and_then(Object::as_reference)
+            {
+                match decode(mask_id, &mut budget) {
+                    Ok(img) => mask_images.push(img),
+                    Err(crate::images::ImageError::Pdf(error @ PdfError::LimitExceeded(_))) => {
+                        return Err(error);
+                    }
+                    Err(_) => return Ok(Fail),
                 }
-                Err(_) => return Ok(Fail),
-            },
-            Err(_) => None,
-        };
+            }
+        }
         let channels = match decoded.color_space {
             crate::images::ColorSpace::Gray => 1usize,
             crate::images::ColorSpace::Rgb => 3,
@@ -1195,7 +1359,7 @@ pub fn verify_image_pixels(
                 Ok(s) => s,
                 Err(_) => return Ok(Fail),
             };
-            if let Some(ref smask) = smask_decoded {
+            for smask in &mask_images {
                 let mask_sel = match pixels::selection(
                     smask.width,
                     smask.height,
@@ -2285,6 +2449,267 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("uninspected carrier refused: vector_path")
+        );
+    }
+
+    /// Distinct 4x4 grey samples, so the original pixels are recognizable in any output.
+    #[cfg(feature = "codecs")]
+    const MARKER: [u8; 16] = [
+        0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x17, 0x28, 0x39, 0x4A, 0x5B, 0x6C, 0x7D, 0x8E, 0x9F,
+        0xA0,
+    ];
+
+    #[cfg(feature = "codecs")]
+    fn marker_image(doc: &mut Document) -> lopdf::ObjectId {
+        doc.add_object(lopdf::Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => 4,
+                "Height" => 4,
+                "ColorSpace" => "DeviceGray",
+                "BitsPerComponent" => 8,
+            },
+            MARKER.to_vec(),
+        ))
+    }
+
+    /// Asserts that no byte of the saved file, and no decoded stream, holds the original pixels.
+    #[cfg(feature = "codecs")]
+    fn assert_original_pixels_absent(output: &[u8]) {
+        assert!(
+            !output.windows(MARKER.len()).any(|w| w == MARKER),
+            "original pixels are present in the serialized bytes"
+        );
+        let parsed = Document::load_mem(output).unwrap();
+        for object in parsed.objects.values() {
+            if let Object::Stream(stream) = object {
+                let decoded = stream
+                    .decompressed_content()
+                    .unwrap_or_else(|_| stream.content.clone());
+                assert!(
+                    !decoded.windows(MARKER.len()).any(|w| w == MARKER),
+                    "original pixels survive in a decoded stream"
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "codecs")]
+    fn redact_pages(bytes: &[u8], pages: u32) -> Result<Vec<u8>, PdfError> {
+        let (request, planned, geometry) =
+            rect_plan(bytes, pages, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+        rewrite_document(
+            bytes,
+            &request,
+            &planned,
+            &geometry,
+            &Limits::local(),
+            &ToolCtx::new(),
+        )
+    }
+
+    #[cfg(feature = "codecs")]
+    fn drawing_page(doc: &mut Document, pages: lopdf::ObjectId, content: &[u8]) -> lopdf::ObjectId {
+        let contents = doc.add_object(lopdf::Stream::new(dictionary! {}, content.to_vec()));
+        doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+            "Contents" => contents,
+        })
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn single_page_with_inherited_resources_keeps_no_original_image() {
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let image = marker_image(&mut doc);
+        let page = drawing_page(&mut doc, pages, b"q 100 0 0 100 0 0 cm /Im0 Do Q");
+        let bytes = finish_with(
+            &mut doc,
+            pages,
+            &[page],
+            dictionary! { "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } } },
+        );
+        assert!(bytes.windows(16).any(|w| w == MARKER));
+        let output = redact_pages(&bytes, 1).unwrap();
+        assert_original_pixels_absent(&output);
+        let pdf = crate::document::open(&output, &Limits::local()).unwrap();
+        let page = collect_page_ids(pdf.inner(), &ToolCtx::new()).unwrap()[0];
+        let decoded = crate::images::decode(
+            &pdf,
+            page_image(&pdf, page),
+            &ToolCtx::new(),
+            &Limits::local(),
+        )
+        .unwrap();
+        assert!(decoded.pixels.contains(&0));
+        assert!(decoded.pixels.contains(&0xA0) || decoded.pixels.contains(&0x9F));
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn shared_indirect_resources_keep_no_original_image_when_no_other_page_draws_it() {
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let image = marker_image(&mut doc);
+        let resources = doc.add_object(dictionary! { "XObject" => dictionary! { "Im0" => image } });
+        let mut kids = Vec::new();
+        for content in [&b"q 100 0 0 100 0 0 cm /Im0 Do Q"[..], b"q Q"] {
+            let page = drawing_page(&mut doc, pages, content);
+            doc.get_object_mut(page)
+                .and_then(Object::as_dict_mut)
+                .unwrap()
+                .set("Resources", resources);
+            kids.push(page);
+        }
+        let bytes = finish(doc, pages, &kids);
+        let output = redact_pages(&bytes, 2).unwrap();
+        assert_original_pixels_absent(&output);
+        let pdf = crate::document::open(&output, &Limits::local()).unwrap();
+        let page = collect_page_ids(pdf.inner(), &ToolCtx::new()).unwrap()[0];
+        let decoded = crate::images::decode(
+            &pdf,
+            page_image(&pdf, page),
+            &ToolCtx::new(),
+            &Limits::local(),
+        )
+        .unwrap();
+        assert!(decoded.pixels.contains(&0));
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn original_image_still_reachable_after_rewrite_is_refused() {
+        // Both pages are redacted and share inherited resources, so a per-page copy cannot
+        // remove the original from the page tree; the rewrite must fail closed.
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let image = marker_image(&mut doc);
+        let mut kids = Vec::new();
+        for _ in 0..2 {
+            kids.push(drawing_page(
+                &mut doc,
+                pages,
+                b"q 100 0 0 100 0 0 cm /Im0 Do Q",
+            ));
+        }
+        let bytes = finish_with(
+            &mut doc,
+            pages,
+            &kids,
+            dictionary! { "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } } },
+        );
+        let (request, planned, geometry) = rect_plan(
+            &bytes,
+            2,
+            vec![
+                rectangle(1, [0.0, 0.0, 50.0, 50.0]),
+                rectangle(2, [0.0, 0.0, 50.0, 50.0]),
+            ],
+        );
+        let err = rewrite_document(
+            &bytes,
+            &request,
+            &planned,
+            &geometry,
+            &Limits::local(),
+            &ToolCtx::new(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("original image"), "{err}");
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn flate_completeness_refuses_other_filters_and_bad_filter_entries() {
+        let ctx = ToolCtx::new();
+        let plain = |filter: Object, content: &[u8]| {
+            lopdf::Stream::new(dictionary! { "Filter" => filter }, content.to_vec())
+        };
+        // Truncated or complete, any non-Flate filter is refused.
+        for (name, data) in [
+            ("LZWDecode", &b"\x80\x0b\x60"[..]),
+            ("ASCII85Decode", b"87cURD]i,\"Ebo"),
+            ("RunLengthDecode", b"\x05abc"),
+            ("ASCIIHexDecode", b"48656c6c6f>"),
+        ] {
+            let stream = plain(Object::Name(name.as_bytes().to_vec()), data);
+            assert!(!flate_is_complete(&stream, &ctx).unwrap(), "{name}");
+        }
+        let broken = plain(Object::Integer(7), b"x");
+        assert!(!flate_is_complete(&broken, &ctx).unwrap());
+        let unfiltered = lopdf::Stream::new(dictionary! {}, b"q Q".to_vec());
+        assert!(flate_is_complete(&unfiltered, &ctx).unwrap());
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn truncated_non_flate_page_content_is_refused() {
+        for (name, data) in [
+            ("LZWDecode", &b"\x80\x0b\x60"[..]),
+            ("ASCII85Decode", b"87cURD]i,\"Ebo"),
+            ("RunLengthDecode", b"\x05abc"),
+        ] {
+            let mut doc = Document::with_version("1.7");
+            let pages = doc.new_object_id();
+            let image = gray_image(&mut doc, 2, 2, 200);
+            let contents = doc.add_object(lopdf::Stream::new(
+                dictionary! { "Filter" => name },
+                data.to_vec(),
+            ));
+            let page = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages,
+                "MediaBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+                "Contents" => contents,
+            });
+            let bytes = finish(doc, pages, &[page]);
+            let (_, planned, _) = rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+            let err = verify_image_pixels(&bytes, &planned, &Limits::local(), &ToolCtx::new())
+                .unwrap_err();
+            assert!(
+                err.to_string().contains("undecodable page content"),
+                "{name}: {err}"
+            );
+        }
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn explicit_mask_is_verified_beneath_the_region() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        let build = |mask_value: u8| {
+            let mut doc = Document::with_version("1.7");
+            let mask = gray_image(&mut doc, 4, 4, mask_value);
+            let image = gray_image(&mut doc, 4, 4, 0);
+            doc.get_object_mut(image)
+                .and_then(Object::as_stream_mut)
+                .unwrap()
+                .dict
+                .set("Mask", mask);
+            single_page(
+                &mut doc,
+                b"q 100 0 0 100 0 0 cm /Im0 Do Q",
+                dictionary! { "XObject" => dictionary! { "Im0" => image } },
+                lopdf::Dictionary::new(),
+            )
+        };
+        // The pixels are already cleared, so only the mask can fail the check.
+        let leaking = build(128);
+        let (_, planned, _) = rect_plan(&leaking, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+        assert_eq!(
+            verify_image_pixels(&leaking, &planned, &Limits::local(), &ToolCtx::new()).unwrap(),
+            RedactionCheckStatus::Fail
+        );
+        let opaque = build(255);
+        let (_, planned, _) = rect_plan(&opaque, 1, vec![rectangle(1, [0.0, 0.0, 50.0, 50.0])]);
+        assert_eq!(
+            verify_image_pixels(&opaque, &planned, &Limits::local(), &ToolCtx::new()).unwrap(),
+            RedactionCheckStatus::Pass
         );
     }
 }
