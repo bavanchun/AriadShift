@@ -2244,6 +2244,8 @@ enum Block {
     Cleared,
     /// Every cell cleared except the one at (column 3, row 3).
     ClearedButOne,
+    /// The original mid-tones in every cell of the image, not only under the rectangle.
+    Everywhere,
 }
 
 /// One page (`/Rotate` `rotate`) with an 8x8 CMYK image at x 100..300, y 300..500, tagged with
@@ -2255,7 +2257,8 @@ fn write_cmyk_pdf(path: &Path, icc: bool, block: Block, rotate: i64) {
     let mut data = Vec::new();
     for row in 0..8u32 {
         for col in 0..8u32 {
-            let in_block = (2..6).contains(&col) && (2..6).contains(&row);
+            let in_block =
+                block == Block::Everywhere || (2..6).contains(&col) && (2..6).contains(&row);
             let cell = if !in_block {
                 [0, 0, 0, 0]
             } else if block == Block::Cleared
@@ -2385,5 +2388,126 @@ fn render_probe_fails_a_leftover_cell_of_a_cmyk_icc_image() {
         verdict(&leftover),
         RedactionCheckStatus::Fail,
         "an uncleared cell whose colour drifted is a leftover"
+    );
+}
+
+/// Largest per-channel gap between two renders over the pixels (100 dpi, 612 x 792 pt page)
+/// that lie inside `image` (page points) but outside `region`, padded by 3 pt.
+fn max_gap_outside(
+    a: &image::RgbaImage,
+    b: &image::RgbaImage,
+    image: [f64; 4],
+    region: [f64; 4],
+) -> i32 {
+    let scale = 100.0 / 72.0;
+    let mut gap = 0;
+    for (x, y, pa) in a.enumerate_pixels() {
+        let (px, py) = (f64::from(x) / scale, 792.0 - f64::from(y) / scale);
+        let inside = |r: [f64; 4], pad: f64| {
+            px >= r[0] - pad && px <= r[2] + pad && py >= r[1] - pad && py <= r[3] + pad
+        };
+        if inside(image, -3.0) && !inside(region, 3.0) {
+            gap = gap.max(channel_gap(pa, b.get_pixel(x, y)));
+        }
+    }
+    gap
+}
+
+const BLOCK_REGION: [f64; 4] = [150.0, 350.0, 250.0, 450.0];
+const BLOCK_IMAGE: [f64; 4] = [100.0, 300.0, 300.0, 500.0];
+
+#[test]
+fn redact_pipeline_partly_covered_cmyk_icc_image_is_not_falsely_refused() {
+    if !child("redact_pipeline_partly_covered_cmyk_icc_image_is_not_falsely_refused") {
+        return;
+    }
+    use ariad_host::tools::redact::render_page_for_test;
+    let temp = tempfile::tempdir().unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let input = temp.path().join("icc.pdf");
+    let out = temp.path().join("out.pdf");
+    write_cmyk_pdf(&input, true, Block::Everywhere, 0);
+    let outcome = redact_raster(
+        &input,
+        json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }),
+        &out,
+    )
+    .expect("a correct redaction of a partly covered ICC image must not be refused");
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    assert_eq!(report.checks.image_pixels, RedactionCheckStatus::Pass);
+    // The precondition: the untouched part of the image really renders differently now.
+    let before = render_page_for_test(&input, 1, 100, &limits).unwrap();
+    let after = render_page_for_test(&out, 1, 100, &limits).unwrap();
+    let gap = max_gap_outside(&before, &after, BLOCK_IMAGE, BLOCK_REGION);
+    assert!(gap > 8, "the colours must drift outside the region: {gap}");
+}
+
+/// One page with an 8x8 black and white checkerboard drawn at x 100..300, y 300..500, with
+/// `/Interpolate` set or not.
+fn write_checker_pdf(path: &Path, interpolate: bool) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let pixels: Vec<u8> = (0..64u32)
+        .map(|i| if (i % 8 + i / 8) % 2 == 0 { 0 } else { 255 })
+        .collect();
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 8, "Height" => 8,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            "Interpolate" => interpolate,
+        },
+        pixels,
+    ));
+    let contents = doc.add_object(Stream::new(
+        Dictionary::new(),
+        b"q 200 0 0 200 100 300 cm /Im0 Do Q\n".to_vec(),
+    ));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+        "Contents" => contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+#[test]
+fn redact_pipeline_partly_covered_interpolated_image_is_not_falsely_refused() {
+    if !child("redact_pipeline_partly_covered_interpolated_image_is_not_falsely_refused") {
+        return;
+    }
+    use ariad_host::tools::redact::render_page_for_test;
+    let temp = tempfile::tempdir().unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let input = temp.path().join("interpolated.pdf");
+    let out = temp.path().join("out.pdf");
+    write_checker_pdf(&input, true);
+    let outcome = redact_raster(
+        &input,
+        json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }),
+        &out,
+    )
+    .expect("a correct redaction of a partly covered /Interpolate image must not be refused");
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    assert_eq!(report.checks.image_pixels, RedactionCheckStatus::Pass);
+    let before = render_page_for_test(&input, 1, 100, &limits).unwrap();
+    let after = render_page_for_test(&out, 1, 100, &limits).unwrap();
+    let gap = max_gap_outside(&before, &after, BLOCK_IMAGE, BLOCK_REGION);
+    assert!(
+        gap > 8,
+        "/Interpolate must change the render outside the region: {gap}"
     );
 }

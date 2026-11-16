@@ -11,6 +11,15 @@
 //! sees content the scan cannot name (a tiling pattern, for example). Our rewriter still
 //! builds the probe, and the comparison is blind to leftovers that render as pure black or
 //! pure white (bilevel scans) and to any change smaller than a render pixel.
+//!
+//! Colour policy. The probe re-encodes cleared images to a device colour space, dropping the
+//! original's ICC profile and `/Interpolate`, so the pixels it leaves alone can render with a
+//! different colour. Two rules keep that from deciding the check either way. Inside a region
+//! (the strict check) a pixel passes only if it shows a cleared colour or page white, however
+//! far it moved from the original. Outside the regions, inside the footprint of a re-encoded
+//! image (the drift zone), a changed pixel passes unless it became a cleared colour where the
+//! original was bright. Everywhere else the original and the probe must agree within a small
+//! tolerance. The drift zone never reaches the strict check.
 
 use std::collections::BTreeMap;
 
@@ -36,6 +45,11 @@ const WHITE_MIN: u8 = 239;
 /// exactly this level is invisible to the check, like any leftover that renders black.
 const CMYK_CLEARED: std::ops::RangeInclusive<u8> = 24..=40;
 const CMYK_CLEARED_SPREAD: u8 = 8;
+/// Brightest channel an original pixel may have when the probe shows a cleared colour there,
+/// inside the drift zone. See [`ProbePage::drift`].
+const DRIFT_BRIGHT_MAX: u8 = 160;
+/// Distance, in points, the drift zone reaches past the page footprint of a cleared image.
+const DRIFT_PAD: f64 = 2.0;
 /// Distance, in points, a region shrinks by before leftovers are looked for in it, so that
 /// edge pixels shared with the surroundings never decide the check.
 const ERODE: f64 = 1.0;
@@ -54,6 +68,16 @@ pub struct ProbePage {
     /// Whether an image the rewrite cleared on this page is CMYK, so that cleared pixels may
     /// render as the [`CMYK_CLEARED`] gray instead of black.
     pub cmyk_cleared: bool,
+    /// The drift zone: bounding boxes, in page points, of the images the rewrite re-encoded.
+    ///
+    /// Re-encoding writes a fresh device-colour image without the original's ICC profile or
+    /// `/Interpolate`, so even the pixels the redaction left alone render with a different
+    /// colour or edge. Outside the allowed areas, inside this zone, a change is therefore not
+    /// by itself over-clearing; only a pixel that turned into a cleared colour where the
+    /// original was bright is (see [`DRIFT_BRIGHT_MAX`]). The zone never reaches the in-region
+    /// check, which accepts only cleared colours whatever the drift, and a placement of the
+    /// same image away from the regions is outside the zone and compared strictly.
+    pub drift: Vec<[f64; 4]>,
 }
 
 fn dilate(rect: [f64; 4], by: f64) -> [f64; 4] {
@@ -183,6 +207,7 @@ pub fn probe_pages(
             regions,
             allowed,
             cmyk_cleared: false,
+            drift: Vec::new(),
         });
     }
     if pages.len() > MAX_PROBE_PAGES {
@@ -193,8 +218,13 @@ pub fn probe_pages(
     // Cleared images lose whole pixels, so their change reaches one pixel cell past a region.
     let cleared = cleared_images(candidate, plan, limits, ctx)?;
     for probe in &mut pages {
-        let info = cleared.get(&probe.page).copied().unwrap_or_default();
+        let info = cleared.get(&probe.page).cloned().unwrap_or_default();
         probe.cmyk_cleared = info.cmyk;
+        probe.drift = info
+            .footprints
+            .iter()
+            .map(|r| dilate(*r, DRIFT_PAD))
+            .collect();
         let margin = info.margin;
         let regions: Vec<[f64; 4]> = probe
             .regions
@@ -207,12 +237,14 @@ pub fn probe_pages(
 }
 
 /// What the rewrite did to the images of one page.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct ClearedImages {
     /// Largest pixel cell, in page points.
     margin: f64,
     /// Whether any cleared image is CMYK.
     cmyk: bool,
+    /// Bounding box of every placement of a cleared image, in page points.
+    footprints: Vec<[f64; 4]>,
 }
 
 /// The images the rewrite cleared, per one-based page number. The candidate is a rewritten and
@@ -260,6 +292,17 @@ fn cleared_images(
             let slot = margins.entry(number).or_insert_with(ClearedImages::default);
             slot.margin = slot.margin.max(cell);
             slot.cmyk |= cmyk;
+            let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)].map(|(x, y)| {
+                (
+                    ctm.0[0] * x + ctm.0[2] * y + ctm.0[4],
+                    ctm.0[1] * x + ctm.0[3] * y + ctm.0[5],
+                )
+            });
+            let xs = corners.map(|c| c.0);
+            let ys = corners.map(|c| c.1);
+            let min = |v: [f64; 4]| v.into_iter().fold(f64::INFINITY, f64::min);
+            let max = |v: [f64; 4]| v.into_iter().fold(f64::NEG_INFINITY, f64::max);
+            slot.footprints.push([min(xs), min(ys), max(xs), max(ys)]);
         }
     }
     Ok(margins)
@@ -319,23 +362,32 @@ pub fn verify_probe_render(
         mask(&eroded)?
     };
     let allowed = mask(&page.allowed)?;
+    let drift = if page.drift.is_empty() {
+        vec![false; width as usize * height as usize]
+    } else {
+        mask(&page.drift)?
+    };
     for (index, (o, p)) in original.pixels().zip(probe.pixels()).enumerate() {
         if index.is_multiple_of(4096) {
             ctx.check()?;
         }
         let unchanged = channel_distance(o, p) <= TOLERANCE;
+        let level = p.0[0].max(p.0[1]).max(p.0[2]);
+        let low = p.0[0].min(p.0[1]).min(p.0[2]);
+        let cleared = level <= BLACK_MAX
+            || (page.cmyk_cleared
+                && CMYK_CLEARED.contains(&low)
+                && CMYK_CLEARED.contains(&level)
+                && level - low <= CMYK_CLEARED_SPREAD);
         if !allowed[index] && !unchanged {
-            return Ok(false);
+            let drifted =
+                drift[index] && !(cleared && o.0[..3].iter().any(|v| *v > DRIFT_BRIGHT_MAX));
+            if !drifted {
+                return Ok(false);
+            }
         }
         if inside[index] {
-            let level = p.0[0].max(p.0[1]).max(p.0[2]);
-            let low = p.0[0].min(p.0[1]).min(p.0[2]);
-            let cleared_or_blank = level <= BLACK_MAX
-                || low >= WHITE_MIN
-                || (page.cmyk_cleared
-                    && CMYK_CLEARED.contains(&low)
-                    && CMYK_CLEARED.contains(&level)
-                    && level - low <= CMYK_CLEARED_SPREAD);
+            let cleared_or_blank = cleared || low >= WHITE_MIN;
             // Never "changed": a leftover that re-encoding moved to another colour is still
             // original content. Only the cleared colour or page white is accepted.
             if !cleared_or_blank {
@@ -363,6 +415,7 @@ mod tests {
             regions: vec![[20.0, 20.0, 60.0, 60.0]],
             allowed,
             cmyk_cleared: false,
+            drift: Vec::new(),
         }
     }
 
@@ -445,6 +498,7 @@ mod tests {
                 regions: region.to_vec(),
                 allowed: region.to_vec(),
                 cmyk_cleared,
+                drift: Vec::new(),
             };
             verify_probe_render(
                 &original,
@@ -464,6 +518,58 @@ mod tests {
         assert!(!run(true, [60, 60, 60]));
         assert!(!run(true, [128, 128, 128]));
         assert!(run(true, [0, 0, 0]));
+    }
+
+    /// A probe page whose drift zone is the whole page.
+    fn check_with_drift(original: &RgbaImage, probe: &RgbaImage, drift: bool) -> bool {
+        let mut page = page(vec![[20.0, 20.0, 60.0, 60.0]]);
+        if drift {
+            page.drift = vec![[0.0, 0.0, 100.0, 100.0]];
+        }
+        verify_probe_render(
+            original,
+            probe,
+            matrix(),
+            &page,
+            &Limits::local(),
+            &ToolCtx::new(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn colour_drift_is_tolerated_only_inside_the_drift_zone() {
+        let mut original = white();
+        paint(&mut original, 0, 0, 100, 100, 128);
+        let mut cleared = original.clone();
+        paint(&mut cleared, 20, 40, 40, 40, 0);
+        // Re-encoding shifted the colour of the untouched part of the image.
+        let mut drifted = cleared.clone();
+        for y in 0..100 {
+            for x in 0..100 {
+                if !(20..60).contains(&x) || !(40..80).contains(&y) {
+                    drifted.put_pixel(x, y, Rgba([100, 100, 100, 255]));
+                }
+            }
+        }
+        assert!(!check_with_drift(&original, &drifted, false));
+        assert!(check_with_drift(&original, &drifted, true));
+
+        // The zone does not excuse a pixel that turned into a cleared colour where the
+        // original was bright: that is over-clearing, not drift.
+        let mut bright = white();
+        paint(&mut bright, 0, 0, 100, 100, 220);
+        let mut cleared_bright = bright.clone();
+        paint(&mut cleared_bright, 20, 40, 40, 40, 0);
+        assert!(check_with_drift(&bright, &cleared_bright, true));
+        let mut over = cleared_bright.clone();
+        paint(&mut over, 70, 5, 10, 10, 0);
+        assert!(!check_with_drift(&bright, &over, true));
+
+        // And it never opens the in-region check: a drifted leftover still fails.
+        let mut leftover = drifted.clone();
+        paint(&mut leftover, 30, 50, 6, 6, 100);
+        assert!(!check_with_drift(&original, &leftover, true));
     }
 
     #[test]
