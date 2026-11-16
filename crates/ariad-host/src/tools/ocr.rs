@@ -615,7 +615,7 @@ pub(super) fn execute(
     let total = selected.len() as u64;
     // Every page needs one PDFium and one Tesseract process, so lanes run pages concurrently
     // (at most `workers` processes at a time) while results are applied strictly in page order.
-    let workers = ocr_pool::worker_count(selected.len());
+    let workers = ocr_pool::worker_count(limits, selected.len());
     let stop = cancel.child_token();
     let mut extra_workspaces = Vec::new();
     for _ in 1..workers {

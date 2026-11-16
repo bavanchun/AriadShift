@@ -916,7 +916,7 @@ fn run_languages(args: LanguageArgs) -> ExitCode {
                         .map(LanguageOutput::Model)
                 }
                 LanguageAction::Remove { language, .. } => {
-                    packs::languages::remove(&context, &language).map(LanguageOutput::Model)
+                    packs::languages::remove_status(&context, &language).map(LanguageOutput::Model)
                 }
             }
         },

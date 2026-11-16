@@ -4,6 +4,7 @@
 //! consumer strictly in page order, so the output is identical to a sequential run. A page may
 //! only start while it is fewer than `workers` pages ahead of the next page to be consumed, which
 //! bounds the number of in-flight plus buffered page results (and so memory) by `workers`.
+use ariad_core::limits::Limits;
 use std::{
     collections::BTreeMap,
     sync::{Condvar, Mutex, MutexGuard},
@@ -11,25 +12,27 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
-/// Hard upper bound for an explicit `ASHIFT_OCR_WORKERS` override.
-const MAX_WORKERS: usize = 8;
 /// Default ceiling when the machine has more cores than this.
 const DEFAULT_MAX_WORKERS: usize = 4;
 
-/// Resolve the worker count: an explicit valid override, else `min(cores, 4)`, never more than
-/// the number of pages and never less than one.
-pub(super) fn resolve_workers(override_value: Option<&str>, cores: usize, pages: usize) -> usize {
-    let configured = override_value
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|n| (1..=MAX_WORKERS).contains(n))
-        .unwrap_or_else(|| cores.clamp(1, DEFAULT_MAX_WORKERS));
+/// Resolve the worker count from the request limits. A per-process memory budget
+/// (`max_memory_mb`, set by the cloud/server profile) means the host must not multiply that
+/// budget across concurrent engine processes, so such jobs use one worker. Without a memory
+/// budget (local CLI and desktop) the count is `min(cores, 4)`. It never exceeds the number of
+/// pages and is never less than one.
+pub(super) fn resolve_workers(limits: &Limits, cores: usize, pages: usize) -> usize {
+    let configured = if limits.max_memory_mb.is_some() {
+        1
+    } else {
+        cores.clamp(1, DEFAULT_MAX_WORKERS)
+    };
     configured.min(pages).max(1)
 }
 
-/// Worker count for a job of `pages` pages on this machine.
-pub(super) fn worker_count(pages: usize) -> usize {
+/// Worker count for a job of `pages` pages on this machine under `limits`.
+pub(super) fn worker_count(limits: &Limits, pages: usize) -> usize {
     resolve_workers(
-        std::env::var("ASHIFT_OCR_WORKERS").ok().as_deref(),
+        limits,
         thread::available_parallelism().map_or(1, |n| n.get()),
         pages,
     )
@@ -166,22 +169,26 @@ mod tests {
     };
 
     #[test]
-    fn worker_count_defaults_to_min_of_cores_and_four() {
-        assert_eq!(resolve_workers(None, 16, 100), 4);
-        assert_eq!(resolve_workers(None, 2, 100), 2);
-        assert_eq!(resolve_workers(None, 0, 100), 1);
+    fn local_profile_uses_min_of_cores_and_four() {
+        let local = Limits::local();
+        assert_eq!(local.max_memory_mb, None);
+        assert_eq!(resolve_workers(&local, 16, 100), 4);
+        assert_eq!(resolve_workers(&local, 2, 100), 2);
+        assert_eq!(resolve_workers(&local, 0, 100), 1);
+        // Never more workers than pages, and never fewer than one.
+        assert_eq!(resolve_workers(&local, 16, 3), 3);
+        assert_eq!(resolve_workers(&local, 16, 0), 1);
     }
 
     #[test]
-    fn worker_count_honours_valid_override_and_page_count() {
-        assert_eq!(resolve_workers(Some("6"), 2, 100), 6);
-        assert_eq!(resolve_workers(Some("1"), 16, 100), 1);
-        assert_eq!(resolve_workers(None, 16, 3), 3);
-        assert_eq!(resolve_workers(None, 16, 0), 1);
-        // Invalid or out-of-range overrides fall back to the default instead of widening the bound.
-        assert_eq!(resolve_workers(Some("0"), 16, 100), 4);
-        assert_eq!(resolve_workers(Some("999"), 16, 100), 4);
-        assert_eq!(resolve_workers(Some("many"), 16, 100), 4);
+    fn memory_budgeted_profiles_use_one_worker() {
+        let cloud = Limits::cloud();
+        assert!(cloud.max_memory_mb.is_some());
+        assert_eq!(resolve_workers(&cloud, 16, 100), 1);
+        assert_eq!(resolve_workers(&cloud, 2, 100), 1);
+        let mut budgeted = Limits::local();
+        budgeted.max_memory_mb = Some(512);
+        assert_eq!(resolve_workers(&budgeted, 16, 100), 1);
     }
 
     #[test]
