@@ -1542,6 +1542,97 @@ pub fn verify(
     Ok(report)
 }
 
+/// One licence or notice file shipped inside an installed pack.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PackNotice {
+    /// Path inside the pack, as listed by the signed manifest.
+    pub path: String,
+    pub text: String,
+}
+
+/// The notice files of one installed pack version.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PackNotices {
+    pub name: String,
+    pub version: String,
+    pub active: bool,
+    pub notices: Vec<PackNotice>,
+}
+
+/// Reads the notice files that the signed manifest of an installed pack lists.
+///
+/// `version` selects an installed version; `None` selects the active one. The manifest kept in
+/// the install receipt must still carry a trusted signature. A notice that is missing, or is
+/// not a regular file reached without crossing a symbolic link, is an error.
+pub fn notices(
+    context: &PackContext,
+    name: &str,
+    version: Option<&str>,
+) -> Result<PackNotices, PackError> {
+    validate_pack_name(name).map_err(PackError::Usage)?;
+    let layout = Layout::new(context);
+    let version = select_version(&layout, name, version)?;
+    let root = layout.version_dir(name, &version);
+    let receipt = read_receipt(&root, name)?;
+    context
+        .keys
+        .verify(
+            receipt.manifest.as_bytes(),
+            &receipt.signature,
+            &receipt.name,
+            &receipt.version,
+        )
+        .map_err(PackError::Signature)?;
+    if receipt.version != version {
+        return Err(verification_failed(
+            name,
+            &version,
+            format!("the receipt records version {}", receipt.version),
+        ));
+    }
+    let manifest = Manifest::parse(&receipt.manifest)?;
+    let mut out = Vec::with_capacity(manifest.notices.len());
+    for notice in &manifest.notices {
+        let bytes = read_notice(&root, notice).map_err(|detail| {
+            verification_failed(name, &version, format!("notice '{notice}' {detail}"))
+        })?;
+        out.push(PackNotice {
+            path: notice.clone(),
+            text: String::from_utf8_lossy(&bytes).into_owned(),
+        });
+    }
+    Ok(PackNotices {
+        name: name.to_owned(),
+        active: active_version(&layout, name).as_deref() == Some(version.as_str()),
+        version,
+        notices: out,
+    })
+}
+
+/// Reads a notice, refusing any symbolic link on the way from the pack root to the file.
+fn read_notice(root: &Path, notice: &str) -> Result<Vec<u8>, String> {
+    let parts = relative_path(notice).map_err(|reason| format!("is invalid: {reason}"))?;
+    let mut path = root.to_path_buf();
+    for (index, part) in parts.iter().enumerate() {
+        path.push(part);
+        let metadata = fs::symlink_metadata(&path).map_err(|error| {
+            if error.kind() == io::ErrorKind::NotFound {
+                "is missing from the pack".to_owned()
+            } else {
+                format!("could not be inspected: {error}")
+            }
+        })?;
+        let last = index + 1 == parts.len();
+        if metadata.file_type().is_symlink() {
+            return Err("is reached through a symbolic link".to_owned());
+        }
+        if last && !metadata.is_file() {
+            return Err("is not a regular file".to_owned());
+        }
+    }
+    fs::read(&path).map_err(|error| format!("could not be read: {error}"))
+}
+
 fn select_version(layout: &Layout, name: &str, version: Option<&str>) -> Result<String, PackError> {
     let installed = installed_versions(layout, name);
     match version {

@@ -302,6 +302,77 @@ fn pack_lifecycle_through_the_cli() {
 }
 
 #[test]
+fn installed_pack_notices_are_reachable_as_text_and_json() {
+    let fixture = Fixture::new();
+    let output = fixture.run(&["engines", "notices"]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("No engine packs are installed"));
+    assert_eq!(
+        json(&fixture.run(&["engines", "notices", "--json"])),
+        json!([])
+    );
+
+    let output = fixture.install();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+
+    let output = fixture.run(&["engines", "notices", "probe"]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("=== probe 1.0.0 ==="), "{text}");
+    assert!(text.contains("--- LICENSE.txt ---"), "{text}");
+    assert!(text.contains("MIT licence"), "{text}");
+
+    let data_dir = fixture.data.path().display().to_string();
+    for args in [
+        &["engines", "notices", "--json"][..],
+        &["engines", "notices", "probe", "--json"][..],
+        &[
+            "engines",
+            "notices",
+            "probe",
+            "--version",
+            "1.0.0",
+            "--json",
+        ][..],
+    ] {
+        let output = fixture.run(args);
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        let packs = json(&output);
+        assert_eq!(packs.as_array().unwrap().len(), 1, "{packs}");
+        assert_eq!(packs[0]["name"], "probe");
+        assert_eq!(packs[0]["version"], "1.0.0");
+        assert_eq!(packs[0]["active"], true);
+        assert_eq!(packs[0]["notices"][0]["path"], "LICENSE.txt");
+        assert_eq!(packs[0]["notices"][0]["text"], "MIT licence\n");
+        assert!(!String::from_utf8_lossy(&output.stdout).contains(&data_dir));
+    }
+
+    let output = fixture.run(&["engines", "notices", "probe", "--version", "9.9.9"]);
+    assert_eq!(output.status.code(), Some(3));
+    assert!(
+        stderr(&output).contains("is not installed"),
+        "{}",
+        stderr(&output)
+    );
+    let output = fixture.run(&["engines", "notices", "--version", "1.0.0"]);
+    assert_eq!(output.status.code(), Some(2), "version needs a pack name");
+
+    fs::remove_file(fixture.data.path().join("packs/probe/1.0.0/LICENSE.txt")).unwrap();
+    for args in [
+        &["engines", "notices"][..],
+        &["engines", "notices", "probe"][..],
+    ] {
+        let output = fixture.run(args);
+        assert_eq!(output.status.code(), Some(1), "{args:?}");
+        assert!(
+            stderr(&output).contains("LICENSE.txt"),
+            "{}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
 fn unknown_pack_exits_3_and_lists_known_packs() {
     let fixture = Fixture::new();
     let output = fixture.run(&["engines", "install", "no-such-pack"]);

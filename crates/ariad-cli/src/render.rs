@@ -424,6 +424,25 @@ pub fn render_pack_verify_human(report: &ariad_host::packs::VerifyReport) -> io:
     out.flush()
 }
 
+/// Renders pack notices as text: a heading per pack and a rule per notice file.
+pub fn render_pack_notices_human(notices: &[ariad_host::packs::PackNotices]) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    if notices.is_empty() {
+        writeln!(out, "No engine packs are installed.")?;
+    }
+    for pack in notices {
+        writeln!(out, "=== {} {} ===", pack.name, pack.version)?;
+        for notice in &pack.notices {
+            writeln!(out, "--- {} ---", escape_control_chars(&notice.path))?;
+            out.write_all(notice.text.as_bytes())?;
+            if !notice.text.ends_with('\n') {
+                writeln!(out)?;
+            }
+        }
+    }
+    out.flush()
+}
+
 /// Renders the `ashift tools` human-readable table to stdout.
 pub fn render_tools_human(tools: &[ToolDescriptor]) -> io::Result<()> {
     let mut out = io::stdout().lock();

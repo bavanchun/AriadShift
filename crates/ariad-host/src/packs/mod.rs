@@ -32,7 +32,8 @@ pub use fetch::FetchPolicy;
 pub use index::{IndexEntry, entries as index_entries, lookup as index_lookup};
 pub use install::{
     InstallReport, InstallRequest, InstallSource, InstallStatus, InstalledVersion, PackEvent,
-    PackHealth, RemoveReport, VerifyReport, check, install, list_installed, remove, verify,
+    PackHealth, PackNotice, PackNotices, RemoveReport, VerifyReport, check, install,
+    list_installed, notices, remove, verify,
 };
 pub use manifest::{
     ALLOWED_ENV, Component, MANIFEST_FILE, MANIFEST_SCHEMA, Manifest, SIGNATURE_FILE, Target,

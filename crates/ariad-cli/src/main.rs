@@ -232,6 +232,8 @@ enum EnginesAction {
     Remove(PackRemoveArgs),
     /// Re-hash an installed engine pack's files and re-check its signature.
     Verify(PackVerifyArgs),
+    /// Print the licence notices shipped inside installed engine packs.
+    Notices(PackNoticesArgs),
     /// List, install, or remove extra OCR language models.
     Languages(LanguageArgs),
 }
@@ -296,6 +298,20 @@ struct PackVerifyArgs {
     #[arg(long, value_name = "VERSION")]
     version: Option<String>,
     /// Output the verification report as JSON to stdout.
+    #[arg(long)]
+    json: bool,
+}
+
+/// Arguments for printing installed pack notices.
+#[derive(Args)]
+struct PackNoticesArgs {
+    /// Pack name; omit it to print the active version of every installed pack.
+    #[arg(value_name = "NAME")]
+    name: Option<String>,
+    /// Print this installed version instead of the active one (needs NAME).
+    #[arg(long, value_name = "VERSION", requires = "name")]
+    version: Option<String>,
+    /// Output the notices as JSON to stdout.
     #[arg(long)]
     json: bool,
 }
@@ -845,6 +861,7 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
         Some(EnginesAction::Install(args)) => return run_pack_install(args),
         Some(EnginesAction::Remove(args)) => return run_pack_remove(args),
         Some(EnginesAction::Verify(args)) => return run_pack_verify(args),
+        Some(EnginesAction::Notices(args)) => return run_pack_notices(args),
         Some(EnginesAction::Languages(args)) => return run_languages(args),
         None => {}
     }
@@ -1729,6 +1746,43 @@ fn run_pack_verify(args: PackVerifyArgs) -> ExitCode {
                     name: report.name,
                     version: report.version,
                 })
+            }
+        },
+    )
+}
+
+fn run_pack_notices(args: PackNoticesArgs) -> ExitCode {
+    let is_json = args.json;
+    run_blocking(
+        "pack notices",
+        move |_cancel| {
+            let context = packs::PackContext::from_env()?;
+            match args.name {
+                Some(name) => Ok(vec![packs::notices(
+                    &context,
+                    &name,
+                    args.version.as_deref(),
+                )?]),
+                None => {
+                    let mut all = Vec::new();
+                    for installed in packs::list_installed(&context)? {
+                        if installed.active {
+                            all.push(packs::notices(
+                                &context,
+                                &installed.name,
+                                Some(&installed.version),
+                            )?);
+                        }
+                    }
+                    Ok(all)
+                }
+            }
+        },
+        move |notices| {
+            if is_json {
+                render::render_json(&notices).map_err(stdout_error)
+            } else {
+                render::render_pack_notices_human(&notices).map_err(stdout_error)
             }
         },
     )

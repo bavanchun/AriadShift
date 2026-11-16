@@ -755,6 +755,93 @@ fn verify_detects_modified_and_missing_files() {
 }
 
 #[test]
+fn notices_are_read_from_the_signed_manifest() {
+    let key = Key::generate();
+    let data = support::temp();
+    install_served(
+        &PackBuilder::standard("sample", "1.0.0"),
+        &key,
+        &key,
+        data.path(),
+    )
+    .unwrap();
+    let ctx = context(data.path(), key.trusted());
+
+    let found = packs::notices(&ctx, "sample", None).unwrap();
+    assert_eq!(
+        (found.name.as_str(), found.version.as_str()),
+        ("sample", "1.0.0")
+    );
+    assert!(found.active);
+    assert_eq!(found.notices.len(), 1);
+    assert_eq!(found.notices[0].path, "LICENSE.txt");
+    assert_eq!(found.notices[0].text, "MIT licence text\n");
+    assert_eq!(
+        packs::notices(&ctx, "sample", Some("1.0.0")).unwrap(),
+        found
+    );
+
+    assert!(matches!(
+        packs::notices(&ctx, "sample", Some("9.9.9")),
+        Err(PackError::NotInstalled {
+            version: Some(_),
+            ..
+        })
+    ));
+    assert!(matches!(
+        packs::notices(&ctx, "absent", None),
+        Err(PackError::NotInstalled { .. })
+    ));
+    let other = Key::generate();
+    assert!(matches!(
+        packs::notices(&context(data.path(), other.trusted()), "sample", None),
+        Err(PackError::Signature(_))
+    ));
+}
+
+#[test]
+fn a_missing_or_irregular_notice_is_an_error() {
+    let key = Key::generate();
+    let data = support::temp();
+    install_served(
+        &PackBuilder::standard("sample", "1.0.0"),
+        &key,
+        &key,
+        data.path(),
+    )
+    .unwrap();
+    let ctx = context(data.path(), key.trusted());
+    let notice = data.path().join("packs/sample/1.0.0/LICENSE.txt");
+
+    fs::remove_file(&notice).unwrap();
+    let error = packs::notices(&ctx, "sample", None).unwrap_err();
+    assert!(
+        matches!(&error, PackError::VerificationFailed { detail, .. } if detail.contains("LICENSE.txt") && detail.contains("missing")),
+        "{error}"
+    );
+
+    fs::create_dir(&notice).unwrap();
+    let error = packs::notices(&ctx, "sample", None).unwrap_err();
+    assert!(
+        matches!(&error, PackError::VerificationFailed { detail, .. } if detail.contains("not a regular file")),
+        "{error}"
+    );
+
+    #[cfg(unix)]
+    {
+        fs::remove_dir(&notice).unwrap();
+        let outside = support::temp();
+        fs::write(outside.path().join("secret"), "outside\n").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret"), &notice).unwrap();
+        let error = packs::notices(&ctx, "sample", None).unwrap_err();
+        assert!(
+            matches!(&error, PackError::VerificationFailed { detail, .. } if detail.contains("symbolic link")),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn remove_deletes_versions_and_keeps_the_rest_active() {
     let key = Key::generate();
     let source = support::temp();
