@@ -132,9 +132,11 @@ pub fn verify_pdfium_text(
     if geometry.schema != "ariad-redact-geometry/1" {
         return Err(PdfError::Malformed);
     }
-    let computed_sha256 = crate::writer::sha256_chunks(&[bytes]);
-    if geometry.source_sha256 != computed_sha256 {
-        return Err(PdfError::Malformed);
+    // Evidence from another document must never vouch for these bytes: same error as `plan()`.
+    if geometry.source_sha256 != crate::writer::sha256_chunks(&[bytes]) {
+        return Err(PdfError::InvalidParams(
+            "incomplete redaction geometry evidence".into(),
+        ));
     }
     params
         .validate()
@@ -1772,6 +1774,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn pdfium_text_check_refuses_evidence_from_another_pdf() {
+        use ariad_core::tools::params::redact_internal::RedactionCheckStatus;
+        let pdf_a = source(false);
+        let mut pdf_b = pdf_a.clone();
+        pdf_b.extend_from_slice(b"\n%different bytes, same page count\n");
+        assert_ne!(pdf_a, pdf_b);
+        let ctx = ToolCtx::new();
+        let limits = Limits::local();
+        let request = page_target_params(RedactionTarget::Page { page: 1 });
+        let evidence_a = blank_geometry(&pdf_a, 1);
+        let ok = verify_pdfium_text(&pdf_a, &request, &evidence_a, &limits, &ctx);
+        assert_eq!(ok.unwrap(), RedactionCheckStatus::Pass);
+        let result = verify_pdfium_text(&pdf_b, &request, &evidence_a, &limits, &ctx);
+        assert!(
+            matches!(result, Err(PdfError::InvalidParams(_))),
+            "evidence for another PDF must be refused, got {result:?}"
+        );
     }
 
     fn rectangle(page: u32, rect: [f64; 4]) -> RedactionTarget {
