@@ -27,14 +27,15 @@ pub fn write(document: &Document) -> WriteOutput {
     let doc = normalize_document(document);
     let mut writer = TextWriter::new();
 
+    // A PDF's catalog language is reader bookkeeping, so only that field stays quiet.
+    let has_language = doc.meta.language.is_some() && doc.meta.source_format != Some(Format::Pdf);
     let has_metadata = doc.meta.title.is_some()
         || !doc.meta.authors.is_empty()
-        || doc.meta.language.is_some()
+        || has_language
         || doc.meta.date.is_some()
         || doc.meta.subject.is_some()
         || !doc.meta.keywords.is_empty();
-    // PDF metadata is the reader's own bookkeeping, so dropping it is not worth a warning.
-    if has_metadata && doc.meta.source_format != Some(Format::Pdf) {
+    if has_metadata {
         writer.warn(
             WarningCode::UnsupportedNode,
             "document metadata is not supported in plain text output and was dropped",
@@ -1132,18 +1133,32 @@ mod tests {
     }
 
     #[test]
-    fn metadata_warning_is_suppressed_only_for_pdf_sources() {
-        let with_title = |source_format| Metadata {
-            title: Some("Title".into()),
+    fn pdf_language_alone_does_not_warn_but_other_metadata_does() {
+        let meta = |source_format, title: Option<&str>, language: Option<&str>| Metadata {
+            title: title.map(Into::into),
+            language: language.map(Into::into),
             source_format,
             ..Default::default()
         };
-        assert_eq!(metadata_warning_count(with_title(Some(Format::Pdf))), 0);
         assert_eq!(
-            metadata_warning_count(with_title(Some(Format::Markdown))),
+            metadata_warning_count(meta(Some(Format::Pdf), None, Some("en"))),
+            0
+        );
+        assert_eq!(
+            metadata_warning_count(meta(Some(Format::Markdown), None, Some("en"))),
             1
         );
-        assert_eq!(metadata_warning_count(with_title(None)), 1);
+        assert_eq!(metadata_warning_count(meta(None, None, Some("en"))), 1);
+        assert_eq!(
+            metadata_warning_count(meta(Some(Format::Pdf), Some("Title"), Some("en"))),
+            1
+        );
+        let authors = Metadata {
+            authors: vec!["Author".into()],
+            source_format: Some(Format::Pdf),
+            ..Default::default()
+        };
+        assert_eq!(metadata_warning_count(authors), 1);
     }
 
     #[test]
