@@ -13,7 +13,7 @@
 use std::{
     collections::{BTreeSet, HashMap},
     fs::{self, File, OpenOptions, TryLockError},
-    io,
+    io::{self, Read},
     path::{Path, PathBuf},
     sync::{LazyLock, Mutex},
     time::{Duration, SystemTime},
@@ -24,6 +24,7 @@ use std::time::UNIX_EPOCH;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -679,9 +680,9 @@ fn check_installed_paths(
 ) -> Result<(), PackError> {
     for notice in &manifest.notices {
         let path = extract::join_parts(root, notice);
-        if !fs::metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
+        if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
             return Err(PackError::InvalidManifest(format!(
-                "notice '{notice}' is not a file in the pack"
+                "notice '{notice}' is not a regular file in the pack"
             )));
         }
     }
@@ -1562,8 +1563,11 @@ pub struct PackNotices {
 /// Reads the notice files that the signed manifest of an installed pack lists.
 ///
 /// `version` selects an installed version; `None` selects the active one. The manifest kept in
-/// the install receipt must still carry a trusted signature. A notice that is missing, or is
-/// not a regular file reached without crossing a symbolic link, is an error.
+/// the install receipt must still carry a trusted signature. Each notice must also match the
+/// size and SHA-256 that the receipt recorded at install time; the size is compared before
+/// the file is read, so an oversized file is never loaded. A notice that is missing, absent
+/// from the receipt, altered, or not a regular file reached without crossing a symbolic link,
+/// is an error.
 pub fn notices(
     context: &PackContext,
     name: &str,
@@ -1593,7 +1597,7 @@ pub fn notices(
     let manifest = Manifest::parse(&receipt.manifest)?;
     let mut out = Vec::with_capacity(manifest.notices.len());
     for notice in &manifest.notices {
-        let bytes = read_notice(&root, notice).map_err(|detail| {
+        let bytes = read_notice(&root, notice, &receipt.files).map_err(|detail| {
             verification_failed(name, &version, format!("notice '{notice}' {detail}"))
         })?;
         out.push(PackNotice {
@@ -1609,18 +1613,40 @@ pub fn notices(
     })
 }
 
-/// The notices of the active version of every installed pack, ordered by pack name.
-pub fn active_notices(context: &PackContext) -> Result<Vec<PackNotices>, PackError> {
-    list_installed(context)?
-        .into_iter()
-        .filter(|installed| installed.active)
-        .map(|installed| notices(context, &installed.name, Some(&installed.version)))
-        .collect()
+/// The outcome for one installed pack in [`active_notices`].
+#[derive(Debug)]
+pub struct PackNoticesEntry {
+    pub name: String,
+    pub version: String,
+    pub result: Result<PackNotices, PackError>,
 }
 
-/// Reads a notice, refusing any symbolic link on the way from the pack root to the file.
-fn read_notice(root: &Path, notice: &str) -> Result<Vec<u8>, String> {
+/// The notices of the active version of every installed pack, ordered by pack name.
+///
+/// Each pack has its own result, so one damaged pack does not hide the others.
+pub fn active_notices(context: &PackContext) -> Result<Vec<PackNoticesEntry>, PackError> {
+    Ok(list_installed(context)?
+        .into_iter()
+        .filter(|installed| installed.active)
+        .map(|installed| PackNoticesEntry {
+            result: notices(context, &installed.name, Some(&installed.version)),
+            name: installed.name,
+            version: installed.version,
+        })
+        .collect())
+}
+
+/// Reads a notice that matches its receipt entry.
+///
+/// No symbolic link may lie on the way from the pack root to the file, and the file is opened
+/// without following one. The checks on size and type run on the open handle, so the file
+/// cannot be swapped between check and read, and the size is compared before any byte is read.
+fn read_notice(root: &Path, notice: &str, recorded: &[ReceiptFile]) -> Result<Vec<u8>, String> {
     let parts = relative_path(notice).map_err(|reason| format!("is invalid: {reason}"))?;
+    let entry = recorded
+        .iter()
+        .find(|file| file.path == parts.join("/"))
+        .ok_or_else(|| "is not recorded in the install receipt".to_owned())?;
     let mut path = root.to_path_buf();
     for (index, part) in parts.iter().enumerate() {
         path.push(part);
@@ -1631,15 +1657,48 @@ fn read_notice(root: &Path, notice: &str) -> Result<Vec<u8>, String> {
                 format!("could not be inspected: {error}")
             }
         })?;
-        let last = index + 1 == parts.len();
         if metadata.file_type().is_symlink() {
             return Err("is reached through a symbolic link".to_owned());
         }
-        if last && !metadata.is_file() {
+        if index + 1 == parts.len() && !metadata.is_file() {
             return Err("is not a regular file".to_owned());
         }
     }
-    fs::read(&path).map_err(|error| format!("could not be read: {error}"))
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options
+        .open(&path)
+        .map_err(|error| format!("could not be opened: {error}"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("could not be inspected: {error}"))?;
+    if !metadata.is_file() {
+        return Err("is not a regular file".to_owned());
+    }
+    if metadata.len() != entry.size {
+        return Err(format!(
+            "has {} bytes but the install receipt recorded {}",
+            metadata.len(),
+            entry.size
+        ));
+    }
+    let mut bytes = Vec::with_capacity(usize::try_from(entry.size).unwrap_or(0));
+    (&mut file)
+        .take(entry.size + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("could not be read: {error}"))?;
+    if bytes.len() as u64 != entry.size {
+        return Err("changed size while it was read".to_owned());
+    }
+    if hex::encode(Sha256::digest(&bytes)) != entry.sha256 {
+        return Err("does not match the SHA-256 in the install receipt".to_owned());
+    }
+    Ok(bytes)
 }
 
 fn select_version(layout: &Layout, name: &str, version: Option<&str>) -> Result<String, PackError> {

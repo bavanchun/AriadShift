@@ -1758,19 +1758,27 @@ fn run_pack_notices(args: PackNoticesArgs) -> ExitCode {
         move |_cancel| {
             let context = packs::PackContext::from_env()?;
             match args.name {
-                Some(name) => Ok(vec![packs::notices(
-                    &context,
-                    &name,
-                    args.version.as_deref(),
-                )?]),
+                Some(name) => {
+                    let found = packs::notices(&context, &name, args.version.as_deref())?;
+                    Ok(vec![packs::PackNoticesEntry {
+                        name: found.name.clone(),
+                        version: found.version.clone(),
+                        result: Ok(found),
+                    }])
+                }
                 None => packs::active_notices(&context),
             }
         },
-        move |notices| {
+        move |entries| {
             if is_json {
-                render::render_json(&notices).map_err(stdout_error)
+                render::render_pack_notices_json(&entries).map_err(stdout_error)?;
             } else {
-                render::render_pack_notices_human(&notices).map_err(stdout_error)
+                render::render_pack_notices_human(&entries).map_err(stdout_error)?;
+            }
+            // Every pack is printed first; the first failure then sets the exit code.
+            match entries.into_iter().find_map(|entry| entry.result.err()) {
+                Some(error) => Err(error),
+                None => Ok(()),
             }
         },
     )

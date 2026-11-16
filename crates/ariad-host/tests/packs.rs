@@ -841,6 +841,78 @@ fn a_missing_or_irregular_notice_is_an_error() {
     }
 }
 
+fn notice_error(ctx: &packs::PackContext, name: &str) -> String {
+    match packs::notices(ctx, name, None) {
+        Err(PackError::VerificationFailed { detail, .. }) => detail,
+        other => panic!("expected a verification failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn tampered_notices_are_refused_before_they_are_shown() {
+    let key = Key::generate();
+    let data = support::temp();
+    install_served(
+        &PackBuilder::standard("sample", "1.0.0"),
+        &key,
+        &key,
+        data.path(),
+    )
+    .unwrap();
+    let ctx = context(data.path(), key.trusted());
+    let root = data.path().join("packs/sample/1.0.0");
+    let notice = root.join("LICENSE.txt");
+    let original = fs::read(&notice).unwrap();
+
+    let mut same_size = original.clone();
+    same_size[0] ^= 0x01;
+    fs::write(&notice, &same_size).unwrap();
+    assert!(notice_error(&ctx, "sample").contains("SHA-256"));
+
+    fs::write(&notice, vec![b'x'; 1 << 20]).unwrap();
+    assert!(notice_error(&ctx, "sample").contains("recorded"));
+
+    fs::write(&notice, &original).unwrap();
+    assert_eq!(
+        packs::notices(&ctx, "sample", None).unwrap().notices.len(),
+        1
+    );
+
+    let receipt_path = root.join("receipt.toml");
+    let mut receipt: toml::Table =
+        toml::from_str(&fs::read_to_string(&receipt_path).unwrap()).unwrap();
+    receipt["files"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|file| file["path"].as_str() != Some("LICENSE.txt"));
+    fs::write(&receipt_path, toml::to_string(&receipt).unwrap()).unwrap();
+    assert!(notice_error(&ctx, "sample").contains("not recorded"));
+}
+
+#[test]
+fn one_broken_pack_does_not_hide_the_notices_of_others() {
+    let key = Key::generate();
+    let data = support::temp();
+    for name in ["alpha", "beta"] {
+        install_served(
+            &PackBuilder::standard(name, "1.0.0"),
+            &key,
+            &key,
+            data.path(),
+        )
+        .unwrap();
+    }
+    let ctx = context(data.path(), key.trusted());
+    fs::remove_file(data.path().join("packs/alpha/1.0.0/LICENSE.txt")).unwrap();
+
+    let entries = packs::active_notices(&ctx).unwrap();
+    let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+    assert_eq!(names, ["alpha", "beta"]);
+    assert!(entries[0].result.is_err());
+    let beta = entries[1].result.as_ref().unwrap();
+    assert_eq!(beta.notices[0].text, "MIT licence text\n");
+}
+
 #[test]
 fn remove_deletes_versions_and_keeps_the_rest_active() {
     let key = Key::generate();

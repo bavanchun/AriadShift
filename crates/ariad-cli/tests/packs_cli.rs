@@ -46,10 +46,14 @@ impl Fixture {
 
     /// Build fixtures in-process; exercise the manifest CLI separately below.
     fn build_pack(&self) {
+        self.build_pack_with_notice("MIT licence\n");
+    }
+
+    fn build_pack_with_notice(&self, notice: &str) {
         let dir = self.source.path();
         let program = probe_file_name();
         fs::copy(engine_probe_path(), dir.join(&program)).unwrap();
-        fs::write(dir.join("LICENSE.txt"), "MIT licence\n").unwrap();
+        fs::write(dir.join("LICENSE.txt"), notice).unwrap();
         let triple = ariad_host::packs::host_targets()[0].clone();
         let template = dir.join("template.toml");
         fs::write(
@@ -370,6 +374,42 @@ fn installed_pack_notices_are_reachable_as_text_and_json() {
             stderr(&output)
         );
     }
+
+    // Without a name, a broken pack is reported in place and the exit code is non-zero.
+    let output = fixture.run(&["engines", "notices"]);
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("=== probe 1.0.0 ==="), "{text}");
+    assert!(
+        text.contains("error:") && text.contains("LICENSE.txt"),
+        "{text}"
+    );
+    let output = fixture.run(&["engines", "notices", "--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let packs = json(&output);
+    assert_eq!(packs[0]["name"], "probe");
+    assert_eq!(packs[0]["error"]["code"], "verification_failed");
+    assert!(packs[0].get("notices").is_none());
+}
+
+#[test]
+fn notice_text_cannot_write_terminal_escape_sequences() {
+    let fixture = Fixture::new();
+    fixture.build_pack_with_notice(
+        "line one\n\x1b[31mred\x1b[0m\x1b]52;c;Y2xpcA==\x07\ttab\r\u{9b}31mcsi\n",
+    );
+    let output = fixture.install();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let output = fixture.run(&["engines", "notices", "probe"]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        text.chars()
+            .all(|c| !c.is_control() || c == '\n' || c == '\t'),
+        "{text:?}"
+    );
+    assert!(text.contains("line one\n"), "{text:?}");
+    assert!(text.contains("\ttab"), "{text:?}");
+    assert!(text.contains("red"), "{text:?}");
 }
 
 #[test]
