@@ -42,9 +42,10 @@ use ariad_core::{
 use ariad_pdf::{
     ToolCtx,
     redact::{
-        Matrix, Region, has_signatures, plan, rewrite_document_with_evidence, verify_core_text,
-        verify_image_pixels, verify_object_graph, verify_pdfium_text, verify_raw_literals,
-        verify_raw_literals_for_plan, verify_rendered_pixels_with_overlay, verify_rewrite_history,
+        Matrix, Region, has_signatures, plan, probe_pages, rewrite_document_probe,
+        rewrite_document_with_evidence, verify_core_text, verify_image_pixels, verify_object_graph,
+        verify_pdfium_text, verify_probe_render, verify_raw_literals, verify_raw_literals_for_plan,
+        verify_rendered_pixels_with_overlay, verify_rewrite_history,
     },
 };
 use serde_json::{Value, json};
@@ -524,9 +525,21 @@ fn execute_redact(
         events,
     )?;
 
-    // Gate 4: Image pixels check
-    let image_pixels = verify_image_pixels(&candidate_bytes, &plan, job.limits, &job.ctx)
+    // Gate 4: Image pixels check. The in-process verifier shares the rewriter's placement
+    // scan, so a PDFium render comparison must agree with it; any disagreement fails.
+    let scan_pixels = verify_image_pixels(&candidate_bytes, &plan, job.limits, &job.ctx)
         .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+    let probe_pixels = verify_image_render_probe(
+        job,
+        input_path,
+        input_bytes,
+        &candidate_bytes,
+        &plan,
+        &redact_params,
+        &geometry,
+        events,
+    )?;
+    let image_pixels = combine_image_gates(scan_pixels, probe_pixels);
 
     // Gate 5: Object graph scan (decoded streams & reachable strings)
     let object_graph = verify_object_graph(&candidate_bytes, &redact_params, job.limits, &job.ctx)
@@ -646,6 +659,123 @@ fn execute_redact(
     })
 }
 
+/// Maps the unit square of a rendered page raster to page points, following the crop box and
+/// the page rotation.
+fn render_matrix(doc: &ariad_pdf::PdfDoc, page_id: (u32, u16)) -> Matrix {
+    let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), page_id);
+    let rotation = ariad_pdf::xobject::resolve_page_rotation(doc.inner(), page_id).rem_euclid(360);
+    let [llx, lly, urx, ury] = [crop.left, crop.bottom, crop.right, crop.top];
+    let [w, h] = [urx - llx, ury - lly];
+    match rotation {
+        90 => Matrix([0.0, h, -w, 0.0, urx, lly]),
+        180 => Matrix([-w, 0.0, 0.0, -h, urx, ury]),
+        270 => Matrix([0.0, -h, w, 0.0, llx, ury]),
+        _ => Matrix([w, 0.0, 0.0, h, llx, lly]),
+    }
+}
+
+/// Resolution of the render-comparison check: the engine minimum of 72 dpi up to 100 dpi,
+/// lowered for large pages so that one raster never exceeds 16 megapixels. `None` when even
+/// the engine minimum would exceed that, which makes the check unavailable.
+fn probe_dpi(width_pt: f64, height_pt: f64) -> Option<u32> {
+    const MAX_PIXELS: f64 = 16_000_000.0;
+    let area_in2 = width_pt * height_pt / (72.0 * 72.0);
+    if !area_in2.is_finite() || area_in2 <= 0.0 {
+        return None;
+    }
+    let dpi = ((MAX_PIXELS / area_in2).sqrt().floor()).min(100.0);
+    (dpi >= 72.0).then_some(dpi as u32)
+}
+
+/// Combines the in-process image-pixel verdict with the render-comparison verdict.
+///
+/// Fail closed: either check failing fails the gate, and the gate passes only when both pass.
+/// A check that could not run leaves the gate unavailable, never passed by default.
+fn combine_image_gates(
+    scan: RedactionCheckStatus,
+    probe: RedactionCheckStatus,
+) -> RedactionCheckStatus {
+    match (scan, probe) {
+        (RedactionCheckStatus::Fail, _) | (_, RedactionCheckStatus::Fail) => {
+            RedactionCheckStatus::Fail
+        }
+        (RedactionCheckStatus::Pass, RedactionCheckStatus::Pass) => RedactionCheckStatus::Pass,
+        _ => RedactionCheckStatus::Unavailable,
+    }
+}
+
+/// Independent image-pixel check by rendering with PDFium.
+///
+/// Renders the original and a probe of the candidate (the same rewrite without the cover, kept
+/// in the private workspace and never published) and compares them: original content that
+/// survives under a rectangle, or pixels cleared outside what the redaction may change, fail.
+/// Only pages that can paint raster content are rendered, at a bounded resolution, with the
+/// request limits, deadline and cancellation. Render and engine errors refuse the redaction.
+#[allow(clippy::too_many_arguments)]
+fn verify_image_render_probe(
+    job: &mut RedactJob<'_>,
+    input_path: &Path,
+    input_bytes: &[u8],
+    candidate_bytes: &[u8],
+    plan: &ariad_pdf::redact::RedactionPlan,
+    params: &RedactParams,
+    geometry: &RedactGeometry,
+    events: &mut dyn FnMut(ToolEvent),
+) -> Result<RedactionCheckStatus, ToolError> {
+    if !plan.complete_scope() {
+        return Ok(RedactionCheckStatus::Unavailable);
+    }
+    let scrubber = job.scrubber;
+    let map = |e| inprocess::map_pdf_error(e, scrubber);
+    let pages = probe_pages(
+        input_bytes,
+        candidate_bytes,
+        plan,
+        geometry,
+        job.limits,
+        &job.ctx,
+    )
+    .map_err(map)?;
+    if pages.is_empty() {
+        return Ok(RedactionCheckStatus::Pass);
+    }
+    let probe_bytes =
+        rewrite_document_probe(input_bytes, params, plan, geometry, job.limits, &job.ctx)
+            .map_err(map)?;
+    let probe_path = job.workspace.input_dir().join("probe.pdf");
+    fs::write(&probe_path, &probe_bytes)
+        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    let doc =
+        ariad_pdf::document::open_with_ctx(candidate_bytes, job.limits, &job.ctx).map_err(map)?;
+    let page_ids = doc.inner().get_pages();
+    for page in pages {
+        job.check()?;
+        let page_id = page_ids
+            .get(&page.page)
+            .copied()
+            .ok_or_else(|| ToolError::EngineFailure("page missing in candidate".into()))?;
+        let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), page_id);
+        let Some(dpi) = probe_dpi(crop.right - crop.left, crop.top - crop.bottom) else {
+            return Ok(RedactionCheckStatus::Unavailable);
+        };
+        let original = job.render_page(input_path, page.page, dpi, events)?;
+        let probe = job.render_page(&probe_path, page.page, dpi, events)?;
+        let agrees = verify_probe_render(
+            &original,
+            &probe,
+            render_matrix(&doc, page_id),
+            &page,
+            job.limits,
+            &job.ctx,
+        )
+        .map_err(map)?;
+        if !agrees {
+            return Ok(RedactionCheckStatus::Fail);
+        }
+    }
+    Ok(RedactionCheckStatus::Pass)
+}
+
 fn verify_candidate_rendering(
     job: &mut RedactJob<'_>,
     candidate_path: &Path,
@@ -691,10 +821,7 @@ fn verify_candidate_rendering(
             .ok_or_else(|| ToolError::EngineFailure("page missing in candidate".into()))?;
 
         let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), page_id);
-        let rotation =
-            ariad_pdf::xobject::resolve_page_rotation(doc.inner(), page_id).rem_euclid(360);
         let [llx, lly, urx, ury] = [crop.left, crop.bottom, crop.right, crop.top];
-        let [w, h] = [urx - llx, ury - lly];
 
         let rendered = job.render_page(candidate_path, page_num, 150, events)?;
 
@@ -711,12 +838,7 @@ fn verify_candidate_rendering(
             }
         }
 
-        let matrix = match rotation {
-            90 => Matrix([0.0, h, -w, 0.0, urx, lly]),
-            180 => Matrix([-w, 0.0, 0.0, -h, urx, ury]),
-            270 => Matrix([0.0, -h, w, 0.0, llx, ury]),
-            _ => Matrix([w, 0.0, 0.0, h, llx, lly]),
-        };
+        let matrix = render_matrix(&doc, page_id);
         let ok = verify_rendered_pixels_with_overlay(
             &rendered,
             matrix,
@@ -886,5 +1008,42 @@ mod tests {
         let meta = fs::symlink_metadata(&written).unwrap();
         assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
         assert_eq!(fs::read(&written).unwrap(), b"{\"status\":\"verified\"}");
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+    use RedactionCheckStatus::{Fail, Pass, Unavailable};
+
+    #[test]
+    fn image_gates_never_pass_unless_both_checks_pass() {
+        // Disagreement in either direction fails; a check that did not run never passes.
+        assert_eq!(combine_image_gates(Pass, Pass), Pass);
+        assert_eq!(combine_image_gates(Pass, Fail), Fail);
+        assert_eq!(combine_image_gates(Fail, Pass), Fail);
+        assert_eq!(combine_image_gates(Fail, Unavailable), Fail);
+        assert_eq!(combine_image_gates(Unavailable, Fail), Fail);
+        assert_eq!(combine_image_gates(Pass, Unavailable), Unavailable);
+        assert_eq!(combine_image_gates(Unavailable, Pass), Unavailable);
+        assert_eq!(combine_image_gates(Unavailable, Unavailable), Unavailable);
+    }
+
+    #[test]
+    fn probe_resolution_is_bounded_by_the_raster_size() {
+        // A4 and US Letter keep the full 100 dpi (about 0.8 megapixel).
+        assert_eq!(probe_dpi(595.0, 842.0), Some(100));
+        assert_eq!(probe_dpi(612.0, 792.0), Some(100));
+        // A huge page lowers the resolution until its raster fits 16 megapixels ...
+        let dpi = probe_dpi(3000.0, 3000.0).unwrap();
+        assert!((72..100).contains(&dpi));
+        let side = 3000.0 / 72.0 * f64::from(dpi);
+        let pixels = side * side;
+        assert!(pixels <= 16_000_000.0, "{pixels}");
+        // ... and a page too large even at the engine minimum is unavailable.
+        assert_eq!(probe_dpi(5000.0, 5000.0), None);
+        assert_eq!(probe_dpi(14_400.0, 14_400.0), None);
+        assert_eq!(probe_dpi(0.0, 100.0), None);
+        assert_eq!(probe_dpi(f64::NAN, 100.0), None);
     }
 }

@@ -1756,6 +1756,140 @@ fn redact_geometry_test_helper_refuses_input_over_the_limit() {
     }
 }
 
+/// One page with a 32x32 grey gradient image drawn through `cm`, and optionally the same image
+/// drawn a second time through `again`.
+fn write_raster_pdf(path: &Path, cm: [i64; 6], again: Option<[i64; 6]>) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let pixels: Vec<u8> = (0..32u32 * 32)
+        .map(|i| (40 + (i % 32) * 4 + (i / 32) * 2).min(250) as u8)
+        .collect();
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 32, "Height" => 32,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        pixels,
+    ));
+    let mut content = format!(
+        "q {} {} {} {} {} {} cm /Im0 Do Q\n",
+        cm[0], cm[1], cm[2], cm[3], cm[4], cm[5]
+    );
+    let resources = dictionary! { "XObject" => dictionary! { "Im0" => image } };
+    if let Some(cm) = again {
+        content.push_str(&format!(
+            "q {} {} {} {} {} {} cm /Im0 Do Q\n",
+            cm[0], cm[1], cm[2], cm[3], cm[4], cm[5]
+        ));
+    }
+    let contents = doc.add_object(Stream::new(Dictionary::new(), content.into_bytes()));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => resources, "Contents" => contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+fn redact_raster(
+    input: &Path,
+    rect: serde_json::Value,
+    out: &Path,
+) -> Result<ariad_host::tools::ToolOutcome, ToolError> {
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(input.to_path_buf())],
+        OutputTarget::Path(out.to_path_buf()),
+    )
+    .with_params(json!({ "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }] }));
+    run_tool(&request)
+}
+
+#[test]
+fn redact_pipeline_partially_covered_image_passes_the_render_probe() {
+    if !child("redact_pipeline_partially_covered_image_passes_the_render_probe") {
+        return;
+    }
+    // The rectangle (x 250..350) covers the right part of a 200x200 image at x 100..300 and
+    // reaches past its edge. The image is drawn in each of four orientations.
+    let placements: [(&str, [i64; 6]); 4] = [
+        ("upright", [200, 0, 0, 200, 100, 300]),
+        ("mirrored in x", [-200, 0, 0, 200, 300, 300]),
+        ("mirrored in y", [200, 0, 0, -200, 100, 500]),
+        ("turned a quarter", [0, 200, -200, 0, 300, 300]),
+    ];
+    for (name, cm) in placements {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("raster.pdf");
+        let out = temp.path().join("out.pdf");
+        write_raster_pdf(&input, cm, None);
+        let outcome = redact_raster(
+            &input,
+            json!({ "left": 250.0, "bottom": 350.0, "right": 350.0, "top": 450.0 }),
+            &out,
+        )
+        .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let report: RedactionVerificationReport =
+            serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+        assert_eq!(
+            report.status,
+            RedactionVerificationStatus::Verified,
+            "{name}"
+        );
+        assert_eq!(
+            report.checks.image_pixels,
+            RedactionCheckStatus::Pass,
+            "{name}"
+        );
+        assert_eq!(report.carriers.unwrap().images_modified, 1, "{name}");
+        // The probe is verification evidence: only the redacted PDF is published.
+        assert_eq!(outcome.artifacts.len(), 1, "{name}");
+        assert_eq!(outcome.artifacts[0].path, out, "{name}");
+    }
+}
+
+#[test]
+fn redact_pipeline_refuses_over_clearing_of_a_repeated_image() {
+    if !child("redact_pipeline_refuses_over_clearing_of_a_repeated_image") {
+        return;
+    }
+    // The same image is drawn twice on the page: once under the rectangle and once well away
+    // from it. Both placements share one image object, so clearing the pixels under the
+    // rectangle blanks the same pixels of the second placement. The in-process placement
+    // scan finds only what the rewriter cleared and agrees with it; rendering shows that
+    // content outside the rectangle changed.
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("repeated.pdf");
+    let out = temp.path().join("out.pdf");
+    write_raster_pdf(
+        &input,
+        [200, 0, 0, 200, 100, 300],
+        Some([200, 0, 0, 200, 100, 50]),
+    );
+    let result = redact_raster(
+        &input,
+        json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }),
+        &out,
+    );
+    match result {
+        Err(ToolError::EngineFailure(message)) => {
+            assert_eq!(message, "redaction verification failed");
+        }
+        Err(other) => panic!("expected a failed verification gate, got {other:?}"),
+        Ok(_) => panic!("redaction that damaged content outside the region must not publish"),
+    }
+    assert!(!out.exists(), "nothing may be published on a failed gate");
+}
+
 #[test]
 fn redact_pipeline_counts_indirect_annotations_and_vector_paths() {
     if !child("redact_pipeline_counts_indirect_annotations_and_vector_paths") {

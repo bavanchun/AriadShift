@@ -8,6 +8,8 @@ mod normalize;
 mod page;
 #[cfg(feature = "codecs")]
 pub mod pixels;
+#[cfg(feature = "codecs")]
+mod probe;
 pub mod scrub;
 mod signatures;
 pub mod stream;
@@ -17,6 +19,8 @@ mod verify_text;
 pub use crate::xobject::Matrix;
 #[cfg(feature = "codecs")]
 pub use pixels::{verify_rendered_pixels, verify_rendered_pixels_with_overlay};
+#[cfg(feature = "codecs")]
+pub use probe::{MAX_PROBE_PAGES, ProbePage, probe_pages, verify_probe_render};
 pub use signatures::has_signatures;
 
 use ariad_core::{
@@ -591,6 +595,41 @@ pub fn rewrite_document_with_evidence(
     ),
     PdfError,
 > {
+    rewrite_document_inner(bytes, params, plan, geometry, limits, ctx, false)
+}
+
+/// Builds the render probe of a redaction: the document [`rewrite_document_with_evidence`]
+/// produces, except that the cover over each rectangle (opaque fill and overlay text) is left
+/// out. Rendering it shows what the rewrite left of the page content under the cover.
+///
+/// The probe is verification evidence only. It must never be published as redacted output.
+pub fn rewrite_document_probe(
+    bytes: &[u8],
+    params: &RedactParams,
+    plan: &RedactionPlan,
+    geometry: &RedactGeometry,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<Vec<u8>, PdfError> {
+    rewrite_document_inner(bytes, params, plan, geometry, limits, ctx, true).map(|(b, _)| b)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_document_inner(
+    bytes: &[u8],
+    params: &RedactParams,
+    plan: &RedactionPlan,
+    geometry: &RedactGeometry,
+    limits: &Limits,
+    ctx: &ToolCtx,
+    omit_cover: bool,
+) -> Result<
+    (
+        Vec<u8>,
+        ariad_core::tools::params::redact::RedactionCarrierEvidence,
+    ),
+    PdfError,
+> {
     use std::collections::BTreeSet;
     if plan.source_sha256 != crate::writer::sha256_chunks(&[bytes])
         || plan.params_sha256 != params_digest(params)?
@@ -645,8 +684,16 @@ pub fn rewrite_document_with_evidence(
     }
 
     if has_rectangles {
-        let (annots_removed, vectors_inspected) =
-            flat::rewrite(&mut doc, bytes.len(), params, plan, geometry, limits, ctx)?;
+        let (annots_removed, vectors_inspected) = flat::rewrite(
+            &mut doc,
+            bytes.len(),
+            params,
+            plan,
+            geometry,
+            limits,
+            ctx,
+            omit_cover,
+        )?;
         carrier_evidence.annotations_removed += annots_removed;
         carrier_evidence.vectors_inspected += vectors_inspected;
     }
@@ -1674,7 +1721,16 @@ pub fn rewrite_flat_text_content(
                 .into(),
         ));
     }
-    flat::rewrite(&mut doc, bytes.len(), params, plan, geometry, limits, ctx)?;
+    flat::rewrite(
+        &mut doc,
+        bytes.len(),
+        params,
+        plan,
+        geometry,
+        limits,
+        ctx,
+        false,
+    )?;
     scrub::remove_opaque_carriers(&mut doc, ctx)?;
     doc.inner_mut()?.trailer.remove(b"ID");
     let matchers =
