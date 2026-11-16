@@ -451,7 +451,7 @@ def _load_pack_build():
     return module
 
 
-def test_prune_bundled_installers_removes_pip_launchers(tmp_path):
+def test_prune_bundled_installers_removes_pip_launchers(tmp_path, monkeypatch):
     """prune_bundled_installers strips pre-installed pip, its distlib EXEs, and scripts."""
     pack_build = _load_pack_build()
     py_env = tmp_path / "python-env"
@@ -472,6 +472,44 @@ def test_prune_bundled_installers_removes_pip_launchers(tmp_path):
         record.read_text(encoding="utf-8") + "../../../bin/pip,,\n",
         encoding="utf-8",
     )
+
+    # Simulate Windows file-locking semantics: refuse unlinking RECORD while it is open.
+    open_records: set[Path] = set()
+    real_open = Path.open
+    real_unlink = Path.unlink
+
+    class _TrackedFile:
+        def __init__(self, inner, tracked_path: Path):
+            self._inner = inner
+            self._tracked_path = tracked_path
+
+        def __enter__(self):
+            open_records.add(self._tracked_path)
+            return self._inner.__enter__()
+
+        def __exit__(self, *exc):
+            try:
+                return self._inner.__exit__(*exc)
+            finally:
+                open_records.discard(self._tracked_path)
+
+        def __getattr__(self, item):
+            return getattr(self._inner, item)
+
+    def guarded_open(self: Path, *args, **kwargs):
+        handle = real_open(self, *args, **kwargs)
+        resolved = self.resolve()
+        if resolved == record.resolve():
+            return _TrackedFile(handle, resolved)
+        return handle
+
+    def guarded_unlink(self: Path, *args, **kwargs):
+        if self.resolve() in open_records:
+            raise PermissionError(f"WinError 32 simulation: {self} is open")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    monkeypatch.setattr(Path, "unlink", guarded_unlink)
 
     pack_build.prune_bundled_installers(py_env, site)
 

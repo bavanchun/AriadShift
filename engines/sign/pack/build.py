@@ -199,17 +199,18 @@ def prune_bundled_installers(py_env: Path, site: Path) -> None:
         record = info / "RECORD"
         if record.is_file():
             with record.open(newline="", encoding="utf-8") as handle:
-                for row in csv.reader(handle):
-                    if not row or not row[0]:
-                        continue
-                    candidate = Path(os.path.normpath(site / row[0]))
-                    parent_ok = candidate.parent.resolve().is_relative_to(py_env_root)
-                    if not parent_ok:
-                        continue
-                    if candidate.is_symlink() or (
-                        candidate.is_file() and candidate.resolve().is_relative_to(py_env_root)
-                    ):
-                        candidate.unlink(missing_ok=True)
+                rows = list(csv.reader(handle))
+            for row in rows:
+                if not row or not row[0]:
+                    continue
+                candidate = Path(os.path.normpath(site / row[0]))
+                parent_ok = candidate.parent.resolve().is_relative_to(py_env_root)
+                if not parent_ok:
+                    continue
+                if candidate.is_symlink() or (
+                    candidate.is_file() and candidate.resolve().is_relative_to(py_env_root)
+                ):
+                    candidate.unlink(missing_ok=True)
         shutil.rmtree(info, ignore_errors=True)
 
     for pkg_dir in ("pip", "setuptools", "wheel", "pkg_resources", "_distutils_hack"):
