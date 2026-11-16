@@ -228,6 +228,13 @@ pub fn probe_pages(
         if !may_paint_raster(source.inner(), &resources) {
             continue;
         }
+        // Checked on the region as given, before the margin widens it: a region this thin
+        // leaves nothing to look inside once its edge pixels are set aside.
+        if regions.iter().any(is_thin) {
+            return Err(redaction_refused(
+                "region too thin to verify image pixels by rendering",
+            ));
+        }
         let mut allowed = Vec::new();
         for selected in plan.selected_characters(page).unwrap_or_default() {
             let bbox = geometry
@@ -972,5 +979,54 @@ mod tests {
             "redaction refused: too many pages to verify image pixels by rendering"
         );
         assert_eq!(run(None).unwrap().len(), count);
+    }
+
+    #[test]
+    fn a_thin_region_is_refused_by_probe_pages_before_it_is_widened() {
+        use ariad_core::tools::params::{
+            CropRect,
+            redact::{RedactParams, RedactionScope, RedactionTarget},
+            redact_internal::{RedactGeometry, RedactGeometryPage},
+        };
+        let bytes = image_pages_document(1);
+        let geometry = RedactGeometry {
+            schema: "ariad-redact-geometry/1".into(),
+            source_sha256: crate::writer::sha256_chunks(&[&bytes]),
+            page_count: 1,
+            pages: vec![RedactGeometryPage {
+                page: 1,
+                width: 100.0,
+                height: 100.0,
+                rotation: 0,
+                chars: Vec::new(),
+            }],
+        };
+        let (limits, ctx) = (Limits::local(), ToolCtx::new());
+        let run = |right: f64| {
+            let params = RedactParams {
+                targets: vec![RedactionTarget::Rectangle {
+                    page: 1,
+                    rect: CropRect {
+                        left: 10.0,
+                        bottom: 10.0,
+                        right,
+                        top: 40.0,
+                    },
+                }],
+                color: None,
+                overlay_text: None,
+                scope: RedactionScope::default(),
+                invalidate_signatures: false,
+            };
+            let plan = super::super::plan(&bytes, &params, &geometry, &limits, &ctx).unwrap();
+            probe_pages(&bytes, &bytes, &plan, &geometry, &limits, &ctx)
+        };
+        // 1.5 pt wide: widened by the pixel margin it would pass; as given it is too thin.
+        let error = run(11.5).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "redaction refused: region too thin to verify image pixels by rendering"
+        );
+        assert_eq!(run(40.0).unwrap().len(), 1);
     }
 }
