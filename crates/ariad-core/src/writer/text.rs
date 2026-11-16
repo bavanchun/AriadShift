@@ -1,6 +1,7 @@
 //! Plain text document writer producing human-readable text.
 
 use crate::{
+    format::Format,
     ir::{Block, Document, Inline, TableCell},
     limits::Limits,
     warning::{Warning, WarningCode},
@@ -32,7 +33,8 @@ pub fn write(document: &Document) -> WriteOutput {
         || doc.meta.date.is_some()
         || doc.meta.subject.is_some()
         || !doc.meta.keywords.is_empty();
-    if has_metadata {
+    // PDF metadata is the reader's own bookkeeping, so dropping it is not worth a warning.
+    if has_metadata && doc.meta.source_format != Some(Format::Pdf) {
         writer.warn(
             WarningCode::UnsupportedNode,
             "document metadata is not supported in plain text output and was dropped",
@@ -1104,6 +1106,78 @@ mod tests {
                 .iter()
                 .any(|msg| msg.contains("rowspan and colspan"))
         );
+    }
+
+    fn document_with(meta: Metadata, body: Vec<Block>) -> Document {
+        Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
+            version: crate::ir::IR_VERSION.to_owned(),
+            meta,
+            body,
+            assets: Default::default(),
+            layout: None,
+            provenance: None,
+            furniture: vec![],
+        }
+    }
+
+    fn metadata_warning_count(meta: Metadata) -> usize {
+        write(&document_with(meta, Vec::new()))
+            .warnings
+            .iter()
+            .filter(|warning| warning.message.contains("document metadata"))
+            .count()
+    }
+
+    #[test]
+    fn metadata_warning_is_suppressed_only_for_pdf_sources() {
+        let with_title = |source_format| Metadata {
+            title: Some("Title".into()),
+            source_format,
+            ..Default::default()
+        };
+        assert_eq!(metadata_warning_count(with_title(Some(Format::Pdf))), 0);
+        assert_eq!(
+            metadata_warning_count(with_title(Some(Format::Markdown))),
+            1
+        );
+        assert_eq!(metadata_warning_count(with_title(None)), 1);
+    }
+
+    #[test]
+    fn omits_table_columns_beyond_the_limit_with_a_warning() {
+        let cell = |text: String| TableCell {
+            rowspan: 1,
+            colspan: 1,
+            header: None,
+            blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content: vec![Inline::Text { text }],
+            }],
+        };
+        let table = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            caption: None,
+            columns: vec![],
+            head: vec![],
+            body: vec![(0..129).map(|index| cell(format!("c{index}x"))).collect()],
+            footnotes: vec![],
+        };
+        let output = write(&document_with(Metadata::default(), vec![table]));
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning.message == "table columns beyond 128 were omitted")
+        );
+        assert!(output.content.contains("c127x"));
+        assert!(!output.content.contains("c128x"));
     }
 
     #[test]
