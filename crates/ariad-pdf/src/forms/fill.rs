@@ -80,6 +80,8 @@ struct Locator<'a> {
     count: u32,
     fields: HashMap<String, FieldRef>,
     duplicate_names: bool,
+    // Later fields that reuse an earlier field's name, in tree order.
+    duplicates: Vec<(String, FieldRef)>,
     resources: HashMap<*const Object, Arc<Object>>,
 }
 struct Inherited<'a> {
@@ -202,26 +204,29 @@ impl Locator<'_> {
                         .clone()
                 })
             };
-            if let std::collections::hash_map::Entry::Vacant(entry) =
-                self.fields.entry(name.clone())
-            {
-                entry.insert(FieldRef {
-                    id,
-                    widgets,
-                    align,
-                    font_size,
-                    default_appearance: default_appearance.clone(),
-                    standard_font: appearance::standard_font(
-                        self.doc,
-                        &default_appearance,
-                        resources,
-                        self.limits.max_nesting_depth,
-                    ),
-                    resources: shared_resources,
-                    has_appearance_font,
-                });
-            } else {
-                self.duplicate_names = true;
+            let reference = FieldRef {
+                id,
+                widgets,
+                align,
+                font_size,
+                default_appearance: default_appearance.clone(),
+                standard_font: appearance::standard_font(
+                    self.doc,
+                    &default_appearance,
+                    resources,
+                    self.limits.max_nesting_depth,
+                ),
+                resources: shared_resources,
+                has_appearance_font,
+            };
+            match self.fields.entry(name.clone()) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(reference);
+                }
+                std::collections::hash_map::Entry::Occupied(_) => {
+                    self.duplicate_names = true;
+                    self.duplicates.push((name.clone(), reference));
+                }
             }
         }
         for child in fields {
@@ -242,11 +247,30 @@ impl Locator<'_> {
 }
 type LocatedFields = (HashMap<String, FieldRef>, Option<Vec<ObjectId>>, bool);
 
+/// Locate fields by name; when names repeat, the first field in tree order wins.
 pub(super) fn locate(
     doc: &Document,
     limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<LocatedFields, PdfError> {
+    let (fields, _, calculations, duplicate_names) = locate_all(doc, limits, ctx)?;
+    Ok((fields, calculations, duplicate_names))
+}
+
+type AllLocatedFields = (
+    HashMap<String, FieldRef>,
+    Vec<(String, FieldRef)>,
+    Option<Vec<ObjectId>>,
+    bool,
+);
+
+/// Locate fields like [`locate`], also returning the later fields whose names
+/// repeat an earlier one, so callers can address every widget by page.
+pub(super) fn locate_all(
+    doc: &Document,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<AllLocatedFields, PdfError> {
     let root = catalog_object_id(doc)?;
     let catalog = doc.get_dictionary(root).map_err(|_| PdfError::Malformed)?;
     let form = catalog
@@ -262,6 +286,7 @@ pub(super) fn locate(
         count: 0,
         fields: HashMap::new(),
         duplicate_names: false,
+        duplicates: Vec::new(),
         resources: HashMap::new(),
     };
     let mut calculations = None;
@@ -309,7 +334,12 @@ pub(super) fn locate(
             }
         }
     }
-    Ok((locator.fields, calculations, locator.duplicate_names))
+    Ok((
+        locator.fields,
+        locator.duplicates,
+        calculations,
+        locator.duplicate_names,
+    ))
 }
 
 pub(super) fn widget_rect(

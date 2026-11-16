@@ -43,7 +43,7 @@ use crate::{
             InputRef, OutputTarget, ToolError, ToolEvent, ToolMetrics, ToolRequest,
             run_tool_with_clock,
         },
-        secrets::SecretBag,
+        secrets::{SecretBag, SecretScrubber},
     },
     workspace::Workspace,
 };
@@ -297,6 +297,18 @@ pub(crate) fn run_recipe_with_sources(
 ) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
     run_recipe_inner(request, &mut |_: RecipeEvent| {})
         .map_err(|e| e.scrubbed(&request.secrets.scrubber()))
+}
+
+/// Copies a final step output into `<workspace>/out/` without following planted links there.
+fn stage_final_item(
+    workspace: &Workspace,
+    source: &Path,
+    staged_name: &str,
+    scrubber: &SecretScrubber,
+) -> Result<PathBuf, ToolError> {
+    let bytes =
+        fs::read(source).map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+    super::run::write_staged_artifact(workspace, staged_name, &bytes, scrubber)
 }
 
 fn run_recipe_inner(
@@ -698,11 +710,8 @@ fn run_recipe_inner(
     let mut staged_final = Vec::with_capacity(current_items.len());
     for (idx, item) in current_items.iter().enumerate() {
         let index_1_based = idx + 1;
-        let staged_file = workspace
-            .output_dir()
-            .join(format!("final-{idx:03}.{}", item.format));
-        fs::copy(&item.path, &staged_file)
-            .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+        let staged_name = format!("final-{idx:03}.{}", item.format);
+        let staged_file = stage_final_item(&workspace, &item.path, &staged_name, &scrubber)?;
 
         let target_name = if let Some(ref template) = request.recipe.naming {
             let title = if template.contains("{title}") {
@@ -900,5 +909,32 @@ fn map_convert_error(err: ConvertError) -> ToolError {
         | ConvertError::FailedWithMemoryHint { .. }
         | ConvertError::EngineUnavailable { .. }
         | ConvertError::Failed => ToolError::EngineFailure(err.to_string()),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stage_final_item_does_not_follow_planted_symlink() {
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.pdf");
+        fs::write(&victim, b"untouched-recipe-victim").unwrap();
+        let source = outside.path().join("step-output.pdf");
+        fs::write(&source, b"%PDF-1.7\nfinal").unwrap();
+
+        let workspace = Workspace::new().unwrap();
+        let planted = workspace.output_dir().join("final-000.pdf");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+        let staged = stage_final_item(&workspace, &source, "final-000.pdf", &SecretScrubber::new())
+            .expect("staging replaces the planted link");
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-recipe-victim");
+        assert_eq!(staged, planted);
+        let meta = fs::symlink_metadata(&staged).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        assert_eq!(fs::read(&staged).unwrap(), b"%PDF-1.7\nfinal");
     }
 }

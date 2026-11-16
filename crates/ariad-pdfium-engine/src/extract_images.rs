@@ -119,7 +119,10 @@ fn validate_nested_references(
     depth: usize,
 ) -> Result<(), EngineFailure> {
     if depth > 16 {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF reference nesting exceeds the depth limit.",
+        ));
     }
     match resolve(Some(doc), object)?.1 {
         Object::Array(items) => {
@@ -143,7 +146,10 @@ fn resolve_tree(
     depth: usize,
 ) -> Result<Object, EngineFailure> {
     if depth > 16 {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF object resolution nesting exceeds the depth limit.",
+        ));
     }
     let value = resolve(Some(doc), value)?.1;
     match value {
@@ -878,10 +884,23 @@ fn visit_stream(
     if state
         .allowed_ids
         .is_some_and(|allowed| !allowed.contains(&id))
-        || depth > state.max_depth
-        || !active.insert(id)
     {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF stream is outside the inspected execution scope.",
+        ));
+    }
+    if depth > state.max_depth {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            crate::execution_budget::CONTENT_NESTING_TOO_DEEP,
+        ));
+    }
+    if !active.insert(id) {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            crate::execution_budget::CONTENT_RECURSION,
+        ));
     }
     let is_page = state.page_contents.contains(&id);
     let stream = state
@@ -1072,13 +1091,23 @@ fn visit_page_execution_streams(
         let annotations = resolve(Some(state.doc), annotations)?
             .1
             .as_array()
-            .map_err(|_| EngineFailure::limit_exceeded())?;
+            .map_err(|_| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    crate::execution_budget::ANNOTS_NOT_ARRAY,
+                )
+            })?;
         let mut ap_roots = Vec::new();
         for annotation in annotations {
             let annotation = resolve(Some(state.doc), annotation)?
                 .1
                 .as_dict()
-                .map_err(|_| EngineFailure::limit_exceeded())?;
+                .map_err(|_| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        crate::execution_budget::ANNOTATION_NOT_DICTIONARY,
+                    )
+                })?;
             if let Ok(appearance) = annotation.get(b"AP") {
                 crate::execution_budget::stream_ids(state.doc, appearance, true, 0, &mut ap_roots)?;
             }
@@ -2425,6 +2454,26 @@ fn jpx_dimensions(data: &[u8]) -> Result<(u64, u64, u64, u64), EngineFailure> {
     ))
 }
 
+const COLOR_SPACE_TOO_DEEP: &str = "Image color space nesting exceeds the limit.";
+const COLOR_SPACE_CYCLE: &str = "Image color space references are cyclic or too deep.";
+const COLOR_SPACE_UNRESOLVED_REFERENCE: &str = "Image color space reference cannot be resolved.";
+const COLOR_SPACE_PATTERN: &str = "Pattern color spaces are not supported for images.";
+const COLOR_SPACE_UNDEFINED: &str = "Image color space resource is not defined.";
+const COLOR_SPACE_NESTED_RESOURCE: &str = "Nested image color space cannot name a resource.";
+const INDEXED_BASE_RESOURCE: &str = "Indexed image base color space cannot name a resource.";
+const COLOR_SPACE_MALFORMED: &str = "Image color space definition is malformed.";
+
+const fn color_space_failure(message: &'static str) -> EngineFailure {
+    EngineFailure::new(ErrorCode::LimitExceeded, message)
+}
+
+fn is_builtin_color_space_name(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"DeviceGray" | b"G" | b"DeviceRGB" | b"RGB" | b"DeviceCMYK" | b"CMYK" | b"Pattern"
+    )
+}
+
 fn resolve_color_object<'a>(
     doc: Option<&'a lopdf::Document>,
     mut obj: &'a Object,
@@ -2435,13 +2484,13 @@ fn resolve_color_object<'a>(
     while let Object::Reference(id) = obj {
         hops += 1;
         if hops > 16 || !seen_ids.insert(*id) {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(color_space_failure(COLOR_SPACE_CYCLE));
         }
         inserted_ids.push(*id);
-        let document = doc.ok_or_else(EngineFailure::limit_exceeded)?;
+        let document = doc.ok_or_else(|| color_space_failure(COLOR_SPACE_UNRESOLVED_REFERENCE))?;
         obj = document
             .get_object(*id)
-            .map_err(|_| EngineFailure::limit_exceeded())?;
+            .map_err(|_| color_space_failure(COLOR_SPACE_UNRESOLVED_REFERENCE))?;
     }
     Ok(obj)
 }
@@ -2467,7 +2516,7 @@ fn color_components_inner(
     seen_ids: &mut HashSet<PdfObjectId>,
 ) -> Result<u64, EngineFailure> {
     if depth > 16 {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(color_space_failure(COLOR_SPACE_TOO_DEEP));
     }
     let mut inserted_ids = Vec::new();
     let result = (|| -> Result<u64, EngineFailure> {
@@ -2477,14 +2526,23 @@ fn color_components_inner(
                 b"DeviceGray" | b"G" => Ok(1),
                 b"DeviceRGB" | b"RGB" => Ok(3),
                 b"DeviceCMYK" | b"CMYK" => Ok(4),
-                b"Pattern" => Err(EngineFailure::limit_exceeded()),
+                b"Pattern" => Err(color_space_failure(COLOR_SPACE_PATTERN)),
                 other => {
                     // PDFium only resolves resource names at top-level lookup, not chained
                     // resource-to-resource aliases or Indexed/alternate sub-spaces.
-                    if let Some(entry) = scope.and_then(|s| s.get(b"ColorSpace", other)) {
-                        color_components_inner(entry, doc, None, allow_indexed, depth + 1, seen_ids)
-                    } else {
-                        Err(EngineFailure::limit_exceeded())
+                    match scope {
+                        Some(scope) => match scope.get(b"ColorSpace", other) {
+                            Some(entry) => color_components_inner(
+                                entry,
+                                doc,
+                                None,
+                                allow_indexed,
+                                depth + 1,
+                                seen_ids,
+                            ),
+                            None => Err(color_space_failure(COLOR_SPACE_UNDEFINED)),
+                        },
+                        None => Err(color_space_failure(COLOR_SPACE_NESTED_RESOURCE)),
                     }
                 }
             },
@@ -2497,19 +2555,20 @@ fn color_components_inner(
                 let array_res = match first_name {
                     Some(b"Indexed" | b"I") => {
                         if !allow_indexed || parts.len() != 4 {
-                            return Err(EngineFailure::limit_exceeded());
+                            return Err(color_space_failure(COLOR_SPACE_MALFORMED));
                         }
                         let mut hival_ids = Vec::new();
                         let hival_res =
                             resolve_color_object(doc, &parts[2], seen_ids, &mut hival_ids)
                                 .and_then(|v| {
-                                    v.as_i64().map_err(|_| EngineFailure::limit_exceeded())
+                                    v.as_i64()
+                                        .map_err(|_| color_space_failure(COLOR_SPACE_MALFORMED))
                                 })
                                 .and_then(|v| {
                                     (0..=255)
                                         .contains(&v)
                                         .then_some(v)
-                                        .ok_or_else(EngineFailure::limit_exceeded)
+                                        .ok_or_else(|| color_space_failure(COLOR_SPACE_MALFORMED))
                                 });
                         for id in hival_ids {
                             seen_ids.remove(&id);
@@ -2526,34 +2585,46 @@ fn color_components_inner(
                             seen_ids.remove(&id);
                         }
                         if !lookup_ok {
-                            return Err(EngineFailure::limit_exceeded());
+                            return Err(color_space_failure(COLOR_SPACE_MALFORMED));
                         }
 
+                        let mut base_ids = Vec::new();
+                        let base_is_resource =
+                            resolve_color_object(doc, &parts[1], seen_ids, &mut base_ids)
+                                .ok()
+                                .and_then(|v| v.as_name().ok())
+                                .is_some_and(|name| !is_builtin_color_space_name(name));
+                        for id in base_ids {
+                            seen_ids.remove(&id);
+                        }
+                        if base_is_resource {
+                            return Err(color_space_failure(INDEXED_BASE_RESOURCE));
+                        }
                         color_components_inner(&parts[1], doc, None, false, depth + 1, seen_ids)?;
                         Ok(1)
                     }
                     Some(b"Separation") => {
                         if parts.len() != 4 {
-                            return Err(EngineFailure::limit_exceeded());
+                            return Err(color_space_failure(COLOR_SPACE_MALFORMED));
                         }
                         color_components_inner(&parts[2], doc, None, false, depth + 1, seen_ids)?;
                         Ok(1)
                     }
                     Some(b"CalGray") => {
                         if parts.len() != 2 {
-                            return Err(EngineFailure::limit_exceeded());
+                            return Err(color_space_failure(COLOR_SPACE_MALFORMED));
                         }
                         Ok(1)
                     }
                     Some(b"CalRGB" | b"Lab") => {
                         if parts.len() != 2 {
-                            return Err(EngineFailure::limit_exceeded());
+                            return Err(color_space_failure(COLOR_SPACE_MALFORMED));
                         }
                         Ok(3)
                     }
                     Some(b"DeviceN" | b"NChannel") => {
                         if !matches!(parts.len(), 4 | 5) {
-                            return Err(EngineFailure::limit_exceeded());
+                            return Err(color_space_failure(COLOR_SPACE_MALFORMED));
                         }
                         color_components_inner(&parts[2], doc, None, false, depth + 1, seen_ids)?;
                         let mut list_ids = Vec::new();
@@ -2565,39 +2636,45 @@ fn color_components_inner(
                             .and_then(|v| v.as_array().ok())
                             .and_then(|v| u64::try_from(v.len()).ok())
                             .filter(|v| *v > 0)
-                            .ok_or_else(EngineFailure::limit_exceeded);
+                            .ok_or_else(|| color_space_failure(COLOR_SPACE_MALFORMED));
                         for id in list_ids {
                             seen_ids.remove(&id);
                         }
                         count
                     }
                     Some(b"ICCBased") => {
-                        let profile = parts.get(1).ok_or_else(EngineFailure::limit_exceeded)?;
+                        let profile = parts
+                            .get(1)
+                            .ok_or_else(|| color_space_failure(COLOR_SPACE_MALFORMED))?;
                         let mut profile_ids = Vec::new();
                         let components =
                             resolve_color_object(doc, profile, seen_ids, &mut profile_ids)
                                 .and_then(|v| {
-                                    v.as_stream().map_err(|_| EngineFailure::limit_exceeded())
+                                    v.as_stream()
+                                        .map_err(|_| color_space_failure(COLOR_SPACE_MALFORMED))
                                 })
                                 .and_then(|s| {
                                     s.dict
                                         .get(b"N")
-                                        .map_err(|_| EngineFailure::limit_exceeded())
+                                        .map_err(|_| color_space_failure(COLOR_SPACE_MALFORMED))
                                 })
                                 .and_then(|n| {
                                     let mut n_ids = Vec::new();
                                     let val = resolve_color_object(doc, n, seen_ids, &mut n_ids)
                                         .and_then(|v| {
-                                            v.as_i64().map_err(|_| EngineFailure::limit_exceeded())
+                                            v.as_i64().map_err(|_| {
+                                                color_space_failure(COLOR_SPACE_MALFORMED)
+                                            })
                                         })
                                         .and_then(|v| {
-                                            u64::try_from(v)
-                                                .map_err(|_| EngineFailure::limit_exceeded())
+                                            u64::try_from(v).map_err(|_| {
+                                                color_space_failure(COLOR_SPACE_MALFORMED)
+                                            })
                                         })
                                         .and_then(|v| {
-                                            (v > 0)
-                                                .then_some(v)
-                                                .ok_or_else(EngineFailure::limit_exceeded)
+                                            (v > 0).then_some(v).ok_or_else(|| {
+                                                color_space_failure(COLOR_SPACE_MALFORMED)
+                                            })
                                         });
                                     for id in n_ids {
                                         seen_ids.remove(&id);
@@ -2609,14 +2686,14 @@ fn color_components_inner(
                         }
                         components
                     }
-                    _ => Err(EngineFailure::limit_exceeded()),
+                    _ => Err(color_space_failure(COLOR_SPACE_MALFORMED)),
                 };
                 for id in first_ids {
                     seen_ids.remove(&id);
                 }
                 array_res
             }
-            _ => Err(EngineFailure::limit_exceeded()),
+            _ => Err(color_space_failure(COLOR_SPACE_MALFORMED)),
         }
     })();
     for id in inserted_ids {
@@ -2932,13 +3009,19 @@ fn preflight_content_inner(
                 b"[" | b"<<" => {
                     nesting += 1;
                     if nesting >= 63 {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image dictionary nesting exceeds the limit.",
+                        ));
                     }
                 }
                 b"]" | b">>" => {
-                    nesting = nesting
-                        .checked_sub(1)
-                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    nesting = nesting.checked_sub(1).ok_or_else(|| {
+                        EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image dictionary has an unmatched closing delimiter.",
+                        )
+                    })?;
                     if nesting == 0 {
                         filter_array = false;
                         color_array = false;
@@ -3061,10 +3144,13 @@ fn preflight_content_inner(
                         Some(b"Indexed" | b"I")
                     ) && !matches!(items.get(1), Some(Object::Name(_)))
                     {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image Indexed base color space must be a name.",
+                        ));
                     }
                 }
-                _ => return Err(EngineFailure::limit_exceeded()),
+                _ => return Err(color_space_failure(COLOR_SPACE_MALFORMED)),
             }
             color_components(colorspace, Some(doc), Some(color_scope), 0)?;
         }
@@ -3258,34 +3344,31 @@ fn preflight_content_inner(
                 cursor += inline_run_length_len(ctx, &bytes[cursor..], decoded_cap)?;
             }
             Some(Object::Name(name)) if name == b"LZWDecode" || name == b"LZW" => {
-                let early = match dict.get(b"DP").or_else(|_| dict.get(b"DecodeParms")) {
-                    Ok(value) => {
-                        let params = resolve(Some(doc), value)?.1;
-                        let params = if let Object::Array(items) = params {
-                            items.first().ok_or_else(EngineFailure::limit_exceeded)?
-                        } else {
-                            params
-                        };
-                        if matches!(params, Object::Null) {
-                            1
-                        } else {
-                            let params = resolve(Some(doc), params)?
-                                .1
-                                .as_dict()
-                                .map_err(|_| EngineFailure::limit_exceeded())?;
-                            match params.get(b"EarlyChange") {
-                                Ok(value) => resolve(Some(doc), value)?
-                                    .1
-                                    .as_i64()
-                                    .map_err(|_| EngineFailure::limit_exceeded())?,
-                                Err(_) => 1,
-                            }
-                        }
-                    }
-                    Err(_) => 1,
+                let early = match inline_decode_params(dict)
+                    .and_then(|params| params.get(b"EarlyChange").ok())
+                {
+                    Some(value) => resolve(Some(doc), value)
+                        .map_err(|_| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Inline LZWDecode EarlyChange cannot be resolved.",
+                            )
+                        })?
+                        .1
+                        .as_i64()
+                        .map_err(|_| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Inline LZWDecode EarlyChange is not an integer.",
+                            )
+                        })?,
+                    None => 1,
                 };
                 if !matches!(early, 0 | 1) {
-                    return Err(EngineFailure::limit_exceeded());
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline LZWDecode EarlyChange must be 0 or 1.",
+                    ));
                 }
                 cursor += inline_lzw_len(ctx, &bytes[cursor..], decoded_cap, early as usize)?;
             }
@@ -3293,12 +3376,12 @@ fn preflight_content_inner(
                 // Group 4's vertical-zero code (1) emits a row identical to the
                 // preceding all-white row. Restrict this decoder to that subset,
                 // with a declared row count and no end-of-block marker.
-                let params = dict
-                    .get(b"DP")
-                    .or_else(|_| dict.get(b"DecodeParms"))
-                    .map_err(|_| EngineFailure::limit_exceeded())?
-                    .as_dict()
-                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let params = inline_decode_params(dict).ok_or_else(|| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline CCITTFaxDecode requires DecodeParms.",
+                    )
+                })?;
                 let integer = |key: &[u8]| params.get(key).ok().and_then(|v| v.as_i64().ok());
                 let flag = |key: &[u8]| params.get(key).ok().and_then(|v| v.as_bool().ok());
                 let width = dict
@@ -3306,29 +3389,53 @@ fn preflight_content_inner(
                     .or_else(|_| dict.get(b"W"))
                     .ok()
                     .and_then(|v| v.as_i64().ok());
-                if integer(b"K") != Some(-1)
-                    || integer(b"Columns") != width
-                    || integer(b"Rows") != i64::try_from(height).ok()
-                    || flag(b"EndOfBlock") != Some(false)
-                    || flag(b"EncodedByteAlign").unwrap_or(false)
-                    || flag(b"EndOfLine").unwrap_or(false)
-                {
-                    return Err(EngineFailure::limit_exceeded());
+                let unsupported =
+                    |message: &'static str| EngineFailure::new(ErrorCode::LimitExceeded, message);
+                if integer(b"K") != Some(-1) {
+                    return Err(unsupported("Inline CCITTFaxDecode K must be -1."));
                 }
-                let length = height
-                    .checked_add(7)
-                    .ok_or_else(EngineFailure::limit_exceeded)?
-                    / 8;
+                if integer(b"Columns") != width {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode Columns must match the image width.",
+                    ));
+                }
+                if integer(b"Rows") != i64::try_from(height).ok() {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode Rows must match the image height.",
+                    ));
+                }
+                if flag(b"EndOfBlock") != Some(false) {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode EndOfBlock must be false.",
+                    ));
+                }
+                if flag(b"EncodedByteAlign").unwrap_or(false) {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode EncodedByteAlign is unsupported.",
+                    ));
+                }
+                if flag(b"EndOfLine").unwrap_or(false) {
+                    return Err(unsupported(
+                        "Inline CCITTFaxDecode EndOfLine is unsupported.",
+                    ));
+                }
+                let length = height.checked_add(7).ok_or_else(|| {
+                    unsupported("Inline CCITTFaxDecode row count overflows the data length.")
+                })? / 8;
                 let end = cursor
                     .checked_add(length)
                     .filter(|end| *end <= bytes.len())
-                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                    .ok_or_else(|| {
+                        unsupported("Inline CCITTFaxDecode data is shorter than its row count.")
+                    })?;
                 for row in 0..height {
                     if row.is_multiple_of(1024) {
                         ctx.check()?;
                     }
                     if bytes[cursor + row / 8] & (0x80 >> (row % 8)) == 0 {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(unsupported(
+                            "Inline CCITTFaxDecode row is not a vertical-zero code.",
+                        ));
                     }
                 }
                 cursor = end;
@@ -3347,21 +3454,15 @@ fn preflight_content_inner(
         if !filters.is_empty() {
             let lossless_count = filters.len() - usize::from(terminal.is_some());
             let mut payload = bytes[data_start..cursor].to_vec();
-            let params = dict
-                .get(b"DP")
-                .or_else(|_| dict.get(b"DecodeParms"))
-                .ok()
-                .map(|v| resolve_tree(doc, v, 0))
+            // At most one filter remains, so PDFium's first-filter parameter
+            // selection applies to every lossless stage.
+            let params = inline_decode_params(dict)
+                .map(|params| resolve_tree(doc, &Object::Dictionary(params.clone()), 0))
                 .transpose()?;
             for (index, filter) in filters[..lossless_count].iter().enumerate() {
                 let mut decode_dict = Dictionary::new();
                 decode_dict.set("Filter", Object::Name(filter.to_vec()));
-                let param = match &params {
-                    Some(Object::Array(items)) => items.get(index),
-                    Some(value) => Some(value),
-                    None => None,
-                };
-                if let Some(value) = param {
+                if let Some(value) = params.as_ref().filter(|_| index == 0) {
                     decode_dict.set("DecodeParms", value.clone());
                 }
                 let cap = if terminal.is_none() && index + 1 == lossless_count {
@@ -3441,7 +3542,15 @@ fn preflight_content_inner(
                     continue;
                 }
                 let mut normalized = value.clone();
-                if full == b"Filter" {
+                if full == b"DecodeParms" && !filters.is_empty() {
+                    // Emit only the parameters PDFium pairs with the first
+                    // filter, so the rewritten scalar `/Filter` keeps them.
+                    validate_inline_decode_params(value)?;
+                    match inline_decode_params(dict) {
+                        Some(params) => normalized = Object::Dictionary(params.clone()),
+                        None => continue,
+                    }
+                } else if full == b"Filter" {
                     normalized = Object::Name(
                         filters
                             .first()
@@ -3452,11 +3561,11 @@ fn preflight_content_inner(
                     let first = match &mut normalized {
                         Object::Array(items) => items
                             .first_mut()
-                            .ok_or_else(EngineFailure::limit_exceeded)?,
+                            .ok_or_else(|| color_space_failure(COLOR_SPACE_MALFORMED))?,
                         other => other,
                     };
                     let Object::Name(name) = first else {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(color_space_failure(COLOR_SPACE_MALFORMED));
                     };
                     *name = match name.as_slice() {
                         b"G" => b"DeviceGray".to_vec(),
@@ -4098,15 +4207,38 @@ fn scan_do_operators(
 /// `/Filter` is an array. A PNG predictor (`/Predictor >= 10`) adds exactly
 /// one tag byte per row to the raw decoder output; parameters PDFium ignores
 /// must not grant that overhead.
-fn png_predictor_enabled(dict: &Dictionary) -> bool {
+/// Selects the decode parameters PDFium's `CPDF_StreamParser::ReadInlineStream`
+/// pairs with an inline image's first filter: `DP[0]` when both `/Filter` and
+/// `/DecodeParms` are arrays, the `/DecodeParms` dictionary when `/Filter` is a
+/// name, and none for any other shape or for a non-dictionary entry.
+fn inline_decode_params(dict: &Dictionary) -> Option<&Dictionary> {
     let get = |long: &[u8], short: &[u8]| dict.get(long).or_else(|_| dict.get(short)).ok();
-    let params = match (get(b"Filter", b"F"), get(b"DecodeParms", b"DP")) {
-        (Some(Object::Array(_)), Some(Object::Array(items))) => items.first(),
-        (Some(Object::Array(_)), _) | (_, Some(Object::Array(_))) | (None, _) => None,
-        (Some(_), params) => params,
-    };
-    params
-        .and_then(|params| params.as_dict().ok())
+    match (get(b"Filter", b"F")?, get(b"DecodeParms", b"DP")?) {
+        (Object::Array(_), Object::Array(items)) => items.first()?.as_dict().ok(),
+        (Object::Array(_), _) | (_, Object::Array(_)) => None,
+        (_, params) => params.as_dict().ok(),
+    }
+}
+
+/// Validates an inline `/DecodeParms` value before it is rewritten as the
+/// selected parameters of [`inline_decode_params`]. Only the first entry of
+/// an array, the one PDFium can select, may be a flat parameter dictionary;
+/// later entries must stay scalar, as before parameter arrays were unwrapped.
+fn validate_inline_decode_params(value: &Object) -> Result<(), EngineFailure> {
+    match value {
+        Object::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                let depth = usize::from(index > 0 || !matches!(item, Object::Dictionary(_)));
+                crate::content_writer::validate_object(item, depth)?;
+            }
+            Ok(())
+        }
+        other => crate::content_writer::validate_object(other, 0),
+    }
+}
+
+fn png_predictor_enabled(dict: &Dictionary) -> bool {
+    inline_decode_params(dict)
         .and_then(|params| params.get(b"Predictor").ok())
         .and_then(|v| v.as_i64().ok())
         .is_some_and(|n| n >= 10)
@@ -5343,6 +5475,194 @@ mod corpus_tests {
         }
     }
 
+    fn inline_preflight_error(content: &[u8]) -> EngineFailure {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline-reason",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut document_work = 0;
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut document_work,
+        };
+        preflight_content(
+            &ctx,
+            &lopdf::Document::new(),
+            content,
+            1024 * 1024,
+            &mut budget,
+        )
+        .unwrap_err()
+    }
+
+    #[test]
+    fn inline_refusals_name_their_reason() {
+        let deep = format!("{}0{}", "[".repeat(63), "]".repeat(63));
+        let ccitt = |params: &str, data: &[u8]| {
+            let mut content =
+                format!("BI /W 8 /H 8 /IM true /F /CCF /DP << {params} >> ID ").into_bytes();
+            content.extend_from_slice(data);
+            content.extend_from_slice(b" EI");
+            content
+        };
+        let good = "/K -1 /Columns 8 /Rows 8 /EndOfBlock false";
+        let cases: Vec<(Vec<u8>, &str)> = vec![
+            (
+                format!("BI /W 1 /H 1 /BPC 8 /CS /G /X {deep} ID x EI").into_bytes(),
+                "Inline image dictionary nesting exceeds the limit.",
+            ),
+            (
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /X ] ID x EI".to_vec(),
+                "Inline image dictionary has an unmatched closing delimiter.",
+            ),
+            (
+                b"BI /W 8 /H 8 /IM true /F /LZW /DP << /EarlyChange /A >> ID x EI".to_vec(),
+                "Inline LZWDecode EarlyChange is not an integer.",
+            ),
+            (
+                b"BI /W 8 /H 8 /IM true /F /LZW /DP << /EarlyChange 2 >> ID x EI".to_vec(),
+                "Inline LZWDecode EarlyChange must be 0 or 1.",
+            ),
+            (
+                b"BI /W 8 /H 8 /IM true /F /CCF ID x EI".to_vec(),
+                "Inline CCITTFaxDecode requires DecodeParms.",
+            ),
+            (
+                b"BI /W 8 /H 64 /IM true /F /CCF /DP << /K -1 /Columns 8 /Rows 64 \
+                  /EndOfBlock false >> ID x EI"
+                    .to_vec(),
+                "Inline CCITTFaxDecode data is shorter than its row count.",
+            ),
+            (
+                ccitt("/K 0 /Columns 8 /Rows 8 /EndOfBlock false", &[0xff]),
+                "Inline CCITTFaxDecode K must be -1.",
+            ),
+            (
+                ccitt("/K -1 /Columns 9 /Rows 8 /EndOfBlock false", &[0xff]),
+                "Inline CCITTFaxDecode Columns must match the image width.",
+            ),
+            (
+                ccitt("/K -1 /Columns 8 /Rows 9 /EndOfBlock false", &[0xff]),
+                "Inline CCITTFaxDecode Rows must match the image height.",
+            ),
+            (
+                ccitt("/K -1 /Columns 8 /Rows 8 /EndOfBlock true", &[0xff]),
+                "Inline CCITTFaxDecode EndOfBlock must be false.",
+            ),
+            (
+                ccitt(&format!("{good} /EncodedByteAlign true"), &[0xff]),
+                "Inline CCITTFaxDecode EncodedByteAlign is unsupported.",
+            ),
+            (
+                ccitt(&format!("{good} /EndOfLine true"), &[0xff]),
+                "Inline CCITTFaxDecode EndOfLine is unsupported.",
+            ),
+            (
+                ccitt(good, &[0x00]),
+                "Inline CCITTFaxDecode row is not a vertical-zero code.",
+            ),
+        ];
+        for (content, message) in cases {
+            let err = inline_preflight_error(&content);
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{message}");
+            assert_eq!(err.message, message);
+        }
+    }
+
+    #[test]
+    fn out_of_scope_stream_refusal_names_its_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "scope-reason",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let allowed = HashSet::from([(1, 0)]);
+        let page_contents = HashSet::new();
+        let mut state = StreamPreflightState {
+            ctx: &ctx,
+            doc: &doc,
+            max_depth: 8,
+            allowed_ids: Some(&allowed),
+            page_contents: &page_contents,
+            remaining: 1024,
+            rewrite: false,
+            visit_declared: false,
+            decoded_cache: HashMap::new(),
+            visited: HashSet::new(),
+            type3_visited: HashSet::new(),
+            out: BTreeMap::new(),
+            facts: BTreeMap::new(),
+            scoped_ops: HashMap::new(),
+            document_work: 0,
+            rewrite_memo: HashMap::new(),
+            rewrite_counts: None,
+        };
+        let err = visit_stream(
+            &mut state,
+            (2, 0),
+            &crate::execution_budget::Scope::default(),
+            0,
+            &mut HashSet::new(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF stream is outside the inspected execution scope."
+        );
+    }
+
+    #[test]
+    fn nested_depth_refusals_name_their_reason() {
+        let doc = lopdf::Document::new();
+        let mut nested = Object::Integer(0);
+        for _ in 0..18 {
+            nested = Object::Array(vec![nested]);
+        }
+        let err = validate_nested_references(&doc, &nested, 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF reference nesting exceeds the depth limit."
+        );
+        let err = resolve_tree(&doc, &nested, 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF object resolution nesting exceeds the depth limit."
+        );
+    }
+
     #[test]
     fn inline_masks_and_supported_filter_chains_are_checked() {
         use std::io::Write;
@@ -5567,6 +5887,63 @@ mod corpus_tests {
     }
 
     #[test]
+    fn inline_decode_params_are_rewritten_as_the_pdfium_selection() {
+        use std::io::Write as _;
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("rewrite", "pdf.render", paths, Limits::local(), &mut sink);
+        let doc = lopdf::Document::new();
+        let flate = |raw: &[u8]| {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(raw).unwrap();
+            encoder.finish().unwrap()
+        };
+        let rewrite = |dict: &str, raw: &[u8]| {
+            let mut content = format!("BI /W 1 /H 2 /BPC 8 /CS /G {dict} ID ").into_bytes();
+            content.extend_from_slice(&flate(raw));
+            content.extend_from_slice(b" EI");
+            rewrite_preflighted_content(&ctx, &doc, &content, 1 << 20, &mut 0)
+                .map(|(canonical, _, _)| String::from_utf8_lossy(&canonical).into_owned())
+        };
+        let png = "<< /Predictor 15 /Columns 1 >>";
+        let selected = "/Filter /FlateDecode /DecodeParms << /Predictor 15 /Columns 1 >> ";
+        let text = rewrite(&format!("/F [/Fl] /DP [{png}]"), b"\x00\x01\x00\x02").unwrap();
+        assert!(text.contains(selected), "{text}");
+        let text = rewrite(&format!("/F /Fl /DP {png}"), b"\x00\x01\x00\x02").unwrap();
+        assert!(text.contains(selected), "{text}");
+        for dict in [
+            format!("/F [/Fl] /DP {png}"),
+            format!("/F /Fl /DP [{png}]"),
+            "/F [/Fl] /DP [null]".to_owned(),
+            "/F /Fl /DP null".to_owned(),
+        ] {
+            let text = rewrite(&dict, b"\x01\x02").unwrap();
+            assert!(text.contains("/Filter /FlateDecode ID "), "{dict}: {text}");
+            assert!(!text.contains("DecodeParms"), "{dict}: {text}");
+        }
+        // Parameter arrays still refuse nested containers PDFium cannot select.
+        for dict in [
+            format!("/F [/Fl] /DP [{png} {png}]"),
+            "/F [/Fl] /DP [[1]]".to_owned(),
+            "/F [/Fl] /DP [<< /K [1] >>]".to_owned(),
+        ] {
+            let err = rewrite(&dict, b"\x01\x02").unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{dict}");
+            assert_eq!(err.message, crate::content_writer::OPERAND_NESTED, "{dict}");
+        }
+        // Multi-filter arrays stay refused.
+        let err = rewrite("/F [/Fl /Fl] /DP [null null]", b"\x01\x02").unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+    }
+
+    #[test]
     fn inline_png_predictor_overhead_follows_pdfium_decode_params() {
         use std::io::Write as _;
         let dir = tempfile::tempdir().unwrap();
@@ -5612,11 +5989,15 @@ mod corpus_tests {
         refused(run("[/Fl]", png, &tagged));
         // PDFium ignores a /DecodeParms array when /Filter is a name.
         refused(run("/Fl", &format!("[{png}]"), &tagged));
-        // A single-entry filter array with parameter dictionaries is still
-        // refused by the later bounded decode, as before this check.
-        let err = run("[/Fl]", &format!("[{png}]"), &tagged).unwrap_err();
-        assert_eq!(err.code, ErrorCode::LimitExceeded);
-        assert_eq!(err.message, "A resource limit was exceeded.");
+        // PDFium pairs a single-entry filter array with `DP[0]`.
+        run("[/Fl]", &format!("[{png}]"), &tagged).unwrap();
+        refused(run(
+            "[/Fl]",
+            &format!("[{png}]"),
+            &[tagged.as_slice(), b"\x00"].concat(),
+        ));
+        // A null `DP[0]` selects no parameters.
+        refused(run("[/Fl]", "[null]", &tagged));
         // TIFF predictor 2 adds no per-row tag byte.
         refused(run("/Fl", "<< /Predictor 2 /Columns 1 >>", &tagged));
         // Without a predictor the cap is the declared image size.
@@ -6179,7 +6560,34 @@ mod corpus_tests {
         let invalid = Object::Dictionary(dictionary! { "XObject" => 42 });
         let err = parent.child(&doc, Some(&invalid)).map(|_| ()).unwrap_err();
         assert_eq!(err.code, ErrorCode::LimitExceeded);
-        assert_eq!(err.message, "A resource limit was exceeded.");
+        assert_eq!(
+            err.message,
+            crate::execution_budget::RESOURCE_CATEGORY_NOT_DICTIONARY
+        );
+        let err = parent
+            .child(&doc, Some(&Object::Integer(42)))
+            .map(|_| ())
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            crate::execution_budget::RESOURCES_NOT_DICTIONARY
+        );
+        let err = Scope::from_page(&doc, Some(&Object::Reference((999, 0))))
+            .map(|_| ())
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            crate::execution_budget::RESOURCES_CANNOT_BE_RESOLVED
+        );
+        let dangling = Object::Dictionary(dictionary! { "XObject" => Object::Reference((999, 0)) });
+        let err = parent.child(&doc, Some(&dangling)).map(|_| ()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            crate::execution_budget::RESOURCE_CATEGORY_CANNOT_BE_RESOLVED
+        );
         assert_eq!(
             parent
                 .child(&doc, None)
@@ -6481,6 +6889,27 @@ mod corpus_tests {
         });
         let scope = crate::execution_budget::Scope::from_page(&doc, Some(&res)).unwrap();
 
+        // A Separation whose alternate refers back to itself.
+        let cycle_id = doc.new_object_id();
+        doc.objects.insert(
+            cycle_id,
+            Object::Array(vec![
+                Object::Name(b"Separation".to_vec()),
+                Object::Name(b"Spot".to_vec()),
+                Object::Reference(cycle_id),
+                Object::Dictionary(dictionary! {}),
+            ]),
+        );
+        // Seventeen nested Separation alternates exceed the depth of sixteen.
+        let mut deep_separation = Object::Name(b"DeviceGray".to_vec());
+        for _ in 0..17 {
+            deep_separation = Object::Array(vec![
+                Object::Name(b"Separation".to_vec()),
+                Object::Name(b"Spot".to_vec()),
+                deep_separation,
+                Object::Dictionary(dictionary! {}),
+            ]);
+        }
         let count = |obj: Object| color_components(&obj, Some(&doc), Some(&scope), 0);
         assert_eq!(count(Object::Name(b"DeviceGray".to_vec())).unwrap(), 1);
         assert_eq!(count(Object::Name(b"G".to_vec())).unwrap(), 1);
@@ -6501,51 +6930,59 @@ mod corpus_tests {
         assert_eq!(count(Object::Name(b"CsIdxStr".to_vec())).unwrap(), 1);
         assert_eq!(count(Object::Name(b"CsIdxRefLookup".to_vec())).unwrap(), 1);
 
-        for bad in [
-            Object::Name(b"Unknown".to_vec()),
-            Object::Name(b"CsAlias".to_vec()),
-            Object::Name(b"CsIdxResBase".to_vec()),
-            Object::Name(b"CsSepResAlt".to_vec()),
-            Object::Name(b"CsIcc0".to_vec()),
-            Object::Name(b"CsIccNeg".to_vec()),
-            Object::Name(b"CsIccNonStream".to_vec()),
-            Object::Name(b"CsCycA".to_vec()),
-            Object::Name(b"CsPat".to_vec()),
+        let indexed = |base: &[u8], hival: i64| {
             Object::Array(vec![
                 Object::Name(b"Indexed".to_vec()),
-                Object::Name(b"CsPat".to_vec()),
-                Object::Integer(1),
+                Object::Name(base.to_vec()),
+                Object::Integer(hival),
                 Object::String(vec![0; 6], lopdf::StringFormat::Hexadecimal),
-            ]),
-            Object::Array(vec![
-                Object::Name(b"Indexed".to_vec()),
-                Object::Name(b"CsCalR".to_vec()),
-                Object::Integer(1),
-                Object::String(vec![0; 6], lopdf::StringFormat::Hexadecimal),
-            ]),
-            Object::Array(vec![
-                Object::Name(b"Indexed".to_vec()),
-                Object::Name(b"DeviceRGB".to_vec()),
-                Object::Integer(256),
-                Object::String(vec![0; 6], lopdf::StringFormat::Hexadecimal),
-            ]),
-            Object::Array(vec![
-                Object::Name(b"I".to_vec()),
-                Object::Name(b"DeviceRGB".to_vec()),
-                Object::Integer(1),
-            ]),
-            Object::Array(vec![
-                Object::Name(b"DeviceN".to_vec()),
-                Object::Array(vec![]),
-                Object::Name(b"DeviceRGB".to_vec()),
-                Object::Dictionary(dictionary! {}),
-            ]),
+            ])
+        };
+        let name = |name: &[u8]| Object::Name(name.to_vec());
+        for (bad, expected) in [
+            (name(b"Unknown"), COLOR_SPACE_UNDEFINED),
+            (name(b"CsAlias"), COLOR_SPACE_NESTED_RESOURCE),
+            (name(b"CsIdxResBase"), INDEXED_BASE_RESOURCE),
+            (name(b"CsSepResAlt"), COLOR_SPACE_NESTED_RESOURCE),
+            (name(b"CsIcc0"), COLOR_SPACE_MALFORMED),
+            (name(b"CsIccNeg"), COLOR_SPACE_MALFORMED),
+            (name(b"CsIccNonStream"), COLOR_SPACE_MALFORMED),
+            (name(b"CsCycA"), COLOR_SPACE_NESTED_RESOURCE),
+            (name(b"CsPat"), COLOR_SPACE_PATTERN),
+            (name(b"Pattern"), COLOR_SPACE_PATTERN),
+            (indexed(b"Pattern", 1), COLOR_SPACE_PATTERN),
+            (indexed(b"CsPat", 1), INDEXED_BASE_RESOURCE),
+            (indexed(b"CsCalR", 1), INDEXED_BASE_RESOURCE),
+            (indexed(b"DeviceRGB", 256), COLOR_SPACE_MALFORMED),
+            (
+                Object::Array(vec![name(b"I"), name(b"DeviceRGB"), Object::Integer(1)]),
+                COLOR_SPACE_MALFORMED,
+            ),
+            (
+                Object::Array(vec![
+                    name(b"DeviceN"),
+                    Object::Array(vec![]),
+                    name(b"DeviceRGB"),
+                    Object::Dictionary(dictionary! {}),
+                ]),
+                COLOR_SPACE_MALFORMED,
+            ),
+            (Object::Integer(3), COLOR_SPACE_MALFORMED),
+            (Object::Reference(cycle_id), COLOR_SPACE_CYCLE),
+            (
+                Object::Reference((9_999, 0)),
+                COLOR_SPACE_UNRESOLVED_REFERENCE,
+            ),
+            (deep_separation, COLOR_SPACE_TOO_DEEP),
         ] {
             let err = count(bad.clone()).expect_err("invalid color space");
             assert_eq!(err.code, ErrorCode::LimitExceeded, "{bad:?}");
-            // `color_components` reports every invalid family with the generic reason.
-            assert_eq!(err.message, "A resource limit was exceeded.", "{bad:?}");
+            assert_eq!(err.message, expected, "{bad:?}");
         }
+        // Without a document, references cannot be followed.
+        let err = color_components(&Object::Reference(cmyk_ref_id), None, None, 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, COLOR_SPACE_UNRESOLVED_REFERENCE);
     }
 
     #[test]
@@ -6598,7 +7035,7 @@ mod corpus_tests {
         .map(|_| ())
         .expect_err("resource-named Indexed base must fail closed");
         assert_eq!(err.code, ErrorCode::LimitExceeded);
-        assert_eq!(err.message, "A resource limit was exceeded.");
+        assert_eq!(err.message, INDEXED_BASE_RESOURCE);
     }
 
     #[test]
@@ -6820,17 +7257,23 @@ mod corpus_tests {
                 "type3-inherited-font-budget.pdf",
                 "Content execution cost 153103 exceeds limit 100000.",
             ),
-            ("property-deep-array.pdf", "A resource limit was exceeded."),
+            (
+                "property-deep-array.pdf",
+                crate::content_writer::PROPERTY_LIST_UNSUPPORTED,
+            ),
             (
                 "content-executable-containers.pdf",
-                "A resource limit was exceeded.",
+                crate::content_writer::NON_ASCII,
             ),
             (
                 "content-nested-operands.pdf",
-                "A resource limit was exceeded.",
+                crate::content_writer::OPERAND_NESTED,
             ),
-            ("content-non-ascii.pdf", "A resource limit was exceeded."),
-            ("forms-cyclic.pdf", "A resource limit was exceeded."),
+            ("content-non-ascii.pdf", crate::content_writer::NON_ASCII),
+            (
+                "forms-cyclic.pdf",
+                crate::execution_budget::ANNOTATION_NOT_DICTIONARY,
+            ),
             (
                 "inline-string-filter.pdf",
                 "PDF resource operand is ambiguous.",

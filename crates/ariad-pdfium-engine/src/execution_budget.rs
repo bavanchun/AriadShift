@@ -430,6 +430,16 @@ impl Scope {
     }
 }
 
+pub(crate) const CONTENT_NESTING_TOO_DEEP: &str = "Content stream nesting exceeds the depth limit.";
+pub(crate) const CONTENT_RECURSION: &str = "Content stream invokes itself recursively.";
+pub(crate) const ANNOTS_NOT_ARRAY: &str = "Page Annots entry is not an array.";
+pub(crate) const ANNOTATION_NOT_DICTIONARY: &str = "Page annotation is not a dictionary.";
+pub(crate) const RESOURCES_NOT_DICTIONARY: &str = "Resources entry is not a dictionary.";
+pub(crate) const RESOURCE_CATEGORY_NOT_DICTIONARY: &str = "Resource category is not a dictionary.";
+pub(crate) const RESOURCES_CANNOT_BE_RESOLVED: &str = "Resources entry cannot be resolved.";
+pub(crate) const RESOURCE_CATEGORY_CANNOT_BE_RESOLVED: &str =
+    "Resource category cannot be resolved.";
+
 fn categories(
     doc: &lopdf::Document,
     resources: Option<&Object>,
@@ -438,10 +448,11 @@ fn categories(
     let Some(resources) = resources else {
         return Ok(out);
     };
-    let dict = resolve(Some(doc), resources)?
+    let dict = resolve(Some(doc), resources)
+        .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, RESOURCES_CANNOT_BE_RESOLVED))?
         .1
         .as_dict()
-        .map_err(|_| EngineFailure::limit_exceeded())?;
+        .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, RESOURCES_NOT_DICTIONARY))?;
     for category in [
         b"XObject".as_slice(),
         b"Pattern",
@@ -451,10 +462,18 @@ fn categories(
         b"ColorSpace",
     ] {
         if let Ok(value) = dict.get(category) {
-            let values = resolve(Some(doc), value)?
+            let values = resolve(Some(doc), value)
+                .map_err(|_| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        RESOURCE_CATEGORY_CANNOT_BE_RESOLVED,
+                    )
+                })?
                 .1
                 .as_dict()
-                .map_err(|_| EngineFailure::limit_exceeded())?;
+                .map_err(|_| {
+                    EngineFailure::new(ErrorCode::LimitExceeded, RESOURCE_CATEGORY_NOT_DICTIONARY)
+                })?;
             out.insert(
                 category.to_vec(),
                 Rc::new(
@@ -616,8 +635,17 @@ impl Calculator<'_, '_> {
     ) -> Result<ScopedStreamFacts, EngineFailure> {
         let page_contents = page_contents || self.page_contents.contains(&id);
         self.ctx.check()?;
-        if depth > MAX_CONTENT_NESTING_DEPTH || !active.insert(id) {
-            return Err(EngineFailure::limit_exceeded());
+        if depth > MAX_CONTENT_NESTING_DEPTH {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                CONTENT_NESTING_TOO_DEEP,
+            ));
+        }
+        if !active.insert(id) {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                CONTENT_RECURSION,
+            ));
         }
         let mut ancestors: Vec<_> = active.iter().copied().collect();
         ancestors.sort_unstable();
@@ -854,12 +882,15 @@ impl Calculator<'_, '_> {
             let annotations = resolve(Some(self.doc), annotations)?
                 .1
                 .as_array()
-                .map_err(|_| EngineFailure::limit_exceeded())?;
+                .map_err(|_| EngineFailure::new(ErrorCode::LimitExceeded, ANNOTS_NOT_ARRAY))?;
             for annotation in annotations {
-                let annotation = resolve(Some(self.doc), annotation)?
-                    .1
-                    .as_dict()
-                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let annotation =
+                    resolve(Some(self.doc), annotation)?
+                        .1
+                        .as_dict()
+                        .map_err(|_| {
+                            EngineFailure::new(ErrorCode::LimitExceeded, ANNOTATION_NOT_DICTIONARY)
+                        })?;
                 if let Ok(appearance) = annotation.get(b"AP") {
                     stream_ids(self.doc, appearance, true, 0, &mut roots)?;
                 }
@@ -1268,7 +1299,39 @@ mod tests {
         // One more level is refused by the depth check, not by the cost budget.
         let err = run(MAX_CONTENT_NESTING_DEPTH + 1).unwrap_err();
         assert_eq!(err.code, ErrorCode::LimitExceeded);
-        assert_eq!(err.message, "A resource limit was exceeded.");
+        assert_eq!(err.message, CONTENT_NESTING_TOO_DEEP);
+    }
+
+    #[test]
+    fn content_recursion_is_refused_with_a_named_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = Vec::new();
+        let ctx = context(dir.path(), &mut sink);
+        let mut doc = lopdf::Document::new();
+        let id = doc.new_object_id();
+        let stream = lopdf::Stream::new(
+            dictionary! {
+                "Subtype" => "Form",
+                "Resources" => dictionary! { "XObject" => dictionary! { "F" => Object::Reference(id) } },
+            },
+            b"/F Do".to_vec(),
+        );
+        doc.objects.insert(id, Object::Stream(stream));
+        let all = BTreeMap::from([(id, facts(1, &[(b"Do", b"F")]))]);
+        let mut calc = Calculator {
+            ctx: &ctx,
+            doc: &doc,
+            facts: &all,
+            scoped_ops: None,
+            memo: HashMap::new(),
+            glyph_memo: HashMap::new(),
+            page_contents: HashSet::new(),
+        };
+        let err = calc
+            .stream(id, &Scope::default(), 0, &mut HashSet::new())
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, CONTENT_RECURSION);
     }
     #[test]
     fn form_resources_without_category_fall_back_to_page_not_parent() {

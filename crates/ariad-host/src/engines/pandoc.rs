@@ -578,7 +578,10 @@ struct PandocWriterConfig<'a> {
     target_format: &'a str,
 }
 
-fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(), EngineFailure> {
+fn pandoc_writer_command(
+    config: &PandocWriterConfig<'_>,
+    source_date_epoch: Option<OsString>,
+) -> Command {
     let mut command = Command::new(config.binary_path);
     if let Some(reference) = config.reference_doc {
         command.arg("--reference-doc").arg(reference);
@@ -605,7 +608,7 @@ fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(),
         .env("TMPDIR", config.workspace.join("tmp"))
         .env("TMP", config.workspace.join("tmp"))
         .env("TEMP", config.workspace.join("tmp"));
-    if let Some(epoch) = env::var_os("SOURCE_DATE_EPOCH") {
+    if let Some(epoch) = source_date_epoch {
         command.env("SOURCE_DATE_EPOCH", epoch);
     }
     if let Some(path) = env::var_os("PATH") {
@@ -615,6 +618,11 @@ fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(),
     if let Some(system_root) = env::var_os("SYSTEMROOT") {
         command.env("SYSTEMROOT", system_root);
     }
+    command
+}
+
+fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(), EngineFailure> {
+    let mut command = pandoc_writer_command(config, env::var_os("SOURCE_DATE_EPOCH"));
 
     let timeout = config
         .limits
@@ -903,7 +911,38 @@ mod tests {
     use ariad_core::{limits::Limits, protocol::ErrorCode, protocol::Event};
     use tempfile::tempdir;
 
-    use super::{EngineFailure, pandoc_log_warnings, rts_memory_cap_mb};
+    use super::{
+        EngineFailure, PandocWriterConfig, pandoc_log_warnings, pandoc_writer_command,
+        rts_memory_cap_mb,
+    };
+
+    #[test]
+    fn forwards_source_date_epoch_to_the_pandoc_subprocess() {
+        let limits = Limits::default();
+        let workspace = std::path::Path::new("/workspace");
+        let config = PandocWriterConfig {
+            reference_doc: None,
+            binary_path: std::path::Path::new("pandoc"),
+            limits: &limits,
+            work_dir: "/workspace/tmp",
+            workspace,
+            log_path: std::path::Path::new("/workspace/tmp/log.json"),
+            output_path: std::path::Path::new("/workspace/out/document.docx"),
+            target_format: "docx",
+        };
+        let epoch_of = |command: &std::process::Command| {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == "SOURCE_DATE_EPOCH")
+                .map(|(_, value)| value.map(std::ffi::OsStr::to_os_string))
+        };
+
+        let forwarded = pandoc_writer_command(&config, Some("1700000000".into()));
+        assert_eq!(epoch_of(&forwarded), Some(Some("1700000000".into())));
+
+        let absent = pandoc_writer_command(&config, None);
+        assert_eq!(epoch_of(&absent), None);
+    }
 
     #[test]
     fn maps_pandoc_warning_log_entries_to_safe_warning_events() {

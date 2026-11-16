@@ -1,20 +1,18 @@
 //! End-to-end tests for `ashift engines install|remove|verify`, the engine and doctor listings
 //! of installed packs, MCP `list_engines`, and `ashift __pack manifest`.
 
+mod support;
+
 use std::{
     fs,
     io::{BufRead, BufReader, Cursor, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Output, Stdio},
 };
 
 use serde_json::{Value, json};
+use support::engine_probe_path;
 use tempfile::TempDir;
-
-fn engine_probe_path() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
-}
 
 fn probe_file_name() -> String {
     format!("engine-probe{}", std::env::consts::EXE_SUFFIX)

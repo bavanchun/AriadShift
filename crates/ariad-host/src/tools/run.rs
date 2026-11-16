@@ -1097,6 +1097,54 @@ pub(super) fn json_inline_cap(limits: &Limits) -> u64 {
     base
 }
 
+/// Maximum size of a staged engine JSON artifact the host scrubs when secrets are registered
+/// (`64 MiB`, further bounded by `limits.max_decompressed_bytes`).
+///
+/// The cap bounds both the staged input and the scrubbed output: redaction can grow the text
+/// (a one-byte secret becomes the ten-byte `[REDACTED]`), and any token or output expansion
+/// past the cap fails with `limit_exceeded` before the oversized text is allocated. The scrub
+/// holds the staged bytes, the output buffer, one decoded string token and one scrubbed copy of
+/// it, each at most this cap, so its peak memory stays under four times the cap (256 MiB)
+/// whatever `max_decompressed_bytes` allows and whatever the JSON shape. The cap is twice
+/// [`MAX_INLINE_JSON_BYTES`], so every JSON payload small enough to inline, and companion JSON
+/// up to twice that size, can still be scrubbed and published.
+pub(super) const MAX_SCRUB_JSON_BYTES: u64 = 64 * 1024 * 1024;
+
+#[cfg(any(test, feature = "test-probe"))]
+thread_local! {
+    static TEST_SCRUB_JSON_CAP: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Temporarily lowers `scrub_json_cap` on the current thread so tests can verify the
+/// over-cap refusal without allocating >64 MiB payloads.
+#[cfg(any(test, feature = "test-probe"))]
+#[doc(hidden)]
+pub fn with_scrub_json_cap_for_test<T>(cap: u64, f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<u64>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_SCRUB_JSON_CAP.with(|cell| cell.set(self.0));
+        }
+    }
+    let previous = TEST_SCRUB_JSON_CAP.with(|cell| {
+        let old = cell.get();
+        cell.set(Some(cap));
+        old
+    });
+    let _reset = Reset(previous);
+    f()
+}
+
+/// Largest staged engine JSON artifact scrubbed in memory when secrets are registered.
+pub(super) fn scrub_json_cap(limits: &Limits) -> u64 {
+    let base = limits.max_decompressed_bytes.min(MAX_SCRUB_JSON_BYTES);
+    #[cfg(any(test, feature = "test-probe"))]
+    if let Some(override_cap) = TEST_SCRUB_JSON_CAP.with(|cell| cell.get()) {
+        return base.min(override_cap);
+    }
+    base
+}
+
 pub(super) fn report_not_inlined_warning() -> ConvertWarning {
     ConvertWarning {
         code: "report_not_inlined".into(),

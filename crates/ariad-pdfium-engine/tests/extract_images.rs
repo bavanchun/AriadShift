@@ -24,11 +24,14 @@ use pdfium_render::prelude::*;
 use serde_json::Value;
 
 fn pdfium_dir() -> Option<PathBuf> {
-    let raw = std::env::var_os("ARIAD_TEST_PDFIUM_DIR")?;
-    if raw.is_empty() {
-        return None;
-    }
-    Some(PathBuf::from(raw))
+    let dir = std::env::var_os("ARIAD_TEST_PDFIUM_DIR")
+        .filter(|raw| !raw.is_empty())
+        .map(PathBuf::from);
+    assert!(
+        dir.is_some() || std::env::var_os("ARIAD_REQUIRE_PDFIUM_PACK").is_none(),
+        "ARIAD_TEST_PDFIUM_DIR is required"
+    );
+    dir
 }
 
 macro_rules! require_pdfium {
@@ -2051,6 +2054,57 @@ fn inline_filter_payload_boundaries_match_pdfium() {
         let expected = render(&pdfium, &control);
         assert_eq!(render(&pdfium, &input), expected, "original {filter}");
         assert_eq!(render(&pdfium, &canonical), expected, "canonical {filter}");
+    }
+}
+
+#[test]
+fn inline_decode_params_follow_pdfium_first_filter_selection() {
+    let lib_dir = require_pdfium!();
+    // PNG Up predictor: the second row repeats the first, so the decoded
+    // samples equal the raw `[0 255 0 255]` control image.
+    let predicted = zlib_compress(b"\x00\x00\xff\x02\x00\x00");
+    let raw = zlib_compress(b"\x00\xff\x00\xff");
+    let png = "<< /Predictor 15 /Columns 2 >>";
+    let samples = [
+        // `CPDF_StreamParser::ReadInlineStream` pairs `[/Fl]` with `DP[0]`.
+        ("/F [/Fl] /DP [".to_owned() + png + "]", predicted.clone()),
+        ("/F /Fl /DP ".to_owned() + png, predicted),
+        // Mismatched shapes and a null `DP[0]` select no parameters.
+        ("/F [/Fl] /DP ".to_owned() + png, raw.clone()),
+        ("/F /Fl /DP [".to_owned() + png + "]", raw.clone()),
+        ("/F [/Fl] /DP [null]".to_owned(), raw),
+    ];
+    let render = |pdfium: &Pdfium, bytes: &[u8]| {
+        let doc = pdfium.load_pdf_from_byte_slice(bytes, None).unwrap();
+        doc.pages()
+            .get(0)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_size(40, 40))
+            .unwrap()
+            .as_rgba_bytes()
+    };
+    let image = |dict: &str, data: &[u8]| {
+        let mut content =
+            format!("q 10 0 0 10 0 0 cm BI /W 2 /H 2 /BPC 8 /CS /G {dict} ID ").into_bytes();
+        content.extend_from_slice(data);
+        content.extend_from_slice(b" EI Q");
+        pdf_with_content(&content)
+    };
+    let control = image("", b"\x00\xff\x00\xff");
+    for (dict, data) in samples {
+        let input = image(&dict, &data);
+        let ws = TestWorkspace::from_bytes("inline.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx =
+            ToolContext::new("inline", "pdf.render", ws.paths, Limits::local(), &mut sink)
+                .with_library_dir(&lib_dir);
+        let canonical = ctx
+            .load_validated_pdf_bytes()
+            .unwrap_or_else(|err| panic!("{dict}: {err:?}"));
+        let pdfium = ctx.pdfium().unwrap();
+        let expected = render(&pdfium, &control);
+        assert_eq!(render(&pdfium, &input), expected, "original {dict}");
+        assert_eq!(render(&pdfium, &canonical), expected, "canonical {dict}");
     }
 }
 

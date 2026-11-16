@@ -57,11 +57,13 @@ pub(super) fn read_for_tool(
     cancel: &CancellationToken,
     engine_program: Option<&Path>,
 ) -> Result<Document, ToolError> {
+    let scrubber = SecretScrubber::new();
     EditContext {
         workspace,
         limits,
         cancel,
         engine_program,
+        scrubber: &scrubber,
         #[cfg(feature = "typst")]
         clock: inprocess::capture_clock()?,
         started: Instant::now(),
@@ -79,11 +81,13 @@ pub(super) fn write_for_tool(
     cancel: &CancellationToken,
     engine_program: Option<&Path>,
 ) -> Result<(PathBuf, Vec<ConvertWarning>), ToolError> {
+    let scrubber = SecretScrubber::new();
     let mut context = EditContext {
         workspace,
         limits,
         cancel,
         engine_program,
+        scrubber: &scrubber,
         #[cfg(feature = "typst")]
         clock: inprocess::capture_clock()?,
         started: Instant::now(),
@@ -98,6 +102,7 @@ struct EditContext<'a> {
     limits: &'a Limits,
     cancel: &'a CancellationToken,
     engine_program: Option<&'a Path>,
+    scrubber: &'a SecretScrubber,
     #[cfg(feature = "typst")]
     clock: HostClock,
     started: Instant,
@@ -186,14 +191,17 @@ impl EditContext<'_> {
         format: EditExportFormat,
     ) -> Result<PathBuf, ToolError> {
         self.check()?;
-        let output = self
-            .workspace
-            .output_dir()
-            .join(format!("document.{}", format.as_str()));
+        let name = format!("document.{}", format.as_str());
+        let mut output = self.workspace.output_dir().join(&name);
         match format {
             EditExportFormat::Docx => {
                 let input = self.workspace.work_dir().join("edited.ir.json");
                 self.write_ir(&input, document)?;
+                self.workspace.remove_artifact(&name).map_err(|e| {
+                    ToolError::EngineFailure(self.scrubber.scrub(&format!(
+                        "could not safely clear staged artifact '{name}': {e}"
+                    )))
+                })?;
                 let request = ConvertRequest::new(input, &output, "docx", self.program("pandoc")?);
                 let report = convert::convert_with_limits(
                     &request,
@@ -242,8 +250,12 @@ impl EditContext<'_> {
                             ),
                         });
                     }
-                    fs::write(&output, rendered.bytes)
-                        .map_err(|e| ToolError::OutputIo(e.to_string()))?;
+                    output = super::run::write_staged_artifact(
+                        self.workspace,
+                        &name,
+                        &rendered.bytes,
+                        self.scrubber,
+                    )?;
                 }
             }
             EditExportFormat::Html | EditExportFormat::Md => {
@@ -253,8 +265,12 @@ impl EditContext<'_> {
                         code: w.code,
                         message: w.message,
                     }));
-                fs::write(&output, written.bytes)
-                    .map_err(|e| ToolError::OutputIo(e.to_string()))?;
+                output = super::run::write_staged_artifact(
+                    self.workspace,
+                    &name,
+                    &written.bytes,
+                    self.scrubber,
+                )?;
             }
         }
         self.check()?;
@@ -290,6 +306,7 @@ pub(crate) fn execute(
         limits,
         cancel,
         engine_program,
+        scrubber,
         #[cfg(feature = "typst")]
         clock,
         started: Instant::now(),
@@ -347,6 +364,10 @@ pub(crate) fn execute(
         drop(document);
 
         let inline_cap = super::run::json_inline_cap(limits);
+        // A raw-text gate is sound here: `raw_json` is serde_json's own serialization of host
+        // data, which escapes only `"`, `\\` and control characters, never `/` or printable
+        // characters, exactly as the registered JSON-escaped pattern does. A secret in any
+        // decoded string therefore appears in `raw_json` as a registered pattern.
         let (doc_bytes, open_inline_json) =
             if scrubber.is_empty() || !scrubber.contains_pattern(&raw_json) {
                 let bytes = raw_json.into_bytes();
@@ -376,8 +397,8 @@ pub(crate) fn execute(
                 (bytes, inline)
             };
 
-        let path = workspace.output_dir().join("document.json");
-        fs::write(&path, &doc_bytes).map_err(|e| ToolError::OutputIo(e.to_string()))?;
+        let path =
+            super::run::write_staged_artifact(workspace, "document.json", &doc_bytes, scrubber)?;
         (open_inline_json, (path, "json".into()))
     } else {
         if normalize_tool_format(&inputs[0].1) != Some("json") {
@@ -606,5 +627,105 @@ fn map_conversion_error(error: ConvertError) -> ToolError {
         ConvertError::EngineMissing { engine, .. } => ToolError::from_missing_engine(&engine),
         ConvertError::SandboxUnavailable(detail) => ToolError::SandboxUnavailable(detail),
         _ => ToolError::EngineFailure(error.to_string()),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use ariad_core::ir::{Block, Inline};
+
+    fn sample_document() -> Document {
+        Document {
+            body: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content: vec![Inline::Text {
+                    text: "Staged export body".into(),
+                }],
+            }],
+            ..Default::default()
+        }
+        .finalize_import()
+    }
+
+    fn plant(workspace: &Workspace, name: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.txt");
+        fs::write(&victim, b"untouched-edit-victim").unwrap();
+        let planted = workspace.output_dir().join(name);
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+        (outside, victim, planted)
+    }
+
+    fn assert_regular_file(path: &Path, planted: &Path) {
+        assert_eq!(path, planted);
+        let meta = fs::symlink_metadata(path).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+    }
+
+    fn export_does_not_follow_planted_symlink(format: EditExportFormat) {
+        let workspace = Workspace::new().unwrap();
+        let name = format!("document.{}", format.as_str());
+        let (_outside, victim, planted) = plant(&workspace, &name);
+
+        let (path, _) = write_for_tool(
+            &sample_document(),
+            format,
+            &workspace,
+            &Limits::local(),
+            &CancellationToken::new(),
+            None,
+        )
+        .expect("export replaces the planted link");
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-edit-victim");
+        assert_regular_file(&path, &planted);
+        assert!(!fs::read(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn export_md_does_not_follow_planted_symlink() {
+        export_does_not_follow_planted_symlink(EditExportFormat::Md);
+    }
+
+    #[test]
+    fn export_html_does_not_follow_planted_symlink() {
+        export_does_not_follow_planted_symlink(EditExportFormat::Html);
+    }
+
+    #[cfg(feature = "typst")]
+    #[test]
+    fn export_pdf_does_not_follow_planted_symlink() {
+        export_does_not_follow_planted_symlink(EditExportFormat::Pdf);
+    }
+
+    #[test]
+    fn open_document_does_not_follow_planted_symlink() {
+        let workspace = Workspace::new().unwrap();
+        let (outside, victim, planted) = plant(&workspace, "document.json");
+        let input = outside.path().join("input.md");
+        fs::write(&input, b"# Title\n\nBody text.\n").unwrap();
+
+        let spec = ariad_core::tools::find("edit.open_document").unwrap();
+        let raw = execute(
+            spec,
+            &[(input, "md".into())],
+            &json!({}),
+            &workspace,
+            &Limits::local(),
+            &SecretScrubber::new(),
+            None,
+            &CancellationToken::new(),
+            &mut |_| {},
+            inprocess::capture_clock().unwrap(),
+        )
+        .expect("open replaces the planted link");
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-edit-victim");
+        assert_regular_file(&raw.artifacts[0].0, &planted);
+        let parsed: Value = serde_json::from_slice(&fs::read(&planted).unwrap()).unwrap();
+        assert!(parsed.get("body").is_some());
     }
 }

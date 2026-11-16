@@ -99,6 +99,10 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut max_cols = 0;
     let mut actual_cells = 0usize;
+    // Every table cell becomes a block. Refuse as soon as the padded grid
+    // outgrows the cell limit, so parsed rows never hold more cells than the
+    // final check would accept.
+    let cell_limit = (limits.max_blocks.saturating_sub(1) as usize).min(MAX_CSV_CELLS);
 
     for result in reader.records() {
         let record = result.map_err(|e| ReadError::Csv(e.to_string()))?;
@@ -116,6 +120,13 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         }
         actual_cells = actual_cells.saturating_add(record.len());
         max_cols = max_cols.max(record.len());
+        let grid_cells = (rows.len() + 1).saturating_mul(max_cols);
+        if grid_cells > cell_limit {
+            return Err(ReadError::TooManyCells {
+                actual: grid_cells,
+                limit: cell_limit,
+            });
+        }
         let mut row = Vec::with_capacity(record.len());
         for field in &record {
             row.push(nfc(field));
@@ -148,7 +159,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         });
     }
 
-    let cell_limit = (limits.max_blocks.saturating_sub(1) as usize).min(MAX_CSV_CELLS);
+    // Backstop only: the per-row grid check above already bounds both counts.
     if total_cells > cell_limit {
         return Err(ReadError::TooManyCells {
             actual: total_cells,
@@ -355,10 +366,16 @@ mod tests {
         limits.max_blocks = 5; // Table (1) + 4 cells = 5 max blocks
         let data = b"A,B\n1,2\n3,4\n"; // 2x3 = 6 cells -> 7 blocks
         let err = read(data, &limits).unwrap_err();
-        assert!(matches!(
-            err,
-            ReadError::TooManyBlocks { .. } | ReadError::TooManyCells { .. }
-        ));
+        assert!(
+            matches!(
+                err,
+                ReadError::TooManyCells {
+                    actual: 6,
+                    limit: 4
+                }
+            ),
+            "{err:?}"
+        );
     }
 
     #[test]
@@ -368,6 +385,54 @@ mod tests {
             ..Limits::local()
         };
         let err = read(b"A,B,C\n1,2,3,4,5\n", &limits).unwrap_err();
-        assert!(matches!(err, ReadError::InputTooLarge { .. }));
+        assert!(matches!(
+            err,
+            ReadError::InputTooLarge {
+                actual: 16,
+                limit: 10
+            }
+        ));
+        // Exactly at the cap is accepted.
+        read(b"A,B\n1,2\n34", &limits).unwrap();
+    }
+
+    #[test]
+    fn pipeline_maps_oversized_csv_to_input_limit() {
+        let limits = Limits {
+            max_input_bytes: Some(10),
+            ..Limits::local()
+        };
+        let err = crate::pipeline::read(Format::Csv, b"A,B,C\n1,2,3,4,5\n", &limits).unwrap_err();
+        assert_eq!(
+            err,
+            crate::pipeline::PipelineError::LimitExceeded {
+                limit: "max_input_bytes".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn refuses_cell_growth_while_reading_rows() {
+        let limits = Limits {
+            max_blocks: 7,
+            ..Limits::local()
+        };
+        // Cell limit is 6. The third row makes the grid 3 x 3 = 9 cells; the
+        // reader stops there instead of buffering every remaining row.
+        let mut data = b"A,B\n1,2\n3,4,5\n".to_vec();
+        data.extend(b"6\n".repeat(10_000));
+        let err = read(&data, &limits).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ReadError::TooManyCells {
+                    actual: 9,
+                    limit: 6
+                }
+            ),
+            "{err:?}"
+        );
+        // A grid exactly at the cell limit is accepted.
+        read(b"A,B\n1,2\n3,4\n", &limits).unwrap();
     }
 }

@@ -1,3 +1,5 @@
+mod support;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -1043,33 +1045,7 @@ fn tables_to_csv_end_to_end_cli_execution() {
     let out_dir = tmp.path().join("out");
     fs::create_dir_all(&out_dir).unwrap();
 
-    let probe = Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
-    let engine_probe_path = if probe.exists() {
-        probe
-    } else {
-        let repo_probe = repository_root().join("target/debug/engine-probe");
-        if repo_probe.exists() {
-            repo_probe
-        } else {
-            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-            let mut cmd = std::process::Command::new(cargo);
-            cmd.args([
-                "build",
-                "-p",
-                "ariad-host",
-                "--bin",
-                "engine-probe",
-                "--features",
-                "ariad-host/test-probe",
-            ]);
-            if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
-                cmd.env("CARGO_TARGET_DIR", target_dir);
-            }
-            let _ = cmd.status();
-            if probe.exists() { probe } else { repo_probe }
-        }
-    };
+    let engine_probe_path = support::engine_probe_path();
 
     let docling_fixture = repository_root().join("fixtures/docling/en-repair-log.docling.json");
     let input_pdf = repository_root().join("fixtures/pdf/en-map-room.pdf");
@@ -1097,14 +1073,6 @@ fn tables_to_csv_end_to_end_cli_execution() {
     // and stderr "no tables found in document"
     let no_tables_fixture =
         repository_root().join("fixtures/docling/pd-en-gao-08-35-highlights.docling.json");
-    if !engine_probe_path.exists() {
-        println!(
-            "skipping: engine-probe binary not found at {}; skipping probe-dependent tool cases",
-            engine_probe_path.display()
-        );
-        return;
-    }
-
     if no_tables_fixture.exists() {
         let no_tables_cmd = ashift_cmd()
             .env("ASHIFT_SANDBOX", "off")

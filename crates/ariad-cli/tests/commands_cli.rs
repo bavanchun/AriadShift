@@ -1,12 +1,11 @@
+mod support;
+
 use std::{
     path::{Path, PathBuf},
     process::{Command, Output},
 };
 
-fn engine_probe_path() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
-}
+use support::engine_probe_path;
 
 fn cli() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_ashift"));

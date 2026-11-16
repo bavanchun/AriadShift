@@ -6,21 +6,12 @@ use crate::{
     format::Format,
     ir::{Block, Document, Inline, ListItem, Metadata},
     limits::{Limits, LimitsError},
-    reader::common::{ReadOutput, nfc},
+    reader::{
+        common::{ReadOutput, nfc},
+        email::strip_bidi_controls,
+    },
     warning::{Warning, WarningCode},
 };
-
-/// Strip bidirectional control characters from filenames or metadata.
-fn strip_bidi_controls(s: &str) -> String {
-    s.chars()
-        .filter(|&c| {
-            !matches!(
-                c,
-                '\u{061c}' | '\u{200e}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
-            )
-        })
-        .collect()
-}
 
 /// Errors that can occur when reading an Outlook MSG file.
 #[derive(Debug, thiserror::Error)]
@@ -80,7 +71,41 @@ fn format_filetime_rfc3339(filetime: i64) -> Option<String> {
     Some(format!("{y:04}-{m:02}-{d:02}T{hour:02}:{min:02}:{sec:02}Z"))
 }
 
+/// CRC lookup table of MS-OXRTFCP 2.1.2.2.1 (reflected polynomial 0xEDB88320).
+const RTF_CRC_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut n = 0;
+    while n < 256 {
+        let mut value = n as u32;
+        let mut bit = 0;
+        while bit < 8 {
+            value = if value & 1 == 1 {
+                (value >> 1) ^ 0xEDB8_8320
+            } else {
+                value >> 1
+            };
+            bit += 1;
+        }
+        table[n] = value;
+        n += 1;
+    }
+    table
+};
+
+/// CRC of MS-OXRTFCP 2.1.3.2: initial value 0, no final inversion.
+fn rtf_crc(bytes: &[u8]) -> u32 {
+    bytes.iter().fold(0, |crc, &byte| {
+        RTF_CRC_TABLE[((crc ^ u32::from(byte)) & 0xff) as usize] ^ (crc >> 8)
+    })
+}
+
+/// Error text for a compressed RTF stream whose CRC does not match.
+const RTF_CRC_MISMATCH: &str = "RTF CRC mismatch";
+
 /// Decompresses LZFu-compressed RTF data per MS-OXRTFCP specification.
+///
+/// For compressed input the CRC of every CONTENTS byte (MS-OXRTFCP
+/// 2.2.3.2) must match the header, or the input is treated as corrupt.
 pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
     if compressed.len() < 16 {
         return Err("RTF compressed data too short".to_string());
@@ -112,6 +137,16 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
         return Err(format!("unknown RTF compression magic: 0x{magic:08x}"));
     }
 
+    let max_in = 4usize.saturating_add(comp_size).min(compressed.len());
+    let stored_crc = u32::from_le_bytes(
+        compressed[12..16]
+            .try_into()
+            .map_err(|_| "invalid header".to_string())?,
+    );
+    if rtf_crc(&compressed[16..max_in.max(16)]) != stored_crc {
+        return Err(RTF_CRC_MISMATCH.to_string());
+    }
+
     const RTF_PREBUF: &[u8; 207] = b"{\\rtf1\\ansi\\mac\\deff0\\deftab720{\\fonttbl;}{\\f0\\fnil \\froman \\fswiss \\fmodern \\fscript \\fdecor MS Sans SerifSymbolArialTimes New RomanCourier{\\colortbl\\red0\\green0\\blue0\r\n\\par \\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx";
 
     let mut dict = [b' '; 4096];
@@ -120,7 +155,6 @@ pub fn decompress_rtf(compressed: &[u8]) -> Result<Vec<u8>, String> {
 
     let mut output = Vec::with_capacity(uncomp_size.min(10 * 1024 * 1024));
     let mut in_pos = 16;
-    let max_in = 4usize.saturating_add(comp_size).min(compressed.len());
 
     while in_pos < max_in && output.len() < uncomp_size {
         let flag_byte = compressed[in_pos];
@@ -268,20 +302,76 @@ pub fn strip_rtf(rtf: &[u8]) -> String {
     text
 }
 
+/// A stream that exists but is larger than the reader's cap.
+struct StreamTooLarge;
+
+/// Reads a stream into a `Vec<u8>`, reading at most `max_bytes + 1` bytes.
+///
+/// Returns `Ok(None)` when the stream is missing or unreadable.
+fn read_stream_checked<F: Read + std::io::Seek>(
+    comp: &mut cfb::CompoundFile<F>,
+    path: &str,
+    max_bytes: usize,
+) -> Result<Option<Vec<u8>>, StreamTooLarge> {
+    let Ok(mut stream) = comp.open_stream(path) else {
+        return Ok(None);
+    };
+    let mut buf = Vec::new();
+    let mut take = (&mut stream).take(max_bytes as u64 + 1);
+    if take.read_to_end(&mut buf).is_err() {
+        return Ok(None);
+    }
+    if buf.len() > max_bytes {
+        Err(StreamTooLarge)
+    } else {
+        Ok(Some(buf))
+    }
+}
+
 /// Helper to read a stream into a Vec<u8> with size bounds.
 fn read_stream_bounded<F: Read + std::io::Seek>(
     comp: &mut cfb::CompoundFile<F>,
     path: &str,
     max_bytes: usize,
 ) -> Option<Vec<u8>> {
-    let mut stream = comp.open_stream(path).ok()?;
-    let mut buf = Vec::new();
-    let mut take = (&mut stream).take(max_bytes as u64 + 1);
-    take.read_to_end(&mut buf).ok()?;
-    if buf.len() > max_bytes {
-        None
+    read_stream_checked(comp, path, max_bytes).ok().flatten()
+}
+
+/// Reads string from either UTF-16LE (`*001F`) or String8 (`*001E`) stream,
+/// reporting a stream that exceeds `max_bytes` when no variant is usable.
+fn read_string_property_checked<F: Read + std::io::Seek>(
+    comp: &mut cfb::CompoundFile<F>,
+    parent: &str,
+    prop_id: &str,
+    max_bytes: usize,
+) -> Result<Option<String>, StreamTooLarge> {
+    let prefix = if parent == "/" {
+        format!("/__substg1.0_{prop_id}")
     } else {
-        Some(buf)
+        format!("{parent}/__substg1.0_{prop_id}")
+    };
+
+    let mut too_large = false;
+    for (suffix, decode) in [
+        ("001F", decode_utf16le as fn(&[u8]) -> String),
+        ("001E", decode_string8),
+    ] {
+        match read_stream_checked(comp, &format!("{prefix}{suffix}"), max_bytes) {
+            Ok(Some(bytes)) => {
+                let s = decode(&bytes);
+                if !s.is_empty() {
+                    return Ok(Some(s));
+                }
+            }
+            Ok(None) => {}
+            Err(StreamTooLarge) => too_large = true,
+        }
+    }
+
+    if too_large {
+        Err(StreamTooLarge)
+    } else {
+        Ok(None)
     }
 }
 
@@ -292,29 +382,50 @@ fn read_string_property<F: Read + std::io::Seek>(
     prop_id: &str,
     max_bytes: usize,
 ) -> Option<String> {
-    let prefix = if parent == "/" {
-        format!("/__substg1.0_{prop_id}")
-    } else {
-        format!("{parent}/__substg1.0_{prop_id}")
+    read_string_property_checked(comp, parent, prop_id, max_bytes)
+        .ok()
+        .flatten()
+}
+
+/// Maximum size of a recipient or attachment `__properties_version1.0` stream.
+const MAX_SUB_PROPERTIES_BYTES: usize = 4096;
+
+/// Header label for recipients whose To, Cc or Bcc type cannot be trusted.
+const UNKNOWN_RECIPIENTS_LABEL: &str = "Recipients (type unknown): ";
+
+/// Header bucket of one MSG recipient.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecipientType {
+    To,
+    Cc,
+    Bcc,
+    /// The properties stream exceeds its cap, so the type was not read.
+    Unknown,
+    /// `PR_RECIPIENT_TYPE` holds a value other than To, Cc or Bcc.
+    Unrecognized,
+}
+
+/// Reads `PR_RECIPIENT_TYPE` (0x0C15, PT_LONG) from a recipient
+/// `__properties_version1.0` stream.
+///
+/// A missing stream or property keeps the historical To default.
+fn recipient_type(prop_bytes: Option<&[u8]>) -> RecipientType {
+    let Some(records) = prop_bytes.and_then(|bytes| bytes.get(8..)) else {
+        return RecipientType::To;
     };
-
-    let u16_path = format!("{prefix}001F");
-    if let Some(bytes) = read_stream_bounded(comp, &u16_path, max_bytes) {
-        let s = decode_utf16le(&bytes);
-        if !s.is_empty() {
-            return Some(s);
-        }
+    let (chunks, _) = records.as_chunks::<16>();
+    let value = chunks.iter().find_map(|chunk| {
+        let prop_type = u16::from_le_bytes([chunk[0], chunk[1]]);
+        let prop_id = u16::from_le_bytes([chunk[2], chunk[3]]);
+        (prop_id == 0x0C15 && prop_type == 0x0003)
+            .then(|| u32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]))
+    });
+    match value {
+        None | Some(1) => RecipientType::To,
+        Some(2) => RecipientType::Cc,
+        Some(3) => RecipientType::Bcc,
+        Some(_) => RecipientType::Unrecognized,
     }
-
-    let a_path = format!("{prefix}001E");
-    if let Some(bytes) = read_stream_bounded(comp, &a_path, max_bytes) {
-        let s = decode_string8(&bytes);
-        if !s.is_empty() {
-            return Some(s);
-        }
-    }
-
-    None
 }
 
 /// Parse date from `__properties_version1.0` stream.
@@ -410,27 +521,39 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut to_recipients = Vec::new();
     let mut cc_recipients = Vec::new();
     let mut bcc_recipients = Vec::new();
+    let mut unknown_recipients = Vec::new();
+    let mut oversized_properties = 0usize;
+    let mut unrecognized_types = 0usize;
+    let mut oversized_strings = 0usize;
 
     for r_path in &recip_storages {
-        let r_name = read_string_property(&mut comp, r_path, "3001", max_stream_bytes);
-        let r_email = read_string_property(&mut comp, r_path, "3003", max_stream_bytes);
+        let mut string_too_large = false;
+        let mut string_property = |comp: &mut cfb::CompoundFile<_>, prop_id| {
+            read_string_property_checked(comp, r_path, prop_id, max_stream_bytes).unwrap_or_else(
+                |StreamTooLarge| {
+                    string_too_large = true;
+                    None
+                },
+            )
+        };
+        let r_name = string_property(&mut comp, "3001");
+        let r_email = string_property(&mut comp, "3003");
+        if string_too_large {
+            oversized_strings += 1;
+        }
 
-        // Check recipient type from properties if available
-        let mut recip_type = 1u32; // Default MAPI_TO
         let prop_path = format!("{r_path}/__properties_version1.0");
-        if let Some(prop_bytes) = read_stream_bounded(&mut comp, &prop_path, 4096)
-            && prop_bytes.len() >= 8
+        let recip_type = match read_stream_checked(&mut comp, &prop_path, MAX_SUB_PROPERTIES_BYTES)
         {
-            let (chunks, _) = prop_bytes[8..].as_chunks::<16>();
-            for chunk in chunks {
-                let prop_type_val = u16::from_le_bytes([chunk[0], chunk[1]]);
-                let prop_id = u16::from_le_bytes([chunk[2], chunk[3]]);
-                // 0x0C15 = PR_RECIPIENT_TYPE (PT_LONG = 0x0003)
-                if prop_id == 0x0C15 && prop_type_val == 0x0003 {
-                    recip_type = u32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
-                    break;
-                }
+            Ok(prop_bytes) => recipient_type(prop_bytes.as_deref()),
+            // The type cannot be read, so the recipient may be Cc or Bcc.
+            Err(StreamTooLarge) => {
+                oversized_properties += 1;
+                RecipientType::Unknown
             }
+        };
+        if recip_type == RecipientType::Unrecognized {
+            unrecognized_types += 1;
         }
 
         let formatted = match (r_name, r_email) {
@@ -441,15 +564,47 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         };
 
         match recip_type {
-            2 => cc_recipients.push(formatted),
-            3 => bcc_recipients.push(formatted),
-            _ => to_recipients.push(formatted),
+            RecipientType::To => to_recipients.push(formatted),
+            RecipientType::Cc => cc_recipients.push(formatted),
+            RecipientType::Bcc => bcc_recipients.push(formatted),
+            RecipientType::Unknown | RecipientType::Unrecognized => {
+                unknown_recipients.push(formatted)
+            }
+        }
+    }
+
+    // Never include recipient data: name only the condition and a count.
+    for (count, condition) in [
+        (
+            oversized_properties,
+            "properties stream exceeds the size limit; recipient type is unknown",
+        ),
+        (
+            unrecognized_types,
+            "type value is not recognized; recipient type is unknown",
+        ),
+        (
+            oversized_strings,
+            "name or address stream exceeds the size limit and was ignored",
+        ),
+    ] {
+        if count > 0 {
+            let noun = if count == 1 {
+                "recipient"
+            } else {
+                "recipients"
+            };
+            warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                format!("MSG recipient {condition} ({count} {noun})"),
+            ));
         }
     }
 
     let to_str = (!to_recipients.is_empty()).then(|| to_recipients.join(", "));
     let cc_str = (!cc_recipients.is_empty()).then(|| cc_recipients.join(", "));
     let bcc_str = (!bcc_recipients.is_empty()).then(|| bcc_recipients.join(", "));
+    let unknown_str = (!unknown_recipients.is_empty()).then(|| unknown_recipients.join(", "));
 
     let mut blocks = Vec::new();
 
@@ -491,6 +646,17 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             }],
         });
         header_inlines.push(Inline::Text { text: nfc(bcc_val) });
+        header_inlines.push(Inline::LineBreak {});
+    }
+    if let Some(ref unknown_val) = unknown_str {
+        header_inlines.push(Inline::Strong {
+            content: vec![Inline::Text {
+                text: UNKNOWN_RECIPIENTS_LABEL.to_owned(),
+            }],
+        });
+        header_inlines.push(Inline::Text {
+            text: nfc(unknown_val),
+        });
         header_inlines.push(Inline::LineBreak {});
     }
     if let Some(ref date_val) = date_str {
@@ -547,8 +713,12 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
                 warnings.extend(html_out.warnings);
                 body_read = true;
             }
-            Err(_) => {
-                // If HTML reading fails, fall through to text or RTF
+            Err(error) => {
+                // The error reports only limits and counts, never body text.
+                warnings.push(Warning::new(
+                    WarningCode::UnsupportedNode,
+                    format!("MSG HTML body could not be converted: {error}; trying other bodies"),
+                ));
             }
         }
     }
@@ -567,10 +737,21 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 
     if !body_read {
         // Try RTF-compressed (0x1009)
-        if let Some(rtf_comp_data) =
-            read_stream_bounded(&mut comp, "/__substg1.0_10090102", max_stream_bytes)
-            && let Ok(decompressed) = decompress_rtf(&rtf_comp_data)
-        {
+        let decompressed =
+            read_stream_bounded(&mut comp, "/__substg1.0_10090102", max_stream_bytes).and_then(
+                |data| match decompress_rtf(&data) {
+                    Ok(decompressed) => Some(decompressed),
+                    Err(error) => {
+                        // The error names only the header condition, never body text.
+                        warnings.push(Warning::new(
+                            WarningCode::UnsupportedNode,
+                            format!("MSG RTF body was dropped: {error}"),
+                        ));
+                        None
+                    }
+                },
+            );
+        if let Some(decompressed) = decompressed {
             let stripped = strip_rtf(&decompressed);
             warnings.push(Warning::new(
                 WarningCode::UnsupportedNode,
@@ -599,7 +780,8 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             // Check PR_ATTACH_SIZE (0x0E20) in attachment properties stream
             let mut prop_size = 0usize;
             let prop_path = format!("{a_path}/__properties_version1.0");
-            if let Some(prop_bytes) = read_stream_bounded(&mut comp, &prop_path, 4096)
+            if let Some(prop_bytes) =
+                read_stream_bounded(&mut comp, &prop_path, MAX_SUB_PROPERTIES_BYTES)
                 && prop_bytes.len() >= 8
             {
                 let (chunks, _) = prop_bytes[8..].as_chunks::<16>();
@@ -777,6 +959,162 @@ mod tests {
         let comp = b"#\x00\x00\x00\"\x00\x00\x00LZFu3\\\xe8t\x03\x00\n\x00rcpg125\x922\n\xf3 t\x07\x90t}\x0f\x10";
         let out = decompress_rtf(comp).expect("LZFu decompression failed");
         assert_eq!(out, b"{\\rtf1\\ansi\\ansicpg1252\\pard test}");
+    }
+
+    /// MS-OXRTFCP 3.1.1, "Example 1: Simple Compressed RTF".
+    const OXRTFCP_EXAMPLE_1: &[u8] = &[
+        0x2d, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x00, 0x00, 0x4c, 0x5a, 0x46, 0x75, 0xf1, 0xc5, 0xc7,
+        0xa7, 0x03, 0x00, 0x0a, 0x00, 0x72, 0x63, 0x70, 0x67, 0x31, 0x32, 0x35, 0x42, 0x32, 0x0a,
+        0xf3, 0x20, 0x68, 0x65, 0x6c, 0x09, 0x00, 0x20, 0x62, 0x77, 0x05, 0xb0, 0x6c, 0x64, 0x7d,
+        0x0a, 0x80, 0x0f, 0xa0,
+    ];
+
+    /// MS-OXRTFCP 3.1.2, "Reading a Token from the Dictionary that Crosses
+    /// WritePosition".
+    const OXRTFCP_EXAMPLE_2: &[u8] = &[
+        0x1a, 0x00, 0x00, 0x00, 0x1c, 0x00, 0x00, 0x00, 0x4c, 0x5a, 0x46, 0x75, 0xe2, 0xd4, 0x4b,
+        0x51, 0x41, 0x00, 0x04, 0x20, 0x57, 0x58, 0x59, 0x5a, 0x0d, 0x6e, 0x7d, 0x01, 0x0e, 0xb0,
+    ];
+
+    #[test]
+    fn lzfu_decompresses_ms_oxrtfcp_examples() {
+        assert_eq!(
+            decompress_rtf(OXRTFCP_EXAMPLE_1).unwrap(),
+            b"{\\rtf1\\ansi\\ansicpg1252\\pard hello world}\r\n"
+        );
+        assert_eq!(
+            decompress_rtf(OXRTFCP_EXAMPLE_2).unwrap(),
+            b"{\\rtf1 WXYZWXYZWXYZWXYZWXYZ}"
+        );
+    }
+
+    #[test]
+    fn lzfu_wraps_write_offset_past_dictionary_end() {
+        // write_offset starts at RTF_PREBUF.len() == 207.
+        // Emit 3887 'a' bytes to reach write_offset = 4094, then "WXYZ" so
+        // dict[4094..4096] = "WX" and write_offset wraps (4095 + 1) % 4096 -> 0,
+        // overwriting dict[0..2] ("{\\" in RTF_PREBUF) with "YZ" (write_offset = 2).
+        // Emit 204 'b' bytes to reach write_offset = 206 (4095 literals total).
+        let mut literals = Vec::with_capacity(4095);
+        literals.extend(std::iter::repeat_n(b'a', 3887));
+        literals.extend_from_slice(b"WXYZ");
+        literals.extend(std::iter::repeat_n(b'b', 204));
+        assert_eq!(literals.len(), 4095);
+
+        let mut contents = Vec::new();
+        for chunk in literals.chunks(8) {
+            if chunk.len() == 8 {
+                contents.push(0x00);
+                contents.extend_from_slice(chunk);
+            } else {
+                // 7 literals (bits 0..7 = 0) + 1 copy token at bit 7 (0x80).
+                assert_eq!(chunk.len(), 7);
+                contents.push(0x80);
+                contents.extend_from_slice(chunk);
+                // Copy 4 bytes from offset 4094 across the 4095 -> 0 boundary.
+                let copy_token: u16 = (4094 << 4) | (4 - 2);
+                contents.extend_from_slice(&copy_token.to_be_bytes());
+            }
+        }
+        // Explicit end-of-stream marker: offset == write_offset (206 + 4 = 210).
+        contents.push(0x01);
+        let eos_token: u16 = 210 << 4;
+        contents.extend_from_slice(&eos_token.to_be_bytes());
+
+        let mut expected = literals;
+        expected.extend_from_slice(b"WXYZ");
+        assert_eq!(expected.len(), 4099);
+
+        let comp_size = (contents.len() + 12) as u32;
+        // Set uncomp_size larger than expected.len() so termination relies on EOS.
+        let uncomp_size = (expected.len() + 16) as u32;
+        let crc = rtf_crc(&contents);
+
+        let mut compressed = Vec::with_capacity(16 + contents.len());
+        compressed.extend_from_slice(&comp_size.to_le_bytes());
+        compressed.extend_from_slice(&uncomp_size.to_le_bytes());
+        compressed.extend_from_slice(b"LZFu");
+        compressed.extend_from_slice(&crc.to_le_bytes());
+        compressed.extend_from_slice(&contents);
+
+        let out = decompress_rtf(&compressed).unwrap();
+        assert!(out.len() > 4096);
+        assert_eq!(&out[out.len() - 4..], b"WXYZ");
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn rtf_crc_matches_ms_oxrtfcp() {
+        // 2.1.2.2.1 table entries and the 3.3.1 worked example.
+        assert_eq!(RTF_CRC_TABLE[1], 0x7707_3096);
+        assert_eq!(RTF_CRC_TABLE[3], 0x9909_51ba);
+        assert_eq!(RTF_CRC_TABLE[255], 0x2d02_ef8d);
+        assert_eq!(rtf_crc(&[0x03]), 0x9909_51ba);
+        assert_eq!(rtf_crc(&OXRTFCP_EXAMPLE_1[16..]), 0xa7c7_c5f1);
+        assert_eq!(rtf_crc(&OXRTFCP_EXAMPLE_2[16..]), 0x514b_d4e2);
+    }
+
+    #[test]
+    fn lzfu_rejects_crc_mismatch() {
+        for example in [OXRTFCP_EXAMPLE_1, OXRTFCP_EXAMPLE_2] {
+            let mut corrupt = example.to_vec();
+            corrupt[12] ^= 0x01;
+            assert_eq!(decompress_rtf(&corrupt).unwrap_err(), RTF_CRC_MISMATCH);
+            // A changed CONTENTS byte is caught as well.
+            let mut corrupt = example.to_vec();
+            *corrupt.last_mut().unwrap() ^= 0x01;
+            assert_eq!(decompress_rtf(&corrupt).unwrap_err(), RTF_CRC_MISMATCH);
+        }
+    }
+
+    #[test]
+    fn rtf_fuzz_seeds_cover_valid_and_mismatched_crc() {
+        let valid = include_bytes!("../../../../../fuzz/seeds/reader_msg/rtf.msg");
+        let out = read(valid, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(
+            out.warnings[0].message,
+            "RTF-compressed body converted to plain text"
+        );
+        let bad = include_bytes!("../../../../../fuzz/seeds/reader_msg/rtf-bad-crc.msg");
+        let out = read(bad, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG RTF body was dropped: RTF CRC mismatch"
+        );
+    }
+
+    #[test]
+    fn mela_follows_ms_oxrtfcp_uncompressed_layout() {
+        // MS-OXRTFCP 2.1.3.1.1 and 2.3.3.1: COMPSIZE = content length + 12,
+        // RAWSIZE = content length, COMPTYPE = "MELA", CRC = 0, raw CONTENTS.
+        // The specification gives no byte example for this layout.
+        let content = b"{\\rtf1\\ansi\\ansicpg1252\\pard hello world}\r\n";
+        let mut mela = Vec::new();
+        mela.extend_from_slice(&(content.len() as u32 + 12).to_le_bytes());
+        mela.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        mela.extend_from_slice(b"MELA");
+        mela.extend_from_slice(&0u32.to_le_bytes());
+        mela.extend_from_slice(content);
+        assert_eq!(decompress_rtf(&mela).unwrap(), content);
+        // 2.2.3.1: a reader MUST NOT validate the CRC of uncompressed input.
+        mela[12..16].copy_from_slice(&0xdead_beefu32.to_le_bytes());
+        assert_eq!(decompress_rtf(&mela).unwrap(), content);
+    }
+
+    #[test]
+    fn lzfu_rejects_short_and_unknown_headers() {
+        assert_eq!(
+            decompress_rtf(&OXRTFCP_EXAMPLE_1[..15]).unwrap_err(),
+            "RTF compressed data too short"
+        );
+        let mut unknown = OXRTFCP_EXAMPLE_1.to_vec();
+        unknown[8..12].copy_from_slice(b"ABCD");
+        assert_eq!(
+            decompress_rtf(&unknown).unwrap_err(),
+            "unknown RTF compression magic: 0x44434241"
+        );
     }
 
     #[test]
@@ -965,6 +1303,48 @@ mod tests {
     }
 
     #[test]
+    fn rtf_crc_mismatch_drops_body_with_warning() {
+        use std::io::Write;
+        let mut stream_bytes = OXRTFCP_EXAMPLE_1.to_vec();
+        stream_bytes[12..16].copy_from_slice(&0u32.to_le_bytes());
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__substg1.0_0037001F").unwrap();
+            stream.write_all(&encode_utf16le("Subject line")).unwrap();
+        }
+        {
+            let mut stream = comp.create_stream("/__substg1.0_10090102").unwrap();
+            stream.write_all(&stream_bytes).unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG RTF body was dropped: RTF CRC mismatch"
+        );
+        // No other body exists, so only the header paragraph remains.
+        assert_eq!(out.document.body.len(), 1);
+        let Block::Paragraph { content, .. } = &out.document.body[0] else {
+            panic!("expected the header paragraph, got {:?}", out.document.body);
+        };
+        assert_eq!(
+            content,
+            &vec![
+                Inline::Strong {
+                    content: vec![Inline::Text {
+                        text: "Subject: ".to_owned()
+                    }]
+                },
+                Inline::Text {
+                    text: "Subject line".to_owned()
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parses_msg_with_filetime_date() {
         use std::io::Write;
         let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
@@ -975,14 +1355,343 @@ mod tests {
             p.extend_from_slice(&0x0040u16.to_le_bytes());
             p.extend_from_slice(&0x0039u16.to_le_bytes());
             p.extend_from_slice(&0u32.to_le_bytes()); // flags
-            // 2026-11-04T12:00:00Z in FILETIME (approx 133752336000000000)
-            let ft: i64 = 133_752_336_000_000_000;
+            // 2026-11-04T12:00:00Z: (1_793_793_600 s + 11_644_473_600 s) * 10^7.
+            let ft: i64 = 134_382_672_000_000_000;
             p.extend_from_slice(&ft.to_le_bytes());
             stream.write_all(&p).unwrap();
         }
         let bytes = comp.into_inner().into_inner();
         let out = read(&bytes, &Limits::local()).unwrap();
-        assert!(out.document.meta.date.is_some());
+        assert_eq!(
+            out.document.meta.date.as_deref(),
+            Some("2026-11-04T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn filetime_boundaries_format_exactly() {
+        const UNIX_EPOCH: i64 = 116_444_736_000_000_000;
+        assert_eq!(
+            format_filetime_rfc3339(UNIX_EPOCH).as_deref(),
+            Some("1970-01-01T00:00:00Z")
+        );
+        // Instants before 1970 are not formatted.
+        assert_eq!(format_filetime_rfc3339(UNIX_EPOCH - 1), None);
+        assert_eq!(format_filetime_rfc3339(0), None);
+        // Leap day, with the sub-second remainder truncated.
+        assert_eq!(
+            format_filetime_rfc3339(133_537_247_999_999_999).as_deref(),
+            Some("2024-02-29T23:59:59Z")
+        );
+    }
+
+    #[test]
+    fn pre_1970_filetime_leaves_date_unset() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__properties_version1.0").unwrap();
+            let mut p = vec![0u8; 32];
+            p.extend_from_slice(&0x0040u16.to_le_bytes());
+            p.extend_from_slice(&0x0039u16.to_le_bytes());
+            p.extend_from_slice(&0u32.to_le_bytes());
+            p.extend_from_slice(&(116_444_736_000_000_000i64 - 1).to_le_bytes());
+            stream.write_all(&p).unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(out.document.meta.date, None);
+    }
+
+    /// A recipient `__properties_version1.0` stream holding only
+    /// `PR_RECIPIENT_TYPE`, padded with zero bytes to `len` when longer.
+    fn recipient_properties(recip_type: u32, len: usize) -> Vec<u8> {
+        let mut p = vec![0u8; 8];
+        p.extend_from_slice(&0x0003u16.to_le_bytes());
+        p.extend_from_slice(&0x0C15u16.to_le_bytes());
+        p.extend_from_slice(&0u32.to_le_bytes());
+        p.extend_from_slice(&recip_type.to_le_bytes());
+        p.extend_from_slice(&0u32.to_le_bytes());
+        p.resize(p.len().max(len), 0);
+        p
+    }
+
+    /// Adds recipient storage `index` with a display name, an address and a
+    /// properties stream.
+    fn add_recipient(
+        comp: &mut cfb::CompoundFile<Cursor<Vec<u8>>>,
+        index: u32,
+        name: &str,
+        email: &str,
+        properties: &[u8],
+    ) {
+        use std::io::Write;
+        let storage = format!("/__recip_version1.0_#{index:08X}");
+        comp.create_storage(&storage).unwrap();
+        for (prop_id, value) in [("3001001F", name), ("3003001F", email)] {
+            let mut s = comp
+                .create_stream(format!("{storage}/__substg1.0_{prop_id}"))
+                .unwrap();
+            s.write_all(&encode_utf16le(value)).unwrap();
+        }
+        let mut s = comp
+            .create_stream(format!("{storage}/__properties_version1.0"))
+            .unwrap();
+        s.write_all(properties).unwrap();
+    }
+
+    /// Header label to value pairs of the first body paragraph.
+    fn header_fields(document: &Document) -> Vec<(String, String)> {
+        let Block::Paragraph { content, .. } = &document.body[0] else {
+            panic!("expected the header paragraph, got {:?}", document.body);
+        };
+        let mut fields = Vec::new();
+        let mut label = None;
+        for inline in content {
+            match inline {
+                Inline::Strong { content } => {
+                    if let Some(Inline::Text { text }) = content.first() {
+                        label = Some(text.clone());
+                    }
+                }
+                Inline::Text { text } => {
+                    if let Some(label) = label.take() {
+                        fields.push((label, text.clone()));
+                    }
+                }
+                _ => {}
+            }
+        }
+        fields
+    }
+
+    #[test]
+    fn oversized_bcc_properties_stream_is_never_to() {
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        add_recipient(
+            &mut comp,
+            0,
+            "To Person",
+            "to@example.com",
+            &recipient_properties(1, 0),
+        );
+        add_recipient(
+            &mut comp,
+            1,
+            "Cc Person",
+            "cc@example.com",
+            &recipient_properties(2, 0),
+        );
+        add_recipient(
+            &mut comp,
+            2,
+            "Bcc Person",
+            "bcc@example.com",
+            &recipient_properties(3, 0),
+        );
+        add_recipient(
+            &mut comp,
+            3,
+            "Hidden Bcc",
+            "hidden@example.com",
+            &recipient_properties(3, MAX_SUB_PROPERTIES_BYTES + 1),
+        );
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+
+        assert_eq!(
+            header_fields(&out.document),
+            vec![
+                ("To: ".to_owned(), "To Person <to@example.com>".to_owned()),
+                ("Cc: ".to_owned(), "Cc Person <cc@example.com>".to_owned()),
+                (
+                    "Bcc: ".to_owned(),
+                    "Bcc Person <bcc@example.com>".to_owned()
+                ),
+                (
+                    UNKNOWN_RECIPIENTS_LABEL.to_owned(),
+                    "Hidden Bcc <hidden@example.com>".to_owned()
+                ),
+            ]
+        );
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG recipient properties stream exceeds the size limit; \
+             recipient type is unknown (1 recipient)"
+        );
+        assert!(!out.warnings[0].message.contains("Hidden"));
+        assert!(!out.warnings[0].message.contains("hidden@"));
+
+        // Every writer keeps the recipient on the unknown-type line only.
+        let typst = crate::writer::typst::write(
+            &out.document,
+            &crate::writer::typst::TypstOptions::default(),
+        )
+        .markup;
+        let json = serde_json::to_string(&out.document).unwrap();
+        for (writer, rendered) in [
+            (
+                "markdown",
+                crate::writer::markdown::write(&out.document).content,
+            ),
+            ("html", crate::writer::html::write(&out.document).content),
+            ("text", crate::writer::text::write(&out.document).content),
+            ("typst", typst),
+            ("json", json),
+        ] {
+            let hidden = rendered
+                .find("Hidden Bcc")
+                .unwrap_or_else(|| panic!("{writer} drops the recipient: {rendered}"));
+            // Markdown moves the colon outside the strong span.
+            let label = rendered
+                .find("Recipients (type unknown)")
+                .unwrap_or_else(|| panic!("{writer} drops the label: {rendered}"));
+            let bcc = rendered.find("Bcc Person").unwrap();
+            // The recipient follows the unknown label, which follows every
+            // To, Cc and Bcc value, so it cannot render under any of them.
+            assert!(bcc < label && label < hidden, "{writer}: {rendered}");
+            assert_eq!(rendered.matches("Hidden Bcc").count(), 1, "{writer}");
+        }
+    }
+
+    #[test]
+    fn oversized_properties_streams_share_one_warning() {
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        for (index, recip_type) in [(0, 1), (1, 2), (2, 3)] {
+            add_recipient(
+                &mut comp,
+                index,
+                "Secret Recipient",
+                "secret@example.com",
+                &recipient_properties(recip_type, MAX_SUB_PROPERTIES_BYTES + 1),
+            );
+        }
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG recipient properties stream exceeds the size limit; \
+             recipient type is unknown (3 recipients)"
+        );
+        assert!(!out.warnings[0].message.contains("Secret"));
+        assert!(!out.warnings[0].message.contains("secret@"));
+        let fields = header_fields(&out.document);
+        assert_eq!(fields.len(), 1, "{fields:?}");
+        assert_eq!(fields[0].0, UNKNOWN_RECIPIENTS_LABEL);
+        assert_eq!(fields[0].1.matches("Secret Recipient").count(), 3);
+    }
+
+    #[test]
+    fn unrecognized_recipient_type_is_unknown() {
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        add_recipient(
+            &mut comp,
+            0,
+            "Origin",
+            "origin@example.com",
+            &recipient_properties(0, 0),
+        );
+        add_recipient(
+            &mut comp,
+            1,
+            "Odd",
+            "odd@example.com",
+            &recipient_properties(7, 0),
+        );
+        let bytes = comp.into_inner().into_inner();
+        let out = read(&bytes, &Limits::local()).unwrap();
+        assert_eq!(
+            header_fields(&out.document),
+            vec![(
+                UNKNOWN_RECIPIENTS_LABEL.to_owned(),
+                "Origin <origin@example.com>, Odd <odd@example.com>".to_owned()
+            )]
+        );
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG recipient type value is not recognized; \
+             recipient type is unknown (2 recipients)"
+        );
+    }
+
+    #[test]
+    fn missing_recipient_type_keeps_to_default() {
+        assert_eq!(recipient_type(None), RecipientType::To);
+        assert_eq!(recipient_type(Some(&[0; 7])), RecipientType::To);
+        assert_eq!(recipient_type(Some(&[0; 24])), RecipientType::To);
+        assert_eq!(
+            recipient_type(Some(&recipient_properties(2, 0))),
+            RecipientType::Cc
+        );
+    }
+
+    #[test]
+    fn oversized_recipient_string_stream_is_reported() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        comp.create_storage("/__recip_version1.0_#00000000")
+            .unwrap();
+        {
+            let mut s = comp
+                .create_stream("/__recip_version1.0_#00000000/__substg1.0_3001001F")
+                .unwrap();
+            s.write_all(&encode_utf16le("Recipient")).unwrap();
+        }
+        let path = "/__recip_version1.0_#00000000";
+        let name = encode_utf16le("Recipient");
+        assert!(matches!(
+            read_string_property_checked(&mut comp, path, "3001", name.len() - 1),
+            Err(StreamTooLarge)
+        ));
+        assert!(matches!(
+            read_string_property_checked(&mut comp, path, "3001", name.len()),
+            Ok(Some(ref text)) if text == "Recipient"
+        ));
+        assert!(matches!(
+            read_string_property_checked(&mut comp, path, "3003", 1),
+            Ok(None)
+        ));
+    }
+
+    #[test]
+    fn html_body_failure_warns_and_falls_back_to_plain_text() {
+        use std::io::Write;
+        let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        {
+            let mut stream = comp.create_stream("/__substg1.0_10130102").unwrap();
+            let html = "<p>secret</p>".repeat(8);
+            stream.write_all(html.as_bytes()).unwrap();
+        }
+        {
+            let mut stream = comp.create_stream("/__substg1.0_1000001F").unwrap();
+            stream.write_all(&encode_utf16le("Plain body")).unwrap();
+        }
+        let bytes = comp.into_inner().into_inner();
+        let limits = Limits {
+            max_blocks: 3,
+            ..Limits::local()
+        };
+        let out = read(&bytes, &limits).unwrap();
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].code, WarningCode::UnsupportedNode);
+        assert_eq!(
+            out.warnings[0].message,
+            "MSG HTML body could not be converted: HTML contains more than the configured \
+             3 block limit; trying other bodies"
+        );
+        assert!(!out.warnings[0].message.contains("secret"));
+        let plain = out.document.body.iter().any(|b| match b {
+            Block::Paragraph { content, .. } => content
+                .iter()
+                .any(|c| matches!(c, Inline::Text { text } if text == "Plain body")),
+            _ => false,
+        });
+        assert!(plain, "plain text body must replace the failed HTML body");
     }
 
     #[test]

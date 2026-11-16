@@ -3,6 +3,8 @@
 
 mod support;
 
+use support::engine_probe_path;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -14,11 +16,6 @@ use tempfile::tempdir;
 
 fn repository() -> PathBuf {
     support::fixtures::repository_root()
-}
-
-fn engine_probe_path() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
 }
 
 fn pandoc_path() -> PathBuf {
