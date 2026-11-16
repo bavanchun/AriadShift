@@ -2635,6 +2635,88 @@ mod tests {
         );
     }
 
+    /// Rewrites a one-page document whose content is `content` under the rectangle
+    /// `[0, 0, 50, 50]` with the default scope (vectors included).
+    fn rewrite_vector_page(
+        content: &str,
+        extgstate: Option<lopdf::Dictionary>,
+    ) -> Result<(), PdfError> {
+        let mut doc = Document::with_version("1.7");
+        let resources = match extgstate {
+            Some(states) => dictionary! { "ExtGState" => states },
+            None => lopdf::Dictionary::new(),
+        };
+        let bytes = single_page(
+            &mut doc,
+            content.as_bytes(),
+            resources,
+            lopdf::Dictionary::new(),
+        );
+        rewrite_rect(&bytes, None).map(|_| ())
+    }
+
+    fn assert_vector_refused(result: Result<(), PdfError>, why: &str) {
+        let error = result.expect_err(why);
+        assert!(
+            error
+                .to_string()
+                .contains("uninspected carrier refused: vector_path"),
+            "{why}: {error}"
+        );
+    }
+
+    #[test]
+    fn vector_refusal_accounts_for_stroke_width() {
+        // The centre line stays right of the rectangle (x = 70); only the ink of a wide
+        // stroke reaches into it (x from 40 to 100).
+        assert_vector_refused(
+            rewrite_vector_page("60 w 70 25 m 70 40 l S", None),
+            "wide stroke reaching the rectangle",
+        );
+        // The same wide stroke through the user-space scale.
+        assert_vector_refused(
+            rewrite_vector_page("q 2 0 0 2 0 0 cm 30 w 35 12 m 35 20 l S Q", None),
+            "stroke width is scaled by the CTM",
+        );
+        // Line width set by an ExtGState instead of `w`.
+        let mut states = lopdf::Dictionary::new();
+        states.set("G", dictionary! { "Type" => "ExtGState", "LW" => 60 });
+        assert_vector_refused(
+            rewrite_vector_page("/G gs 70 25 m 70 40 l S", Some(states)),
+            "ExtGState line width",
+        );
+        // Control: a hairline at the same place does not reach the rectangle.
+        rewrite_vector_page("1 w 70 25 m 70 40 l S", None).expect("thin distant stroke");
+        // A fill has no stroke width.
+        rewrite_vector_page("60 w 70 25 20 15 re f", None).expect("filled path is not stroked");
+    }
+
+    #[test]
+    fn vector_refusal_accounts_for_clipping() {
+        // The path is inside the rectangle but the clip keeps all of its paint out of it.
+        rewrite_vector_page("0 60 100 40 re W n 10 10 30 30 re f", None)
+            .expect("path fully clipped away from the rectangle");
+        // A clip that still leaves part of the path under the rectangle changes nothing.
+        assert_vector_refused(
+            rewrite_vector_page("0 0 100 30 re W n 10 10 30 30 re f", None),
+            "partially clipped path",
+        );
+        // The clip is part of the graphics state: it ends with `Q`.
+        assert_vector_refused(
+            rewrite_vector_page("q 0 60 100 40 re W n Q 10 10 30 30 re f", None),
+            "clip restored by Q",
+        );
+        // Successive clips intersect; a later wider one cannot widen the first.
+        rewrite_vector_page(
+            "0 60 100 40 re W n 0 0 100 100 re W n 10 10 30 30 re f",
+            None,
+        )
+        .expect("clips only ever narrow");
+        // A stroke is clipped like a fill, so a wide stroke clipped away is not refused.
+        rewrite_vector_page("0 60 100 40 re W n 60 w 70 25 m 70 40 l S", None)
+            .expect("clipped wide stroke");
+    }
+
     /// Distinct 4x4 grey samples, so the original pixels are recognizable in any output.
     #[cfg(feature = "codecs")]
     const MARKER: [u8; 16] = [

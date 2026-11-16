@@ -101,6 +101,14 @@ struct Graphics {
     leading: f64,
     rise: f64,
     render_mode: u8,
+    /// Stroke line width in user space units (`w`, ExtGState `LW`).
+    line_width: f64,
+    /// Stroke miter limit (`M`, ExtGState `ML`).
+    miter_limit: f64,
+    /// Line join style (`j`, ExtGState `LJ`): 0 miter, 1 round, 2 bevel.
+    line_join: i64,
+    /// Bounding box in page points that contains the current clipping region, if any.
+    clip: Option<[f64; 4]>,
 }
 
 impl Default for Graphics {
@@ -115,6 +123,10 @@ impl Default for Graphics {
             leading: 0.0,
             rise: 0.0,
             render_mode: 0,
+            line_width: 1.0,
+            miter_limit: 10.0,
+            line_join: 0,
+            clip: None,
         }
     }
 }
@@ -144,6 +156,7 @@ pub fn trace(
         in_text: false,
         total_text: 0,
         current_path: Vec::new(),
+        pending_clip: false,
         trace: TextStreamTrace {
             content_sha256: crate::writer::sha256_chunks(&[content]),
             glyphs: Vec::new(),
@@ -318,7 +331,7 @@ pub fn trace(
             }
             "gs" if operands.len() == 1 => {
                 if let Ok(name) = operands[0].as_name() {
-                    let has_font = walker
+                    let state = walker
                         .resources
                         .get(b"ExtGState")
                         .ok()
@@ -326,8 +339,28 @@ pub fn trace(
                         .and_then(|v| v.as_dict().ok())
                         .and_then(|d| d.get(name).ok())
                         .and_then(|v| resolved(walker.doc, v).ok())
-                        .and_then(|v| v.as_dict().ok())
-                        .is_some_and(|d| d.has(b"Font"));
+                        .and_then(|v| v.as_dict().ok());
+                    // Stroke parameters set by a graphics state widen the painted area, so the
+                    // vector bounds must follow them as they follow `w`, `j` and `M`.
+                    if let Some(state) = state {
+                        let value = |key: &[u8]| {
+                            state
+                                .get(key)
+                                .ok()
+                                .and_then(|v| resolved(walker.doc, v).ok())
+                                .and_then(|v| number(v).ok())
+                        };
+                        if let Some(width) = value(b"LW") {
+                            walker.graphics.line_width = width;
+                        }
+                        if let Some(limit) = value(b"ML") {
+                            walker.graphics.miter_limit = limit;
+                        }
+                        if let Some(join) = value(b"LJ") {
+                            walker.graphics.line_join = join as i64;
+                        }
+                    }
+                    let has_font = state.is_some_and(|d| d.has(b"Font"));
                     if has_font {
                         walker.trace.uninspected_objects = walker
                             .trace
@@ -389,12 +422,13 @@ pub fn trace(
                 walker.add_point(x3, y3);
             }
             "h" => {}
-            "S" | "s" | "f" | "F" | "f*" | "B" | "B*" | "b" | "b*" => {
-                walker.end_paint_path();
-            }
-            "n" => {
-                walker.current_path.clear();
-            }
+            "S" | "s" | "B" | "B*" | "b" | "b*" => walker.end_paint_path(true),
+            "f" | "F" | "f*" => walker.end_paint_path(false),
+            "n" => walker.end_paint_path_without_painting(),
+            "W" | "W*" => walker.pending_clip = true,
+            "w" if operands.len() == 1 => walker.graphics.line_width = number(&operands[0])?,
+            "M" if operands.len() == 1 => walker.graphics.miter_limit = number(&operands[0])?,
+            "j" if operands.len() == 1 => walker.graphics.line_join = number(&operands[0])? as i64,
             "q" | "Q" | "cm" | "BT" | "ET" | "Tf" | "Tc" | "Tw" | "Tz" | "TL" | "Ts" | "Tr"
             | "Tm" | "Td" | "TD" | "T*" | "Tj" | "'" | "\"" | "TJ" => {
                 return Err(PdfError::Malformed);
@@ -402,8 +436,8 @@ pub fn trace(
             // Clipping, path construction, marked content, and graphics state
             // operators do not emit text glyphs.
             "w" | "J" | "j" | "M" | "d" | "ri" | "i" | "G" | "g" | "RG" | "rg" | "K" | "k"
-            | "CS" | "cs" | "SC" | "SCN" | "sc" | "scn" | "gs" | "W" | "W*" | "BMC" | "BDC"
-            | "EMC" | "MP" | "DP" => {}
+            | "CS" | "cs" | "SC" | "SCN" | "sc" | "scn" | "gs" | "BMC" | "BDC" | "EMC" | "MP"
+            | "DP" => {}
             // Unknown, malformed or extension operators cannot establish complete content
             // correlation.
             _ => {
@@ -433,6 +467,8 @@ struct Walker<'a> {
     in_text: bool,
     total_text: usize,
     current_path: Vec<[f64; 2]>,
+    /// `W` or `W*` ended the current path: the clip applies after the next painting operator.
+    pending_clip: bool,
     trace: TextStreamTrace,
 }
 
@@ -445,22 +481,104 @@ impl Walker<'_> {
             self.current_path.push([px, py]);
         }
     }
-    fn end_paint_path(&mut self) {
-        if !self.current_path.is_empty() {
-            let mut min_x = f64::INFINITY;
-            let mut min_y = f64::INFINITY;
-            let mut max_x = f64::NEG_INFINITY;
-            let mut max_y = f64::NEG_INFINITY;
-            for &[px, py] in &self.current_path {
-                min_x = min_x.min(px);
-                min_y = min_y.min(py);
-                max_x = max_x.max(px);
-                max_y = max_y.max(py);
+    /// Bounding box of the current path in page points.
+    fn path_bounds(&self) -> Option<[f64; 4]> {
+        let mut bounds = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for &[px, py] in &self.current_path {
+            bounds = [
+                bounds[0].min(px),
+                bounds[1].min(py),
+                bounds[2].max(px),
+                bounds[3].max(py),
+            ];
+        }
+        bounds.iter().all(|n| n.is_finite()).then_some(bounds)
+    }
+
+    /// Upper bound of how far a stroke reaches beyond the path, in page points.
+    ///
+    /// Half the line width, scaled by the CTM (Frobenius norm, never below the largest
+    /// singular value), times the longest reach of a cap or join: a miter join reaches
+    /// `miter_limit` half widths, a square cap and a bevel or round join stay within
+    /// `sqrt(2)` half widths. Joins exist only when the path has at least two segments.
+    /// A zero width still draws a hairline, so the reach is never below half a point.
+    fn stroke_reach(&self) -> f64 {
+        let [a, b, c, d, _, _] = self.graphics.ctm.0;
+        let scale = (a * a + b * b + c * c + d * d).sqrt();
+        let has_joins = self.current_path.len() >= 3;
+        let factor = if has_joins && self.graphics.line_join == 0 {
+            self.graphics.miter_limit.max(std::f64::consts::SQRT_2)
+        } else {
+            std::f64::consts::SQRT_2
+        };
+        let reach = self.graphics.line_width.abs() / 2.0 * factor * scale;
+        if reach.is_finite() {
+            reach.max(0.5)
+        } else {
+            f64::MAX / 4.0
+        }
+    }
+
+    fn intersect_clip(&self, bounds: [f64; 4]) -> Option<[f64; 4]> {
+        let Some(clip) = self.graphics.clip else {
+            return Some(bounds);
+        };
+        let clipped = [
+            bounds[0].max(clip[0]),
+            bounds[1].max(clip[1]),
+            bounds[2].min(clip[2]),
+            bounds[3].min(clip[3]),
+        ];
+        (clipped[0] <= clipped[2] && clipped[1] <= clipped[3]).then_some(clipped)
+    }
+
+    /// Records a painted path, then applies a pending `W`/`W*` clip.
+    ///
+    /// Both steps only ever narrow a box that contains the real painted or clipped area, so
+    /// the recorded bounds stay a superset of the visible paint: the stroke reach widens the
+    /// path box, and the current clip box narrows it.
+    fn end_paint_path(&mut self, stroke: bool) {
+        if let Some(path) = self.path_bounds() {
+            let mut painted = path;
+            if stroke {
+                let reach = self.stroke_reach();
+                painted = [
+                    path[0] - reach,
+                    path[1] - reach,
+                    path[2] + reach,
+                    path[3] + reach,
+                ];
             }
-            if min_x.is_finite() && min_y.is_finite() && max_x.is_finite() && max_y.is_finite() {
-                self.trace.painted_paths.push([min_x, min_y, max_x, max_y]);
+            if let Some(visible) = self.intersect_clip(painted) {
+                self.trace.painted_paths.push(visible);
             }
-            self.current_path.clear();
+            self.apply_pending_clip(Some(path));
+        } else {
+            self.apply_pending_clip(None);
+        }
+        self.current_path.clear();
+    }
+
+    /// `n`: ends the path without painting; a pending clip still takes effect.
+    fn end_paint_path_without_painting(&mut self) {
+        let path = self.path_bounds();
+        self.apply_pending_clip(path);
+        self.current_path.clear();
+    }
+
+    fn apply_pending_clip(&mut self, path: Option<[f64; 4]>) {
+        if !std::mem::take(&mut self.pending_clip) {
+            return;
+        }
+        // A clip without a usable path leaves the clip unchanged, which is the larger area
+        // and therefore the safe side.
+        if let Some(path) = path {
+            self.graphics.clip = Some(self.intersect_clip(path).unwrap_or([1.0, 1.0, 0.0, 0.0]));
         }
     }
     fn validate_matrix(&self, matrix: Matrix) -> Result<(), PdfError> {
