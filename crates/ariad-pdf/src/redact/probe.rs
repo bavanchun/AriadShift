@@ -73,6 +73,18 @@ const DRIFT_PAD: f64 = 2.0;
 /// edge pixels shared with the surroundings never decide the check.
 const ERODE: f64 = 1.0;
 
+/// Outcome of comparing the renders of one page.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbeVerdict {
+    /// Nothing survives under the regions and nothing else changed.
+    Agree,
+    /// Original content survives, or content outside the allowed areas changed.
+    Disagree,
+    /// The comparison cannot decide (a region too thin to look inside, renders that do not
+    /// match). Never read as agreement.
+    Unavailable,
+}
+
 /// One page the render check must cover.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProbePage {
@@ -336,6 +348,10 @@ fn channel_distance(a: &image::Rgba<u8>, b: &image::Rgba<u8>) -> i16 {
 
 /// Compares the render of the original page with the render of the probe.
 ///
+/// A region thinner than twice [`ERODE`] in either direction leaves nothing to look inside
+/// once its edge pixels are set aside, so the page is [`ProbeVerdict::Unavailable`], never
+/// silently skipped.
+///
 /// `image_to_page` maps the unit raster square to page points, like the matrix of
 /// [`pixels::verify_rendered_pixels`]. Returns `false`, never an error, for a disagreement:
 /// - a pixel well inside a region that is neither black (what a cleared image renders as) nor
@@ -351,9 +367,13 @@ pub fn verify_probe_render(
     page: &ProbePage,
     limits: &Limits,
     ctx: &ToolCtx,
-) -> Result<bool, PdfError> {
+) -> Result<ProbeVerdict, PdfError> {
     if original.dimensions() != probe.dimensions() || page.regions.is_empty() {
-        return Ok(false);
+        return Ok(ProbeVerdict::Disagree);
+    }
+    let thin = |r: &[f64; 4]| !(r[2] - r[0] > 2.0 * ERODE && r[3] - r[1] > 2.0 * ERODE);
+    if page.regions.iter().any(thin) {
+        return Ok(ProbeVerdict::Unavailable);
     }
     let (width, height) = original.dimensions();
     let mut work = 0;
@@ -402,7 +422,7 @@ pub fn verify_probe_render(
             let drifted =
                 drift[index] && !(cleared && o.0[..3].iter().any(|v| *v > DRIFT_BRIGHT_MAX));
             if !drifted {
-                return Ok(false);
+                return Ok(ProbeVerdict::Disagree);
             }
         }
         if inside[index] {
@@ -410,11 +430,11 @@ pub fn verify_probe_render(
             // Never "changed": a leftover that re-encoding moved to another colour is still
             // original content. Only the cleared colour or page white is accepted.
             if !cleared_or_blank {
-                return Ok(false);
+                return Ok(ProbeVerdict::Disagree);
             }
         }
     }
-    Ok(true)
+    Ok(ProbeVerdict::Agree)
 }
 
 #[cfg(test)]
@@ -456,6 +476,7 @@ mod tests {
             &ToolCtx::new(),
         )
         .unwrap()
+            == ProbeVerdict::Agree
     }
 
     fn white() -> RgbaImage {
@@ -528,6 +549,7 @@ mod tests {
                 &ToolCtx::new(),
             )
             .unwrap()
+                == ProbeVerdict::Agree
         };
         // Pure K renders as about 32 gray: accepted only where a cleared image is CMYK.
         assert!(run(true, [32, 32, 32]));
@@ -554,6 +576,7 @@ mod tests {
             &ToolCtx::new(),
         )
         .unwrap()
+            == ProbeVerdict::Agree
     }
 
     #[test]
@@ -589,6 +612,34 @@ mod tests {
         let mut leftover = drifted.clone();
         paint(&mut leftover, 30, 50, 6, 6, 100);
         assert!(!check_with_drift(&original, &leftover, true));
+    }
+
+    #[test]
+    fn a_region_too_thin_to_look_inside_is_unavailable_not_skipped() {
+        let mut original = white();
+        paint(&mut original, 25, 45, 30, 30, 128);
+        let run = |region: [f64; 4]| {
+            let page = ProbePage {
+                page: 1,
+                regions: vec![region],
+                allowed: vec![region],
+                cmyk_cleared: false,
+                drift: Vec::new(),
+            };
+            // The original itself as the probe: everything survives.
+            verify_probe_render(
+                &original,
+                &original,
+                matrix(),
+                &page,
+                &Limits::local(),
+                &ToolCtx::new(),
+            )
+            .unwrap()
+        };
+        assert_eq!(run([20.0, 20.0, 21.5, 60.0]), ProbeVerdict::Unavailable);
+        assert_eq!(run([20.0, 20.0, 60.0, 21.9]), ProbeVerdict::Unavailable);
+        assert_eq!(run([20.0, 20.0, 60.0, 60.0]), ProbeVerdict::Disagree);
     }
 
     #[test]

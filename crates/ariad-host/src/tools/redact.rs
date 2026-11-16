@@ -42,7 +42,7 @@ use ariad_core::{
 use ariad_pdf::{
     ToolCtx,
     redact::{
-        Matrix, Region, has_signatures, plan, probe_pages, rewrite_document_probe,
+        Matrix, ProbeVerdict, Region, has_signatures, plan, probe_pages, rewrite_document_probe,
         rewrite_document_with_evidence, verify_core_text, verify_image_pixels, verify_object_graph,
         verify_pdfium_text, verify_probe_render, verify_raw_literals, verify_raw_literals_for_plan,
         verify_rendered_pixels_with_overlay, verify_rewrite_history,
@@ -831,7 +831,21 @@ fn compare_probe_renders(
         let probes = job.render_pages(probe_path, &numbers, dpi, events)?;
         for (((page, page_id, _), original), probe) in batch.iter().zip(originals).zip(probes) {
             job.check()?;
-            let agrees = verify_probe_render(
+            // The raster must have the size the page mapping assumes: crop box (swapped for a
+            // quarter turn) times dpi / 72, give or take the engine's rounding.
+            let rotated = ariad_pdf::xobject::resolve_page_rotation(doc.inner(), *page_id)
+                .rem_euclid(180)
+                == 90;
+            let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), *page_id);
+            let (w, h) = (crop.right - crop.left, crop.top - crop.bottom);
+            let (w, h) = if rotated { (h, w) } else { (w, h) };
+            let scale = f64::from(dpi) / 72.0;
+            let size_ok =
+                |got: u32, expected: f64| (f64::from(got) - expected * scale).abs() <= 2.0;
+            if !size_ok(original.width(), w) || !size_ok(original.height(), h) {
+                return Ok(RedactionCheckStatus::Unavailable);
+            }
+            let verdict = verify_probe_render(
                 &original,
                 &probe,
                 render_matrix(&doc, *page_id),
@@ -840,8 +854,10 @@ fn compare_probe_renders(
                 &job.ctx,
             )
             .map_err(map)?;
-            if !agrees {
-                return Ok(RedactionCheckStatus::Fail);
+            match verdict {
+                ProbeVerdict::Agree => {}
+                ProbeVerdict::Disagree => return Ok(RedactionCheckStatus::Fail),
+                ProbeVerdict::Unavailable => return Ok(RedactionCheckStatus::Unavailable),
             }
         }
     }

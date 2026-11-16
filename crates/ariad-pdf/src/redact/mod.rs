@@ -20,7 +20,7 @@ pub use crate::xobject::Matrix;
 #[cfg(feature = "codecs")]
 pub use pixels::{verify_rendered_pixels, verify_rendered_pixels_with_overlay};
 #[cfg(feature = "codecs")]
-pub use probe::{ProbePage, max_probe_pages, probe_pages, verify_probe_render};
+pub use probe::{ProbePage, ProbeVerdict, max_probe_pages, probe_pages, verify_probe_render};
 pub use signatures::has_signatures;
 
 use ariad_core::{
@@ -922,10 +922,13 @@ fn collect_page_image_placements(
             }
             "BI" => return Err(placement_scan_refused("inline image")),
             "gs" => {
-                if let Some(Ok(name)) = op.operands.first().map(Object::as_name)
-                    && graphics_state_has_soft_mask(doc, &resources, name)
-                {
-                    return Err(carrier_refused("ext_gstate_smask"));
+                if let Some(Ok(name)) = op.operands.first().map(Object::as_name) {
+                    match graphics_state_soft_mask(doc, &resources, name) {
+                        Some(false) => {}
+                        Some(true) => return Err(carrier_refused("ext_gstate_smask")),
+                        // A state that cannot be read may hold a soft mask: never pass on doubt.
+                        None => return Err(carrier_refused("ext_gstate_unresolved")),
+                    }
                 }
             }
             _ => {}
@@ -934,16 +937,17 @@ fn collect_page_image_placements(
     Ok(placements)
 }
 
-/// Whether the named `ExtGState` sets a soft mask other than `/None`.
+/// Whether the named `ExtGState` sets a soft mask other than `/None`, or `None` when the state
+/// cannot be resolved to a dictionary.
 ///
 /// A soft mask is a transparency group form that can draw images the placement scan would
 /// not see, so a page that selects one cannot be fully scanned.
 #[cfg(feature = "codecs")]
-fn graphics_state_has_soft_mask(
+fn graphics_state_soft_mask(
     doc: &Document,
     resources: &lopdf::Dictionary,
     name: &[u8],
-) -> bool {
+) -> Option<bool> {
     let state = resources
         .get(b"ExtGState")
         .ok()
@@ -951,11 +955,14 @@ fn graphics_state_has_soft_mask(
         .and_then(|(_, v)| v.as_dict().ok())
         .and_then(|states| states.get(name).ok())
         .and_then(|v| doc.dereference(v).ok())
-        .and_then(|(_, v)| v.as_dict().ok());
-    state
-        .and_then(|d| d.get(b"SMask").ok())
-        .and_then(|v| doc.dereference(v).ok())
-        .is_some_and(|(_, v)| !matches!(v.as_name(), Ok(b"None")))
+        .and_then(|(_, v)| v.as_dict().ok())?;
+    Some(
+        state
+            .get(b"SMask")
+            .ok()
+            .and_then(|v| doc.dereference(v).ok())
+            .is_some_and(|(_, v)| !matches!(v.as_name(), Ok(b"None"))),
+    )
 }
 
 #[cfg(feature = "codecs")]
@@ -2921,6 +2928,41 @@ mod tests {
         assert_eq!(error.to_string(), expected);
         let error = verify_image_pixels(&bytes, &planned, &limits, &ctx).unwrap_err();
         assert_eq!(error.to_string(), expected);
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn an_unresolvable_graphics_state_is_refused_not_read_as_no_soft_mask() {
+        let expected = "uninspected carrier refused: ext_gstate_unresolved";
+        let (limits, ctx) = (Limits::local(), ToolCtx::new());
+        // With an image (the placement scan) and without one (the content trace); the state
+        // is missing from the resources, or the resource category is absent altogether.
+        for (content, with_image, with_states) in [
+            (&b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q"[..], true, true),
+            (&b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q"[..], true, false),
+            (&b"/G gs 70 70 20 20 re f"[..], false, true),
+            (&b"/G gs 70 70 20 20 re f"[..], false, false),
+        ] {
+            let mut doc = Document::with_version("1.7");
+            let mut resources = dictionary! {};
+            if with_image {
+                let image = gray_image(&mut doc, 8, 8, 200);
+                resources.set("XObject", dictionary! { "Im0" => image });
+            }
+            if with_states {
+                resources.set("ExtGState", dictionary! {});
+            }
+            let bytes = single_page(&mut doc, content, resources, lopdf::Dictionary::new());
+            let (request, planned, geometry) =
+                rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 90.0, 90.0])]);
+            let error =
+                rewrite_document(&bytes, &request, &planned, &geometry, &limits, &ctx).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                expected,
+                "image {with_image}, states {with_states}"
+            );
+        }
     }
 
     /// Distinct 4x4 grey samples, so the original pixels are recognizable in any output.

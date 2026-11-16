@@ -379,6 +379,18 @@ pub fn trace(
                             .uninspected_carrier
                             .get_or_insert_with(|| "ext_gstate_smask".into());
                     }
+                    // A state that cannot be resolved may hold a soft mask or a font: refuse.
+                    if state.is_none() {
+                        walker.trace.uninspected_objects = walker
+                            .trace
+                            .uninspected_objects
+                            .checked_add(1)
+                            .ok_or(PdfError::Malformed)?;
+                        walker
+                            .trace
+                            .uninspected_carrier
+                            .get_or_insert_with(|| "ext_gstate_unresolved".into());
+                    }
                     let has_font = state.is_some_and(|d| d.has(b"Font"));
                     if has_font {
                         walker.trace.uninspected_objects = walker
