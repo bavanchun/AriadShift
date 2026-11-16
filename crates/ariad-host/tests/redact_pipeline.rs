@@ -1853,7 +1853,12 @@ fn redact_pipeline_partially_covered_image_passes_the_render_probe() {
         assert_eq!(report.carriers.unwrap().images_modified, 1, "{name}");
         // The probe is verification evidence: only the redacted PDF is published.
         assert_eq!(outcome.artifacts.len(), 1, "{name}");
-        assert_eq!(outcome.artifacts[0].path, out, "{name}");
+        // On macOS the temp dir sits behind the /var -> /private/var symlink: compare resolved paths.
+        assert_eq!(
+            fs::canonicalize(&outcome.artifacts[0].path).unwrap(),
+            fs::canonicalize(&out).unwrap(),
+            "{name}"
+        );
     }
 }
 
