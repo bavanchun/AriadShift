@@ -14,6 +14,7 @@ macro_rules! command_table {
             (packs, Empty, Vec<PackRow>),
             (pack, PackRequest, String),
             (pack_cancel, Empty, ()),
+            (pack_notices, PackNoticesRequest, PackNoticesView),
             (doctor, Empty, Vec<Diagnostic>),
             (opened_files, Empty, Vec<String>),
         }

@@ -67,6 +67,9 @@ export type PackRequest = {
   action: PackAction;
   from: string | null;
 };
+export type PackNoticesRequest = { name: string; version: string | null };
+export type PackNoticeView = { path: string; text: string };
+export type PackNoticesView = { name: string; version: string; notices: Array<PackNoticeView> };
 export type Diagnostic = {
   id: string;
   ok: boolean;

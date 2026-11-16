@@ -150,6 +150,22 @@ pub struct PackRequest {
     pub from: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
+pub struct PackNoticesRequest {
+    pub name: String,
+    pub version: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+pub struct PackNoticeView {
+    pub path: String,
+    pub text: String,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+pub struct PackNoticesView {
+    pub name: String,
+    pub version: String,
+    pub notices: Vec<PackNoticeView>,
+}
+#[derive(Clone, Deserialize, Serialize, TS)]
 pub struct Diagnostic {
     pub id: String,
     pub ok: bool,
