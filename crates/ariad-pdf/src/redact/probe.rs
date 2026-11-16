@@ -96,9 +96,11 @@ pub struct ProbePage {
     /// pixel cells of the images they clear, the characters it removes and the annotations on
     /// the page.
     pub allowed: Vec<[f64; 4]>,
-    /// Whether an image the rewrite cleared on this page is CMYK, so that cleared pixels may
-    /// render as the [`CMYK_CLEARED`] gray instead of black.
-    pub cmyk_cleared: bool,
+    /// Page-point rectangles of the cleared CMYK image placements that intersect a region.
+    /// Only inside them may a cleared pixel render as the [`CMYK_CLEARED`] gray instead of
+    /// black; anywhere else on the page that gray is a leftover (dark text over RGB or vector
+    /// content, for example).
+    pub cmyk_footprints: Vec<[f64; 4]>,
     /// The drift zone: bounding boxes, in page points, of the images the rewrite re-encoded.
     ///
     /// Re-encoding writes a fresh device-colour image without the original's ICC profile or
@@ -113,6 +115,15 @@ pub struct ProbePage {
 
 fn dilate(rect: [f64; 4], by: f64) -> [f64; 4] {
     [rect[0] - by, rect[1] - by, rect[2] + by, rect[3] + by]
+}
+
+fn intersects(a: &[f64; 4], b: &[f64; 4]) -> bool {
+    a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+}
+
+/// Whether a region is too thin to look inside once [`ERODE`] is set aside on each side.
+fn is_thin(r: &[f64; 4]) -> bool {
+    !(r[2] - r[0] > 2.0 * ERODE && r[3] - r[1] > 2.0 * ERODE)
 }
 
 fn number(object: &Object) -> Option<f64> {
@@ -237,7 +248,7 @@ pub fn probe_pages(
             page,
             regions,
             allowed,
-            cmyk_cleared: false,
+            cmyk_footprints: Vec::new(),
             drift: Vec::new(),
         });
     }
@@ -250,7 +261,12 @@ pub fn probe_pages(
     let cleared = cleared_images(candidate, plan, limits, ctx)?;
     for probe in &mut pages {
         let info = cleared.get(&probe.page).cloned().unwrap_or_default();
-        probe.cmyk_cleared = info.cmyk;
+        probe.cmyk_footprints = info
+            .cmyk_footprints
+            .iter()
+            .copied()
+            .filter(|f| probe.regions.iter().any(|r| intersects(f, r)))
+            .collect();
         probe.drift = info
             .footprints
             .iter()
@@ -272,8 +288,8 @@ pub fn probe_pages(
 struct ClearedImages {
     /// Largest pixel cell, in page points.
     margin: f64,
-    /// Whether any cleared image is CMYK.
-    cmyk: bool,
+    /// Bounding box of every placement of a cleared CMYK image, in page points.
+    cmyk_footprints: Vec<[f64; 4]>,
     /// Bounding box of every placement of a cleared image, in page points.
     footprints: Vec<[f64; 4]>,
 }
@@ -322,7 +338,6 @@ fn cleared_images(
             let number = *page_numbers.get(&page).ok_or(PdfError::Malformed)?;
             let slot = margins.entry(number).or_insert_with(ClearedImages::default);
             slot.margin = slot.margin.max(cell);
-            slot.cmyk |= cmyk;
             let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)].map(|(x, y)| {
                 (
                     ctm.0[0] * x + ctm.0[2] * y + ctm.0[4],
@@ -333,7 +348,11 @@ fn cleared_images(
             let ys = corners.map(|c| c.1);
             let min = |v: [f64; 4]| v.into_iter().fold(f64::INFINITY, f64::min);
             let max = |v: [f64; 4]| v.into_iter().fold(f64::NEG_INFINITY, f64::max);
-            slot.footprints.push([min(xs), min(ys), max(xs), max(ys)]);
+            let footprint = [min(xs), min(ys), max(xs), max(ys)];
+            if cmyk {
+                slot.cmyk_footprints.push(footprint);
+            }
+            slot.footprints.push(footprint);
         }
     }
     Ok(margins)
@@ -371,8 +390,7 @@ pub fn verify_probe_render(
     if original.dimensions() != probe.dimensions() || page.regions.is_empty() {
         return Ok(ProbeVerdict::Disagree);
     }
-    let thin = |r: &[f64; 4]| !(r[2] - r[0] > 2.0 * ERODE && r[3] - r[1] > 2.0 * ERODE);
-    if page.regions.iter().any(thin) {
+    if page.regions.iter().any(is_thin) {
         return Ok(ProbeVerdict::Unavailable);
     }
     let (width, height) = original.dimensions();
@@ -401,6 +419,11 @@ pub fn verify_probe_render(
         mask(&eroded)?
     };
     let allowed = mask(&page.allowed)?;
+    let cmyk = if page.cmyk_footprints.is_empty() {
+        vec![false; width as usize * height as usize]
+    } else {
+        mask(&page.cmyk_footprints)?
+    };
     let drift = if page.drift.is_empty() {
         vec![false; width as usize * height as usize]
     } else {
@@ -414,7 +437,7 @@ pub fn verify_probe_render(
         let level = p.0[0].max(p.0[1]).max(p.0[2]);
         let low = p.0[0].min(p.0[1]).min(p.0[2]);
         let cleared = level <= BLACK_MAX
-            || (page.cmyk_cleared
+            || (cmyk[index]
                 && CMYK_CLEARED.contains(&low)
                 && CMYK_CLEARED.contains(&level)
                 && level - low <= CMYK_CLEARED_SPREAD);
@@ -453,7 +476,7 @@ mod tests {
             // Page rows 40..80 and columns 20..60.
             regions: vec![[20.0, 20.0, 60.0, 60.0]],
             allowed,
-            cmyk_cleared: false,
+            cmyk_footprints: Vec::new(),
             drift: Vec::new(),
         }
     }
@@ -527,6 +550,11 @@ mod tests {
         paint(&mut original, 25, 45, 30, 30, 128);
         let region = [[20.0, 20.0, 60.0, 60.0]];
         let run = |cmyk_cleared: bool, level: [u8; 3]| {
+            let footprints = if cmyk_cleared {
+                vec![[0.0, 0.0, 100.0, 100.0]]
+            } else {
+                Vec::new()
+            };
             let mut probe = original.clone();
             for y in 40..80 {
                 for x in 20..60 {
@@ -537,7 +565,7 @@ mod tests {
                 page: 1,
                 regions: region.to_vec(),
                 allowed: region.to_vec(),
-                cmyk_cleared,
+                cmyk_footprints: footprints,
                 drift: Vec::new(),
             };
             verify_probe_render(
@@ -559,6 +587,42 @@ mod tests {
         assert!(!run(true, [60, 60, 60]));
         assert!(!run(true, [128, 128, 128]));
         assert!(run(true, [0, 0, 0]));
+    }
+
+    #[test]
+    fn cmyk_gray_is_accepted_only_inside_a_cmyk_footprint() {
+        // A cleared CMYK image covers columns 20..40 and a non-CMYK area is columns 40..60,
+        // both under the region. A neutral 32 gray over the non-CMYK area is a leftover.
+        let mut original = white();
+        paint(&mut original, 25, 45, 30, 30, 128);
+        let run = |gray_columns: std::ops::Range<u32>| {
+            let mut probe = original.clone();
+            paint(&mut probe, 20, 40, 40, 40, 0);
+            for y in 40..80 {
+                for x in gray_columns.clone() {
+                    probe.put_pixel(x, y, Rgba([32, 32, 32, 255]));
+                }
+            }
+            let page = ProbePage {
+                page: 1,
+                regions: vec![[20.0, 20.0, 60.0, 60.0]],
+                allowed: vec![[20.0, 20.0, 60.0, 60.0]],
+                cmyk_footprints: vec![[20.0, 0.0, 40.0, 100.0]],
+                drift: Vec::new(),
+            };
+            verify_probe_render(
+                &original,
+                &probe,
+                matrix(),
+                &page,
+                &Limits::local(),
+                &ToolCtx::new(),
+            )
+            .unwrap()
+        };
+        assert_eq!(run(20..40), ProbeVerdict::Agree);
+        assert_eq!(run(40..60), ProbeVerdict::Disagree);
+        assert_eq!(run(20..60), ProbeVerdict::Disagree);
     }
 
     /// A probe page whose drift zone is the whole page.
@@ -623,7 +687,7 @@ mod tests {
                 page: 1,
                 regions: vec![region],
                 allowed: vec![region],
-                cmyk_cleared: false,
+                cmyk_footprints: Vec::new(),
                 drift: Vec::new(),
             };
             // The original itself as the probe: everything survives.
