@@ -30,6 +30,12 @@ const TOLERANCE: i16 = 8;
 /// Gray levels that still count as the black a cleared image renders as, and as page white.
 const BLACK_MAX: u8 = 16;
 const WHITE_MIN: u8 = 239;
+/// Neutral gray band a cleared CMYK image renders as. Clearing writes pure K (0, 0, 0, 255),
+/// which PDFium's device CMYK conversion renders as a dark gray, not as RGB black. Accepted
+/// only on pages where a cleared image is CMYK, and only for near-neutral pixels. A leftover of
+/// exactly this level is invisible to the check, like any leftover that renders black.
+const CMYK_CLEARED: std::ops::RangeInclusive<u8> = 24..=40;
+const CMYK_CLEARED_SPREAD: u8 = 8;
 /// Distance, in points, a region shrinks by before leftovers are looked for in it, so that
 /// edge pixels shared with the surroundings never decide the check.
 const ERODE: f64 = 1.0;
@@ -45,6 +51,9 @@ pub struct ProbePage {
     /// pixel cells of the images they clear, the characters it removes and the annotations on
     /// the page.
     pub allowed: Vec<[f64; 4]>,
+    /// Whether an image the rewrite cleared on this page is CMYK, so that cleared pixels may
+    /// render as the [`CMYK_CLEARED`] gray instead of black.
+    pub cmyk_cleared: bool,
 }
 
 fn dilate(rect: [f64; 4], by: f64) -> [f64; 4] {
@@ -173,6 +182,7 @@ pub fn probe_pages(
             page,
             regions,
             allowed,
+            cmyk_cleared: false,
         });
     }
     if pages.len() > MAX_PROBE_PAGES {
@@ -181,13 +191,11 @@ pub fn probe_pages(
         ));
     }
     // Cleared images lose whole pixels, so their change reaches one pixel cell past a region.
-    let margins = image_cell_margins(candidate, plan, limits, ctx)?;
+    let cleared = cleared_images(candidate, plan, limits, ctx)?;
     for probe in &mut pages {
-        let margin = page_ids
-            .get(probe.page as usize - 1)
-            .and_then(|id| margins.get(id))
-            .copied()
-            .unwrap_or(0.0);
+        let info = cleared.get(&probe.page).copied().unwrap_or_default();
+        probe.cmyk_cleared = info.cmyk;
+        let margin = info.margin;
         let regions: Vec<[f64; 4]> = probe
             .regions
             .iter()
@@ -198,14 +206,28 @@ pub fn probe_pages(
     Ok(pages)
 }
 
-/// Largest pixel cell, in page points, of each image the rewrite cleared, per page.
-fn image_cell_margins(
+/// What the rewrite did to the images of one page.
+#[derive(Clone, Copy, Default)]
+struct ClearedImages {
+    /// Largest pixel cell, in page points.
+    margin: f64,
+    /// Whether any cleared image is CMYK.
+    cmyk: bool,
+}
+
+/// The images the rewrite cleared, per one-based page number. The candidate is a rewritten and
+/// saved file, so its object ids need not match the original's: pages are matched by number.
+fn cleared_images(
     candidate: &[u8],
     plan: &RedactionPlan,
     limits: &Limits,
     ctx: &ToolCtx,
-) -> Result<BTreeMap<ObjectId, f64>, PdfError> {
+) -> Result<BTreeMap<u32, ClearedImages>, PdfError> {
     let doc = crate::document::open_with_ctx(candidate, limits, ctx)?;
+    let page_numbers: BTreeMap<ObjectId, u32> = collect_page_ids(doc.inner(), ctx)?
+        .into_iter()
+        .zip(1u32..)
+        .collect();
     let mut budget = doc.decode_budget();
     let mut margins = BTreeMap::new();
     for ((page, image), placements) in targeted_placements(doc.inner(), plan, &mut budget, ctx)? {
@@ -223,14 +245,21 @@ fn image_cell_margins(
                 .ok_or(PdfError::Malformed)
         };
         let (width, height) = (dimension(b"Width")?, dimension(b"Height")?);
+        let cmyk = dict
+            .get(b"ColorSpace")
+            .ok()
+            .and_then(|v| v.as_name().ok())
+            .is_some_and(|name| name == b"DeviceCMYK");
         for (ctm, _) in placements {
             let [a, b, c, d, _, _] = ctm.0;
             let cell = (a.hypot(b) / width).max(c.hypot(d) / height);
             if !cell.is_finite() {
                 return Err(PdfError::Malformed);
             }
-            let slot = margins.entry(page).or_insert(0.0_f64);
-            *slot = slot.max(cell);
+            let number = *page_numbers.get(&page).ok_or(PdfError::Malformed)?;
+            let slot = margins.entry(number).or_insert_with(ClearedImages::default);
+            slot.margin = slot.margin.max(cell);
+            slot.cmyk |= cmyk;
         }
     }
     Ok(margins)
@@ -247,9 +276,10 @@ fn channel_distance(a: &image::Rgba<u8>, b: &image::Rgba<u8>) -> i16 {
 ///
 /// `image_to_page` maps the unit raster square to page points, like the matrix of
 /// [`pixels::verify_rendered_pixels`]. Returns `false`, never an error, for a disagreement:
-/// - a pixel well inside a region that the redaction left unchanged and that is neither black
-///   (what a cleared image renders as) nor white (page background) is original content that
-///   survived;
+/// - a pixel well inside a region that is neither black (what a cleared image renders as) nor
+///   white (page background) is original content that survived, whether or not its colour
+///   moved: re-encoding an ICC or CMYK image to a device colour space shifts colours, so a
+///   missed cell can render differently from the original and still be a leftover;
 /// - a pixel outside every allowed area that differs from the original shows that the
 ///   redaction changed more than it was asked to (over-clearing).
 pub fn verify_probe_render(
@@ -300,8 +330,15 @@ pub fn verify_probe_render(
         if inside[index] {
             let level = p.0[0].max(p.0[1]).max(p.0[2]);
             let low = p.0[0].min(p.0[1]).min(p.0[2]);
-            let cleared_or_blank = level <= BLACK_MAX || low >= WHITE_MIN;
-            if unchanged && !cleared_or_blank {
+            let cleared_or_blank = level <= BLACK_MAX
+                || low >= WHITE_MIN
+                || (page.cmyk_cleared
+                    && CMYK_CLEARED.contains(&low)
+                    && CMYK_CLEARED.contains(&level)
+                    && level - low <= CMYK_CLEARED_SPREAD);
+            // Never "changed": a leftover that re-encoding moved to another colour is still
+            // original content. Only the cleared colour or page white is accepted.
+            if !cleared_or_blank {
                 return Ok(false);
             }
         }
@@ -325,6 +362,7 @@ mod tests {
             // Page rows 40..80 and columns 20..60.
             regions: vec![[20.0, 20.0, 60.0, 60.0]],
             allowed,
+            cmyk_cleared: false,
         }
     }
 
@@ -367,6 +405,65 @@ mod tests {
         let mut partial = original.clone();
         paint(&mut partial, 25, 45, 10, 30, 0);
         assert!(!check(&original, &partial, allowed));
+    }
+
+    #[test]
+    fn drifted_leftover_inside_a_region_fails() {
+        // A leftover cell whose colour moved by more than the tolerance (an ICC or CMYK image
+        // re-encoded to a device colour space renders differently) is still original content:
+        // inside a region only the cleared colour counts, never "changed".
+        let mut original = white();
+        paint(&mut original, 25, 45, 30, 30, 128);
+        let mut cleared = original.clone();
+        paint(&mut cleared, 20, 40, 40, 40, 0);
+        let allowed = vec![[20.0, 20.0, 60.0, 60.0]];
+        assert!(check(&original, &cleared, allowed.clone()));
+        for drifted in [100u8, 60, 40, 200] {
+            let mut leftover = cleared.clone();
+            paint(&mut leftover, 30, 50, 6, 6, drifted);
+            assert!(
+                !check(&original, &leftover, allowed.clone()),
+                "a leftover cell rendered as {drifted} must fail"
+            );
+        }
+    }
+
+    #[test]
+    fn cleared_cmyk_renders_as_a_neutral_dark_gray() {
+        let mut original = white();
+        paint(&mut original, 25, 45, 30, 30, 128);
+        let region = [[20.0, 20.0, 60.0, 60.0]];
+        let run = |cmyk_cleared: bool, level: [u8; 3]| {
+            let mut probe = original.clone();
+            for y in 40..80 {
+                for x in 20..60 {
+                    probe.put_pixel(x, y, Rgba([level[0], level[1], level[2], 255]));
+                }
+            }
+            let page = ProbePage {
+                page: 1,
+                regions: region.to_vec(),
+                allowed: region.to_vec(),
+                cmyk_cleared,
+            };
+            verify_probe_render(
+                &original,
+                &probe,
+                matrix(),
+                &page,
+                &Limits::local(),
+                &ToolCtx::new(),
+            )
+            .unwrap()
+        };
+        // Pure K renders as about 32 gray: accepted only where a cleared image is CMYK.
+        assert!(run(true, [32, 32, 32]));
+        assert!(!run(false, [32, 32, 32]));
+        // Not neutral, or outside the band: still a leftover.
+        assert!(!run(true, [32, 32, 60]));
+        assert!(!run(true, [60, 60, 60]));
+        assert!(!run(true, [128, 128, 128]));
+        assert!(run(true, [0, 0, 0]));
     }
 
     #[test]

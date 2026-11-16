@@ -2164,3 +2164,226 @@ fn redact_oversized_companion_report_and_redact_verify_inline_contract() {
         fs::canonicalize(temp.path().join("doc.redact-verify.json")).unwrap()
     );
 }
+
+/// Smallest valid ICC v2 CMYK input profile (`lut8`, two grid points per channel, Lab PCS).
+///
+/// The colours are invented, so a CMYK sample renders differently through this profile than
+/// through PDFium's device CMYK conversion. That difference is what re-encoding an ICC image
+/// to `/DeviceCMYK` causes in the render probe.
+fn synthetic_cmyk_icc() -> Vec<u8> {
+    fn tag_xyz() -> Vec<u8> {
+        let mut v = b"XYZ \0\0\0\0".to_vec();
+        for value in [0x0000_F6D6u32, 0x0001_0000, 0x0000_D32D] {
+            v.extend(value.to_be_bytes());
+        }
+        v
+    }
+    let mut lut = b"mft1\0\0\0\0".to_vec();
+    lut.extend([4, 3, 2, 0]);
+    for value in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] {
+        lut.extend(((value * 65536.0) as i32).to_be_bytes());
+    }
+    for _ in 0..4 {
+        lut.extend(0..=255u8);
+    }
+    for node in 0..16u32 {
+        let [c, m, y, k] = [
+            f64::from(node >> 3 & 1),
+            f64::from(node >> 2 & 1),
+            f64::from(node >> 1 & 1),
+            f64::from(node & 1),
+        ];
+        let lightness = (1.0 - 0.95 * k) * (100.0 - 40.0 * c - 30.0 * m - 15.0 * y);
+        let a = 60.0 * m - 40.0 * c;
+        let b = 70.0 * y - 30.0 * c;
+        lut.push((lightness * 255.0 / 100.0).round() as u8);
+        lut.push((a + 128.0).round() as u8);
+        lut.push((b + 128.0).round() as u8);
+    }
+    for _ in 0..3 {
+        lut.extend(0..=255u8);
+    }
+    let mut text = b"text\0\0\0\0synthetic test profile\0".to_vec();
+    text.resize(text.len().next_multiple_of(4), 0);
+    lut.resize(lut.len().next_multiple_of(4), 0);
+    let tags: [(&[u8; 4], Vec<u8>); 3] = [(b"A2B0", lut), (b"cprt", text), (b"wtpt", tag_xyz())];
+    let mut table = Vec::new();
+    let mut body: Vec<u8> = Vec::new();
+    let first = 128 + 4 + 12 * tags.len();
+    for (signature, data) in &tags {
+        table.extend(*signature);
+        table.extend(((first + body.len()) as u32).to_be_bytes());
+        table.extend((data.len() as u32).to_be_bytes());
+        body.extend(data);
+    }
+    let mut profile = vec![0u8; 128];
+    profile[8..12].copy_from_slice(&[2, 0x10, 0, 0]);
+    profile[12..16].copy_from_slice(b"prtr");
+    profile[16..20].copy_from_slice(b"CMYK");
+    profile[20..24].copy_from_slice(b"Lab ");
+    profile[36..40].copy_from_slice(b"acsp");
+    profile[68..72].copy_from_slice(&0x0000_F6D6u32.to_be_bytes());
+    profile[72..76].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    profile[76..80].copy_from_slice(&0x0000_D32Du32.to_be_bytes());
+    profile.extend((tags.len() as u32).to_be_bytes());
+    profile.extend(table);
+    profile.extend(body);
+    let size = profile.len() as u32;
+    profile[0..4].copy_from_slice(&size.to_be_bytes());
+    profile
+}
+
+/// How the 8x8 CMYK image of [`write_cmyk_pdf`] is filled. The cells in columns and rows 2..6
+/// (the 100 x 100 pt block under the redaction rectangle) hold mid-tones, everything else is
+/// blank paper.
+#[derive(Clone, Copy, PartialEq)]
+enum Block {
+    /// The original mid-tones.
+    Original,
+    /// Every cell of the block cleared to black.
+    Cleared,
+    /// Every cell cleared except the one at (column 3, row 3).
+    ClearedButOne,
+}
+
+/// One page (`/Rotate` `rotate`) with an 8x8 CMYK image at x 100..300, y 300..500, tagged with
+/// the synthetic ICC profile when `icc` is true and `/DeviceCMYK` otherwise.
+fn write_cmyk_pdf(path: &Path, icc: bool, block: Block, rotate: i64) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let mut data = Vec::new();
+    for row in 0..8u32 {
+        for col in 0..8u32 {
+            let in_block = (2..6).contains(&col) && (2..6).contains(&row);
+            let cell = if !in_block {
+                [0, 0, 0, 0]
+            } else if block == Block::Cleared
+                || (block == Block::ClearedButOne && (col, row) != (3, 3))
+            {
+                [0, 0, 0, 255]
+            } else {
+                [128 + (col * 8) as u8, 64 + (row * 8) as u8, 64, 64]
+            };
+            data.extend(cell);
+        }
+    }
+    let color_space: Object = if icc {
+        let profile = doc.add_object(Stream::new(
+            dictionary! { "N" => 4, "Alternate" => "DeviceCMYK" },
+            synthetic_cmyk_icc(),
+        ));
+        Object::Array(vec![Object::Name(b"ICCBased".to_vec()), profile.into()])
+    } else {
+        Object::Name(b"DeviceCMYK".to_vec())
+    };
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 8, "Height" => 8,
+            "ColorSpace" => color_space, "BitsPerComponent" => 8,
+        },
+        data,
+    ));
+    let contents = doc.add_object(Stream::new(
+        Dictionary::new(),
+        b"q 200 0 0 200 100 300 cm /Im0 Do Q\n".to_vec(),
+    ));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id, "Rotate" => rotate,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+        "Contents" => contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+fn block_params() -> ariad_core::tools::params::redact::RedactParams {
+    serde_json::from_value(json!({ "targets": [{
+        "kind": "rectangle", "page": 1,
+        "rect": { "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }
+    }] }))
+    .unwrap()
+}
+
+/// The real candidate of `original` (the shipped rewrite), for the comparison's geometry.
+fn real_candidate(original: &Path, out: &Path) {
+    let limits = ariad_core::limits::Limits::local();
+    let ctx = ariad_pdf::ToolCtx::new();
+    let params = block_params();
+    let bytes = fs::read(original).unwrap();
+    let geometry = ariad_host::tools::redact::inspect_geometry_for_test(original, &limits).unwrap();
+    let plan = ariad_pdf::redact::plan(&bytes, &params, &geometry, &limits, &ctx).unwrap();
+    let (candidate, _) = ariad_pdf::redact::rewrite_document_with_evidence(
+        &bytes, &params, &plan, &geometry, &limits, &ctx,
+    )
+    .unwrap();
+    fs::write(out, candidate).unwrap();
+}
+
+fn channel_gap(a: &image::Rgba<u8>, b: &image::Rgba<u8>) -> i32 {
+    (0..3)
+        .map(|i| (i32::from(a.0[i]) - i32::from(b.0[i])).abs())
+        .max()
+        .unwrap()
+}
+
+#[test]
+fn render_probe_fails_a_leftover_cell_of_a_cmyk_icc_image() {
+    if !child("render_probe_fails_a_leftover_cell_of_a_cmyk_icc_image") {
+        return;
+    }
+    use ariad_host::tools::redact::{compare_probe_for_test, render_page_for_test};
+    let temp = tempfile::tempdir().unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let original = temp.path().join("original.pdf");
+    let candidate = temp.path().join("candidate.pdf");
+    let cleared = temp.path().join("cleared.pdf");
+    let leftover = temp.path().join("leftover.pdf");
+    write_cmyk_pdf(&original, true, Block::Original, 0);
+    write_cmyk_pdf(&cleared, false, Block::Cleared, 0);
+    write_cmyk_pdf(&leftover, false, Block::ClearedButOne, 0);
+    real_candidate(&original, &candidate);
+    let params = block_params();
+
+    // The precondition that makes this test meaningful: the missed cell renders differently
+    // through /DeviceCMYK than through the ICC profile, by more than the "unchanged" tolerance.
+    // Cell (3, 3) centre is at (187.5, 412.5) pt; 100 dpi.
+    let at = |image: &image::RgbaImage| {
+        *image.get_pixel(
+            (187.5f64 * 100.0 / 72.0) as u32,
+            ((792.0 - 412.5) * 100.0 / 72.0) as u32,
+        )
+    };
+    let before = at(&render_page_for_test(&original, 1, 100, &limits).unwrap());
+    let after = at(&render_page_for_test(&leftover, 1, 100, &limits).unwrap());
+    assert!(
+        channel_gap(&before, &after) > 8,
+        "the colour must drift for this test to prove anything: {before:?} -> {after:?}"
+    );
+    let black = at(&render_page_for_test(&cleared, 1, 100, &limits).unwrap());
+    assert!(
+        black.0[..3].iter().all(|v| (24..=40).contains(v)),
+        "cleared CMYK renders as a neutral dark gray, not black: {black:?}"
+    );
+    let verdict = |probe: &Path| {
+        compare_probe_for_test(&original, probe, &candidate, &params, &limits).unwrap()
+    };
+    assert_eq!(
+        verdict(&cleared),
+        RedactionCheckStatus::Pass,
+        "control: a fully cleared block passes"
+    );
+    assert_eq!(
+        verdict(&leftover),
+        RedactionCheckStatus::Fail,
+        "an uncleared cell whose colour drifted is a leftover"
+    );
+}

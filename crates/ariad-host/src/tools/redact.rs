@@ -745,6 +745,23 @@ fn verify_image_render_probe(
     let probe_path = job.workspace.input_dir().join("probe.pdf");
     fs::write(&probe_path, &probe_bytes)
         .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    compare_probe_renders(job, input_path, &probe_path, candidate_bytes, pages, events)
+}
+
+/// Renders the original and the probe of every page in `pages` and compares them.
+///
+/// The page geometry (crop box, rotation) comes from `candidate_bytes`, which has the pages of
+/// the original.
+fn compare_probe_renders(
+    job: &mut RedactJob<'_>,
+    input_path: &Path,
+    probe_path: &Path,
+    candidate_bytes: &[u8],
+    pages: Vec<ariad_pdf::redact::ProbePage>,
+    events: &mut dyn FnMut(ToolEvent),
+) -> Result<RedactionCheckStatus, ToolError> {
+    let scrubber = job.scrubber;
+    let map = |e| inprocess::map_pdf_error(e, scrubber);
     let doc =
         ariad_pdf::document::open_with_ctx(candidate_bytes, job.limits, &job.ctx).map_err(map)?;
     let page_ids = doc.inner().get_pages();
@@ -759,7 +776,7 @@ fn verify_image_render_probe(
             return Ok(RedactionCheckStatus::Unavailable);
         };
         let original = job.render_page(input_path, page.page, dpi, events)?;
-        let probe = job.render_page(&probe_path, page.page, dpi, events)?;
+        let probe = job.render_page(probe_path, page.page, dpi, events)?;
         let agrees = verify_probe_render(
             &original,
             &probe,
@@ -774,6 +791,92 @@ fn verify_image_render_probe(
         }
     }
     Ok(RedactionCheckStatus::Pass)
+}
+
+/// Test-only: compares renders of `original` and a hand-made `probe` with the production
+/// comparison, covering the pages [`probe_pages`] selects for `params`. `candidate` is the
+/// real rewrite of `original`, used for page geometry and the cleared-image margins.
+#[cfg(feature = "test-probe")]
+#[doc(hidden)]
+pub fn compare_probe_for_test(
+    original: &Path,
+    probe: &Path,
+    candidate: &Path,
+    params: &RedactParams,
+    limits: &Limits,
+) -> Result<RedactionCheckStatus, ToolError> {
+    let ws = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    let staged = |name: &str, path: &Path| -> Result<(PathBuf, Vec<u8>), ToolError> {
+        let bytes = fs::read(path).map_err(|e| ToolError::InputIo(e.to_string()))?;
+        let to = ws.input_dir().join(name);
+        fs::write(&to, &bytes).map_err(|e| ToolError::InputIo(e.to_string()))?;
+        Ok((to, bytes))
+    };
+    let (input_path, input_bytes) = staged("input.pdf", original)?;
+    let (probe_path, _) = staged("probe.pdf", probe)?;
+    let (_, candidate_bytes) = staged("candidate.pdf", candidate)?;
+    let scrubber = SecretScrubber::default();
+    let cancel = CancellationToken::new();
+    let mut job = RedactJob {
+        workspace: &ws,
+        limits,
+        scrubber: &scrubber,
+        engine_program: None,
+        cancel: &cancel,
+        deadline: Instant::now() + Duration::from_secs(120),
+        ctx: ToolCtx::new(),
+        _bridge: CancelBridge::new(&cancel),
+        warnings: Vec::new(),
+    };
+    let map = |e| inprocess::map_pdf_error(e, &scrubber);
+    let geometry = job.inspect_geometry(&input_path, &mut |_| {})?;
+    let plan =
+        ariad_pdf::redact::plan(&input_bytes, params, &geometry, limits, &job.ctx).map_err(map)?;
+    let pages = probe_pages(
+        &input_bytes,
+        &candidate_bytes,
+        &plan,
+        &geometry,
+        limits,
+        &job.ctx,
+    )
+    .map_err(map)?;
+    compare_probe_renders(
+        &mut job,
+        &input_path,
+        &probe_path,
+        &candidate_bytes,
+        pages,
+        &mut |_| {},
+    )
+}
+
+/// Test-only: renders one page of `pdf` with the PDFium engine at `dpi`, as the comparison does.
+#[cfg(feature = "test-probe")]
+#[doc(hidden)]
+pub fn render_page_for_test(
+    pdf: &Path,
+    page: u32,
+    dpi: u32,
+    limits: &Limits,
+) -> Result<image::RgbaImage, ToolError> {
+    let ws = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    let staged = ws.input_dir().join("render.pdf");
+    fs::copy(pdf, &staged).map_err(|e| ToolError::InputIo(e.to_string()))?;
+    let scrubber = SecretScrubber::default();
+    let cancel = CancellationToken::new();
+    let mut job = RedactJob {
+        workspace: &ws,
+        limits,
+        scrubber: &scrubber,
+        engine_program: None,
+        cancel: &cancel,
+        deadline: Instant::now() + Duration::from_secs(60),
+        ctx: ToolCtx::new(),
+        _bridge: CancelBridge::new(&cancel),
+        warnings: Vec::new(),
+    };
+    job.render_page(&staged, page, dpi, &mut |_| {})
 }
 
 fn verify_candidate_rendering(
