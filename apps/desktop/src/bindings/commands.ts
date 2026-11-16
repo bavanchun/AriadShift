@@ -37,6 +37,9 @@ export async function pack(request: T.PackRequest): Promise<string> {
 export async function pack_cancel(request: T.Empty): Promise<null> {
   return invoke<null>("pack_cancel", { request });
 }
+export async function pack_notices(request: T.PackNoticesRequest): Promise<T.PackNoticesView> {
+  return invoke<T.PackNoticesView>("pack_notices", { request });
+}
 export async function doctor(request: T.Empty): Promise<Array<T.Diagnostic>> {
   return invoke<Array<T.Diagnostic>>("doctor", { request });
 }

@@ -17,6 +17,7 @@ All conversion and transformation logic lives in `ariad-host` and `ariad-core`; 
   - [`ashift engines install`](#ashift-engines-install)
   - [`ashift engines remove`](#ashift-engines-remove)
   - [`ashift engines verify`](#ashift-engines-verify)
+  - [`ashift engines notices`](#ashift-engines-notices)
   - [`ashift engines languages`](#ashift-engines-languages)
   - [`ashift doctor`](#ashift-doctor)
   - [`ashift tools`](#ashift-tools)
@@ -428,7 +429,7 @@ Lists installed and known engines, versions, licenses, readiness status, and the
 
 ```bash
 ashift engines [OPTIONS]
-ashift engines <install|remove|verify> ...
+ashift engines <install|remove|verify|notices> ...
 ```
 
 #### Options
@@ -600,6 +601,34 @@ ashift engines verify <NAME> [--version <VERSION>] [--json]
   "missing": [],
   "problems": []
 }
+```
+
+---
+
+### `ashift engines notices`
+
+Prints the licence and notice files that an installed pack ships, as listed by its signed manifest. Third-party terms such as the IJG acknowledgement of the qpdf pack are reachable here without opening the data directory.
+
+```bash
+ashift engines notices [<NAME>] [--version <VERSION>] [--json]
+```
+
+- Without `<NAME>`, prints the active version of every installed pack, in name order. `--version` needs `<NAME>` and selects an installed version instead of the active one.
+- The text view prints `=== <name> <version> ===` for each pack and `--- <path> ---` before each notice file, followed by the file as shipped. With no pack installed it prints `No engine packs are installed.`
+- `--json` prints an array with one object per pack: `name`, `version`, `active` and `notices`, a list of `{ "path", "text" }` objects. Paths are relative to the pack and never absolute.
+- The command re-checks the manifest signature stored in the install receipt first, and each notice must match the size and SHA-256 recorded at install. It exits 1 when the signature no longer verifies, or when a listed notice is missing, altered, not a regular file or behind a symbolic link; it exits 3 when the pack or version is not installed. Run `ashift engines verify` for the full file check.
+- Without `<NAME>`, a failing pack does not hide the others: the text view prints `error: <message>` under its heading, the JSON array holds `{ "name", "version", "error": { "code", "message" } }` in place of its notices, and the exit code is non-zero.
+- Control characters other than newline and tab are removed from notice text in the text view, so a notice cannot send terminal escape sequences. JSON keeps the text as shipped.
+
+```json
+[
+  {
+    "name": "qpdf",
+    "version": "0.1.0",
+    "active": true,
+    "notices": [{ "path": "notices/THIRD_PARTY_NOTICES.txt", "text": "..." }]
+  }
+]
 ```
 
 ---

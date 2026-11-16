@@ -17,9 +17,11 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 mod metrics;
+mod pack_notices;
 mod recipe;
 mod secrets;
 pub use metrics::{ChangeList, FidelityCoverage, FidelityReport, FidelityStructureScore};
+pub use pack_notices::{FfiPackNotice, FfiPackNotices, pack_notices};
 pub use recipe::{
     RecipeListener, RecipeRunOutcome, RecipeRunRequest, RecipeStepOutcome, RecipeStepSummary,
     RecipeSummary, recipe_secret_fields, run_recipe, validate_recipe,

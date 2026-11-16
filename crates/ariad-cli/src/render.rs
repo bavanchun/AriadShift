@@ -424,6 +424,62 @@ pub fn render_pack_verify_human(report: &ariad_host::packs::VerifyReport) -> io:
     out.flush()
 }
 
+/// Drops control characters other than newline and tab, so a notice cannot carry terminal
+/// escape sequences (ANSI, OSC 52 clipboard writes) to the user's terminal.
+fn strip_terminal_controls(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect()
+}
+
+/// Renders pack notices as text: a heading per pack and a rule per notice file. A pack whose
+/// notices cannot be read prints its error in place of the files.
+pub fn render_pack_notices_human(
+    entries: &[ariad_host::packs::PackNoticesEntry],
+) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    if entries.is_empty() {
+        writeln!(out, "No engine packs are installed.")?;
+    }
+    for entry in entries {
+        match &entry.result {
+            Ok(pack) => {
+                writeln!(out, "=== {} {} ===", pack.name, pack.version)?;
+                for notice in &pack.notices {
+                    writeln!(out, "--- {} ---", escape_control_chars(&notice.path))?;
+                    let text = strip_terminal_controls(&notice.text);
+                    out.write_all(text.as_bytes())?;
+                    if !text.ends_with('\n') {
+                        writeln!(out)?;
+                    }
+                }
+            }
+            Err(error) => {
+                writeln!(out, "=== {} {} ===", entry.name, entry.version)?;
+                writeln!(out, "error: {}", escape_control_chars(&error.to_string()))?;
+            }
+        }
+    }
+    out.flush()
+}
+
+/// Renders pack notices as a JSON array. A pack that failed is `{name, version, error}` with
+/// the error code and message in place of its notices.
+pub fn render_pack_notices_json(entries: &[ariad_host::packs::PackNoticesEntry]) -> io::Result<()> {
+    let values: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|entry| match &entry.result {
+            Ok(pack) => serde_json::to_value(pack).unwrap_or(serde_json::Value::Null),
+            Err(error) => serde_json::json!({
+                "name": entry.name,
+                "version": entry.version,
+                "error": { "code": error.code(), "message": error.to_string() },
+            }),
+        })
+        .collect();
+    render_json(&values)
+}
+
 /// Renders the `ashift tools` human-readable table to stdout.
 pub fn render_tools_human(tools: &[ToolDescriptor]) -> io::Result<()> {
     let mut out = io::stdout().lock();

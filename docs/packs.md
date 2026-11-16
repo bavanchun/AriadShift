@@ -11,6 +11,7 @@ ashift engines install docling --manifest https://example.org/pack.toml
 ashift engines install docling --from ./docling-pack   # offline, no network
 ashift engines                                 # engines, plus a section for installed packs
 ashift engines verify docling                  # re-hash every file against the install receipt
+ashift engines notices [docling]               # licence notices of installed packs
 ashift engines remove docling [--version 0.2.0]
 ```
 
@@ -151,6 +152,12 @@ On Windows, removal retries transient access, sharing and nonempty-directory err
 Installation refuses an executable archive member unless the signed manifest declares it as an allowed executable. Pack authors must list executable archive paths in `targets[].executables` or declare the entrypoint.
 
 `receipt.toml` (`ariad-pack-receipt/1`) holds the manifest and signature as installed, the install time, the `ashift` version, the signing key id, and the path, size and SHA-256 of every file plus every link target. `ashift engines verify` re-hashes against it and re-checks the signature with the keys of the running `ashift`.
+
+## Notices
+
+Every pack lists its licence and notice files in the manifest `notices` field, and the signature covers that list. Installed packs expose those files through three surfaces: `ashift engines notices` ([cli.md](cli.md#ashift-engines-notices)), the Licences action of the Engine packs view in the desktop app ([desktop.md](desktop.md#engine-packs-and-diagnostics)), and the `pack_notices` function of `crates/ariad-ffi` for the macOS licence screen. All three call `packs::notices` in `ariad-host`. It re-checks the signature of the manifest stored in the install receipt, then reads each listed notice only if the file is a regular file that no symbolic link leads to, its size equals the size recorded in the receipt (compared before the file is read, which is also the size limit), and its SHA-256 equals the recorded digest. A notice that is missing, absent from the receipt or altered since install is an error and its text is never shown. The receipt is a local file that the signature does not cover, so this protects against changed notice files, not against a local user who rewrites the receipt too; `ashift engines verify` and the manifest signature remain the check for that. Without a pack name, the CLI and the macOS function report each pack on its own, so one damaged pack does not hide the others, and the CLI exits non-zero when any failed. The CLI also strips terminal control characters other than newline and tab from notice text before printing it.
+
+The root [`THIRD_PARTY_LICENSES`](../THIRD_PARTY_LICENSES) stays separate. It is generated from `Cargo.lock` for the code in the `ashift` release archive, so it can only describe what that archive contains. A pack is built, signed and versioned on its own, and the user may never install it; its components (libjpeg-turbo, PDFium, a Python runtime and its wheels) change with the pack version and not with the `ashift` version. Copying them into the root file would list code that a given install does not ship, and would go stale at each pack release. Each pack carries the notices for exactly the bytes it installs, which are the notices the licences require to travel with those binaries.
 
 ## Resolution
 

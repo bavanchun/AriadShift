@@ -15,6 +15,7 @@ import type {
   Inspection,
   JobStatus,
   PackAction,
+  PackNoticesView,
   PackRow,
   Profile,
   Settings,
@@ -147,6 +148,7 @@ export function App() {
   const [watchInterval, setWatchInterval] = useState(2);
   const [watchRecursive, setWatchRecursive] = useState(false);
   const [packs, setPacks] = useState<PackRow[]>();
+  const [packNotices, setPackNotices] = useState<Record<string, PackNoticesView>>({});
   const [packName, setPackName] = useState("docling");
   const [packFrom, setPackFrom] = useState("");
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>();
@@ -461,6 +463,17 @@ export function App() {
       });
       setNotice(info(result));
       setPacks(await commands.packs({}));
+    });
+  };
+  const toggleNotices = async (pack: { name: string; version: string }) => {
+    const key = `${pack.name}-${pack.version}`;
+    if (packNotices[key]) {
+      setPackNotices(({ [key]: _hidden, ...rest }) => rest);
+      return;
+    }
+    await run(async () => {
+      const view = await commands.pack_notices({ name: pack.name, version: pack.version });
+      setPackNotices((current) => ({ ...current, [key]: view }));
     });
   };
   const selectProfile = (value: Profile, setter: (value: Profile) => void, id: string) => (
@@ -1027,6 +1040,11 @@ export function App() {
                         >
                           Verify
                         </Button>
+                        <Button variant="outline" onClick={() => void toggleNotices(pack)}>
+                          {packNotices[`${pack.name}-${pack.version}`]
+                            ? "Hide licences"
+                            : "Licences"}
+                        </Button>
                         <Button
                           disabled={state?.pack_busy}
                           variant="outline"
@@ -1045,6 +1063,12 @@ export function App() {
                       </Button>
                     )}
                   </div>
+                  {packNotices[`${pack.name}-${pack.version}`]?.notices.map((notice) => (
+                    <section key={notice.path} aria-label={`${pack.name} licence ${notice.path}`}>
+                      <h4>{notice.path}</h4>
+                      <pre className="pack-notice">{notice.text}</pre>
+                    </section>
+                  ))}
                 </article>
               ))}
             </section>

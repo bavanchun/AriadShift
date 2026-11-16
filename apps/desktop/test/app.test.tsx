@@ -122,6 +122,39 @@ describe("desktop workflow", () => {
       }),
     );
   });
+  it("shows the licence notices of an installed pack", async () => {
+    const original = ipc.getMockImplementation();
+    ipc.mockImplementation(async (name, args) => {
+      if (name === "packs")
+        return [
+          {
+            name: "qpdf",
+            version: "1.2.3",
+            description: "Installed engine pack",
+            installed: true,
+            active: true,
+          },
+        ];
+      if (name === "pack_notices")
+        return {
+          name: "qpdf",
+          version: "1.2.3",
+          active: true,
+          notices: [{ path: "THIRD_PARTY_NOTICES.txt", text: "based in part on the work of IJG" }],
+        };
+      return original?.(name, args);
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Engine packs" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Licences" }));
+    await screen.findByText("based in part on the work of IJG");
+    expect(ipc).toHaveBeenCalledWith("pack_notices", {
+      request: { name: "qpdf", version: "1.2.3" },
+    });
+    expect(screen.getByRole("heading", { name: "THIRD_PARTY_NOTICES.txt" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Hide licences" }));
+    expect(screen.queryByText("based in part on the work of IJG")).toBeNull();
+  });
   it("offers Install Docling on a failed job and opens Engine packs", async () => {
     const guiError =
       "The Docling engine pack is not installed. Scanned PDFs and images require Docling for OCR — install Docling in Engine packs.";

@@ -507,6 +507,24 @@ impl Backend {
         m.pack_progress = result.clone().unwrap_or_else(|e| e);
         result
     }
+    pub fn pack_notices(&self, request: PackNoticesRequest) -> Result<PackNoticesView, String> {
+        let context = packs::PackContext::from_env().map_err(|e| e.to_string())?;
+        let found = packs::notices(&context, &request.name, request.version.as_deref())
+            .map_err(|e| e.to_string())?;
+        Ok(PackNoticesView {
+            name: found.name,
+            version: found.version,
+            active: found.active,
+            notices: found
+                .notices
+                .into_iter()
+                .map(|n| PackNoticeView {
+                    path: n.path,
+                    text: n.text,
+                })
+                .collect(),
+        })
+    }
     pub fn pack_cancel(&self, _: Empty) -> Result<(), String> {
         if let Some(c) = &self.model.lock().unwrap().pack_cancel {
             c.cancel();
@@ -753,6 +771,18 @@ mod tests {
         assert!(restored.settings(saved).is_err());
         assert!(restored.settings(Settings::default()).is_ok());
         restored.shutdown();
+    }
+    #[test]
+    fn pack_notices_report_an_uninstalled_pack() {
+        let app = TestApp::new();
+        let error = app
+            .backend
+            .pack_notices(PackNoticesRequest {
+                name: "no-such-pack".into(),
+                version: None,
+            })
+            .unwrap_err();
+        assert!(!error.is_empty());
     }
     #[test]
     fn queued_jobs_cancel_without_creating_output() {

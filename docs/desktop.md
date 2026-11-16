@@ -85,7 +85,10 @@ meaning as `ashift engines install --from`. A local directory must contain the
 signed manifest, detached signature and component archives. Arbitrary signing
 keys are never trusted by the desktop UI. Installation reports stages and byte
 progress and supports cancellation. Verify rechecks signatures and file hashes;
-Remove deletes the selected installed version. Pack operations are serialized.
+Remove deletes the selected installed version. Licences on an installed pack
+shows the notice files from its signed manifest below the pack, the same text
+as `ashift engines notices` (see [Notices](packs.md#notices)); a missing or
+unsafe notice file is reported as an error. Pack operations are serialized.
 The existing maintainer pack key `D87B0E33F55EA02B` is compiled through the host's
 shared [public-key directory](../crates/ariad-host/data/pack-keys/).
 
