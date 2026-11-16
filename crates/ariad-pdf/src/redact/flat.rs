@@ -15,6 +15,12 @@ use crate::{PdfDoc, PdfError, ToolCtx, document::DecodeBudget, tools::rotate::co
 
 use super::{RedactionPlan, Region, stream};
 
+/// Rewrites the content of every page with rectangle regions.
+///
+/// `omit_cover` leaves out the cover drawn over each rectangle (opaque fill and overlay
+/// text) and changes nothing else: this builds the probe whose render shows what is left of
+/// the page content under the cover.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn rewrite(
     pdf: &mut PdfDoc,
     input_len: usize,
@@ -23,6 +29,7 @@ pub(super) fn rewrite(
     geometry: &RedactGeometry,
     limits: &Limits,
     ctx: &ToolCtx,
+    omit_cover: bool,
 ) -> Result<(usize, usize), PdfError> {
     let page_ids = collect_page_ids(pdf.inner(), ctx)?;
     let affected: BTreeSet<_> = plan
@@ -227,6 +234,9 @@ pub(super) fn rewrite(
                 return Err(PdfError::NotImplemented(
                     "degenerate redaction geometry".into(),
                 ));
+            }
+            if omit_cover {
+                continue;
             }
             operations.push(Operation::new("q", vec![]));
             operations.push(Operation::new(

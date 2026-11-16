@@ -421,6 +421,14 @@ fn tool_missing_text(engine: &str, hint: &str) -> String {
     }
 }
 
+/// Message of the `engine_failure` that ends a redaction whose candidate failed a verification
+/// gate. Nothing is published.
+pub const REDACTION_VERIFICATION_FAILED: &str = "redaction verification failed";
+
+/// Message of the `engine_failure` that ends a redaction whose candidate could not be verified
+/// (a gate was unavailable). Nothing is published.
+pub const REDACTION_NOT_VERIFIABLE: &str = "redaction could not be verified";
+
 /// Reports whether a `ToolMissing` payload is a redaction safety refusal from `ariad-pdf`.
 fn is_safety_refusal(engine: &str, hint: &str) -> bool {
     engine == super::inprocess::INPROCESS_PDF_ENGINE && ariad_pdf::error::is_refusal_message(hint)
@@ -480,13 +488,23 @@ impl ToolError {
         }
     }
 
-    /// Reports whether this is a redaction safety refusal (`tool_missing`, exit 5).
+    /// Reports whether this is a redaction safety refusal: the same input is refused every
+    /// time, so a retry only delays the answer.
     ///
-    /// The reason is a fixed string without document content, so it is safe to show to
-    /// remote clients.
+    /// Two shapes qualify. A refusal from the PDF engine is `tool_missing`, exit 5, with a
+    /// `redaction refused: ...` or `uninspected carrier refused: ...` reason. A verification
+    /// outcome of the redaction composite is `engine_failure`, exit 1, with exactly
+    /// [`REDACTION_VERIFICATION_FAILED`] or [`REDACTION_NOT_VERIFIABLE`]. Every reason is a
+    /// fixed string without document content, so it is safe to show to remote clients.
     #[must_use]
     pub fn is_safety_refusal(&self) -> bool {
-        matches!(self, Self::ToolMissing { engine, hint } if is_safety_refusal(engine, hint))
+        match self {
+            Self::ToolMissing { engine, hint } => is_safety_refusal(engine, hint),
+            Self::EngineFailure(message) => {
+                message == REDACTION_VERIFICATION_FAILED || message == REDACTION_NOT_VERIFIABLE
+            }
+            _ => false,
+        }
     }
 
     /// Constructs a [`ToolError::ToolMissing`] with the install hint from [`crate::engines`].

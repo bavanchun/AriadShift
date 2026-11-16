@@ -8,6 +8,8 @@ mod normalize;
 mod page;
 #[cfg(feature = "codecs")]
 pub mod pixels;
+#[cfg(feature = "codecs")]
+mod probe;
 pub mod scrub;
 mod signatures;
 pub mod stream;
@@ -17,6 +19,8 @@ mod verify_text;
 pub use crate::xobject::Matrix;
 #[cfg(feature = "codecs")]
 pub use pixels::{verify_rendered_pixels, verify_rendered_pixels_with_overlay};
+#[cfg(feature = "codecs")]
+pub use probe::{ProbePage, ProbeVerdict, max_probe_pages, probe_pages, verify_probe_render};
 pub use signatures::has_signatures;
 
 use ariad_core::{
@@ -591,6 +595,41 @@ pub fn rewrite_document_with_evidence(
     ),
     PdfError,
 > {
+    rewrite_document_inner(bytes, params, plan, geometry, limits, ctx, false)
+}
+
+/// Builds the render probe of a redaction: the document [`rewrite_document_with_evidence`]
+/// produces, except that the cover over each rectangle (opaque fill and overlay text) is left
+/// out. Rendering it shows what the rewrite left of the page content under the cover.
+///
+/// The probe is verification evidence only. It must never be published as redacted output.
+pub fn rewrite_document_probe(
+    bytes: &[u8],
+    params: &RedactParams,
+    plan: &RedactionPlan,
+    geometry: &RedactGeometry,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<Vec<u8>, PdfError> {
+    rewrite_document_inner(bytes, params, plan, geometry, limits, ctx, true).map(|(b, _)| b)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_document_inner(
+    bytes: &[u8],
+    params: &RedactParams,
+    plan: &RedactionPlan,
+    geometry: &RedactGeometry,
+    limits: &Limits,
+    ctx: &ToolCtx,
+    omit_cover: bool,
+) -> Result<
+    (
+        Vec<u8>,
+        ariad_core::tools::params::redact::RedactionCarrierEvidence,
+    ),
+    PdfError,
+> {
     use std::collections::BTreeSet;
     if plan.source_sha256 != crate::writer::sha256_chunks(&[bytes])
         || plan.params_sha256 != params_digest(params)?
@@ -645,8 +684,16 @@ pub fn rewrite_document_with_evidence(
     }
 
     if has_rectangles {
-        let (annots_removed, vectors_inspected) =
-            flat::rewrite(&mut doc, bytes.len(), params, plan, geometry, limits, ctx)?;
+        let (annots_removed, vectors_inspected) = flat::rewrite(
+            &mut doc,
+            bytes.len(),
+            params,
+            plan,
+            geometry,
+            limits,
+            ctx,
+            omit_cover,
+        )?;
         carrier_evidence.annotations_removed += annots_removed;
         carrier_evidence.vectors_inspected += vectors_inspected;
     }
@@ -709,6 +756,12 @@ pub fn rewrite_document_with_evidence(
 #[cfg(feature = "codecs")]
 fn placement_scan_refused(reason: &str) -> PdfError {
     redaction_refused(&format!("image placement scan refused: {reason}"))
+}
+
+/// Refusal naming an uninspected carrier, the same text the content trace raises for it.
+#[cfg(feature = "codecs")]
+fn carrier_refused(carrier: &str) -> PdfError {
+    PdfError::NotImplemented(format!("uninspected carrier refused: {carrier}"))
 }
 
 /// Safety refusal: the redaction cannot be carried out without risking a leak or damage.
@@ -868,10 +921,48 @@ fn collect_page_image_placements(
                 placements.push((image_id, ctm));
             }
             "BI" => return Err(placement_scan_refused("inline image")),
+            "gs" => {
+                if let Some(Ok(name)) = op.operands.first().map(Object::as_name) {
+                    match graphics_state_soft_mask(doc, &resources, name) {
+                        Some(false) => {}
+                        Some(true) => return Err(carrier_refused("ext_gstate_smask")),
+                        // A state that cannot be read may hold a soft mask: never pass on doubt.
+                        None => return Err(carrier_refused("ext_gstate_unresolved")),
+                    }
+                }
+            }
             _ => {}
         }
     }
     Ok(placements)
+}
+
+/// Whether the named `ExtGState` sets a soft mask other than `/None`, or `None` when the state
+/// cannot be resolved to a dictionary.
+///
+/// A soft mask is a transparency group form that can draw images the placement scan would
+/// not see, so a page that selects one cannot be fully scanned.
+#[cfg(feature = "codecs")]
+fn graphics_state_soft_mask(
+    doc: &Document,
+    resources: &lopdf::Dictionary,
+    name: &[u8],
+) -> Option<bool> {
+    let state = resources
+        .get(b"ExtGState")
+        .ok()
+        .and_then(|v| doc.dereference(v).ok())
+        .and_then(|(_, v)| v.as_dict().ok())
+        .and_then(|states| states.get(name).ok())
+        .and_then(|v| doc.dereference(v).ok())
+        .and_then(|(_, v)| v.as_dict().ok())?;
+    Some(
+        state
+            .get(b"SMask")
+            .ok()
+            .and_then(|v| doc.dereference(v).ok())
+            .is_some_and(|(_, v)| !matches!(v.as_name(), Ok(b"None"))),
+    )
 }
 
 #[cfg(feature = "codecs")]
@@ -1643,7 +1734,16 @@ pub fn rewrite_flat_text_content(
                 .into(),
         ));
     }
-    flat::rewrite(&mut doc, bytes.len(), params, plan, geometry, limits, ctx)?;
+    flat::rewrite(
+        &mut doc,
+        bytes.len(),
+        params,
+        plan,
+        geometry,
+        limits,
+        ctx,
+        false,
+    )?;
     scrub::remove_opaque_carriers(&mut doc, ctx)?;
     doc.inner_mut()?.trailer.remove(b"ID");
     let matchers =
@@ -2633,6 +2733,236 @@ mod tests {
             err.to_string()
                 .contains("uninspected carrier refused: vector_path")
         );
+    }
+
+    /// Rewrites a one-page document whose content is `content` under the rectangle
+    /// `[0, 0, 50, 50]` with the default scope (vectors included).
+    fn rewrite_vector_page(
+        content: &str,
+        extgstate: Option<lopdf::Dictionary>,
+    ) -> Result<(), PdfError> {
+        let mut doc = Document::with_version("1.7");
+        let resources = match extgstate {
+            Some(states) => dictionary! { "ExtGState" => states },
+            None => lopdf::Dictionary::new(),
+        };
+        let bytes = single_page(
+            &mut doc,
+            content.as_bytes(),
+            resources,
+            lopdf::Dictionary::new(),
+        );
+        rewrite_rect(&bytes, None).map(|_| ())
+    }
+
+    fn assert_vector_refused(result: Result<(), PdfError>, why: &str) {
+        let error = result.expect_err(why);
+        assert!(
+            error
+                .to_string()
+                .contains("uninspected carrier refused: vector_path"),
+            "{why}: {error}"
+        );
+    }
+
+    #[test]
+    fn vector_refusal_accounts_for_stroke_width() {
+        // The centre line stays right of the rectangle (x = 70); only the ink of a wide
+        // stroke reaches into it (x from 40 to 100).
+        assert_vector_refused(
+            rewrite_vector_page("60 w 70 25 m 70 40 l S", None),
+            "wide stroke reaching the rectangle",
+        );
+        // The same wide stroke through the user-space scale.
+        assert_vector_refused(
+            rewrite_vector_page("q 2 0 0 2 0 0 cm 30 w 35 12 m 35 20 l S Q", None),
+            "stroke width is scaled by the CTM",
+        );
+        // Line width set by an ExtGState instead of `w`.
+        let mut states = lopdf::Dictionary::new();
+        states.set("G", dictionary! { "Type" => "ExtGState", "LW" => 60 });
+        assert_vector_refused(
+            rewrite_vector_page("/G gs 70 25 m 70 40 l S", Some(states)),
+            "ExtGState line width",
+        );
+        // Control: a hairline at the same place does not reach the rectangle.
+        rewrite_vector_page("1 w 70 25 m 70 40 l S", None).expect("thin distant stroke");
+        // A fill has no stroke width.
+        rewrite_vector_page("60 w 70 25 20 15 re f", None).expect("filled path is not stroked");
+    }
+
+    #[test]
+    fn vector_refusal_accounts_for_clipping() {
+        // The path is inside the rectangle but the clip keeps all of its paint out of it.
+        rewrite_vector_page("0 60 100 40 re W n 10 10 30 30 re f", None)
+            .expect("path fully clipped away from the rectangle");
+        // A clip that still leaves part of the path under the rectangle changes nothing.
+        assert_vector_refused(
+            rewrite_vector_page("0 0 100 30 re W n 10 10 30 30 re f", None),
+            "partially clipped path",
+        );
+        // The clip is part of the graphics state: it ends with `Q`.
+        assert_vector_refused(
+            rewrite_vector_page("q 0 60 100 40 re W n Q 10 10 30 30 re f", None),
+            "clip restored by Q",
+        );
+        // Successive clips intersect; a later wider one cannot widen the first.
+        rewrite_vector_page(
+            "0 60 100 40 re W n 0 0 100 100 re W n 10 10 30 30 re f",
+            None,
+        )
+        .expect("clips only ever narrow");
+        // A stroke is clipped like a fill, so a wide stroke clipped away is not refused.
+        rewrite_vector_page("0 60 100 40 re W n 60 w 70 25 m 70 40 l S", None)
+            .expect("clipped wide stroke");
+    }
+
+    /// An `ExtGState` named `G` whose soft mask is `mask` (a group dictionary or `/None`).
+    fn smask_state(doc: &mut Document, mask: Object) -> lopdf::Dictionary {
+        let _ = doc;
+        dictionary! { "G" => dictionary! { "Type" => "ExtGState", "SMask" => mask } }
+    }
+
+    /// A luminosity soft mask whose transparency group is a form XObject.
+    fn smask_group(doc: &mut Document) -> Object {
+        let form = doc.add_object(lopdf::Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Form",
+                "BBox" => vec![0.into(), 0.into(), 100.into(), 100.into()],
+                "Group" => dictionary! { "S" => "Transparency", "CS" => "DeviceGray" },
+            },
+            b"1 g 0 0 100 100 re f".to_vec(),
+        ));
+        Object::Dictionary(dictionary! { "Type" => "Mask", "S" => "Luminosity", "G" => form })
+    }
+
+    #[test]
+    fn soft_mask_group_in_a_graphics_state_is_an_uninspected_carrier() {
+        let mut doc = Document::with_version("1.7");
+        let mask = smask_group(&mut doc);
+        let states = smask_state(&mut doc, mask);
+        // The group paints outside the rectangle, so only the soft mask itself can refuse.
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs 70 70 20 20 re f",
+            dictionary! { "ExtGState" => states },
+            lopdf::Dictionary::new(),
+        );
+        let error = rewrite_rect(&bytes, None).expect_err("soft mask group must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("uninspected carrier refused: ext_gstate_smask"),
+            "{error}"
+        );
+
+        // `/SMask /None` switches masking off and carries nothing.
+        let mut doc = Document::with_version("1.7");
+        let states = smask_state(&mut doc, Object::Name(b"None".to_vec()));
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs 70 70 20 20 re f",
+            dictionary! { "ExtGState" => states },
+            lopdf::Dictionary::new(),
+        );
+        rewrite_rect(&bytes, None).expect("SMask /None is not a carrier");
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn image_scans_refuse_a_soft_mask_group_in_a_graphics_state() {
+        let mut doc = Document::with_version("1.7");
+        let image = gray_image(&mut doc, 8, 8, 200);
+        let mask = smask_group(&mut doc);
+        let states = smask_state(&mut doc, mask);
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q",
+            dictionary! {
+                "XObject" => dictionary! { "Im0" => image },
+                "ExtGState" => states,
+            },
+            lopdf::Dictionary::new(),
+        );
+        let (_, planned, _) = rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 90.0, 90.0])]);
+        let limits = Limits::local();
+        let ctx = ToolCtx::new();
+        // The group can draw images the placement scan never sees, so neither the rewriter
+        // nor the verifier may pass on an incomplete scan.
+        let mut pdf = crate::document::open(&bytes, &limits).unwrap();
+        let error = rewrite_image_pixels(&mut pdf, &planned, &limits, &ctx).unwrap_err();
+        let expected = "uninspected carrier refused: ext_gstate_smask";
+        assert_eq!(error.to_string(), expected);
+        let error = verify_image_pixels(&bytes, &planned, &limits, &ctx).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn soft_mask_carrier_is_named_on_pages_with_and_without_images() {
+        // The refusal reads the same wherever it is raised: the content trace, the rewriter's
+        // placement scan and the verifier's scan all name `ext_gstate_smask`.
+        let mut doc = Document::with_version("1.7");
+        let image = gray_image(&mut doc, 8, 8, 200);
+        let mask = smask_group(&mut doc);
+        let states = smask_state(&mut doc, mask);
+        let bytes = single_page(
+            &mut doc,
+            b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q",
+            dictionary! {
+                "XObject" => dictionary! { "Im0" => image },
+                "ExtGState" => states,
+            },
+            lopdf::Dictionary::new(),
+        );
+        let (request, planned, geometry) =
+            rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 90.0, 90.0])]);
+        let (limits, ctx) = (Limits::local(), ToolCtx::new());
+        let expected = "uninspected carrier refused: ext_gstate_smask";
+        let error =
+            rewrite_document(&bytes, &request, &planned, &geometry, &limits, &ctx).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        let mut pdf = crate::document::open(&bytes, &limits).unwrap();
+        let error = rewrite_image_pixels(&mut pdf, &planned, &limits, &ctx).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        let error = verify_image_pixels(&bytes, &planned, &limits, &ctx).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[cfg(feature = "codecs")]
+    #[test]
+    fn an_unresolvable_graphics_state_is_refused_not_read_as_no_soft_mask() {
+        let expected = "uninspected carrier refused: ext_gstate_unresolved";
+        let (limits, ctx) = (Limits::local(), ToolCtx::new());
+        // With an image (the placement scan) and without one (the content trace); the state
+        // is missing from the resources, or the resource category is absent altogether.
+        for (content, with_image, with_states) in [
+            (&b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q"[..], true, true),
+            (&b"/G gs q 50 0 0 50 0 0 cm /Im0 Do Q"[..], true, false),
+            (&b"/G gs 70 70 20 20 re f"[..], false, true),
+            (&b"/G gs 70 70 20 20 re f"[..], false, false),
+        ] {
+            let mut doc = Document::with_version("1.7");
+            let mut resources = dictionary! {};
+            if with_image {
+                let image = gray_image(&mut doc, 8, 8, 200);
+                resources.set("XObject", dictionary! { "Im0" => image });
+            }
+            if with_states {
+                resources.set("ExtGState", dictionary! {});
+            }
+            let bytes = single_page(&mut doc, content, resources, lopdf::Dictionary::new());
+            let (request, planned, geometry) =
+                rect_plan(&bytes, 1, vec![rectangle(1, [0.0, 0.0, 90.0, 90.0])]);
+            let error =
+                rewrite_document(&bytes, &request, &planned, &geometry, &limits, &ctx).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                expected,
+                "image {with_image}, states {with_states}"
+            );
+        }
     }
 
     /// Distinct 4x4 grey samples, so the original pixels are recognizable in any output.

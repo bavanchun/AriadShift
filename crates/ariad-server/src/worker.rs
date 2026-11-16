@@ -101,13 +101,15 @@ impl Failure {
 
     /// Maps a document-tool error to a failure.
     ///
-    /// A redaction safety refusal keeps its message (a fixed reason without document
-    /// content, already filtered by the tool helper) and is permanent: the same input is
-    /// refused again, so retrying only delays the answer. Every other `tool_missing`,
-    /// `sandbox_unavailable` and `engine_failure` stays transient with a fixed text.
+    /// A redaction safety refusal keeps its message and error code (a fixed reason without
+    /// document content, already filtered by the tool helper) and is permanent: the same
+    /// input is refused again, so retrying only delays the answer. That covers the engine's
+    /// refusals (`tool_missing`) and the failed or unverifiable verification of a candidate
+    /// (`engine_failure`). Every other `tool_missing`, `sandbox_unavailable` and
+    /// `engine_failure` stays transient with a fixed text.
     fn from_tool(error: &ToolError) -> Self {
         if error.is_safety_refusal() {
-            return Self::permanent("tool_missing", error.to_string());
+            return Self::permanent(error.code(), error.to_string());
         }
         match error.code() {
             "tool_missing" | "sandbox_unavailable" | "engine_failure" => {
@@ -1179,6 +1181,28 @@ mod tests {
             !failure.transient,
             "a refusal fails again, so it must not retry"
         );
+    }
+
+    #[test]
+    fn failed_or_unverifiable_redactions_keep_their_reason_and_are_never_retried() {
+        use ariad_host::tools::{REDACTION_NOT_VERIFIABLE, REDACTION_VERIFICATION_FAILED};
+        for reason in [REDACTION_VERIFICATION_FAILED, REDACTION_NOT_VERIFIABLE] {
+            let failure = Failure::from_tool(&ToolError::EngineFailure(reason.into()));
+            assert_eq!(failure.code, "engine_failure");
+            assert_eq!(failure.message, reason);
+            assert!(
+                !failure.transient,
+                "{reason}: the same candidate fails again, so it must not retry"
+            );
+        }
+        // Any other engine failure is a crash or an I/O error, which can succeed on retry.
+        for text in [
+            "PDFium did not return rendered page",
+            "redaction verification failed: x",
+        ] {
+            let failure = Failure::from_tool(&ToolError::EngineFailure(text.into()));
+            assert!(failure.transient, "{text}");
+        }
     }
 
     #[test]
