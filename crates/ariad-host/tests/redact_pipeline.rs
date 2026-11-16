@@ -2581,3 +2581,45 @@ fn redact_pipeline_verifies_every_raster_page_of_a_batch() {
     assert_eq!(report.checks.image_pixels, RedactionCheckStatus::Pass);
     assert_eq!(report.carriers.unwrap().images_modified, 3);
 }
+
+/// The original used as its own probe leaves everything under the rectangle in place, so the
+/// render comparison must fail on every page rotation. That proves the page mapping, the
+/// resolution and the region mask against real PDFium. A fully cleared probe passes and a
+/// probe with one missed cell fails, on the same rotations.
+#[test]
+fn render_probe_sees_leftovers_on_every_page_rotation() {
+    if !child("render_probe_sees_leftovers_on_every_page_rotation") {
+        return;
+    }
+    use ariad_host::tools::redact::compare_probe_for_test;
+    let limits = ariad_core::limits::Limits::local();
+    let params = block_params();
+    for rotate in [0, 90, 180, 270] {
+        let temp = tempfile::tempdir().unwrap();
+        let path = |name: &str| temp.path().join(name);
+        let (original, candidate) = (path("original.pdf"), path("candidate.pdf"));
+        let (cleared, leftover) = (path("cleared.pdf"), path("leftover.pdf"));
+        write_cmyk_pdf(&original, true, Block::Original, rotate);
+        write_cmyk_pdf(&cleared, false, Block::Cleared, rotate);
+        write_cmyk_pdf(&leftover, false, Block::ClearedButOne, rotate);
+        real_candidate(&original, &candidate);
+        let verdict = |probe: &Path| {
+            compare_probe_for_test(&original, probe, &candidate, &params, &limits).unwrap()
+        };
+        assert_eq!(
+            verdict(&original),
+            RedactionCheckStatus::Fail,
+            "rotate {rotate}: the original as its own probe must fail"
+        );
+        assert_eq!(
+            verdict(&leftover),
+            RedactionCheckStatus::Fail,
+            "rotate {rotate}: a missed cell must fail"
+        );
+        assert_eq!(
+            verdict(&cleared),
+            RedactionCheckStatus::Pass,
+            "rotate {rotate}: a cleared block must pass"
+        );
+    }
+}
