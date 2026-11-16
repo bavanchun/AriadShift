@@ -37,6 +37,12 @@ on Calculator; it stays strict and fails on any reported issue. `PerformanceUITe
 Cancelling the calling `Task` cancels the Rust run (`EngineError.cancelled`). One client per process is the supported shape; app code never calls the
 generated free functions.
 
+## Engine pack notices (`ariad-ffi`)
+`pack_notices(name, version)` returns the licence notice files of installed engine packs as `FfiPackNotices` (`name`, `version`, `active`, `notices`
+of `path` and `text`): one pack when `name` is set, otherwise the active version of every installed pack. An unknown pack or a missing, irregular or
+symlinked notice file is an error (`Internal` with the pack error code; an invalid name is `InvalidRequest`). The Swift licence screen that lists them is
+not built yet. See [Notices](packs.md#notices).
+
 ## Recipes, secrets and tool results (`ariad-ffi`)
 New public API: `run_recipe` (step events through a `RecipeListener`), `validate_recipe`, `recipe_secret_fields`, the `SecretBag` object, and on
 `ToolOutcome` the typed `fidelity`, `change_list` and `metrics_json`. Put prompted values into a `SecretBag` under the tool parameter name and pass it
