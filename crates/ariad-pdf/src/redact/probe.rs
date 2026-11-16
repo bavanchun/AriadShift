@@ -20,6 +20,10 @@
 //! image (the drift zone), a changed pixel passes unless it became a cleared colour where the
 //! original was bright. Everywhere else the original and the probe must agree within a small
 //! tolerance. The drift zone never reaches the strict check.
+//!
+//! Known limit: dark original content (every channel at most [`DRIFT_BRIGHT_MAX`]) that the
+//! rewrite over-clears inside the drift zone is not flagged, because a pixel there that turns
+//! into a cleared colour is only suspicious where the original was bright.
 
 use std::collections::BTreeMap;
 
