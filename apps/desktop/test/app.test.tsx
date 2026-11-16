@@ -139,6 +139,7 @@ describe("desktop workflow", () => {
         return {
           name: "qpdf",
           version: "1.2.3",
+          active: true,
           notices: [{ path: "THIRD_PARTY_NOTICES.txt", text: "based in part on the work of IJG" }],
         };
       return original?.(name, args);

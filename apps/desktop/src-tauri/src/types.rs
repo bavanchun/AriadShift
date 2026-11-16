@@ -163,6 +163,7 @@ pub struct PackNoticeView {
 pub struct PackNoticesView {
     pub name: String,
     pub version: String,
+    pub active: bool,
     pub notices: Vec<PackNoticeView>,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]

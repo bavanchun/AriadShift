@@ -514,6 +514,7 @@ impl Backend {
         Ok(PackNoticesView {
             name: found.name,
             version: found.version,
+            active: found.active,
             notices: found
                 .notices
                 .into_iter()
