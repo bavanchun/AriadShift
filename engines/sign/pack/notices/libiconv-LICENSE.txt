@@ -6,10 +6,20 @@ modules. libiconv is Copyright (C) Free Software Foundation, Inc. and is
 distributed under the GNU Lesser General Public License, version 2.1 or later
 (the library; its command-line tool is GPL, which lxml does not bundle).
 
-This pack redistributes the unmodified lxml wheel contents. Corresponding
-source for libiconv: https://ftp.gnu.org/gnu/libiconv/ . Source for lxml,
-which allows relinking against another libiconv: https://pypi.org/project/lxml/
-(sdist for the locked version) and https://github.com/lxml/lxml .
+This pack redistributes the unmodified lxml 6.1.3 wheel contents. The
+bundled libiconv is version 1.18, statically linked and unmodified. This was
+read from the _libiconv_version symbol (0x0112) of the Linux x86_64, Linux
+aarch64 and macOS universal2 etree extension modules; the Windows amd64
+wheel links no libiconv.
+
+Corresponding source for libiconv 1.18:
+  https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz
+  SHA-256 3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8
+
+Source for lxml, which allows relinking against another libiconv:
+https://pypi.org/project/lxml/ (sdist for the locked version) and
+https://github.com/lxml/lxml . The locked lxml wheels and their SHA-256
+digests are listed in pack/licence-review.toml.
 
 The full text of the LGPL-2.1 follows.
 

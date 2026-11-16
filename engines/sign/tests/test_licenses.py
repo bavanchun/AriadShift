@@ -371,3 +371,93 @@ def test_check_distribution_accepts_abi_tagged_reviewed_native(tmp_path):
     (found,) = md.distributions(path=[str(tmp_path)])
     findings = licenses.check_distribution(found, inv, site_root=tmp_path)
     assert not any("native" in f.reason for f in findings), _reasons(findings)
+
+
+def _lock_with_lxml_edit(tmp_path, edit):
+    text = licenses.UV_LOCK_PATH.read_text(encoding="utf-8")
+    path = tmp_path / "uv.lock"
+    path.write_text(edit(text), encoding="utf-8")
+    return path
+
+
+def test_lxml_libiconv_review_records_exact_source():
+    entry = licenses.load_reviewed_inventory()["lxml"]["libiconv"]
+    assert entry["version"] == "1.18"
+    assert entry["modified"] is False
+    assert entry["source"] == "https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz"
+    assert entry["source_sha256"] == (
+        "3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8"
+    )
+    notice = (licenses.NOTICES_DIR / "libiconv-LICENSE.txt").read_text(encoding="utf-8")
+    assert entry["source"] in notice
+    assert entry["source_sha256"] in notice
+
+
+def test_real_uv_lock_matches_lxml_locked_wheels():
+    inv = licenses.load_reviewed_inventory()
+    assert licenses.check_locked_wheels(inv) == []
+    locked = licenses.load_locked_wheels()[("lxml", "6.1.3")]
+    assert locked == inv["lxml"]["libiconv"]["locked_wheels"]
+
+
+def test_changed_lxml_wheel_hash_rejected(tmp_path):
+    wheels = licenses.load_reviewed_inventory()["lxml"]["libiconv"]["locked_wheels"]
+    wheel_hash = next(iter(wheels.values()))
+    lock = _lock_with_lxml_edit(tmp_path, lambda t: t.replace(wheel_hash, "0" * 64, 1))
+    findings = licenses.check_locked_wheels(licenses.load_reviewed_inventory(), lock)
+    assert any("SHA-256 differs from review" in f.reason for f in findings)
+    assert any(f.distribution == "lxml" for f in findings)
+    assert licenses.check_environment([], lock_path=lock)
+
+
+def test_unreviewed_lxml_wheel_rejected(tmp_path):
+    marker = "lxml-6.1.3-cp314-cp314-win_arm64.whl"
+    extra = marker.replace("win_arm64", "win_riscv64")
+
+    def add_wheel(text):
+        line = next(item for item in text.splitlines() if marker in item)
+        return text.replace(line, line + "\n" + line.replace(marker, extra), 1)
+
+    lock = _lock_with_lxml_edit(tmp_path, add_wheel)
+    findings = licenses.check_locked_wheels(licenses.load_reviewed_inventory(), lock)
+    assert any(f"unreviewed locked wheel {extra}" in f.reason for f in findings)
+
+
+def test_missing_locked_lxml_wheel_rejected(tmp_path):
+    marker = "lxml-6.1.3-cp314-cp314-win_arm64.whl"
+    lock = _lock_with_lxml_edit(
+        tmp_path,
+        lambda t: "\n".join(row for row in t.splitlines() if marker not in row) + "\n",
+    )
+    findings = licenses.check_locked_wheels(licenses.load_reviewed_inventory(), lock)
+    assert any(f"reviewed wheel not locked in uv.lock: {marker}" in f.reason for f in findings)
+
+
+def test_unreadable_lockfile_rejected(tmp_path):
+    findings = licenses.check_locked_wheels(
+        licenses.load_reviewed_inventory(), tmp_path / "absent.lock"
+    )
+    assert any("cannot read locked wheels" in f.reason for f in findings)
+
+
+def test_extension_suffixes_accept_every_pack_target():
+    cases = {
+        "lxml/etree.cpython-314-x86_64-linux-gnu.so": "lxml/etree",
+        "lxml/etree.cpython-314-aarch64-linux-gnu.so": "lxml/etree",
+        "lxml/etree.cpython-314-darwin.so": "lxml/etree",
+        "lxml/etree.cp314-win_amd64.pyd": "lxml/etree",
+        "_cffi_backend.cpython-314-darwin.so": "_cffi_backend",
+        "_cffi_backend.cp314-win_amd64.pyd": "_cffi_backend",
+        "cryptography/hazmat/bindings/_rust.abi3.so": "cryptography/hazmat/bindings/_rust",
+        "cryptography/hazmat/bindings/_rust.pyd": "cryptography/hazmat/bindings/_rust",
+        "yaml/_yaml.cpython-314-x86_64-linux-gnu.so": "yaml/_yaml",
+        "yaml/_yaml.cp314-win_amd64.pyd": "yaml/_yaml",
+        "aiohttp/_http_parser.cpython-314-aarch64-linux-gnu.so": "aiohttp/_http_parser",
+        "multidict/_multidict.cp314-win_amd64.pyd": "multidict/_multidict",
+        "yarl/_quoting_c.cpython-314-darwin.so": "yarl/_quoting_c",
+        "propcache/_helpers_c.cpython-314-darwin.so": "propcache/_helpers_c",
+        "frozenlist/_frozenlist.cp314-win_amd64.pyd": "frozenlist/_frozenlist",
+    }
+    for relative, entry in cases.items():
+        assert licenses._native_name(relative.rsplit("/", 1)[-1]), relative
+        assert licenses.native_entry_matches(relative, entry), relative

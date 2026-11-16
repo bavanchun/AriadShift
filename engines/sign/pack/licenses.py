@@ -43,6 +43,7 @@ OVERRIDES = {
 }
 
 REVIEW_TOML_PATH = Path(__file__).parent / "licence-review.toml"
+UV_LOCK_PATH = Path(__file__).resolve().parents[1] / "uv.lock"
 
 NOTICES_DIR = Path(__file__).parent / "notices"
 
@@ -102,6 +103,57 @@ def load_reviewed_inventory() -> dict[str, dict]:
     data = tomllib.loads(REVIEW_TOML_PATH.read_text(encoding="utf-8"))
     packages = data.get("package", [])
     return {canonical(p["name"]): p for p in packages}
+
+
+def load_locked_wheels(lock_path: Path | None = None) -> dict[tuple[str, str], dict[str, str]]:
+    """Maps each locked (package, version) to its {wheel filename: sha256} from uv.lock."""
+    path = UV_LOCK_PATH if lock_path is None else lock_path
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    locked: dict[tuple[str, str], dict[str, str]] = {}
+    for package in data.get("package", []):
+        wheels = {
+            wheel["url"].rsplit("/", 1)[-1]: wheel["hash"].removeprefix("sha256:")
+            for wheel in package.get("wheels", [])
+        }
+        locked[(canonical(package["name"]), package.get("version", ""))] = wheels
+    return locked
+
+
+def check_locked_wheels(
+    reviewed_inv: dict[str, dict], lock_path: Path | None = None
+) -> list[Finding]:
+    """Binds every reviewed bundled library to the exact wheels locked in uv.lock."""
+    findings: list[Finding] = []
+    path = UV_LOCK_PATH if lock_path is None else lock_path
+    try:
+        locked = load_locked_wheels(path)
+    except (OSError, tomllib.TOMLDecodeError, KeyError) as error:
+        return [Finding("uv.lock", "unknown", f"cannot read locked wheels from {path}: {error}")]
+    for name, rev in reviewed_inv.items():
+        for library, entry in rev.items():
+            if not isinstance(entry, dict) or "locked_wheels" not in entry:
+                continue
+            reviewed = entry["locked_wheels"]
+            actual = locked.get((name, rev["version"]))
+            licence = entry.get("license", "unknown")
+            subject = f"{name} ({library} {entry.get('version', '?')})"
+            if actual is None:
+                reasons = [f"{name} {rev['version']} is not locked in uv.lock"]
+            else:
+                reasons = (
+                    [f"unreviewed locked wheel {w}" for w in sorted(set(actual) - set(reviewed))]
+                    + [
+                        f"reviewed wheel not locked in uv.lock: {w}"
+                        for w in sorted(set(reviewed) - set(actual))
+                    ]
+                    + [
+                        f"locked wheel SHA-256 differs from review: {w}"
+                        for w in sorted(set(reviewed) & set(actual))
+                        if reviewed[w] != actual[w]
+                    ]
+                )
+            findings.extend(Finding(name, licence, f"{subject}: {r}") for r in reasons)
+    return findings
 
 
 def verdict(name: str, expression: str, *, metadata_only: bool = False) -> str | None:
@@ -337,6 +389,7 @@ def check_site_tree(site_root: Path, reviewed_inv: dict[str, dict]) -> list[Find
 def check_environment(
     distributions: Iterable[metadata.Distribution] | None = None,
     site_root: Path | None = None,
+    lock_path: Path | None = None,
 ) -> list[Finding]:
     """Audits the complete installed environment against the sign licence gate."""
     if distributions is None:
@@ -345,7 +398,7 @@ def check_environment(
         else:
             distributions = list(metadata.distributions())
     reviewed_inv = load_reviewed_inventory()
-    findings: list[Finding] = []
+    findings: list[Finding] = check_locked_wheels(reviewed_inv, lock_path)
     seen = set()
 
     for dist in distributions:

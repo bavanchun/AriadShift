@@ -8,7 +8,7 @@ This distribution bundles:
 - CPython runtime (PSF-2.0, see notices/Python-LICENSE.txt)
 - pyHanko (MIT) and pyhanko-certvalidator (MIT)
 - cryptography (Apache-2.0 OR BSD-3-Clause, bundles OpenSSL under Apache-2.0, see notices/OpenSSL-LICENSE.txt)
-- lxml (BSD-3-Clause, bundles libxml2/libxslt under MIT, see notices/libxml2-libxslt-LICENSES.txt, and libiconv under LGPL-2.1, see notices/libiconv-LICENSE.txt)
+- lxml (BSD-3-Clause, bundles libxml2/libxslt under MIT, see notices/libxml2-libxslt-LICENSES.txt, and libiconv 1.18 under LGPL-2.1, see notices/libiconv-LICENSE.txt)
 - PyYAML (MIT, bundles LibYAML under MIT, see notices/libyaml-LICENSE.txt)
 - cffi (MIT-0)
 - certifi (MPL-2.0 exception for unmodified root certificate bundle)
@@ -18,5 +18,5 @@ This distribution bundles:
 - packaging (Apache-2.0 OR BSD-2-Clause), pygments (BSD-2-Clause)
 - aiohappyeyeballs (PSF-2.0)
 
-All bundled components are distributed under approved OSI open-source licenses (libiconv under the OSI-approved LGPL-2.1, unmodified, with its full text and source pointer in notices/libiconv-LICENSE.txt).
+All bundled components are distributed under approved OSI open-source licenses (libiconv 1.18 under the OSI-approved LGPL-2.1, statically linked and unmodified, with its full text, source URL and SHA-256 in notices/libiconv-LICENSE.txt).
 Detailed upstream license texts are available in this notices directory and the respective .dist-info metadata records.
