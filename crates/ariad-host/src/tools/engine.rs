@@ -171,6 +171,39 @@ pub(super) fn execute_prestaged(
     )
 }
 
+/// Builds the `ariad-engine/2` `run_tool` request for one engine call in `workspace`.
+///
+/// The engine validates that every input sits in `<workspace>/in`, so callers must stage inputs
+/// into the same workspace that is named here.
+pub(super) fn run_tool_request(
+    spec: &ToolSpec,
+    staged_inputs: &[(PathBuf, String)],
+    engine_params: &Value,
+    params_file: Option<PathBuf>,
+    workspace: &Workspace,
+    limits: Limits,
+) -> RequestV2 {
+    RequestV2::RunTool {
+        protocol: PROTOCOL_V2.to_owned(),
+        job: format!("tool-{}", Uuid::new_v4()),
+        tool: spec.id.to_owned(),
+        inputs: staged_inputs
+            .iter()
+            .map(|(path, format)| Input {
+                path: path.display().to_string(),
+                format: format.clone(),
+            })
+            .collect(),
+        output: OutputDir {
+            dir: workspace.output_dir().display().to_string(),
+        },
+        params: engine_params.clone(),
+        params_file,
+        work_dir: workspace.work_dir().display().to_string(),
+        limits,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_inner(
     spec: &ToolSpec,
@@ -214,36 +247,17 @@ fn execute_inner(
             super::sign::SecretFileGuard(None)
         };
 
-    let inputs: Vec<Input> = staged_inputs
-        .iter()
-        .map(|(path, format)| Input {
-            path: path.display().to_string(),
-            format: format.clone(),
-        })
-        .collect();
-
     // Force `params_file` (`0600`) whenever secrets are present in `SecretBag` or `params`.
     let params_file_path = workspace.work_dir().join("params.json");
-    let params_file = if has_secrets {
-        Some(params_file_path.clone())
-    } else {
-        None
-    };
-
-    let effective_limits = engine_limits(effective_engine, limits);
-    let request = RequestV2::RunTool {
-        protocol: PROTOCOL_V2.to_owned(),
-        job: format!("tool-{}", Uuid::new_v4()),
-        tool: spec.id.to_owned(),
-        inputs,
-        output: OutputDir {
-            dir: workspace.output_dir().display().to_string(),
-        },
-        params: engine_params.clone(),
+    let params_file = has_secrets.then(|| params_file_path.clone());
+    let request = run_tool_request(
+        spec,
+        staged_inputs,
+        engine_params,
         params_file,
-        work_dir: workspace.work_dir().display().to_string(),
-        limits: effective_limits,
-    };
+        workspace,
+        engine_limits(effective_engine, limits),
+    );
 
     let mut warnings = Vec::new();
     let mut tsa_guards = Vec::new();

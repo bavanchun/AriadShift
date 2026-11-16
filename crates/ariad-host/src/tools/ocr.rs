@@ -49,6 +49,17 @@ struct Job<'a> {
     warnings: Vec<ConvertWarning>,
 }
 
+/// Per-lane input links, removed on drop.
+struct StagedInputs(Vec<PathBuf>);
+
+impl Drop for StagedInputs {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
 struct Sidecar<'a> {
     bytes: &'a mut Vec<u8>,
     cap: usize,
@@ -105,6 +116,36 @@ impl Job<'_> {
             warnings: Vec::new(),
         }
     }
+    /// Inputs as the engine must see them: the engine accepts only files directly inside the
+    /// request workspace's `in/`. Lane 0 is the job workspace, so its inputs are used as they
+    /// are; any other lane gets its own link (or copy) of each input that lives elsewhere.
+    /// The returned guard removes those links when the engine call is done.
+    fn stage_inputs(
+        &self,
+        inputs: &[(PathBuf, String)],
+    ) -> Result<(Vec<(PathBuf, String)>, StagedInputs), ToolError> {
+        let directory = self.workspace.input_dir();
+        let mut staged = Vec::with_capacity(inputs.len());
+        let mut guard = StagedInputs(Vec::new());
+        for (path, format) in inputs {
+            if path.parent() == Some(directory) {
+                staged.push((path.clone(), format.clone()));
+                continue;
+            }
+            let name = path
+                .file_name()
+                .ok_or_else(|| ToolError::InputIo("could not stage OCR input".into()))?;
+            let target = directory.join(name);
+            // The source may have been rewritten since an earlier call, so never reuse a leftover.
+            let _ = fs::remove_file(&target);
+            fs::hard_link(path, &target)
+                .or_else(|_| fs::copy(path, &target).map(|_| ()))
+                .map_err(|_| ToolError::InputIo("could not stage OCR input".into()))?;
+            guard.0.push(target.clone());
+            staged.push((target, format.clone()));
+        }
+        Ok((staged, guard))
+    }
     fn check(&self) -> Result<(), ToolError> {
         self.ctx
             .check()
@@ -132,11 +173,12 @@ impl Job<'_> {
                 .saturating_add(u64::from(remaining.subsec_nanos() != 0))
                 .max(1),
         );
+        let (staged, _staged_guard) = self.stage_inputs(inputs)?;
         // Extra language models were staged once for the whole job (`stage_job_models`).
         let result = engine::execute_prestaged(
             spec,
             spec.engine,
-            inputs,
+            &staged,
             &params,
             self.workspace,
             &limits,
@@ -904,5 +946,83 @@ mod timeout_tests {
         assert_eq!(ocr_timeout(920, None), 14_400);
         assert_eq!(ocr_timeout(921, None), 14_400);
         assert_eq!(ocr_timeout(10_000, Some(20_000)), 20_000);
+    }
+}
+
+#[cfg(test)]
+mod lane_request_tests {
+    use super::*;
+
+    /// Builds the exact request the host sends for `inputs` on a lane and runs the engine-side
+    /// path validation (`ariad_engine_io`) that real packs apply and the probe engine skips.
+    fn validate_lane_request(lane: &Job<'_>, inputs: &[(PathBuf, String)]) {
+        let spec = internal("scan.render").unwrap();
+        let (staged, _guard) = lane.stage_inputs(inputs).unwrap();
+        let request = engine::run_tool_request(
+            &spec,
+            &staged,
+            &json!({}),
+            None,
+            lane.workspace,
+            lane.limits.clone(),
+        );
+        let ariad_core::protocol::v2::RequestV2::RunTool {
+            protocol,
+            inputs,
+            output,
+            work_dir,
+            limits,
+            ..
+        } = request
+        else {
+            unreachable!()
+        };
+        ariad_engine_io::validate_run_tool_paths(&protocol, &inputs, &output, &work_dir, &limits)
+            .expect("the engine must accept the request this lane builds");
+    }
+
+    fn job<'a>(
+        workspace: &'a Workspace,
+        limits: &'a Limits,
+        scrubber: &'a SecretScrubber,
+        cancel: &'a CancellationToken,
+    ) -> Job<'a> {
+        Job {
+            workspace,
+            limits,
+            scrubber,
+            engine_program: None,
+            cancel,
+            deadline: Instant::now() + Duration::from_secs(60),
+            ctx: inprocess::build_tool_ctx_with_clock(
+                limits,
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                inprocess::capture_clock().unwrap(),
+            ),
+            _bridge: None,
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn every_lane_stages_inputs_in_its_own_workspace() {
+        let main = Workspace::new().unwrap();
+        let extra = Workspace::new().unwrap();
+        let limits = Limits::local();
+        let scrubber = SecretScrubber::new();
+        let cancel = CancellationToken::new();
+        let job = job(&main, &limits, &scrubber, &cancel);
+        let lane = job.lane(&extra, &cancel);
+        let pdf = main.input_dir().join("ocr-document.pdf");
+        fs::write(&pdf, b"%PDF-1.7\n").unwrap();
+        let inputs = [(pdf.clone(), "pdf".to_owned())];
+        validate_lane_request(&job, &inputs);
+        validate_lane_request(&lane, &inputs);
+        let (staged, guard) = lane.stage_inputs(&inputs).unwrap();
+        assert_eq!(fs::read(&staged[0].0).unwrap(), b"%PDF-1.7\n");
+        let link = staged[0].0.clone();
+        drop(guard);
+        assert!(!link.exists(), "lane links are removed after the call");
+        assert_eq!(pdf.parent(), Some(main.input_dir()), "lane 0 is untouched");
     }
 }
