@@ -137,16 +137,22 @@ fn install_from(
     })
 }
 
-/// Remove a selected cached language without touching the signed engine pack.
-pub fn remove(context: &PackContext, language: &str) -> Result<(), PackError> {
-    let (language, _, _) = entry(language)?;
+/// Remove a selected cached language without touching the signed engine pack. Removing a model
+/// that is not cached succeeds; the returned status always has `installed: false`.
+pub fn remove(context: &PackContext, language: &str) -> Result<LanguageStatus, PackError> {
+    let (language, _, size) = entry(language)?;
     let _lock = super::install::tesseract_lock(context)?;
     let path = directory(context).join(format!("{language}.traineddata"));
     match fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(PackError::io("could not remove", &path, error)),
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(PackError::io("could not remove", &path, error)),
     }
+    Ok(LanguageStatus {
+        language,
+        installed: false,
+        size,
+    })
 }
 
 /// Return a cached model only after rechecking its pinned digest and size.

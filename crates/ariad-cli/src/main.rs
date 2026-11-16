@@ -245,11 +245,25 @@ struct LanguageArgs {
 #[derive(Subcommand)]
 enum LanguageAction {
     /// List available models and verified local cache entries.
-    List,
+    List {
+        /// Output the model list as a JSON array to stdout.
+        #[arg(long)]
+        json: bool,
+    },
     /// Download and verify one model from the pinned catalogue.
-    Install { language: String },
+    Install {
+        language: String,
+        /// Output the resulting model status as JSON to stdout.
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove one cached model.
-    Remove { language: String },
+    Remove {
+        language: String,
+        /// Output the resulting model status as JSON to stdout.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Arguments for installing an engine pack.
@@ -877,24 +891,49 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
     )
 }
 
+/// Result of an `engines languages` action: a listing or the one model it acted on.
+enum LanguageOutput {
+    Listing(Vec<packs::languages::LanguageStatus>),
+    Model(packs::languages::LanguageStatus),
+}
+
 fn run_languages(args: LanguageArgs) -> ExitCode {
+    let is_json = match &args.action {
+        LanguageAction::List { json }
+        | LanguageAction::Install { json, .. }
+        | LanguageAction::Remove { json, .. } => *json,
+    };
     run_blocking(
         "OCR language operation",
         move |cancel| {
             let context = packs::PackContext::from_env()?;
             match args.action {
-                LanguageAction::List => packs::languages::list(&context, &cancel),
-                LanguageAction::Install { language } => {
-                    packs::languages::install(&context, &language, &cancel)
-                        .map(|status| vec![status])
+                LanguageAction::List { .. } => {
+                    packs::languages::list(&context, &cancel).map(LanguageOutput::Listing)
                 }
-                LanguageAction::Remove { language } => {
-                    packs::languages::remove(&context, &language)?;
-                    Ok(Vec::new())
+                LanguageAction::Install { language, .. } => {
+                    packs::languages::install(&context, &language, &cancel)
+                        .map(LanguageOutput::Model)
+                }
+                LanguageAction::Remove { language, .. } => {
+                    packs::languages::remove(&context, &language).map(LanguageOutput::Model)
                 }
             }
         },
-        |statuses| {
+        move |output| {
+            if is_json {
+                return match &output {
+                    LanguageOutput::Listing(statuses) => render::render_json(statuses),
+                    LanguageOutput::Model(status) => render::render_json(status),
+                }
+                .map_err(stdout_error);
+            }
+            let statuses = match output {
+                LanguageOutput::Listing(statuses) => statuses,
+                LanguageOutput::Model(status) if status.installed => vec![status],
+                // Removal has always printed nothing in human mode.
+                LanguageOutput::Model(_) => Vec::new(),
+            };
             for status in statuses {
                 writeln!(
                     io::stdout(),
