@@ -664,6 +664,7 @@ with open(r"{out_path}", "wb") as f:
         let fresh_pass_handle = mint(&password, false);
 
         let bad_out_dir = dir.path().join("bad_out");
+        std::fs::create_dir_all(&bad_out_dir).unwrap();
         next_id += 1;
         send(
             &mut stdin,
