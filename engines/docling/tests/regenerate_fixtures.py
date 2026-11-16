@@ -5,7 +5,7 @@ the development environment after ``just docling-dev``::
 
     .tools/docling/python-env/bin/python engines/docling/tests/regenerate_fixtures.py
 
-It converts each source fixture through the engine exactly as the host does (a cleared
+It builds the source-less formula fixture directly and converts each source fixture through the engine exactly as the host does (a cleared
 environment, a fresh workspace) and refreshes the SHA-256 values in ``fixtures/manifest.toml``.
 """
 
@@ -65,6 +65,85 @@ def convert(source: Path, input_format: str, options: dict) -> bytes:
         return (work / "out" / "document.docling.json").read_bytes()
 
 
+FORMULA_CELLS_ID = "en-formula-cells"
+
+# Cell rows of the formula-injection fixture: a table of spreadsheet-formula lookalikes and a
+# plain header-only table. There is no source document, so the file is built directly.
+FORMULA_CELLS_TABLES = (
+    (
+        (False, ("=SUM(A1:A5)", "+12345")),
+        (False, ("-999", "@formula")),
+    ),
+    ((True, ("Item", "Count")),),
+)
+
+
+def formula_cells_document() -> bytes:
+    """Build the DoclingDocument JSON for the formula-injection fixture deterministically."""
+    tables = []
+    for index, rows in enumerate(FORMULA_CELLS_TABLES):
+        cells = [
+            {
+                "row_span": 1,
+                "col_span": 1,
+                "start_row_offset_idx": row,
+                "end_row_offset_idx": row + 1,
+                "start_col_offset_idx": column,
+                "end_col_offset_idx": column + 1,
+                "text": text,
+                "column_header": header,
+                "row_header": False,
+                "row_section": False,
+                "fillable": False,
+            }
+            for row, (header, texts) in enumerate(rows)
+            for column, text in enumerate(texts)
+        ]
+        tables.append(
+            {
+                "self_ref": f"#/tables/{index}",
+                "parent": {"$ref": "#/body"},
+                "children": [],
+                "content_layer": "body",
+                "label": "table",
+                "prov": [],
+                "captions": [],
+                "references": [],
+                "footnotes": [],
+                "data": {"table_cells": cells},
+            }
+        )
+    document = {
+        "schema_name": "DoclingDocument",
+        "version": "1.10.0",
+        "name": FORMULA_CELLS_ID,
+        "origin": {
+            "mimetype": "application/pdf",
+            "binary_hash": 1234567890123456789,
+            "filename": f"{FORMULA_CELLS_ID}.pdf",
+        },
+        "furniture": {
+            "self_ref": "#/furniture",
+            "children": [],
+            "content_layer": "furniture",
+            "name": "_root_",
+            "label": "unspecified",
+        },
+        "body": {
+            "self_ref": "#/body",
+            "children": [{"$ref": f"#/tables/{index}"} for index in range(len(tables))],
+            "content_layer": "body",
+            "name": "_root_",
+            "label": "unspecified",
+        },
+        "groups": [],
+        "texts": [],
+        "pictures": [],
+        "tables": tables,
+    }
+    return (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode()
+
+
 def main() -> int:
     written = set()
     for fixture_id, (source, input_format, options) in SOURCES.items():
@@ -74,6 +153,10 @@ def main() -> int:
         target.write_bytes(convert(REPOSITORY / source, input_format, options))
         written.add(relative)
         print(f"wrote {relative}")
+    formula_relative = f"fixtures/docling/{FORMULA_CELLS_ID}.docling.json"
+    (REPOSITORY / formula_relative).write_bytes(formula_cells_document())
+    written.add(formula_relative)
+    print(f"wrote {formula_relative}")
     update_generated_hashes(REPOSITORY, written)
     return 0
 
