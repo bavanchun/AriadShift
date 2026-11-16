@@ -203,34 +203,69 @@ impl RedactJob<'_> {
         dpi: u32,
         events: &mut dyn FnMut(ToolEvent),
     ) -> Result<image::RgbaImage, ToolError> {
+        let mut images = self.render_pages(pdf_path, &[page], dpi, events)?;
+        images
+            .pop()
+            .ok_or_else(|| ToolError::EngineFailure("PDFium did not return rendered page".into()))
+    }
+
+    /// Renders `pages` of one PDF in a single engine call, returned in the order requested.
+    ///
+    /// The engine validates the whole document on every call, so rendering a batch costs one
+    /// validation instead of one per page.
+    fn render_pages(
+        &mut self,
+        pdf_path: &Path,
+        pages: &[u32],
+        dpi: u32,
+        events: &mut dyn FnMut(ToolEvent),
+    ) -> Result<Vec<image::RgbaImage>, ToolError> {
         let spec = internal_spec("scan.render")?;
+        let list = pages
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
         let output = self.invoke(
             &spec,
             &[(pdf_path.to_owned(), "pdf".into())],
-            json!({"pages": page.to_string(), "dpi": dpi, "clean": false, "deskew": false}),
+            json!({"pages": list, "dpi": dpi, "clean": false, "deskew": false}),
             events,
         )?;
 
-        let mut image_bytes = None;
+        let mut by_page = std::collections::BTreeMap::new();
         for (artifact_path, format) in output.artifacts {
-            if format == "png" && image_bytes.is_none() {
+            let number = artifact_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| {
+                    name.strip_prefix('p')?
+                        .strip_suffix(".png")?
+                        .parse::<u32>()
+                        .ok()
+                });
+            if let (true, Some(number)) = (format == "png", number) {
                 let bytes = self.read_artifact(
                     &artifact_path,
                     self.limits.max_decompressed_bytes.min(128 * 1024 * 1024),
                 )?;
-                let _ = fs::remove_file(&artifact_path);
-                image_bytes = Some(bytes);
-            } else {
-                let _ = fs::remove_file(&artifact_path);
+                by_page.insert(number, bytes);
             }
+            let _ = fs::remove_file(&artifact_path);
         }
-
-        let bytes = image_bytes.ok_or_else(|| {
-            ToolError::EngineFailure("PDFium did not return rendered page".into())
-        })?;
-        let img = image::load_from_memory(&bytes)
-            .map_err(|_| ToolError::EngineFailure("Failed to decode rendered page image".into()))?;
-        Ok(img.to_rgba8())
+        pages
+            .iter()
+            .map(|page| {
+                let bytes = by_page.remove(page).ok_or_else(|| {
+                    ToolError::EngineFailure("PDFium did not return rendered page".into())
+                })?;
+                image::load_from_memory(&bytes)
+                    .map(|img| img.to_rgba8())
+                    .map_err(|_| {
+                        ToolError::EngineFailure("Failed to decode rendered page image".into())
+                    })
+            })
+            .collect()
     }
 }
 
@@ -765,8 +800,11 @@ fn compare_probe_renders(
     let doc =
         ariad_pdf::document::open_with_ctx(candidate_bytes, job.limits, &job.ctx).map_err(map)?;
     let page_ids = doc.inner().get_pages();
+    // Pages are rendered in small batches that share one resolution, so the engine validates
+    // each document once per batch; a batch keeps at most `PROBE_BATCH` pairs of rasters.
+    const PROBE_BATCH: usize = 4;
+    let mut planned = Vec::with_capacity(pages.len());
     for page in pages {
-        job.check()?;
         let page_id = page_ids
             .get(&page.page)
             .copied()
@@ -775,19 +813,36 @@ fn compare_probe_renders(
         let Some(dpi) = probe_dpi(crop.right - crop.left, crop.top - crop.bottom) else {
             return Ok(RedactionCheckStatus::Unavailable);
         };
-        let original = job.render_page(input_path, page.page, dpi, events)?;
-        let probe = job.render_page(probe_path, page.page, dpi, events)?;
-        let agrees = verify_probe_render(
-            &original,
-            &probe,
-            render_matrix(&doc, page_id),
-            &page,
-            job.limits,
-            &job.ctx,
-        )
-        .map_err(map)?;
-        if !agrees {
-            return Ok(RedactionCheckStatus::Fail);
+        planned.push((page, page_id, dpi));
+    }
+    let mut rest = planned.as_slice();
+    while let Some(first) = rest.first() {
+        job.check()?;
+        let dpi = first.2;
+        let size = rest
+            .iter()
+            .take(PROBE_BATCH)
+            .take_while(|entry| entry.2 == dpi)
+            .count();
+        let (batch, tail) = rest.split_at(size);
+        rest = tail;
+        let numbers: Vec<u32> = batch.iter().map(|(page, _, _)| page.page).collect();
+        let originals = job.render_pages(input_path, &numbers, dpi, events)?;
+        let probes = job.render_pages(probe_path, &numbers, dpi, events)?;
+        for (((page, page_id, _), original), probe) in batch.iter().zip(originals).zip(probes) {
+            job.check()?;
+            let agrees = verify_probe_render(
+                &original,
+                &probe,
+                render_matrix(&doc, *page_id),
+                page,
+                job.limits,
+                &job.ctx,
+            )
+            .map_err(map)?;
+            if !agrees {
+                return Ok(RedactionCheckStatus::Fail);
+            }
         }
     }
     Ok(RedactionCheckStatus::Pass)

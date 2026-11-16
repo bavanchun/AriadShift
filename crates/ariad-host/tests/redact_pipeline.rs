@@ -2516,3 +2516,68 @@ fn redact_pipeline_partly_covered_interpolated_image_is_not_falsely_refused() {
         "/Interpolate must change the render outside the region: {gap}"
     );
 }
+
+/// Three pages, each with its own 32x32 gray gradient image at x 100..300, y 300..500.
+fn write_three_raster_pages(path: &Path) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let mut kids = Vec::new();
+    for shift in [0u32, 40, 80] {
+        let pixels: Vec<u8> = (0..32u32 * 32)
+            .map(|i| (40 + shift + (i % 32) * 3 + (i / 32) * 2).min(250) as u8)
+            .collect();
+        let image = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => 32, "Height" => 32,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            },
+            pixels,
+        ));
+        let contents = doc.add_object(Stream::new(
+            Dictionary::new(),
+            b"q 200 0 0 200 100 300 cm /Im0 Do Q\n".to_vec(),
+        ));
+        kids.push(Object::Reference(doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+            "Contents" => contents,
+        })));
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => 3 }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+#[test]
+fn redact_pipeline_verifies_every_raster_page_of_a_batch() {
+    if !child("redact_pipeline_verifies_every_raster_page_of_a_batch") {
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("three.pdf");
+    let out = temp.path().join("out.pdf");
+    write_three_raster_pages(&input);
+    let rect = json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 });
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(input.clone())],
+        OutputTarget::Path(out.clone()),
+    )
+    .with_params(json!({ "targets": [
+        { "kind": "rectangle", "page": 1, "rect": rect },
+        { "kind": "rectangle", "page": 2, "rect": rect },
+        { "kind": "rectangle", "page": 3, "rect": rect },
+    ] }));
+    let outcome = run_tool(&request).unwrap();
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    assert_eq!(report.checks.image_pixels, RedactionCheckStatus::Pass);
+    assert_eq!(report.carriers.unwrap().images_modified, 3);
+}
