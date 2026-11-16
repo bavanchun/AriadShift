@@ -581,12 +581,12 @@ fn execute_redact(
     // Fail closed: never publish an unverified or failed intermediate artifact
     if overall_status == RedactionVerificationStatus::Failed {
         return Err(ToolError::EngineFailure(
-            "redaction verification failed".into(),
+            super::run::REDACTION_VERIFICATION_FAILED.into(),
         ));
     }
     if overall_status == RedactionVerificationStatus::Unverifiable {
         return Err(ToolError::EngineFailure(
-            "redaction could not be verified".into(),
+            super::run::REDACTION_NOT_VERIFIABLE.into(),
         ));
     }
 

@@ -41,7 +41,8 @@ pub use recipe::{
     run_recipe_with_step_events,
 };
 pub use run::{
-    InputRef, OutputTarget, ToolError, ToolEvent, ToolMetrics, ToolOutcome, ToolRequest, run_tool,
-    run_tool_with_events, validate_params_against_schema,
+    InputRef, OutputTarget, REDACTION_NOT_VERIFIABLE, REDACTION_VERIFICATION_FAILED, ToolError,
+    ToolEvent, ToolMetrics, ToolOutcome, ToolRequest, run_tool, run_tool_with_events,
+    validate_params_against_schema,
 };
 pub use secrets::{REDACTED, ResolvedSecrets, SecretBag, SecretError, SecretScrubber};

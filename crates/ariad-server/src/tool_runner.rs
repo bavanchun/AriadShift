@@ -295,6 +295,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn verification_outcomes_survive_sanitising_and_other_engine_failures_do_not() {
+        for reason in [
+            "redaction verification failed",
+            "redaction could not be verified",
+        ] {
+            let safe = sanitize_error(ToolError::EngineFailure(reason.into()));
+            assert_eq!(safe.to_string(), reason);
+            assert_eq!((safe.code(), safe.exit_code()), ("engine_failure", 1));
+            assert!(safe.is_safety_refusal());
+        }
+        let leaky = sanitize_error(ToolError::EngineFailure("/home/someone/secret".into()));
+        assert!(!leaky.to_string().contains("secret"), "{leaky}");
+        assert!(!leaky.is_safety_refusal());
+    }
+
     /// The helper writes `json!(Result<Report, ToolError>)` into the result event's
     /// `tool_job` metric and `run` parses it back; the refusal must survive that trip.
     #[test]
