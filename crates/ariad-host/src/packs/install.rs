@@ -1609,6 +1609,15 @@ pub fn notices(
     })
 }
 
+/// The notices of the active version of every installed pack, ordered by pack name.
+pub fn active_notices(context: &PackContext) -> Result<Vec<PackNotices>, PackError> {
+    list_installed(context)?
+        .into_iter()
+        .filter(|installed| installed.active)
+        .map(|installed| notices(context, &installed.name, Some(&installed.version)))
+        .collect()
+}
+
 /// Reads a notice, refusing any symbolic link on the way from the pack root to the file.
 fn read_notice(root: &Path, notice: &str) -> Result<Vec<u8>, String> {
     let parts = relative_path(notice).map_err(|reason| format!("is invalid: {reason}"))?;

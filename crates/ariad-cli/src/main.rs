@@ -1763,19 +1763,7 @@ fn run_pack_notices(args: PackNoticesArgs) -> ExitCode {
                     &name,
                     args.version.as_deref(),
                 )?]),
-                None => {
-                    let mut all = Vec::new();
-                    for installed in packs::list_installed(&context)? {
-                        if installed.active {
-                            all.push(packs::notices(
-                                &context,
-                                &installed.name,
-                                Some(&installed.version),
-                            )?);
-                        }
-                    }
-                    Ok(all)
-                }
+                None => packs::active_notices(&context),
             }
         },
         move |notices| {
