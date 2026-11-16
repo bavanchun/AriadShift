@@ -5,6 +5,8 @@
 
 mod support;
 
+use support::engine_probe_path;
+
 use std::{
     fs,
     io::Write,
@@ -598,34 +600,6 @@ fn xlsx_created_from_ir_with_tables_opens_in_libreoffice() {
     );
 }
 
-fn engine_probe_path() -> PathBuf {
-    let probe = Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
-    if probe.exists() {
-        return probe;
-    }
-    let repo_probe = support::fixtures::repository_root().join("target/debug/engine-probe");
-    if repo_probe.exists() {
-        return repo_probe;
-    }
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    let mut cmd = std::process::Command::new(cargo);
-    cmd.args([
-        "build",
-        "-p",
-        "ariad-host",
-        "--bin",
-        "engine-probe",
-        "--features",
-        "ariad-host/test-probe",
-    ]);
-    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
-        cmd.env("CARGO_TARGET_DIR", target_dir);
-    }
-    let _ = cmd.status();
-    if probe.exists() { probe } else { repo_probe }
-}
-
 fn docling_cli(fixture: &Path) -> Option<Command> {
     if std::env::var_os("ASHIFT_PACK_DOCLING").is_some()
         || std::env::var_os("ASHIFT_DOCLING_ENGINE").is_some()
@@ -825,6 +799,37 @@ fn xlsx_reread_through_docling_has_one_sheet_per_table() {
         .output()
         .expect("convert pdf -> xlsx");
     assert!(conv.status.success());
+
+    // The text-dump fallback is one sheet too, so a count alone cannot tell it apart: require
+    // that table extraction ran and that the header cells landed in separate columns.
+    let conv_report: Value = serde_json::from_slice(&conv.stdout).unwrap();
+    assert!(
+        !conv_report["warnings"]
+            .as_array()
+            .is_some_and(|warnings| warnings.iter().any(|w| w["code"] == "no_tables_found")),
+        "table extraction must not fall back to a text dump: {conv_report:?}"
+    );
+    let sheet1_xml = {
+        let mut archive = ZipArchive::new(fs::File::open(&xlsx_out).unwrap()).unwrap();
+        let mut sheet = String::new();
+        std::io::Read::read_to_string(
+            &mut archive.by_name("xl/worksheets/sheet1.xml").unwrap(),
+            &mut sheet,
+        )
+        .unwrap();
+        sheet
+    };
+    for (cell, text) in [("A1", "Archive item"), ("B1", "Recorded detail")] {
+        assert!(
+            sheet1_xml.contains(&format!(">{text}</t>"))
+                && sheet1_xml.contains(&format!("<c r=\"{cell}\"")),
+            "sheet1.xml must hold {text:?} in its own cell {cell}: {sheet1_xml}"
+        );
+    }
+    assert!(
+        sheet1_xml.contains("<row r=\"2\">") && sheet1_xml.contains("<c r=\"B2\""),
+        "table rows must map to separate worksheet rows: {sheet1_xml}"
+    );
 
     // Verify sheet count directly from the produced XLSX package (open zip and count xl/worksheets/sheet*.xml)
     let file = fs::File::open(&xlsx_out).expect("open produced XLSX");

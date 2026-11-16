@@ -59,26 +59,6 @@ name = "ashift"
 path = "src/main.rs"
 
 [[test]]
-name = "commands_cli"
-path = "tests/commands_cli.rs"
-required-features = ["ariad-host/test-probe"]
-
-[[test]]
-name = "packs_cli"
-path = "tests/packs_cli.rs"
-required-features = ["ariad-host/test-probe"]
-
-[[test]]
-name = "docling_pack"
-path = "tests/docling_pack.rs"
-required-features = ["ariad-host/test-probe"]
-
-[[test]]
-name = "engine_conformance_v2"
-path = "tests/engine_conformance_v2.rs"
-required-features = ["ariad-host/test-probe"]
-
-[[test]]
 name = "termination"
 path = "tests/termination.rs"
 
