@@ -93,7 +93,7 @@ fn subset_all(pdf: &mut PdfDoc) -> Vec<SubsetOutcome> {
     let fonts = cff_fonts(pdf.inner());
     fonts
         .into_iter()
-        .map(|(id, _)| subset_simple_cff(pdf, id, &usage, &limits).unwrap())
+        .map(|(id, _)| subset_simple_cff(pdf, id, &usage, &limits, &ToolCtx::default()).unwrap())
         .collect()
 }
 
@@ -149,7 +149,7 @@ fn skip_reason(
     let limits = Limits::local();
     let usage = glyph_usage(&pdf, &ToolCtx::default(), &limits).unwrap();
     let before = program_bytes(pdf.inner());
-    let outcome = subset_simple_cff(&mut pdf, font, &usage, &limits).unwrap();
+    let outcome = subset_simple_cff(&mut pdf, font, &usage, &limits, &ToolCtx::default()).unwrap();
     let SubsetOutcome::Skipped(reason) = outcome else {
         panic!("expected a skip, got {outcome:?}")
     };

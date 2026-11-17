@@ -9,7 +9,7 @@
 use super::{
     FontError, GlyphUsage, SubsetOutcome, content_bytes, dict, resolve, shared_font_program,
 };
-use crate::PdfDoc;
+use crate::{PdfDoc, PdfError, ToolCtx};
 use ariad_core::limits::Limits;
 use flate2::{Compression, write::ZlibEncoder};
 use lopdf::{Object, ObjectId, Stream, dictionary};
@@ -22,6 +22,12 @@ const MAX_CALL_DEPTH: u8 = 10;
 const MAX_CALLS: usize = 4096;
 const MAX_STEMS: usize = 96;
 const MAX_SEAC_ROUNDS: usize = 8;
+/// Interpreted bytes allowed per program byte, with a floor and a fixed cap.
+const WORK_PER_BYTE: usize = 16;
+const WORK_FLOOR: usize = 256 * 1024;
+const WORK_CAP: usize = 32 * 1024 * 1024;
+/// Interpreted bytes between two cancellation checks.
+const CHECK_EVERY: usize = 64 * 1024;
 
 /// Glyph names and the built-in encoding of a name-keyed CFF program.
 #[derive(Debug, PartialEq, Eq)]
@@ -313,15 +319,47 @@ enum Step {
 
 /// Minimal Type 2 interpreter: it only follows the operand stack, the hint
 /// count and subroutine calls, which is enough to find a `seac`-style `endchar`.
+///
+/// One machine serves a whole font. The interpreted bytes of every charstring
+/// and subroutine call are charged to a font-wide budget, so a few kilobytes
+/// of nested subroutines cannot cost seconds; running dry refuses the font.
 struct Machine<'a> {
     subrs: &'a Subrs<'a>,
+    ctx: &'a ToolCtx,
     stack: Vec<i32>,
     stems: usize,
     calls: usize,
+    /// Interpreted bytes still allowed for the font.
+    budget: usize,
+    until_check: usize,
+    /// Set when the context asked to stop; the font is then not an outcome.
+    stopped: Option<PdfError>,
 }
 
 impl Machine<'_> {
+    /// Interpret one glyph from a clean state.
+    fn glyph(&mut self, code: &[u8]) -> Option<Step> {
+        self.stack.clear();
+        self.stems = 0;
+        self.calls = 0;
+        self.run(code, 0)
+    }
+
+    fn charge(&mut self, bytes: usize) -> Option<()> {
+        self.budget = self.budget.checked_sub(bytes)?;
+        self.until_check = self.until_check.saturating_sub(bytes);
+        if self.until_check == 0 {
+            self.until_check = CHECK_EVERY;
+            if let Err(error) = self.ctx.check() {
+                self.stopped = Some(error);
+                return None;
+            }
+        }
+        Some(())
+    }
+
     fn run(&mut self, code: &[u8], depth: u8) -> Option<Step> {
+        self.charge(code.len())?;
         let mut pos = 0;
         while pos < code.len() {
             let b0 = code[pos];
@@ -423,7 +461,17 @@ fn seac_glyph(font: &CffFontRef, code: u8) -> Option<u16> {
 }
 
 /// Returns the pruned program, or `None` when it cannot be rewritten safely.
-fn prune(bytes: &[u8], keep: &BTreeSet<u16>) -> Option<Vec<u8>> {
+///
+/// `Err` only reports that `ctx` cancelled the work or ran out of time.
+fn prune(bytes: &[u8], keep: &BTreeSet<u16>, ctx: &ToolCtx) -> Result<Option<Vec<u8>>, PdfError> {
+    prune_inner(bytes, keep, ctx).unwrap_or(Ok(None))
+}
+
+fn prune_inner(
+    bytes: &[u8],
+    keep: &BTreeSet<u16>,
+    ctx: &ToolCtx,
+) -> Option<Result<Option<Vec<u8>>, PdfError>> {
     let font = CffFontRef::new_cff(bytes, 0, None).ok()?;
     if font.is_cid() || *bytes.first()? != 1 || bytes.len() > u32::MAX as usize / 2 {
         return None;
@@ -495,31 +543,49 @@ fn prune(bytes: &[u8], keep: &BTreeSet<u16>) -> Option<Vec<u8>> {
         globals: &globals,
         locals: locals.as_ref(),
     };
-    // Keep the requested glyphs, glyph 0 and the accent parts of each.
+    // Keep the requested glyphs, glyph 0 and the accent parts of each. Each
+    // round interprets only the glyphs the previous one added.
     let mut kept: BTreeSet<u16> = keep.iter().copied().chain([0]).collect();
-    let mut closed = false;
+    let mut pending: Vec<u16> = kept.iter().copied().collect();
+    let budget = bytes
+        .len()
+        .saturating_mul(WORK_PER_BYTE)
+        .clamp(WORK_FLOOR, WORK_CAP);
+    let mut machine = Machine {
+        subrs: &subrs,
+        ctx,
+        stack: Vec::new(),
+        stems: 0,
+        calls: 0,
+        budget,
+        until_check: CHECK_EVERY,
+        stopped: None,
+    };
     for _ in 0..MAX_SEAC_ROUNDS {
-        let mut added = false;
-        for gid in kept.clone() {
+        let mut added = Vec::new();
+        for gid in pending {
             let code = element(bytes, &cs, usize::from(gid))?;
-            let mut machine = Machine {
-                subrs: &subrs,
-                stack: Vec::new(),
-                stems: 0,
-                calls: 0,
+            let Some(step) = machine.glyph(code) else {
+                return machine.stopped.take().map(Err);
             };
-            if let Step::Ended(Some((base, accent))) = machine.run(code, 0)? {
+            if let Step::Ended(Some((base, accent))) = step {
                 for part in [base, accent] {
-                    added |= kept.insert(seac_glyph(&font, part)?);
+                    let part = seac_glyph(&font, part)?;
+                    if kept.insert(part) {
+                        added.push(part);
+                    }
                 }
             }
         }
-        if !added {
-            closed = true;
+        pending = added;
+        if pending.is_empty() {
             break;
         }
     }
-    if !closed || kept.iter().any(|&g| usize::from(g) >= num_glyphs) || kept.len() >= num_glyphs {
+    if !pending.is_empty()
+        || kept.iter().any(|&g| usize::from(g) >= num_glyphs)
+        || kept.len() >= num_glyphs
+    {
         return None;
     }
     let replacement = [ENDCHAR];
@@ -573,7 +639,9 @@ fn prune(bytes: &[u8], keep: &BTreeSet<u16>) -> Option<Vec<u8>> {
     out.extend_from_slice(&bytes[top_end..cs_off]);
     out.extend_from_slice(&new_cs);
     out.extend_from_slice(&bytes[cs_end..]);
-    (out.len() < bytes.len() && verify(bytes, &out, &kept, cs_end)).then_some(out)
+    Some(Ok((out.len() < bytes.len()
+        && verify(bytes, &out, &kept, cs_end))
+    .then_some(out)))
 }
 
 /// Re-parse the output and compare it with the input before it replaces anything.
@@ -708,6 +776,7 @@ pub fn subset_simple_cff(
     font_id: ObjectId,
     usage: &GlyphUsage,
     limits: &Limits,
+    ctx: &ToolCtx,
 ) -> Result<SubsetOutcome, FontError> {
     let depth = limits.max_nesting_depth;
     if usage.incomplete {
@@ -831,7 +900,7 @@ pub fn subset_simple_cff(
     if glyphs.iter().chain([&0]).collect::<BTreeSet<_>>().len() >= face.names.len() {
         return Ok(SubsetOutcome::Skipped("no unused glyphs"));
     }
-    let Some(subset) = prune(&bytes, &glyphs) else {
+    let Some(subset) = prune(&bytes, &glyphs, ctx)? else {
         return Ok(SubsetOutcome::Skipped("unsupported CFF program"));
     };
     let baseline = if program.dict.has(b"Filter") {
@@ -861,6 +930,10 @@ pub fn subset_simple_cff(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn prune(bytes: &[u8], keep: &BTreeSet<u16>) -> Option<Vec<u8>> {
+        super::prune(bytes, keep, &ToolCtx::default()).unwrap()
+    }
 
     /// Printable ASCII glyph names use the CFF standard string ids.
     fn sid(c: char) -> u16 {
@@ -1114,6 +1187,68 @@ mod tests {
             s.local = vec![vec![32, 10]];
             assert!(prune(&build(&s), &BTreeSet::from([2])).is_none());
         }
+    }
+
+    /// Glyphs call a mid-level subroutine, which calls a large leaf many
+    /// times: each glyph interprets megabytes from a few kilobytes of program.
+    fn amplifying(glyphs: usize) -> Spec {
+        let mut s = spec(&"A".repeat(glyphs));
+        // Distinct names are not needed: only the charstrings are walked.
+        let leaf: Vec<u8> = [139_u8, 22].repeat(2000).into_iter().chain([11]).collect();
+        let mid: Vec<u8> = [32_u8, 10].repeat(100).into_iter().chain([11]).collect();
+        // Local subr 0 is the leaf, local subr 1 the mid-level routine.
+        s.local = vec![leaf, mid];
+        let call_mid: Vec<u8> = [33_u8, 10].repeat(40).into_iter().chain([14]).collect();
+        for glyph in s.charstrings.iter_mut().skip(1) {
+            *glyph = call_mid.clone();
+        }
+        s
+    }
+
+    #[test]
+    fn amplifying_subroutines_are_refused_quickly() {
+        let bytes = build(&amplifying(12));
+        let keep: BTreeSet<u16> = (1..=6).collect();
+        let started = std::time::Instant::now();
+        assert!(prune(&bytes, &keep).is_none());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "took {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn cancellation_stops_the_interpreter() {
+        let bytes = build(&amplifying(12));
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let ctx = ToolCtx::with_cancel(cancel);
+        let keep: BTreeSet<u16> = (1..=6).collect();
+        assert!(super::prune(&bytes, &keep, &ctx).is_err());
+    }
+
+    #[test]
+    fn seac_rounds_interpret_each_glyph_once() {
+        // A chain of composites: each round only walks the glyph it added.
+        let acute = PredefinedEncoding::Standard.sid(194).unwrap().to_u16();
+        let mut s = spec("AB");
+        s.sids.extend([acute, 391]);
+        s.strings.push("Aacute");
+        s.charstrings.push(outline(1));
+        s.charstrings.push(vec![139, 139, 204, 247, 86, 14]);
+        let bytes = build(&s);
+        assert!(prune(&bytes, &BTreeSet::from([4])).is_some());
+    }
+
+    #[test]
+    fn modest_subroutine_reuse_still_prunes() {
+        let mut s = amplifying(12);
+        // Every glyph calls the 4 KB leaf three times.
+        let call_leaf: Vec<u8> = [32_u8, 10].repeat(3).into_iter().chain([14]).collect();
+        for glyph in s.charstrings.iter_mut().skip(1) {
+            *glyph = call_leaf.clone();
+        }
+        assert!(prune(&build(&s), &(1..=6).collect()).is_some());
     }
 
     #[test]

@@ -131,7 +131,7 @@ fn type1c_pruning_renders_identically_on_the_corpus() {
         let mut count = 0;
         for id in fonts {
             if let Ok(SubsetOutcome::Subset { .. }) =
-                subset_simple_cff(&mut pruned, id, &usage, &input.limits)
+                subset_simple_cff(&mut pruned, id, &usage, &input.limits, &ctx)
             {
                 count += 1;
             }
