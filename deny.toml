@@ -10,13 +10,6 @@ targets = [
 yanked = "deny"
 unmaintained = "workspace"
 ignore = [
-    # ariad-pdf reads fonts through the maintained read-fonts crate.
-    # ttf-parser 0.25.1 still reaches the build transitively through Typst
-    # 0.15 (typst-library, typst-layout, typst-svg, rustybuzz, fontdb, usvg),
-    # which ariad-typst feeds only its bundled fonts, never input or system
-    # font bytes. This advisory records maintenance status, not a reported
-    # vulnerability. Remove the ignore once Typst drops ttf-parser.
-    { id = "RUSTSEC-2026-0192", reason = "unmaintained parser reached only through Typst, which loads bundled fonts only" },
     # The Marvin attack is a timing side channel in RSA private-key
     # operations. rsa reaches the build only through jsonwebtoken's verifier
     # in ariad-server, which checks signatures with public keys and never
