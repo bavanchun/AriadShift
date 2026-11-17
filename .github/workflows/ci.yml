@@ -302,7 +302,11 @@ jobs:
       - name: Check capabilities registry
         run: just bench-check
 
+      # Packaging is the same on every host, and on macOS it recompiles the dependency graph from
+      # cold (6 to 14 minutes there, 3 to 5 on Linux and Windows), which pushed cold macOS runs past
+      # the timeout and kept the macOS cache from ever being saved.
       - name: Check packaging
+        if: runner.os != 'macOS'
         run: just package-check
 
       - name: Stop sccache and report stats
