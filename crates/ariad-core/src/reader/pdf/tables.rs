@@ -6,11 +6,16 @@
 //! joins its two neighbours into one rectangular merged cell. Glyphs are assigned to cells by
 //! their centre point.
 //!
+//! Two tables that share a border are one connected component, so they read as one table; with
+//! aligned columns that is indistinguishable from one table with a heavy rule between rows, and
+//! the detector does not split them. Tables with a gap between them stay separate.
+//!
 //! The detector favours precision. A candidate is dropped, never repaired, when its outer border
 //! is not closed, when a line dangles past the grid, when merged cells are not rectangles, when it
-//! covers most of the page, when most of its text is not upright, when fewer than two rows hold two or more plain cells (the shape of a
-//! page frame with header, footer and column rules), when too few cells hold text, or when text
-//! crosses cell borders. Tables without rules are not detected.
+//! covers most of the page, when most of its text is not upright, when fewer than two rows hold
+//! two or more plain cells (the shape of a page frame with header, footer and column rules), when
+//! too few cells hold text, or when text crosses cell borders. Tables without rules are not
+//! detected.
 
 use super::{
     interpreter::{Glyph, PageContent, SPACE},
@@ -738,6 +743,46 @@ mod tests {
             width: 1.0,
         });
         assert_eq!(detect(&page, 400.0, 400.0).grids.len(), 1);
+    }
+
+    #[test]
+    fn two_stacked_tables_sharing_a_border_read_as_one() {
+        // The shared rule joins both sets of lines into one component, and a grid whose rows
+        // continue the columns of the table above is the same picture as one longer table.
+        let lower = [YS[3], YS[3] + 20.0, YS[3] + 40.0];
+        let ys: Vec<f64> = YS
+            .iter()
+            .copied()
+            .chain(lower[1..].iter().copied())
+            .collect();
+        let page = page_with_grid(&XS, &ys);
+        let detected = detect(&page, 400.0, 400.0);
+        let [grid] = detected.grids.as_slice() else {
+            panic!("expected one grid, got {:?}", detected.grids);
+        };
+        assert_eq!((grid.rows, grid.columns), (5, 3));
+    }
+
+    #[test]
+    fn two_stacked_tables_with_a_gap_stay_separate() {
+        let mut page = page_with_grid(&XS, &YS);
+        let lower = page_with_grid(
+            &XS,
+            &[YS[3] + 20.0, YS[3] + 40.0, YS[3] + 60.0, YS[3] + 80.0],
+        );
+        let offset = page.glyphs.len();
+        page.rules.extend(lower.rules);
+        for glyph in &lower.glyphs {
+            let start = page.text.len() as u32;
+            page.text.push('b');
+            page.glyphs.push(Glyph {
+                text_start: start,
+                text_end: page.text.len() as u32,
+                ..*glyph
+            });
+        }
+        assert_eq!(page.glyphs.len(), offset + lower.glyphs.len());
+        assert_eq!(detect(&page, 400.0, 400.0).grids.len(), 2);
     }
 
     #[test]
