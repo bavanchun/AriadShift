@@ -270,6 +270,14 @@ doc = false
 bench = false
 
 [[bin]]
+name = "type1_to_cff"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/type1_to_cff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "pdf_redact_params"
 required-features = ["pdf-reader"]
 path = "fuzz_targets/pdf_redact_params.rs"
