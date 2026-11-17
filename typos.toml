@@ -23,6 +23,8 @@ delocate = "delocate"
 # OpenDocument Format and the flate2 compression crate.
 ODF = "ODF"
 flate = "flate"
+# Type 1 charstring terminator alias (`ND`, like `RD` and `NP`) in synthetic font test data.
+ND = "ND"
 # Tesseract's language data name for Thai.
 tha = "tha"
 # XML Formatting Objects namespace used by OpenDocument styles.

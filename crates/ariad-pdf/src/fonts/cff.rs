@@ -748,11 +748,11 @@ impl<'a> Interp<'a> {
         self.width?;
         let sbx = if vertical { self.sbx } else { 0 };
         let set = self.sets.last_mut()?;
-        for pair in args.chunks_exact(2) {
+        for &[pos, len] in args.as_chunks::<2>().0 {
             set.push(Stem {
                 vertical,
-                pos: pair[0].checked_add(sbx)?,
-                len: pair[1],
+                pos: pos.checked_add(sbx)?,
+                len,
             });
         }
         Some(())
@@ -1546,7 +1546,7 @@ fn build(parsed: &Parsed, max_bytes: usize) -> Option<Vec<u8>> {
 
     let charstring_index = index(&charstrings)?;
     let private_bytes = private_dict(private, default_width, nominal_width)?;
-    let name_index = index(&[header.name.clone()])?;
+    let name_index = index(std::slice::from_ref(&header.name))?;
     let string_index = index(&names.custom)?;
     let global_subrs = index(&[])?;
 
