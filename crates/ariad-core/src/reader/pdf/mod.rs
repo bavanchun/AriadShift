@@ -288,16 +288,23 @@ pub fn read_with_options(
     if table_scan.capped_pages > 0 {
         warnings.push(Warning::new(
             WarningCode::UnsupportedNode,
-            format!(
-                "{} pages exceed the table detection limits; some of their tables were not detected",
-                table_scan.capped_pages
-            ),
+            table_limit_message(table_scan.capped_pages),
         ));
     }
     Ok(ReadOutput {
         document: document.finalize_import(),
         warnings,
     })
+}
+
+fn table_limit_message(pages: u32) -> String {
+    if pages == 1 {
+        "1 page exceeds the table detection limits; some of its tables were not detected".to_owned()
+    } else {
+        format!(
+            "{pages} pages exceed the table detection limits; some of their tables were not detected"
+        )
+    }
 }
 
 /// A [`lopdf::Document`] loaded within [`Limits`], together with cross-reference repair status.
@@ -581,10 +588,22 @@ fn split_list(value: &str, separators: &[char]) -> Vec<String> {
 mod tests {
     use super::{
         LoadMode, decode_text_string, inherited, interpret_page, load_bounded_inner, page_geometry,
-        split_list,
+        split_list, table_limit_message,
     };
     use crate::limits::Limits;
     use lopdf::{Document, Object, dictionary};
+
+    #[test]
+    fn the_table_limit_message_agrees_with_the_page_count() {
+        assert_eq!(
+            table_limit_message(1),
+            "1 page exceeds the table detection limits; some of its tables were not detected"
+        );
+        assert_eq!(
+            table_limit_message(3),
+            "3 pages exceed the table detection limits; some of their tables were not detected"
+        );
+    }
 
     #[test]
     fn rotation_maps_the_crop_box_to_a_top_left_display_space() {

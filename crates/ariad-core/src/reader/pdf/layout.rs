@@ -175,7 +175,8 @@ fn table_block(
 }
 
 /// Whether the first row is a head: the rule under it is distinctly heavier, or its text is bold
-/// while the rest of the table is not. Spanning cells in the first row never make a head.
+/// while the body text is not all bold. A first-row cell that spans several rows rules out a head;
+/// cells that span several columns do not.
 fn has_head(grid: &tables::Grid, rows: &[Vec<CellLayout>]) -> bool {
     let first = &rows[0];
     if rows.len() < 2 || first.iter().any(|cell| cell.rowspan != 1) {
