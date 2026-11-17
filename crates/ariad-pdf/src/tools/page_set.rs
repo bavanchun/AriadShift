@@ -1379,7 +1379,9 @@ fn copy_acroform_field_recursive(
 
     let mut surviving_kids = Vec::new();
     let mut seen_kid_ids = BTreeSet::new();
-    for kid in kids {
+    // Source kid positions that survive; `/Opt` is indexed by `/Kids` position and is trimmed to them.
+    let mut surviving_positions = Vec::new();
+    for (position, kid) in kids.iter().enumerate() {
         ctx.check()?;
         let Ok(src_kid_id) = kid.as_reference() else {
             continue;
@@ -1393,12 +1395,16 @@ fn copy_acroform_field_recursive(
             depth + 1,
             ctx,
         )?;
+        let before = surviving_kids.len();
         for kr in kid_refs {
             if let Ok(kid_obj_id) = kr.as_reference()
                 && seen_kid_ids.insert(kid_obj_id)
             {
                 surviving_kids.push(kr);
             }
+        }
+        if surviving_kids.len() > before {
+            surviving_positions.push(position);
         }
     }
 
@@ -1435,8 +1441,25 @@ fn copy_acroform_field_recursive(
             kid_dict.set(b"Parent".to_vec(), Object::Reference(new_parent_id));
         }
     }
+    // The parent may already exist (copied through a widget's `/Parent`) with the full source
+    // `/Opt`, so the trim happens here for both paths.
+    let mut trimmed_opt = None;
+    if let Ok(source_opt) = field_dict.get(b"Opt")
+        && let Some(Object::Array(options)) = resolve_object(src_doc, source_opt)
+    {
+        let mut trimmed = Vec::with_capacity(surviving_positions.len());
+        for &position in &surviving_positions {
+            if let Some(option) = options.get(position) {
+                trimmed.push(copier.copy_object(option, ctx)?);
+            }
+        }
+        trimmed_opt = Some(trimmed);
+    }
     if let Some(Object::Dictionary(parent_dict)) = copier.target.objects.get_mut(&new_parent_id) {
         parent_dict.set(b"Kids".to_vec(), Object::Array(surviving_kids));
+        if let Some(trimmed) = trimmed_opt {
+            parent_dict.set(b"Opt".to_vec(), Object::Array(trimmed));
+        }
     }
 
     let out = vec![Object::Reference(new_parent_id)];

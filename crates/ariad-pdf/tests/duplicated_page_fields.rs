@@ -876,7 +876,7 @@ fn copied_radio_options_follow_the_kid_order_of_every_page_order() {
             for (name, pairs) in &want {
                 assert_eq!(got.get(name), Some(pairs), "order {order}: {name}");
             }
-            assert_eq!(got.len(), want.len().max(got.len()), "order {order}");
+            assert_eq!(got.len(), want.len(), "order {order}");
         }
     }
 }
@@ -971,4 +971,48 @@ fn field_id(doc: &Document, name: &str) -> ObjectId {
         })
         .map(|(id, _)| *id)
         .unwrap_or_else(|| panic!("field {name}"))
+}
+
+#[test]
+fn extracted_radio_options_follow_the_surviving_kids() {
+    for pages in ["2,2", "2,2,1"] {
+        let bytes = run_spanning("pdf.extract_pages", &json!({ "pages": pages }));
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        let doc = pdf.inner();
+        let mut radios = 0;
+        for dict in doc.objects.values().filter_map(|obj| obj.as_dict().ok()) {
+            let Some(name) = partial_name(dict).filter(|n| n == "g" || n.starts_with("g_")) else {
+                continue;
+            };
+            radios += 1;
+            let options: Vec<String> = resolve(doc, dict.get(b"Opt").expect("keeps /Opt"))
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|opt| decode_text(resolve(doc, opt).as_str().unwrap()))
+                .collect();
+            for (kid, option) in kids(doc, dict).into_iter().zip(&options) {
+                let ap = doc.get_dictionary(kid).unwrap().get(b"AP").unwrap();
+                let normal = resolve(doc, ap).as_dict().unwrap().get(b"N").unwrap();
+                let state = resolve(doc, normal)
+                    .as_dict()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, _)| String::from_utf8_lossy(key).into_owned())
+                    .find(|key| key != "Off")
+                    .unwrap();
+                assert_eq!(
+                    option.to_lowercase(),
+                    state,
+                    "pages {pages}, {name}: export value follows its button"
+                );
+            }
+            assert_eq!(
+                options.len(),
+                kids(doc, dict).len(),
+                "pages {pages}, {name}: one /Opt per kid"
+            );
+        }
+        assert!(radios >= 2, "pages {pages}: radio group and copies present");
+    }
 }
