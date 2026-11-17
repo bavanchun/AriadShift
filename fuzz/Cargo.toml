@@ -191,6 +191,14 @@ doc = false
 bench = false
 
 [[bin]]
+name = "pdf_cff_prune"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/pdf_cff_prune.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "pdf_tools_structural"
 required-features = ["pdf-reader"]
 path = "fuzz_targets/pdf_tools_structural.rs"
