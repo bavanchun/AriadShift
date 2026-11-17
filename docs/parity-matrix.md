@@ -108,6 +108,10 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 
 Compression runs in-process; PDFium is used only for similarity measurement. The eligible tools expose Cloud runtimes through server tool jobs.
 
+Compression size parity against Stirling level 6 is measured by `crates/ariad-pdf/tests/compress_corpus.rs` (preset `ebook`, reference sizes in `crates/ariad-pdf/tests/data/stirling-level6.tsv`). Embedded simple Type 1 fonts (`/FontFile`, eexec) are converted to Type1C (`/FontFile3`) with glyph names, encoding and widths unchanged, as Stirling does; this moved `arxiv-multilingual` from 166,344 to 112,282 bytes (Stirling 136,838) and `arxiv-tableformer` from 452,180 to 365,031 bytes. Seven of the ten corpus files are now at or below the Stirling size.
+
+`arxiv-tableformer` (Stirling 206,587 bytes) will not reach parity, by design: Stirling's output drops 5 of the 7 image streams and 10 of the 11 form XObjects, so the figures on pages 3 and 8 render blank. About 131 KB of its saving is deleted visible content, and a further 53 KB comes from dropping CID font subsets that lived in those figures. AriadShift keeps that content. The remaining size gaps (`pd-vi-decree-39-2022` +6.0 KB, `pd-en-gao-08-35-highlights` +9.8 KB) come from object-stream contents and unused CFF glyphs, tracked in #187.
+
 ### security
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
