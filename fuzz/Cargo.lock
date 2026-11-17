@@ -163,6 +163,7 @@ dependencies = [
  "ariad-pdfium-engine",
  "libfuzzer-sys",
  "lopdf",
+ "read-fonts 0.47.0",
  "saphyr-parser",
  "serde",
  "serde_json",

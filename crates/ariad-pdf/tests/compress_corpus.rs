@@ -41,7 +41,9 @@ fn ebook_matches_stirling_on_corpus() {
             wins += 1;
         }
     }
-    // Accepted measured baseline; text-heavy parity follow-up (https://github.com/bavanchun/AriadShift/issues/187).
+    // Accepted measured baseline (seven of ten files meet the size after Type 1 -> Type1C conversion);
+    // text-heavy parity follow-up (https://github.com/bavanchun/AriadShift/issues/187). Tableformer
+    // cannot reach the Stirling size: its output drops 5 of 7 images and 10 of 11 forms.
     assert!(
         errors == 0 && wins >= 6,
         "{errors} errors and only {wins}/10 meet the Stirling size"

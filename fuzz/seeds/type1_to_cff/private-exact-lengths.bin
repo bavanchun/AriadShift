@@ -1,0 +1,7 @@
+/Subrs 0 array
+ND
+2 index /CharStrings 0 dict dup begin
+end
+end
+readonly put
+noaccess put

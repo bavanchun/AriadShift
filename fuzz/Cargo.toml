@@ -16,6 +16,9 @@ ariad-pdf = { path = "../crates/ariad-pdf", optional = true }
 ariad-pdfium-engine = { path = "../crates/ariad-pdfium-engine" }
 libfuzzer-sys = "0.4.13"
 lopdf = { version = "0.46.0", default-features = false }
+# The same exact version `ariad-pdf` uses; `type1` adds the independent Type 1 parser that the
+# type1_to_cff target checks accepted conversions against.
+read-fonts = { version = "=0.47.0", default-features = false, features = ["std", "type1"], optional = true }
 saphyr-parser = "0.3.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "float_roundtrip"] }
@@ -26,7 +29,7 @@ typst = { version = "0.15.1", optional = true }
 zip = { version = "9.2.1", default-features = false }
 
 [features]
-pdf-reader = ["ariad-core/pdf", "dep:ariad-pdf", "ariad-pdf/codecs"]
+pdf-reader = ["ariad-core/pdf", "dep:ariad-pdf", "ariad-pdf/codecs", "dep:read-fonts"]
 typst-writer = ["ariad-host/typst", "dep:typst"]
 
 [lib]
@@ -265,6 +268,14 @@ bench = false
 name = "reader_cbz"
 required-features = ["pdf-reader"]
 path = "fuzz_targets/reader_cbz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "type1_to_cff"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/type1_to_cff.rs"
 test = false
 doc = false
 bench = false

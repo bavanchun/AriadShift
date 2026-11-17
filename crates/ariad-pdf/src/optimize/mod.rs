@@ -126,6 +126,7 @@ pub fn structural(pdf: &mut PdfDoc, limits: &Limits, ctx: &ToolCtx) -> Result<()
             }
         }
     }
+    convert_type1_fonts(pdf, limits, ctx)?;
     // Newly subset font programs and originally plain streams also benefit from Flate.
     let ids: Vec<_> = pdf.inner().objects.keys().copied().collect();
     for id in ids {
@@ -153,6 +154,42 @@ pub fn structural(pdf: &mut PdfDoc, limits: &Limits, ctx: &ToolCtx) -> Result<()
     }
     prune::prune(pdf, ctx)?;
     Ok(())
+}
+
+/// Rewrite embedded simple Type 1 programs as Type1C where that is strictly smaller.
+///
+/// Returns the number of fonts rewritten. Fonts the converter refuses stay byte-identical.
+pub fn convert_type1_fonts(
+    pdf: &mut PdfDoc,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<usize, PdfError> {
+    let ids: Vec<_> = pdf
+        .inner()
+        .objects
+        .iter()
+        .filter_map(|(&id, object)| {
+            (object
+                .as_dict()
+                .ok()?
+                .get(b"Subtype")
+                .and_then(Object::as_name)
+                .ok()
+                == Some(b"Type1".as_slice()))
+            .then_some(id)
+        })
+        .collect();
+    let mut converted = 0;
+    for id in ids {
+        ctx.check()?;
+        match fonts::convert_simple_type1_to_cff(pdf, id, limits) {
+            Ok(fonts::SubsetOutcome::Subset { .. }) => converted += 1,
+            Ok(fonts::SubsetOutcome::Skipped(_)) => {}
+            Err(fonts::FontError::Pdf(error)) => return Err(error),
+            Err(_) => {}
+        }
+    }
+    Ok(converted)
 }
 
 /// Decode each eligible, placed image once for all target-size trials.

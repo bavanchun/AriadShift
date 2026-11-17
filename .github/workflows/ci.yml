@@ -630,13 +630,13 @@ jobs:
             fuzz_args=(-- -max_total_time=60 -timeout=10 -rss_limit_mb=2048)
           fi
           echo "Running fuzz targets with max_total_time=${fuzz_seconds}s per target"
-          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure pdf_redact_params typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned reader_text reader_csv reader_eml reader_msg reader_svg reader_cbz"
+          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure pdf_redact_params type1_to_cff typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned reader_text reader_csv reader_eml reader_msg reader_svg reader_cbz"
           for t in $targets; do
             echo "=== Running fuzz target: $t (${fuzz_seconds}s) ==="
             mkdir -p "fuzz/corpus/$t"
             build_options=()
             case "$t" in
-              pdf_reader|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|reader_cbz) build_options=(--dev --features pdf-reader) ;;
+              pdf_reader|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|type1_to_cff|reader_cbz) build_options=(--dev --features pdf-reader) ;;
               typst_writer) build_options=(--dev --features typst-writer) ;;
             esac
             cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" "${fuzz_args[@]}"

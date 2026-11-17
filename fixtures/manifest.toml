@@ -6511,3 +6511,43 @@ tags = []
 phase = "11"
 routes = ["pdf->docx"]
 companions = [{ path = "fixtures/editor/vi-styled-pair-pdf.truth.json", sha256 = "fffa085a0e28ce97960c61ea429c3d8ba0d79e6f0669de3b9c56fe111a3a78f6" }, { path = "fixtures/editor/vi-styled-pair.typ", sha256 = "414d022165210fa6f7627627f981202b7f8084ffe5f97829c09837f7b0c4cdec" }]
+
+[[fuzz_seed]]
+id = "fuzz-type1-to-cff-glyph"
+target = "type1_to_cff"
+path = "fuzz/seeds/type1_to_cff/glyph-flex-hint-replacement.bin"
+sha256 = "fccabfc7ee5862d8b7c584574af8a94180939560800c45e6c0f04aa45ca600cb"
+source = "Original synthetic Type 1 charstring (flex and hint replacement) seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-type1-to-cff-private"
+target = "type1_to_cff"
+path = "fuzz/seeds/type1_to_cff/private-empty-subrs.bin"
+sha256 = "c80f5d8a36642e5098ce170d6d1f2cf1f3fd02ac891e6c1aab102978cc21bd57"
+source = "Original synthetic Type 1 private part seed authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-type1-to-cff-private-exact-lengths"
+target = "type1_to_cff"
+path = "fuzz/seeds/type1_to_cff/private-exact-lengths.bin"
+sha256 = "939926c26ae7ed6533aaf89e9abbd4589924df526578a8c976521115304ac612"
+source = "Original synthetic Type 1 private part seed (explicit section lengths mode) authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-type1-to-cff-explicit-lengths"
+target = "type1_to_cff"
+path = "fuzz/seeds/type1_to_cff/explicit-lengths-glyph-font.bin"
+sha256 = "ff1870b6e7c7835e255c27f8571b5b7b73414dbf49bf58d310c88295d97c0812"
+source = "Original synthetic Type 1 font program with PDF section lengths (flex and hint replacement glyph) authored for AriadShift."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
