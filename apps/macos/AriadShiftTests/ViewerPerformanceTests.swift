@@ -27,10 +27,11 @@ final class ViewerPerformanceTests: XCTestCase {
     /// timestamps, so it sees dropped display frames, not main-thread time):
     ///  - `sustainedHitchBudget`: hitch time in milliseconds per second of scrolling, with the single worst stall
     ///    left out. 5 ms/s is the "good" bound of Apple's hitch time ratio; the noisy CI runs measure under 2.
-    ///  - `longestHitchBudget`: no single stall may reach a hang. 250 ms is Apple's hang threshold; the worst
-    ///    stall seen on CI is 42 ms.
+    ///  - `longestFrameGapBudget`: no gap between two frames may reach a hang. The gap is the full interval between
+    ///    frames, not its excess over one refresh period; 250 ms is Apple's hang threshold and the longest gap seen
+    ///    on CI is 58 ms.
     private static let sustainedHitchBudget = 5.0
-    private static let longestHitchBudget = 0.250
+    private static let longestFrameGapBudget = 0.250
     private static let memoryBudgetMB = 150.0
     private var hundredPages: URL!
 
@@ -114,7 +115,7 @@ final class ViewerPerformanceTests: XCTestCase {
         try XCTSkipIf(NSScreen.screens.isEmpty, "no display or window server: frames cannot be sampled")
     }
 
-    func testScrollingAThousandPageDocumentHasNoHitch() async throws {
+    func testScrollingAThousandPageDocumentStaysWithinTheHitchBudget() async throws {
         try requireDisplay()
         let data = try Data(contentsOf: fixtureURL("pdf-tools/large-1000-pages.pdf"))
         let viewer = ViewerModel()
@@ -149,8 +150,8 @@ final class ViewerPerformanceTests: XCTestCase {
                 + "without the worst stall (budget \(Self.sustainedHitchBudget))"
         )
         XCTAssertLessThanOrEqual(
-            stats.maxHitch, Self.longestHitchBudget,
-            "a single stall of \(String(format: "%.1f", stats.maxHitch * 1000)) ms while scrolling (budget \(Int(Self.longestHitchBudget * 1000)) ms)"
+            stats.maxInterval, Self.longestFrameGapBudget,
+            "a gap of \(String(format: "%.1f", stats.maxInterval * 1000)) ms between two frames while scrolling (budget \(Int(Self.longestFrameGapBudget * 1000)) ms)"
         )
     }
 
