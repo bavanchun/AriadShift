@@ -17,6 +17,9 @@ const MAX_CHARSTRING: usize = 64 * 1024;
 const MAX_SUBR_DEPTH: usize = 10;
 const MAX_STACK: usize = 24;
 const MAX_STEPS: usize = 100_000;
+/// Whole-font caps: inlined subroutines multiply per-glyph work by the glyph count.
+const MAX_TOTAL_STEPS: usize = 4_000_000;
+const MAX_TOTAL_SEGS: usize = 1_000_000;
 const MAX_STEMS: usize = 23;
 const MAX_LEN_IV: usize = 16;
 const MAX_TOKENS: usize = 1_000_000;
@@ -954,7 +957,17 @@ impl<'a> Interp<'a> {
     }
 }
 
-fn convert_charstring(code: &[u8], subrs: &[Option<Vec<u8>>]) -> Option<Glyph> {
+/// Running totals for one font, charged by every converted glyph.
+struct FontBudget {
+    steps: usize,
+    segs: usize,
+}
+
+fn convert_charstring(
+    code: &[u8],
+    subrs: &[Option<Vec<u8>>],
+    budget: &mut FontBudget,
+) -> Option<Glyph> {
     let mut interp = Interp {
         subrs,
         stack: Vec::new(),
@@ -971,7 +984,13 @@ fn convert_charstring(code: &[u8], subrs: &[Option<Vec<u8>>]) -> Option<Glyph> {
         steps: 0,
         done: false,
     };
-    interp.run(code, 0)?;
+    let ran = interp.run(code, 0);
+    budget.steps = budget.steps.checked_add(interp.steps)?;
+    budget.segs = budget.segs.checked_add(interp.segs.len())?;
+    if budget.steps > MAX_TOTAL_STEPS || budget.segs > MAX_TOTAL_SEGS {
+        return None;
+    }
+    ran?;
     if !interp.done || interp.flex.is_some() {
         return None;
     }
@@ -1424,11 +1443,12 @@ fn build(parsed: &Parsed, max_bytes: usize) -> Option<Vec<u8>> {
     } = parsed;
     let mut converted: Vec<(Vec<u8>, Glyph)> = Vec::with_capacity(raw.len());
     let mut seen: BTreeMap<&[u8], ()> = BTreeMap::new();
+    let mut budget = FontBudget { steps: 0, segs: 0 };
     for (name, code) in raw {
         if seen.insert(name.as_slice(), ()).is_some() {
             return None;
         }
-        converted.push((name.clone(), convert_charstring(code, subrs)?));
+        converted.push((name.clone(), convert_charstring(code, subrs, &mut budget)?));
     }
     // Choose the default and nominal widths, then order glyphs: .notdef, encoded, the rest.
     let mut counts: BTreeMap<i64, usize> = BTreeMap::new();
@@ -1514,12 +1534,14 @@ fn build(parsed: &Parsed, max_bytes: usize) -> Option<Vec<u8>> {
             enc.out
         }
     });
+    let mut output_bytes = 0_usize;
     for &at in &order {
-        charstrings.push(encode_glyph(
-            &converted[at].1,
-            default_width,
-            nominal_width,
-        )?);
+        let encoded = encode_glyph(&converted[at].1, default_width, nominal_width)?;
+        output_bytes = output_bytes.checked_add(encoded.len())?;
+        if output_bytes > max_bytes {
+            return None;
+        }
+        charstrings.push(encoded);
     }
     if charstrings.len() > MAX_GLYPHS {
         return None;
@@ -2329,6 +2351,35 @@ mod tests {
         }
         // Random input is almost always refused; the point is that nothing panics.
         let _ = accepted;
+    }
+
+    #[test]
+    fn subroutine_amplification_is_bounded_for_the_whole_font() {
+        // One 60 KB subroutine inlined into thousands of glyphs: about 180M interpreter steps
+        // without a font-wide budget, and a tiny input.
+        let mut subrs = standard_subrs();
+        let mut big = Vec::new();
+        for _ in 0..20_000 {
+            big.extend(cs(&[N(1), N(1), O(RMOVETO)]));
+        }
+        big.push(RETURN);
+        subrs.push(big);
+        let names: Vec<String> = (0..3000).map(|i| format!("g{i}")).collect();
+        let mut glyphs: Vec<(&str, Vec<u8>)> =
+            vec![(".notdef", cs(&[N(0), N(600), O(HSBW), O(ENDCHAR)]))];
+        for name in &names {
+            glyphs.push((
+                name,
+                cs(&[N(0), N(600), O(HSBW), N(6), O(CALLSUBR), O(ENDCHAR)]),
+            ));
+        }
+        let font = build_font("/Encoding StandardEncoding def", &subrs, &glyphs, "");
+        let started = std::time::Instant::now();
+        assert!(convert_built(&font).is_none());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "the budget must stop the conversion early"
+        );
     }
 
     #[test]
