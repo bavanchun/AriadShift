@@ -1444,7 +1444,9 @@ fn copy_acroform_field_recursive(
     // The parent may already exist (copied through a widget's `/Parent`) with the full source
     // `/Opt`, so the trim happens here for both paths.
     let mut trimmed_opt = None;
-    if let Ok(source_opt) = field_dict.get(b"Opt")
+    // Only button fields index `/Opt` by `/Kids` position; choice fields list their options.
+    if is_button_field(src_doc, src_field_id)
+        && let Ok(source_opt) = field_dict.get(b"Opt")
         && let Some(Object::Array(options)) = resolve_object(src_doc, source_opt)
     {
         let mut trimmed = Vec::with_capacity(surviving_positions.len());
@@ -1465,6 +1467,25 @@ fn copy_acroform_field_recursive(
     let out = vec![Object::Reference(new_parent_id)];
     visited.insert(src_field_id, out.clone());
     Ok(out)
+}
+
+/// True when the field's effective `/FT` is `/Btn`, following an inherited `/FT` up a bounded
+/// `/Parent` chain. A field without any `/FT` is not a button.
+pub(crate) fn is_button_field(doc: &Document, field_id: ObjectId) -> bool {
+    let mut current = field_id;
+    for _ in 0..64 {
+        let Ok(dict) = doc.get_dictionary(current) else {
+            return false;
+        };
+        if let Ok(ft) = dict.get(b"FT") {
+            return matches!(resolve_object(doc, ft), Some(Object::Name(n)) if n.as_slice() == b"Btn");
+        }
+        match dict.get(b"Parent").and_then(Object::as_reference) {
+            Ok(parent) => current = parent,
+            Err(_) => return false,
+        }
+    }
+    false
 }
 
 /// Parses the `/Outlines` hierarchy from `doc`, mapping destination page references, integer page

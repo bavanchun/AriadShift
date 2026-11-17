@@ -1016,3 +1016,129 @@ fn extracted_radio_options_follow_the_surviving_kids() {
         assert!(radios >= 2, "pages {pages}: radio group and copies present");
     }
 }
+
+/// Two pages; page 1 carries a combo box, a list box and an untyped field, each a field dictionary
+/// with one separate widget kid and a three-entry option list; page 2 carries a plain widget.
+fn choice_form_pdf() -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page1 = doc.new_object_id();
+    let page2 = doc.new_object_id();
+    let rect = Object::Array(vec![0.into(), 0.into(), 80.into(), 18.into()]);
+    let options = || ["x", "y", "z"].map(Object::string_literal).to_vec();
+    let mut fields = Vec::new();
+    let mut annots = Vec::new();
+    for (name, ft, flags) in [
+        ("c", Some("Ch"), 131_072),
+        ("l", Some("Ch"), 0),
+        ("n", None, 0),
+    ] {
+        let field = doc.new_object_id();
+        let widget = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => field,
+            "Rect" => rect.clone(), "P" => page1,
+        });
+        let mut dict = dictionary! {
+            "T" => Object::string_literal(name), "Ff" => flags,
+            "V" => Object::string_literal("y"), "Opt" => options(),
+            "Kids" => vec![Object::Reference(widget)],
+        };
+        if let Some(ft) = ft {
+            dict.set("FT", ft);
+        }
+        doc.objects.insert(field, Object::Dictionary(dict));
+        fields.push(Object::Reference(field));
+        annots.push(Object::Reference(widget));
+    }
+    let plain = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx",
+        "T" => Object::string_literal("plain"), "Rect" => rect, "P" => page2,
+    });
+    fields.push(Object::Reference(plain));
+    for (page, annots) in [(page1, annots), (page2, vec![Object::Reference(plain)])] {
+        doc.objects.insert(
+            page,
+            Object::Dictionary(dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Annots" => annots,
+            }),
+        );
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page1), Object::Reference(page2)],
+            "Count" => 2,
+        }),
+    );
+    let acroform = doc.add_object(dictionary! { "Fields" => fields });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => acroform,
+    });
+    doc.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save choice form");
+    bytes
+}
+
+fn assert_choice_options_unchanged(tool: &str, params: &Value, label: &str) {
+    let out = run_tool(
+        tool,
+        &[InputDoc::new("form.pdf", choice_form_pdf())],
+        params,
+        &ToolCtx::default(),
+    )
+    .unwrap_or_else(|err| panic!("{tool} failed: {err:?}"));
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let doc = pdf.inner();
+    let mut seen = 0;
+    for dict in doc.objects.values().filter_map(|obj| obj.as_dict().ok()) {
+        let Some(name) = partial_name(dict) else {
+            continue;
+        };
+        if !["c", "l", "n"]
+            .iter()
+            .any(|b| name == *b || name.starts_with(&format!("{b}_")))
+        {
+            continue;
+        }
+        seen += 1;
+        let strings = |key: &[u8]| -> Vec<String> {
+            match resolve(
+                doc,
+                dict.get(key).unwrap_or_else(|_| {
+                    panic!("{label}: {name} keeps /{}", String::from_utf8_lossy(key))
+                }),
+            ) {
+                Object::Array(items) => items
+                    .iter()
+                    .map(|o| decode_text(resolve(doc, o).as_str().unwrap()))
+                    .collect(),
+                other => vec![decode_text(other.as_str().unwrap())],
+            }
+        };
+        assert_eq!(strings(b"Opt"), ["x", "y", "z"], "{label}: {name} /Opt");
+        assert_eq!(strings(b"V"), ["y"], "{label}: {name} /V");
+    }
+    assert!(seen >= 3, "{label}: choice fields present");
+}
+
+#[test]
+fn choice_field_options_survive_page_filtering_and_repeats() {
+    assert_choice_options_unchanged(
+        "pdf.extract_pages",
+        &json!({ "pages": "1,2" }),
+        "extract 1,2",
+    );
+    assert_choice_options_unchanged(
+        "pdf.extract_pages",
+        &json!({ "pages": "1,1" }),
+        "extract 1,1",
+    );
+    assert_choice_options_unchanged("pdf.delete_pages", &json!({ "pages": "2" }), "delete 2");
+    for order in ["1,1", "1,2,1", "2,1,2,1", "2,1"] {
+        assert_choice_options_unchanged("pdf.reorder", &json!({ "order": order }), order);
+    }
+}

@@ -288,7 +288,10 @@ fn align_copy_kids(
     }
     ordered.sort_by_key(|(index, _)| *index);
     let opt = array_entry(doc, &DictLoc::Id(source_id), b"Opt").cloned();
-    if let Some(options) = opt {
+    // `/Opt` is per-kid only for buttons; choice fields keep their option list as copied.
+    if let Some(options) = opt
+        && super::page_set::is_button_field(doc, source_id)
+    {
         let picked: Vec<Object> = ordered
             .iter()
             .filter_map(|(index, _)| options.get(*index).cloned())
