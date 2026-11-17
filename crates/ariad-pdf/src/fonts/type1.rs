@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-fn crypt(input: &[u8], key: u16, encrypt: bool) -> Vec<u8> {
+pub(super) fn crypt(input: &[u8], key: u16, encrypt: bool) -> Vec<u8> {
     let mut state = key;
     input
         .iter()

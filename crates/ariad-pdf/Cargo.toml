@@ -42,6 +42,8 @@ zip.workspace = true
 [dev-dependencies]
 skrifa = { version = "=0.50.0", default-features = false, features = ["std"] }
 oxiarc-jpeg = { version = "=0.4.2", default-features = false }
+# Test-only oracle: the Type 1 parser in read-fonts reads the same programs the converter sees.
+read-fonts = { version = "=0.47.0", default-features = false, features = ["std", "type1"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lopdf = { workspace = true, features = ["wasm_js"] }
