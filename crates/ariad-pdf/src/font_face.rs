@@ -81,9 +81,12 @@ impl<'a> Face<'a> {
             if !is_unicode_subtable(record.platform_id(), record.encoding_id(), &subtable) {
                 continue;
             }
+            // read-fonts reports an unmapped format 0 entry as glyph 0, where the lookup
+            // must move on to the next Unicode subtable: 0 counts as missing.
             if let Some(gid) = subtable
                 .map_codepoint(ch)
                 .and_then(|gid| u16::try_from(gid.to_u32()).ok())
+                .filter(|gid| *gid != 0)
                 .filter(|gid| *gid < self.num_glyphs)
             {
                 return Some(gid);
@@ -293,6 +296,64 @@ mod tests {
         let glyph = face.glyph_index('A').unwrap();
         assert_eq!(face.glyph_hor_advance(glyph), None);
         assert_eq!(face.glyph_hor_advance(0), None);
+    }
+
+    /// `font` with its `cmap` replaced: the first subtable is Unicode (0, 3) format 0 and
+    /// maps U+00E9 to glyph 0, the second is Windows (3, 1) format 4 and maps it to `gid`.
+    fn with_cmap_zero_then_mapped(gid: u16) -> Vec<u8> {
+        let mut cmap = Vec::new();
+        let put16 = |out: &mut Vec<u8>, value: u16| out.extend_from_slice(&value.to_be_bytes());
+        // Header: version 0, two records at offsets 20 and 282.
+        for value in [0, 2, 0, 3] {
+            put16(&mut cmap, value);
+        }
+        cmap.extend_from_slice(&20_u32.to_be_bytes());
+        for value in [3, 1] {
+            put16(&mut cmap, value);
+        }
+        cmap.extend_from_slice(&282_u32.to_be_bytes());
+        // Format 0: every code maps to glyph 0.
+        for value in [0, 262, 0] {
+            put16(&mut cmap, value);
+        }
+        cmap.extend_from_slice(&[0; 256]);
+        // Format 4: U+00E9 -> gid through idDelta, plus the 0xFFFF terminator segment.
+        for value in [4, 32, 0, 4, 4, 1, 0] {
+            put16(&mut cmap, value);
+        }
+        for value in [
+            0x00E9,
+            0xFFFF,
+            0,
+            0x00E9,
+            0xFFFF,
+            gid.wrapping_sub(0x00E9),
+            1,
+            0,
+            0,
+        ] {
+            put16(&mut cmap, value);
+        }
+        patched(b"cmap", |font, record, _| {
+            let offset = u32::try_from(font.len()).unwrap();
+            font.extend_from_slice(&cmap);
+            font.resize(font.len().next_multiple_of(4), 0);
+            font[record + 8..record + 12].copy_from_slice(&offset.to_be_bytes());
+            font[record + 12..record + 16]
+                .copy_from_slice(&u32::try_from(cmap.len()).unwrap().to_be_bytes());
+        })
+    }
+
+    #[test]
+    fn a_glyph_zero_entry_moves_on_to_the_next_unicode_subtable() {
+        let gid = Face::parse(SANS).unwrap().glyph_index('\u{e9}').unwrap();
+        assert!(gid > 1);
+        let font = with_cmap_zero_then_mapped(gid);
+        assert_eq!(Face::parse(&font).unwrap().glyph_index('\u{e9}'), Some(gid));
+        // A character no subtable maps stays missing.
+        assert_eq!(Face::parse(&font).unwrap().glyph_index('A'), None);
+        #[cfg(feature = "codecs")]
+        assert!(crate::fonts::check_font_coverage(&font, "\u{e9}").unwrap());
     }
 
     #[test]
