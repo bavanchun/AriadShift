@@ -408,11 +408,14 @@ fn register_calculation_order(
         by_source.entry(source).or_default().push(copy);
     }
     let mut updated = Vec::with_capacity(order.len());
+    let mut listed = HashSet::new();
     for item in order {
         ctx.check()?;
         let id = item.as_reference().ok();
         updated.push(item);
+        // A source listed twice in `/CO` still gets its copies once.
         if let Some(id) = id
+            && listed.insert(id)
             && let Some(found) = by_source.get(&id)
         {
             updated.extend(found.iter().map(|&copy| Object::Reference(copy)));

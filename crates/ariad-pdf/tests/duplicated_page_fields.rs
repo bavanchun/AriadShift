@@ -919,3 +919,56 @@ fn odd_length_utf16_names_get_unique_copies() {
     names.sort();
     assert_eq!(names, ["nA", "nA_2", "nA_3"]);
 }
+
+#[test]
+fn a_source_listed_twice_in_the_calculation_order_gets_each_copy_once() {
+    let mut doc = Document::load_mem(&spanning_form_pdf()).expect("load form");
+    let acroform_id = doc
+        .catalog()
+        .unwrap()
+        .get(b"AcroForm")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let sum = field_id(&doc, "sum");
+    let tail = field_id(&doc, "tail");
+    doc.get_dictionary_mut(acroform_id).unwrap().set(
+        "CO",
+        vec![sum, tail, sum]
+            .into_iter()
+            .map(Object::Reference)
+            .collect::<Vec<_>>(),
+    );
+    let mut input = Vec::new();
+    doc.save_to(&mut input).expect("save");
+    let out = run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("form.pdf", input)],
+        &json!({ "order": "1,2,1,2" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder");
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let doc = pdf.inner();
+    let acroform = resolve(doc, doc.catalog().unwrap().get(b"AcroForm").unwrap())
+        .as_dict()
+        .unwrap();
+    let order: Vec<String> = resolve(doc, acroform.get(b"CO").unwrap())
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| partial_name(doc.get_dictionary(id.as_reference().unwrap()).unwrap()).unwrap())
+        .collect();
+    assert_eq!(order, ["sum", "sum_2", "tail", "tail_2", "sum"]);
+}
+
+fn field_id(doc: &Document, name: &str) -> ObjectId {
+    doc.objects
+        .iter()
+        .find(|(_, obj)| {
+            obj.as_dict()
+                .is_ok_and(|dict| partial_name(dict).as_deref() == Some(name))
+        })
+        .map(|(id, _)| *id)
+        .unwrap_or_else(|| panic!("field {name}"))
+}
