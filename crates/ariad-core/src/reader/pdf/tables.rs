@@ -10,6 +10,10 @@
 //! aligned columns that is indistinguishable from one table with a heavy rule between rows, and
 //! the detector does not split them. Tables with a gap between them stay separate.
 //!
+//! Rule grids that are looked at and refused are reported with their boxes. The text inside them
+//! is the text of a drawing, a frame or an irregular grid, and a detector of tables without rules
+//! must not read it as a table either.
+//!
 //! The detector favours precision. A candidate is dropped, never repaired, when its outer border
 //! is not closed, when a line dangles past the grid, when merged cells are not rectangles, when it
 //! covers most of the page, when most of its text is not upright, when fewer than two rows hold
@@ -90,6 +94,8 @@ pub(super) struct Cell {
 #[derive(Debug, Default)]
 pub(super) struct Detected {
     pub(super) grids: Vec<Grid>,
+    /// Boxes, `[left, top, right, bottom]`, of the rule grids that were refused.
+    pub(super) rejected: Vec<[f64; 4]>,
     /// A limit stopped detection on this page, so some tables may be missing.
     pub(super) capped: bool,
 }
@@ -121,10 +127,13 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
             detected.capped = true;
             break;
         }
+        let region = extent(&h_set, &v_set);
         let Some(layout) = build_grid(&h_set, &v_set) else {
+            detected.rejected.push(region);
             continue;
         };
         if covers_most_of_page(&layout, page_width, page_height) {
+            detected.rejected.push(region);
             continue;
         }
         if layout.cells.len() > cells_left {
@@ -133,6 +142,7 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
         }
         let index = glyph_index.get_or_insert_with(|| GlyphIndex::new(content));
         let Some(grid) = fill_grid(&layout, content, index) else {
+            detected.rejected.push(region);
             continue;
         };
         if detected
@@ -149,6 +159,28 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
         .grids
         .sort_by(|a, b| a.bbox[1].total_cmp(&b.bbox[1]));
     detected
+}
+
+/// The box `[left, top, right, bottom]` that the lines of a component span.
+fn extent(horizontal: &[Line], vertical: &[Line]) -> [f64; 4] {
+    let xs = || {
+        horizontal
+            .iter()
+            .flat_map(|line| [line.lo, line.hi])
+            .chain(vertical.iter().map(|line| line.pos))
+    };
+    let ys = || {
+        vertical
+            .iter()
+            .flat_map(|line| [line.lo, line.hi])
+            .chain(horizontal.iter().map(|line| line.pos))
+    };
+    [
+        xs().fold(f64::INFINITY, f64::min),
+        ys().fold(f64::INFINITY, f64::min),
+        xs().fold(f64::NEG_INFINITY, f64::max),
+        ys().fold(f64::NEG_INFINITY, f64::max),
+    ]
 }
 
 fn covers_most_of_page(layout: &Layout, page_width: f64, page_height: f64) -> bool {

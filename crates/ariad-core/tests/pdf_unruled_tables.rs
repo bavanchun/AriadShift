@@ -342,7 +342,7 @@ fn only_known_tables_appear_across_all_fixtures() {
         ("arxiv-tableformer-2203-01017-v1.pdf", 8),
         ("en-map-room.pdf", 1),
         ("ruled-table-traps.pdf", 1),
-        ("ruled-tables.pdf", 3),
+        ("ruled-tables.pdf", 2),
         ("unruled-tables.pdf", 3),
         ("vi-garden-route.pdf", 1),
     ];

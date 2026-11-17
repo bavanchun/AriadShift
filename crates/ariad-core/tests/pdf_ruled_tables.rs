@@ -47,13 +47,6 @@ fn ruled_tables_become_table_blocks_with_merged_cells_and_a_head() {
                 &["East", "143", "5,008"],
             ]),
             rows(&[&["Plan", "Actual"], &["Team A", "10", "12"], &["11", "13"]]),
-            // Page 2: irregular rules make the ruled detector skip this grid, but its text sits
-            // in three aligned rows and columns, which the whitespace detector reads.
-            rows(&[
-                &["L00", "L01", "L02"],
-                &["L10", "L11", "L12"],
-                &["L20", "L21", "L22"],
-            ]),
         ]
     );
 
@@ -119,12 +112,15 @@ fn tables_sit_between_the_paragraphs_around_them() {
     assert_eq!(kinds[1], "table");
     assert_eq!(kinds[2], "Merged cells follow.");
     assert_eq!(kinds[3], "table");
-    // Page 2: the grid with irregular rules is read from its text; the framed note stays text.
+    // Page 2: nothing was detected, so every line of its shapes stays text. The grid with
+    // irregular rules was refused by the ruled detector, and its aligned text is not read as a
+    // table without rules either.
     assert_eq!(kinds[4], "Shapes that are not tables.");
-    assert_eq!(kinds[5], "table");
-    let rest = kinds[6..].join("\n");
-    assert!(rest.contains("Note: figures are provisional."), "{rest:?}");
-    assert!(kinds[6..].iter().all(|kind| kind != "table"));
+    let rest = kinds[5..].join("\n");
+    for expected in ["L00", "L12", "Note: figures are provisional."] {
+        assert!(rest.contains(expected), "{expected} missing from {rest:?}");
+    }
+    assert!(kinds[5..].iter().all(|kind| kind != "table"));
 }
 
 #[test]
@@ -137,9 +133,8 @@ fn table_blocks_are_positioned_in_the_layout_index() {
         .filter(|block| matches!(block, Block::Table { .. }))
         .map(|block| layout.blocks.get(block.id()).expect("table position"))
         .collect();
-    assert_eq!(positions.len(), 3);
-    let pages: Vec<u32> = positions.iter().map(|position| position.page_no).collect();
-    assert_eq!(pages, [1, 1, 2]);
+    assert_eq!(positions.len(), 2);
+    assert!(positions.iter().all(|position| position.page_no == 1));
     // Table A spans x 72..432 and y 92..188 from the top of a 792 pt page.
     let first = &positions[0].bbox;
     assert!((first.left - 72.0).abs() < 1.0 && (first.right - 432.0).abs() < 1.0);
@@ -153,8 +148,7 @@ fn csv_and_xlsx_writers_take_the_detected_tables_unchanged() {
     assert_eq!(
         output.content,
         "Region,Units,Revenue\r\nNorth,120,\"4,500\"\r\nCentral region,95,\"3,210\"\r\n\
-         East,143,\"5,008\"\r\n\r\nPlan,,Actual\r\nTeam A,10,12\r\n,11,13\r\n\r\n\
-         L00,L01,L02\r\nL10,L11,L12\r\nL20,L21,L22\r\n"
+         East,143,\"5,008\"\r\n\r\nPlan,,Actual\r\nTeam A,10,12\r\n,11,13\r\n"
     );
     assert!(output.warnings.is_empty(), "{:?}", output.warnings);
     let workbook = xlsx::write(&document).unwrap();

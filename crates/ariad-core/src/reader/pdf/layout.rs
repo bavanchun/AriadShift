@@ -128,7 +128,13 @@ pub(super) fn layout_page(
         }
     }
     let rest = (0..content.glyphs.len()).filter(|&index| !claimed[index]);
-    let avoid: Vec<[f64; 4]> = ruled.grids.iter().map(|grid| grid.bbox).collect();
+    // Ruled tables, and rule grids that were refused, are not read again as whitespace tables.
+    let avoid: Vec<[f64; 4]> = ruled
+        .grids
+        .iter()
+        .map(|grid| grid.bbox)
+        .chain(ruled.rejected.iter().copied())
+        .collect();
     let budget = unruled::Budget {
         tables: tables::MAX_TABLES.saturating_sub(ruled.grids.len()),
         cells: tables::MAX_CELLS.saturating_sub(
