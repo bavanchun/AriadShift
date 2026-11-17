@@ -264,16 +264,23 @@ fn align_copy_kids(
                 .collect()
         })
         .unwrap_or_default();
+    let index_of: HashMap<ObjectId, usize> = source_kids
+        .iter()
+        .enumerate()
+        .map(|(index, &kid)| (kid, index))
+        .collect();
     let position = |kid: &Object| {
         let id = kid.as_reference().ok()?;
         let origin = origins.get(&id).copied().unwrap_or(id);
-        source_kids.iter().position(|&k| k == origin)
+        index_of.get(&origin).copied()
     };
     let Some(kids) = array_entry(doc, &DictLoc::Id(copy_id), b"Kids").cloned() else {
         return;
     };
     let mut ordered: Vec<(usize, Object)> = Vec::with_capacity(kids.len());
     for kid in kids {
+        // A kid with no source position (not a widget of this field) leaves the copy untouched:
+        // reordering or trimming `/Opt` without a known index would misalign export values.
         let Some(index) = position(&kid) else {
             return;
         };
