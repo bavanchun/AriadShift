@@ -1248,6 +1248,15 @@ where
             "profile".to_owned(),
             serde_json::Value::String(self.request.profile.as_str().to_owned()),
         );
+        if step.engine == engines::PDF.id
+            && Format::from_user_name(&self.request.target_format)
+                .is_some_and(|target| ariad_core::pipeline::route_detects_tables(step.from, target))
+        {
+            options.insert(
+                engines::pdf::DETECT_TABLES_OPTION.to_owned(),
+                serde_json::Value::Bool(true),
+            );
+        }
         if step.to != Format::AriadIrJson {
             options.insert(
                 "title_fallback".to_owned(),
@@ -2334,6 +2343,30 @@ pub fn read_to_ir_with_engine(
     invocation: &EngineInvocation<'_>,
     cancel: CancellationToken,
 ) -> Result<ArchiveToIrOutput, ConvertError> {
+    read_to_ir_with_engine_options(
+        input,
+        format,
+        engine,
+        workspace,
+        limits,
+        invocation,
+        BTreeMap::new(),
+        cancel,
+    )
+}
+
+/// Like [`read_to_ir_with_engine`], passing `options` to the engine request.
+#[allow(clippy::too_many_arguments)]
+pub fn read_to_ir_with_engine_options(
+    input: &Path,
+    format: Format,
+    engine: &str,
+    workspace: &mut Workspace,
+    limits: &Limits,
+    invocation: &EngineInvocation<'_>,
+    options: BTreeMap<String, serde_json::Value>,
+    cancel: CancellationToken,
+) -> Result<ArchiveToIrOutput, ConvertError> {
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
@@ -2351,7 +2384,7 @@ pub fn read_to_ir_with_engine(
         },
         workspace,
         limits,
-        BTreeMap::new(),
+        options,
         &cancel,
         &mut warnings,
         &mut |_| {},
