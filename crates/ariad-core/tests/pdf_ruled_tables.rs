@@ -1,89 +1,17 @@
 //! Ruled-table detection on real and generated PDFs.
 #![cfg(feature = "pdf")]
 
+#[path = "support/pdf_tables.rs"]
+mod pdf_tables;
+
 use ariad_core::writer::csv::find_tables;
 use ariad_core::{
-    ir::{Block, Document, Inline, TableCell},
+    ir::{Block, Document, TableCell},
     limits::Limits,
     reader::pdf::{self, ReadError, ReadOptions},
     writer::{csv, xlsx},
 };
-
-const DETECT: ReadOptions = ReadOptions {
-    detect_tables: true,
-};
-
-fn fixture(name: &str) -> Vec<u8> {
-    let path = format!("{}/../../fixtures/pdf/{name}", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read(&path).unwrap_or_else(|error| panic!("{path}: {error}"))
-}
-
-fn inline_text(inlines: &[Inline], out: &mut String) {
-    for inline in inlines {
-        match inline {
-            Inline::Text { text } | Inline::Code { text } => out.push_str(text),
-            Inline::Styled { content, .. }
-            | Inline::Emph { content }
-            | Inline::Strong { content }
-            | Inline::Strikeout { content }
-            | Inline::Superscript { content }
-            | Inline::Subscript { content }
-            | Inline::Link { content, .. } => inline_text(content, out),
-            _ => {}
-        }
-    }
-}
-
-fn cell_text(cell: &TableCell) -> String {
-    let mut text = String::new();
-    for block in &cell.blocks {
-        if let Block::Paragraph { content, .. } = block {
-            if !text.is_empty() {
-                text.push(' ');
-            }
-            inline_text(content, &mut text);
-        }
-    }
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// Cell text of every table in reading order: `[table][row][cell]`, head rows first.
-fn tables(name: &str, options: &ReadOptions) -> Vec<Vec<Vec<String>>> {
-    let output = pdf::read_with_options(&fixture(name), &Limits::local(), options).unwrap();
-    find_tables(&output.document.body)
-        .into_iter()
-        .map(|table| {
-            let Block::Table { head, body, .. } = table else {
-                unreachable!()
-            };
-            head.iter()
-                .chain(body)
-                .map(|row| row.iter().map(cell_text).collect())
-                .collect()
-        })
-        .collect()
-}
-
-fn read(name: &str, options: &ReadOptions) -> Document {
-    pdf::read_with_options(&fixture(name), &Limits::local(), options)
-        .unwrap()
-        .document
-}
-
-fn rows(rows: &[&[&str]]) -> Vec<Vec<String>> {
-    rows.iter()
-        .map(|row| row.iter().map(|cell| (*cell).to_owned()).collect())
-        .collect()
-}
-
-fn paragraph_text(block: &Block) -> Option<String> {
-    let Block::Paragraph { content, .. } = block else {
-        return None;
-    };
-    let mut text = String::new();
-    inline_text(content, &mut text);
-    Some(text)
-}
+use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, tables};
 
 const PROSE: [&str; 5] = [
     "pd-en-gao-08-35-highlights.pdf",
