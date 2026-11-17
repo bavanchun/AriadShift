@@ -186,8 +186,8 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 
 - **Parameters**: Takes no mandatory parameters (`{}`) and rejects unknown fields (`additionalProperties: false`).
 - **Outputs**: Emits one or more CSV files with RFC 4180 escaping and formula-injection guarding (`=`, `+`, `-`, `@`, `\t`, `\r` prefixed with `'`). Capped at 255 tables and 50 MiB total CSV output.
-- **Runtime**: `local` only (executed host-side via `ariad-host` using Docling table detection).
-- **Error handling**: If the document contains no tables or Docling table detection finds no tables, execution fails before publishing with exit code `1` (`engine_failure`, error message `"no tables found in document"`). If Docling execution fails, the Docling error is surfaced directly without fallback to the native reader.
+- **Runtime**: `wasm`, `local` and `cloud`. Locally, the Docling pack extracts the tables when it is installed (Docling wins) and a Docling failure is surfaced directly without fallback. Without Docling, the native PDF reader detects tables drawn with ruling lines in the PDF engine child process; this detector is the only engine in the browser and cloud runtimes (`ariad-pdf` in process). Tables without ruling lines need Docling. The reader's `styles_dropped` notice is omitted because CSV carries no styling.
+- **Error handling**: If the document contains no tables or table detection finds no tables, execution fails before publishing with exit code `1` (`engine_failure`, error message `"no tables found in document"`). Without Docling, a PDF without any text layer (a scan) fails with `tool_missing` for the `docling` engine because the built-in reader cannot read it.
 
 ### `pdf.compare`
 
