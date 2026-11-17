@@ -676,6 +676,9 @@ struct Interp<'a> {
     segs: Vec<Seg>,
     sets: Vec<Vec<Stem>>,
     moved: bool,
+    /// Set by `closepath` and cleared by the next moveto. A draw while it is set would start a
+    /// contour without a moveto, which renderers place differently, so the font is refused.
+    needs_move: bool,
     flex: Option<Vec<(i64, i64)>>,
     flex_calls: usize,
     steps: usize,
@@ -725,12 +728,13 @@ impl<'a> Interp<'a> {
             dx.checked_add(self.sbx)?
         };
         self.moved = true;
+        self.needs_move = false;
         self.segs.push(Seg::Move(dx, dy));
         Some(())
     }
 
     fn draw(&mut self, seg: Seg) -> Option<()> {
-        if !self.moved || self.flex.is_some() || self.width.is_none() {
+        if !self.moved || self.needs_move || self.flex.is_some() || self.width.is_none() {
             return None;
         }
         let (dx, dy) = match seg {
@@ -785,7 +789,7 @@ impl<'a> Interp<'a> {
             }
             (0, 3) => {
                 let points = self.flex.take()?;
-                if points.len() != 7 || self.flex_calls != 7 || !self.moved {
+                if points.len() != 7 || self.flex_calls != 7 || !self.moved || self.needs_move {
                     return None;
                 }
                 let [first, d1, d2, d3, d4, d5, d6] = points[..] else {
@@ -869,6 +873,7 @@ impl<'a> Interp<'a> {
                 }
                 9 => {
                     self.args(0)?;
+                    self.needs_move = self.moved;
                 }
                 10 => {
                     let index = usize::try_from(self.pop_int()?).ok()?;
@@ -979,6 +984,7 @@ fn convert_charstring(
         segs: Vec::new(),
         sets: vec![Vec::new()],
         moved: false,
+        needs_move: false,
         flex: None,
         flex_calls: 0,
         steps: 0,
@@ -2392,5 +2398,170 @@ mod tests {
             let _ = type1_to_cff(&mutated, Some((font.length1, font.length2)), 1 << 20);
         }
         let _ = FontData::new(&[]);
+    }
+
+    /// Outline of glyph `X`, built from `code`, after conversion.
+    fn x_path(code: Vec<u8>) -> Vec<String> {
+        let converted = convert_built(&with_glyph("X", code)).expect("converts");
+        cff_outlines(&converted.bytes)
+            .remove("X")
+            .expect("X is converted")
+            .1
+    }
+
+    /// `0 600 hsbw 100 100 rmoveto 100 hlineto 100 vlineto` leaves the current point at (200, 200).
+    fn square_corner() -> Vec<T> {
+        vec![
+            N(0),
+            N(600),
+            O(HSBW),
+            N(100),
+            N(100),
+            O(RMOVETO),
+            N(100),
+            O(HLINETO),
+            N(100),
+            O(VLINETO),
+        ]
+    }
+
+    // Renderers disagree about a draw that follows `closepath` without a moveto: fontTools and
+    // FreeType's legacy interpreter start the new contour at the current point, while PDFium and
+    // poppler (FreeType's Adobe interpreter) start it at the first point of the closed contour.
+    // No Type 2 sequence reproduces both, and dropping the closepath, as the converter once did,
+    // matches neither. The font is therefore left alone.
+
+    #[test]
+    fn a_draw_right_after_closepath_refuses_the_font() {
+        // Two triangles, the second drawn without a moveto.
+        let two_triangles = cs(&[
+            N(0),
+            N(600),
+            O(HSBW),
+            N(0),
+            N(0),
+            O(RMOVETO),
+            N(100),
+            N(0),
+            O(RLINETO),
+            N(0),
+            N(100),
+            O(RLINETO),
+            O(CLOSEPATH),
+            N(200),
+            N(0),
+            O(RLINETO),
+            N(0),
+            N(100),
+            O(RLINETO),
+            O(CLOSEPATH),
+            O(ENDCHAR),
+        ]);
+        assert!(convert_built(&with_glyph("X", two_triangles)).is_none());
+    }
+
+    #[test]
+    fn every_draw_kind_after_closepath_refuses_unless_a_move_comes_first() {
+        let flex_moves = [
+            (50, 0),
+            (-50, 10),
+            (20, 5),
+            (30, 0),
+            (30, -5),
+            (20, -10),
+            (10, 0),
+        ];
+        let mut flex = vec![N(1), O(CALLSUBR)];
+        for (dx, dy) in flex_moves {
+            flex.extend([N(dx), N(dy), O(RMOVETO), N(2), O(CALLSUBR)]);
+        }
+        flex.extend([N(50), N(310), N(200), N(0), O(CALLSUBR)]);
+        // (label, operators between closepath and the draw, the draw itself)
+        let cases: Vec<(&str, Vec<T>, Vec<T>)> = vec![
+            ("rlineto", vec![], vec![N(30), N(40), O(RLINETO)]),
+            ("hlineto", vec![], vec![N(30), O(HLINETO)]),
+            ("vlineto", vec![], vec![N(30), O(VLINETO)]),
+            (
+                "rrcurveto",
+                vec![],
+                vec![N(10), N(20), N(30), N(40), N(50), N(60), O(RRCURVETO)],
+            ),
+            (
+                "hvcurveto",
+                vec![],
+                vec![N(10), N(20), N(30), N(40), O(HVCURVETO)],
+            ),
+            (
+                "vhcurveto",
+                vec![],
+                vec![N(10), N(20), N(30), N(40), O(VHCURVETO)],
+            ),
+            ("flex", vec![], flex),
+            (
+                "hint replacement first",
+                vec![N(4), N(1), N(3), E(CALLOTHERSUBR), E(POP), O(CALLSUBR)],
+                vec![N(30), N(40), O(RLINETO)],
+            ),
+        ];
+        for (label, between, draw) in cases {
+            let build = |explicit_move: bool| {
+                let mut ops = square_corner();
+                ops.push(O(CLOSEPATH));
+                ops.extend(between.iter().copied());
+                if explicit_move {
+                    ops.extend([N(0), N(0), O(RMOVETO)]);
+                }
+                ops.extend(draw.iter().copied());
+                ops.extend([O(CLOSEPATH), O(ENDCHAR)]);
+                cs(&ops)
+            };
+            assert!(
+                convert_built(&with_glyph("X", build(false))).is_none(),
+                "{label}: a draw right after closepath must refuse the font"
+            );
+            let path = x_path(build(true));
+            let contours = path.iter().filter(|c| c.starts_with('M')).count();
+            assert_eq!(contours, 2, "{label}: an explicit move starts the contour");
+            assert_eq!(path[3], "M 200.0000 200.0000", "{label}: new contour");
+        }
+    }
+
+    #[test]
+    fn move_after_closepath_adds_no_extra_contour() {
+        let mut ops = square_corner();
+        ops.extend([
+            O(CLOSEPATH),
+            N(10),
+            N(10),
+            O(RMOVETO),
+            N(30),
+            O(HLINETO),
+            O(CLOSEPATH),
+            N(5),
+            O(VMOVETO),
+            N(30),
+            O(VLINETO),
+            O(CLOSEPATH),
+            O(ENDCHAR),
+        ]);
+        let path = x_path(cs(&ops));
+        assert_eq!(
+            path.iter().filter(|c| c.starts_with('M')).count(),
+            3,
+            "{path:?}"
+        );
+        assert_eq!(path[3], "M 210.0000 210.0000");
+        assert_eq!(path[5], "M 240.0000 215.0000");
+    }
+
+    #[test]
+    fn closepath_inside_flex_is_refused() {
+        let mut ops = square_corner();
+        ops.extend([N(1), O(CALLSUBR), O(CLOSEPATH)]);
+        for _ in 0..7 {
+            ops.extend([N(10), N(0), O(RMOVETO), N(2), O(CALLSUBR)]);
+        }
+        ops.extend([N(50), N(270), N(200), N(0), O(CALLSUBR), O(ENDCHAR)]);
+        assert!(convert_built(&with_glyph("X", cs(&ops))).is_none());
     }
 }
