@@ -126,11 +126,28 @@ fn resolve<'a>(doc: &'a Document, obj: &'a Object) -> &'a Object {
     }
 }
 
+/// Decodes a PDF text string: UTF-16BE with a BOM (a stray odd byte is dropped), otherwise one
+/// character per byte.
+fn decode_text(bytes: &[u8]) -> String {
+    match bytes.strip_prefix(&[0xFE, 0xFF]) {
+        Some(rest) => String::from_utf16_lossy(
+            &rest
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .copied()
+                .map(u16::from_be_bytes)
+                .collect::<Vec<_>>(),
+        ),
+        None => bytes.iter().map(|&byte| char::from(byte)).collect(),
+    }
+}
+
 fn partial_name(dict: &Dictionary) -> Option<String> {
     dict.get(b"T")
         .ok()
         .and_then(|t| t.as_str().ok())
-        .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+        .map(decode_text)
 }
 
 fn kids(doc: &Document, dict: &Dictionary) -> Vec<ObjectId> {
@@ -482,6 +499,7 @@ fn spanning_form_pdf() -> Vec<u8> {
         g,
         Object::Dictionary(dictionary! {
             "FT" => "Btn", "Ff" => 49_152, "T" => Object::string_literal("g"), "V" => "a",
+            "Opt" => vec![Object::string_literal("A"), Object::string_literal("B")],
             "Kids" => vec![Object::Reference(a), Object::Reference(b)],
         }),
     );
@@ -712,4 +730,153 @@ fn invalid_utf16_names_keep_their_bytes_when_copied() {
         .filter(|t| **t == expected_raw[..])
         .count();
     assert_eq!(copies, 1);
+}
+
+/// A page order, the expected terminal fields and the expected export values of copied groups.
+type Case<'a> = (
+    &'a str,
+    &'a [(&'a str, &'a [u32])],
+    &'a [(&'a str, Vec<(String, String)>)],
+);
+
+/// The export value `/Opt` assigns to each kid of every copied radio group `g_N`, by the state
+/// name of the kid's normal appearance (`a` exports "A", `b` exports "B").
+fn copied_export_values(bytes: &[u8], order: &str) -> BTreeMap<String, Vec<(String, String)>> {
+    let pdf = open(bytes, &Limits::local()).expect("open output");
+    let doc = pdf.inner();
+    let mut out = BTreeMap::new();
+    for dict in doc.objects.values().filter_map(|obj| obj.as_dict().ok()) {
+        let Some(name) = partial_name(dict).filter(|n| n.starts_with("g_")) else {
+            continue;
+        };
+        let options: Vec<String> = resolve(doc, dict.get(b"Opt").expect("copy keeps /Opt"))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|opt| decode_text(resolve(doc, opt).as_str().unwrap()))
+            .collect();
+        let states: Vec<String> = kids(doc, dict)
+            .into_iter()
+            .map(|kid| {
+                let ap = doc.get_dictionary(kid).unwrap().get(b"AP").unwrap();
+                let normal = resolve(doc, ap).as_dict().unwrap().get(b"N").unwrap();
+                resolve(doc, normal)
+                    .as_dict()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, _)| String::from_utf8_lossy(key).into_owned())
+                    .find(|key| key != "Off")
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            options.len(),
+            states.len(),
+            "order {order}, {name}: one /Opt per kid"
+        );
+        out.insert(name, states.into_iter().zip(options).collect());
+    }
+    out
+}
+
+#[test]
+fn copied_radio_options_follow_the_kid_order_of_every_page_order() {
+    let a = || ("a".to_owned(), "A".to_owned());
+    let b = || ("b".to_owned(), "B".to_owned());
+    let cases: [Case; 6] = [
+        (
+            "1,1,2,2",
+            &[
+                ("g", &[1, 3]),
+                ("g_2", &[2, 4]),
+                ("hdr", &[1, 3]),
+                ("hdr_2", &[2, 4]),
+                ("sum", &[3]),
+                ("sum_2", &[4]),
+                ("tail", &[3]),
+                ("tail_2", &[4]),
+            ],
+            &[("g_2", vec![a(), b()])],
+        ),
+        (
+            "2,1,2,1",
+            &[
+                ("g", &[2, 1]),
+                ("g_2", &[4, 3]),
+                ("hdr", &[2, 1]),
+                ("hdr_2", &[4, 3]),
+                ("sum", &[1]),
+                ("sum_2", &[3]),
+                ("tail", &[1]),
+                ("tail_2", &[3]),
+            ],
+            &[("g_2", vec![a(), b()])],
+        ),
+        (
+            "1,2,2,1",
+            &[
+                ("g", &[1, 2]),
+                ("g_2", &[4, 3]),
+                ("hdr", &[1, 2]),
+                ("hdr_2", &[4, 3]),
+                ("sum", &[2]),
+                ("sum_2", &[3]),
+                ("tail", &[2]),
+                ("tail_2", &[3]),
+            ],
+            &[("g_2", vec![a(), b()])],
+        ),
+        (
+            "2,1,2",
+            &[
+                ("g", &[2, 1]),
+                ("g_2", &[3]),
+                ("hdr", &[2, 1]),
+                ("hdr_2", &[3]),
+                ("sum", &[1]),
+                ("sum_2", &[3]),
+                ("tail", &[1]),
+                ("tail_2", &[3]),
+            ],
+            &[("g_2", vec![b()])],
+        ),
+        (
+            "1,1,1",
+            &[
+                ("g", &[1]),
+                ("g_2", &[2]),
+                ("g_3", &[3]),
+                ("hdr", &[1]),
+                ("hdr_2", &[2]),
+                ("hdr_3", &[3]),
+            ],
+            &[("g_2", vec![a()]), ("g_3", vec![a()])],
+        ),
+        (
+            "1,2,1",
+            &[
+                ("g", &[1, 2]),
+                ("g_2", &[3]),
+                ("hdr", &[1, 2]),
+                ("hdr_2", &[3]),
+                ("sum", &[2]),
+                ("tail", &[2]),
+            ],
+            &[("g_2", vec![a()])],
+        ),
+    ];
+    for (order, fields, options) in cases {
+        for bytes in run_both(order) {
+            assert_eq!(terminal_fields(&bytes), expected(fields), "order {order}");
+            let want: BTreeMap<String, Vec<(String, String)>> = options
+                .iter()
+                .map(|(name, pairs)| ((*name).to_owned(), pairs.clone()))
+                .collect();
+            let got = copied_export_values(&bytes, order);
+            for (name, pairs) in &want {
+                assert_eq!(got.get(name), Some(pairs), "order {order}: {name}");
+            }
+            assert_eq!(got.len(), want.len().max(got.len()), "order {order}");
+        }
+    }
 }

@@ -531,6 +531,20 @@ fn build_page_set_doc_with_warnings(
             .set(b"Info".to_vec(), Object::Reference(info_id));
     }
 
+    // Pair each cloned widget with the widget of the first occurrence it was cloned from.
+    let origins: HashMap<ObjectId, ObjectId> = kept_annot_ids
+        .values()
+        .flat_map(|ids| ids.iter().skip(1).map(|&clone| (clone, ids[0])))
+        .collect();
+    let duplicate_occurrences: Vec<Vec<(ObjectId, ObjectId)>> = duplicate_occurrences
+        .iter()
+        .map(|widgets| {
+            widgets
+                .iter()
+                .filter_map(|clone| origins.get(clone).map(|&source| (source, *clone)))
+                .collect()
+        })
+        .collect();
     duplicate_fields::rename_duplicated_fields(&mut target_doc, &duplicate_occurrences, ctx)?;
 
     let mut out_pdf = source.clone();

@@ -35,13 +35,13 @@ type FieldNames = NameDisambiguator<(String, String)>;
 
 /// Renames the form fields of every extra page occurrence.
 ///
-/// Each item of `occurrences` lists the cloned widget annotations of one copy of the page set (the
-/// n-th repeat of every repeated page), already registered with the form hierarchy the way their
+/// Each item of `occurrences` lists `(source, clone)` widget annotation pairs of one copy of the page
+/// set (the n-th repeat of every repeated page), already registered with the form hierarchy the way their
 /// source widgets are. The first occurrence of a page keeps the source fields, so their names never
 /// change. Nothing is touched when no page is repeated.
 pub(crate) fn rename_duplicated_fields(
     doc: &mut Document,
-    occurrences: &[Vec<ObjectId>],
+    occurrences: &[Vec<(ObjectId, ObjectId)>],
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     if occurrences.iter().all(Vec::is_empty) {
@@ -53,12 +53,14 @@ pub(crate) fn rename_duplicated_fields(
         moved: HashMap::new(),
         copies: Vec::new(),
         field_copies: Vec::new(),
+        origins: HashMap::new(),
     };
     for widgets in occurrences {
         pass.rename_occurrence(doc, widgets, ctx)?;
     }
-    for &copy_id in &pass.field_copies {
+    for &(copy_id, source_id) in &pass.field_copies {
         ctx.check()?;
+        align_copy_kids(doc, copy_id, source_id, &pass.origins);
         drop_unmatched_button_value(doc, copy_id);
     }
     register_calculation_order(doc, &pass.copies, ctx)?;
@@ -121,10 +123,13 @@ struct RenamePass {
     holder_members: HashMap<Option<ObjectId>, HashSet<ObjectId>>,
     /// Widgets moved out of each source terminal field.
     moved: HashMap<ObjectId, HashSet<ObjectId>>,
-    /// Every renamed copy with the fully qualified name of its source, in creation order.
-    copies: Vec<(String, ObjectId)>,
-    /// Terminal field copies that took over the widgets of one copy of the page set.
-    field_copies: Vec<ObjectId>,
+    /// Every renamed copy with the object id of its source field or widget, in creation order.
+    copies: Vec<(ObjectId, ObjectId)>,
+    /// Terminal field copies that took over the widgets of one copy of the page set, with their
+    /// source field.
+    field_copies: Vec<(ObjectId, ObjectId)>,
+    /// Source widget of every cloned widget.
+    origins: HashMap<ObjectId, ObjectId>,
 }
 
 impl RenamePass {
@@ -132,13 +137,14 @@ impl RenamePass {
     fn rename_occurrence(
         &mut self,
         doc: &mut Document,
-        widgets: &[ObjectId],
+        widgets: &[(ObjectId, ObjectId)],
         ctx: &ToolCtx,
     ) -> Result<(), PdfError> {
         // Terminal field copies made for this copy of the page set, keyed by source field.
         let mut copies: HashMap<ObjectId, Option<ObjectId>> = HashMap::new();
-        for &widget_id in widgets {
+        for &(source_widget, widget_id) in widgets {
             ctx.check()?;
+            self.origins.insert(widget_id, source_widget);
             let Ok(widget) = doc.get_dictionary(widget_id) else {
                 continue;
             };
@@ -147,7 +153,7 @@ impl RenamePass {
                 // The widget is itself a terminal field: rename it where it already sits.
                 let prefix = parent.map(|id| qualified_name(doc, id)).unwrap_or_default();
                 let renamed = unique_partial(&mut self.names, &prefix, &partial, ctx)?;
-                self.copies.push((qualify(&prefix, &partial), widget_id));
+                self.copies.push((source_widget, widget_id));
                 if let Ok(widget) = doc.get_dictionary_mut(widget_id) {
                     let name = renamed_name(widget.get(b"T").ok(), &partial, &renamed);
                     widget.set("T", name);
@@ -232,12 +238,60 @@ impl RenamePass {
         copy.set("T", name);
         copy.set("Kids", Object::Array(Vec::new()));
         let copy_id = doc.add_object(Object::Dictionary(copy));
-        self.copies.push((qualify(&prefix, &partial), copy_id));
-        self.field_copies.push(copy_id);
+        self.copies.push((field_id, copy_id));
+        self.field_copies.push((copy_id, field_id));
         if let Some(items) = array_entry_mut(doc, &loc, key) {
             items.push(Object::Reference(copy_id));
         }
         Ok(Some(copy_id))
+    }
+}
+
+/// Orders the kids of a copied field like the kids of its source and gives the copy the `/Opt`
+/// entries of the source at the same positions, since `/Opt` is indexed by `/Kids` position.
+fn align_copy_kids(
+    doc: &mut Document,
+    copy_id: ObjectId,
+    source_id: ObjectId,
+    origins: &HashMap<ObjectId, ObjectId>,
+) {
+    let source_kids: Vec<ObjectId> = array_entry(doc, &DictLoc::Id(source_id), b"Kids")
+        .map(|kids| {
+            kids.iter()
+                .filter_map(|k| k.as_reference().ok())
+                // Clones may already sit in the source `/Kids`; `/Opt` indexes the source kids only.
+                .filter(|id| !origins.contains_key(id))
+                .collect()
+        })
+        .unwrap_or_default();
+    let position = |kid: &Object| {
+        let id = kid.as_reference().ok()?;
+        let origin = origins.get(&id).copied().unwrap_or(id);
+        source_kids.iter().position(|&k| k == origin)
+    };
+    let Some(kids) = array_entry(doc, &DictLoc::Id(copy_id), b"Kids").cloned() else {
+        return;
+    };
+    let mut ordered: Vec<(usize, Object)> = Vec::with_capacity(kids.len());
+    for kid in kids {
+        let Some(index) = position(&kid) else {
+            return;
+        };
+        ordered.push((index, kid));
+    }
+    ordered.sort_by_key(|(index, _)| *index);
+    let opt = array_entry(doc, &DictLoc::Id(source_id), b"Opt").cloned();
+    if let Some(options) = opt {
+        let picked: Vec<Object> = ordered
+            .iter()
+            .filter_map(|(index, _)| options.get(*index).cloned())
+            .collect();
+        if let Ok(copy) = doc.get_dictionary_mut(copy_id) {
+            copy.set("Opt", Object::Array(picked));
+        }
+    }
+    if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(copy_id), b"Kids") {
+        *kids = ordered.into_iter().map(|(_, kid)| kid).collect();
     }
 }
 
@@ -336,7 +390,7 @@ fn resolve_dict<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary
 /// order of the sources. Nothing changes without `/CO`.
 fn register_calculation_order(
     doc: &mut Document,
-    copies: &[(String, ObjectId)],
+    copies: &[(ObjectId, ObjectId)],
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     let Some(form) = acroform_loc(doc) else {
@@ -345,9 +399,9 @@ fn register_calculation_order(
     let Some(order) = array_entry(doc, &form, b"CO").cloned() else {
         return Ok(());
     };
-    let mut by_source: HashMap<&str, Vec<ObjectId>> = HashMap::new();
-    for (source, copy) in copies {
-        by_source.entry(source).or_default().push(*copy);
+    let mut by_source: HashMap<ObjectId, Vec<ObjectId>> = HashMap::new();
+    for &(source, copy) in copies {
+        by_source.entry(source).or_default().push(copy);
     }
     let mut updated = Vec::with_capacity(order.len());
     for item in order {
@@ -355,7 +409,7 @@ fn register_calculation_order(
         let id = item.as_reference().ok();
         updated.push(item);
         if let Some(id) = id
-            && let Some(found) = by_source.get(qualified_name(doc, id).as_str())
+            && let Some(found) = by_source.get(&id)
         {
             updated.extend(found.iter().map(|&copy| Object::Reference(copy)));
         }

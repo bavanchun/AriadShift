@@ -104,7 +104,7 @@ pub fn run(
     let mut new_kids: Vec<ObjectId> = Vec::with_capacity(target_ids.len());
     let mut cloned_widgets = Vec::new();
     // Cloned widgets grouped by copy of the page set: the n-th repeat of every page.
-    let mut duplicate_occurrences: Vec<Vec<ObjectId>> = Vec::new();
+    let mut duplicate_occurrences: Vec<Vec<(ObjectId, ObjectId)>> = Vec::new();
     let mut repeats: HashMap<ObjectId, usize> = HashMap::new();
     for &src_id in &target_ids {
         ctx.check()?;
@@ -117,7 +117,7 @@ pub fn run(
             if duplicate_occurrences.len() <= *repeat {
                 duplicate_occurrences.push(Vec::new());
             }
-            duplicate_occurrences[*repeat].extend(widgets.iter().map(|&(_, clone)| clone));
+            duplicate_occurrences[*repeat].extend(widgets.iter().copied());
             *repeat += 1;
             cloned_widgets.extend(widgets);
             new_kids.push(dup_id);
