@@ -11,7 +11,7 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`codeql.yml`](../.github/workflows/codeql.yml) | Pull requests (code changes), pushes to `dev` or `main`, weekly, manual | CodeQL for Rust and for the workflows themselves; alerts go to the repository's Security tab |
 | [`security.yml`](../.github/workflows/security.yml) | Daily, manual, and pull requests that change it | `cargo deny check advisories` on `dev` and on `main`, so a newly published RustSec advisory fails a run even when no code changed |
 | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) | Daily, manual, and pull requests that change it | Date-pinned nightly AddressSanitizer fuzzing on unsafe-adjacent parsers (10 min per target) |
-| [`pack-docling.yml`](../.github/workflows/pack-docling.yml) | Pull requests that touch the Docling engine, its mapper, `uv.lock`, the `justfile` or the workflow; tags `pack-docling-v*`; manual | Engine tests on Linux/Windows and real-engine conformance; both Linux packs always build, with x86_64 converted offline. macOS requires its authoritative OpenCV pin: missing pins produce a visible PR skip; release runs fail unless that exact omission is explicitly declared. Windows packs stay deferred. Manifests/checksums cover only planned built targets. Details in [docling.md](docling.md#ci) |
+| [`pack-docling.yml`](../.github/workflows/pack-docling.yml) | Pull requests that touch the Docling engine, its mapper, `uv.lock`, the `justfile` or the workflow; pushes to `dev` that touch a pack input; tags `pack-docling-v*`; manual | Engine tests on Linux/Windows and real-engine conformance; both Linux packs always build, with x86_64 converted offline. macOS requires its authoritative OpenCV pin: missing pins produce a visible PR skip; release runs fail unless that exact omission is explicitly declared. Windows packs stay deferred. Manifests/checksums cover only planned built targets. Details in [docling.md](docling.md#ci) |
 | [`torch-docling.yml`](../.github/workflows/torch-docling.yml) | Pull requests changing the torch source build inputs, manual | Builds or reuses the MKL-free CPU wheels on native Linux and Windows x86_64, audits binaries and probes torch/torchvision. Maintainers publish reviewed outputs as checksummed toolchain inputs; see [docling.md](docling.md#the-pack). |
 | [`links.yml`](../.github/workflows/links.yml) | Weekly, manual, and pull requests that change it | lychee checks every Markdown link on `dev`, configured by [`lychee.toml`](../lychee.toml) |
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
@@ -191,7 +191,7 @@ uses the same direct event-ref selection as Scope: the PR head for PRs, the
 trusted `dev` branch for schedules, and `github.sha` for push and manual runs.
 It immediately verifies checkout against Scope's recorded SHA before executing
 repository code. If `dev` moves between jobs, the run fails and must be retried;
-the tested tree and pack still have to match the original SHA. Job outputs
+the tested tree and the pack's inputs still have to match the original SHA. Job outputs
 serve as comparison values, not checkout authority.
 
 The Compose job disables setup-uv's shared dependency cache explicitly. It
@@ -200,13 +200,72 @@ cache. Dockerfile cache mounts remain local to the disposable runner's builder.
 Removing dependency caching alone would not protect the default-branch cache
 token from arbitrary code, so the direct event refs and SHA check are required.
 
-The isolated **Request source-matched CI
-pack** job searches `pack-docling.yml` runs for that SHA and accepts only
-`workflow_dispatch` or `push` builds. A PR pack run's API `head_sha` identifies
-the PR head even though checkout built a merge, so those artifacts are rejected.
-If no usable pack exists, the request job dispatches **Docling pack** on the
-matching branch after checking that its ref still points to the recorded SHA.
-Only this job has `actions: write`; it executes no checked-out code.
+The pack is keyed by its inputs, not by the commit. `scripts/docling-pack-inputs.sh`
+prints `PACK_INPUT_HASH`, a SHA-256 over the git tree entries of the files the pack is built
+from: `engines/docling`, `engines/common/licenses` (its `core.py` is executed by the pack
+scripts), `uv.lock`, the root `pyproject.toml`, the `justfile`, `scripts/install-pandoc.sh`,
+`LICENSE`, `NOTICE`, the two fixtures the pack job converts, the pack workflow and the script
+itself. The workspace crates, `Cargo.toml`, `Cargo.lock` and `rust-toolchain.toml` are
+deliberately **not** inputs: they do not change the archives of an honest build, because the
+Compose job rebuilds `ashift` from the tested commit and regenerates the manifest with it
+(which re-checks `requires_ashift`), and only reviewed `dev` or `main` code can supply a
+reusable pack (below). The script fails closed on an unknown revision or an empty input set.
+`test-docling-pack-inputs` (part of `just static`) checks that the hash moves with each input
+and nothing else, and that the pack workflow's pull request and push path filters list every
+input.
+
+Runs publish a small `docling-inputs-<hash>` artifact from their first job (the name does not
+match the release job's `docling-pack-*` download pattern), so builds still in progress can be
+found as well as finished ones. Pull request runs do not publish it and are never reused.
+
+Trust. A pack from another commit is reused only when it was built from reviewed code, and
+being an ancestor of `dev` is not enough: a merge commit also makes the unreviewed
+intermediate commits of a PR branch ancestors. The run must have been started on the `dev` or
+`main` branch itself (its `head_branch`) *and* its commit must be an ancestor of that
+branch's tip. Branch tips are resolved to SHAs through the branches API and compared by SHA,
+so a tag named `dev` or `main` cannot stand in for the branch. Anything else needs a run of
+the exact tested commit, as before. `pack-docling.yml` therefore also runs on pushes to `dev`
+that touch a pack input, giving `dev` its own pack source. Tag-pushed pack runs (release
+builds) are not reused across commits, and a pack built on a PR branch serves only that
+branch's own commit.
+
+Artifacts last 14 days, so a nightly Cloud E2E job (**Refresh the dev Docling pack**) checks
+that `dev`'s current inputs have a running or younger-than-7-days pack and dispatches one on
+`dev` if not. It is a Cloud E2E job rather than a `schedule` of `pack-docling.yml` because
+GitHub runs schedules only for the default branch `main`, while the pack must come from `dev`.
+For the same reason the nightly refresh becomes active only once this workflow reaches `main`
+(a schedule runs `main`'s copy of the workflow); until then packs are built when a PR or a push
+to `dev` needs them. The refresh logs a notice and stops when `dev` has moved since the nightly
+started, and logs a warning instead of dispatching when the newest `dev` pack run for the same
+inputs failed, so a pack that fails deterministically is not rebuilt every night.
+
+The isolated **Request source-matched CI pack** job lists runs that published the tested
+hash, plus dispatch and push runs of the exact tested commit (found before their first job has
+published anything), and keeps only dispatch or push runs of this repository's pack workflow
+that pass the trust rule. It prefers a finished successful run that still has both Linux
+artifacts, then a run in progress. Only when neither exists does it dispatch **Docling pack**
+on the PR branch (after checking that the ref still points to the recorded SHA). A PR that does
+not change the pack inputs therefore waits minutes for the pack. The waiter applies the same
+filters to the run it picks up, including a run handed over by the request job, and fails at
+once when that run is not eligible or has completed without success. It classifies a run once
+and afterwards only re-reads its status; a failing API call is retried with backoff and does
+not end the job.
+
+Dispatched, dev and tag pack runs are never cancelled by a newer run: their concurrency group
+is the run itself, so a newer dispatch on the same ref cannot cancel a run another PR is
+waiting on, and nothing is serialized behind them. Pull request pack runs still replace each
+other per PR. The cost is that superseded runs are not cut short: a PR that keeps changing
+the pack inputs and re-dispatching can leave several full pack runs executing in parallel
+until they finish. The lookup prevents duplicates for equal inputs only; it cannot avoid runs
+for inputs that really differ.
+
+The name is not trusted. Before downloading, the Compose job applies the same trust rule to
+the run (tested commit, or `dev`/`main` branch run whose commit is an ancestor of the tip), fetches it (the token goes to git through
+`GIT_CONFIG_*` environment variables) and requires `docling-pack-inputs.sh <that commit>` to
+equal the tested commit's hash; any difference fails the job. Fetching a pack commit by SHA
+keeps working after its branch is deleted (checked with merged PR heads), and commits on `dev`
+or `main` stay reachable anyway. The manifest, hash and extraction checks that follow are
+unchanged. If a run being waited on is cancelled or fails, rerun Cloud E2E.
 
 The request shell sets a polling deadline 540 minutes after it obtains a
 runner. An active waiter accounts for request overhead, the pack workflow's
@@ -231,20 +290,20 @@ The Compose job has `actions: read` and waits for
 **Pack (x86_64-unknown-linux-gnu)** to succeed and publish both
 `docling-pack-x86_64-unknown-linux-gnu` and `docling-pack-shared`. Before
 [`gh run download`](https://cli.github.com/manual/gh_run_download), it rechecks
-the artifact run's source SHA and event against its own checkout. A mismatch
-fails with an explanation before download. It generates the unsigned manifest
+the artifact run's workflow, event and the input hash of the commit that built it
+against the tested commit. A mismatch fails with an explanation before download. It generates the unsigned manifest
 with the built server image's `ashift __pack manifest`, safely extracts the
 components, and sets `E2E_DOCLING_PACK_DIR` for the read-only bind mount override.
 This development route skips signature installation and its `requires_ashift`
 check; it proves runtime conversion, not signed installation. No component is
-borrowed from a different commit or an unverified PR merge tree.
+borrowed from a build with different inputs or an unverified PR merge tree.
 
 Fork tokens cannot dispatch repository workflows. A fork needs an existing
-push or dispatch pack for the exact tested commit; otherwise a maintainer must
+push or dispatch pack built from the same inputs; otherwise a maintainer must
 bring that head into a repository branch and run both workflows there. Approving
 a PR merge build alone does not establish matching sources. Expired one-day PR
 artifacts are not reused; expired push or dispatch artifacts trigger a new
-source-matched build through the dispatch mechanism.
+build of the same inputs through the dispatch mechanism.
 
 The nightly deliberately retains the production Dockerfile's signed-release
 installer. It requires a published signed pack compatible with the host version;

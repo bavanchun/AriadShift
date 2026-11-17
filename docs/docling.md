@@ -211,7 +211,7 @@ In 1.0, shipped pack targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-li
 
 ### CI
 
-[`.github/workflows/pack-docling.yml`](../.github/workflows/pack-docling.yml) runs on pull requests that touch the engine, the mapper, `uv.lock`, the `justfile` or the workflow, and on `pack-docling-v*` tags:
+[`.github/workflows/pack-docling.yml`](../.github/workflows/pack-docling.yml) runs on pull requests that touch the engine, the mapper, `uv.lock` or the workflow, on pushes to `dev` that touch a pack input (the files listed by `scripts/docling-pack-inputs.sh --paths`), and on `pack-docling-v*` tags:
 
 - **Engine tests** on `ubuntu-26.04` and `windows-2025`: ruff and pytest.
 - **Engine conformance** on Linux with cached models and Tesseract: `just docling-engine-test`.
