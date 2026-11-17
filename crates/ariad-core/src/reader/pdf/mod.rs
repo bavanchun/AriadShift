@@ -3,7 +3,8 @@
 //! The reader is I/O-free and WASM-safe. It parses the file with `lopdf`, interprets page
 //! content streams itself, and rebuilds reading order, paragraphs, headings, lists and running
 //! headers and footers from glyph positions. Pages without a text layer produce an
-//! `ocr_required` warning.
+//! `ocr_required` warning. With [`ReadOptions::detect_tables`], tables drawn with ruling lines
+//! become table blocks.
 //!
 //! Work is bounded: the page count by [`Limits::max_pages`], decoded stream bytes by
 //! [`Limits::max_decompressed_bytes`] (every use of a shared content stream is charged again),
@@ -29,6 +30,7 @@ mod lists;
 mod objects;
 mod rules;
 mod symbolic;
+mod tables;
 mod text_decode;
 
 use std::collections::{BTreeMap, HashSet};
@@ -44,7 +46,7 @@ pub use text_decode::{PdfDecodedGlyph, PdfTextDecoder};
 use self::{
     assemble::{PageBlocks, assemble},
     interpreter::{DocState, Matrix, interpret_page},
-    layout::layout_page,
+    layout::{TableScan, layout_page},
     objects::{Budget, get, get_dict, number, rectangle, resolve},
 };
 use crate::{
@@ -131,12 +133,34 @@ pub enum ReadError {
     InvalidLimits(#[from] LimitsError),
 }
 
+/// Choices that change what [`read_with_options`] produces. The default reads exactly like
+/// [`read`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ReadOptions {
+    /// Detect tables drawn with ruling lines and emit them as table blocks instead of paragraphs.
+    /// Off by default.
+    pub detect_tables: bool,
+}
+
 /// Reads a PDF into document IR.
 ///
 /// The returned document carries `meta.source_format = pdf`, metadata from the information
 /// dictionary, `furniture` for running headers and footers, a [`crate::ir::LayoutIndex`] with
 /// page geometry and block boxes, and [`PdfStats`] under [`PROVENANCE_KEY`].
 pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
+    read_with_options(bytes, limits, &ReadOptions::default())
+}
+
+/// Reads a PDF into document IR like [`read`], with `options` applied.
+///
+/// With [`ReadOptions::detect_tables`], tables whose cells are bounded by ruling lines become
+/// [`crate::ir::Block::Table`] blocks, and pages where a limit stopped detection add an
+/// `unsupported_node` warning. Tables without ruling lines are not detected.
+pub fn read_with_options(
+    bytes: &[u8],
+    limits: &Limits,
+    options: &ReadOptions,
+) -> Result<ReadOutput, ReadError> {
     let (doc, budget, page_ids, _repaired_xref) =
         load_bounded_inner(bytes, limits, LoadMode { repair_xref: false })?;
 
@@ -152,6 +176,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut truncated = 0_u32;
     let mut unknown_color = false;
     let mut block_total = 0_usize;
+    let mut table_scan = TableScan::default();
     for (index, &page_id) in page_ids.iter().enumerate() {
         let page_no = u32::try_from(index + 1).unwrap_or(u32::MAX);
         let page = doc.get_dictionary(page_id).ok();
@@ -182,7 +207,13 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         unmapped += content.unmapped;
         truncated += u32::from(content.truncated);
         unknown_color |= content.unknown_color;
-        let blocks = layout_page(&content, &state.styles, width, height);
+        let blocks = layout_page(
+            &content,
+            &state.styles,
+            width,
+            height,
+            options.detect_tables.then_some(&mut table_scan),
+        );
         block_total += blocks.len();
         if block_total > limits.max_blocks as usize {
             return Err(ReadError::TooManyBlocks {
@@ -251,6 +282,15 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             format!(
                 "{truncated} pages exceed {MAX_PAGE_OPERATORS} content operators or \
                  {MAX_PAGE_GLYPHS} glyphs; the rest of their content was skipped"
+            ),
+        ));
+    }
+    if table_scan.capped_pages > 0 {
+        warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            format!(
+                "{} pages exceed the table detection limits; some of their tables were not detected",
+                table_scan.capped_pages
             ),
         ));
     }
