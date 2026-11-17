@@ -8,7 +8,7 @@
 //!
 //! The detector favours precision. A candidate is dropped, never repaired, when its outer border
 //! is not closed, when a line dangles past the grid, when merged cells are not rectangles, when it
-//! covers most of the page, when fewer than two rows hold two or more plain cells (the shape of a
+//! covers most of the page, when most of its text is not upright, when fewer than two rows hold two or more plain cells (the shape of a
 //! page frame with header, footer and column rules), when too few cells hold text, or when text
 //! crosses cell borders. Tables without rules are not detected.
 
@@ -463,7 +463,7 @@ fn fill_grid(layout: &Layout, content: &PageContent) -> Option<Grid> {
             glyphs: Vec::new(),
         })
         .collect();
-    let (mut counted, mut straddling) = (0_usize, 0_usize);
+    let (mut counted, mut straddling, mut text_glyphs) = (0_usize, 0_usize, 0_usize);
     for (index, glyph) in content.glyphs.iter().enumerate() {
         let (cx, cy) = centre(glyph);
         let (Some(c), Some(r)) = (interval(xs, cx), interval(ys, cy)) else {
@@ -471,8 +471,11 @@ fn fill_grid(layout: &Layout, content: &PageContent) -> Option<Grid> {
         };
         let cell = slot[r * columns + c];
         filled[cell].glyphs.push(index);
-        let upright = glyph.ux.abs() >= glyph.uy.abs() && glyph.ux > 0.0;
-        if upright && glyph.flags & SPACE == 0 && glyph.text_end > glyph.text_start {
+        if glyph.flags & SPACE != 0 || glyph.text_end <= glyph.text_start {
+            continue;
+        }
+        text_glyphs += 1;
+        if glyph.ux.abs() >= glyph.uy.abs() && glyph.ux > 0.0 {
             counted += 1;
             let origin = &cells[cell];
             let (x0, x1) = (xs[origin.column], xs[origin.column + origin.colspan]);
@@ -493,6 +496,11 @@ fn fill_grid(layout: &Layout, content: &PageContent) -> Option<Grid> {
         })
         .count();
     if with_text < 2 || (with_text as f64) < MIN_FILLED_SHARE * filled.len() as f64 {
+        return None;
+    }
+    // The border-crossing check only measures upright text, and a sideways or upside-down table
+    // would come out transposed or reversed.
+    if counted * 2 <= text_glyphs {
         return None;
     }
     if (straddling as f64) > MAX_STRADDLE_SHARE * counted as f64 {
@@ -723,6 +731,30 @@ mod tests {
         assert!(detect(&page, 400.0, 400.0).grids.is_empty());
         // Give the header row a second cell and it is a table again.
         page.rules.push(segment(XS[1], YS[0], XS[1], YS[1]));
+        assert_eq!(detect(&page, 400.0, 400.0).grids.len(), 1);
+    }
+
+    #[test]
+    fn a_sideways_grid_is_skipped() {
+        let mut page = page_with_grid(&XS, &YS);
+        for glyph in &mut page.glyphs {
+            (glyph.ux, glyph.uy) = (0.0, 1.0);
+        }
+        assert!(detect(&page, 400.0, 400.0).grids.is_empty());
+        // Upside-down text is not upright either.
+        for glyph in &mut page.glyphs {
+            (glyph.ux, glyph.uy) = (-1.0, 0.0);
+        }
+        assert!(detect(&page, 400.0, 400.0).grids.is_empty());
+    }
+
+    #[test]
+    fn a_few_turned_labels_do_not_hide_a_table() {
+        let mut page = page_with_grid(&XS, &YS);
+        // Three of nine cells carry a vertical label, as in a narrow column head.
+        for glyph in page.glyphs.iter_mut().take(3) {
+            (glyph.ux, glyph.uy) = (0.0, 1.0);
+        }
         assert_eq!(detect(&page, 400.0, 400.0).grids.len(), 1);
     }
 

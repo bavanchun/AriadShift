@@ -2,7 +2,7 @@
 
 Page 1: a frame drawn as four segments around two columns of prose, with header, footer and
 column rules. Page 2: the same page furniture with the frame stroked as one rectangle and 50 pt
-margins.
+margins. Page 3: a 3 by 3 table drawn sideways, under a quarter-turn matrix.
 """
 from pathlib import Path
 
@@ -74,7 +74,20 @@ page2 = f"1 w {L} {B} {R - L} {T - B} re S\n"
 page2 += banded_rules(L, B, R, T, 706, 86, 306)
 page2 += furniture(L, B, R, T, 706, 86, 306)
 
-content = [page1.encode("ascii"), page2.encode("ascii")]
+# Page 3: a complete 3 by 3 grid with a letter in every cell, turned a quarter turn
+# counter-clockwise by the matrix. Read upright it would be a table; on the page it is sideways.
+XS = [100, 160, 220, 280]
+YS = [100, 120, 140, 160]
+page3 = "q 0 1 -1 0 612 0 cm\n"
+page3 += "".join(rule(XS[0], y, XS[-1], y) for y in YS)
+page3 += "".join(rule(x, YS[0], x, YS[-1]) for x in XS)
+for r in range(3):
+    for c in range(3):
+        page3 += text(XS[c] + 6, YS[r] + 6, f"{'ABC'[r]}{c + 1}")
+page3 += "Q\n"
+page3 += text(72, 740, "The table on this page is drawn sideways.", 11)
+
+content = [page1.encode("ascii"), page2.encode("ascii"), page3.encode("ascii")]
 count = len(content)
 objects = [
     b"<< /Type /Catalog /Pages 2 0 R >>",

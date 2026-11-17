@@ -290,15 +290,57 @@ fn prose_documents_read_the_same_with_detection_on() {
     }
 }
 
+/// One-based page numbers that hold a detected table, one entry per table.
+fn table_pages(name: &str) -> Vec<u32> {
+    let document = read(name, &DETECT);
+    let layout = document.layout.as_ref().expect("layout index");
+    document
+        .body
+        .iter()
+        .filter(|block| matches!(block, Block::Table { .. }))
+        .map(|block| {
+            layout
+                .blocks
+                .get(block.id())
+                .expect("table position")
+                .page_no
+        })
+        .collect()
+}
+
+/// Text of every top-level paragraph of the document, joined by newlines.
+fn body_text(document: &Document) -> String {
+    let paragraphs: Vec<String> = document.body.iter().filter_map(paragraph_text).collect();
+    paragraphs.join("\n")
+}
+
 #[test]
 fn page_frames_around_columns_are_not_tables() {
-    let name = "ruled-table-traps.pdf";
-    let off = pdf::read(&fixture(name), &Limits::local()).unwrap();
-    let on = pdf::read_with_options(&fixture(name), &Limits::local(), &DETECT).unwrap();
     // Page 1 draws the frame as segments, page 2 as one stroked rectangle.
-    assert!(find_tables(&on.document.body).is_empty());
-    assert_eq!(off.document, on.document);
-    assert_eq!(off.warnings, on.warnings);
+    let pages = table_pages("ruled-table-traps.pdf");
+    assert!(!pages.contains(&1), "page 1 gave a table");
+    assert!(!pages.contains(&2), "page 2 gave a table");
+    let text = body_text(&read("ruled-table-traps.pdf", &DETECT));
+    for expected in [
+        "The harbour committee met",
+        "The treasurer reported",
+        "mooring rings",
+    ] {
+        assert!(text.contains(expected), "{expected} missing from {text:?}");
+    }
+}
+
+#[test]
+fn a_sideways_table_is_not_read_as_a_table() {
+    // Page 3 draws a 3 by 3 grid under a quarter-turn matrix. Read as a table it would come out
+    // transposed and reversed, so its text stays text.
+    let pages = table_pages("ruled-table-traps.pdf");
+    assert!(!pages.contains(&3), "page 3 gave a table");
+    let text = body_text(&read("ruled-table-traps.pdf", &DETECT));
+    assert!(text.contains("The table on this page is drawn sideways."));
+    for cell in ["A1", "B2", "C3"] {
+        assert!(text.contains(cell), "{cell} missing from {text:?}");
+    }
 }
 
 #[test]
