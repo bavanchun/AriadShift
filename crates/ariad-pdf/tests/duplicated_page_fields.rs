@@ -880,3 +880,42 @@ fn copied_radio_options_follow_the_kid_order_of_every_page_order() {
         }
     }
 }
+
+#[test]
+fn odd_length_utf16_names_get_unique_copies() {
+    let mut doc = Document::load_mem(&form_pdf()).expect("load form");
+    let name_id = doc
+        .objects
+        .iter()
+        .find(|(_, obj)| {
+            obj.as_dict()
+                .is_ok_and(|dict| partial_name(dict).as_deref() == Some("name"))
+        })
+        .map(|(id, _)| *id)
+        .expect("name field");
+    // BOM, "n", "A" and a stray final byte.
+    let raw = vec![0xFE, 0xFF, 0x00, b'n', 0x00, b'A', 0x00];
+    doc.get_dictionary_mut(name_id)
+        .unwrap()
+        .set("T", Object::String(raw, lopdf::StringFormat::Hexadecimal));
+    let mut input = Vec::new();
+    doc.save_to(&mut input).expect("save");
+    let out = run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("form.pdf", input)],
+        &json!({ "order": "1,1,1" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder");
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let mut names: Vec<String> = pdf
+        .inner()
+        .objects
+        .values()
+        .filter_map(|obj| obj.as_dict().ok())
+        .filter_map(partial_name)
+        .filter(|name| name.starts_with("nA"))
+        .collect();
+    names.sort();
+    assert_eq!(names, ["nA", "nA_2", "nA_3"]);
+}

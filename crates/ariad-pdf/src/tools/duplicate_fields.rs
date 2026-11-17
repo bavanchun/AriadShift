@@ -296,8 +296,8 @@ fn align_copy_kids(
 }
 
 /// Builds the `/T` of a renamed copy. A source name that decodes losslessly is re-encoded from the
-/// new name. An invalid one (odd UTF-16 length, unpaired surrogate, bad UTF-8) keeps its bytes and
-/// only receives the suffix in its own encoding.
+/// new name. An invalid one (unpaired surrogate, bad UTF-8, odd UTF-16 length) keeps its bytes and
+/// receives the suffix in its own encoding; the stray odd byte of a UTF-16 name is dropped first.
 fn renamed_name(source: Option<&Object>, partial: &str, renamed: &str) -> Object {
     let Some(Object::String(raw, format)) = source else {
         return encode_pdf_string(renamed);
@@ -325,6 +325,10 @@ fn renamed_name(source: Option<&Object>, partial: &str, renamed: &str) -> Object
         };
         if raw.len() % 2 == 0 && String::from_utf16(&units).is_ok() {
             return encode_pdf_string(renamed);
+        }
+        // A stray final byte would swallow the first suffix byte when decoded, so drop it.
+        if raw.len() % 2 == 1 {
+            bytes.pop();
         }
         for unit in suffix.encode_utf16() {
             bytes.extend_from_slice(&if big_endian {
