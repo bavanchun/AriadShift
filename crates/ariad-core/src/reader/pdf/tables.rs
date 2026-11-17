@@ -110,6 +110,7 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
         return detected;
     }
     let mut cells_left = MAX_CELLS;
+    let mut glyph_index = None;
     for (h_set, v_set) in components(&horizontal, &vertical) {
         if detected.grids.len() >= MAX_TABLES {
             detected.capped = true;
@@ -125,7 +126,8 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
             detected.capped = true;
             continue;
         }
-        let Some(grid) = fill_grid(&layout, content) else {
+        let index = glyph_index.get_or_insert_with(|| GlyphIndex::new(content));
+        let Some(grid) = fill_grid(&layout, content, index) else {
             continue;
         };
         if detected
@@ -435,8 +437,38 @@ fn interval(edges: &[f64], value: f64) -> Option<usize> {
     Some(edges.partition_point(|&edge| edge <= value) - 1)
 }
 
+/// Glyph centres, with the glyphs ordered by x so that a grid only visits the glyphs in its box.
+struct GlyphIndex {
+    centres: Vec<(f64, f64)>,
+    by_x: Vec<usize>,
+}
+
+impl GlyphIndex {
+    fn new(content: &PageContent) -> Self {
+        let centres: Vec<(f64, f64)> = content.glyphs.iter().map(centre).collect();
+        let mut by_x: Vec<usize> = (0..centres.len())
+            .filter(|&i| centres[i].0.is_finite() && centres[i].1.is_finite())
+            .collect();
+        by_x.sort_by(|&a, &b| centres[a].0.total_cmp(&centres[b].0));
+        Self { centres, by_x }
+    }
+
+    /// Glyphs centred in `[left, right) x [top, bottom)`, in ascending glyph order.
+    fn within(&self, [left, top, right, bottom]: [f64; 4]) -> Vec<usize> {
+        let from = self.by_x.partition_point(|&i| self.centres[i].0 < left);
+        let to = self.by_x.partition_point(|&i| self.centres[i].0 < right);
+        let mut found: Vec<usize> = self.by_x[from..to]
+            .iter()
+            .copied()
+            .filter(|&i| (top..bottom).contains(&self.centres[i].1))
+            .collect();
+        found.sort_unstable();
+        found
+    }
+}
+
 /// Assigns glyphs to cells and applies the text checks.
-fn fill_grid(layout: &Layout, content: &PageContent) -> Option<Grid> {
+fn fill_grid(layout: &Layout, content: &PageContent, index: &GlyphIndex) -> Option<Grid> {
     let Layout {
         xs,
         ys,
@@ -464,13 +496,15 @@ fn fill_grid(layout: &Layout, content: &PageContent) -> Option<Grid> {
         })
         .collect();
     let (mut counted, mut straddling, mut text_glyphs) = (0_usize, 0_usize, 0_usize);
-    for (index, glyph) in content.glyphs.iter().enumerate() {
-        let (cx, cy) = centre(glyph);
+    let inside = index.within([xs[0], ys[0], xs[columns], ys[ys.len() - 1]]);
+    for glyph_index in inside {
+        let glyph = &content.glyphs[glyph_index];
+        let (cx, cy) = index.centres[glyph_index];
         let (Some(c), Some(r)) = (interval(xs, cx), interval(ys, cy)) else {
             continue;
         };
         let cell = slot[r * columns + c];
-        filled[cell].glyphs.push(index);
+        filled[cell].glyphs.push(glyph_index);
         if glyph.flags & SPACE != 0 || glyph.text_end <= glyph.text_start {
             continue;
         }
@@ -704,6 +738,24 @@ mod tests {
             width: 1.0,
         });
         assert_eq!(detect(&page, 400.0, 400.0).grids.len(), 1);
+    }
+
+    #[test]
+    fn glyphs_outside_the_grid_are_left_alone() {
+        let mut page = page_with_grid(&XS, &YS);
+        // One glyph beyond each side of the grid; the nine glyphs of its cells are the only ones
+        // it claims.
+        glyph_at(&mut page, 'l', XS[0] - 20.0, 130.0);
+        glyph_at(&mut page, 'r', XS[3] + 20.0, 130.0);
+        glyph_at(&mut page, 'u', 130.0, YS[0] - 20.0);
+        glyph_at(&mut page, 'd', 130.0, YS[3] + 20.0);
+        let detected = detect(&page, 400.0, 400.0);
+        let claimed: usize = detected.grids[0]
+            .cells
+            .iter()
+            .map(|cell| cell.glyphs.len())
+            .sum();
+        assert_eq!(claimed, 9);
     }
 
     #[test]
