@@ -44,7 +44,7 @@ landlock = "0.4.7"
 jsonschema = { version = "0.60.2", default-features = false, features = ["resolve-file", "idna"] }
 jsonwebtoken = { version = "11.1.0", default-features = false }
 libc = "0.2"
-lopdf = { version = "0.46.0", default-features = false }
+lopdf = { version = "0.47.0", default-features = false }
 mail-parser = "=1.0.1"
 minisign = "0.10.0"
 minisign-verify = "0.3.0"
