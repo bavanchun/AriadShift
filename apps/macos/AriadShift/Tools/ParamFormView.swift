@@ -109,8 +109,13 @@ struct ParamFieldsView: View {
         case let .choice(options):
             labelled(field) {
                 Picker(selection: index(field)) {
+                    // A selection without a tag is an invalid Picker configuration whose result SwiftUI leaves
+                    // undefined, so `nil` always has one: an optional field shows a dash, a required field that has
+                    // no value yet shows an empty title, and the entry is gone once a value is chosen.
                     if !field.isRequired {
                         Text(verbatim: "–").tag(Int?.none)
+                    } else if index(field).wrappedValue == nil {
+                        Text(verbatim: "").tag(Int?.none)
                     }
                     ForEach(options.indices, id: \.self) { position in
                         Text(verbatim: options[position].displayText).tag(Int?.some(position))
