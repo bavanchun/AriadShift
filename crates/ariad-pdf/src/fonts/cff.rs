@@ -355,17 +355,43 @@ struct Header {
     encoding: EncodingSpec,
 }
 
+/// Skip a `{ ... }` procedure body whose opening brace is already consumed.
+fn skip_procedure(bytes: &[u8], pos: &mut usize) -> Option<()> {
+    let mut depth = 1_usize;
+    for _ in 0..MAX_TOKENS {
+        match next_token(bytes, pos)? {
+            b"{" => depth += 1,
+            b"}" => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Parse what follows `/Encoding`: `StandardEncoding`, or `N array` and its `dup` entries. Any
+/// other form (`ISOLatin1Encoding`, a literal array, a procedure) is not understood, so the
+/// caller refuses the font instead of guessing.
 fn parse_encoding(bytes: &[u8], pos: &mut usize) -> Option<EncodingSpec> {
     let first = next_token(bytes, pos)?;
     if first == b"StandardEncoding" {
         return Some(EncodingSpec::Standard);
     }
-    // `256 array 0 1 255 {1 index exch /.notdef put} for dup N /name put ... readonly def`
+    std::str::from_utf8(first).ok()?.parse::<u16>().ok()?;
+    if next_token(bytes, pos)? != b"array" {
+        return None;
+    }
+    // `0 1 255 {1 index exch /.notdef put} for dup N /name put ... readonly def`
     let mut entries = Vec::new();
     for _ in 0..MAX_TOKENS {
         let token = next_token(bytes, pos)?;
         match token {
             b"def" => return Some(EncodingSpec::Custom(entries)),
+            b"{" => skip_procedure(bytes, pos)?,
             b"dup" => {
                 let code = std::str::from_utf8(next_token(bytes, pos)?)
                     .ok()?
@@ -429,6 +455,8 @@ fn parse_header(head: &[u8]) -> Option<Header> {
                 }
             }
             b"/Encoding" if encoding.is_none() => encoding = Some(parse_encoding(head, &mut pos)?),
+            // Prelude procedures may mention any key; only top-level definitions count.
+            b"{" => skip_procedure(head, &mut pos)?,
             _ => {}
         }
     }
@@ -2563,5 +2591,159 @@ mod tests {
         }
         ops.extend([N(50), N(270), N(200), N(0), O(CALLSUBR), O(ENDCHAR)]);
         assert!(convert_built(&with_glyph("X", cs(&ops))).is_none());
+    }
+
+    // ---- header parsing: /Encoding anchoring and procedure bodies ----
+
+    #[test]
+    fn encoding_key_inside_a_procedure_is_ignored() {
+        // A prelude helper mentions /Encoding before the real definition.
+        let encoding = "/Helper { /Encoding get } bind def\n/Encoding 256 array\n0 1 255 {1 index exch /.notdef put} for\ndup 65 /A put\ndup 66 /B put\nreadonly def";
+        let font = build_font(encoding, &standard_subrs(), &standard_glyphs(), "");
+        let converted = convert_built(&font).expect("converts");
+        let cff = CffFontRef::new(&converted.bytes, 0, None).unwrap();
+        let encoding = cff.encoding().expect("encoding");
+        assert!(encoding.map(65).is_some(), "code 65 keeps its glyph");
+        assert!(encoding.map(66).is_some(), "code 66 keeps its glyph");
+        assert_eq!(encoding.map(67), None);
+    }
+
+    #[test]
+    fn encoding_key_only_inside_a_procedure_refuses_the_font() {
+        let encoding = "/Helper { /Encoding get } bind def";
+        let font = build_font(encoding, &standard_subrs(), &standard_glyphs(), "");
+        assert!(convert_built(&font).is_none());
+    }
+
+    #[test]
+    fn unsupported_encoding_forms_are_refused() {
+        for encoding in [
+            "/Encoding ISOLatin1Encoding def",
+            "/Encoding [ /A /B ] def",
+            "/Encoding 256 dict def",
+            "/Encoding { 256 array } exec def",
+            "/Encoding /StandardEncoding def",
+            "/Encoding 256 array\ndup 65 /A bogus\nreadonly def",
+        ] {
+            let font = build_font(encoding, &standard_subrs(), &standard_glyphs(), "");
+            assert!(convert_built(&font).is_none(), "{encoding}");
+        }
+        // The two supported forms still convert.
+        for encoding in [
+            "/Encoding StandardEncoding def",
+            "/Encoding 256 array\n0 1 255 {1 index exch /.notdef put} for\ndup 65 /A put\nreadonly def",
+        ] {
+            let font = build_font(encoding, &standard_subrs(), &standard_glyphs(), "");
+            assert!(convert_built(&font).is_some(), "{encoding}");
+        }
+    }
+
+    // ---- CFF DICT reading for the tests below ----
+
+    fn dict_entries(data: &[u8]) -> Vec<(u16, Vec<f64>)> {
+        let mut out = Vec::new();
+        let mut operands: Vec<f64> = Vec::new();
+        let mut i = 0;
+        while i < data.len() {
+            let b = data[i];
+            i += 1;
+            match b {
+                0..=21 => {
+                    let op = if b == 12 {
+                        i += 1;
+                        0x0c00 | u16::from(data[i - 1])
+                    } else {
+                        u16::from(b)
+                    };
+                    out.push((op, std::mem::take(&mut operands)));
+                }
+                28 => {
+                    operands.push(f64::from(i16::from_be_bytes([data[i], data[i + 1]])));
+                    i += 2;
+                }
+                29 => {
+                    operands.push(f64::from(i32::from_be_bytes(
+                        data[i..i + 4].try_into().unwrap(),
+                    )));
+                    i += 4;
+                }
+                30 => {
+                    let mut text = String::new();
+                    'real: loop {
+                        let byte = data[i];
+                        i += 1;
+                        for nibble in [byte >> 4, byte & 15] {
+                            match nibble {
+                                0..=9 => text.push(char::from(b'0' + nibble)),
+                                10 => text.push('.'),
+                                11 => text.push('E'),
+                                12 => text.push_str("E-"),
+                                14 => text.push('-'),
+                                15 => break 'real,
+                                _ => {}
+                            }
+                        }
+                    }
+                    operands.push(text.parse().unwrap_or(0.0));
+                }
+                32..=246 => operands.push(f64::from(b) - 139.0),
+                247..=250 => {
+                    operands.push((f64::from(b) - 247.0) * 256.0 + f64::from(data[i]) + 108.0);
+                    i += 1;
+                }
+                251..=254 => {
+                    operands.push(-(f64::from(b) - 251.0) * 256.0 - f64::from(data[i]) - 108.0);
+                    i += 1;
+                }
+                _ => panic!("unexpected DICT byte {b}"),
+            }
+        }
+        out
+    }
+
+    /// Items of the INDEX at `at`, and the offset just after it.
+    fn index_items(data: &[u8], at: usize) -> (Vec<&[u8]>, usize) {
+        let count = usize::from(u16::from_be_bytes([data[at], data[at + 1]]));
+        if count == 0 {
+            return (Vec::new(), at + 2);
+        }
+        let off_size = usize::from(data[at + 2]);
+        let offsets: Vec<usize> = (0..=count)
+            .map(|k| {
+                data[at + 3 + k * off_size..at + 3 + (k + 1) * off_size]
+                    .iter()
+                    .fold(0, |acc, b| acc * 256 + usize::from(*b))
+            })
+            .collect();
+        let base = at + 3 + (count + 1) * off_size - 1;
+        let items = offsets
+            .windows(2)
+            .map(|w| &data[base + w[0]..base + w[1]])
+            .collect();
+        (items, base + offsets[count])
+    }
+
+    fn top_dict(cff: &[u8]) -> Vec<(u16, Vec<f64>)> {
+        let (_, after_names) = index_items(cff, 4);
+        let (tops, _) = index_items(cff, after_names);
+        dict_entries(tops[0])
+    }
+
+    fn private_entries(cff: &[u8]) -> Vec<(u16, Vec<f64>)> {
+        let top = top_dict(cff);
+        let operands = &top.iter().find(|(op, _)| *op == 18).expect("Private").1;
+        let (size, offset) = (operands[0] as usize, operands[1] as usize);
+        dict_entries(&cff[offset..offset + size])
+    }
+
+    #[test]
+    fn keys_inside_procedure_bodies_do_not_define_the_font() {
+        // The helper mentions FontBBox (and a nested FontName) before the real FontBBox.
+        let encoding = "/Helper { /FontMatrix [1 0 0 1 0 0] def /FontBBox [0 0 1 1] def { /FontName /Inner def } if } def\n/Encoding StandardEncoding def";
+        let font = build_font(encoding, &standard_subrs(), &standard_glyphs(), "");
+        let converted = convert_built(&font).expect("converts");
+        let top = top_dict(&converted.bytes);
+        let bbox = &top.iter().find(|(op, _)| *op == 5).expect("FontBBox").1;
+        assert_eq!(bbox, &[-10.0, -20.0, 900.0, 800.0]);
     }
 }
