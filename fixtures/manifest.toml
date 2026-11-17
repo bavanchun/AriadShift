@@ -6570,3 +6570,22 @@ tags = []
 phase = "1b"
 routes = ["pdf->md"]
 companions = []
+
+[[fixture]]
+id = "ruled-table-traps-pdf"
+path = "fixtures/pdf/ruled-table-traps.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "PDF with ruled shapes that are not tables"
+origin = "generated"
+generated_by = "fixtures/gen/ruled-table-traps.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "808fcc0a21e5126404a283cf66ab1b10737072c18cc096af78cbe6bda00fd6d4"
+pages = 2
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []

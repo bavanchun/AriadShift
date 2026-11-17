@@ -7,9 +7,10 @@
 //! their centre point.
 //!
 //! The detector favours precision. A candidate is dropped, never repaired, when its outer border
-//! is not closed, when a line dangles past the grid, when merged cells are not rectangles, when
-//! too few cells hold text, or when text crosses cell borders. Tables without rules are not
-//! detected.
+//! is not closed, when a line dangles past the grid, when merged cells are not rectangles, when it
+//! covers most of the page, when fewer than two rows hold two or more plain cells (the shape of a
+//! page frame with header, footer and column rules), when too few cells hold text, or when text
+//! crosses cell borders. Tables without rules are not detected.
 
 use super::{
     interpreter::{Glyph, PageContent, SPACE},
@@ -38,6 +39,14 @@ const MAX_CELLS: usize = 4_096;
 /// Largest grid, in rows and columns.
 const MAX_ROWS: usize = 200;
 const MAX_COLUMNS: usize = 40;
+
+/// Share of the page area above which a candidate is a page frame or a layout grid, not a table.
+const MAX_PAGE_SHARE: f64 = 0.5;
+
+/// Fewest rows of a grid that must hold at least [`MIN_PLAIN_CELLS`] cells spanning one row and
+/// one column. Header, footer and column rules around prose merge every other row into one cell.
+const MIN_PLAIN_ROWS: usize = 2;
+const MIN_PLAIN_CELLS: usize = 2;
 
 /// Fewest cells of a grid that must hold text, as a share of its merged cells.
 const MIN_FILLED_SHARE: f64 = 0.3;
@@ -109,6 +118,9 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
         let Some(layout) = build_grid(&h_set, &v_set) else {
             continue;
         };
+        if covers_most_of_page(&layout, page_width, page_height) {
+            continue;
+        }
         if layout.cells.len() > cells_left {
             detected.capped = true;
             continue;
@@ -130,6 +142,12 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
         .grids
         .sort_by(|a, b| a.bbox[1].total_cmp(&b.bbox[1]));
     detected
+}
+
+fn covers_most_of_page(layout: &Layout, page_width: f64, page_height: f64) -> bool {
+    let width = layout.xs[layout.xs.len() - 1] - layout.xs[0];
+    let height = layout.ys[layout.ys.len() - 1] - layout.ys[0];
+    width * height > MAX_PAGE_SHARE * page_width * page_height
 }
 
 fn overlaps(a: &[f64; 4], b: &[f64; 4]) -> bool {
@@ -368,6 +386,17 @@ fn build_grid(horizontal: &[Line], vertical: &[Line]) -> Option<Layout> {
     cells.sort_by_key(|cell| (cell.row, cell.column));
     // A row that starts no cell is a full-width merge, which tables do not use.
     if (0..rows).any(|r| cells.iter().all(|cell| cell.row != r)) {
+        return None;
+    }
+    let plain_rows = (0..rows)
+        .filter(|&r| {
+            let plain = cells
+                .iter()
+                .filter(|cell| cell.row == r && cell.rowspan == 1 && cell.colspan == 1);
+            plain.count() >= MIN_PLAIN_CELLS
+        })
+        .count();
+    if plain_rows < MIN_PLAIN_ROWS {
         return None;
     }
 
@@ -666,6 +695,34 @@ mod tests {
             y1: 400.0,
             width: 1.0,
         });
+        assert_eq!(detect(&page, 400.0, 400.0).grids.len(), 1);
+    }
+
+    #[test]
+    fn a_grid_covering_most_of_the_page_is_skipped() {
+        let page = page_with_grid(&XS, &YS);
+        // The grid is 180 by 60 points: 18% of this page, but 54% of a smaller one.
+        assert_eq!(detect(&page, 300.0, 200.0).grids.len(), 1);
+        assert!(detect(&page, 200.0, 100.0).grids.is_empty());
+    }
+
+    #[test]
+    fn a_banded_page_layout_is_skipped() {
+        // Frame, header rule and footer rule, with one column rule between header and footer:
+        // the header and footer rows are single merged cells, so only the body row has two cells.
+        let mut page = page_with_grid(&XS, &YS);
+        page.rules = vec![
+            segment(XS[0], YS[0], XS[2], YS[0]),
+            segment(XS[0], YS[1], XS[2], YS[1]),
+            segment(XS[0], YS[2], XS[2], YS[2]),
+            segment(XS[0], YS[3], XS[2], YS[3]),
+            segment(XS[0], YS[0], XS[0], YS[3]),
+            segment(XS[2], YS[0], XS[2], YS[3]),
+            segment(XS[1], YS[1], XS[1], YS[2]),
+        ];
+        assert!(detect(&page, 400.0, 400.0).grids.is_empty());
+        // Give the header row a second cell and it is a table again.
+        page.rules.push(segment(XS[1], YS[0], XS[1], YS[1]));
         assert_eq!(detect(&page, 400.0, 400.0).grids.len(), 1);
     }
 

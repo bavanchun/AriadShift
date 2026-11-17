@@ -291,6 +291,17 @@ fn prose_documents_read_the_same_with_detection_on() {
 }
 
 #[test]
+fn page_frames_around_columns_are_not_tables() {
+    let name = "ruled-table-traps.pdf";
+    let off = pdf::read(&fixture(name), &Limits::local()).unwrap();
+    let on = pdf::read_with_options(&fixture(name), &Limits::local(), &DETECT).unwrap();
+    // Page 1 draws the frame as segments, page 2 as one stroked rectangle.
+    assert!(find_tables(&on.document.body).is_empty());
+    assert_eq!(off.document, on.document);
+    assert_eq!(off.warnings, on.warnings);
+}
+
+#[test]
 fn the_block_limit_still_applies_to_detected_tables() {
     let limits = Limits {
         max_blocks: 3,
