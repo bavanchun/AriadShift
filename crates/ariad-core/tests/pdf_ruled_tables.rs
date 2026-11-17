@@ -13,12 +13,11 @@ use ariad_core::{
 };
 use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, tables};
 
-const PROSE: [&str; 5] = [
+const PROSE: [&str; 4] = [
     "pd-en-gao-08-35-highlights.pdf",
     "pd-vi-decree-39-2022.pdf",
     "pd-vi-ip-law-155-2025.pdf",
     "pd-vi-qd-1922-2026.pdf",
-    "arxiv-multilingual-open-text-2201-05609-v2.pdf",
 ];
 
 #[test]
@@ -48,6 +47,13 @@ fn ruled_tables_become_table_blocks_with_merged_cells_and_a_head() {
                 &["East", "143", "5,008"],
             ]),
             rows(&[&["Plan", "Actual"], &["Team A", "10", "12"], &["11", "13"]]),
+            // Page 2: irregular rules make the ruled detector skip this grid, but its text sits
+            // in three aligned rows and columns, which the whitespace detector reads.
+            rows(&[
+                &["L00", "L01", "L02"],
+                &["L10", "L11", "L12"],
+                &["L20", "L21", "L22"],
+            ]),
         ]
     );
 
@@ -113,13 +119,12 @@ fn tables_sit_between_the_paragraphs_around_them() {
     assert_eq!(kinds[1], "table");
     assert_eq!(kinds[2], "Merged cells follow.");
     assert_eq!(kinds[3], "table");
-    // Page 2: nothing was detected, so every line of its shapes stays text.
+    // Page 2: the grid with irregular rules is read from its text; the framed note stays text.
     assert_eq!(kinds[4], "Shapes that are not tables.");
-    let rest = kinds[5..].join("\n");
-    for expected in ["L00", "L12", "Note: figures are provisional."] {
-        assert!(rest.contains(expected), "{expected} missing from {rest:?}");
-    }
-    assert!(kinds[5..].iter().all(|kind| kind != "table"));
+    assert_eq!(kinds[5], "table");
+    let rest = kinds[6..].join("\n");
+    assert!(rest.contains("Note: figures are provisional."), "{rest:?}");
+    assert!(kinds[6..].iter().all(|kind| kind != "table"));
 }
 
 #[test]
@@ -132,8 +137,9 @@ fn table_blocks_are_positioned_in_the_layout_index() {
         .filter(|block| matches!(block, Block::Table { .. }))
         .map(|block| layout.blocks.get(block.id()).expect("table position"))
         .collect();
-    assert_eq!(positions.len(), 2);
-    assert!(positions.iter().all(|position| position.page_no == 1));
+    assert_eq!(positions.len(), 3);
+    let pages: Vec<u32> = positions.iter().map(|position| position.page_no).collect();
+    assert_eq!(pages, [1, 1, 2]);
     // Table A spans x 72..432 and y 92..188 from the top of a 792 pt page.
     let first = &positions[0].bbox;
     assert!((first.left - 72.0).abs() < 1.0 && (first.right - 432.0).abs() < 1.0);
@@ -147,7 +153,8 @@ fn csv_and_xlsx_writers_take_the_detected_tables_unchanged() {
     assert_eq!(
         output.content,
         "Region,Units,Revenue\r\nNorth,120,\"4,500\"\r\nCentral region,95,\"3,210\"\r\n\
-         East,143,\"5,008\"\r\n\r\nPlan,,Actual\r\nTeam A,10,12\r\n,11,13\r\n"
+         East,143,\"5,008\"\r\n\r\nPlan,,Actual\r\nTeam A,10,12\r\n,11,13\r\n\r\n\
+         L00,L01,L02\r\nL10,L11,L12\r\nL20,L21,L22\r\n"
     );
     assert!(output.warnings.is_empty(), "{:?}", output.warnings);
     let workbook = xlsx::write(&document).unwrap();
@@ -180,12 +187,14 @@ fn tables_of_real_documents_match_the_page() {
 #[test]
 fn tables_of_a_research_paper_match_the_rendered_page() {
     let found = tables("arxiv-tableformer-2203-01017-v1.pdf", &DETECT);
-    // Figure 1c, the two tables of Figure 5b and the structure grid of Figure 6. The two tables
-    // of Figure 5b share a page in separate columns, and the left one is read first.
-    assert_eq!(found.len(), 4);
+    // Figure 1c, Tables 1 to 4 (drawn without full rulings, see the whitespace tests), the two
+    // tables of Figure 5b and the structure grid of Figure 6. The two tables of Figure 5b share
+    // a page in separate columns, and the left one is read first.
+    assert_eq!(found.len(), 8);
+    let ruled: Vec<_> = [0, 5, 6, 7].iter().map(|&index| &found[index]).collect();
     assert_eq!(
-        found[2],
-        rows(&[
+        ruled[2],
+        &rows(&[
             &[
                 "",
                 "Shares (in millions)",
@@ -205,8 +214,8 @@ fn tables_of_a_research_paper_match_the_rendered_page() {
             ],
         ])
     );
-    assert_eq!(found[1][0], ["", "", "論文ファイル", "参考文献"]);
-    assert_eq!(found[1].len(), 10);
+    assert_eq!(ruled[1][0], ["", "", "論文ファイル", "参考文献"]);
+    assert_eq!(ruled[1].len(), 10);
 }
 
 #[test]
@@ -319,28 +328,4 @@ fn the_block_limit_still_applies_to_detected_tables() {
     };
     let result = pdf::read_with_options(&fixture("ruled-tables.pdf"), &limits, &DETECT);
     assert!(matches!(result, Err(ReadError::TooManyBlocks { limit: 3 })));
-}
-
-/// Prints every detected table of the fixtures named in `PDF_FIXTURES` (comma separated); run
-/// with `--ignored --nocapture`. Unreadable files are reported, not failed.
-#[test]
-#[ignore = "measurement dump"]
-fn dump_tables() {
-    let names = std::env::var("PDF_FIXTURES").unwrap_or_default();
-    for name in names.split(',').filter(|name| !name.is_empty()) {
-        let output = pdf::read_with_options(&fixture(name), &Limits::local(), &DETECT);
-        let Ok(output) = output else {
-            println!("== {name}: unreadable");
-            continue;
-        };
-        let found = find_tables(&output.document.body);
-        println!("== {name}: {} tables", found.len());
-        for (index, table) in tables(name, &DETECT).iter().enumerate() {
-            let cells: usize = table.iter().map(Vec::len).sum();
-            println!("-- table {index}: {} rows, {cells} cells", table.len());
-            for row in table {
-                println!("   {}", row.join(" | "));
-            }
-        }
-    }
 }

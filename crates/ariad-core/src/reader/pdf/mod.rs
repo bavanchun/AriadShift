@@ -3,8 +3,8 @@
 //! The reader is I/O-free and WASM-safe. It parses the file with `lopdf`, interprets page
 //! content streams itself, and rebuilds reading order, paragraphs, headings, lists and running
 //! headers and footers from glyph positions. Pages without a text layer produce an
-//! `ocr_required` warning. With [`ReadOptions::detect_tables`], tables drawn with ruling lines
-//! become table blocks.
+//! `ocr_required` warning. With [`ReadOptions::detect_tables`], tables drawn with ruling lines,
+//! and tables whose columns are only separated by whitespace, become table blocks.
 //!
 //! Work is bounded: the page count by [`Limits::max_pages`], decoded stream bytes by
 //! [`Limits::max_decompressed_bytes`] (every use of a shared content stream is charged again),
@@ -32,6 +32,7 @@ mod rules;
 mod symbolic;
 mod tables;
 mod text_decode;
+mod unruled;
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -137,8 +138,8 @@ pub enum ReadError {
 /// [`read`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ReadOptions {
-    /// Detect tables drawn with ruling lines and emit them as table blocks instead of paragraphs.
-    /// Off by default.
+    /// Detect tables and emit them as table blocks instead of paragraphs: tables drawn with
+    /// ruling lines, and tables aligned with whitespace alone. Off by default.
     pub detect_tables: bool,
 }
 
@@ -154,8 +155,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 /// Reads a PDF into document IR like [`read`], with `options` applied.
 ///
 /// With [`ReadOptions::detect_tables`], tables whose cells are bounded by ruling lines become
-/// [`crate::ir::Block::Table`] blocks, and pages where a limit stopped detection add an
-/// `unsupported_node` warning. Tables without ruling lines are not detected.
+/// [`crate::ir::Block::Table`] blocks, and so do tables whose columns are only separated by
+/// whitespace when at least three rows share two or more aligned column gaps and the result is
+/// unambiguous. Pages where a limit stopped detection add an `unsupported_node` warning.
 pub fn read_with_options(
     bytes: &[u8],
     limits: &Limits,

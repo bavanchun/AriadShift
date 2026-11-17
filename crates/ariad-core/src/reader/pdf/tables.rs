@@ -14,8 +14,8 @@
 //! is not closed, when a line dangles past the grid, when merged cells are not rectangles, when it
 //! covers most of the page, when most of its text is not upright, when fewer than two rows hold
 //! two or more plain cells (the shape of a page frame with header, footer and column rules), when
-//! too few cells hold text, or when text crosses cell borders. Tables without rules are not
-//! detected.
+//! too few cells hold text, or when text crosses cell borders. Tables without rules are the
+//! business of [`super::unruled`].
 
 use super::{
     interpreter::{Glyph, PageContent, SPACE},
@@ -36,14 +36,14 @@ const MIN_RULE: f64 = 3.0;
 const MAX_LINES: usize = 800;
 
 /// Most tables kept for one page.
-const MAX_TABLES: usize = 32;
+pub(super) const MAX_TABLES: usize = 32;
 
 /// Most grid cells, merged or not, for one page.
-const MAX_CELLS: usize = 4_096;
+pub(super) const MAX_CELLS: usize = 4_096;
 
 /// Largest grid, in rows and columns.
-const MAX_ROWS: usize = 200;
-const MAX_COLUMNS: usize = 40;
+pub(super) const MAX_ROWS: usize = 200;
+pub(super) const MAX_COLUMNS: usize = 40;
 
 /// Share of the page area above which a candidate is a page frame or a layout grid, not a table.
 const MAX_PAGE_SHARE: f64 = 0.5;
