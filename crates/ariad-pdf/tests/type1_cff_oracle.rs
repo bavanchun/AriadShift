@@ -1,7 +1,8 @@
 //! Glyph-by-glyph equality between embedded Type 1 programs and their Type1C conversion.
 //!
 //! `read-fonts` (an independent Type 1 and CFF implementation) evaluates every glyph of every
-//! embedded Type 1 font in the corpus before and after conversion; paths and widths must match.
+//! embedded Type 1 font in the corpus before and after conversion; paths, widths and the
+//! character encoding (the glyph each of the 256 codes selects) must match.
 
 #![cfg(feature = "codecs")]
 use ariad_pdf::{InputDoc, ToolCtx, fonts};
@@ -40,6 +41,7 @@ impl CommandSink for R {
 fn converted_corpus_fonts_match_the_type1_oracle() {
     let ctx = ToolCtx::default();
     let mut checked = 0;
+    let mut encoded = 0;
     for f_ in [
         "arxiv-multilingual-open-text-2201-05609-v2.pdf",
         "arxiv-tableformer-2203-01017-v1.pdf",
@@ -76,6 +78,7 @@ fn converted_corpus_fonts_match_the_type1_oracle() {
                 want.insert(name.to_owned(), (w.map(f), r.0));
             }
             let mut got = BTreeMap::new();
+            let mut names: BTreeMap<GlyphId, String> = BTreeMap::new();
             for (gid, sid) in cff.charset().unwrap().iter() {
                 let name = if gid == GlyphId::new(0) {
                     ".notdef".to_string()
@@ -88,6 +91,7 @@ fn converted_corpus_fonts_match_the_type1_oracle() {
                 };
                 let mut r = R::default();
                 let w = cff.evaluate_charstring(&sub, gid, &[], &mut r).unwrap();
+                names.insert(gid, name.clone());
                 got.insert(name, (w.map(f), r.0));
             }
             assert_eq!(want.len(), got.len(), "{id:?} glyph count");
@@ -95,9 +99,27 @@ fn converted_corpus_fonts_match_the_type1_oracle() {
                 assert_eq!(got.get(n), Some(v), "{f_} {id:?} glyph {n}");
             }
             checked += want.len();
+            // The encoding: each of the 256 codes must select the glyph of the same name.
+            // Codes without a glyph (or mapped to .notdef) count as unmapped on both sides.
+            let want_encoding = t1.encoding().expect("Type 1 encoding");
+            let got_encoding = cff.encoding().expect("CFF encoding");
+            for code in 0..=255_u8 {
+                let want_name = want_encoding
+                    .map(code)
+                    .and_then(|gid| t1.glyph_name(gid))
+                    .filter(|name| *name != ".notdef");
+                let got_name = got_encoding
+                    .map(code)
+                    .and_then(|gid| names.get(&gid))
+                    .map(String::as_str)
+                    .filter(|name| *name != ".notdef");
+                assert_eq!(got_name, want_name, "{f_} {id:?} encoding of code {code}");
+                encoded += usize::from(want_name.is_some());
+            }
         }
     }
     assert!(checked > 0, "the corpus must contain Type 1 fonts");
+    assert!(encoded > 0, "the corpus fonts must encode some codes");
 }
 
 mod hook {
