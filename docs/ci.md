@@ -233,6 +233,11 @@ Artifacts last 14 days, so a nightly Cloud E2E job (**Refresh the dev Docling pa
 that `dev`'s current inputs have a running or younger-than-7-days pack and dispatches one on
 `dev` if not. It is a Cloud E2E job rather than a `schedule` of `pack-docling.yml` because
 GitHub runs schedules only for the default branch `main`, while the pack must come from `dev`.
+For the same reason the nightly refresh becomes active only once this workflow reaches `main`
+(a schedule runs `main`'s copy of the workflow); until then packs are built when a PR or a push
+to `dev` needs them. The refresh logs a notice and stops when `dev` has moved since the nightly
+started, and logs a warning instead of dispatching when the newest `dev` pack run for the same
+inputs failed, so a pack that fails deterministically is not rebuilt every night.
 
 The isolated **Request source-matched CI pack** job lists runs that published the tested
 hash, plus dispatch and push runs of the exact tested commit (found before their first job has

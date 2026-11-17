@@ -89,7 +89,9 @@ def test_non_pull_request_pack_runs_have_their_own_concurrency_group(pack_workfl
     ],
 )
 def test_dev_push_declares_the_macos_omission_like_a_dispatch(pack_workflow, ref, inputs, expected):
-    scope = next(step for step in pack_workflow["jobs"]["scope"]["steps"] if step.get("id") == "scope")
+    scope = next(
+        step for step in pack_workflow["jobs"]["scope"]["steps"] if step.get("id") == "scope"
+    )
     expression = scope["env"]["ALLOW_MISSING_TARGETS"]
     github = SimpleNamespace(ref=ref)
     context = {"github": github, "inputs": SimpleNamespace(allow_missing_targets=inputs)}
