@@ -524,8 +524,9 @@ fn prune_inner(
             }
         }
         // Private DICT and its Subrs keep their relative distance only if both
-        // sit on the same side of the CharStrings INDEX.
-        if (offset >= cs_end) != local_subrs.is_none_or(|s| s >= cs_end) {
+        // sit on the same side of the CharStrings INDEX; a Private DICT without
+        // Subrs has no distance to keep.
+        if local_subrs.is_some_and(|s| (s >= cs_end) != (offset >= cs_end)) {
             return None;
         }
         referenced.push(offset);
@@ -956,6 +957,8 @@ mod tests {
         codes: Vec<u8>,
         /// Extra raw Top DICT entries.
         extra_top: Vec<u8>,
+        /// Put a Private DICT without Subrs before the CharStrings INDEX.
+        private_first: bool,
     }
 
     /// Lay out header, Name, Top DICT, String, Global Subr, charset, Encoding,
@@ -982,21 +985,36 @@ mod tests {
             e
         };
         let charstrings = index(&spec.charstrings);
-        let local = index(&spec.local);
+        let local = if spec.private_first {
+            Vec::new()
+        } else {
+            index(&spec.local)
+        };
         let private_len = 6;
+        let int = |v: usize| {
+            let mut o = vec![29];
+            o.extend_from_slice(&(v as i32).to_be_bytes());
+            o
+        };
+        // Either a Private DICT with Subrs, or one with a width and no Subrs.
+        let mut private = int(if spec.private_first { 500 } else { private_len });
+        private.push(if spec.private_first { 20 } else { 19 });
+        assert_eq!(private.len(), private_len);
         let top_len = 2 + 1 + 2 + 29 + spec.extra_top.len();
         let mut at = 4 + names.len() + top_len + strings.len() + global.len();
         let charset_at = at;
         at += charset.len();
         let encoding_at = if spec.codes.is_empty() { 0 } else { at };
         at += encoding.len();
+        if spec.private_first {
+            at += private.len();
+        }
         let charstrings_at = at;
         at += charstrings.len();
-        let private_at = at;
-        let int = |v: usize| {
-            let mut o = vec![29];
-            o.extend_from_slice(&(v as i32).to_be_bytes());
-            o
+        let private_at = if spec.private_first {
+            charstrings_at - private.len()
+        } else {
+            at
         };
         let mut dict = Vec::new();
         dict.extend(int(charset_at));
@@ -1010,9 +1028,6 @@ mod tests {
         dict.push(18);
         assert_eq!(dict.len(), 29);
         dict.extend_from_slice(&spec.extra_top);
-        let mut private = int(private_len);
-        private.push(19);
-        assert_eq!(private.len(), private_len);
         let mut out = vec![1, 0, 4, 4];
         out.extend(names);
         out.extend(index(&[dict]));
@@ -1020,9 +1035,14 @@ mod tests {
         out.extend(global);
         out.extend(charset);
         out.extend(encoding);
+        if spec.private_first {
+            out.extend(&private);
+        }
         out.extend(charstrings);
-        out.extend(private);
-        out.extend(local);
+        if !spec.private_first {
+            out.extend(private);
+            out.extend(local);
+        }
         out
     }
 
@@ -1047,7 +1067,16 @@ mod tests {
             local: vec![vec![169, 179, 5, 11]],
             codes: Vec::new(),
             extra_top: Vec::new(),
+            private_first: false,
         }
+    }
+
+    fn private_at(bytes: &[u8]) -> usize {
+        let names = parse_index(bytes, usize::from(bytes[2])).unwrap();
+        let tops = parse_index(bytes, names.end).unwrap();
+        let entries = parse_dict(element(bytes, &tops, 0).unwrap()).unwrap();
+        let private = entries.iter().find(|e| e.operator == 18).unwrap();
+        usize::try_from(private.operands[1].1.unwrap()).unwrap()
     }
 
     fn charstring(bytes: &[u8], gid: usize) -> Vec<u8> {
@@ -1249,6 +1278,45 @@ mod tests {
             *glyph = call_leaf.clone();
         }
         assert!(prune(&build(&s), &(1..=6).collect()).is_some());
+    }
+
+    #[test]
+    fn private_dict_before_the_charstrings_without_subrs_is_pruned() {
+        let mut s = spec("ABCDE");
+        s.private_first = true;
+        // No glyph may call a local subroutine in this layout.
+        for glyph in s.charstrings.iter_mut().skip(1) {
+            *glyph = vec![149, 159, 21, 14];
+        }
+        let bytes = build(&s);
+        let before = layout(&bytes).unwrap();
+        assert!(before.private.is_some());
+        assert!(private_at(&bytes) < before.cs_off, "private sits first");
+        let out = prune(&bytes, &BTreeSet::from([1, 3])).unwrap();
+        assert!(out.len() < bytes.len());
+        assert_eq!(parse(&bytes), parse(&out));
+        let after = layout(&out).unwrap();
+        assert_eq!(before.private, after.private);
+        assert_eq!(charstring(&out, 2), [ENDCHAR]);
+        assert_eq!(charstring(&out, 3), charstring(&bytes, 3));
+    }
+
+    #[test]
+    fn private_dict_and_subrs_on_opposite_sides_are_refused() {
+        // Private before the CharStrings, its Subrs after them: the distance
+        // between the two would change, so the font stays untouched.
+        let mut s = spec("ABCDE");
+        s.private_first = true;
+        for glyph in s.charstrings.iter_mut().skip(1) {
+            *glyph = vec![149, 159, 21, 14];
+        }
+        let mut bytes = build(&s);
+        let at = private_at(&bytes);
+        let distance = i32::try_from(layout(&bytes).unwrap().cs.end - at).unwrap();
+        bytes[at + 1..at + 5].copy_from_slice(&distance.to_be_bytes());
+        bytes[at + 5] = 19;
+        bytes.extend(index(&[vec![11]]));
+        assert!(prune(&bytes, &BTreeSet::from([1])).is_none());
     }
 
     #[test]
