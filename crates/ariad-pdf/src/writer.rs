@@ -146,12 +146,94 @@ pub fn save_document_with_options(
             },
         )
         .map_err(|_| out.failure.unwrap_or(PdfError::Malformed))?;
-        Ok(out.bytes)
+        Ok(compress_xref_stream(out.bytes))
     } else {
         let mut out = Vec::new();
         doc.save_to(&mut out).map_err(|_| PdfError::Malformed)?;
         Ok(out)
     }
+}
+
+/// Entry width of the cross-reference stream lopdf writes: `/W [1 4 2]`.
+const XREF_ROW: usize = 7;
+
+/// Rewrites the final cross-reference stream as Flate data behind a PNG Up predictor.
+///
+/// lopdf always emits that stream raw (`Filter` removed), which costs 7 bytes per object. The
+/// stream is the last object, so the objects, their offsets and `startxref` stay valid when only
+/// the tail changes. Fails closed: anything unexpected returns `bytes` unchanged.
+fn compress_xref_stream(bytes: Vec<u8>) -> Vec<u8> {
+    rewrite_xref_tail(&bytes).unwrap_or(bytes)
+}
+
+fn rewrite_xref_tail(bytes: &[u8]) -> Option<Vec<u8>> {
+    const KEYWORD: &[u8] = b"\nstartxref\n";
+    const END: &[u8] = b"\nendstream \nendobj\n";
+    let keyword = bytes.windows(KEYWORD.len()).rposition(|w| w == KEYWORD)?;
+    let start: usize =
+        std::str::from_utf8(bytes[keyword + KEYWORD.len()..].strip_suffix(b"\n%%EOF")?)
+            .ok()?
+            .parse()
+            .ok()?;
+    let object = bytes.get(start..)?;
+    let header_len = object.windows(2).position(|w| w == b"<<")?;
+    let header = &object[..header_len];
+    if !header.ends_with(b" 0 obj\n") || !header[..header.len() - 7].iter().all(u8::is_ascii_digit)
+    {
+        return None;
+    }
+    let dict_len = object.windows(9).position(|w| w == b">>stream\n")? + 2;
+    let dict = &object[header_len..dict_len];
+    let marker = b"/Length ";
+    let at = dict.windows(marker.len()).position(|w| w == marker)?;
+    let digits = dict[at + marker.len()..]
+        .iter()
+        .take_while(|b| b.is_ascii_digit())
+        .count();
+    let length: usize = std::str::from_utf8(&dict[at + marker.len()..at + marker.len() + digits])
+        .ok()?
+        .parse()
+        .ok()?;
+    let single = |needle: &[u8]| dict.windows(needle.len()).filter(|w| *w == needle).count() == 1;
+    if !(single(marker) && single(b"/Type/XRef") && single(b"/W[1 4 2]"))
+        || dict.windows(7).any(|w| w == b"/Filter")
+        || length == 0
+        || !length.is_multiple_of(XREF_ROW)
+    {
+        return None;
+    }
+    let payload_start = dict_len + b"stream\n".len();
+    let payload_end = payload_start.checked_add(length)?;
+    let payload = object.get(payload_start..payload_end)?;
+    // Everything after the payload must be exactly the closing lines lopdf writes.
+    if object.get(payload_end..)?.strip_prefix(END)? != &bytes[keyword..] {
+        return None;
+    }
+    // PNG Up predictor: a filter byte of 2 per row, then each byte minus the one above it.
+    let mut predicted = Vec::with_capacity(length + length / XREF_ROW);
+    let mut previous = [0_u8; XREF_ROW];
+    for row in payload.as_chunks::<XREF_ROW>().0 {
+        predicted.push(2);
+        predicted.extend(row.iter().zip(previous).map(|(a, b)| a.wrapping_sub(b)));
+        previous = *row;
+    }
+    let mut stream = Stream::new(Dictionary::new(), predicted);
+    stream.compress().ok()?;
+    if !stream.dict.has(b"Filter") {
+        return None;
+    }
+    let mut out = Vec::with_capacity(start + header_len + dict.len() + stream.content.len() + 128);
+    out.extend_from_slice(&bytes[..start + header_len]);
+    out.extend_from_slice(b"<</DecodeParms<</Columns 7/Predictor 12>>/Filter/FlateDecode");
+    out.extend_from_slice(&dict[2..at + marker.len()]);
+    out.extend_from_slice(stream.content.len().to_string().as_bytes());
+    out.extend_from_slice(&dict[at + marker.len() + digits..]);
+    out.extend_from_slice(b"stream\n");
+    out.extend_from_slice(&stream.content);
+    out.extend_from_slice(END);
+    out.extend_from_slice(&bytes[keyword..]);
+    // Few objects: the added dictionary entries can outweigh the saving.
+    (out.len() < bytes.len()).then_some(out)
 }
 
 // lopdf's cross-reference stream uses 32-bit offsets. Refuse output that cannot be represented.
@@ -828,6 +910,67 @@ mod tests {
         let reloaded = open(&first, &Limits::local()).expect("open object stream output");
         assert_eq!(reloaded.inner().get_pages().len(), 20);
         assert!(first.windows(7).any(|bytes| bytes == b"/ObjStm"));
+    }
+
+    #[test]
+    fn object_stream_output_compresses_the_xref_stream_with_an_up_predictor() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/multipage-20.pdf");
+        let input = std::fs::read(path).expect("read fixture");
+        let mut doc = open(&input, &Limits::local()).expect("open fixture");
+        let output = save_with_options(
+            &mut doc,
+            &ToolCtx::default(),
+            &SaveOptions {
+                object_streams: true,
+                ..SaveOptions::default()
+            },
+        )
+        .expect("save");
+        let reloaded = open(&output, &Limits::local()).expect("open compressed xref output");
+        let count = reloaded.inner().objects.len();
+        assert_eq!(reloaded.inner().get_pages().len(), 20);
+        let ids: Vec<ObjectId> = reloaded.inner().objects.keys().copied().collect();
+        assert_eq!(
+            ids,
+            (1..=u32::try_from(count).unwrap())
+                .map(|n| (n, 0))
+                .collect::<Vec<_>>()
+        );
+        let at = output
+            .windows(10)
+            .rposition(|w| w == b"/Type/XRef")
+            .expect("xref stream");
+        let tail: String = output[at - 200..(at + 200).min(output.len())]
+            .iter()
+            .map(|&b| char::from(b))
+            .collect();
+        assert!(tail.contains("/Predictor 12") && tail.contains("/Columns 7"));
+        assert!(tail.contains("/Filter/FlateDecode"));
+        // Raw rows would take 7 bytes per object; the predicted data is far smaller.
+        let length = tail
+            .split("/Length ")
+            .nth(1)
+            .and_then(|rest| rest.split(['>', '/']).next())
+            .and_then(|digits| digits.parse::<usize>().ok())
+            .expect("xref /Length");
+        assert!(length * 2 < (count + 1) * XREF_ROW, "{length} for {count}");
+    }
+
+    #[test]
+    fn xref_stream_rewrite_fails_closed_on_unexpected_tails() {
+        for bytes in [
+            Vec::new(),
+            b"%PDF-1.5\n1 0 obj\n<<>>\nendobj\n".to_vec(),
+            b"%PDF-1.4\nxref\n0 1\n0000000000 65535 f \ntrailer\n<<>>\nstartxref\n9\n%%EOF"
+                .to_vec(),
+            b"1 0 obj\n<</Type/XRef/W[1 4 2]/Length 14>>stream\nAAAAAAAAAAAAAA\nendstream \nendobj\n\nstartxref\n0\n%%EOF"
+                .to_vec(),
+            b"1 0 obj\n<</Type/XRef/W[1 4 2]/Length 14>>stream\nAAAAAAAAAAAAAA\nendstream \nendobj\n\nstartxref\n0\n%%EOF "
+                .to_vec(),
+        ] {
+            assert_eq!(compress_xref_stream(bytes.clone()), bytes);
+        }
     }
 
     #[test]
