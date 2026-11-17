@@ -56,17 +56,44 @@ def workflow_condition(expression, **context):
     "event,ref,expected",
     [
         ("pull_request", "refs/pull/271/merge", True),
-        ("workflow_dispatch", "refs/heads/feat/web-tool-suite", True),
+        # Another PR's Cloud E2E may be waiting on a dispatched or dev run, so no non-PR run is
+        # ever cancelled by a newer one.
+        ("workflow_dispatch", "refs/heads/feat/web-tool-suite", False),
         ("workflow_dispatch", "refs/heads/dev", False),
         ("workflow_dispatch", "refs/heads/main", False),
         ("workflow_dispatch", "refs/tags/pack-docling-v0.2.0", False),
+        ("push", "refs/heads/dev", False),
         ("push", "refs/tags/pack-docling-v0.2.0", False),
     ],
 )
-def test_pack_supersession_preserves_trusted_branches_and_tags(pack_workflow, event, ref, expected):
+def test_pack_supersession_cancels_only_pull_request_runs(pack_workflow, event, ref, expected):
     condition = pack_workflow["concurrency"]["cancel-in-progress"]
     github = SimpleNamespace(event_name=event, ref=ref)
     assert workflow_condition(condition, github=github) is expected
+
+
+def test_non_pull_request_pack_runs_have_their_own_concurrency_group(pack_workflow):
+    group = pack_workflow["concurrency"]["group"]
+    assert "pull_request.number" in group
+    assert "github.run_id" in group
+    assert "github.ref" not in group
+
+
+@pytest.mark.parametrize(
+    "ref,inputs,expected",
+    [
+        ("refs/heads/dev", "", MACOS),
+        ("refs/heads/dev", "other", "other"),
+        ("refs/heads/feat/x", "", ""),
+        ("refs/tags/pack-docling-v0.2.0", "", ""),
+    ],
+)
+def test_dev_push_declares_the_macos_omission_like_a_dispatch(pack_workflow, ref, inputs, expected):
+    scope = next(step for step in pack_workflow["jobs"]["scope"]["steps"] if step.get("id") == "scope")
+    expression = scope["env"]["ALLOW_MISSING_TARGETS"]
+    github = SimpleNamespace(ref=ref)
+    context = {"github": github, "inputs": SimpleNamespace(allow_missing_targets=inputs)}
+    assert workflow_condition(expression, **context) == expected
 
 
 @pytest.mark.parametrize(
@@ -287,6 +314,16 @@ def test_unpinned_pull_request_keeps_both_linux_targets_and_explains_macos(plann
 def test_release_without_an_explicit_macos_omission_fails(planner, event):
     with pytest.raises(SystemExit, match=r"explicit.*omission"):
         planner.plan(fetch.load_pins(), event, "pack-docling-v0.2.0")
+
+
+def test_dev_push_is_planned_like_a_dispatch(planner):
+    pins = fetch.load_pins()
+    result = planner.plan(pins, "push", "dev", allowed_skips=MACOS)
+    assert result["targets"] == LINUX
+    assert result["allowed_skips"] == [MACOS]
+    assert result["release"] is True
+    with pytest.raises(SystemExit, match="release requires an explicit macOS omission"):
+        planner.plan(pins, "push", "dev")
 
 
 def test_cloud_ci_dispatch_explicitly_omits_only_macos_without_relaxing_release(planner):

@@ -82,9 +82,11 @@ else
     pass "a tree without inputs exits non-zero"
 fi
 
-# The pack workflow's path filters (pull_request and push) must cover every input.
+# The pack workflow's path filters (pull_request and push) must cover every input. Plain
+# patterns only: a back-reference is not portable to BSD grep.
 for path in "${inputs[@]}"; do
-    count=$(grep -c -E "^ +- (\"?)${path//./\\.}(/\*\*)?\1$" "$workflow" || true)
+    escaped=${path//./\\.}
+    count=$(grep -c -E "^ +- ${escaped}$|^ +- ${escaped}/\*\*$" "$workflow" || true)
     if [[ "$count" -ge 2 ]]; then
         pass "the pack workflow filters pull requests and pushes on $path"
     else

@@ -218,12 +218,21 @@ Runs publish a small `docling-inputs-<hash>` artifact from their first job (the 
 match the release job's `docling-pack-*` download pattern), so builds still in progress can be
 found as well as finished ones. Pull request runs do not publish it and are never reused.
 
-Trust. Pack runs reachable by hash are reused across commits only when they were built from
-reviewed code: the run's commit must be an ancestor of `dev` or `main` (GitHub's compare API
-reports `behind` or `identical`). Otherwise the old rule applies and only a run of the exact
-tested commit is used. `pack-docling.yml` therefore also runs on pushes to `dev` that touch a
-pack input, giving `dev` its own pack source; a tag-pushed pack counts only if its commit is on
-`dev` or `main`. A pack built on a PR branch serves only that branch's own commit.
+Trust. A pack from another commit is reused only when it was built from reviewed code, and
+being an ancestor of `dev` is not enough: a merge commit also makes the unreviewed
+intermediate commits of a PR branch ancestors. The run must have been started on the `dev` or
+`main` branch itself (its `head_branch`) *and* its commit must be an ancestor of that
+branch's tip. Branch tips are resolved to SHAs through the branches API and compared by SHA,
+so a tag named `dev` or `main` cannot stand in for the branch. Anything else needs a run of
+the exact tested commit, as before. `pack-docling.yml` therefore also runs on pushes to `dev`
+that touch a pack input, giving `dev` its own pack source. Tag-pushed pack runs (release
+builds) are not reused across commits, and a pack built on a PR branch serves only that
+branch's own commit.
+
+Artifacts last 14 days, so a nightly Cloud E2E job (**Refresh the dev Docling pack**) checks
+that `dev`'s current inputs have a running or younger-than-7-days pack and dispatches one on
+`dev` if not. It is a Cloud E2E job rather than a `schedule` of `pack-docling.yml` because
+GitHub runs schedules only for the default branch `main`, while the pack must come from `dev`.
 
 The isolated **Request source-matched CI pack** job lists runs that published the tested
 hash, plus dispatch and push runs of the exact tested commit (found before their first job has
@@ -232,16 +241,21 @@ that pass the trust rule. It prefers a finished successful run that still has bo
 artifacts, then a run in progress. Only when neither exists does it dispatch **Docling pack**
 on the PR branch (after checking that the ref still points to the recorded SHA). A PR that does
 not change the pack inputs therefore waits minutes for the pack. The waiter applies the same
-filters to the run it picks up and fails at once when that run has completed without success,
-instead of waiting for its deadline.
+filters to the run it picks up, including a run handed over by the request job, and fails at
+once when that run is not eligible or has completed without success. It classifies a run once
+and afterwards only re-reads its status; a failing API call is retried with backoff and does
+not end the job.
 
 Dispatched, dev and tag pack runs are never cancelled by a newer run: their concurrency group
 is the run itself, so a newer dispatch on the same ref cannot cancel a run another PR is
 waiting on, and nothing is serialized behind them. Pull request pack runs still replace each
-other per PR. Duplicate builds are avoided by the lookup above, not by cancellation.
+other per PR. The cost is that superseded runs are not cut short: a PR that keeps changing
+the pack inputs and re-dispatching can leave several full pack runs executing in parallel
+until they finish. The lookup prevents duplicates for equal inputs only; it cannot avoid runs
+for inputs that really differ.
 
-The name is not trusted. Before downloading, the Compose job requires the run's commit to be
-the tested commit or on `dev`/`main`, fetches it (the token goes to git through
+The name is not trusted. Before downloading, the Compose job applies the same trust rule to
+the run (tested commit, or `dev`/`main` branch run whose commit is an ancestor of the tip), fetches it (the token goes to git through
 `GIT_CONFIG_*` environment variables) and requires `docling-pack-inputs.sh <that commit>` to
 equal the tested commit's hash; any difference fails the job. Fetching a pack commit by SHA
 keeps working after its branch is deleted (checked with merged PR heads), and commits on `dev`
