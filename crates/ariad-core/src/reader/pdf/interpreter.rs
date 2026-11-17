@@ -16,7 +16,8 @@ use super::{
     encoding::Encodings,
     font::{CMapCache, Font, normalize_into},
     lexer::{Token, next_token, skip_array, skip_dict, skip_inline_image},
-    objects::{Budget, get, get_array, get_dict, get_name, number, resolve},
+    objects::{Budget, get, get_array, get_dict, get_name, get_number, number, resolve},
+    rules::{PathBuilder, Rule},
 };
 
 /// Most content-stream operators interpreted for one page, including its form XObjects.
@@ -140,6 +141,10 @@ pub(super) struct PageContent {
     pub(super) unmapped: u64,
     pub(super) truncated: bool,
     pub(super) unknown_color: bool,
+    /// Straight rules painted by path operators, in display space.
+    pub(super) rules: Vec<Rule>,
+    /// Rule recording stopped at the cap; the page is otherwise complete.
+    pub(super) rules_truncated: bool,
 }
 
 impl PageContent {
@@ -322,6 +327,7 @@ struct GState {
     leading: f64,
     rise: f64,
     render_mode: i64,
+    line_width: f64,
     fill: Paint,
     stroke: Paint,
 }
@@ -338,6 +344,7 @@ impl GState {
             leading: 0.0,
             rise: 0.0,
             render_mode: 0,
+            line_width: 1.0,
             fill: Paint::new(ColorSpace::Gray),
             stroke: Paint::new(ColorSpace::Gray),
         }
@@ -413,6 +420,7 @@ pub(super) fn interpret_page<'d>(
         saved: Vec::new(),
         tm: Matrix::IDENTITY,
         tlm: Matrix::IDENTITY,
+        path: PathBuilder::default(),
         chunk_start: true,
         operands: Vec::new(),
         operand_items: 0,
@@ -435,6 +443,7 @@ struct Interpreter<'s, 'd> {
     saved: Vec<GState>,
     tm: Matrix,
     tlm: Matrix,
+    path: PathBuilder,
     chunk_start: bool,
     operands: Vec<Operand>,
     /// Array elements retained across all operands and nesting levels.
@@ -572,12 +581,67 @@ impl Interpreter<'_, '_> {
                         .and_then(|frame| frame.resources)
                         .and_then(|r| get_dict(self.state.doc, r, b"ExtGState"))
                         .and_then(|r| get_dict(self.state.doc, r, name))
-                    && let Some([font, size]) = get_array(self.state.doc, dict, b"Font")
-                    && let Some(size) = resolve(self.state.doc, size).and_then(number)
                 {
-                    self.gstate.font = Some(self.state.font_index(font)?);
-                    self.gstate.font_size = size;
+                    if let Some(width) = get_number(self.state.doc, dict, b"LW")
+                        && width.is_finite()
+                    {
+                        self.gstate.line_width = width;
+                    }
+                    if let Some([font, size]) = get_array(self.state.doc, dict, b"Font")
+                        && let Some(size) = resolve(self.state.doc, size).and_then(number)
+                    {
+                        self.gstate.font = Some(self.state.font_index(font)?);
+                        self.gstate.font_size = size;
+                    }
                 }
+            }
+            b"w" => {
+                if let Some([width]) = self.numbers::<1>() {
+                    self.gstate.line_width = width;
+                }
+            }
+            b"m" => {
+                if let Some([x, y]) = self.numbers::<2>() {
+                    self.path.move_to(&self.gstate.ctm, x, y);
+                }
+            }
+            b"l" => {
+                if let Some([x, y]) = self.numbers::<2>() {
+                    self.path.line_to(&self.gstate.ctm, x, y);
+                }
+            }
+            b"c" => {
+                if let Some([_, _, _, _, x, y]) = self.numbers::<6>() {
+                    self.path.curve_to(&self.gstate.ctm, x, y);
+                }
+            }
+            b"v" | b"y" => {
+                if let Some([_, _, x, y]) = self.numbers::<4>() {
+                    self.path.curve_to(&self.gstate.ctm, x, y);
+                }
+            }
+            b"re" => {
+                if let Some([x, y, width, height]) = self.numbers::<4>() {
+                    self.path.rect(&self.gstate.ctm, x, y, width, height);
+                }
+            }
+            b"h" => self.path.close(),
+            b"W" | b"W*" => self.path.clip(),
+            b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" | b"n" => {
+                if matches!(operator, b"s" | b"b" | b"b*") {
+                    self.path.close();
+                }
+                let stroke = matches!(operator, b"S" | b"s" | b"B" | b"B*" | b"b" | b"b*");
+                let fill = matches!(operator, b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*");
+                let [a, b, c, d, ..] = self.gstate.ctm.0;
+                let width = self.gstate.line_width.abs() * (a * d - b * c).abs().sqrt();
+                self.path.paint(
+                    stroke,
+                    fill,
+                    width,
+                    &mut self.out.rules,
+                    &mut self.out.rules_truncated,
+                );
             }
             b"cm" => {
                 if let Some(values) = self.numbers::<6>() {
@@ -1093,6 +1157,7 @@ mod tests {
 
     use super::{DocState, Matrix, PageContent, interpret_page};
     use crate::reader::pdf::objects::Budget;
+    use crate::reader::pdf::rules::{RulePaint, RuleShape};
 
     fn run(content: &[u8], extra: impl FnOnce(&mut Document, &mut Dictionary)) -> PageContent {
         let mut doc = Document::new();
@@ -1118,6 +1183,164 @@ mod tests {
             .iter()
             .map(|glyph| page.glyph_text(glyph))
             .collect()
+    }
+
+    fn rules(content: &str) -> PageContent {
+        run(content.as_bytes(), |_, _| {})
+    }
+
+    fn bounds(page: &PageContent) -> Vec<(RuleShape, RulePaint, [f64; 4])> {
+        page.rules
+            .iter()
+            .map(|r| (r.shape, r.paint, [r.x0, r.y0, r.x1, r.y1]))
+            .collect()
+    }
+
+    #[test]
+    fn records_stroked_grid_from_rectangle_and_lines() {
+        let page = rules("2 w 10 10 100 50 re S 10 30 m 110 30 l S 60 10 m 60 60 l S");
+        assert_eq!(
+            bounds(&page),
+            [
+                (
+                    RuleShape::Rect,
+                    RulePaint::Stroke,
+                    [10.0, 10.0, 110.0, 60.0]
+                ),
+                (
+                    RuleShape::Segment,
+                    RulePaint::Stroke,
+                    [10.0, 30.0, 110.0, 30.0]
+                ),
+                (
+                    RuleShape::Segment,
+                    RulePaint::Stroke,
+                    [60.0, 10.0, 60.0, 60.0]
+                ),
+            ]
+        );
+        assert!(page.rules.iter().all(|r| (r.width - 2.0).abs() < 1e-9));
+        assert!(!page.rules_truncated);
+    }
+
+    #[test]
+    fn closed_stroked_path_yields_its_four_edges() {
+        let page = rules("0 0 m 20 0 l 20 10 l 0 10 l s");
+        assert_eq!(page.rules.len(), 4);
+    }
+
+    #[test]
+    fn thin_filled_rectangle_is_a_rule_and_wide_fill_is_not() {
+        let page = rules("10 10 100 0.5 re f 0 0 200 100 re f 10 10 0.5 80 re B");
+        assert_eq!(
+            bounds(&page),
+            [
+                (RuleShape::Rect, RulePaint::Fill, [10.0, 10.0, 110.0, 10.5]),
+                (
+                    RuleShape::Rect,
+                    RulePaint::FillStroke,
+                    [10.0, 10.0, 10.5, 90.0]
+                ),
+            ]
+        );
+        assert_eq!(page.rules[0].width, 0.0);
+    }
+
+    #[test]
+    fn rotated_matrix_swaps_axes_and_scales_width() {
+        let page = rules("0 1 -1 0 0 0 cm 3 w 10 0 m 50 0 l S");
+        assert_eq!(
+            bounds(&page),
+            [(
+                RuleShape::Segment,
+                RulePaint::Stroke,
+                [0.0, 10.0, 0.0, 50.0]
+            )]
+        );
+        assert!((page.rules[0].width - 3.0).abs() < 1e-9);
+        let page = rules("2 0 0 2 5 5 cm 1 w 0 0 10 10 re S");
+        assert_eq!(page.rules[0].x1, 25.0);
+        assert!((page.rules[0].width - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn graphics_state_nesting_scopes_transform_and_width() {
+        let page = rules(
+            "q 2 0 0 2 0 0 cm 4 w q 1 0 0 1 10 0 cm 0 0 m 5 0 l S Q 0 5 m 5 5 l S Q 0 20 m 5 20 l S",
+        );
+        assert_eq!(
+            bounds(&page),
+            [
+                (
+                    RuleShape::Segment,
+                    RulePaint::Stroke,
+                    [20.0, 0.0, 30.0, 0.0]
+                ),
+                (
+                    RuleShape::Segment,
+                    RulePaint::Stroke,
+                    [0.0, 10.0, 10.0, 10.0]
+                ),
+                (
+                    RuleShape::Segment,
+                    RulePaint::Stroke,
+                    [0.0, 20.0, 5.0, 20.0]
+                ),
+            ]
+        );
+        assert!((page.rules[0].width - 8.0).abs() < 1e-9);
+        assert!((page.rules[2].width - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn curves_and_diagonals_are_ignored() {
+        let page = rules(
+            "0 0 m 10 10 l S 0 0 m 5 0 5 5 10 5 c S 0 0 m 10 0.5 l S \
+             1 0 0.5 1 0 0 cm 0 0 10 10 re S",
+        );
+        assert!(page.rules.is_empty());
+        // A line continuing from a curve's end point is still read from that point.
+        let page = rules("0 0 m 5 0 5 5 10 5 c 20 5 l S");
+        assert_eq!(
+            bounds(&page),
+            [(
+                RuleShape::Segment,
+                RulePaint::Stroke,
+                [10.0, 5.0, 20.0, 5.0]
+            )]
+        );
+    }
+
+    #[test]
+    fn clipping_and_unpainted_paths_are_not_rules() {
+        let page = rules("0 0 100 100 re W n 0 0 50 1 re W f 0 50 m 100 50 l n 0 60 m 50 60 l");
+        assert!(page.rules.is_empty());
+        // The clip flag does not leak into the next path.
+        let page = rules("0 0 100 100 re W n 0 50 m 100 50 l S");
+        assert_eq!(page.rules.len(), 1);
+    }
+
+    #[test]
+    fn line_width_comes_from_extgstate() {
+        let page = run(b"/G gs 0 0 m 10 0 l S", |doc, resources| {
+            let state = doc.add_object(dictionary! { "LW" => 5 });
+            resources.set("ExtGState", dictionary! { "G" => state });
+        });
+        assert!((page.rules[0].width - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rule_cap_truncates_without_failing() {
+        let mut content = String::new();
+        for _ in 0..=crate::reader::pdf::rules::MAX_PAGE_RULES {
+            content.push_str("0 0 9 1 re f\n");
+        }
+        content.push_str("BT /F1 10 Tf (ok) Tj ET");
+        let page = rules(&content);
+        assert_eq!(page.rules.len(), crate::reader::pdf::rules::MAX_PAGE_RULES);
+        assert!(page.rules_truncated);
+        assert!(!page.truncated);
+        assert_eq!(texts(&page), "ok");
     }
 
     #[test]

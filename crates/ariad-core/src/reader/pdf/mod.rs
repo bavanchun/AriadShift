@@ -27,6 +27,7 @@ mod layout;
 mod lexer;
 mod lists;
 mod objects;
+mod rules;
 mod symbolic;
 mod text_decode;
 
@@ -538,7 +539,11 @@ fn split_list(value: &str, separators: &[char]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_text_string, page_geometry, split_list};
+    use super::{
+        LoadMode, decode_text_string, inherited, interpret_page, load_bounded_inner, page_geometry,
+        split_list,
+    };
+    use crate::limits::Limits;
     use lopdf::{Document, Object, dictionary};
 
     #[test]
@@ -589,5 +594,33 @@ mod tests {
     #[test]
     fn splits_metadata_lists() {
         assert_eq!(split_list(" a, b ;c,, ", &[',', ';']), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn ruled_table_fixture_records_rules_on_its_pages() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/pdf/arxiv-tableformer-2203-01017-v1.pdf"
+        );
+        let bytes = std::fs::read(path).unwrap();
+        let (doc, budget, page_ids, _) =
+            load_bounded_inner(&bytes, &Limits::default(), LoadMode { repair_xref: false })
+                .unwrap();
+        let mut state = super::DocState::new(&doc, budget);
+        let (mut rules, mut truncated) = (0, false);
+        for &page_id in &page_ids {
+            let page = doc.get_dictionary(page_id).ok();
+            let (display, _, _) = page_geometry(&doc, page);
+            let resources = page.and_then(|page| {
+                inherited(&doc, page, b"Resources").and_then(|object| object.as_dict().ok())
+            });
+            let contents = doc.get_page_contents(page_id);
+            let content = interpret_page(&mut state, &contents, resources, display).unwrap();
+            assert!(content.rules.iter().all(|r| r.x0 <= r.x1 && r.y0 <= r.y1));
+            rules += content.rules.len();
+            truncated |= content.rules_truncated;
+        }
+        assert!(rules > 0, "no rules recorded");
+        assert!(!truncated);
     }
 }
