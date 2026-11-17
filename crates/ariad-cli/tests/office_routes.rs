@@ -881,7 +881,8 @@ fn xlsx_reread_through_docling_has_one_sheet_per_table() {
 
 #[test]
 fn pdf_to_xlsx_without_docling_falls_back_to_text_dump_with_warning() {
-    let pdf_fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
+    let pdf_fixture =
+        support::fixtures::repository_root().join("fixtures/pdf/pd-en-gao-08-35-highlights.pdf");
     let directory = tempdir().unwrap();
     let empty_data = directory.path().join("empty-data");
     fs::create_dir_all(&empty_data).unwrap();
