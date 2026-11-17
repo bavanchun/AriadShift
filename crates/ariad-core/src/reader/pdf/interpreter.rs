@@ -17,7 +17,7 @@ use super::{
     font::{CMapCache, Font, normalize_into},
     lexer::{Token, next_token, skip_array, skip_dict, skip_inline_image},
     objects::{Budget, get, get_array, get_dict, get_name, get_number, number, resolve},
-    rules::{PathBuilder, Rule},
+    rules::{PathBuilder, Rule, StrokeWidths},
 };
 
 /// Most content-stream operators interpreted for one page, including its form XObjects.
@@ -511,6 +511,7 @@ impl Interpreter<'_, '_> {
             return;
         };
         if frame.form.is_some() {
+            self.path.reset();
             self.saved.truncate(frame.floor);
             if let Some(state) = self.saved.pop() {
                 self.gstate = state;
@@ -626,19 +627,23 @@ impl Interpreter<'_, '_> {
                 }
             }
             b"h" => self.path.close(),
-            b"W" | b"W*" => self.path.clip(),
             b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" | b"n" => {
                 if matches!(operator, b"s" | b"b" | b"b*") {
                     self.path.close();
                 }
                 let stroke = matches!(operator, b"S" | b"s" | b"B" | b"B*" | b"b" | b"b*");
                 let fill = matches!(operator, b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*");
-                let [a, b, c, d, ..] = self.gstate.ctm.0;
-                let width = self.gstate.line_width.abs() * (a * d - b * c).abs().sqrt();
+                let line_width = self.gstate.line_width.abs();
+                let ctm = &self.gstate.ctm;
+                let length = |(x, y): (f64, f64)| x.hypot(y);
+                let widths = StrokeWidths {
+                    horizontal: line_width * length(ctm.apply_vector(0.0, 1.0)),
+                    vertical: line_width * length(ctm.apply_vector(1.0, 0.0)),
+                };
                 self.path.paint(
                     stroke,
                     fill,
-                    width,
+                    widths,
                     &mut self.out.rules,
                     &mut self.out.rules_truncated,
                 );
@@ -1313,11 +1318,61 @@ mod tests {
 
     #[test]
     fn clipping_and_unpainted_paths_are_not_rules() {
-        let page = rules("0 0 100 100 re W n 0 0 50 1 re W f 0 50 m 100 50 l n 0 60 m 50 60 l");
+        let page = rules("0 0 100 100 re W n 0 50 m 100 50 l n 0 60 m 50 60 l");
         assert!(page.rules.is_empty());
-        // The clip flag does not leak into the next path.
+        // A clipping path that is also painted still records its rules.
+        let page = rules("0 0 50 1 re W f");
+        assert_eq!(
+            bounds(&page),
+            vec![(RuleShape::Rect, RulePaint::Fill, [0.0, 0.0, 50.0, 1.0])]
+        );
+        // The clip does not leak into the next path.
         let page = rules("0 0 100 100 re W n 0 50 m 100 50 l S");
         assert_eq!(page.rules.len(), 1);
+    }
+
+    #[test]
+    fn stroke_width_follows_the_scale_across_the_rule() {
+        let page = rules("1 0 0 0.1 0 0 cm 10 w 0 0 m 50 0 l S");
+        assert!((page.rules[0].width - 1.0).abs() < 1e-9);
+        let page = rules("0.1 0 0 1 0 0 cm 10 w 0 0 m 0 50 l S");
+        assert!((page.rules[0].width - 1.0).abs() < 1e-9);
+        let page = rules("1 0 0 0.1 0 0 cm 10 w 0 0 m 0 50 l S");
+        assert!((page.rules[0].width - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn non_finite_stroke_widths_are_skipped() {
+        let huge = format!("1{}", "0".repeat(200));
+        let page = rules(&format!(
+            "{huge} 0 0 {huge} 0 0 cm {huge} w 0 0 m 1 0 l S 0 0 1 1 re S"
+        ));
+        assert!(page.rules.is_empty());
+    }
+
+    #[test]
+    fn a_point_rectangle_is_not_a_rule() {
+        assert!(rules("0 0 0 0 re S").rules.is_empty());
+        assert_eq!(rules("0 0 10 0 re S").rules.len(), 1);
+    }
+
+    #[test]
+    fn an_unpainted_path_does_not_leak_out_of_a_form() {
+        let page = run(b"/Fm Do 0 10 m 50 10 l S", |doc, resources| {
+            let id = doc.add_object(Stream::new(
+                dictionary! { "Subtype" => "Form" },
+                b"0 0 m 100 0 l".to_vec(),
+            ));
+            resources.set("XObject", dictionary! { "Fm" => id });
+        });
+        assert_eq!(
+            bounds(&page),
+            [(
+                RuleShape::Segment,
+                RulePaint::Stroke,
+                [0.0, 10.0, 50.0, 10.0]
+            )]
+        );
     }
 
     #[test]

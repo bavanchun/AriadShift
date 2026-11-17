@@ -63,7 +63,6 @@ pub(super) struct PathBuilder {
     pieces: Vec<Piece>,
     start: Option<(f64, f64)>,
     current: Option<(f64, f64)>,
-    clip: bool,
     overflowed: bool,
 }
 
@@ -116,11 +115,6 @@ impl PathBuilder {
         }
     }
 
-    /// Marks the path as a clipping path, which is never recorded.
-    pub(super) const fn clip(&mut self) {
-        self.clip = true;
-    }
-
     fn line_to_point(&mut self, point: (f64, f64)) {
         let Some(from) = self.current.replace(point) else {
             return;
@@ -164,29 +158,34 @@ impl PathBuilder {
         }
     }
 
-    /// Ends the path. A painted, non-clipping path appends its rules to `rules`; `stroke_width`
-    /// is the line width in display space. Reaching [`MAX_PAGE_RULES`] sets `truncated`.
+    /// Discards the path under construction without painting it.
+    pub(super) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Ends the path. A painted path appends its rules to `rules`; `widths` holds the display-space
+    /// stroke width of a horizontal and of a vertical rule. Reaching [`MAX_PAGE_RULES`] sets
+    /// `truncated`.
     pub(super) fn paint(
         &mut self,
         stroke: bool,
         fill: bool,
-        stroke_width: f64,
+        widths: StrokeWidths,
         rules: &mut Vec<Rule>,
         truncated: &mut bool,
     ) {
-        let record = !self.clip && (stroke || fill);
+        let record = stroke || fill;
         let overflowed = self.overflowed;
         let pieces = std::mem::take(&mut self.pieces);
         self.start = None;
         self.current = None;
-        self.clip = false;
         self.overflowed = false;
         if !record {
             return;
         }
         *truncated |= overflowed;
         for piece in pieces {
-            let Some(rule) = rule_for(piece, stroke, fill, stroke_width) else {
+            let Some(rule) = rule_for(piece, stroke, fill, widths) else {
                 continue;
             };
             if rules.len() >= MAX_PAGE_RULES {
@@ -198,7 +197,14 @@ impl PathBuilder {
     }
 }
 
-fn rule_for(piece: Piece, stroke: bool, fill: bool, stroke_width: f64) -> Option<Rule> {
+/// Display-space stroke width of a horizontal rule and of a vertical rule.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct StrokeWidths {
+    pub(super) horizontal: f64,
+    pub(super) vertical: f64,
+}
+
+fn rule_for(piece: Piece, stroke: bool, fill: bool, widths: StrokeWidths) -> Option<Rule> {
     let Piece {
         shape,
         x0,
@@ -208,13 +214,28 @@ fn rule_for(piece: Piece, stroke: bool, fill: bool, stroke_width: f64) -> Option
     } = piece;
     let (w, h) = (x1 - x0, y1 - y0);
     let degenerate = w <= AXIS_TOLERANCE || h <= AXIS_TOLERANCE;
+    let horizontal = h <= AXIS_TOLERANCE;
+    let line_width = if horizontal {
+        widths.horizontal
+    } else {
+        widths.vertical
+    };
+    // A rectangle's edges can differ under a non-uniform scale; the thinner one is recorded.
+    let stroke_width = match shape {
+        RuleShape::Segment => line_width,
+        RuleShape::Rect => widths.horizontal.min(widths.vertical),
+    };
+    if stroke && !stroke_width.is_finite() {
+        return None;
+    }
     let (shape, paint, width) = match shape {
         // A segment paints only when stroked.
         RuleShape::Segment if stroke => (RuleShape::Segment, RulePaint::Stroke, stroke_width),
         RuleShape::Segment => return None,
-        // A rectangle collapsed to a line has no area to fill.
+        // A rectangle collapsed to a point has no direction; one collapsed to a line is a stroke.
+        RuleShape::Rect if w <= AXIS_TOLERANCE && h <= AXIS_TOLERANCE => return None,
         RuleShape::Rect if degenerate && stroke => {
-            (RuleShape::Segment, RulePaint::Stroke, stroke_width)
+            (RuleShape::Segment, RulePaint::Stroke, line_width)
         }
         RuleShape::Rect if degenerate => return None,
         RuleShape::Rect if stroke && fill => (RuleShape::Rect, RulePaint::FillStroke, stroke_width),
@@ -242,7 +263,16 @@ mod tests {
     fn paint(path: &mut PathBuilder, stroke: bool, fill: bool) -> (Vec<Rule>, bool) {
         let mut rules = Vec::new();
         let mut truncated = false;
-        path.paint(stroke, fill, 1.0, &mut rules, &mut truncated);
+        path.paint(
+            stroke,
+            fill,
+            StrokeWidths {
+                horizontal: 1.0,
+                vertical: 1.0,
+            },
+            &mut rules,
+            &mut truncated,
+        );
         (rules, truncated)
     }
 

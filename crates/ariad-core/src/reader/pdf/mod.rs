@@ -608,6 +608,8 @@ mod tests {
                 .unwrap();
         let mut state = super::DocState::new(&doc, budget);
         let (mut rules, mut truncated) = (0, false);
+        let mut counts = Vec::new();
+        let mut table_page_rules = Vec::new();
         for &page_id in &page_ids {
             let page = doc.get_dictionary(page_id).ok();
             let (display, _, _) = page_geometry(&doc, page);
@@ -617,10 +619,25 @@ mod tests {
             let contents = doc.get_page_contents(page_id);
             let content = interpret_page(&mut state, &contents, resources, display).unwrap();
             assert!(content.rules.iter().all(|r| r.x0 <= r.x1 && r.y0 <= r.y1));
+            counts.push(content.rules.len());
+            if counts.len() == 8 {
+                table_page_rules = content.rules.clone();
+            }
             rules += content.rules.len();
             truncated |= content.rules_truncated;
         }
-        assert!(rules > 0, "no rules recorded");
+        assert_eq!(counts, [128, 0, 17, 8, 162, 0, 11, 614, 0, 0]);
+        assert_eq!(rules, counts.iter().sum::<usize>());
         assert!(!truncated);
+        // A thin filled rectangle in the first table row of page 8.
+        let expected = [273.03, 284.20, 298.33, 284.46];
+        assert!(table_page_rules.iter().any(|r| {
+            r.shape == crate::reader::pdf::rules::RuleShape::Rect
+                && r.paint == crate::reader::pdf::rules::RulePaint::Fill
+                && [r.x0, r.y0, r.x1, r.y1]
+                    .iter()
+                    .zip(expected)
+                    .all(|(got, want)| (got - want).abs() < 0.01)
+        }));
     }
 }
