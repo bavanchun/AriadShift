@@ -546,11 +546,16 @@ macos-test:
     for name in CI ARIAD_SNAPSHOTS SNAPSHOT_ARTIFACTS; do
         if [[ -n "${!name:-}" ]]; then runner_env+=("TEST_RUNNER_${name}=${!name}"); fi
     done
+    # The result bundle names the failing tests even when xcodebuild's own failure list is empty; xcodebuild refuses
+    # to overwrite an existing bundle, so a stale one is removed first.
+    RESULT_BUNDLE="${MACOS_RESULT_BUNDLE:-${DERIVED_DATA}/AriadShift-tests.xcresult}"
+    rm -rf "${RESULT_BUNDLE}"
     env ${runner_env[@]+"${runner_env[@]}"} xcodebuild test \
         -project apps/macos/AriadShift.xcodeproj \
         -scheme AriadShift \
         -destination 'platform=macOS' \
         -derivedDataPath "${DERIVED_DATA}" \
+        -resultBundlePath "${RESULT_BUNDLE}" \
         ${xcode_cache_args[@]+"${xcode_cache_args[@]}"} \
         -onlyUsePackageVersionsFromResolvedFile
 

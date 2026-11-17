@@ -7,8 +7,15 @@ on:
       - "apps/macos/**"
       - "brand/png/**"
       - "crates/ariad-ffi/**"
-      - "crates/**"
+      - "crates/ariad-core/**"
+      - "crates/ariad-engine-io/**"
+      - "crates/ariad-host/**"
+      - "crates/ariad-pdf/**"
+      - "crates/ariad-typst/**"
+      - "crates/ariad-cli/**"
+      - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
       - "justfile"
       - "scripts/*xcframework*"
       - "scripts/macos-*"
@@ -20,8 +27,15 @@ on:
       - "apps/macos/**"
       - "brand/png/**"
       - "crates/ariad-ffi/**"
-      - "crates/**"
+      - "crates/ariad-core/**"
+      - "crates/ariad-engine-io/**"
+      - "crates/ariad-host/**"
+      - "crates/ariad-pdf/**"
+      - "crates/ariad-typst/**"
+      - "crates/ariad-cli/**"
+      - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
       - "justfile"
       - "scripts/*xcframework*"
       - "scripts/macos-*"
@@ -128,12 +142,15 @@ jobs:
           path: ${{ runner.temp }}/snapshot-artifacts
           if-no-files-found: ignore
           retention-days: 7
+      - name: Report failed tests and issues from the result bundle
+        if: failure()
+        run: bash scripts/macos-report-failures.sh target/derived-data/AriadShift-tests.xcresult
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: AriadShift-test-results
-          path: target/derived-data/Logs/Test/*.xcresult
+          path: target/derived-data/AriadShift-tests.xcresult
           if-no-files-found: ignore
           retention-days: 7
       - name: Compress application bundle
