@@ -162,17 +162,19 @@ pub(super) fn detect(flows: &[Vec<Row>], avoid: &[[f64; 4]], budget: Budget) -> 
     let mut cells_left = budget.cells;
     for candidate in candidates {
         let bbox = candidate.found.grid.bbox;
+        // The page budget is cheap to check and ends the work: once it is spent, the other tests
+        // would only decide why a candidate that cannot be kept is dropped.
+        let cells = candidate.found.grid.cells.len();
+        if kept.len() >= budget.tables || cells > cells_left {
+            detected.capped = true;
+            continue;
+        }
         if continues_in_neighbour(flows, &short, &candidate)
             || avoid.iter().any(|other| overlaps(other, &bbox))
             || kept
                 .iter()
                 .any(|other| overlaps(&other.found.grid.bbox, &bbox))
         {
-            continue;
-        }
-        let cells = candidate.found.grid.cells.len();
-        if kept.len() >= budget.tables || cells > cells_left {
-            detected.capped = true;
             continue;
         }
         cells_left -= cells;
@@ -961,6 +963,21 @@ mod tests {
         };
         let detected = detect(&[plain_table()], &[], small);
         assert!(detected.found.is_empty());
+        assert!(detected.capped);
+    }
+
+    #[test]
+    fn the_budget_is_checked_before_the_other_tests() {
+        // The second candidate overlaps the ruled box as well, but the spent budget decides.
+        let mut rows = plain_table();
+        rows.extend(lowered(plain_table(), 100.0));
+        let one = Budget {
+            tables: 1,
+            cells: 1_000,
+        };
+        let second_box = [40.0, 190.0, 260.0, 240.0];
+        let detected = detect(&[rows], &[second_box], one);
+        assert_eq!(detected.found.len(), 1);
         assert!(detected.capped);
     }
 
