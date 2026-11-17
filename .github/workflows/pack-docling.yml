@@ -21,7 +21,6 @@ on:
       - crates/ariad-cli/tests/docling_engine.rs
       - crates/ariad-cli/tests/docling_pack.rs
       - uv.lock
-      - justfile
       - .github/workflows/pack-docling.yml
   push:
     tags: ["pack-docling-v*"]
@@ -70,6 +69,27 @@ jobs:
           ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets }}
         run: >-
           uv run --no-project --python 3.14 python engines/docling/pack/ci_plan.py plan
+
+      # Cloud E2E finds a reusable pack by this hash (docs/ci.md, "Cloud E2E pack dependency").
+      # Only trusted dispatch and tag runs publish it; pull request builds are never reused.
+      - name: Record the pack input hash
+        if: github.event_name != 'pull_request'
+        id: inputs
+        run: |
+          hash=$(sh scripts/docling-pack-inputs.sh HEAD)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          mkdir -p pack-inputs
+          printf '%s\n%s\n' "$hash" "$GITHUB_SHA" > pack-inputs/inputs.txt
+          sh scripts/docling-pack-inputs.sh --list HEAD >> pack-inputs/inputs.txt
+
+      - name: Publish the pack input hash
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docling-pack-inputs-${{ steps.inputs.outputs.hash }}
+          path: pack-inputs/inputs.txt
+          retention-days: 14
+          if-no-files-found: error
 
   engine:
     name: Engine tests (${{ matrix.os }})
