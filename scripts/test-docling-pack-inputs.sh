@@ -1,59 +1,95 @@
-#!/bin/sh
-# Checks that PACK_INPUT_HASH moves with the pack inputs and only with them.
-set -eu
+#!/usr/bin/env bash
+# Checks that PACK_INPUT_HASH moves with each pack input and only with them, and that the script
+# fails closed.
+set -euo pipefail
 
-script=$(CDPATH="" cd "$(dirname "$0")" && pwd)/docling-pack-inputs.sh
+here=$(cd "$(dirname "$0")" && pwd)
+script="$here/docling-pack-inputs.sh"
+workflow="$here/../.github/workflows/pack-docling.yml"
+failed=0
+
+pass() { echo "PASS | $1"; }
+fail() { echo "FAIL | $1" >&2; failed=1; }
+
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cd "$work"
 git init -q .
 git config user.email test@example.test
 git config user.name test
-mkdir -p engines/docling/pack fixtures/pdf fixtures/scan .github/workflows scripts crates
-for file in engines/docling/pack/build.py uv.lock LICENSE NOTICE fixtures/pdf/en-map-room.pdf \
-    fixtures/scan/vi-garden-300dpi.png .github/workflows/pack-docling.yml scripts/docling-pack-inputs.sh; do
-    echo "$file" >"$file"
+
+mapfile -t inputs < <(bash "$script" --paths)
+for path in "${inputs[@]}"; do
+    mkdir -p "$(dirname "$path")"
+    if [[ "$path" == engines/docling || "$path" == engines/common/licenses ]]; then
+        mkdir -p "$path"
+        echo "$path" >"$path/file.txt"
+    else
+        echo "$path" >"$path"
+    fi
 done
+mkdir -p crates
 echo base >crates/other.rs
 git add . && git commit -q -m base
-base=$(sh "$script" HEAD)
+base_commit=$(git rev-parse HEAD)
+base=$(bash "$script" HEAD)
 
-failed=0
-expect() {
-    # expect <same|different> <description>
-    now=$(sh "$script" HEAD)
-    if [ "$1" = same ] && [ "$now" = "$base" ]; then
-        echo "PASS | $2"
-    elif [ "$1" = different ] && [ "$now" != "$base" ]; then
-        echo "PASS | $2"
+# Edit one file, commit, compare the hash, return to the base commit.
+check() {
+    # check <same|different> <file> <description>
+    echo changed >>"$2"
+    git add "$2" && git commit -q -m change
+    local now
+    now=$(bash "$script" HEAD)
+    if [[ "$1" == same && "$now" == "$base" ]] || [[ "$1" == different && "$now" != "$base" ]]; then
+        pass "$3"
     else
-        echo "FAIL | $2 (expected $1)" >&2
-        failed=1
+        fail "$3 (expected $1)"
     fi
     git reset -q --hard "$base_commit"
 }
-base_commit=$(git rev-parse HEAD)
 
-change() {
-    echo changed >>"$1"
-    git add "$1" && git commit -q -m change
-}
+check same crates/other.rs "an unrelated Rust file keeps the hash"
+check same README.md "a prose file keeps the hash"
+check same Cargo.toml "the workspace manifest keeps the hash"
+for path in "${inputs[@]}"; do
+    file=$path
+    [[ -d "$path" ]] && file="$path/file.txt"
+    check different "$file" "$path changes the hash"
+done
 
-change crates/other.rs && expect same "an unrelated Rust file keeps the hash"
-change README.md && expect same "a prose file keeps the hash"
-change engines/docling/pack/build.py && expect different "a pack script changes the hash"
-change uv.lock && expect different "the lock file changes the hash"
-change fixtures/pdf/en-map-room.pdf && expect different "a proof fixture changes the hash"
-change .github/workflows/pack-docling.yml && expect different "the pack workflow changes the hash"
-change scripts/docling-pack-inputs.sh && expect different "this script changes the hash"
-
-# The hash of an older revision does not need a checkout of it.
-change engines/docling/pack/build.py
-if [ "$(sh "$script" "$base_commit")" = "$base" ]; then
-    echo "PASS | an older revision hashes from its tree"
+# An older revision hashes from its tree, with no checkout of it.
+echo changed >>"${inputs[0]}/file.txt" 2>/dev/null || echo changed >>"${inputs[0]}"
+git add . && git commit -q -m later
+if [[ "$(bash "$script" "$base_commit")" == "$base" ]]; then
+    pass "an older revision hashes from its tree"
 else
-    echo "FAIL | older revision hash" >&2
-    failed=1
+    fail "an older revision hashes from its tree"
 fi
+
+# Fails closed: unknown revision, and a tree without any input.
+if out=$(bash "$script" no-such-revision 2>/dev/null); then
+    fail "an unknown revision exits non-zero"
+elif [[ -z "$out" ]]; then
+    pass "an unknown revision exits non-zero with no output"
+else
+    fail "an unknown revision prints nothing"
+fi
+git checkout -q --orphan empty && git rm -rfq . && git commit -q --allow-empty -m empty
+if bash "$script" HEAD >/dev/null 2>&1; then
+    fail "a tree without inputs exits non-zero"
+else
+    pass "a tree without inputs exits non-zero"
+fi
+
+# The pack workflow's path filters (pull_request and push) must cover every input.
+for path in "${inputs[@]}"; do
+    count=$(grep -c -E "^ +- (\"?)${path//./\\.}(/\*\*)?\1$" "$workflow" || true)
+    if [[ "$count" -ge 2 ]]; then
+        pass "the pack workflow filters pull requests and pushes on $path"
+    else
+        fail "the pack workflow lists $path $count time(s); pull_request and push both need it"
+    fi
+done
 
 exit "$failed"

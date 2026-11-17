@@ -16,21 +16,48 @@ on:
     branches: [dev, main]
     paths:
       - engines/docling/**
+      - engines/common/licenses/**
       - crates/ariad-core/src/docling/**
       - crates/ariad-host/src/engines/docling.rs
       - crates/ariad-cli/tests/docling_engine.rs
       - crates/ariad-cli/tests/docling_pack.rs
       - uv.lock
+      - pyproject.toml
+      - justfile
+      - scripts/install-pandoc.sh
+      - LICENSE
+      - NOTICE
+      - fixtures/pdf/en-map-room.pdf
+      - fixtures/scan/vi-garden-300dpi.png
       - .github/workflows/pack-docling.yml
+      - scripts/docling-pack-inputs.sh
+  # dev builds its own pack whenever a pack input changes, so Cloud E2E can reuse it for PRs
+  # that leave the inputs alone. Keep this list equal to scripts/docling-pack-inputs.sh --paths
+  # (scripts/test-docling-pack-inputs.sh checks it).
   push:
+    branches: [dev]
+    paths:
+      - engines/docling/**
+      - engines/common/licenses/**
+      - uv.lock
+      - pyproject.toml
+      - justfile
+      - scripts/install-pandoc.sh
+      - LICENSE
+      - NOTICE
+      - fixtures/pdf/en-map-room.pdf
+      - fixtures/scan/vi-garden-300dpi.png
+      - .github/workflows/pack-docling.yml
+      - scripts/docling-pack-inputs.sh
     tags: ["pack-docling-v*"]
 
+# Pull request runs replace each other. Every other run has its own group and is never
+# cancelled: another PR's Cloud E2E may be waiting on a dispatched or dev run, and a newer
+# dispatch on the same ref must not cancel it (Cloud E2E already looks up a run by input hash
+# before dispatching, so this does not multiply builds).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: >-
-    ${{ github.event_name == 'pull_request' ||
-        (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/') &&
-         github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/main') }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -66,27 +93,27 @@ jobs:
       - name: Decide which targets are ready to build
         id: scope
         env:
-          ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets }}
+          ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets || (github.ref == 'refs/heads/dev' && 'aarch64-apple-darwin') || '' }}
         run: >-
           uv run --no-project --python 3.14 python engines/docling/pack/ci_plan.py plan
 
       # Cloud E2E finds a reusable pack by this hash (docs/ci.md, "Cloud E2E pack dependency").
-      # Only trusted dispatch and tag runs publish it; pull request builds are never reused.
+      # Only trusted dispatch, dev and tag runs publish it; pull request builds are never reused.
       - name: Record the pack input hash
         if: github.event_name != 'pull_request'
         id: inputs
         run: |
-          hash=$(sh scripts/docling-pack-inputs.sh HEAD)
+          hash=$(bash scripts/docling-pack-inputs.sh HEAD)
           echo "hash=$hash" >> "$GITHUB_OUTPUT"
           mkdir -p pack-inputs
           printf '%s\n%s\n' "$hash" "$GITHUB_SHA" > pack-inputs/inputs.txt
-          sh scripts/docling-pack-inputs.sh --list HEAD >> pack-inputs/inputs.txt
+          bash scripts/docling-pack-inputs.sh --list HEAD >> pack-inputs/inputs.txt
 
       - name: Publish the pack input hash
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: docling-pack-inputs-${{ steps.inputs.outputs.hash }}
+          name: docling-inputs-${{ steps.inputs.outputs.hash }}
           path: pack-inputs/inputs.txt
           retention-days: 14
           if-no-files-found: error
@@ -436,7 +463,7 @@ jobs:
       PACK_OUT: ${{ github.workspace }}/pack-out
       ASHIFT_BIN: ${{ github.workspace }}/target/debug/ashift
       PACK_CI_PLAN: ${{ needs.scope.outputs.plan }}
-      ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets }}
+      ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets || (github.ref == 'refs/heads/dev' && 'aarch64-apple-darwin') || '' }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

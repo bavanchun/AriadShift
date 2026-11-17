@@ -219,7 +219,7 @@ static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint s
 
 test-docling-pack-inputs:
     shellcheck scripts/docling-pack-inputs.sh scripts/test-docling-pack-inputs.sh
-    sh scripts/test-docling-pack-inputs.sh
+    bash scripts/test-docling-pack-inputs.sh
 
 test-ci-sccache:
     shellcheck -x scripts/ci-sccache.sh

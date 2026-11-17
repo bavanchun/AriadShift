@@ -45,13 +45,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The pack depends only on the files hashed here, so any pack built from the same
-      # inputs is as good as one built from this exact commit.
+      # The pack depends only on the files hashed here, so a pack built from the same inputs
+      # on reviewed code (dev or main) is as good as one built from this exact commit.
       - name: Record the tested source and the pack input hash
         id: source
         run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "pack-hash=$(sh scripts/docling-pack-inputs.sh HEAD)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          pack_hash=$(bash scripts/docling-pack-inputs.sh HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "pack-hash=$pack_hash" >> "$GITHUB_OUTPUT"
 
       - name: Decide whether to run
         id: scope
@@ -100,70 +103,145 @@ jobs:
       - name: Find or request a Docling pack built from the same inputs
         id: pack
         env:
+          MODE: request
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PACK_HASH: ${{ needs.scope.outputs.pack-hash }}
           PACK_SHA: ${{ needs.scope.outputs.source-sha }}
           PACK_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
           PACK_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
+        run: &pack-lookup |
           set -euo pipefail
           [[ "$PACK_HASH" =~ ^[0-9a-f]{64}$ ]] || { echo '::error::Scope returned no valid pack input hash'; exit 1; }
-          # This timestamp starts once the request has a runner. Wait shells
-          # enforce it only while running; GitHub bounds their runner queues.
-          echo "deadline=$(($(date +%s) + 540 * 60))" >> "$GITHUB_OUTPUT"
-          # Each pack run publishes docling-pack-inputs-<hash> from its first job, so this lists
-          # finished and still-running builds of these inputs, newest first.
-          candidates() {
-            gh api "repos/$GH_REPO/actions/artifacts?name=docling-pack-inputs-$PACK_HASH&per_page=100" \
-              --jq '.artifacts[] | select(.expired == false) | .workflow_run.id' | awk '!seen[$0]++'
+
+          # Runs that built, or are building, a pack for these inputs, newest first: runs that
+          # published docling-inputs-<hash>, plus dispatch and push runs of the exact tested
+          # commit (visible before their first job has published anything).
+          run_ids() {
+            local published exact
+            published=$(gh api "repos/$GH_REPO/actions/artifacts?name=docling-inputs-$PACK_HASH&per_page=100" \
+              --jq '.artifacts[] | select(.expired == false) | .workflow_run.id')
+            exact=$(gh api "repos/$GH_REPO/actions/workflows/pack-docling.yml/runs?head_sha=$PACK_SHA&per_page=100" \
+              --jq '.workflow_runs[] | select(.event == "workflow_dispatch" or .event == "push") | .id')
+            printf '%s\n%s\n' "$published" "$exact" | sed '/^$/d' | sort -rn | uniq
           }
-          # Prefer a finished usable pack, else a build that is still running. Only trusted
-          # dispatch and push runs of this repository's pack workflow count; the download step
-          # rechecks the inputs of the run's own commit before using anything.
-          find_run() {
-            local id meta state have finished="" running=""
-            for id in $(candidates); do
-              meta=$(gh api "repos/$GH_REPO/actions/runs/$id")
-              jq -e '(.path | startswith(".github/workflows/pack-docling.yml"))
-                and (.event == "workflow_dispatch" or .event == "push")
-                and (.head_repository.full_name == env.GH_REPO)' <<< "$meta" >/dev/null || continue
-              state=$(jq -r '.status + ":" + (.conclusion // "")' <<< "$meta")
-              case "$state" in
-                completed:success)
-                  have=$(gh api "repos/$GH_REPO/actions/runs/$id/artifacts?per_page=100" \
-                    --jq '[.artifacts[] | select(.expired == false) | .name]')
-                  if jq -e 'index("docling-pack-shared") != null and index("docling-pack-x86_64-unknown-linux-gnu") != null' <<< "$have" >/dev/null; then
-                    finished=${finished:-$id}
-                  fi ;;
-                completed:*) ;;
-                *) running=${running:-$id} ;;
-              esac
+          # A pack from another commit is reused only when that commit is on dev or main (an
+          # ancestor of either branch); anything else must be built from the tested commit.
+          trusted() {
+            local sha=$1 base status
+            [[ "$sha" == "$PACK_SHA" ]] && return 0
+            for base in dev main; do
+              status=$(gh api "repos/$GH_REPO/compare/$base...$sha" --jq .status 2>/dev/null || true)
+              if [[ "$status" == behind || "$status" == identical ]]; then return 0; fi
             done
-            echo "${finished:-$running}"
+            return 1
           }
-          known=$(find_run)
-          if [[ -n "$known" ]]; then
-            echo "Reusing Docling pack run $known built from input hash $PACK_HASH"
-            previous_id=0
-          else
-            if [[ "$PACK_REPO" != "$GH_REPO" ]]; then
-              echo '::error::No pack built from these inputs. PR merge artifacts are rejected; a maintainer must bring this fork head to a repository branch and dispatch the pack there.'
-              exit 1
+          # skip: not an eligible run. done, running: usable. dead: finished without success.
+          classify() {
+            local meta
+            meta=$(gh api "repos/$GH_REPO/actions/runs/$1")
+            if ! jq -e '(.path | startswith(".github/workflows/pack-docling.yml"))
+                and (.event == "workflow_dispatch" or .event == "push")
+                and (.head_repository.full_name == env.GH_REPO)' <<< "$meta" >/dev/null; then
+              echo skip
+            elif ! trusted "$(jq -r .head_sha <<< "$meta")"; then
+              echo skip
+            else
+              jq -r 'if .status != "completed" then "running" elif .conclusion == "success" then "done" else "dead" end' <<< "$meta"
             fi
-            # Dispatch accepts a ref; reject a branch that has already moved.
-            ref_sha=$(gh api "repos/$GH_REPO/commits/$PACK_REF" --jq .sha)
-            [[ "$ref_sha" == "$PACK_SHA" ]] || { echo '::error::Pack ref has moved; rerun Cloud E2E on its new head.'; exit 1; }
-            # Runs that already exist for these inputs (failed or cancelled) must not be
-            # mistaken for the new dispatch; run IDs only grow.
-            previous_id=$(candidates | sort -n | tail -n 1)
-            previous_id=${previous_id:-0}
-            # CI needs Linux only; explicitly declare the unpinned macOS omission.
-            gh workflow run pack-docling.yml --ref "$PACK_REF" \
-              --field allow_missing_targets=aarch64-apple-darwin
-          fi
-          echo "known-run=$known" >> "$GITHUB_OUTPUT"
-          echo "previous-id=$previous_id" >> "$GITHUB_OUTPUT"
+          }
+          has_artifacts() {
+            gh api "repos/$GH_REPO/actions/runs/$1/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.expired == false) | .name]' |
+              jq -e 'index("docling-pack-shared") != null and index("docling-pack-x86_64-unknown-linux-gnu") != null' >/dev/null
+          }
+
+          case "$MODE" in
+            request)
+              # This timestamp starts once the request has a runner. Wait shells
+              # enforce it only while running; GitHub bounds their runner queues.
+              echo "deadline=$(($(date +%s) + 540 * 60))" >> "$GITHUB_OUTPUT"
+              known="" running=""
+              ids=$(run_ids)
+              for id in $ids; do
+                case "$(classify "$id")" in
+                  done) if has_artifacts "$id"; then known=$id; break; fi ;;
+                  running) running=${running:-$id} ;;
+                esac
+              done
+              known=${known:-$running}
+              if [[ -n "$known" ]]; then
+                echo "Reusing Docling pack run $known for input hash $PACK_HASH"
+                previous_id=0
+              else
+                if [[ "$PACK_REPO" != "$GH_REPO" ]]; then
+                  echo '::error::No pack built from these inputs. PR merge artifacts are rejected; a maintainer must bring this fork head to a repository branch and dispatch the pack there.'
+                  exit 1
+                fi
+                # Dispatch accepts a ref; reject a branch that has already moved.
+                ref_sha=$(gh api "repos/$GH_REPO/commits/$PACK_REF" --jq .sha)
+                [[ "$ref_sha" == "$PACK_SHA" ]] || { echo '::error::Pack ref has moved; rerun Cloud E2E on its new head.'; exit 1; }
+                # Runs that already exist (failed or cancelled) must not be mistaken for the new
+                # dispatch; run IDs only grow.
+                previous_id=${ids%%$'\n'*}
+                previous_id=${previous_id:-0}
+                # CI needs Linux only; explicitly declare the unpinned macOS omission.
+                gh workflow run pack-docling.yml --ref "$PACK_REF" \
+                  --field allow_missing_targets=aarch64-apple-darwin
+              fi
+              echo "known-run=$known" >> "$GITHUB_OUTPUT"
+              echo "previous-id=$previous_id" >> "$GITHUB_OUTPUT"
+              ;;
+            wait)
+              window_end=$(($(date +%s) + WINDOW_SECONDS))
+              while (( $(date +%s) < PACK_DEADLINE && $(date +%s) < window_end )); do
+                run_id=$KNOWN_RUN
+                if [[ -z "$run_id" ]]; then
+                  dead=""
+                  for id in $(run_ids); do
+                    (( id > PREVIOUS_ID )) || break
+                    case "$(classify "$id")" in
+                      dead) dead=${dead:-$id} ;;
+                      done|running) run_id=$id; break ;;
+                    esac
+                  done
+                  if [[ -z "$run_id" && -n "$dead" ]]; then
+                    echo "::error::Docling pack run $dead completed without success."
+                    exit 1
+                  fi
+                fi
+                if [[ -n "$run_id" ]]; then
+                  if [[ "$(classify "$run_id")" == dead ]]; then
+                    echo "::error::Docling pack run $run_id completed without success."
+                    exit 1
+                  fi
+                  job=$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
+                    --jq '.jobs[] | select(.name == "Pack (x86_64-unknown-linux-gnu)") | .conclusion // .status')
+                  if [[ "$job" == success ]]; then
+                    if has_artifacts "$run_id"; then
+                      echo "Using Docling pack run $run_id for input hash $PACK_HASH"
+                      echo "ready=true" >> "$GITHUB_OUTPUT"
+                      echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+                      exit 0
+                    fi
+                  elif [[ "$job" =~ ^(failure|cancelled|timed_out|skipped)$ ]]; then
+                    echo "::error::Linux pack job failed in run $run_id: $job"
+                    exit 1
+                  fi
+                fi
+                echo "Waiting for the Linux pack and shared components for input hash $PACK_HASH"
+                sleep 60
+              done
+              if [[ "$CONTINUE_WAIT" == true ]] && (( $(date +%s) < PACK_DEADLINE )); then
+                echo "Continuing the pack wait in a fresh runner within the original deadline."
+                echo "ready=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "::error::Docling pack exceeded the 540-minute dependency deadline (scope, engine tests, Linux pack and runner queues); see docs/ci.md."
+              exit 1
+              ;;
+            *) echo "::error::Unknown pack lookup mode: $MODE"; exit 1 ;;
+          esac
 
   pack-wait:
     name: Wait for source-matched pack
@@ -181,56 +259,17 @@ jobs:
       - name: Wait for the Linux pack and shared components
         id: wait
         env:
+          MODE: wait
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PACK_HASH: ${{ needs.scope.outputs.pack-hash }}
+          PACK_SHA: ${{ needs.scope.outputs.source-sha }}
           KNOWN_RUN: ${{ needs.pack.outputs.known-run }}
           PREVIOUS_ID: ${{ needs.pack.outputs.previous-id }}
           PACK_DEADLINE: ${{ needs.pack.outputs.deadline }}
           WINDOW_SECONDS: "18000"
           CONTINUE_WAIT: "true"
-        run: &wait-for-pack |
-          set -euo pipefail
-          window_end=$(($(date +%s) + WINDOW_SECONDS))
-          while (( $(date +%s) < PACK_DEADLINE && $(date +%s) < window_end )); do
-            run_id=$KNOWN_RUN
-            if [[ -z "$run_id" ]]; then
-              # The dispatched build publishes its input hash from its first job.
-              run_id=$(gh api "repos/$GH_REPO/actions/artifacts?name=docling-pack-inputs-$PACK_HASH&per_page=100" \
-                --jq "[.artifacts[] | select(.expired == false) | .workflow_run.id | select(. > $PREVIOUS_ID)] | max // empty")
-            fi
-            if [[ -n "$run_id" ]]; then
-              job=$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
-                --jq '.jobs[] | select(.name == "Pack (x86_64-unknown-linux-gnu)") | .conclusion // .status')
-              if [[ "$job" == success ]]; then
-                artifacts=$(gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts?per_page=100" \
-                  --jq '[.artifacts[] | select(.expired == false) | .name]')
-                if jq -e 'index("docling-pack-shared") != null and index("docling-pack-x86_64-unknown-linux-gnu") != null' <<< "$artifacts" >/dev/null; then
-                  echo "Using Docling pack run $run_id built from input hash $PACK_HASH"
-                  echo "ready=true" >> "$GITHUB_OUTPUT"
-                  echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
-                  exit 0
-                fi
-              elif [[ "$job" =~ ^(failure|cancelled|timed_out|skipped)$ ]]; then
-                echo "::error::Linux pack job failed in run $run_id: $job"
-                exit 1
-              fi
-              state=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq .status)
-              if [[ "$state" == completed ]]; then
-                echo "::error::Pack run $run_id completed without usable Linux components."
-                exit 1
-              fi
-            fi
-            echo "Waiting for the Linux pack and shared components for input hash $PACK_HASH"
-            sleep 60
-          done
-          if [[ "$CONTINUE_WAIT" == true ]] && (( $(date +%s) < PACK_DEADLINE )); then
-            echo "Continuing the pack wait in a fresh runner within the original deadline."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "::error::Docling pack exceeded the 540-minute dependency deadline (scope, engine tests, Linux pack and runner queues); see docs/ci.md."
-          exit 1
+        run: *pack-lookup
 
   pack-wait-continued:
     name: Continue waiting for source-matched pack
@@ -248,15 +287,17 @@ jobs:
       - name: Wait within the original dependency deadline
         id: wait
         env:
+          MODE: wait
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PACK_HASH: ${{ needs.scope.outputs.pack-hash }}
+          PACK_SHA: ${{ needs.scope.outputs.source-sha }}
           KNOWN_RUN: ${{ needs.pack.outputs.known-run }}
           PREVIOUS_ID: ${{ needs.pack.outputs.previous-id }}
           PACK_DEADLINE: ${{ needs.pack.outputs.deadline }}
           WINDOW_SECONDS: "14400"
           CONTINUE_WAIT: "false"
-        run: *wait-for-pack
+        run: *pack-lookup
 
   e2e:
     name: Run Compose (core, office, docling)
@@ -346,11 +387,27 @@ jobs:
           [[ "$event" == workflow_dispatch || "$event" == push ]] || { echo '::error::Docling pack source mismatch: PR artifacts use an unverified synthetic merge; a pinned-head dispatch or push build is required'; exit 1; }
           jq -e '(.path | startswith(".github/workflows/pack-docling.yml")) and (.head_repository.full_name == env.GH_REPO)' <<< "$metadata" >/dev/null \
             || { echo '::error::Docling pack run is not a build of this repository pack workflow'; exit 1; }
-          # Never trust the artifact name alone: hash the inputs of the commit that built the
-          # pack and require them to equal the tested commit's inputs.
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
-            fetch --no-tags --depth=1 origin "$actual_sha"
-          pack_hash=$(sh scripts/docling-pack-inputs.sh "$actual_sha")
+          # Never trust the artifact name alone. A pack from another commit must come from
+          # reviewed code (an ancestor of dev or main), and the inputs of the commit that built
+          # it must hash to the tested commit's.
+          trusted=false
+          if [[ "$actual_sha" == "$PACK_SHA" ]]; then
+            trusted=true
+          else
+            for base in dev main; do
+              status=$(gh api "repos/$GH_REPO/compare/$base...$actual_sha" --jq .status 2>/dev/null || true)
+              if [[ "$status" == behind || "$status" == identical ]]; then trusted=true; fi
+            done
+          fi
+          [[ "$trusted" == true ]] || { echo "::error::Docling pack commit $actual_sha is neither the tested commit nor on dev or main"; exit 1; }
+          # The token reaches git through its environment, not the command line.
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          git fetch --no-tags --depth=1 origin "$actual_sha"
+          unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+          pack_hash=$(bash scripts/docling-pack-inputs.sh "$actual_sha")
           [[ "$pack_hash" == "$PACK_HASH" ]] || { echo "::error::Docling pack inputs differ: pack commit $actual_sha hashes to $pack_hash, tested commit to $PACK_HASH"; exit 1; }
           echo "Pack run $PACK_RUN_ID (commit $actual_sha) was built from the same inputs as $PACK_SHA ($PACK_HASH)"
           archives="$RUNNER_TEMP/docling-archives"
