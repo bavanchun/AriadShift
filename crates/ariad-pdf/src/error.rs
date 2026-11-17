@@ -36,6 +36,14 @@ pub enum PdfError {
     #[error("invalid tool parameters: {0}")]
     InvalidParams(String),
 
+    /// The document has no table to extract.
+    #[error("no tables found in document")]
+    NoTables,
+
+    /// The extracted tables exceed the output size cap.
+    #[error("the extracted tables exceed the output size limit")]
+    TablesTooLarge,
+
     /// The requested tool is not implemented yet, or a redaction safety refusal.
     ///
     /// Safety refusals carry a message starting with one of [`REFUSAL_PREFIXES`]; they keep
@@ -144,6 +152,8 @@ impl PdfError {
             Self::Encrypted { .. } => "encrypted",
             Self::LimitExceeded(_) => "limit_exceeded",
             Self::InvalidParams(_) => "invalid_input",
+            Self::NoTables => "no_tables",
+            Self::TablesTooLarge => "limit_exceeded",
             Self::NotImplemented(_) => "not_implemented",
         }
     }
@@ -156,8 +166,8 @@ impl PdfError {
         }
         match self {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => "invalid_input",
-            Self::LimitExceeded(_) => "limit_exceeded",
-            Self::NotImplemented(_) => "engine_failed",
+            Self::LimitExceeded(_) | Self::TablesTooLarge => "limit_exceeded",
+            Self::NoTables | Self::NotImplemented(_) => "engine_failed",
         }
     }
 
@@ -169,8 +179,8 @@ impl PdfError {
         }
         match self {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => 2,
-            Self::LimitExceeded(_) => 7,
-            Self::NotImplemented(_) => 6,
+            Self::LimitExceeded(_) | Self::TablesTooLarge => 7,
+            Self::NoTables | Self::NotImplemented(_) => 6,
         }
     }
 }

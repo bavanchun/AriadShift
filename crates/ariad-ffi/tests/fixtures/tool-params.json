@@ -6,6 +6,12 @@
       ],
       "params": {}
     },
+    "pdf.tables_to_csv": {
+      "inputs": [
+        "fixtures/pdf/ruled-tables.pdf"
+      ],
+      "params": {}
+    },
     "pdf.merge": {
       "inputs": [
         "fixtures/pdf-tools/multipage-20.pdf",
@@ -705,16 +711,6 @@
     "pdf.sign_remove": {
       "requires": "pack:sign",
       "reason": "needs the sign engine pack (ashift engines install sign); tool_missing without it"
-    },
-    "pdf.tables_to_csv": {
-      "requires": "pack:docling",
-      "reason": "needs the Docling engine pack (ashift engines install docling); tool_missing without it",
-      "probe": {
-        "inputs": [
-          "fixtures/pdf/arxiv-tableformer-2203-01017-v1.pdf"
-        ],
-        "params": {}
-      }
     },
     "pdf.to_cbz": {
       "requires": "pack:pdfium",

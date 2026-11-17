@@ -193,12 +193,14 @@ pub(crate) fn map_pdf_error(err: PdfError) -> EngineFailure {
             ErrorCode::EngineFailure,
             "The PDF is encrypted; run pdf.decrypt first.",
         ),
-        PdfError::LimitExceeded(_) => EngineFailure::limit_exceeded(),
+        PdfError::LimitExceeded(_) | PdfError::TablesTooLarge => EngineFailure::limit_exceeded(),
         PdfError::InvalidParams(msg) => EngineFailure::owned(ErrorCode::InvalidRequest, msg),
-        PdfError::Malformed | PdfError::NotImplemented(_) => EngineFailure::new(
-            ErrorCode::EngineFailure,
-            "The PDF is damaged or cannot be read.",
-        ),
+        PdfError::Malformed | PdfError::NoTables | PdfError::NotImplemented(_) => {
+            EngineFailure::new(
+                ErrorCode::EngineFailure,
+                "The PDF is damaged or cannot be read.",
+            )
+        }
     }
 }
 

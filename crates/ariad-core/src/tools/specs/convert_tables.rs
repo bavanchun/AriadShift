@@ -8,7 +8,7 @@ use crate::tools::{
 /// Artifact formats of `pdf.tables_to_csv`: one CSV file per table.
 pub const TABLES_TO_CSV_OUTPUT_FORMATS: &[&str] = &["csv"];
 
-const LOCAL: &[ToolRuntime] = &[ToolRuntime::Local];
+const RUNTIMES: &[ToolRuntime] = &[ToolRuntime::Wasm, ToolRuntime::Local, ToolRuntime::Cloud];
 
 /// Specification for `pdf.tables_to_csv`.
 pub const PDF_TABLES_TO_CSV_SPEC: ToolSpec = ToolSpec {
@@ -21,8 +21,8 @@ pub const PDF_TABLES_TO_CSV_SPEC: ToolSpec = ToolSpec {
     output_format: "csv",
     output_formats: TABLES_TO_CSV_OUTPUT_FORMATS,
     tier: Tier::Free,
-    runtimes: LOCAL,
-    engine: "ariad-host",
+    runtimes: RUNTIMES,
+    engine: "ariad-pdf",
     params_schema: schema_for_params::<TablesToCsvParams>,
     secret_params: &[],
 };

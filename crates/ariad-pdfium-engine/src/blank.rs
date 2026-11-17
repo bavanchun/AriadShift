@@ -440,8 +440,11 @@ pub(crate) fn map_pdf_error(err: PdfError) -> EngineFailure {
             ErrorCode::InvalidRequest,
             "The input PDF is encrypted. Decrypt it with pdf.decrypt first.",
         ),
-        PdfError::LimitExceeded(_) => EngineFailure::limit_exceeded(),
+        PdfError::LimitExceeded(_) | PdfError::TablesTooLarge => EngineFailure::limit_exceeded(),
         PdfError::InvalidParams(msg) => EngineFailure::owned(ErrorCode::InvalidRequest, msg),
+        PdfError::NoTables => {
+            EngineFailure::new(ErrorCode::EngineFailure, "No tables found in the document.")
+        }
         PdfError::NotImplemented(msg) => EngineFailure::owned(ErrorCode::EngineFailure, msg),
     }
 }

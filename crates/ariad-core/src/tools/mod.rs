@@ -11,6 +11,7 @@ pub mod recipe;
 pub mod registry;
 pub mod secret;
 pub mod specs;
+pub mod tables_csv;
 
 pub use access::{
     FREE_MAX_RUN_BYTES, FREE_MAX_RUN_FILES, Plan, PlanParseError, RunSize, ToolAccess, allowed,
