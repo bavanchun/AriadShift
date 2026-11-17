@@ -4,9 +4,10 @@
 # connection to a system service); the bundle still records which test or issue caused it.
 set -uo pipefail
 
-bundle="${1:?usage: macos-report-failures.sh <result.xcresult>}"
+# Same location as the macos-test recipe: MACOS_RESULT_BUNDLE, else the default under target/derived-data.
+bundle="${1:-${MACOS_RESULT_BUNDLE:-target/derived-data/AriadShift-tests.xcresult}}"
 if [[ ! -d "$bundle" ]]; then
-    echo "No result bundle at ${bundle}; xcodebuild failed before it created one."
+    echo "No result bundle at ${bundle}; the job failed before xcodebuild test ran."
     exit 0
 fi
 
