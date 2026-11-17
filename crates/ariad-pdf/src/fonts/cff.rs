@@ -1397,21 +1397,22 @@ fn dict_op(out: &mut Vec<u8>, op: u16) {
 
 fn private_dict(values: &PrivateValues, default_width: i64, nominal_width: i64) -> Option<Vec<u8>> {
     let mut out = Vec::new();
-    let delta_keys: [(&str, u16); 6] = [
-        ("BlueValues", 6),
-        ("OtherBlues", 7),
-        ("FamilyBlues", 8),
-        ("FamilyOtherBlues", 9),
-        ("StemSnapH", 0x0c0c),
-        ("StemSnapV", 0x0c0d),
+    // Operator and the most numbers the Type 1 and CFF specifications allow in the array.
+    let delta_keys: [(&str, u16, usize); 6] = [
+        ("BlueValues", 6, 14),
+        ("OtherBlues", 7, 14),
+        ("FamilyBlues", 8, 14),
+        ("FamilyOtherBlues", 9, 14),
+        ("StemSnapH", 0x0c0c, 12),
+        ("StemSnapV", 0x0c0d, 12),
     ];
-    for (key, op) in delta_keys {
+    for (key, op, max) in delta_keys {
         let Some(numbers) = values.values.get(key) else {
             continue;
         };
         let ints: Option<Vec<i32>> = numbers.iter().map(|n| n.int).collect();
         let Some(ints) = ints else { continue };
-        if ints.is_empty() || ints.len() > 14 {
+        if ints.is_empty() || ints.len() > max {
             continue;
         }
         let mut previous = 0_i32;
@@ -2829,5 +2830,55 @@ mod tests {
             started.elapsed() < std::time::Duration::from_secs(1),
             "46,000 distinct stems must be refused without pairwise deduplication"
         );
+    }
+
+    // ---- Private DICT caps ----
+
+    #[test]
+    fn stem_snap_arrays_are_capped_at_twelve_entries() {
+        let snap = |count: usize| {
+            let values: Vec<String> = (0..count).map(|k| (20 + k * 3).to_string()).collect();
+            format!(
+                "/StemSnapH [{}] def\n/StemSnapV [{}] def\n",
+                values.join(" "),
+                values.join(" ")
+            )
+        };
+        for (count, kept) in [(12, true), (13, false), (14, false)] {
+            let font = build_font(
+                "/Encoding StandardEncoding def",
+                &standard_subrs(),
+                &standard_glyphs(),
+                &snap(count),
+            );
+            let converted = convert_built(&font).expect("converts");
+            let entries = private_entries(&converted.bytes);
+            for op in [0x0c0c_u16, 0x0c0d] {
+                let found = entries.iter().find(|(o, _)| *o == op);
+                assert_eq!(found.is_some(), kept, "{count} entries, op {op:#x}");
+                if let Some((_, operands)) = found {
+                    assert_eq!(operands.len(), 12);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn blue_arrays_keep_their_fourteen_entry_cap() {
+        let blues = |count: usize| {
+            let values: Vec<String> = (0..count).map(|k| (k * 10).to_string()).collect();
+            format!("/FamilyBlues [{}] def\n", values.join(" "))
+        };
+        for (count, kept) in [(14, true), (16, false)] {
+            let font = build_font(
+                "/Encoding StandardEncoding def",
+                &standard_subrs(),
+                &standard_glyphs(),
+                &blues(count),
+            );
+            let converted = convert_built(&font).expect("converts");
+            let entries = private_entries(&converted.bytes);
+            assert_eq!(entries.iter().any(|(op, _)| *op == 8), kept, "{count}");
+        }
     }
 }
