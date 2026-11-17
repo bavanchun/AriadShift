@@ -1158,8 +1158,14 @@ pub fn subset_simple_cff(
         return Ok(SubsetOutcome::Skipped("no size gain"));
     }
     let kept = glyphs.len();
+    // Keep entries such as /Metadata; the new data is plain, so drop the filter chain.
+    let mut program_dict = program.dict.clone();
+    for key in [&b"Filter"[..], b"DecodeParms", b"DL"] {
+        program_dict.remove(key);
+    }
+    program_dict.set("Subtype", "Type1C");
     let pdf = doc.inner_mut()?;
-    let file_id = pdf.add_object(Stream::new(dictionary! {"Subtype" => "Type1C"}, subset));
+    let file_id = pdf.add_object(Stream::new(program_dict, subset));
     descriptor.set("FontFile3", file_id);
     descriptor.remove(b"CharSet");
     let descriptor_id = pdf.add_object(descriptor);

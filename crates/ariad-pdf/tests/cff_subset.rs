@@ -283,3 +283,56 @@ fn pruned_output_is_a_valid_pdf_with_the_same_page_count() {
         Document::load_mem(&gao()).unwrap().get_pages().len()
     );
 }
+
+#[test]
+fn pruned_programs_keep_their_other_stream_dictionary_entries() {
+    let mut source = Document::load_mem(&gao()).unwrap();
+    let metadata = source.add_object(lopdf::Stream::new(
+        dictionary! {"Type" => "Metadata", "Subtype" => "XML"},
+        b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>".to_vec(),
+    ));
+    for (_, program) in cff_fonts(&source) {
+        let Object::Stream(stream) = source.get_object_mut(program).unwrap() else {
+            panic!()
+        };
+        stream.dict.set("Metadata", metadata);
+    }
+    let mut bytes = Vec::new();
+    source.save_to(&mut bytes).unwrap();
+    let mut pdf = open(&bytes);
+    let outcomes = subset_all(&mut pdf);
+    let mut checked = 0;
+    for (font, program) in cff_fonts(pdf.inner()) {
+        let descriptor = pdf.inner().get_dictionary(descriptor_of(pdf.inner(), font));
+        if descriptor.unwrap().has(b"CharSet") {
+            continue;
+        }
+        let stream = pdf
+            .inner()
+            .get_object(program)
+            .unwrap()
+            .as_stream()
+            .unwrap();
+        assert_eq!(
+            stream.dict.get(b"Subtype").unwrap().as_name().unwrap(),
+            b"Type1C"
+        );
+        assert_eq!(
+            stream
+                .dict
+                .get(b"Metadata")
+                .unwrap()
+                .as_reference()
+                .unwrap(),
+            metadata
+        );
+        // The data is stored plain, so no stale filter may describe it.
+        assert!(!stream.dict.has(b"Filter"), "{:?}", stream.dict);
+        assert_eq!(
+            stream.dict.get(b"Length").unwrap().as_i64().unwrap(),
+            i64::try_from(stream.content.len()).unwrap()
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 4, "{outcomes:?}");
+}
