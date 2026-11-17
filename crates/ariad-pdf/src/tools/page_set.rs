@@ -2,7 +2,7 @@
 //! `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.split`, `pdf.merge`, and
 //! `pdf.insert_blank`.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use ariad_core::{
     reader::pdf::ReadError,
@@ -255,7 +255,9 @@ fn build_page_set_doc_with_warnings(
     let mut page_rotations: Vec<(ObjectId, i64, bool, bool)> =
         Vec::with_capacity(selected_pages.len());
     let mut kept_annot_ids: BTreeMap<ObjectId, Vec<ObjectId>> = BTreeMap::new();
+    // Cloned widgets grouped by copy of the page set: the n-th repeat of every page.
     let mut duplicate_occurrences: Vec<Vec<ObjectId>> = Vec::new();
+    let mut repeats: HashMap<ObjectId, usize> = HashMap::new();
 
     for (idx, &page_num) in selected_pages.iter().enumerate() {
         ctx.check()?;
@@ -323,7 +325,12 @@ fn build_page_set_doc_with_warnings(
             ctx,
         )?;
         if !is_first_occurrence {
-            duplicate_occurrences.push(widget_ids(copier.target, &page_annots));
+            let repeat = repeats.entry(src_page_id).or_default();
+            if duplicate_occurrences.len() <= *repeat {
+                duplicate_occurrences.push(Vec::new());
+            }
+            duplicate_occurrences[*repeat].extend(widget_ids(copier.target, &page_annots));
+            *repeat += 1;
         }
         if !page_annots.is_empty() {
             new_page_dict.set(b"Annots".to_vec(), Object::Array(page_annots));

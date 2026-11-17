@@ -413,6 +413,7 @@ Whether duplicate page indices are permitted depends on the tool's operation mod
 1. **Reorder and extraction tools (`DuplicatePolicy::KeepInOrder`)** — `pdf.extract_pages`, `pdf.reorder`:
    - Duplicates are preserved in the exact order specified by the user.
    - Example: `"1,1,5-3,last"` on a 10-page document expands to `[1, 1, 5, 4, 3, 10]`.
+   - Form fields of a repeated page get names of their own (`name_2`, `name_3`, and so on). The n-th repeat of every repeated page forms one copy of the page set, and a field whose widgets span several pages stays one field per copy: with order `1,2,1,2`, a radio group `g` with a button on each of pages 1 and 2 yields `g_2` with both widgets on pages 3 and 4. A copied button field whose widgets have no appearance for its `/V` state gets `/V /Off`. Copies of calculated fields are inserted into `/AcroForm /CO` right after their source. Copied JavaScript is not rewritten, so `getField("orig")` still points at the original field. A renamed `/T` that is not valid UTF-16 keeps its original bytes and only receives the suffix.
 2. **In-place modification and deletion tools (`DuplicatePolicy::Reject`)** — `pdf.rotate`, `pdf.delete_pages`, `pdf.crop`, `pdf.scale`, `pdf.overlay`, `pdf.ocr`, `pdf.redact`, `pdf.watermark_add`, etc.:
    - Any repeated page index (whether explicit like `"2,2"` or overlapping like `"1-4,3-5"` or `"all,1"`) is **rejected** with exit code `9` (`invalid_params`).
 

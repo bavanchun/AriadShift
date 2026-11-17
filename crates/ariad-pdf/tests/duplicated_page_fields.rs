@@ -456,3 +456,260 @@ fn many_copies_of_a_wide_form_page_stay_fast_and_unique() {
         }
     }
 }
+
+/// Builds a two-page form whose fields span both pages: a radio group `g` (button `a` on page 1,
+/// button `b` on page 2, value `a`), a text field `hdr` with one widget per page, and the
+/// calculated fields `sum` and `tail` (page 2) listed in `/AcroForm /CO`, with `/AA` script.
+fn spanning_form_pdf() -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page1 = doc.new_object_id();
+    let page2 = doc.new_object_id();
+    let rect = |y: i64| Object::Array(vec![0.into(), y.into(), 80.into(), (y + 18).into()]);
+
+    let g = doc.new_object_id();
+    let button = |doc: &mut Document, state: &str, page: ObjectId| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => g,
+            "AS" => if state == "a" { "a" } else { "Off" },
+            "AP" => dictionary! { "N" => dictionary! { state => Object::Null, "Off" => Object::Null } },
+            "Rect" => rect(0), "P" => page,
+        })
+    };
+    let a = button(&mut doc, "a", page1);
+    let b = button(&mut doc, "b", page2);
+    doc.objects.insert(
+        g,
+        Object::Dictionary(dictionary! {
+            "FT" => "Btn", "Ff" => 49_152, "T" => Object::string_literal("g"), "V" => "a",
+            "Kids" => vec![Object::Reference(a), Object::Reference(b)],
+        }),
+    );
+
+    let hdr = doc.new_object_id();
+    let hdr_widget = |doc: &mut Document, page: ObjectId| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => hdr,
+            "Rect" => rect(30), "P" => page,
+        })
+    };
+    let hdr1 = hdr_widget(&mut doc, page1);
+    let hdr2 = hdr_widget(&mut doc, page2);
+    doc.objects.insert(
+        hdr,
+        Object::Dictionary(dictionary! {
+            "FT" => "Tx", "T" => Object::string_literal("hdr"), "V" => Object::string_literal("Ada"),
+            "Kids" => vec![Object::Reference(hdr1), Object::Reference(hdr2)],
+        }),
+    );
+
+    let calc = |doc: &mut Document, name: &str, page: ObjectId| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx",
+            "T" => Object::string_literal(name), "Rect" => rect(60), "P" => page,
+            "AA" => dictionary! { "C" => dictionary! {
+                "S" => "JavaScript", "JS" => Object::string_literal("getField(\"hdr\")"),
+            } },
+        })
+    };
+    let sum = calc(&mut doc, "sum", page2);
+    let tail = calc(&mut doc, "tail", page2);
+
+    for (page, annots) in [(page1, vec![a, hdr1]), (page2, vec![b, hdr2, sum, tail])] {
+        doc.objects.insert(
+            page,
+            Object::Dictionary(dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Annots" => annots.into_iter().map(Object::Reference).collect::<Vec<_>>(),
+            }),
+        );
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page1), Object::Reference(page2)],
+            "Count" => 2,
+        }),
+    );
+    let acroform = doc.add_object(dictionary! {
+        "Fields" => vec![
+            Object::Reference(g), Object::Reference(hdr),
+            Object::Reference(sum), Object::Reference(tail),
+        ],
+        "CO" => vec![Object::Reference(sum), Object::Reference(tail)],
+    });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => acroform,
+    });
+    doc.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save spanning form");
+    bytes
+}
+
+fn run_spanning(tool: &str, params: &Value) -> Vec<u8> {
+    run_tool(
+        tool,
+        &[InputDoc::new("form.pdf", spanning_form_pdf())],
+        params,
+        &ToolCtx::default(),
+    )
+    .unwrap_or_else(|err| panic!("{tool} failed: {err:?}"))
+    .artifacts[0]
+        .bytes
+        .clone()
+}
+
+fn field_named<'a>(doc: &'a Document, name: &str) -> &'a Dictionary {
+    doc.objects
+        .values()
+        .filter_map(|obj| obj.as_dict().ok())
+        .find(|dict| partial_name(dict).as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("field {name}"))
+}
+
+fn run_both(order: &str) -> [Vec<u8>; 2] {
+    [
+        run_spanning("pdf.reorder", &json!({ "order": order })),
+        run_spanning("pdf.extract_pages", &json!({ "pages": order })),
+    ]
+}
+
+#[test]
+fn fields_spanning_pages_stay_one_field_per_copy_of_the_page_set() {
+    for bytes in run_both("1,2,1,2") {
+        assert_eq!(
+            terminal_fields(&bytes),
+            expected(&[
+                ("g", &[1, 2]),
+                ("g_2", &[3, 4]),
+                ("hdr", &[1, 2]),
+                ("hdr_2", &[3, 4]),
+                ("sum", &[2]),
+                ("sum_2", &[4]),
+                ("tail", &[2]),
+                ("tail_2", &[4]),
+            ])
+        );
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        assert_eq!(
+            field_named(pdf.inner(), "g_2")
+                .get(b"V")
+                .unwrap()
+                .as_name()
+                .unwrap(),
+            b"a"
+        );
+    }
+}
+
+#[test]
+fn copied_button_without_a_widget_for_its_value_resets_to_off() {
+    for bytes in run_both("2,1,2") {
+        assert_eq!(
+            terminal_fields(&bytes),
+            expected(&[
+                ("g", &[2, 1]),
+                ("g_2", &[3]),
+                ("hdr", &[2, 1]),
+                ("hdr_2", &[3]),
+                ("sum", &[1]),
+                ("sum_2", &[3]),
+                ("tail", &[1]),
+                ("tail_2", &[3]),
+            ])
+        );
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        let doc = pdf.inner();
+        assert_eq!(
+            field_named(doc, "g").get(b"V").unwrap().as_name().unwrap(),
+            b"a"
+        );
+        assert_eq!(
+            field_named(doc, "g_2")
+                .get(b"V")
+                .unwrap()
+                .as_name()
+                .unwrap(),
+            b"Off"
+        );
+    }
+}
+
+#[test]
+fn copied_calculated_fields_follow_their_sources_in_the_calculation_order() {
+    for bytes in run_both("1,2,1,2,2") {
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        let doc = pdf.inner();
+        let acroform = resolve(doc, doc.catalog().unwrap().get(b"AcroForm").unwrap())
+            .as_dict()
+            .unwrap();
+        let order: Vec<String> = resolve(doc, acroform.get(b"CO").unwrap())
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| {
+                partial_name(doc.get_dictionary(id.as_reference().unwrap()).unwrap()).unwrap()
+            })
+            .collect();
+        assert_eq!(order, ["sum", "sum_2", "sum_3", "tail", "tail_2", "tail_3"]);
+        // The copied script keeps addressing the original field name.
+        let script = field_named(doc, "sum_2")
+            .get(b"AA")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .get(b"C")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .get(b"JS")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(script, b"getField(\"hdr\")");
+    }
+}
+
+#[test]
+fn invalid_utf16_names_keep_their_bytes_when_copied() {
+    let mut doc = Document::load_mem(&form_pdf()).expect("load form");
+    let name_id = doc
+        .objects
+        .iter()
+        .find(|(_, obj)| {
+            obj.as_dict()
+                .is_ok_and(|dict| partial_name(dict).as_deref() == Some("name"))
+        })
+        .map(|(id, _)| *id)
+        .expect("name field");
+    // BOM, "n", then a lone high surrogate: invalid UTF-16.
+    let raw = vec![0xFE, 0xFF, 0x00, b'n', 0xD8, 0x00];
+    doc.get_dictionary_mut(name_id).unwrap().set(
+        "T",
+        Object::String(raw.clone(), lopdf::StringFormat::Hexadecimal),
+    );
+    let mut input = Vec::new();
+    doc.save_to(&mut input).expect("save");
+    let out = run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("form.pdf", input)],
+        &json!({ "order": "1,1" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder");
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let mut expected_raw = raw;
+    expected_raw.extend_from_slice(&[0x00, b'_', 0x00, b'2']);
+    let copies = pdf
+        .inner()
+        .objects
+        .values()
+        .filter_map(|obj| obj.as_dict().ok())
+        .filter_map(|dict| dict.get(b"T").ok().and_then(|t| t.as_str().ok()))
+        .filter(|t| **t == expected_raw[..])
+        .count();
+    assert_eq!(copies, 1);
+}
