@@ -33,6 +33,13 @@ ignore = [
     # parsing paths never run. Drop both entries once citationberg moves to >= 0.41.
     { id = "RUSTSEC-2026-0194", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
     { id = "RUSTSEC-2026-0195", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
+    # chrono 0.4.45 is flagged as unmaintained ("no safe upgrade"); the advisory
+    # records maintenance status, not a vulnerability. It is a direct dependency
+    # of ariad-server (timestamps in the API, blob expiry, sweeper) and reaches the
+    # build through sqlx, utoipa, object_store, pdfium-render, rmcp and schemars,
+    # so no single bump removes it. Reassess when upstream publishes a maintained
+    # release or when the server migrates its timestamps to another time crate.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no safe upgrade; direct in ariad-server and transitive via object_store, pdfium-render, rmcp, schemars; migration to be tracked in a follow-up issue" },
 ]
 
 [licenses]
