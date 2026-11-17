@@ -599,12 +599,13 @@ fn pdf_exports_have_reviewable_goldens() {
             "xlsx" => {
                 let package = read_package(&output);
                 assert!(package.contains_key("xl/workbook.xml"));
+                // The map-room fixture draws ruled tables, so the built-in detector gives
+                // each one a sheet instead of the single-sheet text dump.
+                let warnings = report["warnings"].as_array().unwrap();
                 assert!(
-                    report["warnings"]
-                        .as_array()
-                        .unwrap()
+                    !warnings
                         .iter()
-                        .any(|warning| { warning["code"] == "no_tables_found" })
+                        .any(|warning| warning["code"] == "no_tables_found")
                 );
                 package
                     .iter()
