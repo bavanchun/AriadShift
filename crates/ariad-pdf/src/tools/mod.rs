@@ -25,6 +25,7 @@ pub mod crop;
 pub mod decompress;
 pub mod delete_pages;
 pub mod divide_pages;
+mod duplicate_fields;
 pub mod extract_pages;
 #[cfg(feature = "codecs")]
 mod furniture_common;

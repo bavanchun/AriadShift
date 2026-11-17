@@ -14,7 +14,7 @@ use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
     naming,
-    tools::OutputDoc,
+    tools::{OutputDoc, duplicate_fields},
 };
 
 /// Upper bound on total output pages produced by a single structural tool invocation.
@@ -255,6 +255,7 @@ fn build_page_set_doc_with_warnings(
     let mut page_rotations: Vec<(ObjectId, i64, bool, bool)> =
         Vec::with_capacity(selected_pages.len());
     let mut kept_annot_ids: BTreeMap<ObjectId, Vec<ObjectId>> = BTreeMap::new();
+    let mut duplicate_occurrences: Vec<Vec<ObjectId>> = Vec::new();
 
     for (idx, &page_num) in selected_pages.iter().enumerate() {
         ctx.check()?;
@@ -321,6 +322,9 @@ fn build_page_set_doc_with_warnings(
             &mut copier,
             ctx,
         )?;
+        if !is_first_occurrence {
+            duplicate_occurrences.push(widget_ids(copier.target, &page_annots));
+        }
         if !page_annots.is_empty() {
             new_page_dict.set(b"Annots".to_vec(), Object::Array(page_annots));
         }
@@ -520,12 +524,28 @@ fn build_page_set_doc_with_warnings(
             .set(b"Info".to_vec(), Object::Reference(info_id));
     }
 
+    duplicate_fields::rename_duplicated_fields(&mut target_doc, &duplicate_occurrences, ctx)?;
+
     let mut out_pdf = source.clone();
     *out_pdf.inner_mut()? = target_doc;
     if let Some(stem) = naming::doc_stem(source) {
         naming::set_doc_stem(&mut out_pdf, &stem);
     }
     Ok((out_pdf, warnings))
+}
+
+/// Returns the ids of the widget annotations among `annots`.
+fn widget_ids(doc: &Document, annots: &[Object]) -> Vec<ObjectId> {
+    annots
+        .iter()
+        .filter_map(|annot| annot.as_reference().ok())
+        .filter(|&id| {
+            doc.get_dictionary(id)
+                .and_then(|dict| dict.get(b"Subtype"))
+                .and_then(Object::as_name)
+                .is_ok_and(|name| name == b"Widget")
+        })
+        .collect()
 }
 
 /// Collects all `/Pages` tree node IDs and `/Page` object IDs in `doc`.

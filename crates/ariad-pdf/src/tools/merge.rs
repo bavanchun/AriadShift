@@ -762,6 +762,11 @@ impl<K> Default for NameDisambiguator<K> {
 }
 
 impl<K: Eq + Hash> NameDisambiguator<K> {
+    /// Marks `raw` as taken without disambiguating it, so later candidates never reuse it.
+    pub(crate) fn reserve(&mut self, raw: &[u8]) {
+        self.seen.insert(raw.to_vec());
+    }
+
     pub(crate) fn disambiguate<F, G>(
         &mut self,
         raw: &[u8],
