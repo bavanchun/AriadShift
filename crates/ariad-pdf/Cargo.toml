@@ -22,7 +22,7 @@ flate2 = { workspace = true, optional = true }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
 qrcode = { version = "=0.14.1", default-features = false, optional = true }
 quick-xml.workspace = true
-read-fonts = { version = "=0.47.0", default-features = false, features = ["std"] }
+read-fonts = { version = "=0.47.0", default-features = false, features = ["std", "agl"] }
 oxiarc-jpeg = { version = "=0.4.2", default-features = false, optional = true }
 lopdf.workspace = true
 regex.workspace = true

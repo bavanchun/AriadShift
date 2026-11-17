@@ -102,9 +102,8 @@ pub fn structural(pdf: &mut PdfDoc, limits: &Limits, ctx: &ToolCtx) -> Result<()
             (b"TrueType", fonts::subset_simple_truetype),
             (b"Type1", fonts::subset_simple_type1),
         ];
-        for (subtype, subset) in subsetters {
-            let ids: Vec<_> = pdf
-                .inner()
+        let font_ids = |pdf: &PdfDoc, subtype: &[u8]| -> Vec<ObjectId> {
+            pdf.inner()
                 .objects
                 .iter()
                 .filter_map(|(&id, object)| {
@@ -117,12 +116,23 @@ pub fn structural(pdf: &mut PdfDoc, limits: &Limits, ctx: &ToolCtx) -> Result<()
                         == Some(subtype))
                     .then_some(id)
                 })
-                .collect();
-            for id in ids {
+                .collect()
+        };
+        for (subtype, subset) in subsetters {
+            for id in font_ids(pdf, subtype) {
                 ctx.check()?;
                 if let Err(fonts::FontError::Pdf(error)) = subset(pdf, id, usage, limits) {
                     return Err(error);
                 }
+            }
+        }
+        // Bare CFF programs are interpreted, so this subsetter takes the context.
+        for id in font_ids(pdf, b"Type1") {
+            ctx.check()?;
+            if let Err(fonts::FontError::Pdf(error)) =
+                fonts::subset_simple_cff(pdf, id, usage, limits, ctx)
+            {
+                return Err(error);
             }
         }
     }
