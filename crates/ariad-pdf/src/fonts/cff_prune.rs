@@ -747,6 +747,264 @@ fn base_table(pdf: &lopdf::Document, name: &[u8]) -> Option<CharTable> {
     Some(table)
 }
 
+type Names = [&'static str; 256];
+
+const WIN_ANSI_HIGH: [&str; 32] = [
+    "Euro",
+    "bullet",
+    "quotesinglbase",
+    "florin",
+    "quotedblbase",
+    "ellipsis",
+    "dagger",
+    "daggerdbl",
+    "circumflex",
+    "perthousand",
+    "Scaron",
+    "guilsinglleft",
+    "OE",
+    "bullet",
+    "Zcaron",
+    "bullet",
+    "bullet",
+    "quoteleft",
+    "quoteright",
+    "quotedblleft",
+    "quotedblright",
+    "bullet",
+    "endash",
+    "emdash",
+    "tilde",
+    "trademark",
+    "scaron",
+    "guilsinglright",
+    "oe",
+    "bullet",
+    "zcaron",
+    "Ydieresis",
+];
+
+const MAC_ROMAN_HIGH: [&str; 128] = [
+    "Adieresis",
+    "Aring",
+    "Ccedilla",
+    "Eacute",
+    "Ntilde",
+    "Odieresis",
+    "Udieresis",
+    "aacute",
+    "agrave",
+    "acircumflex",
+    "adieresis",
+    "atilde",
+    "aring",
+    "ccedilla",
+    "eacute",
+    "egrave",
+    "ecircumflex",
+    "edieresis",
+    "iacute",
+    "igrave",
+    "icircumflex",
+    "idieresis",
+    "ntilde",
+    "oacute",
+    "ograve",
+    "ocircumflex",
+    "odieresis",
+    "otilde",
+    "uacute",
+    "ugrave",
+    "ucircumflex",
+    "udieresis",
+    "dagger",
+    "degree",
+    "cent",
+    "sterling",
+    "section",
+    "bullet",
+    "paragraph",
+    "germandbls",
+    "registered",
+    "copyright",
+    "trademark",
+    "acute",
+    "dieresis",
+    "notequal",
+    "AE",
+    "Oslash",
+    "infinity",
+    "plusminus",
+    "lessequal",
+    "greaterequal",
+    "yen",
+    "mu",
+    "partialdiff",
+    "summation",
+    "product",
+    "pi",
+    "integral",
+    "ordfeminine",
+    "ordmasculine",
+    "Omega",
+    "ae",
+    "oslash",
+    "questiondown",
+    "exclamdown",
+    "logicalnot",
+    "radical",
+    "florin",
+    "approxequal",
+    "Delta",
+    "guillemotleft",
+    "guillemotright",
+    "ellipsis",
+    "space",
+    "Agrave",
+    "Atilde",
+    "Otilde",
+    "OE",
+    "oe",
+    "endash",
+    "emdash",
+    "quotedblleft",
+    "quotedblright",
+    "quoteleft",
+    "quoteright",
+    "divide",
+    "lozenge",
+    "ydieresis",
+    "Ydieresis",
+    "fraction",
+    "currency",
+    "guilsinglleft",
+    "guilsinglright",
+    "fi",
+    "fl",
+    "daggerdbl",
+    "periodcentered",
+    "quotesinglbase",
+    "quotedblbase",
+    "perthousand",
+    "Acircumflex",
+    "Ecircumflex",
+    "Aacute",
+    "Edieresis",
+    "Egrave",
+    "Iacute",
+    "Icircumflex",
+    "Idieresis",
+    "Igrave",
+    "Oacute",
+    "Ocircumflex",
+    "apple",
+    "Ograve",
+    "Uacute",
+    "Ucircumflex",
+    "Ugrave",
+    "dotlessi",
+    "circumflex",
+    "tilde",
+    "macron",
+    "breve",
+    "dotaccent",
+    "ring",
+    "cedilla",
+    "hungarumlaut",
+    "ogonek",
+    "caron",
+];
+
+/// Glyph names of the predefined PDF base encodings (PDF 32000-1 Annex D), so
+/// names outside the Adobe Glyph List, such as MacRoman `apple`, match by name.
+/// MacExpert has no table here and falls back to character matching.
+fn base_names(name: &[u8]) -> Option<Names> {
+    let latin = |code: u8| match code {
+        // The CFF ISOLatin1 table has quoteleft here; the PDF ones have grave.
+        0x60 => "grave",
+        _ => PredefinedEncoding::IsoLatin1.name(code),
+    };
+    let mut table = [""; 256];
+    for code in 0..=255_u8 {
+        let slot = usize::from(code);
+        table[slot] = match name {
+            b"StandardEncoding" => PredefinedEncoding::Standard.name(code),
+            b"WinAnsiEncoding" => match code {
+                0x7f => "bullet",
+                0x80..=0x9f => WIN_ANSI_HIGH[slot - 0x80],
+                0xa0 => "space",
+                0xad => "hyphen",
+                _ => latin(code),
+            },
+            b"MacRomanEncoding" => match code {
+                0x80..=0xff => MAC_ROMAN_HIGH[slot - 0x80],
+                _ => latin(code),
+            },
+            _ => return None,
+        };
+    }
+    Some(table)
+}
+
+/// A predefined base encoding: its characters and, where known, glyph names.
+struct Base {
+    chars: CharTable,
+    names: Option<Names>,
+    win_ansi: bool,
+}
+
+fn base_of(pdf: &lopdf::Document, name: &[u8]) -> Option<Base> {
+    Some(Base {
+        chars: base_table(pdf, name)?,
+        names: base_names(name),
+        win_ansi: name == b"WinAnsiEncoding",
+    })
+}
+
+/// Glyphs a viewer may draw for `codes`: the built-in encoding, `/Differences`
+/// names, and the base encoding by glyph name and by character.
+fn used_glyphs(
+    face: &Face,
+    codes: impl IntoIterator<Item = u8>,
+    base: Option<&Base>,
+    standard: &CharTable,
+    differences: &[(u8, Vec<u8>)],
+) -> BTreeSet<u16> {
+    let mut glyphs = BTreeSet::new();
+    for code in codes {
+        let slot = usize::from(code);
+        // Every route a viewer might take from the code to a glyph is kept.
+        glyphs.extend(face.builtin[slot]);
+        let named = differences.iter().rev().find(|(c, _)| *c == code);
+        if let Some((_, name)) = named {
+            glyphs.extend(glyphs_matching(face, Some(name), None));
+            continue;
+        }
+        let mut chars = Vec::new();
+        let mut name = match base {
+            Some(base) => {
+                chars.extend(base.chars[slot]);
+                base.names.map(|names| names[slot])
+            }
+            None => {
+                chars.extend(standard[slot]);
+                Some(PredefinedEncoding::Standard.name(code))
+            }
+        };
+        if base.is_some_and(|base| base.win_ansi) && code > 40 && chars.is_empty() {
+            chars.push('\u{2022}');
+            name = Some("bullet");
+        }
+        if let Some(name) = name.filter(|n| !n.is_empty() && *n != ".notdef") {
+            glyphs.extend(glyphs_matching(face, Some(name.as_bytes()), None));
+        }
+        for ch in chars {
+            glyphs.extend(glyphs_for_char(face, ch));
+        }
+    }
+    glyphs
+}
+
 // Fields in an AcroForm default resource dictionary can be typed into later.
 fn form_default_font(pdf: &lopdf::Document, font_id: ObjectId, limit: u16) -> bool {
     pdf.objects.values().any(|object| {
@@ -831,12 +1089,12 @@ pub fn subset_simple_cff(
         .get(b"Encoding")
         .ok()
         .and_then(|o| resolve(pdf, o, depth));
-    let mut base: Option<(CharTable, bool)> = None;
+    let mut base: Option<Base> = None;
     let mut differences: Vec<(u8, Vec<u8>)> = Vec::new();
     match encoding {
         None => {}
-        Some(Object::Name(name)) => match base_table(pdf, name) {
-            Some(table) => base = Some((table, name == b"WinAnsiEncoding")),
+        Some(Object::Name(name)) => match base_of(pdf, name) {
+            Some(found) => base = Some(found),
             None => return Ok(SubsetOutcome::Skipped("unsupported font encoding")),
         },
         Some(Object::Dictionary(encoding)) => {
@@ -846,8 +1104,8 @@ pub fn subset_simple_cff(
                 .and_then(|o| resolve(pdf, o, depth))
             {
                 None => {}
-                Some(Object::Name(name)) => match base_table(pdf, name) {
-                    Some(table) => base = Some((table, name == b"WinAnsiEncoding")),
+                Some(Object::Name(name)) => match base_of(pdf, name) {
+                    Some(found) => base = Some(found),
                     None => return Ok(SubsetOutcome::Skipped("unsupported font encoding")),
                 },
                 Some(_) => return Ok(SubsetOutcome::Skipped("unsupported font encoding")),
@@ -875,29 +1133,13 @@ pub fn subset_simple_cff(
         Some(_) => return Ok(SubsetOutcome::Skipped("unsupported font encoding")),
     }
     let standard = base_table(pdf, b"StandardEncoding").unwrap_or([None; 256]);
-    let mut glyphs = BTreeSet::new();
-    for &code in codes {
-        // Every route a viewer might take from the code to a glyph is kept.
-        glyphs.extend(face.builtin[usize::from(code)]);
-        let named = differences.iter().rev().find(|(c, _)| *c == code);
-        if let Some((_, name)) = named {
-            glyphs.extend(glyphs_matching(&face, Some(name), None));
-            continue;
-        }
-        let mut chars = Vec::new();
-        match base {
-            Some((table, win_ansi)) => {
-                chars.extend(table[usize::from(code)]);
-                if win_ansi && code > 40 && chars.is_empty() {
-                    chars.push('\u{2022}');
-                }
-            }
-            None => chars.extend(standard[usize::from(code)]),
-        }
-        for ch in chars {
-            glyphs.extend(glyphs_for_char(&face, ch));
-        }
-    }
+    let glyphs = used_glyphs(
+        &face,
+        codes.iter().copied(),
+        base.as_ref(),
+        &standard,
+        &differences,
+    );
     if glyphs.iter().chain([&0]).collect::<BTreeSet<_>>().len() >= face.names.len() {
         return Ok(SubsetOutcome::Skipped("no unused glyphs"));
     }
@@ -1317,6 +1559,108 @@ mod tests {
         bytes[at + 5] = 19;
         bytes.extend(index(&[vec![11]]));
         assert!(prune(&bytes, &BTreeSet::from([1])).is_none());
+    }
+
+    fn named_font(extra: &[&'static str]) -> Face {
+        let mut s = spec("AB");
+        for (i, name) in extra.iter().enumerate() {
+            s.sids.push(391 + i as u16);
+            s.strings.push(name);
+            s.charstrings.push(outline(1));
+        }
+        parse(&build(&s)).unwrap()
+    }
+
+    fn base(name: &[u8]) -> Base {
+        base_of(&lopdf::Document::new(), name).unwrap()
+    }
+
+    fn standard() -> CharTable {
+        base_table(&lopdf::Document::new(), b"StandardEncoding").unwrap()
+    }
+
+    #[test]
+    fn base_encodings_match_glyphs_outside_the_adobe_glyph_list_by_name() {
+        // MacRoman 0xF0 is the Apple logo, named `apple`, which has no AGL entry.
+        let face = named_font(&["apple"]);
+        // The base carries no character table, so only the name can find it.
+        let mac = Base {
+            chars: [None; 256],
+            names: base_names(b"MacRomanEncoding"),
+            win_ansi: false,
+        };
+        let found = used_glyphs(&face, [0xf0], Some(&mac), &standard(), &[]);
+        assert!(found.contains(&3), "{found:?}");
+        // The same code under WinAnsi is an undefined bullet, not the logo.
+        let win = base(b"WinAnsiEncoding");
+        assert!(!used_glyphs(&face, [0xf0], Some(&win), &standard(), &[]).contains(&3));
+    }
+
+    #[test]
+    fn base_encoding_tables_follow_the_pdf_specification() {
+        let mac = base_names(b"MacRomanEncoding").unwrap();
+        let win = base_names(b"WinAnsiEncoding").unwrap();
+        let std = base_names(b"StandardEncoding").unwrap();
+        assert_eq!(
+            (mac[0xf0], mac[0xca], mac[0xdb]),
+            ("apple", "space", "currency")
+        );
+        assert_eq!(
+            (mac[0x27], mac[0x60], mac[0x41]),
+            ("quotesingle", "grave", "A")
+        );
+        assert_eq!(
+            (win[0x27], win[0x60], win[0x80]),
+            ("quotesingle", "grave", "Euro")
+        );
+        assert_eq!(
+            (win[0x95], win[0xa0], win[0xad]),
+            ("bullet", "space", "hyphen")
+        );
+        assert_eq!(
+            (win[0xe9], win[0xb5], win[0x9f]),
+            ("eacute", "mu", "Ydieresis")
+        );
+        assert_eq!(
+            (std[0x27], std[0x60], std[0xae]),
+            ("quoteright", "quoteleft", "fi")
+        );
+        assert!(base_names(b"MacExpertEncoding").is_none());
+    }
+
+    #[test]
+    fn base_encoding_character_matching_still_works() {
+        // `uni00E9` is not named `eacute`, but it is the same character.
+        let face = named_font(&["uni00E9"]);
+        let win = base(b"WinAnsiEncoding");
+        assert!(used_glyphs(&face, [0xe9], Some(&win), &standard(), &[]).contains(&3));
+        let none = used_glyphs(&face, [65], None, &standard(), &[]);
+        assert!(none.contains(&1) && !none.contains(&3));
+    }
+
+    #[test]
+    fn glyph_name_tables_agree_with_the_character_tables() {
+        // Every named code must decode to the character of its glyph name, so the
+        // name path only adds exactness and never contradicts the character path.
+        for encoding in [
+            &b"MacRomanEncoding"[..],
+            b"WinAnsiEncoding",
+            b"StandardEncoding",
+        ] {
+            let base = base(encoding);
+            let names = base.names.unwrap();
+            for (code, name) in names.into_iter().enumerate() {
+                if name.is_empty() || name == ".notdef" {
+                    continue;
+                }
+                assert_eq!(
+                    char_of(name.as_bytes()),
+                    base.chars[code],
+                    "{} {code:#x} {name}",
+                    String::from_utf8_lossy(encoding)
+                );
+            }
+        }
     }
 
     #[test]
