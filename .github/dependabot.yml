@@ -1,6 +1,9 @@
 # Weekly update pull requests into dev. Each ecosystem gets one grouped pull
-# request for minor and patch updates; majors arrive one by one. A release
-# must be seven days old before it is proposed.
+# request holding every update, so a week costs one CI run per ecosystem. Open
+# pull requests are never rebased automatically: a rebase after each merge to
+# dev restarted the heavy workflows for every open pull request. Rebase one by
+# hand (comment "@dependabot rebase") when it is about to merge. A release must
+# be seven days old before it is proposed.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -18,8 +21,9 @@ updates:
       include: scope
     groups:
       github-actions:
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
+        patterns: ['*']
+    rebase-strategy: disabled
+    open-pull-requests-limit: 2
 
   - package-ecosystem: cargo
     directory: /
@@ -36,8 +40,9 @@ updates:
       include: scope
     groups:
       cargo:
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
+        patterns: ['*']
+    rebase-strategy: disabled
+    open-pull-requests-limit: 2
 
   - package-ecosystem: cargo
     directory: /fuzz
@@ -54,8 +59,9 @@ updates:
       include: scope
     groups:
       cargo:
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
+        patterns: ['*']
+    rebase-strategy: disabled
+    open-pull-requests-limit: 2
 
   - package-ecosystem: npm
     directory: /
@@ -72,8 +78,9 @@ updates:
       include: scope
     groups:
       npm:
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
+        patterns: ['*']
+    rebase-strategy: disabled
+    open-pull-requests-limit: 2
 
   - package-ecosystem: uv
     directory: /
@@ -90,5 +97,6 @@ updates:
       include: scope
     groups:
       uv:
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
+        patterns: ['*']
+    rebase-strategy: disabled
+    open-pull-requests-limit: 2
