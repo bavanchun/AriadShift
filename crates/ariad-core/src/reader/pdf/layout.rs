@@ -191,15 +191,24 @@ fn has_head(grid: &tables::Grid, rows: &[Vec<CellLayout>]) -> bool {
     grid.heavy_head_rule || (first_bold && !body_all_bold)
 }
 
-/// Index at which a table block enters the reading order: after the last text block above it
-/// that shares its columns, otherwise before the first one below it, otherwise at the end.
+/// Index at which a table block enters the reading order. The anchor is the last text block above
+/// the table that shares its columns, which may be a heading across all of them. Columns are read
+/// left to right, so the blocks that follow the anchor and lie wholly left of the table belong to
+/// an earlier column and come first: a table at the top of the right-hand column enters after the
+/// left-hand column, not right under the heading. With no such anchor the table goes before the
+/// first block that shares its columns, otherwise at the end.
 fn table_position(blocks: &[Block], bbox: &[f64; 4]) -> usize {
     let shares_columns = |block: &Block| block.bbox[0] < bbox[2] && bbox[0] < block.bbox[2];
+    let in_earlier_column = |block: &Block| block.bbox[2] <= bbox[0];
     if let Some(above) = blocks
         .iter()
         .rposition(|block| shares_columns(block) && block.bbox[1] < bbox[1])
     {
-        return above + 1;
+        let earlier = blocks[above + 1..]
+            .iter()
+            .take_while(|block| in_earlier_column(block))
+            .count();
+        return above + 1 + earlier;
     }
     blocks
         .iter()

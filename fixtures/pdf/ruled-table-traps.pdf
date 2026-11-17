@@ -4,18 +4,21 @@
 << /Type /Catalog /Pages 2 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>
+<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 >>
 endobj
 3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 9 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 11 0 R >> >> >>
 endobj
 4 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 9 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R /Resources << /Font << /F1 11 0 R >> >> >>
 endobj
 5 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R /Resources << /Font << /F1 9 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R /Resources << /Font << /F1 11 0 R >> >> >>
 endobj
 6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 11 0 R >> >> >>
+endobj
+7 0 obj
 << /Length 1497 >>
 stream
 1 w 36 756 m 576 756 l S
@@ -47,7 +50,7 @@ BT /F1 10 Tf 318 598 Td (week after the lamp has been tested) Tj ET
 BT /F1 10 Tf 318 584 Td (and the mooring rings are delivered.) Tj ET
 endstream
 endobj
-7 0 obj
+8 0 obj
 << /Length 1424 >>
 stream
 1 w 50 50 512 692 re S
@@ -76,7 +79,7 @@ BT /F1 10 Tf 318 584 Td (week after the lamp has been tested) Tj ET
 BT /F1 10 Tf 318 570 Td (and the mooring rings are delivered.) Tj ET
 endstream
 endobj
-8 0 obj
+9 0 obj
 << /Length 634 >>
 stream
 q 0 1 -1 0 612 0 cm
@@ -101,23 +104,57 @@ Q
 BT /F1 11 Tf 72 740 Td (The table on this page is drawn sideways.) Tj ET
 endstream
 endobj
-9 0 obj
+10 0 obj
+<< /Length 1408 >>
+stream
+BT /F1 14 Tf 72 740 Td (Harbour committee minutes and notices for the autumn season) Tj ET
+BT /F1 10 Tf 72 710 Td (The harbour committee met on the first) Tj ET
+BT /F1 10 Tf 72 696 Td (morning of the month to review the) Tj ET
+BT /F1 10 Tf 72 682 Td (tide tables for the coming season.) Tj ET
+BT /F1 10 Tf 72 668 Td (Members agreed that the northern pier) Tj ET
+BT /F1 10 Tf 72 654 Td (needs new mooring rings before the) Tj ET
+BT /F1 10 Tf 72 640 Td (autumn storms arrive in earnest.) Tj ET
+BT /F1 10 Tf 72 626 Td (A survey of the lower slipway showed) Tj ET
+BT /F1 10 Tf 72 612 Td (that the planks are sound but the) Tj ET
+BT /F1 10 Tf 72 598 Td (iron fittings have rusted through.) Tj ET
+0.5 w 318 700 m 540 700 l S
+0.5 w 318 678 m 540 678 l S
+0.5 w 318 656 m 540 656 l S
+0.5 w 318 634 m 540 634 l S
+0.5 w 318 700 m 318 634 l S
+0.5 w 429 700 m 429 634 l S
+0.5 w 540 700 m 540 634 l S
+BT /F1 10 Tf 324 685 Td (Item) Tj ET
+BT /F1 10 Tf 435 685 Td (Quantity) Tj ET
+BT /F1 10 Tf 324 663 Td (Mooring rings) Tj ET
+BT /F1 10 Tf 435 663 Td (12) Tj ET
+BT /F1 10 Tf 324 641 Td (Signal lamps) Tj ET
+BT /F1 10 Tf 435 641 Td (2) Tj ET
+BT /F1 10 Tf 318 606 Td (The treasurer reported a small surplus) Tj ET
+BT /F1 10 Tf 318 592 Td (from the summer ferry fares, which the) Tj ET
+BT /F1 10 Tf 318 578 Td (committee voted to set aside for the) Tj ET
+BT /F1 10 Tf 318 564 Td (repair of the signal lamp on the point.) Tj ET
+endstream
+endobj
+11 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
 endobj
 xref
-0 10
+0 12
 0000000000 65535 f 
 0000000015 00000 n 
 0000000064 00000 n 
-0000000133 00000 n 
-0000000259 00000 n 
-0000000385 00000 n 
-0000000511 00000 n 
-0000002059 00000 n 
-0000003534 00000 n 
-0000004218 00000 n 
+0000000139 00000 n 
+0000000266 00000 n 
+0000000393 00000 n 
+0000000520 00000 n 
+0000000648 00000 n 
+0000002196 00000 n 
+0000003671 00000 n 
+0000004355 00000 n 
+0000005815 00000 n 
 trailer
-<< /Size 10 /Root 1 0 R >>
+<< /Size 12 /Root 1 0 R >>
 startxref
-4315
+5913
 %%EOF

@@ -251,10 +251,11 @@ fn tables_of_real_documents_match_the_page() {
 #[test]
 fn tables_of_a_research_paper_match_the_rendered_page() {
     let found = tables("arxiv-tableformer-2203-01017-v1.pdf", &DETECT);
-    // Figure 1c, the two tables of Figure 5b and the structure grid of Figure 6.
+    // Figure 1c, the two tables of Figure 5b and the structure grid of Figure 6. The two tables
+    // of Figure 5b share a page in separate columns, and the left one is read first.
     assert_eq!(found.len(), 4);
     assert_eq!(
-        found[1],
+        found[2],
         rows(&[
             &[
                 "",
@@ -275,8 +276,8 @@ fn tables_of_a_research_paper_match_the_rendered_page() {
             ],
         ])
     );
-    assert_eq!(found[2][0], ["", "", "論文ファイル", "参考文献"]);
-    assert_eq!(found[2].len(), 10);
+    assert_eq!(found[1][0], ["", "", "論文ファイル", "参考文献"]);
+    assert_eq!(found[1].len(), 10);
 }
 
 #[test]
@@ -341,6 +342,44 @@ fn a_sideways_table_is_not_read_as_a_table() {
     for cell in ["A1", "B2", "C3"] {
         assert!(text.contains(cell), "{cell} missing from {text:?}");
     }
+}
+
+#[test]
+fn a_table_in_the_right_column_follows_the_left_column() {
+    // Page 4: a title across both columns, prose on the left, and on the right a table with
+    // prose under it.
+    let document = read("ruled-table-traps.pdf", &DETECT);
+    let layout = document.layout.as_ref().expect("layout index");
+    let kinds: Vec<String> = document
+        .body
+        .iter()
+        .filter(|block| {
+            layout
+                .blocks
+                .get(block.id())
+                .is_some_and(|p| p.page_no == 4)
+        })
+        .map(|block| match block {
+            Block::Table { .. } => "table".to_owned(),
+            Block::Heading { .. } => "heading".to_owned(),
+            other => paragraph_text(other).unwrap_or_else(|| "other".to_owned()),
+        })
+        .collect();
+    let start = |text: &str| text.chars().take(24).collect::<String>();
+    let order: Vec<String> = kinds.iter().map(|kind| start(kind)).collect();
+    let table = order
+        .iter()
+        .position(|kind| kind == "table")
+        .expect("a table");
+    let after = |needle: &str| order.iter().position(|kind| kind.starts_with(needle));
+    assert_eq!(order[0], "heading");
+    // Every left-column paragraph comes before the table, the right-column prose after it.
+    assert!(after("The harbour committee").unwrap() < table, "{order:?}");
+    assert!(after("A survey of the lower").unwrap() < table, "{order:?}");
+    assert!(
+        after("The treasurer reported").unwrap() > table,
+        "{order:?}"
+    );
 }
 
 #[test]

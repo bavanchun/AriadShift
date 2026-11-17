@@ -2,7 +2,9 @@
 
 Page 1: a frame drawn as four segments around two columns of prose, with header, footer and
 column rules. Page 2: the same page furniture with the frame stroked as one rectangle and 50 pt
-margins. Page 3: a 3 by 3 table drawn sideways, under a quarter-turn matrix.
+margins. Page 3: a 3 by 3 table drawn sideways, under a quarter-turn matrix. Page 4: a real
+table at the top of the right-hand column of a two-column page, which must be read after the
+left-hand column.
 """
 from pathlib import Path
 
@@ -87,7 +89,20 @@ for r in range(3):
 page3 += "Q\n"
 page3 += text(72, 740, "The table on this page is drawn sideways.", 11)
 
-content = [page1.encode("ascii"), page2.encode("ascii"), page3.encode("ascii")]
+# Page 4: a title across both columns, prose in the left column, and in the right column a ruled
+# table followed by prose.
+COLS = [72, 318, 540]
+ROWS = [700, 678, 656, 634]
+page4 = text(72, 740, "Harbour committee minutes and notices for the autumn season", 14)
+page4 += column(72, 710, LEFT)
+page4 += "".join(rule(COLS[1], y, COLS[2], y) for y in ROWS)
+page4 += "".join(rule(x, ROWS[0], x, ROWS[-1]) for x in (COLS[1], 429, COLS[2]))
+for r, (item, quantity) in enumerate([("Item", "Quantity"), ("Mooring rings", "12"), ("Signal lamps", "2")]):
+    page4 += text(COLS[1] + 6, ROWS[r + 1] + 7, item)
+    page4 += text(429 + 6, ROWS[r + 1] + 7, quantity)
+page4 += column(318, 606, RIGHT[:4])
+
+content = [page1.encode("ascii"), page2.encode("ascii"), page3.encode("ascii"), page4.encode("ascii")]
 count = len(content)
 objects = [
     b"<< /Type /Catalog /Pages 2 0 R >>",
