@@ -8,7 +8,7 @@ use ariad_core::writer::csv::find_tables;
 use ariad_core::{
     ir::Block,
     limits::Limits,
-    reader::pdf::{self, ReadOptions},
+    reader::pdf::{self, ReadError, ReadOptions},
 };
 use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, table_pages, tables};
 
@@ -358,9 +358,14 @@ fn only_known_tables_appear_across_all_fixtures() {
         detect_tables: true,
     };
     for name in names {
-        let Ok(output) = pdf::read_with_options(&fixture(&name), &Limits::local(), &options) else {
+        let result = pdf::read_with_options(&fixture(&name), &Limits::local(), &options);
+        if name == "repaired-xref-extraction.pdf" {
+            // The reader does not repair a broken cross-reference table; every other fixture
+            // must read.
+            assert!(matches!(result, Err(ReadError::Malformed)), "{name}");
             continue;
-        };
+        }
+        let output = result.unwrap_or_else(|error| panic!("{name}: {error}"));
         let count = find_tables(&output.document.body).len();
         let want = expected
             .iter()
