@@ -1,10 +1,12 @@
 //! Font coverage, bundled edit fallbacks and conservative font program subsetting.
 
 pub mod cff;
+mod cff_prune;
 pub mod fallback;
 mod truetype;
 mod type1;
 
+pub use cff_prune::subset_simple_cff;
 pub use fallback::{
     BundledFontChoice, BundledFontFamily, BundledFontStyle, FontFallbackError, ResolvedEditFont,
     check_font_coverage, embed_subset_type0_font, match_bundled_font, resolve_font_for_text,
