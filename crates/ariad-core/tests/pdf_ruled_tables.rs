@@ -1,4 +1,5 @@
 //! Ruled-table detection on real and generated PDFs.
+#![cfg(feature = "pdf")]
 
 use ariad_core::writer::csv::find_tables;
 use ariad_core::{
