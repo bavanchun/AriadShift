@@ -784,11 +784,19 @@ impl<'a> Interp<'a> {
         let sbx = if vertical { self.sbx } else { 0 };
         let set = self.sets.last_mut()?;
         for &[pos, len] in args.as_chunks::<2>().0 {
-            set.push(Stem {
+            let stem = Stem {
                 vertical,
                 pos: pos.checked_add(sbx)?,
                 len,
-            });
+            };
+            // A repeated stem is one stem; a set may hold at most MAX_STEMS per direction.
+            if set.contains(&stem) {
+                continue;
+            }
+            if set.iter().filter(|s| s.vertical == vertical).count() >= MAX_STEMS {
+                return None;
+            }
+            set.push(stem);
         }
         Some(())
     }
@@ -1196,14 +1204,15 @@ fn encode_glyph(glyph: &Glyph, default_width: i64, nominal_width: i64) -> Option
             &mut hstems
         };
         if !list.contains(&(stem.pos, stem.len)) {
+            // Stop at the limit instead of deduplicating an unbounded number of stems.
+            if list.len() >= MAX_STEMS {
+                return None;
+            }
             list.push((stem.pos, stem.len));
         }
     }
     hstems.sort_unstable();
     vstems.sort_unstable();
-    if hstems.len() > MAX_STEMS || vstems.len() > MAX_STEMS {
-        return None;
-    }
     let has_stems = !hstems.is_empty() || !vstems.is_empty();
     let masked = has_stems && glyph.sets.len() > 1;
     let mask_for = |set: usize| -> Option<Vec<u8>> {
@@ -2745,5 +2754,80 @@ mod tests {
         let top = top_dict(&converted.bytes);
         let bbox = &top.iter().find(|(op, _)| *op == 5).expect("FontBBox").1;
         assert_eq!(bbox, &[-10.0, -20.0, 900.0, 800.0]);
+    }
+
+    // ---- hint stems ----
+
+    /// `0 600 hsbw`, `count` distinct horizontal stems, one line.
+    fn stem_glyph(count: usize) -> Vec<u8> {
+        let mut ops = vec![N(0), N(600), O(HSBW)];
+        for k in 0..count {
+            ops.extend([N(i32::try_from(k).unwrap() * 20), N(10), O(HSTEM)]);
+        }
+        ops.extend([N(0), N(0), O(RMOVETO), N(10), O(HLINETO), O(ENDCHAR)]);
+        cs(&ops)
+    }
+
+    fn interpret(code: &[u8]) -> Option<Glyph> {
+        let mut budget = FontBudget { steps: 0, segs: 0 };
+        convert_charstring(code, &[], &mut budget)
+    }
+
+    #[test]
+    fn a_hint_set_over_the_stem_limit_is_refused_when_interpreting() {
+        assert!(interpret(&stem_glyph(MAX_STEMS)).is_some());
+        assert!(interpret(&stem_glyph(MAX_STEMS + 1)).is_none());
+        // Tens of thousands of stems fit in the step limit; they must not pile up.
+        assert!(interpret(&stem_glyph(30_000)).is_none());
+    }
+
+    #[test]
+    fn repeated_stems_in_one_set_count_once() {
+        let mut ops = vec![N(0), N(600), O(HSBW)];
+        for _ in 0..(MAX_STEMS * 3) {
+            ops.extend([N(5), N(10), O(HSTEM)]);
+        }
+        ops.extend([N(0), N(0), O(RMOVETO), N(10), O(HLINETO), O(ENDCHAR)]);
+        let glyph = interpret(&cs(&ops)).expect("duplicates of one stem are one stem");
+        assert_eq!(glyph.sets[0].len(), 1);
+    }
+
+    #[test]
+    fn both_directions_may_use_the_full_stem_limit() {
+        let mut ops = vec![N(0), N(600), O(HSBW)];
+        for k in 0..i32::try_from(MAX_STEMS).unwrap() {
+            ops.extend([N(k * 20), N(10), O(HSTEM), N(k * 30), N(10), O(VSTEM)]);
+        }
+        ops.extend([N(0), N(0), O(RMOVETO), N(10), O(HLINETO), O(ENDCHAR)]);
+        assert!(convert_built(&with_glyph("X", cs(&ops))).is_some());
+        assert!(convert_built(&with_glyph("X", stem_glyph(MAX_STEMS + 1))).is_none());
+    }
+
+    #[test]
+    fn stems_across_hint_replacements_are_bounded_for_the_glyph() {
+        // Every set stays within the limit, but the union over many sets is huge: the encoder
+        // must refuse early instead of deduplicating tens of thousands of stems pairwise.
+        let sets = 2_000;
+        let glyph = Glyph {
+            width: 600 * FIXED,
+            sets: (0..sets)
+                .map(|set| {
+                    (0..MAX_STEMS)
+                        .map(|k| Stem {
+                            vertical: false,
+                            pos: i64::try_from(set * MAX_STEMS + k).unwrap() * FIXED,
+                            len: 10 * FIXED,
+                        })
+                        .collect()
+                })
+                .collect(),
+            segs: vec![Seg::Move(0, 0), Seg::Line(10 * FIXED, 0)],
+        };
+        let started = std::time::Instant::now();
+        assert!(encode_glyph(&glyph, 600, 600).is_none());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "46,000 distinct stems must be refused without pairwise deduplication"
+        );
     }
 }
