@@ -22,6 +22,7 @@ flate2 = { workspace = true, optional = true }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
 qrcode = { version = "=0.14.1", default-features = false, optional = true }
 quick-xml.workspace = true
+read-fonts = { version = "=0.47.0", default-features = false, features = ["std"] }
 oxiarc-jpeg = { version = "=0.4.2", default-features = false, optional = true }
 lopdf.workspace = true
 regex.workspace = true
@@ -32,7 +33,6 @@ serde_json = { workspace = true, features = ["raw_value"] }
 similar = "=3.2.1"
 subsetter = { version = "=0.2.6", default-features = false, optional = true }
 thiserror.workspace = true
-ttf-parser = { version = "=0.25.1", default-features = false, features = ["std", "glyph-names"] }
 unicode-normalization.workspace = true
 unicode-segmentation = "=1.13.3"
 zune-core = { version = "=0.5.3", default-features = false, features = ["std"], optional = true }
@@ -40,6 +40,7 @@ zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"],
 zip.workspace = true
 
 [dev-dependencies]
+skrifa = { version = "=0.50.0", default-features = false, features = ["std"] }
 oxiarc-jpeg = { version = "=0.4.2", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

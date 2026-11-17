@@ -3,11 +3,10 @@
 use std::{collections::BTreeMap, fmt::Write};
 
 use lopdf::{Document, Object, ObjectId, dictionary};
-use ttf_parser::{Face, GlyphId};
 use unicode_normalization::UnicodeNormalization;
 
 use super::{FontError, subset_program};
-use crate::PdfError;
+use crate::{PdfError, font_face::Face};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BundledFontFamily {
@@ -127,13 +126,13 @@ pub fn match_bundled_font(
 }
 
 fn parse_font(bytes: &[u8]) -> Result<Face<'_>, FontError> {
-    Face::parse(bytes, 0).map_err(|_| FontError::Program("cannot parse font face".into()))
+    Face::parse(bytes).ok_or_else(|| FontError::Program("cannot parse font face".into()))
 }
 
 fn missing_character(font: &Face<'_>, text: &str) -> Option<char> {
     text.nfc()
         .filter(|ch| *ch != '\n')
-        .find(|ch| font.glyph_index(*ch).is_none_or(|gid| gid.0 == 0))
+        .find(|ch| font.glyph_index(*ch).is_none_or(|gid| gid == 0))
 }
 
 /// Check every NFC-normalized scalar except line feeds; `.notdef` is never coverage.
@@ -212,7 +211,7 @@ pub fn embed_subset_type0_font(
     let font = parse_font(choice.bytes()).map_err(|_| PdfError::Malformed)?;
     let mut glyphs = BTreeMap::new();
     for ch in text.nfc().filter(|ch| *ch != '\n') {
-        let gid = font.glyph_index(ch).filter(|g| g.0 != 0).ok_or_else(|| {
+        let gid = font.glyph_index(ch).filter(|g| *g != 0).ok_or_else(|| {
             PdfError::InvalidParams(
                 FontFallbackError::GlyphUnavailable {
                     ch,
@@ -221,7 +220,7 @@ pub fn embed_subset_type0_font(
                 .to_string(),
             )
         })?;
-        glyphs.insert(ch, gid.0);
+        glyphs.insert(ch, gid);
         if glyphs.len() >= usize::from(u16::MAX) {
             return Err(PdfError::InvalidParams("too many font characters".into()));
         }
@@ -241,9 +240,7 @@ pub fn embed_subset_type0_font(
         let code = u16::try_from(index + 1).map_err(|_| PdfError::Malformed)?;
         codes.insert(ch, code);
         cid_to_gid.extend_from_slice(&remap.get(&gid).ok_or(PdfError::Malformed)?.to_be_bytes());
-        let advance = font
-            .glyph_hor_advance(GlyphId(gid))
-            .ok_or(PdfError::Malformed)?;
+        let advance = font.glyph_hor_advance(gid).ok_or(PdfError::Malformed)?;
         widths.push(Object::Integer(
             i64::from(advance) * 1000 / i64::from(font.units_per_em()),
         ));
