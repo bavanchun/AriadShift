@@ -162,11 +162,14 @@ const XREF_ROW: usize = 7;
 /// lopdf always emits that stream raw (`Filter` removed), which costs 7 bytes per object. The
 /// stream is the last object, so the objects, their offsets and `startxref` stay valid when only
 /// the tail changes. Fails closed: anything unexpected returns `bytes` unchanged.
-fn compress_xref_stream(bytes: Vec<u8>) -> Vec<u8> {
-    rewrite_xref_tail(&bytes).unwrap_or(bytes)
+fn compress_xref_stream(mut bytes: Vec<u8>) -> Vec<u8> {
+    let _ = rewrite_xref_tail(&mut bytes);
+    bytes
 }
 
-fn rewrite_xref_tail(bytes: &[u8]) -> Option<Vec<u8>> {
+/// Edits `bytes` in place: only the small tail is copied, so peak memory stays near one output.
+/// Returns `None` and leaves `bytes` untouched when anything is unexpected.
+fn rewrite_xref_tail(bytes: &mut Vec<u8>) -> Option<()> {
     const KEYWORD: &[u8] = b"\nstartxref\n";
     const END: &[u8] = b"\nendstream \nendobj\n";
     let keyword = bytes.windows(KEYWORD.len()).rposition(|w| w == KEYWORD)?;
@@ -222,18 +225,24 @@ fn rewrite_xref_tail(bytes: &[u8]) -> Option<Vec<u8>> {
     if !stream.dict.has(b"Filter") {
         return None;
     }
-    let mut out = Vec::with_capacity(start + header_len + dict.len() + stream.content.len() + 128);
-    out.extend_from_slice(&bytes[..start + header_len]);
-    out.extend_from_slice(b"<</DecodeParms<</Columns 7/Predictor 12>>/Filter/FlateDecode");
-    out.extend_from_slice(&dict[2..at + marker.len()]);
-    out.extend_from_slice(stream.content.len().to_string().as_bytes());
-    out.extend_from_slice(&dict[at + marker.len() + digits..]);
-    out.extend_from_slice(b"stream\n");
-    out.extend_from_slice(&stream.content);
-    out.extend_from_slice(END);
-    out.extend_from_slice(&bytes[keyword..]);
+    let mut tail =
+        Vec::with_capacity(dict.len() + stream.content.len() + 128 + bytes.len() - keyword);
+    tail.extend_from_slice(b"<</DecodeParms<</Columns 7/Predictor 12>>/Filter/FlateDecode");
+    tail.extend_from_slice(&dict[2..at + marker.len()]);
+    tail.extend_from_slice(stream.content.len().to_string().as_bytes());
+    tail.extend_from_slice(&dict[at + marker.len() + digits..]);
+    tail.extend_from_slice(b"stream\n");
+    tail.extend_from_slice(&stream.content);
+    tail.extend_from_slice(END);
+    tail.extend_from_slice(&bytes[keyword..]);
+    let keep = start + header_len;
     // Few objects: the added dictionary entries can outweigh the saving.
-    (out.len() < bytes.len()).then_some(out)
+    if keep + tail.len() >= bytes.len() {
+        return None;
+    }
+    bytes.truncate(keep);
+    bytes.extend_from_slice(&tail);
+    Some(())
 }
 
 // lopdf's cross-reference stream uses 32-bit offsets. Refuse output that cannot be represented.
@@ -941,7 +950,7 @@ mod tests {
             .windows(10)
             .rposition(|w| w == b"/Type/XRef")
             .expect("xref stream");
-        let tail: String = output[at - 200..(at + 200).min(output.len())]
+        let tail: String = output[at.saturating_sub(200)..(at + 200).min(output.len())]
             .iter()
             .map(|&b| char::from(b))
             .collect();
@@ -957,6 +966,74 @@ mod tests {
         assert!(length * 2 < (count + 1) * XREF_ROW, "{length} for {count}");
     }
 
+    /// A well-formed raw xref tail of `rows` entries, as lopdf writes it, behind a filler prefix.
+    fn raw_xref_file(
+        rows: usize,
+        edit: impl Fn(&mut String, &mut Vec<u8>, &mut Vec<u8>),
+    ) -> Vec<u8> {
+        let mut dict = String::from("<</Type/XRef/W[1 4 2]");
+        let mut payload = Vec::new();
+        for n in 0..rows {
+            let offset = u32::try_from(9 + n * 40).unwrap().to_be_bytes();
+            payload.extend_from_slice(&[1, offset[0], offset[1], offset[2], offset[3], 0, 0]);
+        }
+        let mut junk = Vec::new();
+        edit(&mut dict, &mut payload, &mut junk);
+        let mut out = b"%PDF-1.5\n".to_vec();
+        let start = out.len();
+        out.extend_from_slice(format!("1 0 obj\n{dict}>>stream\n").as_bytes());
+        out.extend_from_slice(&payload);
+        out.extend_from_slice(b"\nendstream \nendobj\n");
+        out.extend_from_slice(&junk);
+        out.extend_from_slice(format!("\nstartxref\n{start}\n%%EOF").as_bytes());
+        out
+    }
+
+    fn well_formed(dict_extra: &str) -> impl Fn(&mut String, &mut Vec<u8>, &mut Vec<u8>) {
+        let extra = dict_extra.to_owned();
+        move |dict, payload, _| {
+            dict.push_str(&format!("/Length {}{extra}", payload.len()));
+        }
+    }
+
+    #[test]
+    fn xref_rewrite_round_trips_the_raw_rows_through_the_predictor() {
+        let raw = raw_xref_file(300, well_formed(""));
+        let out = compress_xref_stream(raw.clone());
+        assert!(out.len() < raw.len());
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("/Predictor 12") && text.contains("/Columns 7"));
+        // Decode the new stream by hand and compare it with the raw rows.
+        let head = out
+            .windows(9)
+            .position(|w| w == b">>stream\n")
+            .expect("stream")
+            + 9;
+        let tail_at = out
+            .windows(19)
+            .rposition(|w| w == b"\nendstream \nendobj\n")
+            .expect("end");
+        let stream = Stream::new(
+            dictionary! { "Filter" => "FlateDecode" },
+            out[head..tail_at].to_vec(),
+        );
+        let predicted = stream.decompressed_content().expect("inflate");
+        assert_eq!(predicted.len(), 300 * (XREF_ROW + 1));
+        let mut rows = Vec::new();
+        let mut previous = [0_u8; XREF_ROW];
+        for chunk in predicted.chunks(XREF_ROW + 1) {
+            assert_eq!(chunk[0], 2);
+            let mut row = [0_u8; XREF_ROW];
+            for i in 0..XREF_ROW {
+                row[i] = chunk[i + 1].wrapping_add(previous[i]);
+            }
+            rows.extend_from_slice(&row);
+            previous = row;
+        }
+        let first = raw.windows(9).position(|w| w == b">>stream\n").unwrap() + 9;
+        assert_eq!(rows, raw[first..first + 300 * XREF_ROW]);
+    }
+
     #[test]
     fn xref_stream_rewrite_fails_closed_on_unexpected_tails() {
         for bytes in [
@@ -970,6 +1047,37 @@ mod tests {
                 .to_vec(),
         ] {
             assert_eq!(compress_xref_stream(bytes.clone()), bytes);
+        }
+        // One mutant per guard, each built from a tail that does compress.
+        let ok = raw_xref_file(300, well_formed(""));
+        assert_ne!(compress_xref_stream(ok.clone()), ok);
+        let mutants = [
+            raw_xref_file(300, well_formed("/Filter/FlateDecode")),
+            raw_xref_file(300, |dict, payload, _| {
+                dict.replace_range(dict.find("/W[1 4 2]").unwrap().., "/W[1 3 2]");
+                dict.push_str(&format!("/Length {}", payload.len()));
+            }),
+            raw_xref_file(300, |dict, payload, _| {
+                payload.pop();
+                dict.push_str(&format!("/Length {}", payload.len()));
+            }),
+            raw_xref_file(300, |dict, payload, _| {
+                dict.push_str(&format!(
+                    "/Length {}/Length {}",
+                    payload.len(),
+                    payload.len()
+                ));
+            }),
+            raw_xref_file(300, |dict, payload, _| {
+                dict.push_str(&format!("/Length {}", payload.len() + 7000));
+            }),
+            raw_xref_file(300, |dict, payload, junk| {
+                dict.push_str(&format!("/Length {}", payload.len()));
+                junk.extend_from_slice(b"junk");
+            }),
+        ];
+        for mutant in mutants {
+            assert_eq!(compress_xref_stream(mutant.clone()), mutant);
         }
     }
 
