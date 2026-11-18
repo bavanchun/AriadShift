@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Test macos-check-secrets.sh over the six Apple secrets and the Sparkle key: named cases for every documented row of the
-# mode table, every single-secret case, empty-string values (how GitHub passes an unset secret), and an exhaustive sweep of
-# all 2^7 presence combinations against an independent oracle. Values must never reach stdout, stderr or the step summary.
+# Test macos-check-secrets.sh over the six Apple secrets and SPARKLE_ED_KEY_PRESENT, the boolean the workflow derives from
+# `secrets.SPARKLE_ED_PRIVATE_KEY != ''` (the step never receives the key): named cases for every documented row of the
+# mode table, every single-secret case, empty and blank flags (whitespace trimmed), a wrongly wired flag, and an exhaustive
+# sweep of all 2^7 presence combinations against an independent oracle. Values must never reach stdout, stderr or the
+# step summary.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CHECK="${SCRIPT_DIR}/macos-check-secrets.sh"
 ALL=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY)
-KEY=SPARKLE_ED_PRIVATE_KEY
+KEY=SPARKLE_ED_KEY_PRESENT
+SECRET_KEY=SPARKLE_ED_PRIVATE_KEY
 CANARY="canary-value-that-must-never-be-printed"
 failures=0
 cases=0
@@ -49,12 +52,17 @@ run_case() {
     rm -f "${summary}" "${err}"
 }
 
-# env_args NAME... -> fills the global array ENV_ARGS with NAME=<canary> for each present name
+# env_args NAME... -> fills the global array ENV_ARGS with NAME=<canary> for each present Apple secret; the Sparkle flag
+# is a boolean, so its presence means KEY=true
 env_args() {
     ENV_ARGS=()
     local name
     for name in "$@"; do
-        ENV_ARGS+=("${name}=${CANARY}")
+        if [[ "${name}" == "${KEY}" ]]; then
+            ENV_ARGS+=("${KEY}=true")
+        else
+            ENV_ARGS+=("${name}=${CANARY}")
+        fi
     done
 }
 
@@ -99,7 +107,7 @@ for one in "${ALL[@]}"; do
     named "all but ${one} + Sparkle key" "" 1 "${one}" "${others[@]}" "${KEY}"
 done
 
-echo "== Empty values count as absent, the way GitHub passes an unset secret =="
+echo "== Empty, false and blank flags count as absent, the way GitHub passes an unset secret =="
 empties=()
 for name in "${ALL[@]}" "${KEY}"; do
     empties+=("${name}=")
@@ -109,15 +117,78 @@ only_key=()
 for name in "${ALL[@]}"; do
     only_key+=("${name}=")
 done
-run_case "six empty + Sparkle key" adhoc 0 "" "${only_key[@]}" "${KEY}=${CANARY}"
+run_case "six empty + Sparkle flag true" adhoc 0 "" "${only_key[@]}" "${KEY}=true"
+run_case "six empty + Sparkle flag false" unsigned 0 "" "${only_key[@]}" "${KEY}=false"
 all_set=()
 for name in "${ALL[@]}"; do
     all_set+=("${name}=${CANARY}")
 done
-run_case "six set + empty Sparkle key" signed 0 "" "${all_set[@]}" "${KEY}="
-run_case "five set, one empty + empty Sparkle key" "" 1 "APPLE_API_KEY" \
+run_case "six set + empty Sparkle flag" signed 0 "" "${all_set[@]}" "${KEY}="
+run_case "six set + Sparkle flag false" signed 0 "" "${all_set[@]}" "${KEY}=false"
+run_case "five set, one empty + empty Sparkle flag" "" 1 "APPLE_API_KEY" \
     APPLE_CERTIFICATE="${CANARY}" APPLE_CERTIFICATE_PASSWORD="${CANARY}" APPLE_SIGNING_IDENTITY="${CANARY}" \
     APPLE_API_KEY_ID="${CANARY}" APPLE_API_ISSUER="${CANARY}" APPLE_API_KEY= "${KEY}="
+
+echo "== Whitespace around the flag is trimmed, and a blank flag counts as absent =="
+# The workflow can only pass true or false, so these protect the script against any other plumbing of the same value.
+BLANKS=(
+    "spaces|   "
+    "one space| "
+    "tab|"$'\t'
+    "newline|"$'\n'
+    "carriage return and newline|"$'\r\n'
+    "mixed|"$' \t\n \t\n '
+)
+for entry in "${BLANKS[@]}"; do
+    label="${entry%%|*}"
+    blank="${entry#*|}"
+    run_case "blank flag (${label}), no Apple secret" unsigned 0 "" "${KEY}=${blank}"
+    run_case "blank flag (${label}) + six Apple secrets" signed 0 "" "${all_set[@]}" "${KEY}=${blank}"
+    run_case "blank flag (${label}) + one Apple secret" "" 1 "${ALL_MISSING_BUT_CERT}" APPLE_CERTIFICATE="${CANARY}" "${KEY}=${blank}"
+    run_case "blank flag (${label}) + five Apple secrets" "" 1 "APPLE_API_KEY" \
+        APPLE_CERTIFICATE="${CANARY}" APPLE_CERTIFICATE_PASSWORD="${CANARY}" APPLE_SIGNING_IDENTITY="${CANARY}" \
+        APPLE_API_KEY_ID="${CANARY}" APPLE_API_ISSUER="${CANARY}" "${KEY}=${blank}"
+done
+run_case "flag true with surrounding spaces" adhoc 0 "" "${KEY}=  true  "
+run_case "flag true with a trailing newline" adhoc 0 "" "${KEY}=true"$'\n'
+run_case "flag true with a leading tab and trailing newline" adhoc 0 "" "${KEY}="$'\t'"true"$'\n'
+run_case "flag false with a trailing newline" unsigned 0 "" "${KEY}=false"$'\n'
+run_case "flag true with surrounding whitespace + six Apple secrets" signed 0 "" "${all_set[@]}" "${KEY}= true "
+run_case "flag true with surrounding whitespace + one Apple secret" "" 1 "${ALL_MISSING_BUT_CERT}" APPLE_CERTIFICATE="${CANARY}" "${KEY}= true "
+
+echo "== A flag that is neither true nor false fails closed and is never echoed =="
+# If the private key itself were wired into the flag by mistake, it must neither select a mode nor reach a log.
+wrong_flag() {
+    local label="$1" value="$2"
+    shift 2
+    local err rc=0 out
+    err="$(mktemp)"
+    out="$(env -i PATH="${PATH}" "$@" "${KEY}=${value}" bash "${CHECK}" 2>"${err}")" || rc=$?
+    cases=$((cases + 1))
+    if [[ "${rc}" -ne 0 && -z "${out}" ]] && grep -qF "SPARKLE_ED_KEY_PRESENT must be true or false" "${err}" \
+        && ! grep -qF "${value}" "${err}"; then
+        echo "PASS ${label}: rc=${rc}, no mode printed, value not echoed"
+    else
+        echo "FAIL ${label}: rc=${rc} stdout='${out}' stderr:" >&2
+        cat "${err}" >&2
+        failures=$((failures + 1))
+    fi
+    rm -f "${err}"
+}
+wrong_flag "flag set to the secret itself" "${CANARY}"
+wrong_flag "flag True (capital)" "True"
+wrong_flag "flag 1" "1"
+wrong_flag "flag yes" "yes"
+wrong_flag "flag 'true false'" "true false"
+wrong_flag "flag 't r u e' (inner whitespace)" "t r u e"
+wrong_flag "wrong flag + six Apple secrets" "${CANARY}" "${all_set[@]}"
+wrong_flag "wrong flag + one Apple secret" "${CANARY}" APPLE_CERTIFICATE="${CANARY}"
+
+echo "== The private key itself is never read by this step =="
+run_case "only SPARKLE_ED_PRIVATE_KEY set, no flag" unsigned 0 "" "${SECRET_KEY}=${CANARY}"
+run_case "SPARKLE_ED_PRIVATE_KEY set + flag false" unsigned 0 "" "${SECRET_KEY}=${CANARY}" "${KEY}=false"
+run_case "SPARKLE_ED_PRIVATE_KEY set + six Apple secrets" signed 0 "" "${all_set[@]}" "${SECRET_KEY}=${CANARY}"
+run_case "SPARKLE_ED_PRIVATE_KEY set + one Apple secret" "" 1 "${ALL_MISSING_BUT_CERT}" APPLE_CERTIFICATE="${CANARY}" "${SECRET_KEY}=${CANARY}"
 
 echo "== Exhaustive sweep: all 2^7 presence combinations against an independent oracle =="
 QUIET=1

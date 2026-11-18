@@ -2,13 +2,17 @@
 set -euo pipefail
 
 # Generate a Sparkle 2 appcast feed for macOS releases using pinned Sparkle tools.
-# The EdDSA private key is read from SPARKLE_ED_PRIVATE_KEY (env) or stdin, NEVER argv.
+# The EdDSA private key is read from SPARKLE_ED_PRIVATE_KEY (env) or stdin, NEVER argv. The variable is unset as soon as
+# the key is copied, so no child process (curl, tar, ditto, shasum, generate_appcast) inherits it; the key reaches
+# generate_appcast only on its standard input.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH='' cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 # Check key presence; fail loudly if absent
 KEY_INPUT="${SPARKLE_ED_PRIVATE_KEY:-}"
+# Drop the exported variable right away. KEY_INPUT is a plain shell variable, so children never see it.
+unset SPARKLE_ED_PRIVATE_KEY
 if [[ -z "${KEY_INPUT}" && ! -t 0 ]]; then
     # Read stdin with timeout to prevent hanging in non-interactive pipeline contexts
     if read -r -t 2 first_line; then
@@ -21,10 +25,11 @@ if [[ -z "${KEY_INPUT}" && ! -t 0 ]]; then
     fi
 fi
 
-if [[ -z "${KEY_INPUT}" ]]; then
+# A key made only of whitespace is no key: it would reach generate_appcast as garbage.
+if [[ -z "${KEY_INPUT//[[:space:]]/}" ]]; then
     echo "======================================================================" >&2
     echo "ERROR / UNSIGNED NOTICE:" >&2
-    echo "SPARKLE_ED_PRIVATE_KEY is not set." >&2
+    echo "SPARKLE_ED_PRIVATE_KEY is not set (or is only whitespace)." >&2
     echo "Sparkle appcast generation requires the EdDSA private key." >&2
     echo "======================================================================" >&2
     exit 1
