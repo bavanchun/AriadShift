@@ -2170,7 +2170,7 @@ mod tests {
             .collect();
         assert_eq!(
             fallback,
-            [ariad_core::tools::tables_csv::RULED_ONLY_MESSAGE]
+            [ariad_core::tools::tables_csv::BUILT_IN_DETECTOR_MESSAGE]
         );
 
         // A lone table has no number, exactly like the host names it.

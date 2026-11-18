@@ -269,7 +269,7 @@ pub(super) fn execute(
     if reader == TableReader::BuiltIn {
         warnings.push(ConvertWarning {
             code: tables_csv::DOCLING_FALLBACK_CODE.to_owned(),
-            message: tables_csv::RULED_ONLY_MESSAGE.to_owned(),
+            message: tables_csv::BUILT_IN_DETECTOR_MESSAGE.to_owned(),
         });
     }
     Ok(RawToolExecution {
