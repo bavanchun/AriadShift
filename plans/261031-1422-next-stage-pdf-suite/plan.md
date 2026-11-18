@@ -121,7 +121,7 @@ Phase 17 signing note (owner, 2026-11-18): macOS releases are ad-hoc signed and 
 - [ ] Footprint benchmark published vs Stirling desktop (phase 20).
 - [ ] 40+ locales shipped; EN/VI reviewed.
 - [ ] No AGPL/non-OSI code in any artifact; `just deny`, `just licenses-check`, `just js-licenses` green.
-- [ ] Web 1.0 and notarized macOS 1.0 released with the owner's GO. **OPEN OWNER DECISION (2026-11-18):** no Apple Developer account exists and macOS ships ad-hoc signed + Sparkle (phase 17 note below); whether 1.0 still requires notarization is undecided, so this criterion is unchanged until the owner rules.
+- [ ] Web 1.0 and notarized macOS 1.0 released with the owner's GO. **OPEN OWNER DECISION (2026-11-18):** no Apple Developer account exists and macOS ships ad-hoc signed + Sparkle (the "Phase 17 signing note" at the end of the "Release cadence" section above); whether 1.0 still requires notarization is undecided, so this criterion is unchanged until the owner rules.
 
 ## Dependencies
 
