@@ -50,7 +50,7 @@ pub const PER_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 pub fn preflight() -> Result<(), ToolError> {
     #[cfg(not(feature = "typst"))]
     {
-        return Err(ToolError::from_missing_engine("typst"));
+        Err(ToolError::from_missing_engine("typst"))
     }
     #[cfg(feature = "typst")]
     Ok(())
@@ -773,7 +773,7 @@ pub(crate) fn execute_with_client_deadline(
     #[cfg(not(feature = "typst"))]
     {
         let _ = (&document, &options, timestamp, scrubber);
-        return Err(ToolError::from_missing_engine("typst"));
+        Err(ToolError::from_missing_engine("typst"))
     }
 
     #[cfg(feature = "typst")]
