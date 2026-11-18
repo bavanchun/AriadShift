@@ -6,7 +6,7 @@ priority: P1
 effort: "6 tasks, ~15 worker-days"
 dependencies: [17]
 branch: feat/macos-tools-editor
-milestone: E (macOS) — ends with macOS preview 0.7.0
+milestone: E (macOS) — ends with macOS preview 0.8.0
 ---
 
 # Phase 18: macOS tools and editor
@@ -84,4 +84,4 @@ Carried over from the scout (Q3, Q4): whether plan verification belongs in `aria
 - [ ] Sparkle menu/update-window, relaunch and https/ATS checks recorded.
 - [x] CI build-time investigation recorded with before (52-56 min build + ~3 min tests) and after times (PR #316 check, then the sccache PR).
 - [ ] Pro interim implemented as above; the owner answers the Pro grant open question before any purchase or licence work.
-- [ ] macOS preview 0.7.0 notarized DMG + Sparkle appcast (owner GO).
+- [ ] macOS preview 0.8.0 notarized DMG + Sparkle appcast (owner GO).
