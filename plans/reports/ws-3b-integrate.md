@@ -410,7 +410,7 @@ The scoped code-review pass checked both conflict parents, quota ownership,
 error serialization, cleanup, unchanged abuse counters, configured/local signup
 and generated-contract consistency. No additional blocking issue was found.
 This was an inline review; fresh independent lead acceptance is still required.
-The execution checklist is [here](../261030-1552-hardening-integration-repair.md).
+The execution checklist is `plans/261030-1552-hardening-integration-repair.md` (removed; see git history).
 The local journal is [here](../journals/2026-10-30-repair-joined-hardening-integration.md).
 AgentWiki publication was skipped.
 

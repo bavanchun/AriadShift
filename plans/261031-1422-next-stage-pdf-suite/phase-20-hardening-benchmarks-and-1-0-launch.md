@@ -11,7 +11,7 @@ milestone: F (1.0)
 
 # Phase 20: Hardening, benchmarks and 1.0 launch
 
-> Deep-mode note: scout-and-detail pass by the Mac PM before dispatch. Folds in the on-hold v1-completion phases 7 (security audit) and 8 (distribution) from `plans/261025-1651-ariadshift-v1-completion/`.
+> Deep-mode note: scout-and-detail pass by the Mac PM before dispatch. Folds in the on-hold v1-completion phases 7 (security audit) and 8 (distribution) from the removed v1-completion plan (see git history).
 
 ## Goal
 

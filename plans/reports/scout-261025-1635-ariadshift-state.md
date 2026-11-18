@@ -41,11 +41,11 @@ All implementation roadmaps and follow-ups are located under [`plans/`](../../pl
 
 | Plan Folder | Status | Done Phases | Open / In-Progress Phases |
 |---|---|---|---|
-| [`261005-1717-phase-0-foundations`](../../plans/261005-1717-phase-0-foundations) | Completed | Phases 1–6 (Workspace, CI, Fixtures, IR v0, Protocol draft, Pandoc MD→DOCX) | None (Closed) |
-| [`261006-0544-docling-spike-and-roadmap-1a`](../../plans/261006-0544-docling-spike-and-roadmap-1a) | Completed | Phase 1 (Docling spike), Roadmap 1a (v0.1 CLI + MCP, MD↔DOCX/HTML/EPUB, release v0.1.0) | None (Closed) |
-| [`261022-2128-roadmap-1b-to-v1-product`](../../plans/261022-2128-roadmap-1b-to-v1-product) | **In-Progress** | • Phase 0 (Housekeeping)<br>• Phase 1 (Engine packs - PR #35)<br>• Phase 2 (Linux sandbox/limits - PR #33)<br>• Phase 3 (PDF/Typst/Office - PR #34, #50)<br>• Phase 4 (Docling engine/pack - PR #38, #43, #46)<br>• Phase 6 (Web foundation - PR #36, #41, #42)<br>• Phase 8 (Desktop Tauri app - PR #40) | • Phase 4 follow-up: PR #51 (Intel IPP/MKL drop)<br>• Phase 5: PR #49 (Bench freeze & v0.2.0 prep)<br>• Phase 7: PR #48 (Web heavy routes & hand-off)<br>• Phase 10: Cloud web, Better Auth, SDK, Compose<br>• Phase 11: v1.0 remote MCP, OS hooks, audit, release |
-| [`261024-0537-docling-pack-followups`](../../plans/261024-0537-docling-pack-followups) | Completed | Steps 1–4 (8 review findings addressed, Linux reproducibility, runtime attributions) | None (Merged via PR #43 & #46) |
-| [`261024-1000-cloud-hardening`](../../plans/261024-1000-cloud-hardening) | Completed | Phase 01 (13 cloud review observations closed: procfs check, storage bounds, tenant roles, SSE leases) | None (Merged via PR #44, #45, #47) |
+| `261005-1717-phase-0-foundations` | Completed | Phases 1–6 (Workspace, CI, Fixtures, IR v0, Protocol draft, Pandoc MD→DOCX) | None (Closed) |
+| `261006-0544-docling-spike-and-roadmap-1a` | Completed | Phase 1 (Docling spike), Roadmap 1a (v0.1 CLI + MCP, MD↔DOCX/HTML/EPUB, release v0.1.0) | None (Closed) |
+| `261022-2128-roadmap-1b-to-v1-product` | **In-Progress** | • Phase 0 (Housekeeping)<br>• Phase 1 (Engine packs - PR #35)<br>• Phase 2 (Linux sandbox/limits - PR #33)<br>• Phase 3 (PDF/Typst/Office - PR #34, #50)<br>• Phase 4 (Docling engine/pack - PR #38, #43, #46)<br>• Phase 6 (Web foundation - PR #36, #41, #42)<br>• Phase 8 (Desktop Tauri app - PR #40) | • Phase 4 follow-up: PR #51 (Intel IPP/MKL drop)<br>• Phase 5: PR #49 (Bench freeze & v0.2.0 prep)<br>• Phase 7: PR #48 (Web heavy routes & hand-off)<br>• Phase 10: Cloud web, Better Auth, SDK, Compose<br>• Phase 11: v1.0 remote MCP, OS hooks, audit, release |
+| `261024-0537-docling-pack-followups` | Completed | Steps 1–4 (8 review findings addressed, Linux reproducibility, runtime attributions) | None (Merged via PR #43 & #46) |
+| `261024-1000-cloud-hardening` | Completed | Phase 01 (13 cloud review observations closed: procfs check, storage bounds, tenant roles, SSE leases) | None (Merged via PR #44, #45, #47) |
 
 ---
 

@@ -6,7 +6,7 @@ priority: P1
 effort: "20 phases, ~125 worker tasks, ~225 worker-days"
 branch: dev
 tags: [feature, backend, frontend, infra, critical]
-blockedBy: [261025-1651-ariadshift-v1-completion]
+blockedBy: []
 blocks: []
 created: 2026-10-31
 ---
@@ -119,7 +119,7 @@ Packs (`pdfium`, `qpdf`, `tesseract`, `sign`, `verapdf`, `ai`, `inpaint`) are ve
 
 ## Dependencies
 
-- Blocked by: `261025-1651-ariadshift-v1-completion` phase 3 (v0.2.0 release) only. Its phases 7 and 8 (on hold) are folded into phase 20 here.
+- Blocked by: nothing; v0.2.0 shipped long ago. The removed v1-completion plan's phases 7 and 8 (on hold) are folded into phase 20 here (see git history).
 - Owner inputs needed during the plan: Pro tool list (phase 1 gate), Weblate host (phase 14), Apple signing/notarization secrets and Sparkle EdDSA key (phase 17), LaMa/AI weight licence approvals (phase 13), every release GO.
 
 ## Red Team Review
