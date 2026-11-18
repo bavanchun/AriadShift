@@ -1463,10 +1463,82 @@ fn copy_acroform_field_recursive(
             parent_dict.set(b"Opt".to_vec(), Object::Array(trimmed));
         }
     }
+    if is_button_field(src_doc, src_field_id) {
+        drop_unmatched_button_value(copier.target, new_parent_id);
+    }
 
     let out = vec![Object::Reference(new_parent_id)];
     visited.insert(src_field_id, out.clone());
     Ok(out)
+}
+
+/// Sets `/V` and `/DV` of a button field to `/Off` when none of its widgets has an appearance for
+/// the stored state, so a copied or partially kept group never names a state it cannot show. A
+/// widget whose normal appearance is not a dictionary of states leaves the entry alone, and so
+/// does an entry that is not a name or already `/Off`.
+pub(crate) fn drop_unmatched_button_value(doc: &mut Document, field_id: ObjectId) {
+    for key in [&b"V"[..], &b"DV"[..]] {
+        let Ok(field) = doc.get_dictionary(field_id) else {
+            return;
+        };
+        let Ok(Object::Name(value)) = field.get(key) else {
+            continue;
+        };
+        if value.as_slice() == b"Off" {
+            continue;
+        }
+        let value = value.clone();
+        let mut visited = BTreeSet::from([field_id]);
+        let unmatched = widget_states_lack(doc, field_id, &value, &mut visited, 0) == Some(true);
+        if unmatched && let Ok(field) = doc.get_dictionary_mut(field_id) {
+            field.set(key, Object::Name(b"Off".to_vec()));
+        }
+    }
+}
+
+/// Whether every widget below `node_id` has a dictionary of appearance states without `value`.
+/// Intermediate nodes (no `/AP`, with `/Kids`) are traversed within `MAX_TREE_DEPTH` and a visited
+/// set. `None` means unknown: a widget without a dictionary of states, a missing node, or a tree
+/// too deep to read, so the caller leaves the entry alone.
+fn widget_states_lack(
+    doc: &Document,
+    node_id: ObjectId,
+    value: &[u8],
+    visited: &mut BTreeSet<ObjectId>,
+    depth: usize,
+) -> Option<bool> {
+    if depth >= MAX_TREE_DEPTH {
+        return None;
+    }
+    let node = doc.get_dictionary(node_id).ok()?;
+    // The field itself is only ever a container here; a merged field/widget has no kids to judge.
+    if depth == 0 || node.get(b"AP").is_err() {
+        let kids = node
+            .get(b"Kids")
+            .ok()
+            .and_then(|k| resolve_object(doc, k))?;
+        let Object::Array(kids) = kids else {
+            return None;
+        };
+        let mut all_lack = true;
+        let mut any = false;
+        for kid in kids {
+            let kid_id = kid.as_reference().ok()?;
+            if !visited.insert(kid_id) {
+                continue;
+            }
+            any = true;
+            all_lack &= widget_states_lack(doc, kid_id, value, visited, depth + 1)?;
+        }
+        return any.then_some(all_lack);
+    }
+    let states = node
+        .get(b"AP")
+        .ok()
+        .and_then(|ap| resolve_dict(doc, ap))
+        .and_then(|ap| ap.get(b"N").ok())
+        .and_then(|normal| resolve_dict(doc, normal))?;
+    Some(!states.has(value))
 }
 
 /// True when the field's effective `/FT` is `/Btn`, following an inherited `/FT` up a bounded
