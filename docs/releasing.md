@@ -282,6 +282,7 @@ Native macOS app releases (`AriadShift.app`) are packaged, signed (Developer ID 
 - The Sparkle EdDSA private key is generated using Sparkle's `generate_keys` tool and exported with `generate_keys -x <file>`. The file content is a 44-character base64 string representing the 32-byte Ed25519 private seed.
 - The repository owner holds the key. It is stored **only** as `SPARKLE_ED_PRIVATE_KEY` in the GitHub Actions `release` environment, plus one offline, cold-storage backup (e.g., encrypted flash drive in a secure safe). The public key is not secret and is stored as described in the next bullet. Losing the key means installed copies cannot be updated by Sparkle, so the backup is mandatory.
 - The corresponding public key is stored in the variable `vars.SPARKLE_PUBLIC_ED_KEY` (the canonical location, which `macos.yml` reads; a `release` environment variable of the same name takes precedence over a repository variable) and injected at build time into `apps/macos/AriadShift/Info.plist` under `SUPublicEDKey`.
+- **Setup order matters.** Set `vars.SPARKLE_PUBLIC_ED_KEY` first, then add `SPARKLE_ED_PRIVATE_KEY` to the `release` environment. With only the secret set, a `v*` tag fails at the public-key check before anything is built. With neither set, and no Apple secrets, the tag builds in `unsigned` mode (nothing is published), which is the safe default.
 
 #### 2. Key rotation
 Sparkle 2 does not use or recognize `SUOldPublicEDKeys`. To rotate the EdDSA update signing key:
