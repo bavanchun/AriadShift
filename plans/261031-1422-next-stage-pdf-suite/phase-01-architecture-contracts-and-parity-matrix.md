@@ -137,7 +137,7 @@ rg -n "pdfium" crates apps fuzz Cargo.toml   # matches the T1 decision
 - [x] `docs/parity-matrix.md` covers 100 % of the Stirling feature table rows and Bento tools (or lists them under "Not adopted" with a reason); Pro rows are marked `proposed` (`docs/parity-matrix.md` merged in PR #125).
 - [x] Owner approved the Pro list (recorded in `docs/parity-matrix.md` with the date) (Pro list approved by the Mac PM on the owner's delegation on 2026-11-01, recorded in `docs/parity-matrix.md`).
 - [x] `docs/i18n.md` fixes library, catalogue path, TMS, locale list (`docs/i18n.md` merged in PR #125).
-- [x] The corpus regenerates deterministically and every file has a truth companion and a manifest entry (corpus: 22 PDFs with truth files and manifest entries, deterministic across two runs of `just fixtures`; merged in PR #125).
+- [x] The corpus regenerates deterministically and every file has a truth companion and a manifest entry (corpus: 28 PDFs with truth files and manifest entries, deterministic across two runs of `just fixtures`; merged in PR #125).
 
 ## Risks
 

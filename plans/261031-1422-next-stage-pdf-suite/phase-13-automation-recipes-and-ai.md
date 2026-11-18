@@ -42,7 +42,7 @@ Make AriadShift programmable and intelligent without giving up privacy: recipes 
 - [x] Watch folder processes 100 files idempotently (re-run does nothing).
 - [x] NL→recipe eval ≥ 90 % valid and correct on the 50-prompt set (EN + VI).
 - [x] No network access by `ai`/`inpaint` engines (sandbox verified); cloud path only after consent.
-- [ ] Engine preview 0.5.0 (owner GO).
+- [x] Engine preview 0.5.0 (owner GO) (shipped 0.5.0).
 
 ## Integration verification
 

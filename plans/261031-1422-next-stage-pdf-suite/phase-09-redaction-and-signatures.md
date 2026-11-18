@@ -1,7 +1,7 @@
 ---
 phase: 9
 title: "True redaction with verification, and digital signatures (visual + PAdES certificate, timestamp, validate)"
-status: pending
+status: in-progress
 priority: P1
 effort: "6 tasks, ~12 worker-days"
 dependencies: [4, 5]
@@ -32,8 +32,8 @@ Tools: `pdf.redact { targets, color, overlay_text?, scope: {text, images, vector
 - Visual signatures (draw/type/image) placed as stamp annotations or flattened content: `pdf.sign_visual`.
 - Certificate signing (PAdES B-B, B-T, B-LT, B-LTA) via **pyHanko 0.38.0 (MIT)** out of process in a `sign` pack (Python via uv with `uv.lock` hashes; full dependency tree listed and reviewed in the task report; licence gate = the Docling gate **generalised into a shared library** first (`engines/common/licenses/`), because `engines/docling/pack/licenses.py` hard-codes Docling distributions — note the gate detects licence drift, not malicious wheels): `pdf.sign { certificate: pkcs12 bytes (secret), password (secret), reason, location, contact, visible: {page, rect, appearance}, level: "B-B" \| "B-T" \| "B-LT" \| "B-LTA", tsa_url? }`. Incremental update always (keeps earlier signatures valid).
 - PKCS#11 / hardware tokens and macOS Keychain identities: macOS app (phase 18) passes the signing operation through a Swift-side `SecKey` signer callback; desktop CLI supports PKCS#11 via pyHanko's extra only after its licence is verified (gate). Tier `pro` for hardware-token signing (proposed in parity matrix).
-- `pdf.sign_validate` → JSON per signature: signer, time, integrity, coverage (whole document or partial), certificate chain status, timestamp, modifications since signing (pyHanko difference analysis). `pdf.sign_remove`.
-- Network (AD-15): the `sign` engine never gets network. When a timestamp or revocation data is needed, the **host** fetches TSA/OCSP/CRL responses with the SSRF-safe client (https, public IPs only after DNS resolution, redirects re-checked, size/time caps) and passes them to pyHanko as files; in cloud this is disabled unless the operator configures allowed TSA URLs. URLs embedded in an attacker's certificate are never fetched automatically during `pdf.sign_validate` (offline validation by default; `--fetch-revocation` is explicit).
+- `pdf.sign_verify` → JSON per signature: signer, time, integrity, coverage (whole document or partial), certificate chain status, timestamp, modifications since signing (pyHanko difference analysis). `pdf.sign_remove`.
+- Network (AD-15): the `sign` engine never gets network. When a timestamp or revocation data is needed, the **host** fetches TSA/OCSP/CRL responses with the SSRF-safe client (https, public IPs only after DNS resolution, redirects re-checked, size/time caps) and passes them to pyHanko as files; in cloud this is disabled unless the operator configures allowed TSA URLs. URLs embedded in an attacker's certificate are never fetched automatically during `pdf.sign_verify` (offline validation by default; `--fetch-revocation` is explicit).
 
 ## Tasks
 

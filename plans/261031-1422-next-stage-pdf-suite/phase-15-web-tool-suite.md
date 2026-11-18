@@ -1,7 +1,7 @@
 ---
 phase: 15
 title: "Web tool suite: every engine tool with a first-class UI"
-status: pending
+status: in-progress
 priority: P1
 effort: "6 tasks, ~12-15 worker-days"
 dependencies: [14, 10]

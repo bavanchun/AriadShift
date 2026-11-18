@@ -41,7 +41,7 @@ Engine-level APIs that both surfaces use to edit any PDF like Word (Document mod
 
 ## Acceptance
 
-- [x] Replace a word in `vi-diacritics-subset-font.pdf` → output renders correctly in Preview and Chrome; substitution warning when the subset lacks glyphs.
+- [ ] Replace a word in `vi-diacritics-subset-font.pdf` → output renders correctly in Preview and Chrome; substitution warning when the subset lacks glyphs.
 - [x] Document mode: open → edit IR → export PDF/DOCX on the corpus with fidelity reported.
 - [x] Page mode: op-list replay after an engine kill reproduces identical bytes.
 - [x] All edit tools available via CLI/MCP (`ashift tool edit.*`).

@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "OCR and scan tools: searchable PDF, deskew, auto-rotate, clean, scan splitting"
-status: pending
+status: completed
 priority: P1
 effort: "5 tasks, ~8 worker-days"
 dependencies: [4]
@@ -30,7 +30,7 @@ milestone: B (engine breadth)
 
 | Task | Owner (model) | Files owned |
 |---|---|---|
-| T0 | Gemini 4 Argon high | Tesseract + Leptonica reproducible source build per target (`engines/tesseract/build/**`, CI workflow), licence notices, effort tracked separately (expect 2-3 days) |
+| T0 | Gemini 4 Argon high | Tesseract + Leptonica reproducible source build per target (`engines/tesseract/pack/**`, CI workflow), licence notices, effort tracked separately (expect 2-3 days) |
 | T1 | Gemini 4 Argon high | `crates/ariad-host/src/engines/tesseract.rs` (v2 adapter), pack `engines/tesseract/pack/**`, `just pack-tesseract` |
 | T2 | Gemini 4 Argon high | Text-layer merge in `crates/ariad-pdf/src/ocr_layer.rs` (also used by Vision OCR in phase 19 — API takes word boxes + page size → invisible text content stream with a bundled OFL font with Vietnamese coverage, `Tr 3`) |
 | T3 | Gemini 4 Argon high | Orchestration tool `pdf.ocr` in host (`crates/ariad-host/src/tools/ocr.rs`): page fan-out with bounded parallelism, progress, cancellation |
