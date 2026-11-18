@@ -315,6 +315,28 @@ fn pdf_to_xlsx_puts_tables_without_ruling_lines_on_their_own_sheets_too() {
     let mut archive = ZipArchive::new(fs::File::open(&xlsx).unwrap()).unwrap();
     assert!(archive.by_name("xl/worksheets/sheet3.xml").is_ok());
     assert!(archive.by_name("xl/worksheets/sheet4.xml").is_err());
+
+    // Once tables are found, only the tables are kept: no sentence, title or caption of the page
+    // appears anywhere in the workbook. The table cells do appear, so the scan reads real text.
+    let mut workbook = String::new();
+    for index in 0..archive.len() {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_index(index).unwrap(), &mut bytes).unwrap();
+        workbook.push_str(&String::from_utf8_lossy(&bytes));
+    }
+    assert!(workbook.contains("Caliper") && workbook.contains("Gamma"));
+    for prose in [
+        "The committee reviewed the proposal and noted that every district would receive a share",
+        "Members asked for a clearer account",
+        "Measurement summary",
+        "Table 1: Instruments and their stated error.",
+        "Two columns",
+    ] {
+        assert!(
+            !workbook.contains(prose),
+            "prose kept in the workbook: {prose}"
+        );
+    }
 }
 
 #[test]
@@ -355,6 +377,69 @@ fn pdf_to_csv_keeps_ruled_tables_apart() {
         "Region,Units,Revenue\r\nNorth,120,\"4,500\"\r\nCentral region,95,\"3,210\"\r\nEast,143,\"5,008\"\r\n\r\n\
          Plan,,Actual\r\nTeam A,10,12\r\n,11,13\r\n"
     );
+}
+
+#[test]
+fn pdf_to_csv_keeps_tables_without_ruling_lines_apart() {
+    let (directory, data, _) = fresh();
+    let csv = directory.path().join("unruled.csv");
+    let output = no_docling_cli(&data)
+        .arg("convert")
+        .arg(pdf("unruled-tables.pdf"))
+        .args(["--to", "csv", "-o"])
+        .arg(&csv)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    // One block per detected table, a blank line between them, and nothing of the prose.
+    let text = fs::read_to_string(&csv).unwrap();
+    assert_eq!(
+        text,
+        "Instrument,Range,Error,Unit\r\nCaliper,150,0.02,mm\r\nMicrometer,25,0.004,mm\r\nDial gauge,10,0.01,mm\r\nHeight gauge,300,0.03,mm\r\nDepth rod,200,0.05,mm\r\n\r\n\
+         Region,Spring,Summer,Autumn\r\nNorth,12,18,\r\nSouth,20,25,14\r\nEast,9,,11\r\nWest,15,22,13\r\n\r\n\
+         Name,Size,Speed,Score\r\nAlpha,12,340,0.91\r\nBeta,48,210,0.87\r\nGamma,96,120,0.95\r\nDelta,7,410,0.78\r\n"
+    );
+    assert_eq!(
+        text.matches("\r\n\r\n").count(),
+        2,
+        "three tables, two separators"
+    );
+}
+
+/// `pdf.tables_to_csv` through the CLI is the route that extracts one file per table; the
+/// conversion to XLSX is the route that falls back to a text dump. Both must find no table on a
+/// PDF whose pages only look tabular.
+#[test]
+fn layouts_that_only_look_like_tables_give_no_tables_through_the_cli() {
+    let (directory, data, out) = fresh();
+    let output = run_tool(&data, &pdf("unruled-negatives.pdf"), &out);
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("no tables found in document"),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(fs::read_dir(&out).unwrap().count(), 0);
+
+    let xlsx = directory.path().join("negatives.xlsx");
+    let output = no_docling_cli(&data)
+        .arg("convert")
+        .arg(pdf("unruled-negatives.pdf"))
+        .args(["--to", "xlsx", "--json", "-o"])
+        .arg(&xlsx)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        warning_codes(&output).contains(&"no_tables_found".to_owned()),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    // The text dump is one sheet without merged cells.
+    let (dump, merges) = sheet_cells(&xlsx, "xl/worksheets/sheet1.xml");
+    assert!(!dump.is_empty() && merges.is_empty());
+    let mut archive = ZipArchive::new(fs::File::open(&xlsx).unwrap()).unwrap();
+    assert!(archive.by_name("xl/worksheets/sheet2.xml").is_err());
 }
 
 #[test]
