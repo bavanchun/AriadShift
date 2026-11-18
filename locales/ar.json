@@ -134,9 +134,9 @@
       "disabled": "{reason, select, later {متاح في إصدار لاحق} format {يعمل مع صيغ أخرى. استخدم ملف > استيراد.} paid {يتطلب خطة مدفوعة} info {تعذّرت قراءة تفاصيل الأداة، لذا تبقى الأدوات متوقفة.} other {غير متاح}}",
       "loading": "جارٍ تحميل الأدوات…",
       "pro_title": "{title} (Pro)",
-      "pro_hint": "أداة Pro. يتطلب تشغيلها خطة Pro.",
+      "pro_hint": "أداة Pro.‎ يتطلب تشغيلها خطة Pro.‎",
       "job": "{job, select, organize {تنظيم} edit {تحرير} convert {تحويل} secure {الأمان} ocr {OCR} ai {الذكاء الاصطناعي} other {أدوات أخرى}}",
-      "badge": "{reason, select, later {لاحقًا} format {استيراد} paid {Pro} info {متوقفة} other {متوقفة}}",
+      "badge": "{reason, select, later {لاحقًا} format {استيراد} paid {Pro} info {معطّلة} other {معطّلة}}",
       "search": "البحث في الأدوات",
       "clear_search": "مسح البحث"
     },
@@ -159,7 +159,7 @@
       "next_page": "الصفحة التالية",
       "page_field": "رقم الصفحة",
       "tools": "الأدوات",
-      "tools_help": "البحث عن أداة (⌘K)"
+      "tools_help": "البحث عن أداة (⁦⌘K⁩)"
     },
     "inspector": {
       "title": "المستند",
@@ -179,8 +179,8 @@
       "remove": "إزالة",
       "need_documents": "{count, plural, zero {لا حاجة إلى إضافة مستندات لتشغيل هذه الأداة.} one {أضف مستندًا واحدًا آخر لتشغيل هذه الأداة.} two {أضف مستندين آخرين لتشغيل هذه الأداة.} few {أضف # مستندات أخرى لتشغيل هذه الأداة.} many {أضف # مستندًا آخر لتشغيل هذه الأداة.} other {أضف # مستند آخر لتشغيل هذه الأداة.}}",
       "failed": "لم تكتمل الأداة.",
-      "pro_notice": "هذه أداة Pro. يتطلب تشغيلها خطة Pro.",
-      "upgrade": "تتطلب هذه الأداة خطة Pro. قم بالترقية لتشغيلها.",
+      "pro_notice": "هذه أداة Pro.‎ يتطلب تشغيلها خطة Pro.‎",
+      "upgrade": "تتطلب هذه الأداة خطة Pro.‎ قم بالترقية لتشغيلها.",
       "reveal": "إظهار في Finder",
       "field_error": "{kind, select, missing {الحقل {field} مطلوب.} other {الحقل {field} غير صالح.}}",
       "result": "النتيجة",
@@ -189,7 +189,7 @@
       "move_up": "نقل لأعلى",
       "move_down": "نقل لأسفل",
       "reset": "إعادة ضبط",
-      "run_help": "تشغيل الأداة (⌘↩)",
+      "run_help": "تشغيل الأداة (⁦⌘↩⁩)",
       "close_tool": "إغلاق الأداة",
       "details": "التفاصيل",
       "output": "المخرجات",
@@ -197,7 +197,7 @@
       "open_result": "فتح النتيجة",
       "done": "تم",
       "undo": "تراجع",
-      "done_sizes": "{tool} · {before} ← {after}",
+      "done_sizes": "{tool} · ⁦{before}⁩ ← ⁦{after}⁩",
       "done_files": "{tool} · {count, plural, zero {لم يُنشأ أي ملف} one {أُنشئ ملف واحد} two {أُنشئ ملفان} few {أُنشئت # ملفات} many {أُنشئ # ملفًا} other {أُنشئ # ملف}}"
     },
     "settings": {
@@ -217,7 +217,7 @@
       "start": "ابدأ"
     },
     "welcome": {
-      "tagline": "كل أدوات PDF، بخصوصية تامة على جهاز Mac.",
+      "tagline": "كل أدوات PDF، بخصوصية تامة على جهاز Mac.‎",
       "drop_title": "أفلت ملفات PDF أو المستندات هنا",
       "drop_or": "أو",
       "open": "فتح…",
@@ -230,14 +230,14 @@
         "ocr": "OCR لمسح ضوئي",
         "split": "تقسيم ملف PDF"
       },
-      "suggest_message": "اختر ملفات PDF لأداة {tool}."
+      "suggest_message": "اختر ملفات PDF لأداة ⁦{tool}⁩."
     },
     "whats_new": {
-      "title": "الجديد في AriadShift {version}",
+      "title": "ما الجديد في AriadShift {version}",
       "look_title": "مظهر جديد",
       "look_detail": "نافذة أكثر هدوءًا مع Liquid Glass على macOS 26، وشريط جانبي للصفحات ولوحة فحص تظهر عند الحاجة.",
       "tools_title": "كل أداة في متناول يدك",
-      "tools_detail": "اضغط ⌘K للعثور على أي أداة وتشغيلها بجوار مستندك مباشرة.",
+      "tools_detail": "اضغط ⁦⌘K⁩ للعثور على أي أداة وتشغيلها بجوار مستندك مباشرة.",
       "private_title": "ما زال خاصًا",
       "private_detail": "تعمل كل أداة على جهاز Mac لديك. تبقى مستنداتك عليه ما لم تختر غير ذلك.",
       "continue": "متابعة"
