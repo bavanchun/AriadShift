@@ -2161,8 +2161,7 @@ mod tests {
             ]
         );
 
-        // The built-in reader finds ruled tables only, and the result says so like the other
-        // runtimes do.
+        // The built-in reader ran, and the result says so like the other runtimes do.
         let fallback: Vec<&str> = run
             .warnings
             .iter()
@@ -2225,7 +2224,7 @@ mod tests {
             budget,
             false,
         )
-        .expect_err("a document without ruled tables has nothing to extract");
+        .expect_err("a document without tables has nothing to extract");
         assert_eq!(error.code(), "engine_failure");
         assert_eq!(error.detail("exit_code"), Some(&serde_json::json!(1)));
         assert_eq!(

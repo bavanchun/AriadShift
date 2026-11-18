@@ -1,5 +1,5 @@
 //! `pdf.tables_to_csv` and PDF -> XLSX/CSV without the Docling pack: the in-process reader
-//! detects tables drawn with ruling lines.
+//! detects tables drawn with ruling lines and tables whose columns are aligned with whitespace.
 
 mod support;
 
@@ -61,13 +61,14 @@ fn sheet_cells(xlsx: &Path, sheet: &str) -> (Vec<(String, String)>, Vec<String>)
     let cells = xml
         .split("<c r=\"")
         .skip(1)
-        .map(|cell| {
+        .filter_map(|cell| {
             let (reference, rest) = cell.split_once('"').expect("cell reference");
-            let cell = &rest[..rest.find("</c>").expect("cell end")];
+            // An empty cell with a style is self-closing and has no value.
+            let cell = &rest[..rest.find("</c>")?];
             let value = between(cell, "<t xml:space=\"preserve\">", "</t>")
                 .or_else(|| between(cell, "<v>", "</v>"))
                 .expect("cell value");
-            (reference.to_owned(), value.to_owned())
+            Some((reference.to_owned(), value.to_owned()))
         })
         .collect();
     let merges = xml
@@ -134,13 +135,48 @@ fn tables_to_csv_extracts_ruled_tables_without_docling() {
         !warning_codes(&output).contains(&"styles_dropped".to_owned()),
         "CSV has no styling, so that notice would be noise"
     );
-    // The built-in reader ran, and the report says it found ruled tables only.
+    // The built-in reader ran, and the report says so.
     let report = report(&output);
     assert_eq!(report["engine"], "ariad-pdf");
     assert_eq!(
         warning_messages(&output, "docling_fallback"),
         [
-            "The Docling engine pack is not installed; tables were detected from ruling lines only. Install Docling to also find tables without ruling lines."
+            "The Docling engine pack is not installed; tables were detected from ruling lines and from columns aligned with whitespace, and other layouts stay text. Install Docling for layout-aware table detection."
+        ]
+    );
+}
+
+#[test]
+fn tables_to_csv_extracts_tables_without_ruling_lines_without_docling() {
+    let (_directory, data, out) = fresh();
+    let output = run_tool(&data, &pdf("unruled-tables.pdf"), &out);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let mut files: Vec<_> = fs::read_dir(&out)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    files.sort();
+    assert_eq!(
+        files,
+        [
+            "unruled-tables.table-001.csv",
+            "unruled-tables.table-002.csv",
+            "unruled-tables.table-003.csv"
+        ]
+    );
+    assert_eq!(
+        fs::read_to_string(out.join("unruled-tables.table-001.csv")).unwrap(),
+        "Instrument,Range,Error,Unit\r\nCaliper,150,0.02,mm\r\nMicrometer,25,0.004,mm\r\nDial gauge,10,0.01,mm\r\nHeight gauge,300,0.03,mm\r\nDepth rod,200,0.05,mm\r\n"
+    );
+    assert_eq!(
+        fs::read_to_string(out.join("unruled-tables.table-002.csv")).unwrap(),
+        "Region,Spring,Summer,Autumn\r\nNorth,12,18,\r\nSouth,20,25,14\r\nEast,9,,11\r\nWest,15,22,13\r\n"
+    );
+    assert_eq!(report(&output)["engine"], "ariad-pdf");
+    assert_eq!(
+        warning_messages(&output, "docling_fallback"),
+        [
+            "The Docling engine pack is not installed; tables were detected from ruling lines and from columns aligned with whitespace, and other layouts stay text. Install Docling for layout-aware table detection."
         ]
     );
 }
@@ -236,6 +272,52 @@ fn pdf_to_xlsx_puts_each_ruled_table_on_its_own_sheet_without_docling() {
 }
 
 #[test]
+fn pdf_to_xlsx_puts_tables_without_ruling_lines_on_their_own_sheets_too() {
+    let (directory, data, _) = fresh();
+    let xlsx = directory.path().join("unruled.xlsx");
+    let output = no_docling_cli(&data)
+        .arg("convert")
+        .arg(pdf("unruled-tables.pdf"))
+        .args(["--to", "xlsx", "--json", "-o"])
+        .arg(&xlsx)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let codes = warning_codes(&output);
+    assert!(codes.contains(&"docling_fallback".to_owned()), "{codes:?}");
+    assert!(!codes.contains(&"no_tables_found".to_owned()), "{codes:?}");
+
+    let (second, merges) = sheet_cells(&xlsx, "xl/worksheets/sheet2.xml");
+    assert_eq!(
+        second,
+        cells(&[
+            ("A1", "Region"),
+            ("B1", "Spring"),
+            ("C1", "Summer"),
+            ("D1", "Autumn"),
+            ("A2", "North"),
+            ("B2", "12"),
+            ("C2", "18"),
+            ("A3", "South"),
+            ("B3", "20"),
+            ("C3", "25"),
+            ("D3", "14"),
+            ("A4", "East"),
+            ("B4", "9"),
+            ("D4", "11"),
+            ("A5", "West"),
+            ("B5", "15"),
+            ("C5", "22"),
+            ("D5", "13"),
+        ])
+    );
+    assert!(merges.is_empty());
+    let mut archive = ZipArchive::new(fs::File::open(&xlsx).unwrap()).unwrap();
+    assert!(archive.by_name("xl/worksheets/sheet3.xml").is_ok());
+    assert!(archive.by_name("xl/worksheets/sheet4.xml").is_err());
+}
+
+#[test]
 fn pdf_to_xlsx_without_ruled_tables_is_still_a_text_dump() {
     let (directory, data, _) = fresh();
     let xlsx = directory.path().join("prose.xlsx");
@@ -300,7 +382,7 @@ fn docling_wins_over_the_in_process_detector_when_it_is_installed() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
-    // Docling ran, so the report names it and carries no ruled-tables-only notice.
+    // Docling ran, so the report names it and carries no built-in reader notice.
     assert_eq!(report(&output)["engine"], "docling");
     assert!(
         !warning_codes(&output).contains(&"docling_fallback".to_owned()),

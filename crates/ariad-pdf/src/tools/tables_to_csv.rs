@@ -1,10 +1,13 @@
-//! `pdf.tables_to_csv`: extracts the tables drawn with ruling lines into one CSV file each.
+//! `pdf.tables_to_csv`: extracts the tables of a PDF into one CSV file each: tables drawn with
+//! ruling lines, and tables whose columns are only aligned with whitespace.
 //!
 //! This is the in-process extractor of the browser, where the Docling engine pack cannot run. The
 //! local and cloud runtimes run the host path instead (`ariad-host`), which prefers Docling when
 //! its pack is installed and otherwise reads the PDF with this same detector in the PDF engine
-//! child process; the cloud Core worker has no Docling pack, so it finds ruled tables only.
-//! Tables without ruling lines are not detected, and a PDF without any text layer needs Docling.
+//! child process; the cloud Core worker has no Docling pack, so it uses the built-in detector.
+//! The detector favours precision over recall: lists, forms, code, tables of words with no column
+//! of numbers and other layouts that are only aligned text stay text, so such a table is not
+//! extracted. A PDF without any text layer needs Docling.
 
 use std::collections::BTreeMap;
 

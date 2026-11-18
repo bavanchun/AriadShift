@@ -205,10 +205,14 @@ ashift convert drawing.odg --to pdf
 PDF to ODT/RTF uses the PDF reader → IR → Pandoc; TXT uses the native writer.
 PDF to XLSX and CSV extract tables with Docling when its pack is installed. Without
 Docling, the native PDF reader detects tables drawn with ruling lines (cell borders)
-and emits `docling_fallback`; tables without ruling lines are not found, and a PDF
-with none yields a text-dump sheet with `no_tables_found`. When ruled tables are
-found, XLSX and CSV keep only the tables: the surrounding prose is dropped, so a
-document that mixes prose and ruled tables loses its prose in these two outputs.
+and tables whose columns are aligned with whitespace, and emits `docling_fallback`.
+The whitespace detector favours precision over recall: lists, forms, code, tables of
+contents and other aligned text stay text, and so does a table of words with no column
+of numbers (a Yes and No matrix, a feature list) or a ledger whose description column
+is long phrases, so such tables still need Docling. A PDF with no table yields a
+text-dump sheet with `no_tables_found`. When tables are found, XLSX and CSV keep only
+the tables: the surrounding prose is dropped, so a document that mixes prose and
+tables loses its prose in these two outputs.
 CSV conversion produces one artifact; use `pdf.tables_to_csv` for one CSV per
 detected table. PDF to PPTX uses the system LibreOffice PDF import
 filter directly, without a PDFium rendering stage. Email attachments are listed,

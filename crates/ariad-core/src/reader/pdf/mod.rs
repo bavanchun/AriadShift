@@ -160,8 +160,10 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 /// whitespace when at least three rows share two or more aligned column gaps and the result is
 /// unambiguous: lists, forms, code, tables of contents and other text that only happens to be
 /// aligned in columns stay text, and so does a table whose columns hold words only, with no
-/// column of numbers. Pages where a limit stopped detection and a table that would otherwise
-/// have been kept was lost add an `unsupported_node` warning.
+/// column of numbers. A refused page frame, or a rule grid that spans the page, keeps whitespace
+/// detection off the whole page, so a table without rules inside such a frame stays text. Pages
+/// where a limit stopped detection and a table that would otherwise have been kept was lost add an
+/// `unsupported_node` warning.
 pub fn read_with_options(
     bytes: &[u8],
     limits: &Limits,

@@ -207,7 +207,8 @@ pub const fn can_write(format: Format) -> bool {
 /// Choices that change what [`read_with_options`] produces. The default reads like [`read`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ReadOptions {
-    /// Detect tables drawn with ruling lines when the input is a PDF. Ignored for other formats.
+    /// Detect tables when the input is a PDF: tables drawn with ruling lines and tables whose
+    /// columns are aligned with whitespace. Ignored for other formats.
     pub detect_tables: bool,
 }
 

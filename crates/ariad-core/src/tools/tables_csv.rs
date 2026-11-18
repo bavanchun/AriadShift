@@ -22,8 +22,10 @@ pub const NO_TABLES_MESSAGE: &str = "no tables found in document";
 /// Code of the warning that says the Docling engine pack did not read the tables.
 pub const DOCLING_FALLBACK_CODE: &str = "docling_fallback";
 
-/// Text of the [`DOCLING_FALLBACK_CODE`] warning when the built-in reader found the tables.
-pub const RULED_ONLY_MESSAGE: &str = "The Docling engine pack is not installed; tables were detected from ruling lines only. Install Docling to also find tables without ruling lines.";
+/// Text of the [`DOCLING_FALLBACK_CODE`] warning when the built-in reader found the tables. The
+/// reader detects tables drawn with ruling lines and tables whose columns are aligned with
+/// whitespace; other layouts stay text.
+pub const RULED_ONLY_MESSAGE: &str = "The Docling engine pack is not installed; tables were detected from ruling lines and from columns aligned with whitespace, and other layouts stay text. Install Docling for layout-aware table detection.";
 
 /// One extracted table.
 #[derive(Clone, Debug, Eq, PartialEq)]
