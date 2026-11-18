@@ -6551,3 +6551,41 @@ source = "Original synthetic Type 1 font program with PDF section lengths (flex 
 license = "Apache-2.0"
 license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
 attribution = "AriadShift contributors"
+
+[[fixture]]
+id = "ruled-tables-pdf"
+path = "fixtures/pdf/ruled-tables.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "PDF with ruled tables"
+origin = "generated"
+generated_by = "fixtures/gen/ruled-tables.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "45cf2d040a0e04ff7c8889d1e8641e25e471b428887b0452911a48cfee2faf78"
+pages = 2
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "ruled-table-traps-pdf"
+path = "fixtures/pdf/ruled-table-traps.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "PDF with ruled shapes that are not tables"
+origin = "generated"
+generated_by = "fixtures/gen/ruled-table-traps.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "33aa29ecbf0da5c6e140f279225b35ac1bc8987cdc50720f05454723fa25b11b"
+pages = 4
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []

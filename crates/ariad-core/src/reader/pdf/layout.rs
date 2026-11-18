@@ -16,7 +16,7 @@ use unicode_normalization::char::is_combining_mark;
 
 use super::{
     interpreter::{CHUNK_START, FontStyle, Glyph, INVISIBLE, PageContent, SPACE, STROKED},
-    lists,
+    lists, tables,
 };
 
 /// Gap, in font sizes, beyond which glyphs on one baseline belong to separate segments.
@@ -76,18 +76,159 @@ pub(super) struct Block {
     /// Whether the text runs left to right on the displayed page.
     pub(super) upright: bool,
     pub(super) direct: ParagraphStyle,
+    /// Set for a ruled table, whose `lines` are empty.
+    pub(super) table: Option<Box<TableLayout>>,
 }
 
-/// Lays out one page whose display box is `width` by `height` points.
+/// A detected table with the laid-out text of its cells.
+#[derive(Clone, Debug)]
+pub(super) struct TableLayout {
+    pub(super) columns: usize,
+    /// Rows, top to bottom; each holds the cells that start in it, left to right.
+    pub(super) rows: Vec<Vec<CellLayout>>,
+    /// Rows from the top that form the table head.
+    pub(super) head_rows: usize,
+}
+
+/// One cell of a [`TableLayout`].
+#[derive(Clone, Debug)]
+pub(super) struct CellLayout {
+    pub(super) rowspan: usize,
+    pub(super) colspan: usize,
+    pub(super) blocks: Vec<Block>,
+}
+
+/// Page-level counters for table detection.
+#[derive(Debug, Default)]
+pub(super) struct TableScan {
+    /// Pages where a limit stopped detection, so tables may be missing.
+    pub(super) capped_pages: u32,
+}
+
+/// Lays out one page whose display box is `width` by `height` points. With `scan`, ruled tables
+/// are detected and replace the text blocks they cover.
 pub(super) fn layout_page(
     content: &PageContent,
     styles: &[FontStyle],
     width: f64,
     height: f64,
+    scan: Option<&mut TableScan>,
+) -> Vec<Block> {
+    let detected = scan.map(|scan| {
+        let detected = tables::detect(content, width, height);
+        scan.capped_pages += u32::from(detected.capped);
+        detected
+    });
+    let grids = detected.map(|detected| detected.grids).unwrap_or_default();
+    if grids.is_empty() {
+        return layout_glyphs(content, styles, width, height, 0..content.glyphs.len());
+    }
+    let mut claimed = vec![false; content.glyphs.len()];
+    for grid in &grids {
+        for cell in &grid.cells {
+            for &index in &cell.glyphs {
+                claimed[index] = true;
+            }
+        }
+    }
+    let rest = (0..content.glyphs.len()).filter(|&index| !claimed[index]);
+    let mut blocks = layout_glyphs(content, styles, width, height, rest);
+    for grid in &grids {
+        let block = table_block(grid, content, styles, width, height);
+        let at = table_position(&blocks, &block.bbox);
+        blocks.insert(at, block);
+    }
+    blocks
+}
+
+fn table_block(
+    grid: &tables::Grid,
+    content: &PageContent,
+    styles: &[FontStyle],
+    width: f64,
+    height: f64,
+) -> Block {
+    let mut rows: Vec<Vec<CellLayout>> = (0..grid.rows).map(|_| Vec::new()).collect();
+    for cell in &grid.cells {
+        let blocks = layout_glyphs(content, styles, width, height, cell.glyphs.iter().copied());
+        rows[cell.row].push(CellLayout {
+            rowspan: cell.rowspan,
+            colspan: cell.colspan,
+            blocks,
+        });
+    }
+    let head_rows = usize::from(has_head(grid, &rows));
+    Block {
+        lines: Vec::new(),
+        bbox: grid.bbox,
+        size: 0.0,
+        bold: false,
+        chars: 0,
+        upright: true,
+        direct: ParagraphStyle::default(),
+        table: Some(Box::new(TableLayout {
+            columns: grid.columns,
+            rows,
+            head_rows,
+        })),
+    }
+}
+
+/// Whether the first row is a head: the rule under it is distinctly heavier, or its text is bold
+/// while the body text is not all bold. A first-row cell that spans several rows rules out a head;
+/// cells that span several columns do not.
+fn has_head(grid: &tables::Grid, rows: &[Vec<CellLayout>]) -> bool {
+    let first = &rows[0];
+    if rows.len() < 2 || first.iter().any(|cell| cell.rowspan != 1) {
+        return false;
+    }
+    if first.iter().all(|cell| cell.blocks.is_empty()) {
+        return false;
+    }
+    let bold = |cell: &CellLayout| cell.blocks.iter().all(|block| block.bold);
+    let filled = |cell: &&CellLayout| !cell.blocks.is_empty();
+    let first_bold = first.iter().filter(filled).all(bold);
+    let body_all_bold = rows[1..].iter().flatten().filter(filled).all(bold);
+    grid.heavy_head_rule || (first_bold && !body_all_bold)
+}
+
+/// Index at which a table block enters the reading order. The anchor is the last text block above
+/// the table that shares its columns, which may be a heading across all of them. Columns are read
+/// left to right, so the blocks that follow the anchor and lie wholly left of the table belong to
+/// an earlier column and come first: a table at the top of the right-hand column enters after the
+/// left-hand column, not right under the heading. With no such anchor the table goes before the
+/// first block that shares its columns, otherwise at the end.
+fn table_position(blocks: &[Block], bbox: &[f64; 4]) -> usize {
+    let shares_columns = |block: &Block| block.bbox[0] < bbox[2] && bbox[0] < block.bbox[2];
+    let in_earlier_column = |block: &Block| block.bbox[2] <= bbox[0];
+    if let Some(above) = blocks
+        .iter()
+        .rposition(|block| shares_columns(block) && block.bbox[1] < bbox[1])
+    {
+        let earlier = blocks[above + 1..]
+            .iter()
+            .take_while(|block| in_earlier_column(block))
+            .count();
+        return above + 1 + earlier;
+    }
+    blocks
+        .iter()
+        .position(shares_columns)
+        .unwrap_or(blocks.len())
+}
+
+/// Lays out the glyphs at `indices` (ascending positions in [`PageContent::glyphs`]).
+fn layout_glyphs(
+    content: &PageContent,
+    styles: &[FontStyle],
+    width: f64,
+    height: f64,
+    indices: impl Iterator<Item = usize>,
 ) -> Vec<Block> {
     let mut groups: [Vec<CGlyph>; 4] = Default::default();
     let mut seen = HashSet::new();
-    for (index, glyph) in content.glyphs.iter().enumerate() {
+    for index in indices {
+        let glyph = &content.glyphs[index];
         let margin = glyph.size;
         if glyph.x < -margin
             || glyph.y < -margin
@@ -1067,6 +1208,7 @@ fn finish(segments: &[Segment], members: &[usize], orientation: u8) -> Block {
         bold: chars > 0 && bold_chars as f64 >= BOLD_SHARE * chars as f64,
         chars,
         upright: orientation == 0,
+        table: None,
         direct: if orientation == 0 {
             paragraph_style(segments, members, size)
         } else {
@@ -1200,7 +1342,7 @@ mod tests {
         for (line, x, y) in body {
             place(&mut page, line, x, y, 10.0, 0);
         }
-        let blocks = layout_page(&page, &styles(), 400.0, 400.0);
+        let blocks = layout_page(&page, &styles(), 400.0, 400.0, None);
         let texts: Vec<Vec<String>> = blocks.iter().map(text).collect();
         assert_eq!(texts.len(), 4, "{texts:?}");
         assert_eq!(texts[0], vec!["Title here"]);
@@ -1241,7 +1383,7 @@ mod tests {
                 0,
             );
         }
-        let blocks = layout_page(&page, &styles(), 612.0, 792.0);
+        let blocks = layout_page(&page, &styles(), 612.0, 792.0, None);
         let texts: Vec<String> = blocks.iter().map(|b| text(b).join("|")).collect();
         assert_eq!(texts.len(), 3, "{texts:?}");
         assert!(texts[0].starts_with("A Spanning"));
@@ -1258,7 +1400,7 @@ mod tests {
         place(&mut page, "TH", 10.0, 50.0, 10.0, 0);
         place(&mut page, "Ủ", 20.0, 50.0, 10.0, 1);
         place(&mut page, "TƯỚNG", 32.0, 50.0, 10.0, 0);
-        let blocks = layout_page(&page, &styles(), 200.0, 200.0);
+        let blocks = layout_page(&page, &styles(), 200.0, 200.0, None);
         let line: String = blocks[0].lines[0].iter().map(|s| s.text.as_str()).collect();
         assert_eq!(line, "THỦ TƯỚNG");
     }
@@ -1270,7 +1412,7 @@ mod tests {
         place(&mut page, "1", 30.0, 46.0, 6.0, 0);
         place(&mut page, "e", 40.0, 50.0, 10.0, 0);
         place(&mut page, "\u{0301}", 41.0, 50.0, 10.0, 0);
-        let blocks = layout_page(&page, &styles(), 200.0, 200.0);
+        let blocks = layout_page(&page, &styles(), 200.0, 200.0, None);
         let spans = &blocks[0].lines[0];
         assert_eq!(spans[0].text, "note");
         assert_eq!(spans[1].text, "1 ");
@@ -1298,7 +1440,7 @@ mod tests {
                 flags: 0,
             });
         }
-        let blocks = layout_page(&page, &styles(), 400.0, 400.0);
+        let blocks = layout_page(&page, &styles(), 400.0, 400.0, None);
         assert_eq!(text(&blocks[0]), vec!["UP"]);
         let [left, top, right, bottom] = blocks[0].bbox;
         assert!(left < 20.0 && right > 20.0 && top < 300.0 && bottom > 290.0);
