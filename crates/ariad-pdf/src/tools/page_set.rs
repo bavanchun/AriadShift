@@ -1463,10 +1463,56 @@ fn copy_acroform_field_recursive(
             parent_dict.set(b"Opt".to_vec(), Object::Array(trimmed));
         }
     }
+    if is_button_field(src_doc, src_field_id) {
+        drop_unmatched_button_value(copier.target, new_parent_id);
+    }
 
     let out = vec![Object::Reference(new_parent_id)];
     visited.insert(src_field_id, out.clone());
     Ok(out)
+}
+
+/// Sets `/V` and `/DV` of a button field to `/Off` when none of its widgets has an appearance for
+/// the stored state, so a copied or partially kept group never names a state it cannot show. A
+/// widget whose normal appearance is not a dictionary of states leaves the entry alone, and so
+/// does an entry that is not a name or already `/Off`.
+pub(crate) fn drop_unmatched_button_value(doc: &mut Document, field_id: ObjectId) {
+    for key in [&b"V"[..], &b"DV"[..]] {
+        let Ok(field) = doc.get_dictionary(field_id) else {
+            return;
+        };
+        let Ok(Object::Name(value)) = field.get(key) else {
+            continue;
+        };
+        if value.as_slice() == b"Off" {
+            continue;
+        }
+        let value = value.clone();
+        let Some(kids) = field.get(b"Kids").ok().and_then(|k| k.as_array().ok()) else {
+            return;
+        };
+        let mut unmatched = true;
+        for kid in kids {
+            let states = kid
+                .as_reference()
+                .ok()
+                .and_then(|id| doc.get_dictionary(id).ok())
+                .and_then(|widget| widget.get(b"AP").ok())
+                .and_then(|ap| resolve_dict(doc, ap))
+                .and_then(|ap| ap.get(b"N").ok())
+                .and_then(|normal| resolve_dict(doc, normal));
+            match states {
+                Some(states) if !states.has(&value) => {}
+                _ => {
+                    unmatched = false;
+                    break;
+                }
+            }
+        }
+        if unmatched && let Ok(field) = doc.get_dictionary_mut(field_id) {
+            field.set(key, Object::Name(b"Off".to_vec()));
+        }
+    }
 }
 
 /// True when the field's effective `/FT` is `/Btn`, following an inherited `/FT` up a bounded

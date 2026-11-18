@@ -61,7 +61,7 @@ pub(crate) fn rename_duplicated_fields(
     for &(copy_id, source_id) in &pass.field_copies {
         ctx.check()?;
         align_copy_kids(doc, copy_id, source_id, &pass.origins);
-        drop_unmatched_button_value(doc, copy_id);
+        super::page_set::drop_unmatched_button_value(doc, copy_id);
     }
     register_calculation_order(doc, &pass.copies, ctx)?;
     // Every source `/Kids` array is filtered once, after all occurrences moved their widgets out.
@@ -353,51 +353,6 @@ fn renamed_name(source: Option<&Object>, partial: &str, renamed: &str) -> Object
         return encode_pdf_string(renamed);
     }
     Object::String(bytes, *format)
-}
-
-/// Sets `/V` of a copied button field to `/Off` when none of its widgets has an appearance for the
-/// stored state, so a copy never keeps a value for a state it cannot show. A widget whose normal
-/// appearance is not a dictionary of states leaves the value alone.
-fn drop_unmatched_button_value(doc: &mut Document, field_id: ObjectId) {
-    let Ok(field) = doc.get_dictionary(field_id) else {
-        return;
-    };
-    let Ok(Object::Name(value)) = field.get(b"V") else {
-        return;
-    };
-    if value.as_slice() == b"Off" {
-        return;
-    }
-    let value = value.clone();
-    let Some(kids) = field.get(b"Kids").ok().and_then(|k| k.as_array().ok()) else {
-        return;
-    };
-    for kid in kids {
-        let states = kid
-            .as_reference()
-            .ok()
-            .and_then(|id| doc.get_dictionary(id).ok())
-            .and_then(|widget| widget.get(b"AP").ok())
-            .and_then(|ap| resolve_dict(doc, ap))
-            .and_then(|ap| ap.get(b"N").ok())
-            .and_then(|normal| resolve_dict(doc, normal));
-        match states {
-            None => return,
-            Some(states) if states.has(&value) => return,
-            Some(_) => {}
-        }
-    }
-    if let Ok(field) = doc.get_dictionary_mut(field_id) {
-        field.set("V", Object::Name(b"Off".to_vec()));
-    }
-}
-
-fn resolve_dict<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary> {
-    match obj {
-        Object::Reference(id) => doc.get_dictionary(*id).ok(),
-        Object::Dictionary(dict) => Some(dict),
-        _ => None,
-    }
 }
 
 /// Lists each copy of a calculated field in `/AcroForm /CO` right after its source, keeping the
