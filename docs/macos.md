@@ -32,6 +32,20 @@ run (macOS 27.2, Xcode 27.2): 15 tests, 13 pass, 2 skip, 0 fail, twice in a row.
 1,000 pages in about 0.1 s and no engine pack is installed. The accessibility audit test skips because the audit service times out (error -56), even
 on Calculator; it stays strict and fails on any reported issue. `PerformanceUITests` hold the metrics and assert no budget.
 
+## Installing a dev build beside the stable app
+`just macos-install-dev` runs `macos-build` and installs the result as `~/Applications/AriadShift Dev.app` (bundle id `com.ariadnev.ariadshift.dev`),
+so it runs next to the stable app with its own preferences. The version is `<latest tag>-dev+<short sha>` and the build number is the commit count.
+Sparkle is off in the copy: `SUFeedURL` is removed and automatic checks are disabled, so it never updates itself to the stable release.
+
+The recipe re-signs the staged copy ad hoc as a whole (`xattr -cr`, `codesign --force --deep --sign -`, then `codesign --verify --deep --strict`).
+A plain ad-hoc Release build does not launch, because the embedded `Sparkle.framework` keeps Sparkle's Team ID and dyld refuses to map it
+("mapping process and mapped file (non-platform) have different Team IDs"). The old install is deleted before the new one is copied in, because
+macOS App Management blocks modifying a bundle that has been launched.
+
+- `ASHIFT_DEV_APP_DIR` overrides the install directory.
+- `ASHIFT_KEEP_BUILD=1` keeps `target/derived-data` and the cargo target directory; by default both are deleted after a successful install
+  (only when they are inside the checkout).
+
 ## EngineClient
 `EngineClient()` points the engine at `<App.app>/Contents/Helpers/ashift`; it throws `EngineError.helperMissing` unless that is an executable file.
 Cancelling the calling `Task` cancels the Rust run (`EngineError.cancelled`). One client per process is the supported shape; app code never calls the
