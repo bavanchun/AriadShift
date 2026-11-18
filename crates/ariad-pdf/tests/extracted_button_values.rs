@@ -326,30 +326,173 @@ fn a_nested_group_keeps_the_value_while_its_widget_stays() {
 }
 
 #[test]
-fn deep_and_cyclic_nesting_terminate() {
-    for nesting in [Nesting::Chain(10), Nesting::Chain(200), Nesting::Cycle] {
-        // Whatever the outcome, the run must end; a kept widget never loses its value.
-        let result = run_tool(
-            "pdf.extract_pages",
-            &[InputDoc::new("form.pdf", nested_pdf("a", nesting))],
-            &json!({ "pages": "1" }),
-            &ToolCtx::default(),
-        );
-        if let Ok(out) = result {
-            let doc = open(&out.artifacts[0].bytes, &Limits::local())
-                .expect("open output")
-                .inner()
-                .clone();
-            if let Some(group) = doc
-                .objects
-                .values()
-                .filter_map(|obj| obj.as_dict().ok())
-                .find(|d| partial_name(d).as_deref() == Some("g"))
-            {
-                assert_ne!(name_entry(group, b"V").as_deref(), Some("Off"));
-            }
+fn a_chain_deeper_than_the_walkers_is_refused_and_never_yields_a_reset_output() {
+    // Beyond the page-set walkers' depth bound the tool fails closed; it never emits a document
+    // in which the stale value was judged on a truncated tree.
+    let result = run_tool(
+        "pdf.extract_pages",
+        &[InputDoc::new(
+            "form.pdf",
+            nested_pdf("stale", Nesting::Chain(200)),
+        )],
+        &json!({ "pages": "1" }),
+        &ToolCtx::default(),
+    );
+    assert!(result.is_err(), "a 200-level chain must be refused");
+}
+
+#[test]
+fn a_cyclic_tree_terminates_and_judges_the_acyclic_remainder() {
+    // The copier breaks the cycle, so the kept group is root -> node -> widget `a`, which cannot
+    // show the stale value: it resets rather than looping or keeping the stale name.
+    let doc = extract("1", nested_pdf("stale", Nesting::Cycle));
+    let group = field(&doc, "g");
+    assert_eq!(name_entry(group, b"V").as_deref(), Some("Off"));
+    assert_eq!(name_entry(group, b"DV").as_deref(), Some("Off"));
+}
+
+#[test]
+fn a_deep_chain_within_the_bound_resets_a_stale_value() {
+    let doc = extract("1", nested_pdf("stale", Nesting::Chain(30)));
+    assert_eq!(name_entry(field(&doc, "g"), b"V").as_deref(), Some("Off"));
+}
+
+/// Shapes of the root field `g` built by `shaped_pdf`; the widgets are `a` (page 1) and `b`
+/// (page 2).
+#[derive(Clone, Copy)]
+enum Shape {
+    /// root -> `mid` (own `/AP /N` with only `/Off`) -> widgets that do have state `a`.
+    MidApLacksKidsHold,
+    /// root -> `mid` (own `/AP /N` with state `a`) -> widgets that lack state `a`.
+    MidApHoldsKidsLack,
+    /// root -> widget `a` (states `x`, `/Off`) and widget `b` (no `/AP`).
+    MixedWithoutAp,
+    /// root with an empty `/Kids` array and the widgets elsewhere on the pages.
+    EmptyKidsRoot,
+}
+
+fn shaped_pdf(shape: Shape) -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page1 = doc.new_object_id();
+    let page2 = doc.new_object_id();
+    let g = doc.new_object_id();
+    let mid = doc.new_object_id();
+    let states = |names: &[&str]| {
+        let mut dict = Dictionary::new();
+        for name in names {
+            dict.set(*name, Object::Null);
         }
+        dictionary! { "N" => dict }
+    };
+    let widget = |doc: &mut Document, parent: ObjectId, ap: Option<Dictionary>, page| {
+        let mut dict = dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => parent, "AS" => "Off",
+            "Rect" => vec![0.into(), 0.into(), 80.into(), 18.into()], "P" => page,
+        };
+        if let Some(ap) = ap {
+            dict.set("AP", ap);
+        }
+        doc.add_object(dict)
+    };
+    let (a, b, root_kids) = match shape {
+        Shape::MidApLacksKidsHold | Shape::MidApHoldsKidsLack => {
+            let (mid_states, kid_states): (&[&str], &[&str]) =
+                if matches!(shape, Shape::MidApLacksKidsHold) {
+                    (&["Off"], &["a", "Off"])
+                } else {
+                    (&["a", "Off"], &["x", "Off"])
+                };
+            let a = widget(&mut doc, mid, Some(states(kid_states)), page1);
+            let b = widget(&mut doc, mid, Some(states(kid_states)), page2);
+            doc.objects.insert(
+                mid,
+                Object::Dictionary(dictionary! {
+                    "Parent" => g, "AP" => states(mid_states),
+                    "Kids" => vec![Object::Reference(a), Object::Reference(b)],
+                }),
+            );
+            (a, b, vec![Object::Reference(mid)])
+        }
+        Shape::MixedWithoutAp => {
+            let a = widget(&mut doc, g, Some(states(&["x", "Off"])), page1);
+            let b = widget(&mut doc, g, None, page2);
+            (a, b, vec![Object::Reference(a), Object::Reference(b)])
+        }
+        Shape::EmptyKidsRoot => {
+            let a = widget(&mut doc, g, Some(states(&["x", "Off"])), page1);
+            let b = widget(&mut doc, g, Some(states(&["x", "Off"])), page2);
+            (a, b, Vec::new())
+        }
+    };
+    doc.objects.insert(
+        g,
+        Object::Dictionary(dictionary! {
+            "FT" => "Btn", "Ff" => 49_152, "T" => Object::string_literal("g"),
+            "V" => "a", "DV" => "a", "Kids" => root_kids,
+        }),
+    );
+    for (page, annot) in [(page1, a), (page2, b)] {
+        doc.objects.insert(
+            page,
+            Object::Dictionary(dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Annots" => vec![Object::Reference(annot)],
+            }),
+        );
     }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page1), Object::Reference(page2)],
+            "Count" => 2,
+        }),
+    );
+    let acroform = doc.add_object(dictionary! { "Fields" => vec![Object::Reference(g)] });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => acroform,
+    });
+    doc.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save shaped pdf");
+    bytes
+}
+
+#[test]
+fn an_intermediate_node_with_its_own_ap_is_judged_by_it_and_resets_when_its_states_lack_the_value()
+{
+    // The kids hold state `a`, but the node's own `/AP /N` does not: it is a widget, not descended.
+    let doc = extract("1", shaped_pdf(Shape::MidApLacksKidsHold));
+    let group = field(&doc, "g");
+    assert_eq!(name_entry(group, b"V").as_deref(), Some("Off"));
+    assert_eq!(name_entry(group, b"DV").as_deref(), Some("Off"));
+}
+
+#[test]
+fn an_intermediate_node_with_its_own_ap_is_judged_by_it_and_keeps_a_value_its_states_hold() {
+    // The node's `/AP /N` has `a` while its kids lack it: judged as a widget, so the value stays.
+    let doc = extract("1", shaped_pdf(Shape::MidApHoldsKidsLack));
+    let group = field(&doc, "g");
+    assert_eq!(name_entry(group, b"V").as_deref(), Some("a"));
+    assert_eq!(name_entry(group, b"DV").as_deref(), Some("a"));
+}
+
+#[test]
+fn mixed_descendants_with_one_missing_ap_leave_the_value_alone() {
+    let doc = extract("1,2", shaped_pdf(Shape::MixedWithoutAp));
+    let group = field(&doc, "g");
+    assert_eq!(name_entry(group, b"V").as_deref(), Some("a"));
+    assert_eq!(name_entry(group, b"DV").as_deref(), Some("a"));
+}
+
+#[test]
+fn an_empty_kids_array_leaves_the_value_alone() {
+    let doc = extract("1,2", shaped_pdf(Shape::EmptyKidsRoot));
+    let group = field(&doc, "g");
+    assert_eq!(name_entry(group, b"V").as_deref(), Some("a"));
+    assert_eq!(name_entry(group, b"DV").as_deref(), Some("a"));
 }
 
 #[test]
