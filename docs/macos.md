@@ -46,6 +46,8 @@ macOS App Management blocks modifying a bundle that has been launched.
 - `ASHIFT_KEEP_BUILD=1` keeps `target/derived-data` and the cargo target directory; by default both are deleted after a successful install
   (only when they are inside the checkout).
 
+The dev app shares the packs folder `~/Library/Application Support/com.ariadnev.ariadshift/packs` with the stable app and the CLI, and both apps appear in Open With.
+
 ## EngineClient
 `EngineClient()` points the engine at `<App.app>/Contents/Helpers/ashift`; it throws `EngineError.helperMissing` unless that is an executable file.
 Cancelling the calling `Task` cancels the Rust run (`EngineError.cancelled`). One client per process is the supported shape; app code never calls the
