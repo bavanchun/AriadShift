@@ -224,3 +224,146 @@ fn a_stale_default_value_resets_and_a_valid_one_stays() {
     let doc = extract("2", form_pdf(Some("b"), Some("b"), Appearance::States));
     assert_eq!(name_entry(field(&doc, "g"), b"DV").as_deref(), Some("b"));
 }
+
+/// How the radio group's widgets hang under the root field `g`.
+#[derive(Clone, Copy)]
+enum Nesting {
+    /// root -> intermediate node -> widgets `a` (page 1) and `b` (page 2).
+    TwoLevel,
+    /// root -> a chain of `n` intermediate nodes -> widgets.
+    Chain(usize),
+    /// as `TwoLevel`, but the intermediate node lists the root among its own `/Kids`.
+    Cycle,
+}
+
+/// Radio group `g` (`/V` and `/DV` on the root) whose widgets sit below intermediate nodes that
+/// carry no `/AP` of their own.
+fn nested_pdf(value: &str, nesting: Nesting) -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page1 = doc.new_object_id();
+    let page2 = doc.new_object_id();
+    let g = doc.new_object_id();
+    let mid = doc.new_object_id();
+    let widget = |doc: &mut Document, state: &str, page: ObjectId| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => mid,
+            "AS" => if state == value { state } else { "Off" },
+            "AP" => dictionary! { "N" => dictionary! { state => Object::Null, "Off" => Object::Null } },
+            "Rect" => vec![0.into(), 0.into(), 80.into(), 18.into()], "P" => page,
+        })
+    };
+    let a = widget(&mut doc, "a", page1);
+    let b = widget(&mut doc, "b", page2);
+    let mut mid_kids = vec![Object::Reference(a), Object::Reference(b)];
+    if matches!(nesting, Nesting::Cycle) {
+        mid_kids.push(Object::Reference(g));
+    }
+    let mut top = mid;
+    if let Nesting::Chain(depth) = nesting {
+        // Re-parent: mid -> n1 -> n2 ... -> widgets stay under `mid`; the root reaches `mid`
+        // through `depth` extra intermediate nodes.
+        for _ in 0..depth {
+            let wrapper = doc.add_object(dictionary! { "Kids" => vec![Object::Reference(top)] });
+            top = wrapper;
+        }
+    }
+    doc.objects.insert(
+        mid,
+        Object::Dictionary(dictionary! { "Parent" => g, "Kids" => mid_kids }),
+    );
+    doc.objects.insert(
+        g,
+        Object::Dictionary(dictionary! {
+            "FT" => "Btn", "Ff" => 49_152, "T" => Object::string_literal("g"),
+            "V" => value, "DV" => value, "Kids" => vec![Object::Reference(top)],
+        }),
+    );
+    for (page, annot) in [(page1, a), (page2, b)] {
+        doc.objects.insert(
+            page,
+            Object::Dictionary(dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Annots" => vec![Object::Reference(annot)],
+            }),
+        );
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page1), Object::Reference(page2)],
+            "Count" => 2,
+        }),
+    );
+    let acroform = doc.add_object(dictionary! { "Fields" => vec![Object::Reference(g)] });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => acroform,
+    });
+    doc.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save nested pdf");
+    bytes
+}
+
+#[test]
+fn a_nested_group_loses_the_value_with_its_selected_widget() {
+    let doc = extract("2", nested_pdf("a", Nesting::TwoLevel));
+    let group = field(&doc, "g");
+    assert_eq!(name_entry(group, b"V").as_deref(), Some("Off"));
+    assert_eq!(name_entry(group, b"DV").as_deref(), Some("Off"));
+}
+
+#[test]
+fn a_nested_group_keeps_the_value_while_its_widget_stays() {
+    let doc = extract("1", nested_pdf("a", Nesting::TwoLevel));
+    let group = field(&doc, "g");
+    assert_eq!(name_entry(group, b"V").as_deref(), Some("a"));
+    assert_eq!(name_entry(group, b"DV").as_deref(), Some("a"));
+    let doc = extract("1,2", nested_pdf("b", Nesting::TwoLevel));
+    assert_eq!(name_entry(field(&doc, "g"), b"V").as_deref(), Some("b"));
+}
+
+#[test]
+fn deep_and_cyclic_nesting_terminate() {
+    for nesting in [Nesting::Chain(10), Nesting::Chain(200), Nesting::Cycle] {
+        // Whatever the outcome, the run must end; a kept widget never loses its value.
+        let result = run_tool(
+            "pdf.extract_pages",
+            &[InputDoc::new("form.pdf", nested_pdf("a", nesting))],
+            &json!({ "pages": "1" }),
+            &ToolCtx::default(),
+        );
+        if let Ok(out) = result {
+            let doc = open(&out.artifacts[0].bytes, &Limits::local())
+                .expect("open output")
+                .inner()
+                .clone();
+            if let Some(group) = doc
+                .objects
+                .values()
+                .filter_map(|obj| obj.as_dict().ok())
+                .find(|d| partial_name(d).as_deref() == Some("g"))
+            {
+                assert_ne!(name_entry(group, b"V").as_deref(), Some("Off"));
+            }
+        }
+    }
+}
+
+#[test]
+fn splitting_resets_a_group_whose_selected_button_is_in_another_part() {
+    let out = run_tool(
+        "pdf.split",
+        &[InputDoc::new("form.pdf", standard())],
+        &json!({ "mode": "ranges", "ranges": ["2"] }),
+        &ToolCtx::default(),
+    )
+    .unwrap_or_else(|err| panic!("pdf.split failed: {err:?}"));
+    let doc = open(&out.artifacts[0].bytes, &Limits::local())
+        .expect("open part")
+        .inner()
+        .clone();
+    assert_eq!(name_entry(field(&doc, "g"), b"V").as_deref(), Some("Off"));
+}

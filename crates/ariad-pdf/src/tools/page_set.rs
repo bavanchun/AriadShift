@@ -1488,31 +1488,57 @@ pub(crate) fn drop_unmatched_button_value(doc: &mut Document, field_id: ObjectId
             continue;
         }
         let value = value.clone();
-        let Some(kids) = field.get(b"Kids").ok().and_then(|k| k.as_array().ok()) else {
-            return;
-        };
-        let mut unmatched = true;
-        for kid in kids {
-            let states = kid
-                .as_reference()
-                .ok()
-                .and_then(|id| doc.get_dictionary(id).ok())
-                .and_then(|widget| widget.get(b"AP").ok())
-                .and_then(|ap| resolve_dict(doc, ap))
-                .and_then(|ap| ap.get(b"N").ok())
-                .and_then(|normal| resolve_dict(doc, normal));
-            match states {
-                Some(states) if !states.has(&value) => {}
-                _ => {
-                    unmatched = false;
-                    break;
-                }
-            }
-        }
+        let mut visited = BTreeSet::from([field_id]);
+        let unmatched = widget_states_lack(doc, field_id, &value, &mut visited, 0) == Some(true);
         if unmatched && let Ok(field) = doc.get_dictionary_mut(field_id) {
             field.set(key, Object::Name(b"Off".to_vec()));
         }
     }
+}
+
+/// Whether every widget below `node_id` has a dictionary of appearance states without `value`.
+/// Intermediate nodes (no `/AP`, with `/Kids`) are traversed within `MAX_TREE_DEPTH` and a visited
+/// set. `None` means unknown: a widget without a dictionary of states, a missing node, or a tree
+/// too deep to read, so the caller leaves the entry alone.
+fn widget_states_lack(
+    doc: &Document,
+    node_id: ObjectId,
+    value: &[u8],
+    visited: &mut BTreeSet<ObjectId>,
+    depth: usize,
+) -> Option<bool> {
+    if depth >= MAX_TREE_DEPTH {
+        return None;
+    }
+    let node = doc.get_dictionary(node_id).ok()?;
+    // The field itself is only ever a container here; a merged field/widget has no kids to judge.
+    if depth == 0 || node.get(b"AP").is_err() {
+        let kids = node
+            .get(b"Kids")
+            .ok()
+            .and_then(|k| resolve_object(doc, k))?;
+        let Object::Array(kids) = kids else {
+            return None;
+        };
+        let mut all_lack = true;
+        let mut any = false;
+        for kid in kids {
+            let kid_id = kid.as_reference().ok()?;
+            if !visited.insert(kid_id) {
+                continue;
+            }
+            any = true;
+            all_lack &= widget_states_lack(doc, kid_id, value, visited, depth + 1)?;
+        }
+        return any.then_some(all_lack);
+    }
+    let states = node
+        .get(b"AP")
+        .ok()
+        .and_then(|ap| resolve_dict(doc, ap))
+        .and_then(|ap| ap.get(b"N").ok())
+        .and_then(|normal| resolve_dict(doc, normal))?;
+    Some(!states.has(value))
 }
 
 /// True when the field's effective `/FT` is `/Btn`, following an inherited `/FT` up a bounded
