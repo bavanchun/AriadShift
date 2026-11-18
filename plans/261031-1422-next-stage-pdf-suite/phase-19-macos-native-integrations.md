@@ -6,7 +6,7 @@ priority: P2
 effort: "5 tasks, ~8-10 worker-days"
 dependencies: [18]
 branch: feat/macos-integrations
-milestone: E (macOS) — ends with macOS preview 0.8.0
+milestone: E (macOS) — ends with macOS integrations 0.9.0
 ---
 
 # Phase 19: macOS native integrations
@@ -43,4 +43,4 @@ Make AriadShift part of macOS itself — the differentiator no web-wrapped compe
 - [ ] Each extension appears and works on a clean macOS 15 and macOS 26/27 VM (or machine), recorded in the gate file.
 - [ ] A Shortcut "Merge selected PDFs → compress under 5 MB" runs without opening the app window.
 - [ ] Vision OCR output is searchable in Preview; Vietnamese accuracy compared with Tesseract on the scan corpus and recorded.
-- [ ] macOS preview 0.8.0 (owner GO).
+- [ ] macOS integrations 0.9.0 (owner GO).

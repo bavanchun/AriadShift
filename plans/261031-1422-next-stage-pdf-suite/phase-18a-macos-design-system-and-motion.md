@@ -7,7 +7,7 @@ effort: "5 tasks, ~8 worker-days"
 dependencies: [17]
 blocks: "phase 18 UI tasks T1 remainder, T2, T3, T5, T6"
 branch: feat/macos-design-system
-milestone: E (macOS) — lands before macOS preview 0.7.0
+milestone: E (macOS) — lands before macOS preview 0.8.0
 ---
 
 # Phase 18a: macOS UI/UX redesign
@@ -35,7 +35,7 @@ Phases 18-20 contain no redesign work. The remaining phase 18 UI tasks would oth
 | Look | Apple system chrome (Liquid Glass on macOS 26+, `.regularMaterial` fallback on 15-25) plus AriadShift brand: sage/gold accent, brand mark, Plus Jakarta Sans for display text only |
 | Opening animation | Plays on every launch into the welcome/empty window: full ~1.2 s on first launch and after an update, short ~0.6 s otherwise. Skippable, never blocks input, Reduce Motion swaps it for a fade. No blocking splash (HIG). |
 | Approval | The owner approves an interactive mockup (screens + motion) before any Swift code |
-| Order | Now, before the remaining phase 18 UI tasks. 0.7.0 moves accordingly. |
+| Order | Now, before the remaining phase 18 UI tasks. 0.8.0 moves accordingly. |
 
 Minimum macOS stays 15 (plan decision). Every macOS 26 API lives behind one availability wrapper.
 
