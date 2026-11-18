@@ -3,6 +3,35 @@
 `apps/macos` is the native SwiftUI document app. Swift carries no document logic: every operation goes through `crates/ariad-ffi` via the
 `AriadShiftCore` Swift package.
 
+## Install
+The native app is planned for 0.8.0 and is not released yet; the steps below describe the intended install path. Until then, use the web app
+(nothing to install, files stay on the device) or the Homebrew CLI (`brew tap bavanchun/tap && brew trust --tap bavanchun/tap && brew install
+bavanchun/tap/ashift`). Both avoid the first-launch prompt described here.
+
+1. Download `AriadShift-<version>-universal.dmg` from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases), open it and drag
+   `AriadShift.app` to Applications.
+2. The app is ad-hoc signed, not signed with a paid Apple Developer ID and not notarized, so Gatekeeper blocks the first launch with a dialog saying
+   Apple could not verify the app is free of malware. The exact wording differs by macOS version.
+3. Open System Settings > Privacy & Security, scroll to the Security section and click **Open Anyway** next to AriadShift, then confirm. On macOS 15
+   and later, right-click > Open no longer bypasses the block, so use this route.
+4. Alternatively, remove the quarantine flag in Terminal and launch normally:
+   `xattr -dr com.apple.quarantine /Applications/AriadShift.app`.
+
+You only do this once per installed copy. Updates arrive through Sparkle, which verifies each update archive with an EdDSA signature against the
+public key embedded in the app, so they do not repeat the prompt.
+
+## Signing and distribution
+The only Mac app is this Swift app (the Tauri app no longer ships for macOS). Release builds use one of three modes, decided in
+`.github/workflows/macos.yml` (see [releasing.md](releasing.md#macos-release-signing-and-updates)):
+- `signed`: Developer ID signed and notarized, when the six Apple secrets exist. No Apple Developer account exists today, so this path is kept
+  working but unused.
+- `adhoc`: ad-hoc signed (`codesign -s -`), published with a Sparkle appcast, when the Apple secrets are absent and `SPARKLE_ED_PRIVATE_KEY` exists.
+  This is the distribution policy for 0.8.0.
+- `unsigned`: no publish.
+
+Ad-hoc signing gives the bundle a consistent signature for the hardened runtime and Sparkle, but it carries no Apple identity, which is why the
+first-launch steps above are needed. The bundle id stays `com.ariadnev.ariadshift`.
+
 ## Layout
 - `project.yml`: XcodeGen spec; `AriadShift.xcodeproj` is generated and gitignored.
 - `AriadShiftCore/`: Swift package wrapping the XCFramework: the `EngineClient` actor, the Tools menu model (`ToolCatalog`,
@@ -157,7 +186,7 @@ End-to-end check (Sparkle 2.10.1, macOS 27.2, ad-hoc arm64 builds 0.0.1 and 0.0.
 appcast from `scripts/macos-dmg.sh` and `scripts/macos-appcast.sh`): build 0.0.1 (key and loopback `SUFeedURL` in its Info.plist copy,
 `SUAutomaticallyUpdate` on) fetched the feed, logged `EdDSA signature is correct for update` and installed 0.0.2 on quit; the signature stayed valid
 and it launched. A DMG with one flipped byte and an archive signed by another key were refused (`EdDSA signature does not match`). Not covered: the
-Check for Updates menu and update window (UI scripting needs Automation consent), relaunch after install, Developer ID and notarised builds.
+Check for Updates menu and update window (UI scripting needs Automation consent), relaunch after install, Developer ID and notarised builds (the shipped policy is ad-hoc signing plus Sparkle, see Signing and distribution).
 
 `apps/macos/Package.resolved` is the tracked pin file. Xcode reads pins from the gitignored generated project, so `just macos-project` copies it into
 `project.xcworkspace/xcshareddata/swiftpm/` and `macos-build` and `macos-test` pass `-onlyUsePackageVersionsFromResolvedFile`: a stale pin fails the
