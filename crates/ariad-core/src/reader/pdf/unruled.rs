@@ -24,6 +24,11 @@
 //! A page limit stops detection when it would otherwise keep a candidate: the budget is only spent
 //! on candidates that pass every other test, and only a refused one sets [`Detected::capped`].
 //!
+//! The boxes in `avoid` are the ruled tables and the regions of rules that the ruled detector
+//! refused. A refused page frame, or any rule grid that spans the page, therefore keeps this
+//! detector away from the whole page: a table drawn without rules inside such a frame stays text.
+//! That is a cost in recall, accepted so that nothing is read twice.
+//!
 //! All distances scale with the median glyph advance of the flow, so the thresholds follow the
 //! text size. Cells are assigned to columns by the centre point of each glyph, as ruled tables
 //! are, and the resulting [`Grid`] goes through the same layout and emission as a ruled one.

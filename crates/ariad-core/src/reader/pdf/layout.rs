@@ -107,7 +107,12 @@ pub(super) struct TableScan {
 
 /// Lays out one page whose display box is `width` by `height` points. With `scan`, tables are
 /// detected and replace the text blocks they cover: ruled tables first, then tables whose columns
-/// are only separated by whitespace in the text that is left.
+/// are only separated by whitespace in the text that is left, outside every region of rules.
+///
+/// Regions of rules that the ruled detector refused count as well: a page frame, or any grid of
+/// rules that spans the page, keeps whitespace detection away from the whole page. A table drawn
+/// without rules inside such a frame stays text, which costs recall and avoids reading one region
+/// twice.
 pub(super) fn layout_page(
     content: &PageContent,
     styles: &[FontStyle],
@@ -128,7 +133,8 @@ pub(super) fn layout_page(
         }
     }
     let rest = (0..content.glyphs.len()).filter(|&index| !claimed[index]);
-    // Ruled tables, and rule grids that were refused, are not read again as whitespace tables.
+    // Ruled tables, and rule grids that were refused, are not read again as whitespace tables. A
+    // refused grid is the extent of its rules, so one that spans the page puts the whole page here.
     let avoid: Vec<[f64; 4]> = ruled
         .grids
         .iter()
