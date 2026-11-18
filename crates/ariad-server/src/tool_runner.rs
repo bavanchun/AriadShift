@@ -232,9 +232,9 @@ fn execute(body: RequestBody, progress: &mut impl FnMut(ToolEvent)) -> Result<Re
 
 fn sanitize_error(error: ToolError) -> ToolError {
     use ToolError::*;
-    // A redaction refusal carries a fixed reason string (never document content), so HTTP
-    // clients keep it, as `docs/tools.md` promises.
-    if error.is_safety_refusal() {
+    // A redaction refusal and a document without tables carry a fixed reason string (never
+    // document content), so HTTP clients keep it, as `docs/tools.md` promises.
+    if error.is_safety_refusal() || error.is_no_tables() {
         return error;
     }
     match error {
@@ -292,6 +292,26 @@ mod tests {
             let safe = sanitize_error(refusal(reason));
             assert_eq!(safe.to_string(), reason);
             assert_eq!((safe.code(), safe.exit_code()), ("tool_missing", 5));
+        }
+    }
+
+    #[test]
+    fn a_document_without_tables_keeps_its_fixed_message_and_is_not_a_refusal() {
+        let safe = sanitize_error(ToolError::EngineFailure(
+            "no tables found in document".into(),
+        ));
+        assert_eq!(safe.to_string(), "no tables found in document");
+        assert_eq!((safe.code(), safe.exit_code()), ("engine_failure", 1));
+        assert!(safe.is_no_tables());
+        assert!(!safe.is_safety_refusal());
+        // Only the exact fixed text passes: anything around it may carry document content.
+        for leaky in [
+            "no tables found in document: /home/someone/secret",
+            "/home/someone/secret: no tables found in document",
+        ] {
+            let safe = sanitize_error(ToolError::EngineFailure(leaky.into()));
+            assert!(!safe.to_string().contains("secret"), "{safe}");
+            assert!(!safe.is_no_tables());
         }
     }
 
