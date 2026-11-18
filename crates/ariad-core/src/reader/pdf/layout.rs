@@ -1438,7 +1438,7 @@ fn paragraph_style(segments: &[Segment], members: &[usize], size: f64) -> Paragr
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, TableScan, layout_page};
+    use super::{Block, Detection, TableScan, layout_glyphs_with, layout_page, unruled};
     use crate::reader::pdf::interpreter::{FontStyle, Glyph, PageContent, SPACE};
 
     /// Places `text` as glyphs of `width` per character starting at `(x, y)`.
@@ -1642,6 +1642,56 @@ mod tests {
             text(&blocks[2]),
             vec!["This sentence comes after the table."]
         );
+    }
+
+    /// Places a table of three columns and four rows whose first baseline is `y`.
+    fn place_table(page: &mut PageContent, y: f64) {
+        let rows = [
+            ["Item", "Qty", "Sum"],
+            ["ab", "12", "3.5"],
+            ["cd", "48", "1.2"],
+            ["ef", "96", "7.7"],
+        ];
+        for (index, row) in rows.iter().enumerate() {
+            for (cell, x) in row.iter().zip([50.0, 150.0, 250.0]) {
+                place(page, cell, x, y + 14.0 * index as f64, 10.0, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn a_table_that_would_be_dropped_anyway_does_not_set_the_limit_flag() {
+        let mut page = PageContent::default();
+        place_table(&mut page, 100.0);
+        place_table(&mut page, 250.0);
+        // The budget holds one table.
+        let laid = |avoid: &[[f64; 4]]| {
+            let detection = Detection {
+                avoid,
+                budget: unruled::Budget {
+                    tables: 1,
+                    cells: 1_000,
+                },
+                page_height: 400.0,
+            };
+            layout_glyphs_with(
+                &page,
+                &styles(),
+                400.0,
+                400.0,
+                0..page.glyphs.len(),
+                Some(&detection),
+            )
+        };
+        // The second table lies inside the box of a ruled table, so it is dropped for its place
+        // and not for the budget.
+        let laid_avoiding = laid(&[[40.0, 200.0, 300.0, 400.0]]);
+        assert_eq!(laid_avoiding.grids.len(), 1);
+        assert!(!laid_avoiding.capped);
+        // With nothing in the way, the second table is lost to the budget, and that is reported.
+        let laid_free = laid(&[]);
+        assert_eq!(laid_free.grids.len(), 1);
+        assert!(laid_free.capped);
     }
 
     #[test]

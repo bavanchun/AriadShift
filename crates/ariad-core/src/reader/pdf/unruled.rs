@@ -21,6 +21,9 @@
 //!   continue across the column gutter;
 //! - it overlaps a ruled table or another candidate.
 //!
+//! A page limit stops detection when it would otherwise keep a candidate: the budget is only spent
+//! on candidates that pass every other test, and only a refused one sets [`Detected::capped`].
+//!
 //! All distances scale with the median glyph advance of the flow, so the thresholds follow the
 //! text size. Cells are assigned to columns by the centre point of each glyph, as ruled tables
 //! are, and the resulting [`Grid`] goes through the same layout and emission as a ruled one.
@@ -188,13 +191,6 @@ pub(super) fn detect(
     let mut cells_left = budget.cells;
     for candidate in candidates {
         let bbox = candidate.found.grid.bbox;
-        // The page budget is cheap to check and ends the work: once it is spent, the other tests
-        // would only decide why a candidate that cannot be kept is dropped.
-        let cells = candidate.found.grid.cells.len();
-        if kept.len() >= budget.tables || cells > cells_left {
-            detected.capped = true;
-            continue;
-        }
         if in_page_margin(&bbox, page_height)
             || continues_in_neighbour(flows, &short, &candidate)
             || avoid.iter().any(|other| overlaps(other, &bbox))
@@ -202,6 +198,12 @@ pub(super) fn detect(
                 .iter()
                 .any(|other| overlaps(&other.found.grid.bbox, &bbox))
         {
+            continue;
+        }
+        // Only a candidate that would be kept can be lost to the page budget.
+        let cells = candidate.found.grid.cells.len();
+        if kept.len() >= budget.tables || cells > cells_left {
+            detected.capped = true;
             continue;
         }
         cells_left -= cells;
@@ -1135,8 +1137,9 @@ mod tests {
     }
 
     #[test]
-    fn the_budget_is_checked_before_the_other_tests() {
-        // The second candidate overlaps the ruled box as well, but the spent budget decides.
+    fn a_candidate_that_would_be_dropped_anyway_does_not_set_the_limit_flag() {
+        // The second candidate overlaps a ruled box and would be dropped even with room to spare,
+        // so the spent budget must not be reported as a loss.
         let mut rows = plain_table();
         rows.extend(lowered(plain_table(), 100.0));
         let one = Budget {
@@ -1146,7 +1149,28 @@ mod tests {
         let second_box = [40.0, 190.0, 260.0, 240.0];
         let detected = detect(&[rows], &[second_box], one, PAGE);
         assert_eq!(detected.found.len(), 1);
-        assert!(detected.capped);
+        assert!(!detected.capped);
+
+        // The same goes for a candidate in the footer band or one that may continue in the
+        // neighbouring flow.
+        let mut rows = plain_table();
+        rows.extend(lowered(plain_table(), 640.0));
+        let detected = detect(&[rows], &[], one, PAGE);
+        assert_eq!(detected.found.len(), 1);
+        assert!(!detected.capped);
+        let halves: Vec<Row> = (0..4)
+            .map(|i| {
+                row(
+                    200.0 + 12.0 * f64::from(i),
+                    &[(400.0, "1.5"), (460.0, "2.5")],
+                )
+            })
+            .collect();
+        let mut rows = plain_table();
+        rows.extend(lowered(plain_table(), 100.0));
+        let detected = detect(&[rows, halves], &[], one, PAGE);
+        assert_eq!(detected.found.len(), 1);
+        assert!(!detected.capped);
     }
 
     #[test]
