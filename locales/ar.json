@@ -126,17 +126,26 @@
       "go_to_page": "انتقال إلى صفحة…",
       "find": "بحث…",
       "find_next": "البحث عن التالي",
-      "find_previous": "البحث عن السابق"
+      "find_previous": "البحث عن السابق",
+      "find_tool": "البحث عن أداة…"
     },
     "tools": {
       "group": "{group, select, organize {تنظيم} convert {تحويل} optimize {تحسين} security {الأمان} overlay {تراكب} ocr {OCR والمسوحات} annotate {إضافة تعليقات} forms {النماذج} sign {توقيع} redact {حجب} compare {مقارنة وتحقق} edit {تحرير} ai {الذكاء الاصطناعي} automation {الأتمتة} other {أدوات أخرى}}",
       "disabled": "{reason, select, later {متاح في إصدار لاحق} format {يعمل مع صيغ أخرى. استخدم ملف > استيراد.} paid {يتطلب خطة مدفوعة} info {تعذّرت قراءة تفاصيل الأداة، لذا تبقى الأدوات متوقفة.} other {غير متاح}}",
-      "loading": "جارٍ تحميل الأدوات…"
+      "loading": "جارٍ تحميل الأدوات…",
+      "pro_title": "{title} (Pro)",
+      "pro_hint": "أداة Pro. يتطلب تشغيلها خطة Pro.",
+      "job": "{job, select, organize {تنظيم} edit {تحرير} convert {تحويل} secure {الأمان} ocr {OCR} ai {الذكاء الاصطناعي} other {أدوات أخرى}}",
+      "badge": "{reason, select, later {لاحقًا} format {استيراد} paid {Pro} info {متوقفة} other {متوقفة}}",
+      "search": "البحث في الأدوات",
+      "clear_search": "مسح البحث"
     },
     "sidebar": {
       "title": "الصفحات",
       "placeholder": "ستظهر الصور المصغّرة للصفحات هنا.",
-      "page": "الصفحة {number} من {total}"
+      "page": "الصفحة {number} من {total}",
+      "tools": "الأدوات",
+      "tabs": "محتوى الشريط الجانبي"
     },
     "viewer": {
       "placeholder": "سيظهر عارض الصفحات هنا.",
@@ -148,7 +157,9 @@
       "page_grid": "شبكة الصفحات",
       "previous_page": "الصفحة السابقة",
       "next_page": "الصفحة التالية",
-      "page_field": "رقم الصفحة"
+      "page_field": "رقم الصفحة",
+      "tools": "الأدوات",
+      "tools_help": "البحث عن أداة (⌘K)"
     },
     "inspector": {
       "title": "المستند",
@@ -168,10 +179,26 @@
       "remove": "إزالة",
       "need_documents": "{count, plural, zero {لا حاجة إلى إضافة مستندات لتشغيل هذه الأداة.} one {أضف مستندًا واحدًا آخر لتشغيل هذه الأداة.} two {أضف مستندين آخرين لتشغيل هذه الأداة.} few {أضف # مستندات أخرى لتشغيل هذه الأداة.} many {أضف # مستندًا آخر لتشغيل هذه الأداة.} other {أضف # مستند آخر لتشغيل هذه الأداة.}}",
       "failed": "لم تكتمل الأداة.",
+      "pro_notice": "هذه أداة Pro. يتطلب تشغيلها خطة Pro.",
+      "upgrade": "تتطلب هذه الأداة خطة Pro. قم بالترقية لتشغيلها.",
       "reveal": "إظهار في Finder",
       "field_error": "{kind, select, missing {الحقل {field} مطلوب.} other {الحقل {field} غير صالح.}}",
       "result": "النتيجة",
-      "presets": "إعدادات مسبقة"
+      "presets": "إعدادات مسبقة",
+      "add_row": "إضافة",
+      "move_up": "نقل لأعلى",
+      "move_down": "نقل لأسفل",
+      "reset": "إعادة ضبط",
+      "run_help": "تشغيل الأداة (⌘↩)",
+      "close_tool": "إغلاق الأداة",
+      "details": "التفاصيل",
+      "output": "المخرجات",
+      "save_to": "الحفظ في",
+      "open_result": "فتح النتيجة",
+      "done": "تم",
+      "undo": "تراجع",
+      "done_sizes": "{tool} · {before} ← {after}",
+      "done_files": "{tool} · {count, plural, zero {لم يُنشأ أي ملف} one {أُنشئ ملف واحد} two {أُنشئ ملفان} few {أُنشئت # ملفات} many {أُنشئ # ملفًا} other {أُنشئ # ملف}}"
     },
     "settings": {
       "output_folder": "حفظ النتائج في",
@@ -188,6 +215,32 @@
       "packs": "تُخزَّن حزم المحرك الاختيارية (OCR والتوقيع والتحقق) في {path}.",
       "privacy": "يعمل AriadShift على جهاز Mac لديك. ولا يُجري أي اتصالات شبكية ما لم تُفعّل ميزة تحتاج إليها.",
       "start": "ابدأ"
+    },
+    "welcome": {
+      "tagline": "كل أدوات PDF، بخصوصية تامة على جهاز Mac.",
+      "drop_title": "أفلت ملفات PDF أو المستندات هنا",
+      "drop_or": "أو",
+      "open": "فتح…",
+      "open_message": "اختر ملفات PDF أو مستندات لفتحها.",
+      "suggested": "مقترحة",
+      "recent": "الأخيرة",
+      "suggest": {
+        "merge": "دمج ملفات PDF",
+        "compress": "ضغط",
+        "ocr": "OCR لمسح ضوئي",
+        "split": "تقسيم ملف PDF"
+      },
+      "suggest_message": "اختر ملفات PDF لأداة {tool}."
+    },
+    "whats_new": {
+      "title": "الجديد في AriadShift {version}",
+      "look_title": "مظهر جديد",
+      "look_detail": "نافذة أكثر هدوءًا مع Liquid Glass على macOS 26، وشريط جانبي للصفحات ولوحة فحص تظهر عند الحاجة.",
+      "tools_title": "كل أداة في متناول يدك",
+      "tools_detail": "اضغط ⌘K للعثور على أي أداة وتشغيلها بجوار مستندك مباشرة.",
+      "private_title": "ما زال خاصًا",
+      "private_detail": "تعمل كل أداة على جهاز Mac لديك. تبقى مستنداتك عليه ما لم تختر غير ذلك.",
+      "continue": "متابعة"
     },
     "import": {
       "message": "اختر مستندًا لتحويله إلى PDF",
@@ -211,7 +264,23 @@
       "delete": "حذف الصفحات المحددة",
       "move_earlier": "نقل قبل الصفحة السابقة",
       "move_later": "نقل بعد الصفحة التالية",
-      "drop_end": "أفلِت هنا للنقل إلى النهاية"
+      "drop_end": "أفلِت هنا للنقل إلى النهاية",
+      "selected": "تم تحديد {count}"
+    },
+    "window": {
+      "pages": "{count, plural, zero {لا صفحات} one {صفحة واحدة} two {صفحتان} few {# صفحات} many {# صفحة} other {# صفحة}}"
+    },
+    "drop": {
+      "open": "أفلت للفتح",
+      "insert": "أفلت لإدراج الصفحات",
+      "insert_hint": "اضغط ⌥ مع الاستمرار لإدراج الصفحات في هذا المستند"
+    },
+    "palette": {
+      "placeholder": "البحث في الأدوات",
+      "dismiss": "esc",
+      "empty": "لا توجد أدوات مطابقة",
+      "recent": "الأخيرة",
+      "suggested": "مقترحة لهذا الملف"
     }
   },
   "web": {

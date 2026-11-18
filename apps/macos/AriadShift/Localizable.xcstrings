@@ -14036,6 +14036,12 @@
     "mac.drop.insert" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أفلت لإدراج الصفحات"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14054,6 +14060,12 @@
       "comment" : "Shown while files are dragged over a document window. ⌥ is the Option key symbol.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اضغط ⌥ مع الاستمرار لإدراج الصفحات في هذا المستند"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14071,6 +14083,12 @@
     "mac.drop.open" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أفلت للفتح"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16851,6 +16869,12 @@
       "comment" : "Count of selected pages in the page grid action bar, for example \"3 selected\". types: count=int",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تم تحديد %1$lld"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23520,6 +23544,12 @@
       "comment" : "Tools menu item (⌘K) that opens the tool palette.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "البحث عن أداة…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27308,6 +27338,12 @@
       "comment" : "Key hint at the trailing end of the palette query field: the Escape key closes the palette.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "esc"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27325,6 +27361,12 @@
     "mac.palette.empty" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا توجد أدوات مطابقة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27343,6 +27385,12 @@
       "comment" : "Placeholder of the query field in the ⌘K tool palette.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "البحث في الأدوات"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27361,6 +27409,12 @@
       "comment" : "Section title of the tools the user ran most recently, in the palette and the inspector.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الأخيرة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27379,6 +27433,12 @@
       "comment" : "Section title of tools that suit the open document (for example OCR for a scan), in the palette and the inspector.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مقترحة لهذا الملف"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27648,6 +27708,12 @@
       "comment" : "Button that adds a row to a list of items in a tool setting.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إضافة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28168,6 +28234,12 @@
       "comment" : "Button in the inspector header that closes the open tool and shows the document again.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إغلاق الأداة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28186,6 +28258,12 @@
       "comment" : "Disclosure under a tool error that shows the engine message.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "التفاصيل"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28204,6 +28282,12 @@
       "comment" : "Shown with a check mark when a tool finished and its result is shown in the inspector.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تم"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28222,6 +28306,48 @@
       "comment" : "Toast after a tool wrote several files, for example \"Split · 3 files created\". {tool} is the tool name. types: count=int",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$@ · أُنشئت %2$lld ملفات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$@ · أُنشئ %2$lld ملفًا"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$@ · أُنشئ ملف واحد"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$@ · أُنشئ %2$lld ملف"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$@ · أُنشئ ملفان"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$@ · لم يُنشأ أي ملف"
+                }
+              }
+            }
+          }
+        },
         "en" : {
           "variations" : {
             "plural" : {
@@ -28258,6 +28384,12 @@
       "comment" : "Toast after a tool wrote one file, for example \"Compress · 4.2 MB → 1.1 MB\". {tool} is the tool name, {before} the size of the document and {after} the size of the result, both formatted.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ · %2$@ ← %3$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29282,6 +29414,12 @@
       "comment" : "Button that moves a row of a tool setting list down.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نقل لأسفل"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29300,6 +29438,12 @@
       "comment" : "Button that moves a row of a tool setting list up.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نقل لأعلى"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30432,6 +30576,12 @@
       "comment" : "Switch in the inspector: open a PDF result in a new window when the tool finishes.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "فتح النتيجة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30449,6 +30599,12 @@
     "mac.run.output" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "المخرجات"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30969,6 +31125,12 @@
     "mac.run.pro_notice" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "هذه أداة Pro. يتطلب تشغيلها خطة Pro."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31238,6 +31400,12 @@
       "comment" : "Inspector button that restores the default settings of the open tool.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إعادة ضبط"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32008,6 +32176,12 @@
     "mac.run.run_help" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تشغيل الأداة (⌘↩)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32026,6 +32200,12 @@
       "comment" : "Inspector row label; the value is the folder the result is written to.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الحفظ في"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32044,6 +32224,12 @@
       "comment" : "Toast button that removes the file a tool just created.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تراجع"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32061,6 +32247,12 @@
     "mac.run.upgrade" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تتطلب هذه الأداة خطة Pro. قم بالترقية لتشغيلها."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -34589,6 +34781,12 @@
     "mac.sidebar.tabs" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "محتوى الشريط الجانبي"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -34857,6 +35055,12 @@
     "mac.sidebar.tools" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الأدوات"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36131,6 +36335,12 @@
       "comment" : "Toolbar button that opens the tool palette; the ⌘K shortcut is shown next to it.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الأدوات"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36148,6 +36358,12 @@
     "mac.toolbar.tools_help" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "البحث عن أداة (⌘K)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36166,6 +36382,12 @@
       "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استيراد"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36184,6 +36406,12 @@
       "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "متوقفة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36202,6 +36430,12 @@
       "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لاحقًا"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36220,6 +36454,12 @@
       "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "متوقفة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36238,6 +36478,12 @@
       "comment" : "Short badge on a tool that cannot run on the open document, at most one word. {reason} is the keyword later (a later release), format (works on other formats through File > Import), paid (a paid plan) or info (tool details could not be read). Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pro"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36255,6 +36501,12 @@
     "mac.tools.clear_search" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مسح البحث"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41403,6 +41655,12 @@
       "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الذكاء الاصطناعي"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41421,6 +41679,12 @@
       "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تحويل"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41439,6 +41703,12 @@
       "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تحرير"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41457,6 +41727,12 @@
       "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OCR"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41475,6 +41751,12 @@
       "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تنظيم"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41493,6 +41775,12 @@
       "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أدوات أخرى"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41511,6 +41799,12 @@
       "comment" : "Group titles of the tool palette and the sidebar Tools tab, by the job a tool does. {job} is the keyword organize, edit, convert, secure, ocr or ai. Keep the keywords untranslated.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الأمان"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41779,6 +42073,12 @@
     "mac.tools.pro_hint" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أداة Pro. يتطلب تشغيلها خطة Pro."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41797,6 +42097,12 @@
       "comment" : "Tools menu item of a Pro tool. {title} is the tool name, for example Sign Token. Keep (Pro) as the plan name.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ (Pro)"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41815,6 +42121,12 @@
       "comment" : "Placeholder of the search field at the top of the sidebar Tools tab.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "البحث في الأدوات"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42585,6 +42897,12 @@
     "mac.welcome.drop_or" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أو"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42602,6 +42920,12 @@
     "mac.welcome.drop_title" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "أفلت ملفات PDF أو المستندات هنا"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42619,6 +42943,12 @@
     "mac.welcome.open" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "فتح…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42636,6 +42966,12 @@
     "mac.welcome.open_message" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اختر ملفات PDF أو مستندات لفتحها."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42654,6 +42990,12 @@
       "comment" : "Row label in a 72-point column; keep it short.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الأخيرة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42671,6 +43013,12 @@
     "mac.welcome.suggest.compress" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ضغط"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42688,6 +43036,12 @@
     "mac.welcome.suggest.merge" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "دمج ملفات PDF"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42705,6 +43059,12 @@
     "mac.welcome.suggest.ocr" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OCR لمسح ضوئي"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42722,6 +43082,12 @@
     "mac.welcome.suggest.split" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تقسيم ملف PDF"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42740,6 +43106,12 @@
       "comment" : "{tool} is the name of a suggested task, such as Compress.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اختر ملفات PDF لأداة %1$@."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42758,6 +43130,12 @@
       "comment" : "Row label in a 72-point column; keep it short.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مقترحة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42775,6 +43153,12 @@
     "mac.welcome.tagline" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "كل أدوات PDF، بخصوصية تامة على جهاز Mac."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42792,6 +43176,12 @@
     "mac.whats_new.continue" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "متابعة"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42809,6 +43199,12 @@
     "mac.whats_new.look_detail" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "نافذة أكثر هدوءًا مع Liquid Glass على macOS 26، وشريط جانبي للصفحات ولوحة فحص تظهر عند الحاجة."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42826,6 +43222,12 @@
     "mac.whats_new.look_title" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "مظهر جديد"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42843,6 +43245,12 @@
     "mac.whats_new.private_detail" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعمل كل أداة على جهاز Mac لديك. تبقى مستنداتك عليه ما لم تختر غير ذلك."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42860,6 +43268,12 @@
     "mac.whats_new.private_title" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ما زال خاصًا"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42878,6 +43292,12 @@
       "comment" : "{version} is the app version, such as 0.7.0.",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "الجديد في AriadShift %1$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42895,6 +43315,12 @@
     "mac.whats_new.tools_detail" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "اضغط ⌘K للعثور على أي أداة وتشغيلها بجوار مستندك مباشرة."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42912,6 +43338,12 @@
     "mac.whats_new.tools_title" : {
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "كل أداة في متناول يدك"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42930,6 +43362,48 @@
       "comment" : "Toolbar subtitle under the document name, before the file size, for example \"20 pages\". types: count=int",
       "extractionState" : "manual",
       "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$lld صفحات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$lld صفحة"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "صفحة واحدة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "%1$lld صفحة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "صفحتان"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "لا صفحات"
+                }
+              }
+            }
+          }
+        },
         "en" : {
           "variations" : {
             "plural" : {
