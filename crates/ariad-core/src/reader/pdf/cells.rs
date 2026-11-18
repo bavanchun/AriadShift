@@ -15,6 +15,19 @@
 //! aligned words with no such column, and so are tables that only hold words, such as a matrix of
 //! Yes and No. Those are left as text too: telling them from a table of words would need more than
 //! the text, and precision comes first.
+//!
+//! A cell is a number when it has a digit and is
+//!
+//! - digits with separators and signs: `1,200`, `3.5`, `(12.5)`, `45%`, `$5`, `08:30`, `1.4.0`,
+//!   `2024-05-12`, or a short token that starts with digits, such as `509k`;
+//! - a number with one unit or currency code after it, from the fixed lists [`UNITS`] and
+//!   [`CURRENCIES`]: `12 kg`, `1,200 USD`; or a currency code before it: `USD 50`;
+//! - a day, a month name and a year: `12 May 2024`.
+//!
+//! A word before a number does not make it a number (`Room 12`, `Chapter 3`), nor does a word
+//! after it that is not on the lists (`12 apples`), and `12 May` without a year is not one either.
+//! A cell of punctuation only (`-`, `...`, `:`, `/`, a dash) is neutral: it marks a missing value
+//! or a separator, so it is left out of the share of numbers and never counts as one.
 
 use super::lists;
 
@@ -95,11 +108,7 @@ pub(super) fn recognise(columns: &[Vec<String>]) -> Option<Layout> {
     if is_repeated(columns) {
         return Some(Layout::Repeated);
     }
-    if !columns
-        .iter()
-        .filter(judged)
-        .any(|column| share(column, is_number) >= SHARE)
-    {
+    if !columns.iter().any(|column| is_numeric(column)) {
         return Some(Layout::Words);
     }
     None
@@ -121,33 +130,131 @@ fn is_phrase(text: &str) -> bool {
     letter_words(text) >= PHRASE_WORDS
 }
 
-/// Characters that appear in numbers, amounts and missing-value marks.
+/// Characters that appear in numbers and amounts besides digits, and a space for `1 234`.
 const NUMBER_MARKS: &[char] = &[
     '.', ',', '%', '(', ')', '-', '–', '—', '−', '+', '$', '€', '£', '¥', '/', ':', ' ',
 ];
 
-/// Whether the text is a number: digits and number marks, a mark alone for a missing value, or a
-/// short token that starts with digits such as `509k`.
+/// Units that may follow a number, in lower case: `12 kg`, `3 ms`. The list is closed on purpose:
+/// a word that is not on it, such as `apples`, does not make `12 apples` a number.
+const UNITS: &[&str] = &[
+    "mg", "g", "kg", "mm", "cm", "m", "km", "ml", "l", "kb", "mb", "gb", "tb", "ms", "s", "min",
+    "h",
+];
+
+/// Currency codes, in lower case, that may come before or after a number: `USD 50`, `1,200 USD`.
+const CURRENCIES: &[&str] = &[
+    "usd", "eur", "gbp", "jpy", "cny", "vnd", "aud", "cad", "chf", "inr", "krw",
+];
+
+/// Months of a date, in lower case. A month is its full name or its first three letters.
+const MONTHS: &[&str] = &[
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+];
+
+/// Digits with separators and signs, without a space: `1,200`, `(12.5)`, `45%`, `$5`.
+fn is_digits(token: &str) -> bool {
+    token.chars().any(|ch| ch.is_ascii_digit())
+        && token
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || (ch != ' ' && NUMBER_MARKS.contains(&ch)))
+}
+
+fn is_unit(token: &str) -> bool {
+    UNITS.contains(&token.to_ascii_lowercase().as_str())
+}
+
+fn is_currency(token: &str) -> bool {
+    CURRENCIES.contains(&token.to_ascii_lowercase().as_str())
+}
+
+/// A month name, in full or as its first three letters, with an optional dot after the short form.
+fn is_month(token: &str) -> bool {
+    let token = token.trim_end_matches('.').to_ascii_lowercase();
+    token.len() >= 3
+        && MONTHS
+            .iter()
+            .any(|month| *month == token || (token.len() == 3 && month.starts_with(&token)))
+}
+
+/// A date written as day, month name and year: `12 May 2024`, `3 Sep 2023`.
+fn is_date(tokens: &[&str]) -> bool {
+    let [day, month, year] = tokens else {
+        return false;
+    };
+    let day_ok = (1..=2).contains(&day.len())
+        && day.bytes().all(|byte| byte.is_ascii_digit())
+        && day.parse::<u32>().is_ok_and(|day| (1..=31).contains(&day));
+    day_ok && is_month(month) && year.len() == 4 && year.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Whether the text is a number, in the forms listed in the module documentation. The text must
+/// have a digit.
 fn is_number(text: &str) -> bool {
-    if text.is_empty() {
+    if !text.chars().any(|ch| ch.is_ascii_digit()) {
         return false;
     }
-    let digits = text.chars().any(|ch| ch.is_ascii_digit());
     if text
         .chars()
         .all(|ch| ch.is_ascii_digit() || NUMBER_MARKS.contains(&ch))
     {
         return true;
     }
-    digits
-        && text.chars().count() <= 8
+    if text.chars().count() <= 8
         && !text.contains(' ')
         && text.starts_with(|ch: char| ch.is_ascii_digit())
+    {
+        return true;
+    }
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    match tokens.as_slice() {
+        [number, unit] => {
+            (is_digits(number) && (is_unit(unit) || is_currency(unit)))
+                || (is_currency(number) && is_digits(unit))
+        }
+        _ => is_date(&tokens),
+    }
 }
 
-/// Whether the column holds mostly something other than numbers.
+/// Whether the text is punctuation only: a dash, dots or a colon that marks a missing value or
+/// separates columns. Such a cell is neither a number nor a word.
+fn is_neutral(text: &str) -> bool {
+    !text.is_empty() && !text.chars().any(char::is_alphanumeric)
+}
+
+/// How many cells of the column count, leaving out the neutral ones, and how many of those are
+/// numbers.
+fn tally(column: &[String]) -> (usize, usize) {
+    column
+        .iter()
+        .filter(|text| !is_neutral(text))
+        .fold((0, 0), |(all, numbers), text| {
+            (all + 1, numbers + usize::from(is_number(text)))
+        })
+}
+
+/// Whether the column is mostly numbers: at least [`MIN_CELLS`] cells that are not neutral, of
+/// which the share [`SHARE`] are numbers.
+fn is_numeric(column: &[String]) -> bool {
+    let (all, numbers) = tally(column);
+    all >= MIN_CELLS && numbers as f64 >= SHARE * all as f64
+}
+
+/// Whether the column holds mostly something other than numbers, not counting neutral cells.
 fn is_textual(column: &[String]) -> bool {
-    share(column, |text| !is_number(text)) >= SHARE
+    let (all, numbers) = tally(column);
+    all > 0 && (all - numbers) as f64 >= SHARE * all as f64
 }
 
 /// A list marker such as `1.`, `(a)` or a bullet. A lone dash or asterisk marks a missing value
@@ -289,7 +396,7 @@ fn is_repeated(columns: &[Vec<String>]) -> bool {
         if column.len() < MIN_CELLS {
             return false;
         }
-        if share(column, is_number) >= SHARE {
+        if is_numeric(column) {
             kinds.push(true);
         } else if is_textual(column) {
             kinds.push(false);
@@ -652,6 +759,174 @@ mod tests {
             column(&["No", "No", "Yes", "Yes"]),
         ];
         assert_eq!(recognise(&matrix), Some(Layout::Words));
+    }
+
+    #[test]
+    fn a_number_needs_a_digit() {
+        for text in [
+            "-", "--", "...", ":", "/", "—", "–", ".", "(", "%", "$", "N/A", "kg", "USD",
+        ] {
+            assert!(!is_number(text), "{text}");
+        }
+        for text in [
+            "0",
+            "-5",
+            "3.5",
+            "1,200",
+            "(12.5)",
+            "45%",
+            "$5",
+            "€1,200",
+            "08:30",
+            "1.4.0",
+            "2024-05-12",
+            "1 234",
+            "509k",
+            "12kg",
+        ] {
+            assert!(is_number(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_number_may_have_one_unit_or_currency_code() {
+        for text in [
+            "12 kg",
+            "250 g",
+            "3 ms",
+            "12 mm",
+            "5 h",
+            "7 GB",
+            "1,200 USD",
+            "45 EUR",
+            "USD 50",
+            "gbp 1,200",
+            "5 %",
+        ] {
+            assert!(is_number(text), "{text}");
+        }
+        for text in [
+            // A word before a number or a word that is not a unit after it.
+            "Room 12",
+            "Chapter 3",
+            "Page 5",
+            "in 2019",
+            "12 apples",
+            "12 in",
+            "5 kg of rice",
+            "12 kg 5",
+            // Units and codes alone.
+            "kg",
+            "USD",
+            "kg 12",
+        ] {
+            assert!(!is_number(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_date_is_a_day_a_month_name_and_a_year() {
+        for text in [
+            "12 May 2024",
+            "3 Sep 2023",
+            "1 January 2020",
+            "31 Dec. 2021",
+            "7 march 1999",
+        ] {
+            assert!(is_number(text), "{text}");
+        }
+        for text in [
+            // No year, a two-digit year, a day that does not exist, a word that is not a month,
+            // and the other order of the parts.
+            "12 May",
+            "12 May 24",
+            "32 May 2024",
+            "0 May 2024",
+            "12 Mayday 2024",
+            "12 Ma 2024",
+            "May 12, 2024",
+            "May 2024",
+        ] {
+            assert!(!is_number(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn punctuation_only_cells_are_neutral() {
+        for text in ["-", "...", "…", ":", "/", "—", "*", "$"] {
+            assert!(is_neutral(text), "{text}");
+        }
+        for text in ["", "N/A", "0", "a", "-5", "..a"] {
+            assert!(!is_neutral(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn neutral_cells_never_make_a_column_of_numbers() {
+        let column = |cells: &[&str]| {
+            cells
+                .iter()
+                .map(|cell| (*cell).to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert!(!is_numeric(&column(&["-", "-", "-", "-"])));
+        assert!(!is_numeric(&column(&["...", "...", "...", "..."])));
+        // Fewer than three cells that are not neutral.
+        assert!(!is_numeric(&column(&["-", "-", "-", "5"])));
+        assert!(!is_numeric(&column(&["Beta", "-", "-", "-", "Yes"])));
+        // Missing values do not count against a column of numbers.
+        assert!(is_numeric(&column(&["12", "-", "-", "7", "9"])));
+        assert!(is_numeric(&column(&[
+            "Simple", "91.1", "-", "98.5", "-", "88.4"
+        ])));
+        assert!(!is_textual(&column(&["-", "-", "-"])));
+    }
+
+    #[test]
+    fn words_beside_a_separator_column_are_not_a_table() {
+        let dashes = [
+            column(&["bread", "water", "house", "dog", "school"]),
+            column(&["-", "-", "-", "-", "-"]),
+            column(&["pan", "agua", "casa", "perro", "escuela"]),
+        ];
+        assert_eq!(recognise(&dashes), Some(Layout::Words));
+        let dots = [
+            column(&["Hamlet", "Ophelia", "Claudius", "Gertrude", "Horatio"]),
+            column(&["...", "...", "...", "...", "..."]),
+            column(&["Prince", "Maid", "King", "Queen", "Friend"]),
+        ];
+        assert_eq!(recognise(&dots), Some(Layout::Words));
+        let matrix = [
+            column(&["Role", "Reader", "Writer", "Editor", "Admin", "Guest"]),
+            column(&["Read", "Yes", "Yes", "Yes", "Yes", "No"]),
+            column(&["Write", "No", "Yes", "Yes", "Yes", "No"]),
+            column(&["Delete", "No", "No", "Yes", "Yes", "No"]),
+            column(&["Beta", "-", "-", "-", "Yes", "-"]),
+        ];
+        assert_eq!(recognise(&matrix), Some(Layout::Words));
+    }
+
+    #[test]
+    fn a_column_of_amounts_with_units_or_dates_is_a_column_of_numbers() {
+        let amounts = [
+            column(&["Flour", "Milk", "Salt"]),
+            column(&["250 g", "300 ml", "5 g"]),
+            column(&["sifted", "cold", "fine"]),
+        ];
+        assert_eq!(recognise(&amounts), None);
+        let dates = [
+            column(&["Alpha", "Beta", "Gamma", "Delta"]),
+            column(&["12 May 2024", "14 May 2024", "3 Sep 2023", "1 Jan 2022"]),
+            column(&["north", "south", "east", "west"]),
+        ];
+        assert_eq!(recognise(&dates), None);
+        // A word before the number does not make it one.
+        let rooms = [
+            column(&["Alpha", "Beta", "Gamma", "Delta"]),
+            column(&["Room 12", "Room 14", "Room 3", "Room 9"]),
+            column(&["north", "south", "east", "west"]),
+        ];
+        assert_eq!(recognise(&rooms), Some(Layout::Words));
     }
 
     #[test]

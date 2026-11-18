@@ -17,7 +17,9 @@ signature block, a letterhead footer, code with aligned comments, two bibliograp
 index, numbered equations, a list of abbreviations, quiz options and a transcript with time
 codes. The last seven have no column of numbers, or only a column of list labels: a bibliography
 with bracketed numbers, a grid of photo captions, directory cards, a spelling list, a maths
-worksheet and quiz options with capital letters, with and without parentheses. A reader must find
+worksheet and quiz options with capital letters, with and without parentheses. The last three have
+a column that holds only punctuation and no number: a vocabulary list with a dash between the
+words, a cast list with dots, and a Yes and No matrix with a column of dashes. A reader must find
 no table on any of them.
 """
 from pathlib import Path
@@ -825,6 +827,62 @@ def quiz_options_with_capitals(parentheses):
     return page
 
 
+def vocabulary_with_a_dash_column():
+    """Two languages side by side, with a dash column between them: words and no numbers."""
+    page = Page()
+    page.text(72, 740, "Vocabulary", BOLD, 14)
+    rows = [
+        ("bread", "-", "pan"),
+        ("water", "-", "agua"),
+        ("house", "-", "casa"),
+        ("dog", "-", "perro"),
+        ("school", "-", "escuela"),
+    ]
+    y = 700
+    for row in rows:
+        for x, value in zip((72, 180, 230), row):
+            page.text(x, y, value, REGULAR, 11)
+        y -= 20
+    return page
+
+
+def cast_list_with_dots():
+    page = Page()
+    page.text(72, 740, "Cast", BOLD, 14)
+    rows = [
+        ("Hamlet", "...", "Prince"),
+        ("Ophelia", "...", "Maid"),
+        ("Claudius", "...", "King"),
+        ("Gertrude", "...", "Queen"),
+        ("Horatio", "...", "Friend"),
+    ]
+    y = 700
+    for row in rows:
+        for x, value in zip((72, 180, 230), row):
+            page.text(x, y, value, REGULAR, 11)
+        y -= 20
+    return page
+
+
+def access_matrix_with_a_dash_column():
+    page = Page()
+    page.text(72, 740, "Access by role", BOLD, 14)
+    rows = [
+        ("Role", "Read", "Write", "Delete", "Beta"),
+        ("Reader", "Yes", "No", "No", "-"),
+        ("Writer", "Yes", "Yes", "No", "-"),
+        ("Editor", "Yes", "Yes", "Yes", "-"),
+        ("Admin", "Yes", "Yes", "Yes", "Yes"),
+        ("Guest", "No", "No", "No", "-"),
+    ]
+    y = 700
+    for index, row in enumerate(rows):
+        for x, value in zip((72, 180, 260, 340, 430), row):
+            page.text(x, y, value, BOLD if index == 0 else REGULAR, 10)
+        y -= 18
+    return page
+
+
 def negatives():
     return [
         three_column_prose(), lists(), poetry(), code(), contents(), running_text(), wide_gaps(),
@@ -836,6 +894,7 @@ def negatives():
         transcript_with_time_codes(), bibliography_with_bracketed_numbers(), photo_caption_grid(),
         team_directory_cards(), spelling_word_list(), maths_worksheet(),
         quiz_options_with_capitals(True), quiz_options_with_capitals(False),
+        vocabulary_with_a_dash_column(), cast_list_with_dots(), access_matrix_with_a_dash_column(),
     ]
 
 

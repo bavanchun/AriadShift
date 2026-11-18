@@ -14,7 +14,7 @@ use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, table_pages, table
 
 /// The pages of `unruled-negatives.pdf`: prose and layouts that look tabular, none of which may
 /// yield a table.
-const NEGATIVE_PAGES: [&str; 32] = [
+const NEGATIVE_PAGES: [&str; 35] = [
     "three-column prose",
     "nested lists and a definition list",
     "poetry with line numbers",
@@ -47,6 +47,9 @@ const NEGATIVE_PAGES: [&str; 32] = [
     "maths worksheet",
     "quiz options with capital letters in parentheses",
     "quiz options with capital letters and dots",
+    "vocabulary with a dash column",
+    "cast list with a column of dots",
+    "yes and no matrix with a dash column",
 ];
 
 #[test]
