@@ -209,8 +209,10 @@ and tables whose columns are aligned with whitespace, and emits `docling_fallbac
 The whitespace detector favours precision over recall: lists, forms, code, tables of
 contents and other aligned text stay text, and so does a table of words with no column
 of numbers (a Yes and No matrix, a feature list) or a ledger whose description column
-is long phrases, so such tables still need Docling. A PDF with no table yields a
-text-dump sheet with `no_tables_found`. When tables are found, XLSX and CSV keep only
+is long phrases, so such tables still need Docling. On a page with a frame, or with a
+grid of ruling lines that is not read as a table, whitespace detection is off for the
+whole page, so a table without rules on that page stays text too. A PDF with no table
+yields a text-dump sheet with `no_tables_found`. When tables are found, XLSX and CSV keep only
 the tables: the surrounding prose is dropped, so a document that mixes prose and
 tables loses its prose in these two outputs.
 CSV conversion produces one artifact; use `pdf.tables_to_csv` for one CSV per
