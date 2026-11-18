@@ -1,4 +1,5 @@
 import AppKit
+import AriadDesignSystem
 import AriadShiftCore
 import SwiftUI
 
@@ -13,7 +14,7 @@ struct SettingsView: View {
         Form {
             Section {
                 LabeledContent(String(localized: "mac.settings.output_folder")) {
-                    VStack(alignment: .trailing, spacing: 6) {
+                    VStack(alignment: .trailing, spacing: DSSpacing.s) {
                         Text(verbatim: outputFolder.isEmpty ? String(localized: "mac.settings.output_same") : displayPath)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -41,7 +42,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480)
+        .frame(width: DSSize.settingsWidth)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { automaticChecks = updater.automaticallyChecks }
     }
