@@ -1,24 +1,19 @@
 # Desktop app
 
-AriadShift Desktop is a local-first Tauri 2 app for macOS, Windows and Linux.
+AriadShift Desktop is a local-first Tauri 2 app for Windows and Linux. The Mac app is the native
+Swift app in `apps/macos` (see [macos.md](macos.md)); the Tauri app is no longer
+built or released for macOS.
 Document conversion calls `ariad-host` directly; documents are never uploaded.
 The base installer excludes the optional Docling engine pack.
 
 ## Install and run
 
-Download a desktop installer from the project's GitHub Release: `.dmg` for macOS,
-`.msi` or NSIS `.exe` for Windows, or AppImage, `.deb` or `.rpm` for Linux.
+Download a desktop installer from the project's GitHub Release: `.msi` or NSIS `.exe` for Windows, or AppImage, `.deb` or `.rpm` for Linux.
 Linux URL registration requires `desktop-file-utils` and `xdg-utils`. The DEB
 and RPM declare these package dependencies; install them separately for AppImage.
 
 Unsigned builds are available until the maintainer configures platform signing
-certificates. On macOS, open the disk image and copy AriadShift to Applications.
-On first launch from a downloaded unsigned DMG, Gatekeeper blocks the app with a
-warning that its developer cannot be verified or Apple cannot check it for
-malicious software; follow [Apple’s guidance](https://support.apple.com/102445)
-if you trust the download.
-macOS installers and in-app updates currently support Apple silicon (aarch64)
-only. Intel macOS is not built and has no updater metadata entry.
+certificates.
 
 Markdown and HTML conversion needs no external engine. Digital PDF input uses the
 built-in text reader, and PDF output uses the built-in Typst compiler. Scanned PDFs,
@@ -116,8 +111,7 @@ shared UI preference.
 route/profile and opens a native file picker. Links carry preferences only;
 file paths cannot be supplied in the URL. Unknown or duplicate parameters are
 rejected. `ariadshift://auth/callback` is reserved and performs no authentication.
-The OS registers the scheme when the installed app runs; on macOS use the app
-installed from the disk image to test Launch Services registration.
+The OS registers the scheme when the installed app runs.
 Finder's `file://` URLs are handled by the file-open channel and ignored by the
 preference-link parser, including percent-encoded names and localhost URLs.
 
@@ -130,13 +124,6 @@ and press Convert to queue them. Folders, missing files and unsupported extensio
 are skipped, and one launch takes at most 1,000 files. No entry becomes the
 default app for a format.
 
-- **macOS:** the app declares its document types with the `Alternate` rank, so it
-  appears under Finder's Open With and accepts files dropped on its Dock icon. The
-  Quick Action ships inside the app; install it once by opening
-  `AriadShift.app/Contents/Resources/os-integration/Convert with AriadShift.workflow`
-  (Finder: Show Package Contents) and confirming the prompt. It then appears under
-  Quick Actions and Services for supported files and remains in
-  `~/Library/Services` until you remove it there.
 - **Windows:** both the NSIS installer and MSI install for the current user.
   The MSI uses a [custom WiX template](../apps/desktop/src-tauri/windows/per-user.wxs)
   derived from the pinned Tauri CLI template, with limited installation privileges
@@ -199,8 +186,7 @@ Before release, test MSI and NSIS install, upgrade and uninstall as a standard
 Windows user, confirming the installing user's verbs and protocol registrations
 and no writes to other users' hives or machine registrations. For each installer,
 quit the app, select 20 supported files and choose Convert with AriadShift;
-expect one window with all 20 files, repeated five times. On macOS, open a Finder
-selection and confirm it appears without an invalid-link notice. Linux unit
+expect one window with all 20 files, repeated five times. Linux unit
 tests cover parsing and lock behavior; they do not establish these platform results.
 
 ## Updates and release configuration
@@ -221,19 +207,12 @@ manually. Rotating the pack key requires shipping its new public key in a
 desktop/CLI release before publishing packs signed only by that key; losing a
 pack key leaves existing signatures valid but prevents signing new packs.
 
-Apple signing requires `APPLE_CERTIFICATE` (base64 PKCS#12),
-`APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` together. Optional
-notarization additionally requires all three of `APPLE_ID`, `APPLE_PASSWORD` and
-`APPLE_TEAM_ID`. Empty Apple variables are removed before invoking Tauri; when
-the certificate is absent, Tauri leaves the macOS app unsigned while still
-creating the separate minisign updater signature. Windows signing is optional through
+Windows signing is optional through
 `WINDOWS_CERTIFICATE` (base64 PFX) and `WINDOWS_CERTIFICATE_PASSWORD`. Without
 platform signing material, bundles are unsigned; updater signatures are still
 mandatory for release updates. Only Tauri 2 updater artifacts are supported; the
 legacy ZIP/compressed-AppImage compatibility feature is disabled to exclude its
-vulnerable ZIP dependency. Native AppImage, MSI/NSIS and macOS app archives
-remain supported. The macOS build compiles the existing Icon
-Composer layers using `actool` into `Assets.car`, with an `.icns` fallback.
+vulnerable ZIP dependency. Native AppImage and MSI/NSIS bundles remain supported.
 
 ## Development and checks
 
@@ -244,8 +223,7 @@ the generators normalize line endings and trailing spaces for reproducible
 checks. JavaScript notices traverse the desktop production graph, including
 shared UI dependencies and fonts; `just desktop-licenses` updates them alone.
 See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for
-platform setup. macOS needs Xcode for
-`actool`; Windows needs the standard Tauri build prerequisites and WebView2.
+platform setup. Windows needs the standard Tauri build prerequisites and WebView2.
 
 ```sh
 just pandoc
@@ -306,10 +284,8 @@ upstream release includes the fix; keep the upstream license files intact.
 Upstream trailing whitespace is normalized to the repository style; the only
 behavioral change is the parser initializer.
 
-Pull requests build installers on `ubuntu-26.04`, `macos-26` and `windows-2025`
-without publishing artifacts; the macOS job generates a disposable updater key,
-enables updater artifacts and requires a nonempty app archive signature with
-empty Apple credentials. Linux also runs `just desktop-smoke` under Xvfb
+Pull requests build installers on `ubuntu-26.04` and `windows-2025`
+without publishing artifacts. Linux also runs `just desktop-smoke` under Xvfb
 using `tauri-driver` and the real UI to convert Markdown to HTML. Tag builds use
 the release environment, sign update artifacts and attach bundles to the GitHub
 release created by the CLI workflow. Desktop jobs wait for that release and

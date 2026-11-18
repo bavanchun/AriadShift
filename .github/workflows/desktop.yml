@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-26.04, macos-26, windows-2025]
+        os: [ubuntu-26.04, windows-2025]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
@@ -100,36 +100,7 @@ jobs:
         if: runner.os == 'Linux'
         run: node apps/desktop/scripts/linux-tools.mjs
       - name: Build platform installers without publishing
-        if: runner.os != 'macOS'
         run: just desktop-build
-      - name: Build macOS installers and assert updater signature without Apple credentials
-        if: runner.os == 'macOS'
-        env:
-          APPLE_CERTIFICATE: ""
-          APPLE_CERTIFICATE_PASSWORD: ""
-          APPLE_SIGNING_IDENTITY: ""
-          APPLE_ID: ""
-          APPLE_PASSWORD: ""
-          APPLE_TEAM_ID: ""
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: |
-          key_dir=$(mktemp -d "$RUNNER_TEMP/desktop-updater.XXXXXX")
-          trap 'rm -rf "$key_dir"' EXIT
-          umask 077
-          pnpm --filter @ariadshift/desktop tauri signer generate --ci --password '' --write-keys "$key_dir/updater.key" >/dev/null 2>&1
-          node --input-type=module - "$key_dir" <<'JS'
-          import { readFileSync, writeFileSync } from "node:fs";
-          const dir = process.argv[2];
-          writeFileSync(`${dir}/updater.json`, JSON.stringify({
-            bundle: { createUpdaterArtifacts: true },
-            plugins: { updater: { pubkey: readFileSync(`${dir}/updater.key.pub`, "utf8").trim() } },
-          }));
-          JS
-          TAURI_SIGNING_PRIVATE_KEY="$(cat "$key_dir/updater.key")"
-          export TAURI_SIGNING_PRIVATE_KEY
-          pnpm --filter @ariadshift/desktop tauri build --config "$key_dir/updater.json"
-          test -s target/release/bundle/macos/AriadShift.app.tar.gz.sig
-          echo 'Verified nonempty AriadShift.app.tar.gz.sig without Apple credentials.'
       - name: Convert PDF and Office through the packaged AppImage
         if: runner.os == 'Linux'
         env:
@@ -150,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-26.04, macos-26, windows-2025]
+        os: [ubuntu-26.04, windows-2025]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     defaults:
@@ -243,12 +214,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tauriScript: pnpm tauri
           projectPath: apps/desktop

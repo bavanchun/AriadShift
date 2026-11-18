@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 export function releaseTargets(metadata, assets, tag) {
   if (metadata.version !== tag.replace(/^v/, ""))
     throw new Error("Updater version differs from tag");
-  const targets = ["linux-x86_64", "darwin-aarch64", "windows-x86_64"];
+  const targets = ["linux-x86_64", "windows-x86_64"];
   const seen = new Set();
   return targets.map((platform) => {
     const entry = metadata.platforms?.[platform];
