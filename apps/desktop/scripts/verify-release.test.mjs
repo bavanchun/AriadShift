@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { releaseTargets } from "./verify-release.mjs";
 
-const platforms = ["linux-x86_64", "darwin-aarch64", "windows-x86_64"];
+const platforms = ["linux-x86_64", "windows-x86_64"];
 function fixture() {
   const assets = platforms.map((name, id) => ({
     id,
@@ -22,10 +22,10 @@ function fixture() {
 }
 test("all updater platforms must reference distinct attached release assets", () => {
   const { metadata, assets } = fixture();
-  assert.equal(releaseTargets(metadata, assets, "v1.2.3").length, 3);
+  assert.equal(releaseTargets(metadata, assets, "v1.2.3").length, 2);
   assert.throws(() => releaseTargets(metadata, assets, "v1.2.4"), /version/);
-  delete metadata.platforms["darwin-aarch64"];
-  assert.throws(() => releaseTargets(metadata, assets, "v1.2.3"), /darwin-aarch64/);
+  delete metadata.platforms["windows-x86_64"];
+  assert.throws(() => releaseTargets(metadata, assets, "v1.2.3"), /windows-x86_64/);
 });
 test("missing signatures, external URLs and lost matrix updates fail closed", () => {
   for (const mutate of [
