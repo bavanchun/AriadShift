@@ -195,12 +195,13 @@ pub(crate) fn map_pdf_error(err: PdfError) -> EngineFailure {
         ),
         PdfError::LimitExceeded(_) | PdfError::TablesTooLarge => EngineFailure::limit_exceeded(),
         PdfError::InvalidParams(msg) => EngineFailure::owned(ErrorCode::InvalidRequest, msg),
-        PdfError::Malformed | PdfError::NoTables | PdfError::NotImplemented(_) => {
-            EngineFailure::new(
-                ErrorCode::EngineFailure,
-                "The PDF is damaged or cannot be read.",
-            )
-        }
+        PdfError::Malformed
+        | PdfError::NoTables
+        | PdfError::EngineRequired { .. }
+        | PdfError::NotImplemented(_) => EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "The PDF is damaged or cannot be read.",
+        ),
     }
 }
 

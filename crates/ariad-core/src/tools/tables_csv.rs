@@ -15,11 +15,21 @@ pub const MAX_TABLES_COUNT: usize = 255;
 /// Maximum cumulative CSV bytes emitted by `pdf.tables_to_csv` (50 MiB).
 pub const MAX_TOTAL_CSV_BYTES: usize = 50 * 1024 * 1024;
 
+/// Message of the `engine_failure` for a document without any table. It is a fixed text with no
+/// document content, so every runtime may show it to the caller.
+pub const NO_TABLES_MESSAGE: &str = "no tables found in document";
+
+/// Code of the warning that says the Docling engine pack did not read the tables.
+pub const DOCLING_FALLBACK_CODE: &str = "docling_fallback";
+
+/// Text of the [`DOCLING_FALLBACK_CODE`] warning when the built-in reader found the tables.
+pub const RULED_ONLY_MESSAGE: &str = "The Docling engine pack is not installed; tables were detected from ruling lines only. Install Docling to also find tables without ruling lines.";
+
 /// One extracted table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CsvTable {
-    /// One-based position of the table in the document. Tables without content are skipped, so
-    /// consecutive entries can skip a number.
+    /// One-based position among the extracted tables. Tables without content are skipped and do
+    /// not take a number, so the numbers are consecutive.
     pub number: usize,
     /// CSV text of the table.
     pub csv: String,
@@ -118,7 +128,7 @@ pub fn extract(document: &Document) -> Result<TablesCsv, TablesCsvError> {
             return Err(TablesCsvError::LimitExceeded);
         }
         extracted.push(CsvTable {
-            number: index + 1,
+            number: extracted.len() + 1,
             csv,
         });
     }
@@ -131,4 +141,76 @@ pub fn extract(document: &Document) -> Result<TablesCsv, TablesCsvError> {
         warnings,
         capped_from,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{Alignment, ColumnSpec, Inline, TableCell};
+
+    fn cell(text: &str) -> TableCell {
+        TableCell {
+            rowspan: 1,
+            colspan: 1,
+            header: None,
+            blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content: vec![Inline::Text {
+                    text: text.to_owned(),
+                }],
+            }],
+        }
+    }
+
+    fn table(rows: &[&str]) -> Block {
+        Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            caption: None,
+            columns: vec![ColumnSpec {
+                align: Alignment::Default,
+            }],
+            head: Vec::new(),
+            body: rows.iter().map(|text| vec![cell(text)]).collect(),
+            footnotes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn tables_are_numbered_consecutively_after_empty_tables_are_skipped() {
+        let document = Document {
+            body: vec![table(&["first"]), table(&[]), table(&["third"])],
+            ..Default::default()
+        }
+        .finalize_import();
+        let extracted = extract(&document).unwrap();
+        let numbered: Vec<(usize, &str)> = extracted
+            .tables
+            .iter()
+            .map(|table| (table.number, table.csv.trim_end()))
+            .collect();
+        assert_eq!(numbered, [(1, "first"), (2, "third")]);
+        assert_eq!(csv_file_name(extracted.tables[1].number), "table-002.csv");
+        assert!(
+            extracted
+                .warnings
+                .iter()
+                .any(|warning| warning.message == "table 2 has no content; skipped"),
+            "{:?}",
+            extracted.warnings
+        );
+    }
+
+    #[test]
+    fn a_document_of_empty_tables_has_no_tables() {
+        let document = Document {
+            body: vec![table(&[])],
+            ..Default::default()
+        }
+        .finalize_import();
+        assert_eq!(extract(&document), Err(TablesCsvError::NoTables));
+    }
 }

@@ -23,6 +23,7 @@ use ariad_core::{
     tools::{
         Plan, RunSize, SecretSource, Tier, ToolId, ToolSpec,
         access::{allowed, within_run_quota},
+        tables_csv,
     },
 };
 use schemars::{JsonSchema, Schema};
@@ -507,6 +508,16 @@ impl ToolError {
         }
     }
 
+    /// Reports whether this is the `engine_failure` of a document without any table.
+    ///
+    /// The message is the fixed [`tables_csv::NO_TABLES_MESSAGE`] with no document content, so it
+    /// is safe to show to remote clients, and the same input has no tables every time, so a retry
+    /// only delays the answer.
+    #[must_use]
+    pub fn is_no_tables(&self) -> bool {
+        matches!(self, Self::EngineFailure(message) if message == tables_csv::NO_TABLES_MESSAGE)
+    }
+
     /// Constructs a [`ToolError::ToolMissing`] with the install hint from [`crate::engines`].
     #[must_use]
     pub fn from_missing_engine(engine: &str) -> Self {
@@ -691,6 +702,8 @@ fn run_tool_inner(
     let is_document_edit = matches!(spec.id, "edit.open_document" | "edit.export_document");
     let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
+    let table_reader = is_tables_to_csv
+        .then(|| super::tables::TableReader::detect(request.engine_program.as_deref()));
     let is_compare = spec.id == "pdf.compare";
     let is_web_to_pdf = spec.id == "web.to_pdf";
     let is_compliance = spec.id == "pdf.to_pdfa" || spec.id == "pdf.to_pdfua";
@@ -952,7 +965,7 @@ fn run_tool_inner(
             clock,
         )
         .map_err(|e| e.scrubbed(scrubber))?
-    } else if is_tables_to_csv {
+    } else if let Some(reader) = table_reader {
         super::tables::execute(
             &spec,
             &staged_inputs_with_format,
@@ -964,6 +977,7 @@ fn run_tool_inner(
             &request.cancel,
             on_event,
             clock,
+            reader,
         )
         .map_err(|e| e.scrubbed(scrubber))?
     } else if !is_out_of_process {
@@ -1087,7 +1101,11 @@ fn run_tool_inner(
     let mut outcome = ToolOutcome {
         tool: spec.id.to_owned(),
         version: spec.version.to_owned(),
-        engine: effective_engine.to_owned(),
+        // The engine that ran: `pdf.tables_to_csv` prefers Docling over its built-in reader.
+        engine: table_reader.map_or_else(
+            || effective_engine.to_owned(),
+            |reader| reader.engine_id(effective_engine),
+        ),
         artifacts: published,
         warnings,
         metrics,

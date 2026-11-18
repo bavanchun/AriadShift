@@ -484,6 +484,7 @@ pub fn map_pdf_error(err: PdfError, scrubber: &SecretScrubber) -> ToolError {
             ToolError::EngineFailure("the file is not a readable PDF".to_owned())
         }
         PdfError::NoTables => ToolError::EngineFailure(err.to_string()),
+        PdfError::EngineRequired { engine } => ToolError::from_missing_engine(engine),
         PdfError::NotImplemented(message) if ariad_pdf::error::is_refusal_message(&message) => {
             // Safety refusal: same `tool_missing` code and exit 5, but the hint is the
             // refusal reason itself so the user does not read "tool ... is not implemented".

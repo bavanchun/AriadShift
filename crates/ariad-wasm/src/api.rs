@@ -683,16 +683,7 @@ where
 
     let effective_engine = spec.engine_for_params(&params_value);
     if effective_engine != "ariad-pdf" {
-        return Err(ApiError::new(
-            "engine_unavailable",
-            format!(
-                "tool '{}' requires the '{effective_engine}' engine, which is not available in the browser",
-                spec.id
-            ),
-        )
-        .with("tool", spec.id)
-        .with("engine", effective_engine)
-        .with("exit_code", 5u8));
+        return Err(browser_engine_unavailable(spec.id, effective_engine));
     }
 
     for (idx, (input_bytes, input_name)) in inputs.iter().zip(names.iter()).enumerate() {
@@ -827,6 +818,19 @@ where
         warnings,
         metrics: tool_output.metrics,
     })
+}
+
+/// The error for a tool that needs an engine the browser cannot run.
+fn browser_engine_unavailable(tool_id: &str, engine: &str) -> ApiError {
+    ApiError::new(
+        "engine_unavailable",
+        format!(
+            "tool '{tool_id}' requires the '{engine}' engine, which is not available in the browser"
+        ),
+    )
+    .with("tool", tool_id)
+    .with("engine", engine)
+    .with("exit_code", 5u8)
 }
 
 fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: usize) -> bool {
@@ -970,6 +974,7 @@ fn map_pdf_error(tool_id: &str, error: PdfError) -> ApiError {
         PdfError::NoTables => ApiError::new("engine_failure", error.to_string())
             .with("tool", tool_id)
             .with("exit_code", 1u8),
+        PdfError::EngineRequired { engine } => browser_engine_unavailable(tool_id, engine),
         PdfError::NotImplemented(reason) if ariad_pdf::error::is_refusal_message(&reason) => {
             ApiError::new("engine_unavailable", reason.clone())
                 .with("tool", tool_id)
@@ -2155,6 +2160,57 @@ mod tests {
                 ),
             ]
         );
+
+        // The built-in reader finds ruled tables only, and the result says so like the other
+        // runtimes do.
+        let fallback: Vec<&str> = run
+            .warnings
+            .iter()
+            .filter(|warning| warning.code == "docling_fallback")
+            .map(|warning| warning.message.as_str())
+            .collect();
+        assert_eq!(
+            fallback,
+            [ariad_core::tools::tables_csv::RULED_ONLY_MESSAGE]
+        );
+
+        // A lone table has no number, exactly like the host names it.
+        let single = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/en-map-room.pdf"),
+        )
+        .expect("read single-table fixture");
+        let run = run_tool(
+            [single.as_slice()],
+            ["en-map-room.pdf"],
+            "pdf.tables_to_csv",
+            "{}",
+            budget,
+            false,
+        )
+        .expect("a single ruled table");
+        let names: Vec<&str> = run.artifacts.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["en-map-room.table.csv"]);
+
+        // A scan has no text layer to read tables from: it needs Docling, which the browser
+        // cannot run, exactly like the unavailable-engine error of the other runtimes.
+        let scan = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/vi-garden-image-only.pdf"),
+        )
+        .expect("read scan fixture");
+        let error = run_tool(
+            [scan.as_slice()],
+            ["vi-garden-image-only.pdf"],
+            "pdf.tables_to_csv",
+            "{}",
+            budget,
+            false,
+        )
+        .expect_err("a scan needs the Docling engine");
+        assert_eq!(error.code(), "engine_unavailable");
+        assert_eq!(error.detail("engine"), Some(&serde_json::json!("docling")));
+        assert_eq!(error.detail("exit_code"), Some(&serde_json::json!(5)));
 
         let prose = std::fs::read(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

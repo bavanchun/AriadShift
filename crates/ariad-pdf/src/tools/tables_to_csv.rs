@@ -1,19 +1,24 @@
 //! `pdf.tables_to_csv`: extracts the tables drawn with ruling lines into one CSV file each.
 //!
-//! This is the in-process extractor used where the Docling engine pack cannot run (the browser
-//! and cloud runtimes) and as the fallback of the local runtime. Tables without ruling lines are
-//! not detected.
+//! This is the in-process extractor of the browser, where the Docling engine pack cannot run. The
+//! local and cloud runtimes run the host path instead (`ariad-host`), which prefers Docling when
+//! its pack is installed and otherwise reads the PDF with this same detector in the PDF engine
+//! child process; the cloud Core worker has no Docling pack, so it finds ruled tables only.
+//! Tables without ruling lines are not detected, and a PDF without any text layer needs Docling.
 
 use std::collections::BTreeMap;
 
 use ariad_core::{
-    reader::pdf::{self, ReadOptions},
+    reader::pdf::{self, PdfStats, ReadOptions},
     tools::{params::TablesToCsvParams, tables_csv},
 };
 use serde_json::Value;
 
 use super::{InputSource, OutputArtifact, ToolOutput, ToolWarning};
 use crate::{document::ToolCtx, error::PdfError, naming::single_output_name};
+
+/// Engine that reads a PDF without any text layer.
+const SCAN_ENGINE: &str = "docling";
 
 /// Runs `pdf.tables_to_csv` over exactly one raw PDF input.
 pub(super) fn run(
@@ -45,6 +50,16 @@ pub(super) fn run(
     )?;
     ctx.check()?;
 
+    // A PDF without any text layer is a scan: the built-in reader sees no tables in it, but only
+    // because it cannot read it, so report the engine that can instead of "no tables".
+    if PdfStats::from_document(&read.document)
+        .is_some_and(|stats| stats.pages > 0 && stats.text_pages == 0)
+    {
+        return Err(PdfError::EngineRequired {
+            engine: SCAN_ENGINE,
+        });
+    }
+
     let extracted = tables_csv::extract(&read.document).map_err(|error| match error {
         tables_csv::TablesCsvError::NoTables => PdfError::NoTables,
         tables_csv::TablesCsvError::LimitExceeded => PdfError::TablesTooLarge,
@@ -67,13 +82,23 @@ pub(super) fn run(
         })
         .filter(|warning| tables_csv::keeps_read_warning_code(&warning.code))
         .chain(cap)
+        .chain(std::iter::once(ToolWarning {
+            code: tables_csv::DOCLING_FALLBACK_CODE.to_owned(),
+            message: tables_csv::RULED_ONLY_MESSAGE.to_owned(),
+        }))
         .collect();
 
+    // Same names as the host: a lone table has no number, several are numbered from 1.
+    let single = extracted.tables.len() == 1;
     let artifacts = extracted
         .tables
         .into_iter()
         .map(|table| OutputArtifact {
-            name: single_output_name(&input.stem, &format!("table-{:03}", table.number), "csv"),
+            name: if single {
+                single_output_name(&input.stem, "table", "csv")
+            } else {
+                single_output_name(&input.stem, &format!("table-{:03}", table.number), "csv")
+            },
             format: "csv".to_owned(),
             bytes: table.csv.into_bytes(),
         })

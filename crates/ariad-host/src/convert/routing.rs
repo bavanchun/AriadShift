@@ -158,7 +158,7 @@ pub(crate) fn select(
                 None => {
                     if tables_without_docling {
                         fallback_warning = Some(docling_fallback_warning(
-                            "The Docling engine pack is not installed; tables were detected from ruling lines only. Install Docling to also find tables without ruling lines.".to_owned(),
+                            ariad_core::tools::tables_csv::RULED_ONLY_MESSAGE.to_owned(),
                         ));
                     }
                     reader = Some(engines::PDF.id.to_owned());

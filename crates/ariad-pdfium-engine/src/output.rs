@@ -531,6 +531,10 @@ pub fn map_pdf_open_error(err: PdfError) -> EngineFailure {
         PdfError::NoTables => {
             EngineFailure::new(ErrorCode::EngineFailure, "No tables found in the document.")
         }
+        PdfError::EngineRequired { .. } => EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "The document needs an engine that is not available here.",
+        ),
         PdfError::NotImplemented(message) => {
             EngineFailure::owned(ErrorCode::EngineFailure, message)
         }

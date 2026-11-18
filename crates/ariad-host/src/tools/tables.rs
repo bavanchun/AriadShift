@@ -56,6 +56,34 @@ fn docling_installed(engine_program: Option<&Path>) -> bool {
     engines::resolve_pack_with_options(engines::docling::ENGINE_ID, engine_program).is_ok()
 }
 
+/// The engine that reads the tables of one run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum TableReader {
+    /// The Docling pack, installed and preferred.
+    Docling,
+    /// The built-in reader in the PDF engine child process: ruled tables only.
+    BuiltIn,
+}
+
+impl TableReader {
+    /// Picks the reader once per run, so the run and the engine it reports agree.
+    pub(super) fn detect(engine_program: Option<&Path>) -> Self {
+        if docling_installed(engine_program) {
+            Self::Docling
+        } else {
+            Self::BuiltIn
+        }
+    }
+
+    /// Identifier of the engine that actually reads the tables; `built_in` is the tool's own.
+    pub(super) fn engine_id(self, built_in: &str) -> String {
+        match self {
+            Self::Docling => engines::docling::ENGINE_ID.to_owned(),
+            Self::BuiltIn => built_in.to_owned(),
+        }
+    }
+}
+
 /// Output artifact tuple and warnings produced by table extraction.
 pub type TablesArtifacts = (Vec<(PathBuf, String)>, Vec<ConvertWarning>);
 
@@ -73,7 +101,7 @@ fn stage_csv_artifacts(
     scrubber: &SecretScrubber,
 ) -> Result<TablesArtifacts, ToolError> {
     let extracted = tables_csv::extract(document).map_err(|error| match error {
-        TablesCsvError::NoTables => ToolError::EngineFailure("no tables found in document".into()),
+        TablesCsvError::NoTables => ToolError::EngineFailure(tables_csv::NO_TABLES_MESSAGE.into()),
         TablesCsvError::LimitExceeded => ToolError::LimitExceeded,
     })?;
     let warnings = extracted
@@ -219,22 +247,30 @@ pub(super) fn execute(
     cancel: &CancellationToken,
     _on_event: &mut dyn FnMut(ToolEvent),
     _clock: inprocess::HostClock,
+    reader: TableReader,
 ) -> Result<RawToolExecution, ToolError> {
     let (input_path, _) = inputs
         .first()
         .ok_or_else(|| ToolError::Usage("pdf.tables_to_csv requires one input file".into()))?;
 
-    let (doc, read_warnings) = if docling_installed(engine_program) {
-        (
+    let (doc, read_warnings) = match reader {
+        TableReader::Docling => (
             extract_document_with_docling(input_path, workspace, limits, engine_program, cancel)?,
             Vec::new(),
-        )
-    } else {
-        extract_document_in_process(input_path, limits, engine_program, cancel)?
+        ),
+        TableReader::BuiltIn => {
+            extract_document_in_process(input_path, limits, engine_program, cancel)?
+        }
     };
 
     let (artifacts, mut warnings) = stage_csv_artifacts(&doc, workspace, scrubber)?;
     warnings.splice(0..0, read_warnings);
+    if reader == TableReader::BuiltIn {
+        warnings.push(ConvertWarning {
+            code: tables_csv::DOCLING_FALLBACK_CODE.to_owned(),
+            message: tables_csv::RULED_ONLY_MESSAGE.to_owned(),
+        });
+    }
     Ok(RawToolExecution {
         artifacts,
         warnings,

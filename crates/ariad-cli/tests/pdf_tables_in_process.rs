@@ -85,8 +85,22 @@ fn cells(expected: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
+fn report(output: &Output) -> Value {
+    serde_json::from_slice(&output.stdout).expect("json report")
+}
+
+fn warning_messages(output: &Output, code: &str) -> Vec<String> {
+    report(output)["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .iter()
+        .filter(|warning| warning["code"] == code)
+        .map(|warning| warning["message"].as_str().unwrap().to_owned())
+        .collect()
+}
+
 fn warning_codes(output: &Output) -> Vec<String> {
-    let report: Value = serde_json::from_slice(&output.stdout).expect("json report");
+    let report = report(output);
     report["warnings"]
         .as_array()
         .expect("warnings array")
@@ -120,6 +134,27 @@ fn tables_to_csv_extracts_ruled_tables_without_docling() {
         !warning_codes(&output).contains(&"styles_dropped".to_owned()),
         "CSV has no styling, so that notice would be noise"
     );
+    // The built-in reader ran, and the report says it found ruled tables only.
+    let report = report(&output);
+    assert_eq!(report["engine"], "ariad-pdf");
+    assert_eq!(
+        warning_messages(&output, "docling_fallback"),
+        [
+            "The Docling engine pack is not installed; tables were detected from ruling lines only. Install Docling to also find tables without ruling lines."
+        ]
+    );
+}
+
+#[test]
+fn a_lone_table_is_named_without_a_number() {
+    let (_directory, data, out) = fresh();
+    let output = run_tool(&data, &pdf("en-map-room.pdf"), &out);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let files: Vec<_> = fs::read_dir(&out)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(files, ["en-map-room.table.csv"]);
 }
 
 #[test]
@@ -261,9 +296,17 @@ fn docling_wins_over_the_in_process_detector_when_it_is_installed() {
         .arg(pdf("ruled-tables.pdf"))
         .arg("-o")
         .arg(&out)
+        .arg("--json")
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
+    // Docling ran, so the report names it and carries no ruled-tables-only notice.
+    assert_eq!(report(&output)["engine"], "docling");
+    assert!(
+        !warning_codes(&output).contains(&"docling_fallback".to_owned()),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     let files: Vec<_> = fs::read_dir(&out)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())

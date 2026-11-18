@@ -66,6 +66,38 @@ fn ruled_tables_become_one_csv_each() {
 }
 
 #[test]
+fn a_lone_table_is_named_without_a_number() {
+    let output = run("en-map-room.pdf", "en-map-room.pdf").unwrap();
+    let names: Vec<&str> = output.artifacts.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["en-map-room.table.csv"]);
+}
+
+#[test]
+fn the_ruled_only_reader_says_so_in_a_warning() {
+    let output = run("ruled-tables.pdf", "ruled-tables.pdf").unwrap();
+    let fallback: Vec<&str> = output
+        .coded_warnings
+        .iter()
+        .filter(|warning| warning.code == "docling_fallback")
+        .map(|warning| warning.message.as_str())
+        .collect();
+    assert_eq!(
+        fallback,
+        [
+            "The Docling engine pack is not installed; tables were detected from ruling lines only. Install Docling to also find tables without ruling lines."
+        ]
+    );
+}
+
+#[test]
+fn a_scan_needs_the_docling_engine() {
+    let error = run("vi-garden-image-only.pdf", "vi-garden-image-only.pdf").unwrap_err();
+    assert_eq!(error, PdfError::EngineRequired { engine: "docling" });
+    assert_eq!(error.exit_code(), 5);
+    assert_eq!(error.cli_error_code(), "tool_missing");
+}
+
+#[test]
 fn a_document_without_ruled_tables_has_no_tables() {
     let error = run(
         "pd-en-gao-08-35-highlights.pdf",

@@ -37,8 +37,16 @@ pub enum PdfError {
     InvalidParams(String),
 
     /// The document has no table to extract.
-    #[error("no tables found in document")]
+    #[error("{}", ariad_core::tools::tables_csv::NO_TABLES_MESSAGE)]
     NoTables,
+
+    /// The tool cannot read this document with the built-in reader and needs an engine that does
+    /// not run in this process, such as Docling for a PDF without any text layer.
+    #[error("this document needs the {engine} engine, which is not available here")]
+    EngineRequired {
+        /// Identifier of the engine that could read the document.
+        engine: &'static str,
+    },
 
     /// The extracted tables exceed the output size cap.
     #[error("the extracted tables exceed the output size limit")]
@@ -153,6 +161,7 @@ impl PdfError {
             Self::LimitExceeded(_) => "limit_exceeded",
             Self::InvalidParams(_) => "invalid_input",
             Self::NoTables => "no_tables",
+            Self::EngineRequired { .. } => "engine_required",
             Self::TablesTooLarge => "limit_exceeded",
             Self::NotImplemented(_) => "not_implemented",
         }
@@ -168,6 +177,7 @@ impl PdfError {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => "invalid_input",
             Self::LimitExceeded(_) | Self::TablesTooLarge => "limit_exceeded",
             Self::NoTables | Self::NotImplemented(_) => "engine_failed",
+            Self::EngineRequired { .. } => "tool_missing",
         }
     }
 
@@ -181,6 +191,7 @@ impl PdfError {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => 2,
             Self::LimitExceeded(_) | Self::TablesTooLarge => 7,
             Self::NoTables | Self::NotImplemented(_) => 6,
+            Self::EngineRequired { .. } => 5,
         }
     }
 }
@@ -214,6 +225,18 @@ mod tests {
             assert_eq!(error.cli_error_code(), "engine_failed");
             assert_eq!(error.exit_code(), 6);
         }
+    }
+
+    #[test]
+    fn a_missing_engine_is_a_tool_missing_failure() {
+        let error = PdfError::EngineRequired { engine: "docling" };
+        assert_eq!(
+            error.to_string(),
+            "this document needs the docling engine, which is not available here"
+        );
+        assert_eq!(error.code(), "engine_required");
+        assert_eq!(error.cli_error_code(), "tool_missing");
+        assert_eq!(error.exit_code(), 5);
     }
 
     #[test]
