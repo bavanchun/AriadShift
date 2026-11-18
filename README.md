@@ -53,10 +53,7 @@ cargo binstall ariad-cli
 cargo install ariad-cli
 ```
 
-```powershell
-# Windows Package Manager (pending review, coming soon)
-winget install VChun.AriadShift
-```
+WinGet: submitted, pending review ([microsoft/winget-pkgs#483310](https://github.com/microsoft/winget-pkgs/pull/483310)); not yet installable.
 
 ## Convert Documents
 
@@ -102,15 +99,11 @@ ashift doctor
 
 Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
 
-Heavy engines ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the PDFium pack is installable with `ashift engines install pdfium` (macOS and Linux glibc; Windows not yet supported), while the Docling pack is not yet published ([#204](https://github.com/bavanchun/AriadShift/issues/204)). Without Docling, digital PDFs are read by the built-in reader, including ruled and whitespace-aligned tables; scanned PDFs need Docling. See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
+Heavy engines ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the PDFium pack is installable with `ashift engines install pdfium` (macOS and Linux glibc; Windows not yet supported), while the Docling pack is not yet published ([#204](https://github.com/bavanchun/AriadShift/issues/204)). Without Docling, digital PDFs are read by the built-in reader, and table detection (ruled and whitespace-aligned) applies to `pdf.tables_to_csv` and to PDF to XLSX or CSV; scanned PDFs need Docling. See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
 
 ## Convert in the Browser
 
-The web app in [`apps/web`](apps/web) runs the same core compiled to
-WebAssembly, with a tool hub, PDF workspace, visual recipe builder and
-document editors. Files stay in the browser's private storage, the converter keeps
-working offline with the engines already downloaded, and every route shows
-its measured quality when benchmark data exists. Run it locally:
+The web app in [`apps/web`](apps/web) runs the same core compiled to WebAssembly, with a tool hub, PDF workspace, visual recipe builder and document editors. Files stay in the browser's private storage, the converter keeps working offline with the engines already downloaded, and every route shows its measured quality when benchmark data exists. Run it locally:
 
 ```sh
 just js
@@ -132,11 +125,7 @@ The server exposes 6 tools (`list_engines`, `inspect`, `plan`, `convert`, `list_
 
 ## Desktop app
 
-The Tauri app in `apps/desktop` converts local files and batches, watches folders,
-manages signed engine packs and opens `ariadshift://` links. Desktop builds are
-unsigned for now. Run `just desktop-dev`
-for development or `just desktop-build` for installers. See
-[the desktop guide](docs/desktop.md) for setup, dependencies and updates.
+The Tauri app in `apps/desktop` converts local files and batches, watches folders, manages signed engine packs and opens `ariadshift://` links. Desktop builds are unsigned for now (updater signatures are provided). Run `just desktop-dev` for development or `just desktop-build` for installers. See [the desktop guide](docs/desktop.md) for setup, dependencies and updates.
 
 ## Development
 
