@@ -104,11 +104,14 @@ flowchart LR
 | 0.5.0 | 13 + 15 | IR styles, edit engine, recipes, offline AI, cloud tool jobs + every tool in the web UI |
 | 0.6.0 | 16 | Web editor (Document/Page modes) + AI panel |
 | 0.7.0 | (dev promotion) | Shipped as a dev promotion, not a macOS preview |
-| 0.8.0 | 18a + 18 | macOS preview |
+| 0.8.0 | 18a + Export as Word/Markdown/HTML | macOS preview (ad-hoc signed + Sparkle) |
+| 0.8.x | 18 (rest: Document mode, annotate/forms, batch, recipes, AI) | macOS tools + editor |
 | 0.9.0 | 19 | macOS integrations |
 | 1.0.0 | 20 | Web + macOS 1.0 |
 
 Packs (`pdfium`, `qpdf`, `tesseract`, `sign`, `verapdf`, `ai`, `inpaint`) are versioned `0.x` and declared unstable until `ariad-engine/2` is final in phase 20; each manifest carries `engine_protocol`.
+
+Phase 17 signing note (owner, 2026-11-18): macOS releases are ad-hoc signed and updated through Sparkle (EdDSA); there is no Developer ID or notarization while no Apple Developer account exists. The Developer ID path stays in CI for later. See AD-8 amendment in P1.
 
 ## Success criteria
 
@@ -118,7 +121,7 @@ Packs (`pdfium`, `qpdf`, `tesseract`, `sign`, `verapdf`, `ai`, `inpaint`) are ve
 - [ ] Footprint benchmark published vs Stirling desktop (phase 20).
 - [ ] 40+ locales shipped; EN/VI reviewed.
 - [ ] No AGPL/non-OSI code in any artifact; `just deny`, `just licenses-check`, `just js-licenses` green.
-- [ ] Web 1.0 and notarized macOS 1.0 released with the owner's GO.
+- [ ] Web 1.0 and notarized macOS 1.0 released with the owner's GO. **OPEN OWNER DECISION (2026-11-18):** no Apple Developer account exists and macOS ships ad-hoc signed + Sparkle (phase 17 note below); whether 1.0 still requires notarization is undecided, so this criterion is unchanged until the owner rules.
 
 ## Dependencies
 

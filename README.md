@@ -38,6 +38,12 @@ irm https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-i
 
 Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`, and ships with a `.sha256` checksum.
 
+### macOS
+
+The native macOS app (Swift, ad-hoc signed, updated through Sparkle) is planned for 0.8.0 and is not released yet. Until then, use the
+[web app](docs/web.md) or the Homebrew CLI below. Once released, its install steps (including the one-time "Open Anyway" prompt for an app that
+is not notarized) are in [docs/macos.md](docs/macos.md#install).
+
 ### Package managers
 
 The current release is [v0.7.0](https://github.com/bavanchun/AriadShift/releases/tag/v0.7.0). The `ariad-cli` crate and its libraries are on crates.io, and the formula is in the Homebrew tap; current Homebrew needs the tap trust step shown below. WinGet is submitted and pending review.
