@@ -7,6 +7,11 @@
 //! widgets of each extra occurrence into a copy of their terminal field. The new partial name is
 //! the source name with a `_N` suffix (the style `pdf.merge` uses) whose fully qualified form is
 //! not used by any other field in the document.
+//!
+//! Occurrences are grouped by copy of the page set: the n-th repeat of every page belongs to the
+//! same group, so a field whose widgets sit on several pages stays one field per copy. Copies of
+//! calculated fields join `/AcroForm /CO` right after their source. Copied JavaScript is left
+//! untouched and keeps addressing the original field names.
 
 use std::collections::{HashMap, HashSet};
 
@@ -30,13 +35,13 @@ type FieldNames = NameDisambiguator<(String, String)>;
 
 /// Renames the form fields of every extra page occurrence.
 ///
-/// Each item of `occurrences` lists the cloned widget annotations of one extra occurrence of a
-/// page, already registered with the form hierarchy the way their source widgets are. The first
-/// occurrence of a page keeps the source fields, so their names never change. Nothing is touched
-/// when no page is repeated.
+/// Each item of `occurrences` lists `(source, clone)` widget annotation pairs of one copy of the page
+/// set (the n-th repeat of every repeated page), already registered with the form hierarchy the way their
+/// source widgets are. The first occurrence of a page keeps the source fields, so their names never
+/// change. Nothing is touched when no page is repeated.
 pub(crate) fn rename_duplicated_fields(
     doc: &mut Document,
-    occurrences: &[Vec<ObjectId>],
+    occurrences: &[Vec<(ObjectId, ObjectId)>],
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     if occurrences.iter().all(Vec::is_empty) {
@@ -46,10 +51,19 @@ pub(crate) fn rename_duplicated_fields(
         names: reserve_existing_names(doc, ctx)?,
         holder_members: HashMap::new(),
         moved: HashMap::new(),
+        copies: Vec::new(),
+        field_copies: Vec::new(),
+        origins: HashMap::new(),
     };
     for widgets in occurrences {
         pass.rename_occurrence(doc, widgets, ctx)?;
     }
+    for &(copy_id, source_id) in &pass.field_copies {
+        ctx.check()?;
+        align_copy_kids(doc, copy_id, source_id, &pass.origins);
+        drop_unmatched_button_value(doc, copy_id);
+    }
+    register_calculation_order(doc, &pass.copies, ctx)?;
     // Every source `/Kids` array is filtered once, after all occurrences moved their widgets out.
     for (field_id, moved) in pass.moved {
         ctx.check()?;
@@ -109,6 +123,13 @@ struct RenamePass {
     holder_members: HashMap<Option<ObjectId>, HashSet<ObjectId>>,
     /// Widgets moved out of each source terminal field.
     moved: HashMap<ObjectId, HashSet<ObjectId>>,
+    /// Every renamed copy with the object id of its source field or widget, in creation order.
+    copies: Vec<(ObjectId, ObjectId)>,
+    /// Terminal field copies that took over the widgets of one copy of the page set, with their
+    /// source field.
+    field_copies: Vec<(ObjectId, ObjectId)>,
+    /// Source widget of every cloned widget.
+    origins: HashMap<ObjectId, ObjectId>,
 }
 
 impl RenamePass {
@@ -116,13 +137,14 @@ impl RenamePass {
     fn rename_occurrence(
         &mut self,
         doc: &mut Document,
-        widgets: &[ObjectId],
+        widgets: &[(ObjectId, ObjectId)],
         ctx: &ToolCtx,
     ) -> Result<(), PdfError> {
-        // Terminal field copies made for this occurrence, keyed by source field.
+        // Terminal field copies made for this copy of the page set, keyed by source field.
         let mut copies: HashMap<ObjectId, Option<ObjectId>> = HashMap::new();
-        for &widget_id in widgets {
+        for &(source_widget, widget_id) in widgets {
             ctx.check()?;
+            self.origins.insert(widget_id, source_widget);
             let Ok(widget) = doc.get_dictionary(widget_id) else {
                 continue;
             };
@@ -131,8 +153,10 @@ impl RenamePass {
                 // The widget is itself a terminal field: rename it where it already sits.
                 let prefix = parent.map(|id| qualified_name(doc, id)).unwrap_or_default();
                 let renamed = unique_partial(&mut self.names, &prefix, &partial, ctx)?;
+                self.copies.push((source_widget, widget_id));
                 if let Ok(widget) = doc.get_dictionary_mut(widget_id) {
-                    widget.set("T", encode_pdf_string(&renamed));
+                    let name = renamed_name(widget.get(b"T").ok(), &partial, &renamed);
+                    widget.set("T", name);
                 }
                 continue;
             }
@@ -210,14 +234,207 @@ impl RenamePass {
             }
         }
         let renamed = unique_partial(&mut self.names, &prefix, &partial, ctx)?;
-        copy.set("T", encode_pdf_string(&renamed));
+        let name = renamed_name(field.get(b"T").ok(), &partial, &renamed);
+        copy.set("T", name);
         copy.set("Kids", Object::Array(Vec::new()));
         let copy_id = doc.add_object(Object::Dictionary(copy));
+        self.copies.push((field_id, copy_id));
+        self.field_copies.push((copy_id, field_id));
         if let Some(items) = array_entry_mut(doc, &loc, key) {
             items.push(Object::Reference(copy_id));
         }
         Ok(Some(copy_id))
     }
+}
+
+/// Orders the kids of a copied field like the kids of its source and gives the copy the `/Opt`
+/// entries of the source at the same positions, since `/Opt` is indexed by `/Kids` position.
+fn align_copy_kids(
+    doc: &mut Document,
+    copy_id: ObjectId,
+    source_id: ObjectId,
+    origins: &HashMap<ObjectId, ObjectId>,
+) {
+    let source_kids: Vec<ObjectId> = array_entry(doc, &DictLoc::Id(source_id), b"Kids")
+        .map(|kids| {
+            kids.iter()
+                .filter_map(|k| k.as_reference().ok())
+                // Clones may already sit in the source `/Kids`; `/Opt` indexes the source kids only.
+                .filter(|id| !origins.contains_key(id))
+                .collect()
+        })
+        .unwrap_or_default();
+    let index_of: HashMap<ObjectId, usize> = source_kids
+        .iter()
+        .enumerate()
+        .map(|(index, &kid)| (kid, index))
+        .collect();
+    let position = |kid: &Object| {
+        let id = kid.as_reference().ok()?;
+        let origin = origins.get(&id).copied().unwrap_or(id);
+        index_of.get(&origin).copied()
+    };
+    let Some(kids) = array_entry(doc, &DictLoc::Id(copy_id), b"Kids").cloned() else {
+        return;
+    };
+    let mut ordered: Vec<(usize, Object)> = Vec::with_capacity(kids.len());
+    for kid in kids {
+        // A kid with no source position (not a widget of this field) leaves the copy untouched:
+        // reordering or trimming `/Opt` without a known index would misalign export values.
+        let Some(index) = position(&kid) else {
+            return;
+        };
+        ordered.push((index, kid));
+    }
+    ordered.sort_by_key(|(index, _)| *index);
+    let opt = array_entry(doc, &DictLoc::Id(source_id), b"Opt").cloned();
+    // `/Opt` is per-kid only for buttons; choice fields keep their option list as copied.
+    if let Some(options) = opt
+        && super::page_set::is_button_field(doc, source_id)
+    {
+        let picked: Vec<Object> = ordered
+            .iter()
+            .filter_map(|(index, _)| options.get(*index).cloned())
+            .collect();
+        if let Ok(copy) = doc.get_dictionary_mut(copy_id) {
+            copy.set("Opt", Object::Array(picked));
+        }
+    }
+    if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(copy_id), b"Kids") {
+        *kids = ordered.into_iter().map(|(_, kid)| kid).collect();
+    }
+}
+
+/// Builds the `/T` of a renamed copy. A source name that decodes losslessly is re-encoded from the
+/// new name. An invalid one (unpaired surrogate, bad UTF-8, odd UTF-16 length) keeps its bytes and
+/// receives the suffix in its own encoding; the stray odd byte of a UTF-16 name is dropped first.
+fn renamed_name(source: Option<&Object>, partial: &str, renamed: &str) -> Object {
+    let Some(Object::String(raw, format)) = source else {
+        return encode_pdf_string(renamed);
+    };
+    let suffix = renamed.strip_prefix(partial).unwrap_or_default();
+    let mut bytes = raw.clone();
+    if raw.starts_with(&[0xFE, 0xFF]) || raw.starts_with(&[0xFF, 0xFE]) {
+        let big_endian = raw.starts_with(&[0xFE, 0xFF]);
+        let units: Vec<u16> = if big_endian {
+            raw[2..]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .copied()
+                .map(u16::from_be_bytes)
+                .collect()
+        } else {
+            raw[2..]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .copied()
+                .map(u16::from_le_bytes)
+                .collect()
+        };
+        if raw.len() % 2 == 0 && String::from_utf16(&units).is_ok() {
+            return encode_pdf_string(renamed);
+        }
+        // A stray final byte would swallow the first suffix byte when decoded, so drop it.
+        if raw.len() % 2 == 1 {
+            bytes.pop();
+        }
+        for unit in suffix.encode_utf16() {
+            bytes.extend_from_slice(&if big_endian {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            });
+        }
+    } else if raw.starts_with(&[0xEF, 0xBB, 0xBF]) && std::str::from_utf8(&raw[3..]).is_err() {
+        bytes.extend_from_slice(suffix.as_bytes());
+    } else {
+        return encode_pdf_string(renamed);
+    }
+    Object::String(bytes, *format)
+}
+
+/// Sets `/V` of a copied button field to `/Off` when none of its widgets has an appearance for the
+/// stored state, so a copy never keeps a value for a state it cannot show. A widget whose normal
+/// appearance is not a dictionary of states leaves the value alone.
+fn drop_unmatched_button_value(doc: &mut Document, field_id: ObjectId) {
+    let Ok(field) = doc.get_dictionary(field_id) else {
+        return;
+    };
+    let Ok(Object::Name(value)) = field.get(b"V") else {
+        return;
+    };
+    if value.as_slice() == b"Off" {
+        return;
+    }
+    let value = value.clone();
+    let Some(kids) = field.get(b"Kids").ok().and_then(|k| k.as_array().ok()) else {
+        return;
+    };
+    for kid in kids {
+        let states = kid
+            .as_reference()
+            .ok()
+            .and_then(|id| doc.get_dictionary(id).ok())
+            .and_then(|widget| widget.get(b"AP").ok())
+            .and_then(|ap| resolve_dict(doc, ap))
+            .and_then(|ap| ap.get(b"N").ok())
+            .and_then(|normal| resolve_dict(doc, normal));
+        match states {
+            None => return,
+            Some(states) if states.has(&value) => return,
+            Some(_) => {}
+        }
+    }
+    if let Ok(field) = doc.get_dictionary_mut(field_id) {
+        field.set("V", Object::Name(b"Off".to_vec()));
+    }
+}
+
+fn resolve_dict<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary> {
+    match obj {
+        Object::Reference(id) => doc.get_dictionary(*id).ok(),
+        Object::Dictionary(dict) => Some(dict),
+        _ => None,
+    }
+}
+
+/// Lists each copy of a calculated field in `/AcroForm /CO` right after its source, keeping the
+/// order of the sources. Nothing changes without `/CO`.
+fn register_calculation_order(
+    doc: &mut Document,
+    copies: &[(ObjectId, ObjectId)],
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    let Some(form) = acroform_loc(doc) else {
+        return Ok(());
+    };
+    let Some(order) = array_entry(doc, &form, b"CO").cloned() else {
+        return Ok(());
+    };
+    let mut by_source: HashMap<ObjectId, Vec<ObjectId>> = HashMap::new();
+    for &(source, copy) in copies {
+        by_source.entry(source).or_default().push(copy);
+    }
+    let mut updated = Vec::with_capacity(order.len());
+    let mut listed = HashSet::new();
+    for item in order {
+        ctx.check()?;
+        let id = item.as_reference().ok();
+        updated.push(item);
+        // A source listed twice in `/CO` still gets its copies once.
+        if let Some(id) = id
+            && listed.insert(id)
+            && let Some(found) = by_source.get(&id)
+        {
+            updated.extend(found.iter().map(|&copy| Object::Reference(copy)));
+        }
+    }
+    if let Some(order) = array_entry_mut(doc, &form, b"CO") {
+        *order = updated;
+    }
+    Ok(())
 }
 
 /// Returns `partial` with the lowest `_N` suffix whose fully qualified name under `prefix` is free,

@@ -126,11 +126,28 @@ fn resolve<'a>(doc: &'a Document, obj: &'a Object) -> &'a Object {
     }
 }
 
+/// Decodes a PDF text string: UTF-16BE with a BOM (a stray odd byte is dropped), otherwise one
+/// character per byte.
+fn decode_text(bytes: &[u8]) -> String {
+    match bytes.strip_prefix(&[0xFE, 0xFF]) {
+        Some(rest) => String::from_utf16_lossy(
+            &rest
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .copied()
+                .map(u16::from_be_bytes)
+                .collect::<Vec<_>>(),
+        ),
+        None => bytes.iter().map(|&byte| char::from(byte)).collect(),
+    }
+}
+
 fn partial_name(dict: &Dictionary) -> Option<String> {
     dict.get(b"T")
         .ok()
         .and_then(|t| t.as_str().ok())
-        .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+        .map(decode_text)
 }
 
 fn kids(doc: &Document, dict: &Dictionary) -> Vec<ObjectId> {
@@ -454,5 +471,674 @@ fn many_copies_of_a_wide_form_page_stay_fast_and_unique() {
         for name in ["radio7", "radio7_300", "text31", "text31_300"] {
             assert!(names.contains(name), "{tool}: missing {name}");
         }
+    }
+}
+
+/// Builds a two-page form whose fields span both pages: a radio group `g` (button `a` on page 1,
+/// button `b` on page 2, value `a`), a text field `hdr` with one widget per page, and the
+/// calculated fields `sum` and `tail` (page 2) listed in `/AcroForm /CO`, with `/AA` script.
+fn spanning_form_pdf() -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page1 = doc.new_object_id();
+    let page2 = doc.new_object_id();
+    let rect = |y: i64| Object::Array(vec![0.into(), y.into(), 80.into(), (y + 18).into()]);
+
+    let g = doc.new_object_id();
+    let button = |doc: &mut Document, state: &str, page: ObjectId| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => g,
+            "AS" => if state == "a" { "a" } else { "Off" },
+            "AP" => dictionary! { "N" => dictionary! { state => Object::Null, "Off" => Object::Null } },
+            "Rect" => rect(0), "P" => page,
+        })
+    };
+    let a = button(&mut doc, "a", page1);
+    let b = button(&mut doc, "b", page2);
+    doc.objects.insert(
+        g,
+        Object::Dictionary(dictionary! {
+            "FT" => "Btn", "Ff" => 49_152, "T" => Object::string_literal("g"), "V" => "a",
+            "Opt" => vec![Object::string_literal("A"), Object::string_literal("B")],
+            "Kids" => vec![Object::Reference(a), Object::Reference(b)],
+        }),
+    );
+
+    let hdr = doc.new_object_id();
+    let hdr_widget = |doc: &mut Document, page: ObjectId| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => hdr,
+            "Rect" => rect(30), "P" => page,
+        })
+    };
+    let hdr1 = hdr_widget(&mut doc, page1);
+    let hdr2 = hdr_widget(&mut doc, page2);
+    doc.objects.insert(
+        hdr,
+        Object::Dictionary(dictionary! {
+            "FT" => "Tx", "T" => Object::string_literal("hdr"), "V" => Object::string_literal("Ada"),
+            "Kids" => vec![Object::Reference(hdr1), Object::Reference(hdr2)],
+        }),
+    );
+
+    let calc = |doc: &mut Document, name: &str, page: ObjectId| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx",
+            "T" => Object::string_literal(name), "Rect" => rect(60), "P" => page,
+            "AA" => dictionary! { "C" => dictionary! {
+                "S" => "JavaScript", "JS" => Object::string_literal("getField(\"hdr\")"),
+            } },
+        })
+    };
+    let sum = calc(&mut doc, "sum", page2);
+    let tail = calc(&mut doc, "tail", page2);
+
+    for (page, annots) in [(page1, vec![a, hdr1]), (page2, vec![b, hdr2, sum, tail])] {
+        doc.objects.insert(
+            page,
+            Object::Dictionary(dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Annots" => annots.into_iter().map(Object::Reference).collect::<Vec<_>>(),
+            }),
+        );
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page1), Object::Reference(page2)],
+            "Count" => 2,
+        }),
+    );
+    let acroform = doc.add_object(dictionary! {
+        "Fields" => vec![
+            Object::Reference(g), Object::Reference(hdr),
+            Object::Reference(sum), Object::Reference(tail),
+        ],
+        "CO" => vec![Object::Reference(sum), Object::Reference(tail)],
+    });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => acroform,
+    });
+    doc.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save spanning form");
+    bytes
+}
+
+fn run_spanning(tool: &str, params: &Value) -> Vec<u8> {
+    run_tool(
+        tool,
+        &[InputDoc::new("form.pdf", spanning_form_pdf())],
+        params,
+        &ToolCtx::default(),
+    )
+    .unwrap_or_else(|err| panic!("{tool} failed: {err:?}"))
+    .artifacts[0]
+        .bytes
+        .clone()
+}
+
+fn field_named<'a>(doc: &'a Document, name: &str) -> &'a Dictionary {
+    doc.objects
+        .values()
+        .filter_map(|obj| obj.as_dict().ok())
+        .find(|dict| partial_name(dict).as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("field {name}"))
+}
+
+fn run_both(order: &str) -> [Vec<u8>; 2] {
+    [
+        run_spanning("pdf.reorder", &json!({ "order": order })),
+        run_spanning("pdf.extract_pages", &json!({ "pages": order })),
+    ]
+}
+
+#[test]
+fn fields_spanning_pages_stay_one_field_per_copy_of_the_page_set() {
+    for bytes in run_both("1,2,1,2") {
+        assert_eq!(
+            terminal_fields(&bytes),
+            expected(&[
+                ("g", &[1, 2]),
+                ("g_2", &[3, 4]),
+                ("hdr", &[1, 2]),
+                ("hdr_2", &[3, 4]),
+                ("sum", &[2]),
+                ("sum_2", &[4]),
+                ("tail", &[2]),
+                ("tail_2", &[4]),
+            ])
+        );
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        assert_eq!(
+            field_named(pdf.inner(), "g_2")
+                .get(b"V")
+                .unwrap()
+                .as_name()
+                .unwrap(),
+            b"a"
+        );
+    }
+}
+
+#[test]
+fn copied_button_without_a_widget_for_its_value_resets_to_off() {
+    for bytes in run_both("2,1,2") {
+        assert_eq!(
+            terminal_fields(&bytes),
+            expected(&[
+                ("g", &[2, 1]),
+                ("g_2", &[3]),
+                ("hdr", &[2, 1]),
+                ("hdr_2", &[3]),
+                ("sum", &[1]),
+                ("sum_2", &[3]),
+                ("tail", &[1]),
+                ("tail_2", &[3]),
+            ])
+        );
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        let doc = pdf.inner();
+        assert_eq!(
+            field_named(doc, "g").get(b"V").unwrap().as_name().unwrap(),
+            b"a"
+        );
+        assert_eq!(
+            field_named(doc, "g_2")
+                .get(b"V")
+                .unwrap()
+                .as_name()
+                .unwrap(),
+            b"Off"
+        );
+    }
+}
+
+#[test]
+fn copied_calculated_fields_follow_their_sources_in_the_calculation_order() {
+    for bytes in run_both("1,2,1,2,2") {
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        let doc = pdf.inner();
+        let acroform = resolve(doc, doc.catalog().unwrap().get(b"AcroForm").unwrap())
+            .as_dict()
+            .unwrap();
+        let order: Vec<String> = resolve(doc, acroform.get(b"CO").unwrap())
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| {
+                partial_name(doc.get_dictionary(id.as_reference().unwrap()).unwrap()).unwrap()
+            })
+            .collect();
+        assert_eq!(order, ["sum", "sum_2", "sum_3", "tail", "tail_2", "tail_3"]);
+        // The copied script keeps addressing the original field name.
+        let script = field_named(doc, "sum_2")
+            .get(b"AA")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .get(b"C")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .get(b"JS")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(script, b"getField(\"hdr\")");
+    }
+}
+
+#[test]
+fn invalid_utf16_names_keep_their_bytes_when_copied() {
+    let mut doc = Document::load_mem(&form_pdf()).expect("load form");
+    let name_id = doc
+        .objects
+        .iter()
+        .find(|(_, obj)| {
+            obj.as_dict()
+                .is_ok_and(|dict| partial_name(dict).as_deref() == Some("name"))
+        })
+        .map(|(id, _)| *id)
+        .expect("name field");
+    // BOM, "n", then a lone high surrogate: invalid UTF-16.
+    let raw = vec![0xFE, 0xFF, 0x00, b'n', 0xD8, 0x00];
+    doc.get_dictionary_mut(name_id).unwrap().set(
+        "T",
+        Object::String(raw.clone(), lopdf::StringFormat::Hexadecimal),
+    );
+    let mut input = Vec::new();
+    doc.save_to(&mut input).expect("save");
+    let out = run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("form.pdf", input)],
+        &json!({ "order": "1,1" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder");
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let mut expected_raw = raw;
+    expected_raw.extend_from_slice(&[0x00, b'_', 0x00, b'2']);
+    let copies = pdf
+        .inner()
+        .objects
+        .values()
+        .filter_map(|obj| obj.as_dict().ok())
+        .filter_map(|dict| dict.get(b"T").ok().and_then(|t| t.as_str().ok()))
+        .filter(|t| **t == expected_raw[..])
+        .count();
+    assert_eq!(copies, 1);
+}
+
+/// A page order, the expected terminal fields and the expected export values of copied groups.
+type Case<'a> = (
+    &'a str,
+    &'a [(&'a str, &'a [u32])],
+    &'a [(&'a str, Vec<(String, String)>)],
+);
+
+/// The export value `/Opt` assigns to each kid of every copied radio group `g_N`, by the state
+/// name of the kid's normal appearance (`a` exports "A", `b` exports "B").
+fn copied_export_values(bytes: &[u8], order: &str) -> BTreeMap<String, Vec<(String, String)>> {
+    let pdf = open(bytes, &Limits::local()).expect("open output");
+    let doc = pdf.inner();
+    let mut out = BTreeMap::new();
+    for dict in doc.objects.values().filter_map(|obj| obj.as_dict().ok()) {
+        let Some(name) = partial_name(dict).filter(|n| n.starts_with("g_")) else {
+            continue;
+        };
+        let options: Vec<String> = resolve(doc, dict.get(b"Opt").expect("copy keeps /Opt"))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|opt| decode_text(resolve(doc, opt).as_str().unwrap()))
+            .collect();
+        let states: Vec<String> = kids(doc, dict)
+            .into_iter()
+            .map(|kid| {
+                let ap = doc.get_dictionary(kid).unwrap().get(b"AP").unwrap();
+                let normal = resolve(doc, ap).as_dict().unwrap().get(b"N").unwrap();
+                resolve(doc, normal)
+                    .as_dict()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, _)| String::from_utf8_lossy(key).into_owned())
+                    .find(|key| key != "Off")
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            options.len(),
+            states.len(),
+            "order {order}, {name}: one /Opt per kid"
+        );
+        out.insert(name, states.into_iter().zip(options).collect());
+    }
+    out
+}
+
+#[test]
+fn copied_radio_options_follow_the_kid_order_of_every_page_order() {
+    let a = || ("a".to_owned(), "A".to_owned());
+    let b = || ("b".to_owned(), "B".to_owned());
+    let cases: [Case; 6] = [
+        (
+            "1,1,2,2",
+            &[
+                ("g", &[1, 3]),
+                ("g_2", &[2, 4]),
+                ("hdr", &[1, 3]),
+                ("hdr_2", &[2, 4]),
+                ("sum", &[3]),
+                ("sum_2", &[4]),
+                ("tail", &[3]),
+                ("tail_2", &[4]),
+            ],
+            &[("g_2", vec![a(), b()])],
+        ),
+        (
+            "2,1,2,1",
+            &[
+                ("g", &[2, 1]),
+                ("g_2", &[4, 3]),
+                ("hdr", &[2, 1]),
+                ("hdr_2", &[4, 3]),
+                ("sum", &[1]),
+                ("sum_2", &[3]),
+                ("tail", &[1]),
+                ("tail_2", &[3]),
+            ],
+            &[("g_2", vec![a(), b()])],
+        ),
+        (
+            "1,2,2,1",
+            &[
+                ("g", &[1, 2]),
+                ("g_2", &[4, 3]),
+                ("hdr", &[1, 2]),
+                ("hdr_2", &[4, 3]),
+                ("sum", &[2]),
+                ("sum_2", &[3]),
+                ("tail", &[2]),
+                ("tail_2", &[3]),
+            ],
+            &[("g_2", vec![a(), b()])],
+        ),
+        (
+            "2,1,2",
+            &[
+                ("g", &[2, 1]),
+                ("g_2", &[3]),
+                ("hdr", &[2, 1]),
+                ("hdr_2", &[3]),
+                ("sum", &[1]),
+                ("sum_2", &[3]),
+                ("tail", &[1]),
+                ("tail_2", &[3]),
+            ],
+            &[("g_2", vec![b()])],
+        ),
+        (
+            "1,1,1",
+            &[
+                ("g", &[1]),
+                ("g_2", &[2]),
+                ("g_3", &[3]),
+                ("hdr", &[1]),
+                ("hdr_2", &[2]),
+                ("hdr_3", &[3]),
+            ],
+            &[("g_2", vec![a()]), ("g_3", vec![a()])],
+        ),
+        (
+            "1,2,1",
+            &[
+                ("g", &[1, 2]),
+                ("g_2", &[3]),
+                ("hdr", &[1, 2]),
+                ("hdr_2", &[3]),
+                ("sum", &[2]),
+                ("tail", &[2]),
+            ],
+            &[("g_2", vec![a()])],
+        ),
+    ];
+    for (order, fields, options) in cases {
+        for bytes in run_both(order) {
+            assert_eq!(terminal_fields(&bytes), expected(fields), "order {order}");
+            let want: BTreeMap<String, Vec<(String, String)>> = options
+                .iter()
+                .map(|(name, pairs)| ((*name).to_owned(), pairs.clone()))
+                .collect();
+            let got = copied_export_values(&bytes, order);
+            for (name, pairs) in &want {
+                assert_eq!(got.get(name), Some(pairs), "order {order}: {name}");
+            }
+            assert_eq!(got.len(), want.len(), "order {order}");
+        }
+    }
+}
+
+#[test]
+fn odd_length_utf16_names_get_unique_copies() {
+    let mut doc = Document::load_mem(&form_pdf()).expect("load form");
+    let name_id = doc
+        .objects
+        .iter()
+        .find(|(_, obj)| {
+            obj.as_dict()
+                .is_ok_and(|dict| partial_name(dict).as_deref() == Some("name"))
+        })
+        .map(|(id, _)| *id)
+        .expect("name field");
+    // BOM, "n", "A" and a stray final byte.
+    let raw = vec![0xFE, 0xFF, 0x00, b'n', 0x00, b'A', 0x00];
+    doc.get_dictionary_mut(name_id)
+        .unwrap()
+        .set("T", Object::String(raw, lopdf::StringFormat::Hexadecimal));
+    let mut input = Vec::new();
+    doc.save_to(&mut input).expect("save");
+    let out = run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("form.pdf", input)],
+        &json!({ "order": "1,1,1" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder");
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let mut names: Vec<String> = pdf
+        .inner()
+        .objects
+        .values()
+        .filter_map(|obj| obj.as_dict().ok())
+        .filter_map(partial_name)
+        .filter(|name| name.starts_with("nA"))
+        .collect();
+    names.sort();
+    assert_eq!(names, ["nA", "nA_2", "nA_3"]);
+}
+
+#[test]
+fn a_source_listed_twice_in_the_calculation_order_gets_each_copy_once() {
+    let mut doc = Document::load_mem(&spanning_form_pdf()).expect("load form");
+    let acroform_id = doc
+        .catalog()
+        .unwrap()
+        .get(b"AcroForm")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let sum = field_id(&doc, "sum");
+    let tail = field_id(&doc, "tail");
+    doc.get_dictionary_mut(acroform_id).unwrap().set(
+        "CO",
+        vec![sum, tail, sum]
+            .into_iter()
+            .map(Object::Reference)
+            .collect::<Vec<_>>(),
+    );
+    let mut input = Vec::new();
+    doc.save_to(&mut input).expect("save");
+    let out = run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("form.pdf", input)],
+        &json!({ "order": "1,2,1,2" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder");
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let doc = pdf.inner();
+    let acroform = resolve(doc, doc.catalog().unwrap().get(b"AcroForm").unwrap())
+        .as_dict()
+        .unwrap();
+    let order: Vec<String> = resolve(doc, acroform.get(b"CO").unwrap())
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| partial_name(doc.get_dictionary(id.as_reference().unwrap()).unwrap()).unwrap())
+        .collect();
+    assert_eq!(order, ["sum", "sum_2", "tail", "tail_2", "sum"]);
+}
+
+fn field_id(doc: &Document, name: &str) -> ObjectId {
+    doc.objects
+        .iter()
+        .find(|(_, obj)| {
+            obj.as_dict()
+                .is_ok_and(|dict| partial_name(dict).as_deref() == Some(name))
+        })
+        .map(|(id, _)| *id)
+        .unwrap_or_else(|| panic!("field {name}"))
+}
+
+#[test]
+fn extracted_radio_options_follow_the_surviving_kids() {
+    for pages in ["2,2", "2,2,1"] {
+        let bytes = run_spanning("pdf.extract_pages", &json!({ "pages": pages }));
+        let pdf = open(&bytes, &Limits::local()).expect("open output");
+        let doc = pdf.inner();
+        let mut radios = 0;
+        for dict in doc.objects.values().filter_map(|obj| obj.as_dict().ok()) {
+            let Some(name) = partial_name(dict).filter(|n| n == "g" || n.starts_with("g_")) else {
+                continue;
+            };
+            radios += 1;
+            let options: Vec<String> = resolve(doc, dict.get(b"Opt").expect("keeps /Opt"))
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|opt| decode_text(resolve(doc, opt).as_str().unwrap()))
+                .collect();
+            for (kid, option) in kids(doc, dict).into_iter().zip(&options) {
+                let ap = doc.get_dictionary(kid).unwrap().get(b"AP").unwrap();
+                let normal = resolve(doc, ap).as_dict().unwrap().get(b"N").unwrap();
+                let state = resolve(doc, normal)
+                    .as_dict()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, _)| String::from_utf8_lossy(key).into_owned())
+                    .find(|key| key != "Off")
+                    .unwrap();
+                assert_eq!(
+                    option.to_lowercase(),
+                    state,
+                    "pages {pages}, {name}: export value follows its button"
+                );
+            }
+            assert_eq!(
+                options.len(),
+                kids(doc, dict).len(),
+                "pages {pages}, {name}: one /Opt per kid"
+            );
+        }
+        assert!(radios >= 2, "pages {pages}: radio group and copies present");
+    }
+}
+
+/// Two pages; page 1 carries a combo box, a list box and an untyped field, each a field dictionary
+/// with one separate widget kid and a three-entry option list; page 2 carries a plain widget.
+fn choice_form_pdf() -> Vec<u8> {
+    let mut doc = Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let page1 = doc.new_object_id();
+    let page2 = doc.new_object_id();
+    let rect = Object::Array(vec![0.into(), 0.into(), 80.into(), 18.into()]);
+    let options = || ["x", "y", "z"].map(Object::string_literal).to_vec();
+    let mut fields = Vec::new();
+    let mut annots = Vec::new();
+    for (name, ft, flags) in [
+        ("c", Some("Ch"), 131_072),
+        ("l", Some("Ch"), 0),
+        ("n", None, 0),
+    ] {
+        let field = doc.new_object_id();
+        let widget = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => field,
+            "Rect" => rect.clone(), "P" => page1,
+        });
+        let mut dict = dictionary! {
+            "T" => Object::string_literal(name), "Ff" => flags,
+            "V" => Object::string_literal("y"), "Opt" => options(),
+            "Kids" => vec![Object::Reference(widget)],
+        };
+        if let Some(ft) = ft {
+            dict.set("FT", ft);
+        }
+        doc.objects.insert(field, Object::Dictionary(dict));
+        fields.push(Object::Reference(field));
+        annots.push(Object::Reference(widget));
+    }
+    let plain = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx",
+        "T" => Object::string_literal("plain"), "Rect" => rect, "P" => page2,
+    });
+    fields.push(Object::Reference(plain));
+    for (page, annots) in [(page1, annots), (page2, vec![Object::Reference(plain)])] {
+        doc.objects.insert(
+            page,
+            Object::Dictionary(dictionary! {
+                "Type" => "Page", "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Annots" => annots,
+            }),
+        );
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page1), Object::Reference(page2)],
+            "Count" => 2,
+        }),
+    );
+    let acroform = doc.add_object(dictionary! { "Fields" => fields });
+    let catalog = doc.add_object(dictionary! {
+        "Type" => "Catalog", "Pages" => pages_id, "AcroForm" => acroform,
+    });
+    doc.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save choice form");
+    bytes
+}
+
+fn assert_choice_options_unchanged(tool: &str, params: &Value, label: &str) {
+    let out = run_tool(
+        tool,
+        &[InputDoc::new("form.pdf", choice_form_pdf())],
+        params,
+        &ToolCtx::default(),
+    )
+    .unwrap_or_else(|err| panic!("{tool} failed: {err:?}"));
+    let pdf = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+    let doc = pdf.inner();
+    let mut seen = 0;
+    for dict in doc.objects.values().filter_map(|obj| obj.as_dict().ok()) {
+        let Some(name) = partial_name(dict) else {
+            continue;
+        };
+        if !["c", "l", "n"]
+            .iter()
+            .any(|b| name == *b || name.starts_with(&format!("{b}_")))
+        {
+            continue;
+        }
+        seen += 1;
+        let strings = |key: &[u8]| -> Vec<String> {
+            match resolve(
+                doc,
+                dict.get(key).unwrap_or_else(|_| {
+                    panic!("{label}: {name} keeps /{}", String::from_utf8_lossy(key))
+                }),
+            ) {
+                Object::Array(items) => items
+                    .iter()
+                    .map(|o| decode_text(resolve(doc, o).as_str().unwrap()))
+                    .collect(),
+                other => vec![decode_text(other.as_str().unwrap())],
+            }
+        };
+        assert_eq!(strings(b"Opt"), ["x", "y", "z"], "{label}: {name} /Opt");
+        assert_eq!(strings(b"V"), ["y"], "{label}: {name} /V");
+    }
+    assert!(seen >= 3, "{label}: choice fields present");
+}
+
+#[test]
+fn choice_field_options_survive_page_filtering_and_repeats() {
+    assert_choice_options_unchanged(
+        "pdf.extract_pages",
+        &json!({ "pages": "1,2" }),
+        "extract 1,2",
+    );
+    assert_choice_options_unchanged(
+        "pdf.extract_pages",
+        &json!({ "pages": "1,1" }),
+        "extract 1,1",
+    );
+    assert_choice_options_unchanged("pdf.delete_pages", &json!({ "pages": "2" }), "delete 2");
+    for order in ["1,1", "1,2,1", "2,1,2,1", "2,1"] {
+        assert_choice_options_unchanged("pdf.reorder", &json!({ "order": order }), order);
     }
 }
