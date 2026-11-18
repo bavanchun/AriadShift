@@ -10,7 +10,10 @@
 //! The detector favours precision over recall. A candidate is dropped, never repaired, when
 //!
 //! - the columns are not aligned, most cells are empty, or the cells read like running text;
-//! - the text is monospaced, as in code listings;
+//! - the text is monospaced, as in code listings, or the cells read as a list, a form, code or
+//!   equations rather than data, which [`super::cells`] decides from their text;
+//! - it has three columns and fewer than four table-like rows, as a signature block or a
+//!   letterhead footer has, or it sits in the top or bottom tenth of the page;
 //! - the neighbouring flow holds short rows on the same baselines, which means the table may
 //!   continue across the column gutter;
 //! - it overlaps a ruled table or another candidate.
@@ -21,7 +24,10 @@
 
 use std::ops::Range;
 
-use super::tables::{Cell, Grid, MAX_COLUMNS, MAX_ROWS};
+use super::{
+    cells,
+    tables::{Cell, Grid, MAX_COLUMNS, MAX_ROWS},
+};
 
 /// Gap, in median glyph advances, that separates two clusters of a row.
 const CLUSTER_GAP: f64 = 2.0;
@@ -38,6 +44,16 @@ const MIN_COLUMNS: usize = 3;
 
 /// Fewest table-like rows of a candidate.
 const MIN_ROWS: usize = 3;
+
+/// Fewest table-like rows of a candidate with three columns. Three rows of three short columns
+/// are as likely to be a signature block or a footer as a table.
+const MIN_ROWS_THREE_COLUMNS: usize = 4;
+
+/// Share of the page height at the top and at the bottom where a candidate is page furniture.
+const PAGE_MARGIN_SHARE: f64 = 0.1;
+
+/// Gap, in font sizes, that separates two words of a cell.
+const WORD_GAP: f64 = 0.15;
 
 /// Most baseline distance, in font sizes, between consecutive rows of a candidate.
 const MAX_PITCH: f64 = 2.5;
@@ -98,6 +114,8 @@ pub(super) struct GlyphBox {
     pub(super) visible: bool,
     /// A base letter, which sets the advance of a monospaced face.
     pub(super) letter: bool,
+    /// The first character of the glyph's text, for reading what a cell holds.
+    pub(super) ch: char,
 }
 
 /// A line of text with all its glyphs, spaces included, sorted by `x0`.
@@ -149,7 +167,12 @@ struct Candidate {
 
 /// Finds whitespace-aligned tables among the rows of `flows`, none of which may overlap `avoid`
 /// (the boxes of ruled tables).
-pub(super) fn detect(flows: &[Vec<Row>], avoid: &[[f64; 4]], budget: Budget) -> Detected {
+pub(super) fn detect(
+    flows: &[Vec<Row>],
+    avoid: &[[f64; 4]],
+    budget: Budget,
+    page_height: f64,
+) -> Detected {
     let mut candidates = Vec::new();
     for (flow, rows) in flows.iter().enumerate() {
         if let Some(advance) = median_advance(rows) {
@@ -169,7 +192,8 @@ pub(super) fn detect(flows: &[Vec<Row>], avoid: &[[f64; 4]], budget: Budget) -> 
             detected.capped = true;
             continue;
         }
-        if continues_in_neighbour(flows, &short, &candidate)
+        if in_page_margin(&bbox, page_height)
+            || continues_in_neighbour(flows, &short, &candidate)
             || avoid.iter().any(|other| overlaps(other, &bbox))
             || kept
                 .iter()
@@ -182,6 +206,15 @@ pub(super) fn detect(flows: &[Vec<Row>], avoid: &[[f64; 4]], budget: Budget) -> 
     }
     detected.found = kept.into_iter().map(|candidate| candidate.found).collect();
     detected
+}
+
+/// Whether the box centres in the top or bottom tenth of the page: a running header or footer.
+fn in_page_margin(bbox: &[f64; 4], page_height: f64) -> bool {
+    if !page_height.is_finite() || page_height <= 0.0 {
+        return false;
+    }
+    let centre = f64::midpoint(bbox[1], bbox[3]);
+    centre < PAGE_MARGIN_SHARE * page_height || centre > (1.0 - PAGE_MARGIN_SHARE) * page_height
 }
 
 fn overlaps(a: &[f64; 4], b: &[f64; 4]) -> bool {
@@ -310,11 +343,13 @@ fn median_of(mut values: Vec<f64>) -> Option<f64> {
 }
 
 /// Extent and glyph count of the visible text of one cell.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct CellStat {
     glyphs: usize,
     x0: f64,
     x1: f64,
+    /// The visible text, with a space at each word gap.
+    text: String,
 }
 
 fn build(
@@ -329,6 +364,9 @@ fn build(
     let mids = stripe_midpoints(&seed_rows, advance);
     let columns = mids.len() + 1;
     if !(MIN_COLUMNS..=MAX_COLUMNS).contains(&columns) {
+        return None;
+    }
+    if columns == MIN_COLUMNS && seeds.len() < MIN_ROWS_THREE_COLUMNS {
         return None;
     }
     let left = seeds
@@ -409,6 +447,10 @@ fn build(
             cells[r * columns + c].glyphs.push(glyph.index);
             if glyph.visible {
                 let stat = &mut stats[r * columns + c];
+                if !stat.text.is_empty() && glyph.x0 - stat.x1 >= WORD_GAP * row.size {
+                    stat.text.push(' ');
+                }
+                stat.text.push(glyph.ch);
                 if stat.glyphs == 0 {
                     stat.x0 = glyph.x0;
                     stat.x1 = glyph.x1;
@@ -426,6 +468,19 @@ fn build(
     }
     let core: Vec<usize> = seeds.iter().map(|&index| index - top).collect();
     if !reads_as_table(&stats, &core, columns, advance) || is_monospaced(&letters) {
+        return None;
+    }
+    // The text of the table-like rows, column by column, tells data from lists and forms.
+    let texts: Vec<Vec<String>> = (0..columns)
+        .map(|c| {
+            core.iter()
+                .map(|&r| stats[r * columns + c].text.trim())
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .collect();
+    if cells::recognise(&texts).is_some() {
         return None;
     }
     for cell in &mut cells {
@@ -602,6 +657,7 @@ mod tests {
                     index: glyphs.len(),
                     visible: true,
                     letter: ch.is_alphabetic(),
+                    ch,
                 });
                 at += advance;
             }
@@ -619,13 +675,16 @@ mod tests {
         make_row(base, cells, false)
     }
 
+    /// The height of the page the rows sit on.
+    const PAGE: f64 = 800.0;
+
     const ROOM: Budget = Budget {
         tables: 8,
         cells: 1_000,
     };
 
     fn detect_one(rows: Vec<Row>) -> Detected {
-        detect(&[rows], &[], ROOM)
+        detect(&[rows], &[], ROOM, PAGE)
     }
 
     /// The rows moved down by `distance`.
@@ -864,11 +923,8 @@ mod tests {
 
     #[test]
     fn monospaced_text_is_not_a_table() {
-        let cells = [
-            (50.0, "count_total"),
-            (200.0, "= items.len();"),
-            (350.0, "// number"),
-        ];
+        // Plain words, so that only the typeface decides.
+        let cells = [(50.0, "totals"), (200.0, "different"), (350.0, "number")];
         let mono: Vec<Row> = (0..5)
             .map(|i| make_row(100.0 + 12.0 * f64::from(i), &cells, true))
             .collect();
@@ -907,7 +963,7 @@ mod tests {
                 )
             })
             .collect();
-        let detected = detect(&[left, halves], &[], ROOM);
+        let detected = detect(&[left, halves], &[], ROOM, PAGE);
         assert!(detected.found.is_empty());
 
         // Long lines in the neighbouring flow are prose, not a continuation.
@@ -922,7 +978,7 @@ mod tests {
                 )
             })
             .collect();
-        let detected = detect(&[plain_table(), prose], &[], ROOM);
+        let detected = detect(&[plain_table(), prose], &[], ROOM, PAGE);
         assert_eq!(detected.found.len(), 1);
         assert_eq!(detected.found[0].flow, 0);
     }
@@ -932,17 +988,126 @@ mod tests {
         let other: Vec<Row> = (0..4)
             .map(|i| row(103.0 + 12.0 * f64::from(i), &[(400.0, "12"), (460.0, "34")]))
             .collect();
-        let detected = detect(&[plain_table(), other], &[], ROOM);
+        let detected = detect(&[plain_table(), other], &[], ROOM, PAGE);
         assert_eq!(detected.found.len(), 1);
     }
 
     #[test]
     fn ruled_tables_keep_priority() {
         let bbox = detect_one(plain_table()).found[0].grid.bbox;
-        let detected = detect(&[plain_table()], &[bbox], ROOM);
+        let detected = detect(&[plain_table()], &[bbox], ROOM, PAGE);
         assert!(detected.found.is_empty());
         let far = [1_000.0, 1_000.0, 1_100.0, 1_100.0];
-        assert_eq!(detect(&[plain_table()], &[far], ROOM).found.len(), 1);
+        assert_eq!(detect(&[plain_table()], &[far], ROOM, PAGE).found.len(), 1);
+    }
+
+    #[test]
+    fn three_columns_need_four_table_like_rows() {
+        let mut rows = plain_table();
+        rows.truncate(3);
+        assert!(detect_one(rows).found.is_empty());
+        assert_eq!(detect_one(plain_table()).found.len(), 1);
+    }
+
+    #[test]
+    fn four_columns_may_have_three_rows() {
+        let rows = vec![
+            row(
+                100.0,
+                &[
+                    (50.0, "Name"),
+                    (150.0, "Size"),
+                    (220.0, "Cost"),
+                    (290.0, "Unit"),
+                ],
+            ),
+            row(
+                112.0,
+                &[
+                    (50.0, "Alpha"),
+                    (150.0, "12"),
+                    (220.0, "3.5"),
+                    (290.0, "kg"),
+                ],
+            ),
+            row(
+                124.0,
+                &[(50.0, "Beta"), (150.0, "48"), (220.0, "1.2"), (290.0, "kg")],
+            ),
+        ];
+        let detected = detect_one(rows);
+        let [found] = detected.found.as_slice() else {
+            panic!("expected one table");
+        };
+        assert_eq!((found.grid.rows, found.grid.columns), (3, 4));
+    }
+
+    #[test]
+    fn a_candidate_in_the_header_or_footer_band_is_dropped() {
+        // Rows centred at about 75 pt and 755 pt of an 800 pt page.
+        for distance in [-40.0, 640.0] {
+            let rows = lowered(plain_table(), distance);
+            assert!(detect_one(rows).found.is_empty(), "{distance}");
+        }
+        assert_eq!(detect_one(lowered(plain_table(), 300.0)).found.len(), 1);
+    }
+
+    /// Three aligned columns of the given cells, one row each.
+    fn aligned(cells: &[[&str; 3]]) -> Vec<Row> {
+        cells
+            .iter()
+            .enumerate()
+            .map(|(index, cells)| {
+                let base = 100.0 + 12.0 * index as f64;
+                row(
+                    base,
+                    &[(50.0, cells[0]), (150.0, cells[1]), (320.0, cells[2])],
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn aligned_text_that_is_a_list_a_form_or_code_is_not_a_table() {
+        let contents = aligned(&[
+            ["1", "Introduction", "3"],
+            ["1.1", "Background", "4"],
+            ["1.2", "Scope", "6"],
+            ["2", "Methods", "9"],
+        ]);
+        assert!(detect_one(contents).found.is_empty());
+        let code = aligned(&[
+            ["total", "= sum(items);", "// all together"],
+            ["count", "= len(items);", "// how many"],
+            ["mean", "= total / count;", "// the average"],
+            ["peak", "= max(items);", "// upper end"],
+        ]);
+        assert!(detect_one(code).found.is_empty());
+        let form = aligned(&[
+            ["Name:", "Jane", "Date:"],
+            ["Address:", "Mill Lane", "City:"],
+            ["Phone:", "555 0143", "Email:"],
+            ["Account:", "00481516", "Branch:"],
+        ]);
+        assert!(detect_one(form).found.is_empty());
+        let clauses = aligned(&[
+            ["1.", "(a)", "Pay within thirty days"],
+            ["2.", "(a)", "Ship to the named address"],
+            ["3.", "(a)", "Sign both copies in ink"],
+            ["4.", "(a)", "Keep a copy for the file"],
+        ]);
+        assert!(detect_one(clauses).found.is_empty());
+    }
+
+    #[test]
+    fn the_same_shape_with_data_is_a_table() {
+        let data = aligned(&[
+            ["Alpha", "12", "3.5"],
+            ["Beta", "48", "1.2"],
+            ["Gamma", "96", "7.7"],
+            ["Delta", "7", "9.1"],
+        ]);
+        assert_eq!(detect_one(data).found.len(), 1);
     }
 
     #[test]
@@ -953,7 +1118,7 @@ mod tests {
             tables: 1,
             cells: 1_000,
         };
-        let detected = detect(&[rows], &[], none);
+        let detected = detect(&[rows], &[], none, PAGE);
         assert_eq!(detected.found.len(), 1);
         assert!(detected.capped);
 
@@ -961,7 +1126,7 @@ mod tests {
             tables: 8,
             cells: 11,
         };
-        let detected = detect(&[plain_table()], &[], small);
+        let detected = detect(&[plain_table()], &[], small, PAGE);
         assert!(detected.found.is_empty());
         assert!(detected.capped);
     }
@@ -976,7 +1141,7 @@ mod tests {
             cells: 1_000,
         };
         let second_box = [40.0, 190.0, 260.0, 240.0];
-        let detected = detect(&[rows], &[second_box], one);
+        let detected = detect(&[rows], &[second_box], one, PAGE);
         assert_eq!(detected.found.len(), 1);
         assert!(detected.capped);
     }
@@ -993,7 +1158,7 @@ mod tests {
 
     #[test]
     fn empty_input_finds_nothing() {
-        assert!(detect(&[], &[], ROOM).found.is_empty());
-        assert!(detect(&[Vec::new()], &[], ROOM).found.is_empty());
+        assert!(detect(&[], &[], ROOM, PAGE).found.is_empty());
+        assert!(detect(&[Vec::new()], &[], ROOM, PAGE).found.is_empty());
     }
 }

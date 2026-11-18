@@ -154,6 +154,7 @@ pub(super) fn layout_page(
         Some(&Detection {
             avoid: &avoid,
             budget,
+            page_height: height,
         }),
     );
     scan.capped_pages += u32::from(ruled.capped || laid.capped);
@@ -247,6 +248,7 @@ struct Detection<'a> {
     /// Boxes that detected tables must stay clear of.
     avoid: &'a [[f64; 4]],
     budget: unruled::Budget,
+    page_height: f64,
 }
 
 /// Blocks of laid-out glyphs, and the tables found among them.
@@ -358,7 +360,12 @@ fn layout_glyphs_with(
                         .collect()
                 })
                 .collect();
-            let detected = unruled::detect(&rows, detection.avoid, detection.budget);
+            let detected = unruled::detect(
+                &rows,
+                detection.avoid,
+                detection.budget,
+                detection.page_height,
+            );
             capped |= detected.capped;
             let mut taken: Vec<Vec<bool>> =
                 flows.iter().map(|flow| vec![false; flow.len()]).collect();
@@ -419,6 +426,7 @@ fn scan_row(
                     letter: visible
                         && !glyph.mark
                         && text.chars().next().is_some_and(char::is_alphabetic),
+                    ch: text.chars().next().unwrap_or(' '),
                 });
             }
         }

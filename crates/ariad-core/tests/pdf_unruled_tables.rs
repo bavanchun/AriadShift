@@ -12,8 +12,9 @@ use ariad_core::{
 };
 use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, table_pages, tables};
 
-/// Fixtures of prose and layouts that look tabular, which must not yield a table.
-const NEGATIVE_PAGES: [&str; 11] = [
+/// The pages of `unruled-negatives.pdf`: prose and layouts that look tabular, none of which may
+/// yield a table.
+const NEGATIVE_PAGES: [&str; 25] = [
     "three-column prose",
     "nested lists and a definition list",
     "poetry with line numbers",
@@ -25,6 +26,20 @@ const NEGATIVE_PAGES: [&str; 11] = [
     "columns that drift",
     "aligned running text",
     "a table across both columns",
+    "table of contents without leaders",
+    "two levels of numbered clauses",
+    "verse with a line number on every line",
+    "label and value form, two per line",
+    "signature block",
+    "letterhead footer in three columns",
+    "proportional code with aligned comments",
+    "bibliography with aligned years",
+    "bibliography with wrapped lines",
+    "two-column index",
+    "numbered equations",
+    "list of abbreviations with page numbers",
+    "quiz options in columns",
+    "transcript with time codes",
 ];
 
 #[test]

@@ -6,8 +6,12 @@ rules, in a single-column page and beside prose in one column of a two-column pa
 `unruled-negatives.pdf` has one page per layout that looks tabular but is not a table, or is too
 uncertain to call one: multi-column prose, nested lists, poetry, code, tables of contents, running
 headers, justified text with wide gaps, grids that are too small, drifting columns, running text
-in aligned cells, and a table that spans both columns of a page. A reader must find no table on
-any of them.
+in aligned cells, and a table that spans both columns of a page. The last fourteen pages are near
+misses whose text is aligned in three or more short columns, as in a table: a table of contents
+without leaders, numbered clauses, verse with line numbers, a form of labels and values, a
+signature block, a letterhead footer, code with aligned comments, two bibliographies, a two-column
+index, numbered equations, a list of abbreviations, quiz options and a transcript with time
+codes. A reader must find no table on any of them.
 """
 from pathlib import Path
 
@@ -381,10 +385,276 @@ def table_across_columns():
     return page
 
 
+# Near misses: layouts that align text in columns but are lists, forms, notes or other prose ----
+
+def contents_without_leaders():
+    page = Page()
+    page.text(72, 740, "Contents", BOLD, 14)
+    entries = [
+        ("1", "Introduction", "3"), ("1.1", "Background", "4"), ("1.2", "Scope of the study", "6"),
+        ("2", "Methods", "9"), ("2.1", "Sampling", "10"), ("2.2", "Instruments", "13"),
+        ("3", "Results", "17"), ("4", "Discussion", "25"),
+    ]
+    y = 710
+    for number, title, first_page in entries:
+        page.text(72, y, number)
+        page.text(130, y, title)
+        page.cell(440, 60, y, first_page, "r")
+        y -= 16
+    return page
+
+
+def numbered_clauses():
+    """Two numbering levels in two marker columns, with the clause text after them."""
+    page = Page()
+    page.text(72, 740, "Terms", BOLD, 14)
+    clauses = [
+        ("1.", ["Deliver to the named address.", "Agree the dates in writing.",
+                "Late delivery earns a credit."]),
+        ("2.", ["Pay within thirty days.", "Pay by bank transfer only.",
+                "Settle disputed sums later."]),
+        ("3.", ["End this deal in writing.", "Notice runs from receipt.",
+                "Delivered goods stay put."]),
+    ]
+    y = 710
+    for number, items in clauses:
+        page.text(72, y, number)
+        for index, item in enumerate(items):
+            page.text(100, y, f"({'abc'[index]})")
+            page.text(132, y, item)
+            y -= 14
+        y -= 4
+    return page
+
+
+def verse_with_line_numbers():
+    page = Page()
+    page.text(72, 740, "Verse", BOLD, 14)
+    lines = [
+        ("the rain began", "and the wind rose"), ("we walked on", "through the grey fields"),
+        ("no bird sang", "over the dark water"), ("the lamps were lit", "along the old road"),
+        ("a door stood open", "at the end of it"), ("so we went in", "and shut out the cold"),
+    ]
+    y = 710
+    for number, (left, right) in enumerate(lines, 1):
+        page.text(72, y, str(number), REGULAR, 10)
+        page.text(120, y, left, REGULAR, 10)
+        page.text(290, y, right, REGULAR, 10)
+        y -= 16
+    return page
+
+
+def label_and_value_form():
+    page = Page()
+    page.text(72, 740, "Application", BOLD, 14)
+    rows = [
+        ("Name:", "Jane Doe", "Date:", "12 May 2024"),
+        ("Address:", "14 Mill Lane", "City:", "Leeds"),
+        ("Phone:", "555 0143", "Email:", "jane@example.org"),
+        ("Account:", "00481516", "Branch:", "North"),
+    ]
+    y = 700
+    for label, value, other_label, other_value in rows:
+        page.text(72, y, label, BOLD, 10)
+        page.text(140, y, value)
+        page.text(300, y, other_label, BOLD, 10)
+        page.text(360, y, other_value)
+        y -= 20
+    return page
+
+
+def signature_block():
+    page = Page()
+    page.text(72, 740, "Approval", BOLD, 14)
+    paragraph(page, 72, 712, 468, sentences(0, 2), 11)
+    rows = [
+        ("Prepared by", "Reviewed by", "Approved by"),
+        ("J. Smith", "A. Jones", "K. Lee"),
+        ("Date: 12 May", "Date: 14 May", "Date: 15 May"),
+    ]
+    y = 560
+    for row in rows:
+        for x, value in zip((72, 240, 410), row):
+            page.text(x, y, value)
+        y -= 22
+    return page
+
+
+def letterhead_footer():
+    page = Page()
+    page.text(72, 740, "Acme Trading Ltd", BOLD, 14)
+    paragraph(page, 72, 700, 468, sentences(0, 3), 11)
+    rows = [
+        ("Acme Trading Ltd", "12 High Street, Leeds", "Tel 0113 555 0100"),
+        ("Registered in England 04815162", "Leeds LS1 4AB", "Fax 0113 555 0101"),
+        ("VAT GB 123 4567 89", "www.example.com", "info@example.com"),
+    ]
+    y = 64
+    for row in rows:
+        for x, value in zip((72, 250, 430), row):
+            page.text(x, y, value, REGULAR, 8)
+        y -= 10
+    return page
+
+
+def code_with_comments():
+    """Code set in a proportional face, with the comments aligned in a column."""
+    page = Page()
+    page.text(72, 740, "Listing", BOLD, 14)
+    rows = [
+        ("total", "= sum(items);", "// all together"),
+        ("count", "= len(items);", "// how many"),
+        ("mean", "= total / count;", "// the average"),
+        ("peak", "= max(items);", "// upper end"),
+    ]
+    y = 710
+    for name, statement, comment in rows:
+        page.text(90, y, name, REGULAR, 9)
+        page.text(150, y, statement, REGULAR, 9)
+        page.text(280, y, comment, REGULAR, 9)
+        y -= 13
+    return page
+
+
+BIBLIOGRAPHY = [
+    ("Nguyen, T.", "2018", "Reading order in digital documents", "Pattern Recognit."),
+    ("Garcia, M.", "2020", "A survey of table extraction methods", "ACM Surveys"),
+    ("Okafor, A.", "2021", "Layout analysis without ruling lines", "Doc. Anal. Rec."),
+    ("Lindqvist, E.", "2022", "Aligned text and its hidden structure", "IJDAR"),
+    ("Tanaka, H.", "2023", "Precision over recall in tables", "Proc. ICDAR"),
+]
+
+
+def bibliography_with_years():
+    page = Page()
+    page.text(72, 740, "References", BOLD, 14)
+    y = 710
+    for authors, year, title, venue in BIBLIOGRAPHY:
+        page.text(72, y, authors, REGULAR, 9)
+        page.text(170, y, year, REGULAR, 9)
+        page.text(215, y, title, REGULAR, 9)
+        page.text(430, y, venue, REGULAR, 9)
+        y -= 14
+    return page
+
+
+def bibliography_with_wrapped_lines():
+    page = Page()
+    page.text(72, 740, "References", BOLD, 14)
+    y = 710
+    for authors, year, title, venue in BIBLIOGRAPHY:
+        words = title.split()
+        first, second = " ".join(words[:3]), " ".join(words[3:])
+        page.text(72, y, authors, REGULAR, 9)
+        page.text(170, y, year, REGULAR, 9)
+        page.text(215, y, first, REGULAR, 9)
+        page.text(380, y, venue, REGULAR, 9)
+        page.text(215, y - 11, second, REGULAR, 9)
+        y -= 28
+    return page
+
+
+def two_column_index():
+    page = Page()
+    page.text(72, 740, "Index", BOLD, 14)
+    left = [("Aperture", "12"), ("Bokeh", "14"), ("Contrast", "15"), ("Depth of field", "18"),
+            ("Exposure", "21"), ("Focal length", "23"), ("Gamma", "25"), ("Histogram", "27"),
+            ("ISO speed", "30"), ("Jitter", "31")]
+    right = [("Kernel", "33"), ("Lens hood", "35"), ("Macro", "36"), ("Noise", "38"),
+             ("Overexposure", "40"), ("Panorama", "41"), ("Quantization", "44"), ("Raw file", "46"),
+             ("Shutter", "48"), ("Tripod", "50")]
+    y = 710
+    for (term, number), (other, other_number) in zip(left, right):
+        page.text(72, y, term)
+        page.cell(160, 40, y, number, "r")
+        page.text(300, y, other)
+        page.cell(400, 40, y, other_number, "r")
+        y -= 15
+    return page
+
+
+def numbered_equations():
+    page = Page()
+    page.text(72, 740, "Derivation", BOLD, 14)
+    rows = [
+        ("x", "a + b"), ("y", "c - d"), ("z", "2e"), ("u", "f / g"), ("w", "h + i + j"),
+    ]
+    y = 700
+    for number, (left, right) in enumerate(rows, 1):
+        page.text(150, y, left, REGULAR, 11)
+        page.text(190, y, "=", REGULAR, 11)
+        page.text(230, y, right, REGULAR, 11)
+        page.cell(440, 60, y, f"({number})", "r", REGULAR, 11)
+        y -= 22
+    return page
+
+
+def list_of_abbreviations():
+    page = Page()
+    page.text(72, 740, "Abbreviations", BOLD, 14)
+    rows = [
+        ("ACL", "Association for Computational Linguistics", "12"),
+        ("CNN", "Convolutional neural network", "14"),
+        ("OCR", "Optical character recognition", "21"),
+        ("PDF", "Portable document format", "3"),
+        ("TEDS", "Tree edit distance based similarity", "45"),
+        ("IoU", "Intersection over union", "47"),
+    ]
+    y = 710
+    for abbreviation, expansion, number in rows:
+        page.text(72, y, abbreviation, BOLD, 10)
+        page.text(130, y, expansion)
+        page.cell(440, 60, y, number, "r")
+        y -= 16
+    return page
+
+
+def quiz_options():
+    """Short questions with four lettered options in columns, as a maths quiz sets them."""
+    page = Page()
+    page.text(72, 740, "Quiz", BOLD, 14)
+    rows = [
+        ("7 + 8 =", "(a) 14", "(b) 15", "(c) 16", "(d) 17"),
+        ("9 + 6 =", "(a) 13", "(b) 14", "(c) 15", "(d) 16"),
+        ("4 + 9 =", "(a) 12", "(b) 13", "(c) 14", "(d) 15"),
+        ("8 + 8 =", "(a) 15", "(b) 16", "(c) 17", "(d) 18"),
+    ]
+    y = 710
+    for row in rows:
+        for x, value in zip((72, 160, 250, 340, 430), row):
+            page.text(x, y, value)
+        y -= 20
+    return page
+
+
+def transcript_with_time_codes():
+    page = Page()
+    page.text(72, 740, "Interview", BOLD, 14)
+    rows = [
+        ("00:01", "Interviewer:", "Where did you grow up?"),
+        ("00:05", "Maya:", "In a small town near Leeds."),
+        ("00:09", "Interviewer:", "What did your parents do?"),
+        ("00:14", "Maya:", "My father drove a bus."),
+        ("00:17", "Interviewer:", "Did you like school?"),
+    ]
+    y = 710
+    for code, speaker, utterance in rows:
+        page.text(72, y, code)
+        page.text(130, y, speaker, BOLD, 10)
+        page.text(220, y, utterance)
+        y -= 18
+    return page
+
+
 def negatives():
     return [
         three_column_prose(), lists(), poetry(), code(), contents(), running_text(), wide_gaps(),
         small_grids(), drifting_columns(), running_text_in_cells(), table_across_columns(),
+        contents_without_leaders(), numbered_clauses(), verse_with_line_numbers(),
+        label_and_value_form(), signature_block(), letterhead_footer(), code_with_comments(),
+        bibliography_with_years(), bibliography_with_wrapped_lines(), two_column_index(),
+        numbered_equations(), list_of_abbreviations(), quiz_options(),
+        transcript_with_time_codes(),
     ]
 
 

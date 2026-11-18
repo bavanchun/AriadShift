@@ -19,6 +19,7 @@
 //! decompression limit, not by the amplification budget.
 
 mod assemble;
+mod cells;
 mod cmap;
 mod encoding;
 mod font;
@@ -157,7 +158,9 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
 /// With [`ReadOptions::detect_tables`], tables whose cells are bounded by ruling lines become
 /// [`crate::ir::Block::Table`] blocks, and so do tables whose columns are only separated by
 /// whitespace when at least three rows share two or more aligned column gaps and the result is
-/// unambiguous. Pages where a limit stopped detection add an `unsupported_node` warning.
+/// unambiguous: lists, forms, code, tables of contents and other text that only happens to be
+/// aligned in columns stay text. Pages where a limit stopped detection add an `unsupported_node`
+/// warning.
 pub fn read_with_options(
     bytes: &[u8],
     limits: &Limits,
