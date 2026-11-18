@@ -2,7 +2,9 @@
 
 AriadShift Desktop is a local-first Tauri 2 app for Windows and Linux. The Mac app is the native
 Swift app in `apps/macos` (see [macos.md](macos.md)); the Tauri app is no longer
-built or released for macOS.
+built or released for macOS. The darwin branches in `apps/desktop/scripts/tauri.mjs` and
+`prepare-icons.mjs` and the macOS block in `tauri.conf.json` are intentionally kept so
+that a local macOS build of the Tauri app still works; CI and releases do not use them.
 Document conversion calls `ariad-host` directly; documents are never uploaded.
 The base installer excludes the optional Docling engine pack.
 
