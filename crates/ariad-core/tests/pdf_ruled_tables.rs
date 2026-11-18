@@ -1,96 +1,23 @@
 //! Ruled-table detection on real and generated PDFs.
 #![cfg(feature = "pdf")]
 
+#[path = "support/pdf_tables.rs"]
+mod pdf_tables;
+
 use ariad_core::writer::csv::find_tables;
 use ariad_core::{
-    ir::{Block, Document, Inline, TableCell},
+    ir::{Block, Document, TableCell},
     limits::Limits,
     reader::pdf::{self, ReadError, ReadOptions},
     writer::{csv, xlsx},
 };
+use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, tables};
 
-const DETECT: ReadOptions = ReadOptions {
-    detect_tables: true,
-};
-
-fn fixture(name: &str) -> Vec<u8> {
-    let path = format!("{}/../../fixtures/pdf/{name}", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read(&path).unwrap_or_else(|error| panic!("{path}: {error}"))
-}
-
-fn inline_text(inlines: &[Inline], out: &mut String) {
-    for inline in inlines {
-        match inline {
-            Inline::Text { text } | Inline::Code { text } => out.push_str(text),
-            Inline::Styled { content, .. }
-            | Inline::Emph { content }
-            | Inline::Strong { content }
-            | Inline::Strikeout { content }
-            | Inline::Superscript { content }
-            | Inline::Subscript { content }
-            | Inline::Link { content, .. } => inline_text(content, out),
-            _ => {}
-        }
-    }
-}
-
-fn cell_text(cell: &TableCell) -> String {
-    let mut text = String::new();
-    for block in &cell.blocks {
-        if let Block::Paragraph { content, .. } = block {
-            if !text.is_empty() {
-                text.push(' ');
-            }
-            inline_text(content, &mut text);
-        }
-    }
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// Cell text of every table in reading order: `[table][row][cell]`, head rows first.
-fn tables(name: &str, options: &ReadOptions) -> Vec<Vec<Vec<String>>> {
-    let output = pdf::read_with_options(&fixture(name), &Limits::local(), options).unwrap();
-    find_tables(&output.document.body)
-        .into_iter()
-        .map(|table| {
-            let Block::Table { head, body, .. } = table else {
-                unreachable!()
-            };
-            head.iter()
-                .chain(body)
-                .map(|row| row.iter().map(cell_text).collect())
-                .collect()
-        })
-        .collect()
-}
-
-fn read(name: &str, options: &ReadOptions) -> Document {
-    pdf::read_with_options(&fixture(name), &Limits::local(), options)
-        .unwrap()
-        .document
-}
-
-fn rows(rows: &[&[&str]]) -> Vec<Vec<String>> {
-    rows.iter()
-        .map(|row| row.iter().map(|cell| (*cell).to_owned()).collect())
-        .collect()
-}
-
-fn paragraph_text(block: &Block) -> Option<String> {
-    let Block::Paragraph { content, .. } = block else {
-        return None;
-    };
-    let mut text = String::new();
-    inline_text(content, &mut text);
-    Some(text)
-}
-
-const PROSE: [&str; 5] = [
+const PROSE: [&str; 4] = [
     "pd-en-gao-08-35-highlights.pdf",
     "pd-vi-decree-39-2022.pdf",
     "pd-vi-ip-law-155-2025.pdf",
     "pd-vi-qd-1922-2026.pdf",
-    "arxiv-multilingual-open-text-2201-05609-v2.pdf",
 ];
 
 #[test]
@@ -185,7 +112,9 @@ fn tables_sit_between_the_paragraphs_around_them() {
     assert_eq!(kinds[1], "table");
     assert_eq!(kinds[2], "Merged cells follow.");
     assert_eq!(kinds[3], "table");
-    // Page 2: nothing was detected, so every line of its shapes stays text.
+    // Page 2: nothing was detected, so every line of its shapes stays text. The grid with
+    // irregular rules was refused by the ruled detector, and its aligned text is not read as a
+    // table without rules either.
     assert_eq!(kinds[4], "Shapes that are not tables.");
     let rest = kinds[5..].join("\n");
     for expected in ["L00", "L12", "Note: figures are provisional."] {
@@ -252,12 +181,14 @@ fn tables_of_real_documents_match_the_page() {
 #[test]
 fn tables_of_a_research_paper_match_the_rendered_page() {
     let found = tables("arxiv-tableformer-2203-01017-v1.pdf", &DETECT);
-    // Figure 1c, the two tables of Figure 5b and the structure grid of Figure 6. The two tables
-    // of Figure 5b share a page in separate columns, and the left one is read first.
-    assert_eq!(found.len(), 4);
+    // Figure 1c, Tables 1 to 4 (drawn without full rulings, see the whitespace tests), the two
+    // tables of Figure 5b and the structure grid of Figure 6. The two tables of Figure 5b share
+    // a page in separate columns, and the left one is read first.
+    assert_eq!(found.len(), 8);
+    let ruled: Vec<_> = [0, 5, 6, 7].iter().map(|&index| &found[index]).collect();
     assert_eq!(
-        found[2],
-        rows(&[
+        ruled[2],
+        &rows(&[
             &[
                 "",
                 "Shares (in millions)",
@@ -277,8 +208,8 @@ fn tables_of_a_research_paper_match_the_rendered_page() {
             ],
         ])
     );
-    assert_eq!(found[1][0], ["", "", "論文ファイル", "参考文献"]);
-    assert_eq!(found[1].len(), 10);
+    assert_eq!(ruled[1][0], ["", "", "論文ファイル", "参考文献"]);
+    assert_eq!(ruled[1].len(), 10);
 }
 
 #[test]
@@ -391,28 +322,4 @@ fn the_block_limit_still_applies_to_detected_tables() {
     };
     let result = pdf::read_with_options(&fixture("ruled-tables.pdf"), &limits, &DETECT);
     assert!(matches!(result, Err(ReadError::TooManyBlocks { limit: 3 })));
-}
-
-/// Prints every detected table of the fixtures named in `PDF_FIXTURES` (comma separated); run
-/// with `--ignored --nocapture`. Unreadable files are reported, not failed.
-#[test]
-#[ignore = "measurement dump"]
-fn dump_tables() {
-    let names = std::env::var("PDF_FIXTURES").unwrap_or_default();
-    for name in names.split(',').filter(|name| !name.is_empty()) {
-        let output = pdf::read_with_options(&fixture(name), &Limits::local(), &DETECT);
-        let Ok(output) = output else {
-            println!("== {name}: unreadable");
-            continue;
-        };
-        let found = find_tables(&output.document.body);
-        println!("== {name}: {} tables", found.len());
-        for (index, table) in tables(name, &DETECT).iter().enumerate() {
-            let cells: usize = table.iter().map(Vec::len).sum();
-            println!("-- table {index}: {} rows, {cells} cells", table.len());
-            for row in table {
-                println!("   {}", row.join(" | "));
-            }
-        }
-    }
 }

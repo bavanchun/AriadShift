@@ -1,4 +1,4 @@
-//! `pdf.tables_to_csv` over the in-process ruled-table detector.
+//! `pdf.tables_to_csv` over the in-process table detector.
 
 use std::path::{Path, PathBuf};
 
@@ -73,7 +73,7 @@ fn a_lone_table_is_named_without_a_number() {
 }
 
 #[test]
-fn the_ruled_only_reader_says_so_in_a_warning() {
+fn the_built_in_reader_says_so_in_a_warning() {
     let output = run("ruled-tables.pdf", "ruled-tables.pdf").unwrap();
     let fallback: Vec<&str> = output
         .coded_warnings
@@ -84,9 +84,52 @@ fn the_ruled_only_reader_says_so_in_a_warning() {
     assert_eq!(
         fallback,
         [
-            "The Docling engine pack is not installed; tables were detected from ruling lines only. Install Docling to also find tables without ruling lines."
+            "The Docling engine pack is not installed; tables were detected from ruling lines and from columns aligned with whitespace, and other layouts stay text. Install Docling for layout-aware table detection."
         ]
     );
+}
+
+#[test]
+fn tables_without_ruling_lines_become_one_csv_each_too() {
+    let output = run("unruled-tables.pdf", "unruled-tables.pdf").unwrap();
+    let files: Vec<(&str, String)> = output
+        .artifacts
+        .iter()
+        .map(|artifact| {
+            (
+                artifact.name.as_str(),
+                String::from_utf8(artifact.bytes.clone()).unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        files,
+        [
+            (
+                "unruled-tables.table-001.csv",
+                "Instrument,Range,Error,Unit\r\nCaliper,150,0.02,mm\r\nMicrometer,25,0.004,mm\r\nDial gauge,10,0.01,mm\r\nHeight gauge,300,0.03,mm\r\nDepth rod,200,0.05,mm\r\n"
+                    .to_owned()
+            ),
+            (
+                "unruled-tables.table-002.csv",
+                "Region,Spring,Summer,Autumn\r\nNorth,12,18,\r\nSouth,20,25,14\r\nEast,9,,11\r\nWest,15,22,13\r\n"
+                    .to_owned()
+            ),
+            (
+                "unruled-tables.table-003.csv",
+                "Name,Size,Speed,Score\r\nAlpha,12,340,0.91\r\nBeta,48,210,0.87\r\nGamma,96,120,0.95\r\nDelta,7,410,0.78\r\n"
+                    .to_owned()
+            ),
+        ]
+    );
+}
+
+#[test]
+fn layouts_that_only_look_like_tables_are_not_extracted() {
+    // Every page is aligned text that is not a table: a list of contents, a form, code, a
+    // bibliography, a word list, a Yes and No matrix. None of them may become a CSV file.
+    let error = run("unruled-negatives.pdf", "unruled-negatives.pdf").unwrap_err();
+    assert_eq!(error, PdfError::NoTables);
 }
 
 #[test]
@@ -98,7 +141,7 @@ fn a_scan_needs_the_docling_engine() {
 }
 
 #[test]
-fn a_document_without_ruled_tables_has_no_tables() {
+fn a_document_without_tables_has_no_tables() {
     let error = run(
         "pd-en-gao-08-35-highlights.pdf",
         "pd-en-gao-08-35-highlights.pdf",

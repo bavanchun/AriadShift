@@ -10,12 +10,16 @@
 //! aligned columns that is indistinguishable from one table with a heavy rule between rows, and
 //! the detector does not split them. Tables with a gap between them stay separate.
 //!
+//! Rule grids that are looked at and refused are reported with their boxes. The text inside them
+//! is the text of a drawing, a frame or an irregular grid, and a detector of tables without rules
+//! must not read it as a table either.
+//!
 //! The detector favours precision. A candidate is dropped, never repaired, when its outer border
 //! is not closed, when a line dangles past the grid, when merged cells are not rectangles, when it
 //! covers most of the page, when most of its text is not upright, when fewer than two rows hold
 //! two or more plain cells (the shape of a page frame with header, footer and column rules), when
-//! too few cells hold text, or when text crosses cell borders. Tables without rules are not
-//! detected.
+//! too few cells hold text, or when text crosses cell borders. Tables without rules are the
+//! business of [`super::unruled`].
 
 use super::{
     interpreter::{Glyph, PageContent, SPACE},
@@ -36,14 +40,14 @@ const MIN_RULE: f64 = 3.0;
 const MAX_LINES: usize = 800;
 
 /// Most tables kept for one page.
-const MAX_TABLES: usize = 32;
+pub(super) const MAX_TABLES: usize = 32;
 
 /// Most grid cells, merged or not, for one page.
-const MAX_CELLS: usize = 4_096;
+pub(super) const MAX_CELLS: usize = 4_096;
 
 /// Largest grid, in rows and columns.
-const MAX_ROWS: usize = 200;
-const MAX_COLUMNS: usize = 40;
+pub(super) const MAX_ROWS: usize = 200;
+pub(super) const MAX_COLUMNS: usize = 40;
 
 /// Share of the page area above which a candidate is a page frame or a layout grid, not a table.
 const MAX_PAGE_SHARE: f64 = 0.5;
@@ -90,6 +94,8 @@ pub(super) struct Cell {
 #[derive(Debug, Default)]
 pub(super) struct Detected {
     pub(super) grids: Vec<Grid>,
+    /// Boxes, `[left, top, right, bottom]`, of the rule grids that were refused.
+    pub(super) rejected: Vec<[f64; 4]>,
     /// A limit stopped detection on this page, so some tables may be missing.
     pub(super) capped: bool,
 }
@@ -121,10 +127,13 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
             detected.capped = true;
             break;
         }
+        let region = extent(&h_set, &v_set);
         let Some(layout) = build_grid(&h_set, &v_set) else {
+            detected.rejected.push(region);
             continue;
         };
         if covers_most_of_page(&layout, page_width, page_height) {
+            detected.rejected.push(region);
             continue;
         }
         if layout.cells.len() > cells_left {
@@ -133,6 +142,7 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
         }
         let index = glyph_index.get_or_insert_with(|| GlyphIndex::new(content));
         let Some(grid) = fill_grid(&layout, content, index) else {
+            detected.rejected.push(region);
             continue;
         };
         if detected
@@ -149,6 +159,28 @@ pub(super) fn detect(content: &PageContent, page_width: f64, page_height: f64) -
         .grids
         .sort_by(|a, b| a.bbox[1].total_cmp(&b.bbox[1]));
     detected
+}
+
+/// The box `[left, top, right, bottom]` that the lines of a component span.
+fn extent(horizontal: &[Line], vertical: &[Line]) -> [f64; 4] {
+    let xs = || {
+        horizontal
+            .iter()
+            .flat_map(|line| [line.lo, line.hi])
+            .chain(vertical.iter().map(|line| line.pos))
+    };
+    let ys = || {
+        vertical
+            .iter()
+            .flat_map(|line| [line.lo, line.hi])
+            .chain(horizontal.iter().map(|line| line.pos))
+    };
+    [
+        xs().fold(f64::INFINITY, f64::min),
+        ys().fold(f64::INFINITY, f64::min),
+        xs().fold(f64::NEG_INFINITY, f64::max),
+        ys().fold(f64::NEG_INFINITY, f64::max),
+    ]
 }
 
 fn covers_most_of_page(layout: &Layout, page_width: f64, page_height: f64) -> bool {

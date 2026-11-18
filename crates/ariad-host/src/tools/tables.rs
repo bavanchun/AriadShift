@@ -3,7 +3,7 @@
 //! Extracts tables from an input PDF document, serializing each discovered table into a
 //! separate CSV file with formula-injection guarding. The Docling engine pack extracts the
 //! tables when it is installed; otherwise the built-in PDF reader detects tables drawn with
-//! ruling lines.
+//! ruling lines and tables whose columns are aligned with whitespace.
 
 use std::{
     collections::BTreeMap,
@@ -61,7 +61,7 @@ fn docling_installed(engine_program: Option<&Path>) -> bool {
 pub(super) enum TableReader {
     /// The Docling pack, installed and preferred.
     Docling,
-    /// The built-in reader in the PDF engine child process: ruled tables only.
+    /// The built-in reader in the PDF engine child process: ruled and whitespace-aligned tables.
     BuiltIn,
 }
 
@@ -126,7 +126,8 @@ fn stage_csv_artifacts(
     Ok((artifacts, warnings))
 }
 
-/// Reads the PDF with the built-in reader, which detects tables drawn with ruling lines.
+/// Reads the PDF with the built-in reader, which detects tables drawn with ruling lines and tables
+/// whose columns are aligned with whitespace.
 ///
 /// The reader runs in the PDF engine child process, like the conversion routes. A PDF without
 /// any text layer is a scan that only Docling can read, so it reports the missing pack.
@@ -268,7 +269,7 @@ pub(super) fn execute(
     if reader == TableReader::BuiltIn {
         warnings.push(ConvertWarning {
             code: tables_csv::DOCLING_FALLBACK_CODE.to_owned(),
-            message: tables_csv::RULED_ONLY_MESSAGE.to_owned(),
+            message: tables_csv::BUILT_IN_DETECTOR_MESSAGE.to_owned(),
         });
     }
     Ok(RawToolExecution {
