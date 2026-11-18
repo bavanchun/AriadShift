@@ -4,15 +4,64 @@ Changes in each AriadShift release, newest first. Installation commands and down
 
 ## Unreleased
 
+## 0.7.0 (2026-11-18)
+
+Table extraction from PDFs now works without the Docling pack, `pdf.compress` shrinks LaTeX-style PDFs further, and redaction, form handling and the host's file writing are stricter about failing safely. (#416, #408, #396, #353)
+
+### Highlights
+
+- **Tables from PDFs without Docling.** `pdf.tables_to_csv` and PDF to XLSX or CSV detect ruled and whitespace-aligned tables in the built-in reader. (#416, #414, #407)
+- **Smaller compressed PDFs.** `pdf.compress` converts Type 1 fonts to CFF, prunes unused glyphs and compresses the cross-reference stream. (#408, #410, #405)
+- **Safer redaction.** Redaction refuses cases it cannot prove clean and verifies the rendered pixels. (#396, #362, #393)
+- **Text PDFs read without Docling.** Conversions fall back to the built-in PDF reader with a warning. (#298)
+- **Form fields survive page duplication and extraction.** Copies get unique names and no stale button values. (#353, #409, #419)
+
+### Added
+
+- **PDF tables without Docling.** `pdf.tables_to_csv` and PDF to XLSX or CSV now detect tables in the built-in reader when the Docling pack is not installed, and `pdf.tables_to_csv` runs in the browser and in the cloud as well. Docling still takes precedence when installed. A text PDF that used to fail with `tool_missing` now writes the detected tables or fails with `no tables found in document`. The result carries a `docling_fallback` warning and its engine is `ariad-pdf`. Files are named `<stem>.table.csv` for a lone table and `<stem>.table-001.csv` and up otherwise. A scanned PDF still needs Docling. (#416)
+- **Ruled and whitespace-aligned tables.** The reader detects tables drawn with ruling lines and, conservatively, tables whose columns are only aligned with whitespace, as in booktabs-style papers. A candidate needs three consecutive aligned rows and a column of numbers; lists, forms, code, tables of contents and other aligned text stay text. Detection is off by default in the library and on for the table tools. (#401, #407, #414)
+- **Text PDFs without Docling.** When the Docling pack is missing, conversions of digital and mixed PDFs use the built-in reader and report how many pages had no text. A scanned PDF with no text still fails with exit code 5. The desktop app offers an **Install Docling** action on those jobs. (#298)
+- **Pack notices.** `ashift engines notices [NAME] [--version V] [--json]` lists the licence notices of installed engine packs, and the desktop app shows them through a **Licences** action. (#390)
+- **OCR language listing.** The `ashift engines languages` subcommands accept `--json`. (#389)
+- **Oversized JSON results.** A tool whose JSON result is too large to return inline now writes it beside the input, and `pdf.compare` always writes its diff PDF there. (#350)
+
 ### Changed
 
-- **Compression converts Type 1 fonts to Type1C.** `pdf.compress` rewrites embedded simple Type 1 font programs (`/FontFile`) as CFF (`/FontFile3 /Subtype /Type1C`) when the result is strictly smaller. The converter is pure Rust and refuses any font it cannot convert exactly (`seac`, unknown `callothersubr` use, malformed charstrings, a draw that follows `closepath` without a moveto, an `/Encoding` other than `StandardEncoding` or an `N array`), leaving it byte-identical. Glyph names, encoding, widths and `ToUnicode` are unchanged, and corpus renders are pixel-identical. On the ebook preset `arxiv-multilingual` drops from 164,289 to 110,226 bytes, the combined effect of this conversion, the compressed cross-reference stream and the Type1C glyph pruning, and seven of ten corpus files meet the Stirling reference size. (#187)
-- **Compress prunes unused glyphs from embedded Type1C fonts.** `pdf.compress` now blanks the outlines of glyphs that no text operation reaches in simple, name-keyed CFF fonts (`/FontFile3 /Type1C`), keeping glyph ids, the charset, the encoding, subroutines and `/Widths` unchanged so rendering and text extraction stay identical. Glyphs reachable through the PDF `/Encoding`, `/Differences`, the font's built-in encoding or an accent composition are kept. CID-keyed or OpenType-wrapped programs, shared font programs, fonts listed in an AcroForm default resource dictionary and ambiguous glyph scans leave the font byte-identical. (#187)
-- **PDF tables without Docling.** `pdf.tables_to_csv` and PDF to XLSX or CSV now detect tables in the built-in PDF reader when the Docling pack is not installed (tables drawn with ruling lines, and tables whose columns are aligned with whitespace), and `pdf.tables_to_csv` runs in the browser and in the cloud as well. Docling still takes precedence when it is installed. A scanned PDF still needs Docling for any table output; in the browser that case is `engine_unavailable` (exit code 5, engine `docling`) like the other runtimes. The cloud Core worker has no Docling pack, so the cloud runtime uses the built-in detector. `pdf.tables_to_csv` on a text PDF without Docling used to exit with `tool_missing` and now writes the detected tables or fails with `no tables found in document`; the cloud server keeps that fixed message and does not retry it. When the built-in reader ran, the result carries a `docling_fallback` warning and its `engine` is `ariad-pdf`; with Docling it is `docling`. Output files are named the same in the browser, locally and in the cloud: `<stem>.table.csv` for a lone table, `<stem>.table-001.csv` and up otherwise, numbered without gaps. PDF to XLSX and CSV keep only the tables, and drop the prose, when tables are found. (#416)
-- **Tables without ruling lines in the built-in PDF reader.** The built-in reader detects tables whose columns are only aligned with whitespace, as in booktabs-style papers, in addition to tables drawn with ruling lines. `pdf.tables_to_csv` and PDF to XLSX or CSV reach them when the Docling pack is not installed, so output that was `no tables found in document`, or a text dump, can now hold tables, and a document that mixes prose and tables loses its prose in XLSX and CSV. Precision comes first: a candidate needs three consecutive aligned rows and a column of numbers, and lists, forms, code, tables of contents, bibliographies and other aligned text stay text. Accepted costs: a table of words with no column of numbers (a Yes and No matrix), a ledger whose description column is long phrases, a ranking whose first column counts 1, 2, 3, a three-column table of three rows and a table in the top or bottom tenth of a page are read as text, and a page with a refused frame or rule grid has no whitespace tables. Scanned pages still need Docling. The `docling_fallback` warning now says that tables were detected from ruling lines and from columns aligned with whitespace, and that other layouts stay text. Other conversions, such as PDF to Markdown, are unchanged. (#414)
-- **Library API for table reads.** `ariad-core` adds `pipeline::ReadOptions`, `pipeline::read_with_options`, `pipeline::route_detects_tables` and the `tools::tables_csv` module (`extract`, `TablesCsv`, `NO_TABLES_MESSAGE` and related items). `pipeline::execute` now reads a PDF with table detection when the route ends in XLSX or CSV, so library callers of those routes get one sheet or CSV block per detected table instead of a text dump when the reader detects tables in the PDF; `pipeline::read` and every other route are unchanged. `PdfError` in `ariad-pdf` gains an `EngineRequired` variant. (#416)
-- **Redaction test API is gated.** The test-only `ariad_host::tools::redact` items, including the module and `inspect_geometry_for_test`, now sit behind the `test-probe` feature and are `#[doc(hidden)]`. They are not part of the supported public API. (#393)
-- **Redaction text verification refuses foreign evidence.** `verify_pdfium_text` rejects geometry whose `source_sha256` does not match the bytes under check, with the same `InvalidParams` refusal that `plan()` uses. (#393)
+- **OCR runs pages in parallel.** A bounded pool OCRs pages in order, one worker under a per-process memory budget (cloud and server) and up to four otherwise. Extra language models are staged once per job instead of once per page. (#389)
+- **Redaction refusals read as refusals.** Messages begin with `redaction refused:` or `uninspected carrier refused:` and keep exit code 5. (#392)
+- **Pandoc probe timeout.** The Pandoc version probe waits up to 15 seconds, and a timed-out probe no longer reports Pandoc as missing. (#336)
+- **Library API.** `ariad-core` adds `pipeline::ReadOptions`, `pipeline::read_with_options` and the `tools::tables_csv` module; `PdfError` gains an `EngineRequired` variant. The `ariad_host::tools::redact` test items are behind the `test-probe` feature, and text verification rejects geometry that does not match the bytes under check. (#416, #393)
+
+### Fixed
+
+- **Redaction fails closed.** Redaction now refuses undecodable page content, inline images and Form XObjects it cannot inspect, strokes, clips and soft masks that could leave content behind, and clones shared images instead of rewriting them for every page. An independent check compares rendered pixels inside and outside the redacted regions. (#362, #393, #396)
+- **Form fields on repeated pages.** Pages placed more than once by `pdf.reorder` or `pdf.extract_pages` get uniquely named field copies, a field spanning several pages stays whole per copy, and calculation order follows. (#353, #409)
+- **Stale button values.** A radio group or checkbox that loses its selected widget in extract, delete, split or duplicate resets `/V` and `/DV` to `/Off`. (#419)
+- **Annotations and form CSV.** A deep action chain no longer fails the whole `pdf.annotations` listing and is reported as `action_chain_truncated`. The forms CSV formula guard round-trips values that start with apostrophes. Flattening picks the right field when names repeat across pages. (#358)
+- **Email and CSV readers.** MSG compressed-RTF checksums are verified, and recipients of an unknown type no longer land in To. (#359, #369)
+- **Safer output writing.** Tool artifacts are staged without following symbolic links, staged JSON is size-bounded and scrubbed of secrets, and recipe outputs stream to disk instead of being held in memory. (#365, #363, #364, #388)
+- **PDFium pre-flight checks.** Inline images with resource-named colour spaces are supported, and the budget checks follow PDFium on predictors, inline dictionaries and other cases, refusing with a named reason. (#340, #356, #366, #384)
+- **Merge and AcroForm performance.** `pdf.merge` disambiguates field and attachment names in linear time and can be cancelled. (#339)
+- **Memory watchdog.** Where the system probe is unavailable on macOS or Windows, the host warns once instead of failing silently. (#327)
+- **Font parsing.** The PDF library reads fonts with `read-fonts`, removing the unmaintained `ttf-parser` dependency. (#355)
+
+### Performance
+
+- **Type 1 fonts become CFF.** `pdf.compress` rewrites embedded Type 1 fonts as Type1C when the result is strictly smaller and refuses any font it cannot convert exactly, leaving it unchanged. On the ebook preset `arxiv-multilingual` drops from 164,289 to 110,226 bytes together with the other two changes, and seven of ten corpus files meet the Stirling reference size. (#408, #415)
+- **Unused glyphs are pruned** from simple Type1C fonts without changing glyph ids, widths or extracted text. (#410)
+- **Compressed cross-reference stream.** Saves with object streams rewrite the xref table with a PNG Up predictor, saving up to 17.6 KB per file in the corpus. (#405)
+
+### Packaging & install
+
+- **Docling and qpdf pack builds.** Pack builds pin immutable input URLs, record source receipts, build reproducibly, write licence notices atomically and check the pack's required `ashift` version against the workspace. (#323, #325, #331, #337, #342, #343)
+- **Faster CI for packs.** Continuous integration reuses a Docling pack built from identical inputs instead of rebuilding it for each commit. (#403)
+- **Downloads.** Prebuilt binaries are published for Linux (`x86_64` and `aarch64` musl), macOS (Apple Silicon and Intel) and Windows (`x86_64`), with the shell and PowerShell installers and the Homebrew tap.
+
+### Known issues
+
+- **WinGet is pending review.** The manifest is submitted ([microsoft/winget-pkgs#483310](https://github.com/microsoft/winget-pkgs/pull/483310)); `winget install VChun.AriadShift` works once it merges.
+- **No native macOS app yet.** The native macOS app is not part of this release because signing is not configured. The Tauri desktop builds are unsigned.
+- **No Docling worker image.** The Docling worker container image did not publish for this release.
 
 ## 0.6.0 (2026-11-11)
 
