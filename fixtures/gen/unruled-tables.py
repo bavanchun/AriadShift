@@ -3,15 +3,22 @@
 `unruled-tables.pdf` holds tables that have no ruling lines, or only booktabs-style horizontal
 rules, in a single-column page and beside prose in one column of a two-column page.
 
+`unruled-tables-everyday.pdf` has one page per kind of everyday table whose columns hold mostly
+words beside one column of numbers: a recipe, a timetable, a changelog and a menu. All four must
+be read as tables.
+
 `unruled-negatives.pdf` has one page per layout that looks tabular but is not a table, or is too
 uncertain to call one: multi-column prose, nested lists, poetry, code, tables of contents, running
 headers, justified text with wide gaps, grids that are too small, drifting columns, running text
-in aligned cells, and a table that spans both columns of a page. The last fourteen pages are near
+in aligned cells, and a table that spans both columns of a page. The next fourteen pages are near
 misses whose text is aligned in three or more short columns, as in a table: a table of contents
 without leaders, numbered clauses, verse with line numbers, a form of labels and values, a
 signature block, a letterhead footer, code with aligned comments, two bibliographies, a two-column
 index, numbered equations, a list of abbreviations, quiz options and a transcript with time
-codes. A reader must find no table on any of them.
+codes. The last seven have no column of numbers, or only a column of list labels: a bibliography
+with bracketed numbers, a grid of photo captions, directory cards, a spelling list, a maths
+worksheet and quiz options with capital letters, with and without parentheses. A reader must find
+no table on any of them.
 """
 from pathlib import Path
 
@@ -68,6 +75,9 @@ class Page:
 
     def rule(self, x0, y0, x1, y1, line=0.5):
         self.ops.append(f"{line} w {x0} {y0} m {x1} {y1} l S\n")
+
+    def fill(self, x, y, box_width, box_height, gray=0.85):
+        self.ops.append(f"{gray} g {x} {y} {box_width} {box_height} re f 0 g\n")
 
     def cell(self, left, cell_width, y, value, align="l", font=REGULAR, size=10):
         size_width = width(value, font, size)
@@ -187,6 +197,66 @@ def positives():
     two.text(324, y - 6, "Table 3: Model comparison.", REGULAR, 9)
     paragraph(two, 324, y - 30, 216, sentences(3), 9)
     return [one, two]
+
+
+def everyday_tables():
+    """Four kinds of ordinary table: words in most columns and one column of numbers."""
+    recipe = Page()
+    recipe.text(72, 740, "Pancakes", BOLD, 14)
+    y = paragraph(recipe, 72, 716, 468,
+                  "Makes about eight pancakes. Mix the dry ingredients first, then add the "
+                  "liquids a little at a time.", 11)
+    columns = [(72, 90, "l"), (180, 50, "r"), (250, 40, "l"), (310, 90, "l")]
+    y = table(recipe, columns, y - 14, [
+        ["Ingredient", "Amount", "Unit", "Note"],
+        ["Flour", "250", "g", "sifted"],
+        ["Milk", "300", "ml", "cold"],
+        ["Eggs", "2", "pcs", "large"],
+        ["Butter", "30", "g", "melted"],
+        ["Sugar", "1", "tbsp", "fine"],
+        ["Salt", "1", "pinch", "sea salt"],
+    ], pitch=15, bold_first=True)
+    paragraph(recipe, 72, y - 24, 468, "Rest the batter for ten minutes before frying.", 11)
+
+    timetable = Page()
+    timetable.text(72, 740, "Timetable, class 4B", BOLD, 14)
+    columns = [(72, 50, "l"), (150, 70, "l"), (240, 70, "l"), (330, 70, "l"), (420, 70, "l")]
+    y = table(timetable, columns, 690, [
+        ["Time", "Monday", "Tuesday", "Wednesday", "Thursday"],
+        ["08:30", "Maths", "English", "Science", "Music"],
+        ["09:30", "Reading", "Maths", "History", "Sport"],
+        ["10:45", "Art", "Science", "Maths", "English"],
+        ["11:45", "Sport", "Reading", "Art", "History"],
+        ["13:15", "Music", "History", "English", "Maths"],
+    ], pitch=18, bold_first=True)
+    paragraph(timetable, 72, y - 24, 468, "Lunch is at twelve thirty every day.", 11)
+
+    changelog = Page()
+    changelog.text(72, 740, "Changelog", BOLD, 14)
+    columns = [(72, 50, "l"), (140, 80, "l"), (240, 60, "l"), (320, 110, "l")]
+    y = table(changelog, columns, 690, [
+        ["Version", "Date", "Kind", "Summary"],
+        ["1.4.0", "2024-05-12", "Added", "Export to PDF"],
+        ["1.3.2", "2024-04-02", "Fixed", "Crash on open"],
+        ["1.3.1", "2024-03-18", "Fixed", "Slow search"],
+        ["1.3.0", "2024-02-27", "Added", "Dark mode"],
+        ["1.2.0", "2024-01-15", "Changed", "Smaller files"],
+    ], pitch=16, bold_first=True)
+    paragraph(changelog, 72, y - 24, 468, "Older releases are listed in the archive.", 11)
+
+    menu = Page()
+    menu.text(72, 740, "Lunch menu", BOLD, 14)
+    columns = [(72, 110, "l"), (200, 50, "r"), (270, 40, "r"), (330, 50, "l")]
+    y = table(menu, columns, 690, [
+        ["Dish", "Price", "kcal", "Diet"],
+        ["Tomato soup", "4.50", "120", "V"],
+        ["Garlic bread", "3.80", "210", "V"],
+        ["Caesar salad", "6.20", "340", "-"],
+        ["Fish cakes", "7.40", "380", "GF"],
+        ["Lamb tagine", "11.90", "520", "-"],
+    ], pitch=16, bold_first=True)
+    paragraph(menu, 72, y - 24, 468, "V is vegan and GF is gluten free.", 11)
+    return [recipe, timetable, changelog, menu]
 
 
 # Negative fixture --------------------------------------------------------------------------
@@ -646,6 +716,115 @@ def transcript_with_time_codes():
     return page
 
 
+def bibliography_with_bracketed_numbers():
+    page = Page()
+    page.text(72, 740, "References", BOLD, 14)
+    rows = [
+        ("[1]", "Smith", "2019", "Table detection"),
+        ("[2]", "Garcia", "2020", "Layout analysis"),
+        ("[3]", "Okafor", "2021", "Column finding"),
+        ("[4]", "Tanaka", "2023", "Aligned text"),
+    ]
+    y = 700
+    for label, author, year, title in rows:
+        for x, value in zip((72, 120, 200, 260), (label, author, year, title)):
+            page.text(x, y, value)
+        y -= 16
+    return page
+
+
+def photo_caption_grid():
+    """Three photographs side by side with four lines of caption under each."""
+    page = Page()
+    page.text(72, 740, "Gallery", BOLD, 14)
+    for x in (72, 232, 392):
+        page.fill(x, 600, 140, 90)
+    rows = [
+        ("Figure 1", "Figure 2", "Figure 3"),
+        ("Harbour at dawn", "Old market", "Station roof"),
+        ("Photo: A. Smith", "Photo: B. Jones", "Photo: K. Lee"),
+        ("12 May 2024", "14 May 2024", "15 May 2024"),
+    ]
+    y = 580
+    for row in rows:
+        for x, value in zip((72, 232, 392), row):
+            page.text(x, y, value)
+        y -= 14
+    return page
+
+
+def team_directory_cards():
+    """Three cards side by side, each with a name, a role, an email address and a phone number."""
+    page = Page()
+    page.text(72, 740, "Our team", BOLD, 14)
+    rows = [
+        ("Jane Doe", "Tom Reyes", "Mia Chen"),
+        ("Designer", "Engineer", "Analyst"),
+        ("jane@example.org", "tom@example.org", "mia@example.org"),
+        ("0113 555 0101", "0113 555 0102", "0113 555 0103"),
+    ]
+    y = 700
+    for index, row in enumerate(rows):
+        for x, value in zip((72, 232, 392), row):
+            page.text(x, y, value, BOLD if index == 0 else REGULAR, 10)
+        y -= 14
+    return page
+
+
+def spelling_word_list():
+    page = Page()
+    page.text(72, 740, "Spelling words, week 3", BOLD, 14)
+    rows = [
+        ("because", "friend", "believe", "receive"),
+        ("separate", "definitely", "necessary", "occasion"),
+        ("beginning", "calendar", "embarrass", "government"),
+        ("restaurant", "tomorrow", "weird", "address"),
+    ]
+    y = 700
+    for row in rows:
+        for x, value in zip((72, 192, 312, 432), row):
+            page.text(x, y, value, REGULAR, 11)
+        y -= 20
+    return page
+
+
+def maths_worksheet():
+    page = Page()
+    page.text(72, 740, "Practice sheet", BOLD, 14)
+    rows = [
+        ("3 + 4 = ____", "8 - 5 = ____", "6 + 7 = ____"),
+        ("9 + 2 = ____", "7 - 3 = ____", "5 + 5 = ____"),
+        ("4 + 8 = ____", "9 - 6 = ____", "2 + 9 = ____"),
+        ("7 + 6 = ____", "8 - 4 = ____", "3 + 9 = ____"),
+    ]
+    y = 700
+    for row in rows:
+        for x, value in zip((72, 232, 392), row):
+            page.text(x, y, value, REGULAR, 12)
+        y -= 26
+    return page
+
+
+def quiz_options_with_capitals(parentheses):
+    """Questions with three options labelled A, B and C, in the form (A) 14 or A. 14."""
+    page = Page()
+    page.text(72, 740, "Quiz", BOLD, 14)
+    rows = [
+        ("7 + 8 =", "14", "15", "16"),
+        ("9 + 6 =", "13", "14", "15"),
+        ("4 + 9 =", "12", "13", "14"),
+        ("8 + 8 =", "15", "16", "17"),
+    ]
+    y = 710
+    for question, *options in rows:
+        page.text(72, y, question)
+        for x, letter, option in zip((180, 280, 380), "ABC", options):
+            label = f"({letter})" if parentheses else f"{letter}."
+            page.text(x, y, f"{label} {option}")
+        y -= 20
+    return page
+
+
 def negatives():
     return [
         three_column_prose(), lists(), poetry(), code(), contents(), running_text(), wide_gaps(),
@@ -654,7 +833,9 @@ def negatives():
         label_and_value_form(), signature_block(), letterhead_footer(), code_with_comments(),
         bibliography_with_years(), bibliography_with_wrapped_lines(), two_column_index(),
         numbered_equations(), list_of_abbreviations(), quiz_options(),
-        transcript_with_time_codes(),
+        transcript_with_time_codes(), bibliography_with_bracketed_numbers(), photo_caption_grid(),
+        team_directory_cards(), spelling_word_list(), maths_worksheet(),
+        quiz_options_with_capitals(True), quiz_options_with_capitals(False),
     ]
 
 
@@ -695,4 +876,5 @@ def write(path, pages):
 
 target = Path(__file__).resolve().parents[1] / "pdf"
 write(target / "unruled-tables.pdf", positives())
+write(target / "unruled-tables-everyday.pdf", everyday_tables())
 write(target / "unruled-negatives.pdf", negatives())

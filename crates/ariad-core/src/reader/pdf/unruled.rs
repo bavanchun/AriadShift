@@ -12,6 +12,9 @@
 //! - the columns are not aligned, most cells are empty, or the cells read like running text;
 //! - the text is monospaced, as in code listings, or the cells read as a list, a form, code or
 //!   equations rather than data, which [`super::cells`] decides from their text;
+//! - no column is mostly numbers. A table of words only, such as a matrix of Yes and No, is read
+//!   as text, like photo captions, directory cards and word lists, which are aligned words and
+//!   nothing more (see [`super::cells`]);
 //! - it has three columns and fewer than four table-like rows, as a signature block or a
 //!   letterhead footer has, or it sits in the top or bottom tenth of the page;
 //! - the neighbouring flow holds short rows on the same baselines, which means the table may
@@ -923,8 +926,8 @@ mod tests {
 
     #[test]
     fn monospaced_text_is_not_a_table() {
-        // Plain words, so that only the typeface decides.
-        let cells = [(50.0, "totals"), (200.0, "different"), (350.0, "number")];
+        // Plain words and a number, so that only the typeface decides.
+        let cells = [(50.0, "totals"), (200.0, "12"), (350.0, "number")];
         let mono: Vec<Row> = (0..5)
             .map(|i| make_row(100.0 + 12.0 * f64::from(i), &cells, true))
             .collect();

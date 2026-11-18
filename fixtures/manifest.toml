@@ -6610,6 +6610,25 @@ routes = ["pdf->md"]
 companions = []
 
 [[fixture]]
+id = "unruled-tables-everyday-pdf"
+path = "fixtures/pdf/unruled-tables-everyday.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "PDF with everyday tables that have no ruling lines"
+origin = "generated"
+generated_by = "fixtures/gen/unruled-tables.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "afc1a7f3f85a9b13eb0021eed9c8c34a777f906a3e42eda4e50d7b1f2ebce3e0"
+pages = 4
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
 id = "unruled-negatives-pdf"
 path = "fixtures/pdf/unruled-negatives.pdf"
 format = "pdf"
@@ -6621,8 +6640,8 @@ generated_by = "fixtures/gen/unruled-tables.py"
 license = "Apache-2.0"
 license_basis = "Original synthetic PDF generated for AriadShift."
 attribution = "AriadShift contributors"
-sha256 = "ff7f6d3b343567007316eb37ed4dafc474562670ba51c49dc6c8a8e6544388bc"
-pages = 25
+sha256 = "f8cd94498839b0e0d8621fc69e153cd635452eb01f22914367a1499bcf6a72aa"
+pages = 32
 tags = []
 phase = "1b"
 routes = ["pdf->md"]

@@ -9,6 +9,12 @@
 //! at least [`MIN_CELLS`] filled cells. The checks are deliberately blunt: a real table that looks
 //! like one of these layouts, such as a ledger whose first column numbers the rows next to a
 //! column of descriptions, is also left as text.
+//!
+//! One check is structural rather than about a layout: a table has at least one column that is
+//! mostly numbers. Photo captions, directory cards, word lists, worksheets and quiz options are
+//! aligned words with no such column, and so are tables that only hold words, such as a matrix of
+//! Yes and No. Those are left as text too: telling them from a table of words would need more than
+//! the text, and precision comes first.
 
 use super::lists;
 
@@ -47,6 +53,9 @@ pub(super) enum Layout {
     Equations,
     /// The same kinds of column twice over: a list set in two column groups, as an index is.
     Repeated,
+    /// Words in every column, with no column that is mostly numbers: captions, directory cards,
+    /// word lists, worksheets.
+    Words,
 }
 
 /// The first layout of the columns that is not a table, if any. `columns` holds the text of the
@@ -85,6 +94,13 @@ pub(super) fn recognise(columns: &[Vec<String>]) -> Option<Layout> {
     }
     if is_repeated(columns) {
         return Some(Layout::Repeated);
+    }
+    if !columns
+        .iter()
+        .filter(judged)
+        .any(|column| share(column, is_number) >= SHARE)
+    {
+        return Some(Layout::Words);
     }
     None
 }
@@ -486,8 +502,12 @@ mod tests {
             column(&["1.", "2."]),
             column(&["Pay", "Ship"]),
             column(&["a", "b"]),
+            column(&["3", "5", "8"]),
         ];
         assert_eq!(recognise(&columns), None);
+        // With no judged column there is no column of numbers either.
+        let short = [column(&["1.", "2."]), column(&["Pay", "Ship"])];
+        assert_eq!(recognise(&short), Some(Layout::Words));
     }
 
     #[test]
@@ -498,6 +518,140 @@ mod tests {
             column(&["1.5", "2.5", "3.5", "4.5"]),
         ];
         assert_eq!(recognise(&columns), None);
+    }
+
+    #[test]
+    fn words_in_every_column_are_not_a_table() {
+        let captions = [
+            column(&[
+                "Figure 1",
+                "Harbour at dawn",
+                "Photo: A. Smith",
+                "12 May 2024",
+            ]),
+            column(&["Figure 2", "Old market", "Photo: B. Jones", "14 May 2024"]),
+            column(&["Figure 3", "Station roof", "Photo: K. Lee", "15 May 2024"]),
+        ];
+        assert_eq!(recognise(&captions), Some(Layout::Words));
+        let cards = [
+            column(&["Jane Doe", "Designer", "jane@example.org", "0113 555 0101"]),
+            column(&["Tom Reyes", "Engineer", "tom@example.org", "0113 555 0102"]),
+            column(&["Mia Chen", "Analyst", "mia@example.org", "0113 555 0103"]),
+        ];
+        assert_eq!(recognise(&cards), Some(Layout::Words));
+        let words = [
+            column(&["because", "separate", "beginning", "restaurant"]),
+            column(&["friend", "definitely", "calendar", "tomorrow"]),
+            column(&["believe", "necessary", "embarrass", "weird"]),
+            column(&["receive", "occasion", "government", "address"]),
+        ];
+        assert_eq!(recognise(&words), Some(Layout::Words));
+        let worksheet = [
+            column(&[
+                "3 + 4 = ____",
+                "9 + 2 = ____",
+                "4 + 8 = ____",
+                "7 + 6 = ____",
+            ]),
+            column(&[
+                "8 - 5 = ____",
+                "7 - 3 = ____",
+                "9 - 6 = ____",
+                "8 - 4 = ____",
+            ]),
+            column(&[
+                "6 + 7 = ____",
+                "5 + 5 = ____",
+                "2 + 9 = ____",
+                "3 + 9 = ____",
+            ]),
+        ];
+        assert_eq!(recognise(&worksheet), Some(Layout::Words));
+        let options = [
+            column(&["7 + 8 =", "9 + 6 =", "4 + 9 =", "8 + 8 ="]),
+            column(&["A. 14", "A. 13", "A. 12", "A. 15"]),
+            column(&["B. 15", "B. 14", "B. 13", "B. 16"]),
+            column(&["C. 16", "C. 15", "C. 14", "C. 17"]),
+        ];
+        assert_eq!(recognise(&options), Some(Layout::Words));
+    }
+
+    #[test]
+    fn one_column_of_numbers_is_enough_for_a_table_of_words() {
+        let recipe = [
+            column(&[
+                "Ingredient",
+                "Flour",
+                "Milk",
+                "Eggs",
+                "Butter",
+                "Sugar",
+                "Salt",
+            ]),
+            column(&["Amount", "250", "300", "2", "30", "1", "1"]),
+            column(&["Unit", "g", "ml", "pcs", "g", "tbsp", "pinch"]),
+            column(&[
+                "Note", "sifted", "cold", "large", "melted", "fine", "sea salt",
+            ]),
+        ];
+        assert_eq!(recognise(&recipe), None);
+        let timetable = [
+            column(&["Time", "08:30", "09:30", "10:45", "11:45", "13:15"]),
+            column(&["Monday", "Maths", "Reading", "Art", "Sport", "Music"]),
+            column(&[
+                "Tuesday", "English", "Maths", "Science", "Reading", "History",
+            ]),
+            column(&["Wednesday", "Science", "History", "Maths", "Art", "English"]),
+            column(&["Thursday", "Music", "Sport", "English", "History", "Maths"]),
+        ];
+        assert_eq!(recognise(&timetable), None);
+        let changelog = [
+            column(&["Version", "1.4.0", "1.3.2", "1.3.1", "1.3.0", "1.2.0"]),
+            column(&[
+                "Date",
+                "2024-05-12",
+                "2024-04-02",
+                "2024-03-18",
+                "2024-02-27",
+                "2024-01-15",
+            ]),
+            column(&["Kind", "Added", "Fixed", "Fixed", "Added", "Changed"]),
+            column(&[
+                "Summary",
+                "Export to PDF",
+                "Crash on open",
+                "Slow search",
+                "Dark mode",
+                "Smaller files",
+            ]),
+        ];
+        assert_eq!(recognise(&changelog), None);
+        let menu = [
+            column(&[
+                "Dish",
+                "Tomato soup",
+                "Garlic bread",
+                "Caesar salad",
+                "Fish cakes",
+                "Lamb tagine",
+            ]),
+            column(&["Price", "4.50", "3.80", "6.20", "7.40", "11.90"]),
+            column(&["kcal", "120", "210", "340", "380", "520"]),
+            column(&["Diet", "V", "V", "-", "GF", "-"]),
+        ];
+        assert_eq!(recognise(&menu), None);
+    }
+
+    #[test]
+    fn a_yes_and_no_matrix_is_left_as_text() {
+        // A real table of words only, left as text on purpose.
+        let matrix = [
+            column(&["Reader", "Writer", "Editor", "Viewer"]),
+            column(&["Yes", "Yes", "No", "No"]),
+            column(&["Yes", "No", "Yes", "No"]),
+            column(&["No", "No", "Yes", "Yes"]),
+        ];
+        assert_eq!(recognise(&matrix), Some(Layout::Words));
     }
 
     #[test]

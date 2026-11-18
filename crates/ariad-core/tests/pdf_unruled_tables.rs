@@ -14,7 +14,7 @@ use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, table_pages, table
 
 /// The pages of `unruled-negatives.pdf`: prose and layouts that look tabular, none of which may
 /// yield a table.
-const NEGATIVE_PAGES: [&str; 25] = [
+const NEGATIVE_PAGES: [&str; 32] = [
     "three-column prose",
     "nested lists and a definition list",
     "poetry with line numbers",
@@ -40,6 +40,13 @@ const NEGATIVE_PAGES: [&str; 25] = [
     "list of abbreviations with page numbers",
     "quiz options in columns",
     "transcript with time codes",
+    "bibliography with bracketed numbers",
+    "photo captions under three pictures",
+    "team directory cards",
+    "spelling word list",
+    "maths worksheet",
+    "quiz options with capital letters in parentheses",
+    "quiz options with capital letters and dots",
 ];
 
 #[test]
@@ -74,6 +81,54 @@ fn unruled_tables_are_detected_with_and_without_horizontal_rules() {
             ]),
         ]
     );
+}
+
+#[test]
+fn everyday_tables_with_one_column_of_numbers_are_detected() {
+    assert_eq!(
+        tables("unruled-tables-everyday.pdf", &DETECT),
+        vec![
+            // A recipe: words in three columns, amounts in one.
+            rows(&[
+                &["Ingredient", "Amount", "Unit", "Note"],
+                &["Flour", "250", "g", "sifted"],
+                &["Milk", "300", "ml", "cold"],
+                &["Eggs", "2", "pcs", "large"],
+                &["Butter", "30", "g", "melted"],
+                &["Sugar", "1", "tbsp", "fine"],
+                &["Salt", "1", "pinch", "sea salt"],
+            ]),
+            // A timetable: the times are the only numbers.
+            rows(&[
+                &["Time", "Monday", "Tuesday", "Wednesday", "Thursday"],
+                &["08:30", "Maths", "English", "Science", "Music"],
+                &["09:30", "Reading", "Maths", "History", "Sport"],
+                &["10:45", "Art", "Science", "Maths", "English"],
+                &["11:45", "Sport", "Reading", "Art", "History"],
+                &["13:15", "Music", "History", "English", "Maths"],
+            ]),
+            // A changelog: versions and dates beside two columns of words.
+            rows(&[
+                &["Version", "Date", "Kind", "Summary"],
+                &["1.4.0", "2024-05-12", "Added", "Export to PDF"],
+                &["1.3.2", "2024-04-02", "Fixed", "Crash on open"],
+                &["1.3.1", "2024-03-18", "Fixed", "Slow search"],
+                &["1.3.0", "2024-02-27", "Added", "Dark mode"],
+                &["1.2.0", "2024-01-15", "Changed", "Smaller files"],
+            ]),
+            // A menu: prices and calories beside dish names and diet marks.
+            rows(&[
+                &["Dish", "Price", "kcal", "Diet"],
+                &["Tomato soup", "4.50", "120", "V"],
+                &["Garlic bread", "3.80", "210", "V"],
+                &["Caesar salad", "6.20", "340", "-"],
+                &["Fish cakes", "7.40", "380", "GF"],
+                &["Lamb tagine", "11.90", "520", "-"],
+            ]),
+        ]
+    );
+    let document = read("unruled-tables-everyday.pdf", &DETECT);
+    assert_eq!(table_pages(&document), [1, 2, 3, 4]);
 }
 
 #[test]
@@ -358,6 +413,7 @@ fn only_known_tables_appear_across_all_fixtures() {
         ("en-map-room.pdf", 1),
         ("ruled-table-traps.pdf", 1),
         ("ruled-tables.pdf", 2),
+        ("unruled-tables-everyday.pdf", 4),
         ("unruled-tables.pdf", 3),
         ("vi-garden-route.pdf", 1),
     ];
