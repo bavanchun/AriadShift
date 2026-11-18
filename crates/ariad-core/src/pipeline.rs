@@ -204,8 +204,35 @@ pub const fn can_write(format: Format) -> bool {
     )
 }
 
+/// Choices that change what [`read_with_options`] produces. The default reads like [`read`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ReadOptions {
+    /// Detect tables drawn with ruling lines when the input is a PDF. Ignored for other formats.
+    pub detect_tables: bool,
+}
+
+/// Whether a route from `from` to `to` should detect tables while reading a PDF.
+///
+/// Only spreadsheet-shaped targets need table blocks; every other PDF route keeps the plain
+/// paragraph reading.
+#[must_use]
+pub const fn route_detects_tables(from: Format, to: Format) -> bool {
+    matches!(from, Format::Pdf) && matches!(to, Format::Xlsx | Format::Csv)
+}
+
 /// Reads `bytes` of `format` into the IR.
 pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, PipelineError> {
+    read_with_options(format, bytes, limits, &ReadOptions::default())
+}
+
+/// Reads `bytes` of `format` into the IR with `options` applied.
+#[cfg_attr(not(feature = "pdf"), allow(unused_variables))]
+pub fn read_with_options(
+    format: Format,
+    bytes: &[u8],
+    limits: &Limits,
+    options: &ReadOptions,
+) -> Result<Read, PipelineError> {
     limits.validate()?;
     if let Some(limit) = limits.max_input_bytes
         && bytes.len() as u64 > limit
@@ -239,7 +266,14 @@ pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, Pipel
             reader_html::ReadError::TooManyNodes { .. } => limit_exceeded("max_dom_nodes"),
         })?,
         #[cfg(feature = "pdf")]
-        Format::Pdf => crate::reader::pdf::read(bytes, limits).map_err(|error| {
+        Format::Pdf => crate::reader::pdf::read_with_options(
+            bytes,
+            limits,
+            &crate::reader::pdf::ReadOptions {
+                detect_tables: options.detect_tables,
+            },
+        )
+        .map_err(|error| {
             use crate::reader::pdf::ReadError;
             match error {
                 ReadError::InvalidLimits(e) => e.into(),
@@ -744,11 +778,16 @@ pub fn execute(
     }
 
     let mut warnings = Vec::new();
+    let read_options = ReadOptions {
+        detect_tables: steps
+            .last()
+            .is_some_and(|last| route_detects_tables(first.from, last.to)),
+    };
     let mut stage = Stage::Bytes(first.from, Cow::Borrowed(bytes));
     for step in steps {
         stage = match (stage, step.from, step.to) {
             (Stage::Bytes(format, input), _, Format::AriadIrJson) => {
-                let read = read(format, &input, limits)?;
+                let read = read_with_options(format, &input, limits, &read_options)?;
                 warnings.extend(read.warnings);
                 Stage::Document(Box::new(read.document))
             }

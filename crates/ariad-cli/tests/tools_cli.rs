@@ -447,7 +447,8 @@ fn tools_command_lists_registry_json_and_human() {
     assert!(
         all_tools
             .iter()
-            .any(|tool| tool["id"] == "pdf.tables_to_csv" && tool["runtimes"] == json!(["local"]))
+            .any(|tool| tool["id"] == "pdf.tables_to_csv"
+                && tool["runtimes"] == json!(["wasm", "local", "cloud"]))
     );
     assert!(
         all_tools
@@ -1050,13 +1051,15 @@ fn tables_to_csv_end_to_end_cli_execution() {
     let docling_fixture = repository_root().join("fixtures/docling/en-repair-log.docling.json");
     let input_pdf = repository_root().join("fixtures/pdf/en-map-room.pdf");
 
-    // Case 1: When engine pack is missing, fails with exit code 5 (tool_missing)
+    // Case 1: A scan has no text layer for the built-in reader, so without the Docling pack it
+    // fails with exit code 5 (tool_missing)
+    let scan_pdf = repository_root().join("fixtures/pdf/vi-garden-image-only.pdf");
     let missing_cmd = ashift_cmd()
         .env("ASHIFT_DATA_DIR", tmp.path().join("empty-data"))
         .env_remove("ASHIFT_PACK_DOCLING")
         .env_remove("ASHIFT_DOCLING_ENGINE")
         .args(["tool", "pdf.tables_to_csv"])
-        .arg(&input_pdf)
+        .arg(&scan_pdf)
         .arg("-o")
         .arg(&out_dir)
         .output()

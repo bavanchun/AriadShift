@@ -1,7 +1,9 @@
 //! Host-side execution for the `pdf.tables_to_csv` tool.
 //!
-//! Extracts tables from an input PDF document using Docling table detection,
-//! serializing each discovered table into a separate CSV file with formula-injection guarding.
+//! Extracts tables from an input PDF document, serializing each discovered table into a
+//! separate CSV file with formula-injection guarding. The Docling engine pack extracts the
+//! tables when it is installed; otherwise the built-in PDF reader detects tables drawn with
+//! ruling lines.
 
 use std::{
     collections::BTreeMap,
@@ -9,10 +11,13 @@ use std::{
 };
 
 use ariad_core::{
-    ir::{Block, Document},
+    ir::Document,
     limits::Limits,
     protocol::{Input, Output, PROTOCOL, Request},
-    tools::ToolSpec,
+    tools::{
+        ToolSpec,
+        tables_csv::{self, TablesCsvError},
+    },
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -22,23 +27,61 @@ use super::{
     run::{ToolError, ToolEvent},
     secrets::SecretScrubber,
 };
-use crate::{convert::ConvertWarning, workspace::Workspace};
+use crate::{
+    commands::inspect::PdfSummary,
+    convert::{ConvertError, ConvertWarning},
+    engines::{self, EngineInvocation},
+    workspace::Workspace,
+};
 
 /// Maximum number of tables extracted into CSV files by `pdf.tables_to_csv`.
-pub const MAX_TABLES_COUNT: usize = 255;
+pub use tables_csv::MAX_TABLES_COUNT;
 /// Maximum cumulative CSV bytes emitted by `pdf.tables_to_csv` (50 MiB).
-pub const MAX_TOTAL_CSV_BYTES: usize = 50 * 1024 * 1024;
+pub use tables_csv::MAX_TOTAL_CSV_BYTES;
 
 /// Checks engine prerequisites before staging inputs or executing.
+///
+/// Docling extracts the tables when its pack is installed; otherwise the built-in reader runs in
+/// the PDF engine child process, which must be resolvable.
 pub fn preflight(engine_program: Option<&Path>) -> Result<(), ToolError> {
-    if crate::engines::resolve_pack_with_options(crate::engines::docling::ENGINE_ID, engine_program)
-        .is_err()
+    if docling_installed(engine_program)
+        || engines::resolve_engine_program(engine_program).is_some()
     {
-        return Err(ToolError::from_missing_engine(
-            crate::engines::docling::ENGINE_ID,
-        ));
+        return Ok(());
     }
-    Ok(())
+    Err(ToolError::from_missing_engine(engines::PDF.id))
+}
+
+fn docling_installed(engine_program: Option<&Path>) -> bool {
+    engines::resolve_pack_with_options(engines::docling::ENGINE_ID, engine_program).is_ok()
+}
+
+/// The engine that reads the tables of one run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum TableReader {
+    /// The Docling pack, installed and preferred.
+    Docling,
+    /// The built-in reader in the PDF engine child process: ruled tables only.
+    BuiltIn,
+}
+
+impl TableReader {
+    /// Picks the reader once per run, so the run and the engine it reports agree.
+    pub(super) fn detect(engine_program: Option<&Path>) -> Self {
+        if docling_installed(engine_program) {
+            Self::Docling
+        } else {
+            Self::BuiltIn
+        }
+    }
+
+    /// Identifier of the engine that actually reads the tables; `built_in` is the tool's own.
+    pub(super) fn engine_id(self, built_in: &str) -> String {
+        match self {
+            Self::Docling => engines::docling::ENGINE_ID.to_owned(),
+            Self::BuiltIn => built_in.to_owned(),
+        }
+    }
 }
 
 /// Output artifact tuple and warnings produced by table extraction.
@@ -57,85 +100,86 @@ fn stage_csv_artifacts(
     workspace: &Workspace,
     scrubber: &SecretScrubber,
 ) -> Result<TablesArtifacts, ToolError> {
-    let tables = ariad_core::writer::csv::find_tables(&document.body);
-    if tables.is_empty() {
-        return Err(ToolError::EngineFailure(
-            "no tables found in document".into(),
-        ));
+    let extracted = tables_csv::extract(document).map_err(|error| match error {
+        TablesCsvError::NoTables => ToolError::EngineFailure(tables_csv::NO_TABLES_MESSAGE.into()),
+        TablesCsvError::LimitExceeded => ToolError::LimitExceeded,
+    })?;
+    let warnings = extracted
+        .cap_message()
+        .map(|message| ConvertWarning {
+            code: "unsupported_node".to_owned(),
+            message,
+        })
+        .into_iter()
+        .chain(extracted.warnings.iter().map(crate::convert::safe_warning))
+        .collect();
+    let mut artifacts = Vec::with_capacity(extracted.tables.len());
+    for table in &extracted.tables {
+        let path = super::run::write_staged_artifact(
+            workspace,
+            &tables_csv::csv_file_name(table.number),
+            table.csv.as_bytes(),
+            scrubber,
+        )?;
+        artifacts.push((path, "csv".to_owned()));
     }
-
-    let mut warnings = Vec::new();
-    let capped_tables = if tables.len() > MAX_TABLES_COUNT {
-        warnings.push(ConvertWarning {
-            code: "unsupported_node".to_string(),
-            message: format!(
-                "document has {} tables; capped at maximum {} tables",
-                tables.len(),
-                MAX_TABLES_COUNT
-            ),
-        });
-        &tables[..MAX_TABLES_COUNT]
-    } else {
-        &tables[..]
-    };
-
-    let mut artifacts = Vec::with_capacity(capped_tables.len());
-    let mut total_bytes: usize = 0;
-
-    for (idx, table_block) in capped_tables.iter().enumerate() {
-        if total_bytes >= MAX_TOTAL_CSV_BYTES {
-            return Err(ToolError::LimitExceeded);
-        }
-        if let Block::Table {
-            columns,
-            head,
-            body,
-            ..
-        } = table_block
-        {
-            let mut core_warnings = Vec::new();
-            let csv_text = ariad_core::writer::csv::table_to_csv_with_warnings(
-                columns,
-                head,
-                body,
-                &mut core_warnings,
-            );
-            warnings.extend(core_warnings.iter().map(crate::convert::safe_warning));
-            if csv_text.is_empty() {
-                warnings.push(crate::convert::safe_warning(
-                    &ariad_core::warning::Warning::new(
-                        ariad_core::warning::WarningCode::UnsupportedNode,
-                        format!("table {} has no content; skipped", idx + 1),
-                    ),
-                ));
-                continue;
-            }
-            let table_truncated = core_warnings
-                .iter()
-                .any(|w| w.code == ariad_core::warning::WarningCode::OutputTruncated);
-            total_bytes = total_bytes.saturating_add(csv_text.len());
-            if total_bytes > MAX_TOTAL_CSV_BYTES || table_truncated {
-                return Err(ToolError::LimitExceeded);
-            }
-
-            let file_name = format!("table-{:03}.csv", idx + 1);
-            let path = super::run::write_staged_artifact(
-                workspace,
-                &file_name,
-                csv_text.as_bytes(),
-                scrubber,
-            )?;
-            artifacts.push((path, "csv".to_owned()));
-        }
-    }
-
-    if artifacts.is_empty() {
-        return Err(ToolError::EngineFailure(
-            "no tables found in document".into(),
-        ));
-    }
-
     Ok((artifacts, warnings))
+}
+
+/// Reads the PDF with the built-in reader, which detects tables drawn with ruling lines.
+///
+/// The reader runs in the PDF engine child process, like the conversion routes. A PDF without
+/// any text layer is a scan that only Docling can read, so it reports the missing pack.
+fn extract_document_in_process(
+    input_path: &Path,
+    limits: &Limits,
+    engine_program: Option<&Path>,
+    cancel: &CancellationToken,
+) -> Result<(Document, Vec<ConvertWarning>), ToolError> {
+    let program = engines::resolve_engine_program(engine_program)
+        .ok_or_else(|| ToolError::from_missing_engine(engines::PDF.id))?;
+    let mut workspace = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    let options = BTreeMap::from([(
+        engines::pdf::DETECT_TABLES_OPTION.to_owned(),
+        Value::Bool(true),
+    )]);
+    let read = crate::convert::read_to_ir_with_engine_options(
+        input_path,
+        ariad_core::format::Format::Pdf,
+        engines::PDF.id,
+        &mut workspace,
+        limits,
+        &EngineInvocation::new(&program),
+        options,
+        cancel.clone(),
+    );
+    let _ = workspace.close();
+    let read = read.map_err(map_read_error)?;
+    if PdfSummary::from_document(&read.document)
+        .is_some_and(|summary| summary.needs_ocr && summary.text_pages == 0)
+    {
+        return Err(ToolError::from_missing_engine(
+            crate::engines::docling::ENGINE_ID,
+        ));
+    }
+    let warnings = read
+        .warnings
+        .into_iter()
+        .filter(|warning| tables_csv::keeps_read_warning_code(&warning.code))
+        .collect();
+    Ok((read.document, warnings))
+}
+
+fn map_read_error(error: ConvertError) -> ToolError {
+    match error {
+        ConvertError::Interrupted => ToolError::Interrupted,
+        ConvertError::LimitExceeded | ConvertError::MemoryLimitExceeded { .. } => {
+            ToolError::LimitExceeded
+        }
+        ConvertError::EngineMissing { engine, .. } => ToolError::from_missing_engine(&engine),
+        ConvertError::SandboxUnavailable(detail) => ToolError::SandboxUnavailable(detail),
+        other => ToolError::EngineFailure(other.to_string()),
+    }
 }
 
 fn extract_document_with_docling(
@@ -203,14 +247,30 @@ pub(super) fn execute(
     cancel: &CancellationToken,
     _on_event: &mut dyn FnMut(ToolEvent),
     _clock: inprocess::HostClock,
+    reader: TableReader,
 ) -> Result<RawToolExecution, ToolError> {
     let (input_path, _) = inputs
         .first()
         .ok_or_else(|| ToolError::Usage("pdf.tables_to_csv requires one input file".into()))?;
 
-    let doc = extract_document_with_docling(input_path, workspace, limits, engine_program, cancel)?;
+    let (doc, read_warnings) = match reader {
+        TableReader::Docling => (
+            extract_document_with_docling(input_path, workspace, limits, engine_program, cancel)?,
+            Vec::new(),
+        ),
+        TableReader::BuiltIn => {
+            extract_document_in_process(input_path, limits, engine_program, cancel)?
+        }
+    };
 
-    let (artifacts, warnings) = stage_csv_artifacts(&doc, workspace, scrubber)?;
+    let (artifacts, mut warnings) = stage_csv_artifacts(&doc, workspace, scrubber)?;
+    warnings.splice(0..0, read_warnings);
+    if reader == TableReader::BuiltIn {
+        warnings.push(ConvertWarning {
+            code: tables_csv::DOCLING_FALLBACK_CODE.to_owned(),
+            message: tables_csv::RULED_ONLY_MESSAGE.to_owned(),
+        });
+    }
     Ok(RawToolExecution {
         artifacts,
         warnings,
@@ -223,7 +283,7 @@ pub(super) fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ariad_core::ir::{Alignment, ColumnSpec, Inline, TableCell};
+    use ariad_core::ir::{Alignment, Block, ColumnSpec, Inline, TableCell};
     use std::fs;
 
     fn make_cell(text: &str) -> TableCell {

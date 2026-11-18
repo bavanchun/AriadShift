@@ -683,16 +683,7 @@ where
 
     let effective_engine = spec.engine_for_params(&params_value);
     if effective_engine != "ariad-pdf" {
-        return Err(ApiError::new(
-            "engine_unavailable",
-            format!(
-                "tool '{}' requires the '{effective_engine}' engine, which is not available in the browser",
-                spec.id
-            ),
-        )
-        .with("tool", spec.id)
-        .with("engine", effective_engine)
-        .with("exit_code", 5u8));
+        return Err(browser_engine_unavailable(spec.id, effective_engine));
     }
 
     for (idx, (input_bytes, input_name)) in inputs.iter().zip(names.iter()).enumerate() {
@@ -829,6 +820,19 @@ where
     })
 }
 
+/// The error for a tool that needs an engine the browser cannot run.
+fn browser_engine_unavailable(tool_id: &str, engine: &str) -> ApiError {
+    ApiError::new(
+        "engine_unavailable",
+        format!(
+            "tool '{tool_id}' requires the '{engine}' engine, which is not available in the browser"
+        ),
+    )
+    .with("tool", tool_id)
+    .with("engine", engine)
+    .with("exit_code", 5u8)
+}
+
 fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: usize) -> bool {
     let action = params.get("action").and_then(Value::as_str);
     match spec_id {
@@ -963,6 +967,14 @@ fn map_pdf_error(tool_id: &str, error: PdfError) -> ApiError {
         .with("exit_code", 9u8),
         // A redaction safety refusal keeps the machine-readable code and exit code, but its
         // text is the fixed refusal reason, not a "not implemented" sentence.
+        PdfError::TablesTooLarge => ApiError::new("limit_exceeded", error.to_string())
+            .with("limit", "max_output_bytes")
+            .with("tool", tool_id)
+            .with("exit_code", 4u8),
+        PdfError::NoTables => ApiError::new("engine_failure", error.to_string())
+            .with("tool", tool_id)
+            .with("exit_code", 1u8),
+        PdfError::EngineRequired { engine } => browser_engine_unavailable(tool_id, engine),
         PdfError::NotImplemented(reason) if ariad_pdf::error::is_refusal_message(&reason) => {
             ApiError::new("engine_unavailable", reason.clone())
                 .with("tool", tool_id)
@@ -2069,6 +2081,156 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("unknown package target")
+        );
+    }
+
+    #[test]
+    fn pdf_to_spreadsheet_routes_detect_ruled_tables_and_other_routes_do_not() {
+        let ruled = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/ruled-tables.pdf"),
+        )
+        .expect("read ruled-tables fixture");
+
+        let xlsx = convert(&ruled, "pdf", "xlsx", ConvertOptions::default()).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(xlsx.bytes)).unwrap();
+        let mut sheet = |name: &str| {
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut archive.by_name(name).unwrap(), &mut text).unwrap();
+            text
+        };
+        assert!(sheet("xl/worksheets/sheet1.xml").contains(">Region<"));
+        assert!(sheet("xl/worksheets/sheet2.xml").contains(">Team A<"));
+        assert!(archive.by_name("xl/worksheets/sheet3.xml").is_err());
+
+        let csv = convert(&ruled, "pdf", "csv", ConvertOptions::default()).unwrap();
+        assert_eq!(
+            String::from_utf8(csv.bytes).unwrap(),
+            "Region,Units,Revenue\r\nNorth,120,\"4,500\"\r\nCentral region,95,\"3,210\"\r\nEast,143,\"5,008\"\r\n\r\n\
+             Plan,,Actual\r\nTeam A,10,12\r\n,11,13\r\n"
+        );
+
+        let markdown = convert(&ruled, "pdf", "markdown", ConvertOptions::default()).unwrap();
+        let markdown = String::from_utf8(markdown.bytes).unwrap();
+        assert!(
+            !markdown.contains('|'),
+            "default reads keep paragraphs: {markdown}"
+        );
+    }
+
+    #[test]
+    fn run_tool_pdf_tables_to_csv_runs_the_ruled_table_detector_in_wasm() {
+        let budget = 64 * 1024 * 1024;
+        let ruled = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/ruled-tables.pdf"),
+        )
+        .expect("read ruled-tables fixture");
+        let run = run_tool(
+            [ruled.as_slice()],
+            ["ruled-tables.pdf"],
+            "pdf.tables_to_csv",
+            "{}",
+            budget,
+            false,
+        )
+        .expect("pdf.tables_to_csv must run in wasm");
+        assert_eq!(run.format, "csv");
+        let files: Vec<(&str, String)> = run
+            .artifacts
+            .iter()
+            .map(|artifact| {
+                (
+                    artifact.name.as_str(),
+                    String::from_utf8(artifact.bytes.clone()).unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            files,
+            [
+                (
+                    "ruled-tables.table-001.csv",
+                    "Region,Units,Revenue\r\nNorth,120,\"4,500\"\r\nCentral region,95,\"3,210\"\r\nEast,143,\"5,008\"\r\n"
+                        .to_owned()
+                ),
+                (
+                    "ruled-tables.table-002.csv",
+                    "Plan,,Actual\r\nTeam A,10,12\r\n,11,13\r\n".to_owned()
+                ),
+            ]
+        );
+
+        // The built-in reader finds ruled tables only, and the result says so like the other
+        // runtimes do.
+        let fallback: Vec<&str> = run
+            .warnings
+            .iter()
+            .filter(|warning| warning.code == "docling_fallback")
+            .map(|warning| warning.message.as_str())
+            .collect();
+        assert_eq!(
+            fallback,
+            [ariad_core::tools::tables_csv::RULED_ONLY_MESSAGE]
+        );
+
+        // A lone table has no number, exactly like the host names it.
+        let single = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/en-map-room.pdf"),
+        )
+        .expect("read single-table fixture");
+        let run = run_tool(
+            [single.as_slice()],
+            ["en-map-room.pdf"],
+            "pdf.tables_to_csv",
+            "{}",
+            budget,
+            false,
+        )
+        .expect("a single ruled table");
+        let names: Vec<&str> = run.artifacts.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["en-map-room.table.csv"]);
+
+        // A scan has no text layer to read tables from: it needs Docling, which the browser
+        // cannot run, exactly like the unavailable-engine error of the other runtimes.
+        let scan = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/vi-garden-image-only.pdf"),
+        )
+        .expect("read scan fixture");
+        let error = run_tool(
+            [scan.as_slice()],
+            ["vi-garden-image-only.pdf"],
+            "pdf.tables_to_csv",
+            "{}",
+            budget,
+            false,
+        )
+        .expect_err("a scan needs the Docling engine");
+        assert_eq!(error.code(), "engine_unavailable");
+        assert_eq!(error.detail("engine"), Some(&serde_json::json!("docling")));
+        assert_eq!(error.detail("exit_code"), Some(&serde_json::json!(5)));
+
+        let prose = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/pd-en-gao-08-35-highlights.pdf"),
+        )
+        .expect("read prose fixture");
+        let error = run_tool(
+            [prose.as_slice()],
+            ["pd-en-gao-08-35-highlights.pdf"],
+            "pdf.tables_to_csv",
+            "{}",
+            budget,
+            false,
+        )
+        .expect_err("a document without ruled tables has nothing to extract");
+        assert_eq!(error.code(), "engine_failure");
+        assert_eq!(error.detail("exit_code"), Some(&serde_json::json!(1)));
+        assert_eq!(
+            error.detail("message").and_then(Value::as_str),
+            Some("no tables found in document")
         );
     }
 

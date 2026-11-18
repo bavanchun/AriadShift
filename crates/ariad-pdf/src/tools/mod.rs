@@ -64,6 +64,7 @@ pub mod single_page;
 pub mod split;
 #[cfg(feature = "codecs")]
 pub mod stamp;
+mod tables_to_csv;
 #[cfg(feature = "codecs")]
 pub mod toc_page;
 pub mod unlock_forms;
@@ -360,6 +361,9 @@ pub fn run_tool(
     }
     if tool_id == "image.to_pdf" {
         return run_image_to_pdf(inputs, params, ctx);
+    }
+    if tool_id == "pdf.tables_to_csv" {
+        return tables_to_csv::run(inputs, params, ctx);
     }
 
     match tool_id {

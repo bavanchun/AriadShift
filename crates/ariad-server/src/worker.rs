@@ -105,10 +105,11 @@ impl Failure {
     /// document content, already filtered by the tool helper) and is permanent: the same
     /// input is refused again, so retrying only delays the answer. That covers the engine's
     /// refusals (`tool_missing`) and the failed or unverifiable verification of a candidate
-    /// (`engine_failure`). Every other `tool_missing`, `sandbox_unavailable` and
-    /// `engine_failure` stays transient with a fixed text.
+    /// (`engine_failure`). A document without tables is the same: the fixed
+    /// `no tables found in document` is kept and never retried. Every other `tool_missing`,
+    /// `sandbox_unavailable` and `engine_failure` stays transient with a fixed text.
     fn from_tool(error: &ToolError) -> Self {
-        if error.is_safety_refusal() {
+        if error.is_safety_refusal() || error.is_no_tables() {
             return Self::permanent(error.code(), error.to_string());
         }
         match error.code() {
@@ -1203,6 +1204,23 @@ mod tests {
             let failure = Failure::from_tool(&ToolError::EngineFailure(text.into()));
             assert!(failure.transient, "{text}");
         }
+    }
+
+    #[test]
+    fn a_document_without_tables_keeps_its_message_and_is_never_retried() {
+        let failure = Failure::from_tool(&ToolError::EngineFailure(
+            "no tables found in document".into(),
+        ));
+        assert_eq!(failure.code, "engine_failure");
+        assert_eq!(failure.message, "no tables found in document");
+        assert!(
+            !failure.transient,
+            "the same document has no tables again, so it must not retry"
+        );
+        let other = Failure::from_tool(&ToolError::EngineFailure(
+            "no tables found in document: x".into(),
+        ));
+        assert!(other.transient);
     }
 
     #[test]

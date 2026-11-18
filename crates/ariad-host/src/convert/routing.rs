@@ -10,7 +10,7 @@ use ariad_core::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    ArchiveToIrOutput, ConvertError, ConvertWarning, map_run_error, read_to_ir_with_engine,
+    ArchiveToIrOutput, ConvertError, ConvertWarning, map_run_error, read_to_ir_with_engine_options,
 };
 use crate::{
     commands::inspect::PdfSummary,
@@ -94,7 +94,7 @@ pub(crate) fn select(
         .any(|edge| edge.from == from && edge.to == to && edge.to != Format::AriadIrJson);
 
     // Decision D4: PDF -> XLSX and PDF -> CSV default to Docling tables reader when available.
-    let target_needs_tables = from == Format::Pdf && matches!(to, Format::Xlsx | Format::Csv);
+    let target_needs_tables = ariad_core::pipeline::route_detects_tables(from, to);
     if reader.is_none() && target_needs_tables {
         if docling_available(invocation, cancel)? {
             reader = Some(engines::docling::ENGINE_ID.to_owned());
@@ -121,13 +121,21 @@ pub(crate) fn select(
         }
         if available.is_available(engines::PDF.id) {
             let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-            let read = read_to_ir_with_engine(
+            let mut options = std::collections::BTreeMap::new();
+            if target_needs_tables {
+                options.insert(
+                    engines::pdf::DETECT_TABLES_OPTION.to_owned(),
+                    serde_json::Value::Bool(true),
+                );
+            }
+            let read = read_to_ir_with_engine_options(
                 path,
                 Format::Pdf,
                 engines::PDF.id,
                 &mut workspace,
                 limits,
                 invocation,
+                options,
                 cancel.clone(),
             );
             let _ = workspace.close();
@@ -150,7 +158,7 @@ pub(crate) fn select(
                 None => {
                     if tables_without_docling {
                         fallback_warning = Some(docling_fallback_warning(
-                            "The Docling engine pack is not installed; converted digital PDF without Docling table layout extraction. Install Docling for structured table output.".to_owned(),
+                            ariad_core::tools::tables_csv::RULED_ONLY_MESSAGE.to_owned(),
                         ));
                     }
                     reader = Some(engines::PDF.id.to_owned());

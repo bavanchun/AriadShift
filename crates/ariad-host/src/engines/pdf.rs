@@ -14,6 +14,9 @@ use ariad_core::{
 
 use super::common::{self, EngineFailure};
 
+/// Engine request option that turns table detection on for the PDF read.
+pub const DETECT_TABLES_OPTION: &str = "detect_tables";
+
 const UNSUPPORTED_ROUTE: EngineFailure = EngineFailure::new(
     ErrorCode::UnsupportedRoute,
     "The PDF engine converts PDF to IR JSON only.",
@@ -65,6 +68,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             output: request_output,
             work_dir,
             limits,
+            options,
             ..
         } => {
             let paths = common::validate_convert_paths(
@@ -78,7 +82,12 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             {
                 return Err(UNSUPPORTED_ROUTE);
             }
-            convert(&paths, &limits, output)
+            let detect_tables = match options.get(DETECT_TABLES_OPTION) {
+                None => false,
+                Some(serde_json::Value::Bool(value)) => *value,
+                Some(_) => return Err(EngineFailure::invalid_request()),
+            };
+            convert(&paths, &limits, detect_tables, output)
         }
     }
 }
@@ -87,6 +96,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
 fn convert<W: Write>(
     paths: &common::ConvertPaths,
     limits: &ariad_core::limits::Limits,
+    detect_tables: bool,
     output: &mut W,
 ) -> Result<(), EngineFailure> {
     use std::{
@@ -102,24 +112,25 @@ fn convert<W: Write>(
             _ => EngineFailure::io(),
         },
     )?;
-    let read = pdf::read(&bytes, limits).map_err(|error| match error {
-        ReadError::Malformed => {
-            EngineFailure::new(ErrorCode::EngineFailure, "The file is not a readable PDF.")
-        }
-        ReadError::Encrypted => EngineFailure::new(
-            ErrorCode::EngineFailure,
-            "The PDF is encrypted with a password; password-protected PDFs are not supported.",
-        ),
-        ReadError::InvalidLimits(_) => EngineFailure::invalid_request(),
-        ReadError::InputTooLarge { .. }
-        | ReadError::TooManyPages { .. }
-        | ReadError::TooManyObjects { .. }
-        | ReadError::DecompressedTooLarge { .. }
-        | ReadError::NestingTooDeep { .. }
-        | ReadError::TooManyBlocks { .. } => {
-            EngineFailure::owned(ErrorCode::LimitExceeded, error.to_string())
-        }
-    })?;
+    let read = pdf::read_with_options(&bytes, limits, &pdf::ReadOptions { detect_tables })
+        .map_err(|error| match error {
+            ReadError::Malformed => {
+                EngineFailure::new(ErrorCode::EngineFailure, "The file is not a readable PDF.")
+            }
+            ReadError::Encrypted => EngineFailure::new(
+                ErrorCode::EngineFailure,
+                "The PDF is encrypted with a password; password-protected PDFs are not supported.",
+            ),
+            ReadError::InvalidLimits(_) => EngineFailure::invalid_request(),
+            ReadError::InputTooLarge { .. }
+            | ReadError::TooManyPages { .. }
+            | ReadError::TooManyObjects { .. }
+            | ReadError::DecompressedTooLarge { .. }
+            | ReadError::NestingTooDeep { .. }
+            | ReadError::TooManyBlocks { .. } => {
+                EngineFailure::owned(ErrorCode::LimitExceeded, error.to_string())
+            }
+        })?;
     for warning in &read.warnings {
         common::emit_warning(output, warning)?;
     }
@@ -140,6 +151,7 @@ fn convert<W: Write>(
 fn convert<W: Write>(
     _paths: &common::ConvertPaths,
     _limits: &ariad_core::limits::Limits,
+    _detect_tables: bool,
     _output: &mut W,
 ) -> Result<(), EngineFailure> {
     Err(EngineFailure::new(
@@ -263,5 +275,76 @@ mod tests {
                 ));
             }
         }
+    }
+
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn detect_tables_option_switches_ruled_table_detection() {
+        use crate::workspace::Workspace;
+        use ariad_core::{
+            ir::Document,
+            limits::Limits,
+            protocol::{ErrorCode, Input, Output},
+            writer::csv::find_tables,
+        };
+        use std::{collections::BTreeMap, path::Path};
+
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/ruled-tables.pdf");
+        let run = |option: Option<serde_json::Value>| {
+            let workspace = Workspace::new().unwrap();
+            let input = workspace.input_dir().join("document.pdf");
+            std::fs::copy(&source, &input).unwrap();
+            let request = Request::Convert {
+                session_id: None,
+                protocol: PROTOCOL.to_owned(),
+                job: "pdf-tables".to_owned(),
+                input: Input {
+                    path: input.to_string_lossy().into_owned(),
+                    format: "pdf".to_owned(),
+                },
+                output: Output {
+                    dir: workspace.output_dir().to_string_lossy().into_owned(),
+                    format: "ariad-ir+json".to_owned(),
+                },
+                work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+                options: option
+                    .map(|value| BTreeMap::from([(super::DETECT_TABLES_OPTION.to_owned(), value)]))
+                    .unwrap_or_default(),
+                limits: Limits::local(),
+            };
+            let mut output = Vec::new();
+            let exit = super::serve(
+                Cursor::new(serde_json::to_vec(&request).unwrap()),
+                &mut output,
+            );
+            let events: Vec<Event> = output
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
+                .map(|line| serde_json::from_slice(line).unwrap())
+                .collect();
+            let tables = events.iter().find_map(|event| match event {
+                Event::Artifact { path, .. } => {
+                    let document: Document =
+                        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+                    Some(find_tables(&document.body).len())
+                }
+                _ => None,
+            });
+            (exit, events, tables)
+        };
+
+        assert_eq!(run(None).2, Some(0), "detection is off by default");
+        assert_eq!(run(Some(serde_json::json!(false))).2, Some(0));
+        assert_eq!(run(Some(serde_json::json!(true))).2, Some(2));
+
+        let (exit, events, tables) = run(Some(serde_json::json!("yes")));
+        assert_eq!(exit, std::process::ExitCode::from(1));
+        assert_eq!(tables, None);
+        assert!(matches!(
+            events.last(),
+            Some(Event::Result { ok: false, error: Some(error), .. })
+                if error.code == ErrorCode::InvalidRequest
+        ));
     }
 }

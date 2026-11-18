@@ -9412,7 +9412,7 @@
       "version": "1"
     },
     {
-      "engine": "ariad-host",
+      "engine": "ariad-pdf",
       "group": "convert",
       "id": "pdf.tables_to_csv",
       "input_formats": [
@@ -9433,7 +9433,9 @@
         "additionalProperties": false
       },
       "runtimes": [
-        "local"
+        "wasm",
+        "local",
+        "cloud"
       ],
       "secret_params": [],
       "summary": "Extract tables from a PDF document to individual CSV files.",
