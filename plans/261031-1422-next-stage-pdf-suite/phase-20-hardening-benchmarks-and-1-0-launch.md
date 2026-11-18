@@ -51,4 +51,4 @@ Prove 1.0 quality with evidence — security, correctness, performance, accessib
 - [ ] No open critical/high security findings; residual risks documented.
 - [ ] All proofs green; benchmark published with reproducible commands.
 - [ ] Parity matrix 100 % implemented on web and macOS (every row checked).
-- [ ] Owner GO → v1.0.0 tags, web prod, notarized macOS 1.0. (OPEN OWNER DECISION: macOS currently ships ad-hoc signed + Sparkle; whether 1.0 requires notarization is not decided, see plan.md.)
+- [ ] Owner GO → v1.0.0 tags, web prod, notarized macOS 1.0. (OPEN OWNER DECISION: macOS currently ships ad-hoc signed + Sparkle; whether 1.0 requires notarization is not decided; see the "Phase 17 signing note" at the end of the "Release cadence" section in plan.md.)

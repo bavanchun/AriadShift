@@ -12,7 +12,7 @@ bavanchun/tap/ashift`). Both avoid the first-launch prompt described here.
    `AriadShift.app` to Applications.
 2. The app is ad-hoc signed, not signed with a paid Apple Developer ID and not notarized, so Gatekeeper blocks the first launch with a dialog saying
    Apple could not verify the app is free of malware. The exact wording differs by macOS version.
-3. Open System Settings > Privacy & Security, scroll to the Security section and click **Open Anyway** next to AriadShift, then confirm. On macOS 15
+3. Open System Settings > Privacy & Security, scroll to the Security section and click **Open Anyway** next to AriadShift, then confirm. The button appears only after the first blocked launch, so try to open the app once before looking for it. On macOS 15
    and later, right-click > Open no longer bypasses the block, so use this route.
 4. Alternatively, remove the quarantine flag in Terminal and launch normally:
    `xattr -dr com.apple.quarantine /Applications/AriadShift.app`.
