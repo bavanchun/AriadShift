@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prove that the release workflow itself fails on a partial Apple secret set.
+# Prove that the release workflow itself publishes the right mode and fails on a partial Apple secret set.
 # macos-check-secrets.test.sh tests the script; this test runs the real `run:` block of the
 # `mode` step of .github/workflows/macos.yml the way the runner does (bash -eo pipefail), because
 # the exit status of a command substitution inside echo arguments is silently discarded.
+# The mode is signed (all six Apple secrets), adhoc (no Apple secret, Sparkle key set), unsigned (neither),
+# and a partial Apple set fails with no mode written, with or without the Sparkle key.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname -- "${SCRIPT_DIR}")"
 WORKFLOW="${REPO_ROOT}/.github/workflows/macos.yml"
 ALL=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY)
+KEY=SPARKLE_ED_PRIVATE_KEY
+CANARY="canary-value-that-must-never-be-printed"
 failures=0
 
 # Print the `run: |` block of the step whose id is "mode", with the YAML indentation removed.
@@ -44,18 +48,24 @@ run_block() {
     local -a env_args=()
     local name
     for name in "$@"; do
-        env_args+=("${name}=placeholder")
+        env_args+=("${name}=${CANARY}")
     done
-    local out_file summary err rc=0 ok=1
+    local out_file summary err log rc=0 ok=1
     out_file="$(mktemp)"
     summary="$(mktemp)"
     err="$(mktemp)"
+    log="$(mktemp)"
     (
         cd "${REPO_ROOT}"
         env -i PATH="${PATH}" GITHUB_OUTPUT="${out_file}" GITHUB_STEP_SUMMARY="${summary}" \
             ${env_args[@]+"${env_args[@]}"} \
-            bash --noprofile --norc -eo pipefail -c "${script}" >/dev/null 2>"${err}"
+            bash --noprofile --norc -eo pipefail -c "${script}" >"${log}" 2>"${err}"
     ) || rc=$?
+    # No value may reach the log, stderr, the step summary or the step outputs.
+    if grep -qF "${CANARY}" "${log}" "${err}" "${summary}" "${out_file}"; then
+        ok=0
+        echo "LEAK ${label}: a secret value reached an output stream" >&2
+    fi
     if [[ "${expect}" == "ok" ]]; then
         [[ "${rc}" -eq 0 ]] || ok=0
         grep -qxF "${want_line}" "${out_file}" || ok=0
@@ -71,7 +81,7 @@ run_block() {
         cat "${err}" >&2
         failures=$((failures + 1))
     fi
-    rm -f "${out_file}" "${summary}" "${err}"
+    rm -f "${out_file}" "${summary}" "${err}" "${log}"
 }
 
 # Control: the previous form `echo "mode=$(...)"` swallows the failure, which is why the real block is tested.
@@ -98,6 +108,14 @@ run_block "workflow step, 1 present" "${block}" fail "" APPLE_CERTIFICATE
 run_block "workflow step, 3 present" "${block}" fail "" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
 run_block "workflow step, 5 present (key missing)" "${block}" fail "" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER
 run_block "workflow step, 1 present (api key only)" "${block}" fail "" APPLE_API_KEY
+
+# The Sparkle key decides only between adhoc and unsigned, and never rescues a partial Apple set.
+run_block "workflow step, Sparkle key only" "${block}" ok "mode=adhoc" "${KEY}"
+run_block "workflow step, 6 present + Sparkle key" "${block}" ok "mode=signed" "${ALL[@]}" "${KEY}"
+run_block "workflow step, 1 present + Sparkle key" "${block}" fail "" APPLE_CERTIFICATE "${KEY}"
+run_block "workflow step, 3 present + Sparkle key" "${block}" fail "" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY "${KEY}"
+run_block "workflow step, 5 present (key missing) + Sparkle key" "${block}" fail "" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER "${KEY}"
+run_block "workflow step, 1 present (api key only) + Sparkle key" "${block}" fail "" APPLE_API_KEY "${KEY}"
 
 if [[ "${failures}" -ne 0 ]]; then
     echo "${failures} case(s) failed" >&2
