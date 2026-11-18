@@ -206,8 +206,11 @@ PDF to ODT/RTF uses the PDF reader → IR → Pandoc; TXT uses the native writer
 PDF to XLSX and CSV extract tables with Docling when its pack is installed. Without
 Docling, the native PDF reader detects tables drawn with ruling lines (cell borders)
 and emits `docling_fallback`; tables without ruling lines are not found, and a PDF
-with none yields a text-dump sheet with `no_tables_found`. CSV conversion produces
-one artifact; use `pdf.tables_to_csv` for one CSV per detected table. PDF to PPTX uses the system LibreOffice PDF import
+with none yields a text-dump sheet with `no_tables_found`. When ruled tables are
+found, XLSX and CSV keep only the tables: the surrounding prose is dropped, so a
+document that mixes prose and ruled tables loses its prose in these two outputs.
+CSV conversion produces one artifact; use `pdf.tables_to_csv` for one CSV per
+detected table. PDF to PPTX uses the system LibreOffice PDF import
 filter directly, without a PDFium rendering stage. Email attachments are listed,
 not opened or rendered. CBZ uses natural page order and preserves image page sizes.
 
