@@ -226,7 +226,7 @@ Repository `bavanchun/AriadShift` defines a GitHub Actions environment named **`
   - **`APPLE_API_KEY`**: App Store Connect `.p8` private key (PEM string or base64-encoded) for `notarytool`.
   - **`SPARKLE_ED_PRIVATE_KEY`**: Sparkle 2 EdDSA private key (44-character base64 string representing the 32-byte private seed, exported via `generate_keys -x <file>`) passed via stdin to `generate_appcast`.
 
-In addition, the repository or environment variable **`vars.SPARKLE_PUBLIC_ED_KEY`** (an environment variable of the `release` environment takes precedence over a repository variable of the same name) stores the corresponding public key, injected during signed release builds into `AriadShift.app/Contents/Info.plist` under `SUPublicEDKey`. Development builds and the unsigned fallback leave the key empty, keeping the updater disabled.
+In addition, the repository or environment variable **`vars.SPARKLE_PUBLIC_ED_KEY`** (an environment variable of the `release` environment takes precedence over a repository variable of the same name) stores the corresponding public key, injected during signed and ad-hoc release builds into `AriadShift.app/Contents/Info.plist` under `SUPublicEDKey`. Development builds and an unsigned (never published) build leave the key empty, keeping the updater disabled.
 
 [`scripts/check-release-workflow.sh`](../scripts/check-release-workflow.sh) enforces in CI that `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN` appear nowhere else in `.github/workflows/release.yml` or `.github/workflows/publish-crates.yml`, and that both publishing jobs declare `environment: release`.
 
@@ -281,14 +281,14 @@ Native macOS app releases (`AriadShift.app`) are packaged, signed (Developer ID 
 Sparkle 2 does not use or recognize `SUOldPublicEDKeys`. To rotate the EdDSA update signing key:
 1. Generate a new Ed25519 keypair using Sparkle's `generate_keys` tool and export the private key with `generate_keys -x <new-key-file>`.
 2. Update the public key in GitHub repository variable `vars.SPARKLE_PUBLIC_ED_KEY` to the new public key.
-3. Build and release an intermediate app version (e.g. `vX.Y.0`) signed and published with the **old** `SPARKLE_ED_PRIVATE_KEY`. Existing installed clients verify the update with their current trusted key (and verify the matching Apple Developer ID code-signing identity) and receive the new `SUPublicEDKey`.
+3. Build and release an intermediate app version (e.g. `vX.Y.0`) signed and published with the **old** `SPARKLE_ED_PRIVATE_KEY`. Existing installed clients verify the update with their current trusted key and receive the new `SUPublicEDKey`. In ad-hoc mode the EdDSA key alone protects updates; there is no Developer ID identity to check as a second barrier.
 4. After allowing a transition period for users to update, replace `SPARKLE_ED_PRIVATE_KEY` in the `release` environment with the new private key export. All subsequent releases and appcasts will then be signed with the new key.
 
 #### 3. Compromise response
 If `SPARKLE_ED_PRIVATE_KEY` is suspected or confirmed compromised:
 1. **Immediate revocation in CI**: Delete `SPARKLE_ED_PRIVATE_KEY` from the `release` environment immediately (`gh secret delete SPARKLE_ED_PRIVATE_KEY --env release`) to prevent unauthorized feed publication.
 2. **Generate replacement key**: Generate a fresh keypair offline using `generate_keys` and export via `generate_keys -x`.
-3. **Emergency signed release**: Note that Gatekeeper is NOT the barrier for Sparkle in-app updates (Sparkle applies updates directly without Gatekeeper quarantine). The actual cryptographic barriers are Sparkle's own EdDSA signature verification and Apple Developer ID code-signing identity verification. Because attackers holding only `SPARKLE_ED_PRIVATE_KEY` lack Apple Developer ID code-signing credentials, they cannot construct updates accepted by installed clients. Cut an immediate patch release with the new public key in `vars.SPARKLE_PUBLIC_ED_KEY`, signed and notarized with Developer ID.
+3. **Emergency release**: Note that Gatekeeper is NOT the barrier for Sparkle in-app updates (Sparkle applies updates directly without Gatekeeper quarantine). In ad-hoc mode the only cryptographic barrier is Sparkle's EdDSA signature verification, so whoever holds `SPARKLE_ED_PRIVATE_KEY` can publish updates that installed clients accept: treat a leak as a full compromise of the update channel. (Only in signed mode do installed clients also check the Developer ID code-signing identity, which an attacker holding only the EdDSA key lacks.) Cut an immediate patch release with the new public key in `vars.SPARKLE_PUBLIC_ED_KEY`, signed with the new EdDSA key, and with Developer ID and notarization when that path is available. Installed copies still trust the old key, so users of an already compromised copy may need to reinstall manually.
 4. **Purge compromised assets**: Remove any unauthorized release assets or tampered `appcast.xml` files from GitHub Releases.
 5. **Feed invalidation**: Push the authentic, freshly generated `appcast.xml` signed with the replacement key.
 
