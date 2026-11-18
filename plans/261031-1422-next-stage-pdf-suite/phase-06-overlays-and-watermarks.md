@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Overlays and watermarks: add text/image watermarks, stamps, page numbers, header/footer, Bates, QR; remove watermarks (level 1)"
-status: pending
+status: completed
 priority: P1
 effort: "5 tasks, ~8 worker-days"
 dependencies: [3, 4]

@@ -1,7 +1,7 @@
 ---
 title: "Next stage: PDF suite engine → Web → native macOS (Stirling + Bento parity, edit-like-Word gem)"
 description: "Build a permissive PDF tool engine, then a web app and a native SwiftUI macOS app that match Stirling-PDF and BentoPDF and beat them on correctness, UX and footprint, led by Word-like PDF editing."
-status: pending
+status: in-progress
 priority: P1
 effort: "20 phases, ~125 worker tasks, ~225 worker-days"
 branch: dev
@@ -35,27 +35,29 @@ AriadShift today converts documents (36 routes, shared IR, CLI/MCP/web/desktop/c
 
 | # | Phase | Milestone | Depends on | Status |
 |---|---|---|---|---|
-| 1 | [Architecture contracts, parity matrix, test corpus](./phase-01-architecture-contracts-and-parity-matrix.md) | A | — | Completed |
-| 2 | [Tool framework + `ariad-engine/2` (pdf.info skeleton)](./phase-02-tool-framework-and-engine-protocol-v2.md) | A | 1 | Completed |
-| 3 | [Structural PDF tools (25 tools, wasm)](./phase-03-structural-pdf-tools.md) | A → 0.3.0 | 2 | Completed |
-| 4 | [PDFium engine: render, images, text](./phase-04-pdfium-engine-render-and-images.md) | B | 2 | Completed |
-| 5 | [Optimize and security (compress, qpdf, sanitize)](./phase-05-optimize-and-security.md) | B | 3, 4 | Completed |
-| 6 | [Overlays and watermarks (add + remove L1)](./phase-06-overlays-and-watermarks.md) | B | 3, 4 | Completed |
-| 7 | [OCR and scan tools](./phase-07-ocr-and-scan-tools.md) | B | 4 | Completed |
-| 8 | [Annotations and forms](./phase-08-annotations-and-forms.md) | B | 4 | Completed |
-| 9 | [Redaction and signatures](./phase-09-redaction-and-signatures.md) | B | 4, 5 | Completed |
-| 10 | [Conversion parity, PDF/A-UA, compare](./phase-10-conversion-parity-compliance-compare.md) | B → 0.4.0 (with 14) | 4, 7 | Completed |
-| 11 | [IR styles (`ariad-ir/2`) + fidelity score](./phase-11-ir-styles-and-fidelity-score.md) | C | 10 | Completed |
-| 12 | [Edit engine: Document + Page mode](./phase-12-document-and-page-edit-engine.md) | C | 11, 8 | Completed |
-| 13 | [Automation, recipes, offline AI, cloud tool jobs, watermark L2](./phase-13-automation-recipes-and-ai.md) | C → 0.5.0 (with 15) | 12, 6, 7 | Completed (preview release GO pending) |
-| 14 | [Web foundation: shell, i18n 40+, viewer](./phase-14-web-foundation-i18n-viewer.md) | D (parallel with 5-13) → 0.4.0 | 3, 4 | Pending |
-| 15 | [Web tool suite](./phase-15-web-tool-suite.md) | D → 0.5.0 | 14, 10 | Pending |
-| 16 | [Web editor + AI panel](./phase-16-web-editor-and-ai.md) | D → 0.6.0 | 15, 12, 13 | Pending |
-| 17 | [macOS foundation: ariad-ffi, shell, viewer, Sparkle](./phase-17-macos-foundation-ffi-shell.md) | E | 16 | Completed (PR #284; Sparkle menu/relaunch/ATS path carried to 18) |
-| 18a | [macOS UI/UX redesign: design system, shell, motion, opening animation](./phase-18a-macos-design-system-and-motion.md) | E (before 0.7.0) | 17 | In progress |
-| 18 | [macOS tools + editor](./phase-18-macos-tools-and-editor.md) | E → 0.7.0 | 17 | Pending |
-| 19 | [macOS native integrations](./phase-19-macos-native-integrations.md) | E → 0.8.0 | 18 | Pending |
-| 20 | [Hardening, benchmarks, 1.0 launch](./phase-20-hardening-benchmarks-and-1-0-launch.md) | F → 1.0.0 | 19 | Pending |
+| 1 | [Architecture contracts, parity matrix, test corpus](./phase-01-architecture-contracts-and-parity-matrix.md) | A | — | Completed (#125) |
+| 2 | [Tool framework + `ariad-engine/2` (pdf.info skeleton)](./phase-02-tool-framework-and-engine-protocol-v2.md) | A | 1 | Completed (#130) |
+| 3 | [Structural PDF tools (25 tools, wasm)](./phase-03-structural-pdf-tools.md) | A → 0.3.0 | 2 | Completed, follow-ups open (#131, #153, #210) |
+| 4 | [PDFium engine: render, images, text](./phase-04-pdfium-engine-render-and-images.md) | B | 2 | Completed, follow-ups #132 #164 #189 #192 #194 #357 #368 (#177) |
+| 5 | [Optimize and security (compress, qpdf, sanitize)](./phase-05-optimize-and-security.md) | B | 3, 4 | Completed, follow-ups #186 #187 (#188, #415) |
+| 6 | [Overlays and watermarks (add + remove L1)](./phase-06-overlays-and-watermarks.md) | B | 3, 4 | Completed, follow-up #213 (#206) |
+| 7 | [OCR and scan tools](./phase-07-ocr-and-scan-tools.md) | B | 4 | Completed, follow-ups #202 #214 (#212, #389) |
+| 8 | [Annotations and forms](./phase-08-annotations-and-forms.md) | B | 4 | Completed, follow-up #139 (#216, #358) |
+| 9 | [Redaction and signatures](./phase-09-redaction-and-signatures.md) | B | 4, 5 | Partial ~80%: redaction done (#217, #392, #393, #396); signing B-B..B-LTA done (#221, #385); PKCS#11 token signing and macOS Keychain signing not delivered; follow-ups #186 #219 #227 |
+| 10 | [Conversion parity, PDF/A-UA, compare](./phase-10-conversion-parity-compliance-compare.md) | B → 0.4.0 (with 14) | 4, 7 | Completed, shipped 0.4.0 (#239, #407, #414, #416); follow-ups #223 #225 #226 #412 #418 |
+| 11 | [IR styles (`ariad-ir/2`) + fidelity score](./phase-11-ir-styles-and-fidelity-score.md) | C | 10 | Completed; benchmark thin (one authored fixture, layout IoU unmeasured, table F1 0 vs 0) (#252, #258, #259) |
+| 12 | [Edit engine: Document + Page mode](./phase-12-document-and-page-edit-engine.md) | C | 11, 8 | Completed; manual Preview/Chrome check not run (#254) |
+| 13 | [Automation, recipes, offline AI, cloud tool jobs, watermark L2](./phase-13-automation-recipes-and-ai.md) | C → 0.5.0 (with 15) | 12, 6, 7 | Completed, shipped 0.5.0 (#266, #267, #268, #270) |
+| 14 | [Web foundation: shell, i18n 40+, viewer](./phase-14-web-foundation-i18n-viewer.md) | D (parallel with 5-13) → 0.4.0 | 3, 4 | Mostly done ~85% (#271): 40 community locales below the 80% publish threshold (only en, vi, en-GB live); Safari and 1,000-page perf unverified |
+| 15 | [Web tool suite](./phase-15-web-tool-suite.md) | D → 0.5.0 | 14, 10 | Mostly done ~85% (#273): 39 studio panels, batch, recipes; pdf.sign_token has no web UI |
+| 16 | [Web editor + AI panel](./phase-16-web-editor-and-ai.md) | D → 0.6.0 | 15, 12, 13 | Mostly done ~80%, shipped 0.6.0 (#275): Tiptap not adopted (custom schema), Noto font not bundled, IR round trip unverified |
+| 17 | [macOS foundation: ariad-ffi, shell, viewer, Sparkle](./phase-17-macos-foundation-ffi-shell.md) | E | 16 | Completed with gaps (#284): cold launch 444 ms vs 400 ms budget; no Sparkle E2E; Apple signing and Sparkle secrets not configured |
+| 18a | [macOS UI/UX redesign: design system, shell, motion, opening animation](./phase-18a-macos-design-system-and-motion.md) | E (before 0.7.0) | 17 | In progress ~75% (#341): 7 design-literal baseline entries left, hitch traces not run, accessibility screenshots missing |
+| 18 | [macOS tools + editor](./phase-18-macos-tools-and-editor.md) | E → 0.7.0 | 17 | In progress ~35% (#300, #308, #311, #348): tool browser, forms, Pro gate, page grid done; Document mode, custom panels, annotate/forms, batch, recipes, AI, IR FFI exports missing |
+| 19 | [macOS native integrations](./phase-19-macos-native-integrations.md) | E → 0.8.0 | 18 | Not started |
+| 20 | [Hardening, benchmarks, 1.0 launch](./phase-20-hardening-benchmarks-and-1-0-launch.md) | F → 1.0.0 | 19 | Not started (~10% groundwork: fuzz nightly, bench harness) |
+
+Audited against dev 9d5832b on 2026-11-18. Remaining: finish 18a, 18, 19, 20; close gaps in 9, 14, 15, 16, 17.
 
 Parallelism: after phase 4, engine phases 5-8 run concurrently and the **web foundation (14) runs alongside them** (owner decision 2026-10-31: web starts once structural tools + PDFium exist). Web tool UIs (15) start after engine parity (10); the web editor (16) after the edit engine (12, 13). macOS (17-19) starts after the web editor. Concurrent phases follow the integration rule in the coordinator protocol: one integration owner regenerates shared/generated files per wave, and a red `dev` blocks new phase worktrees.
 
@@ -93,7 +95,7 @@ flowchart LR
   HOST --> Engines
 ```
 
-## Release cadence (D7; every tag needs the owner's GO)
+## Release cadence (D7; every tag needs the owner's GO; 0.8.0/0.9.0 numbering: owner to confirm)
 
 | Version | After phase | Contents |
 |---|---|---|
@@ -101,8 +103,9 @@ flowchart LR
 | 0.4.0 | 10 + 14 | Engine parity (render, optimize, security, overlays, OCR, forms, redaction, signatures, conversion, compare) + web preview (new shell, 40+ locales, viewer, browser tools) |
 | 0.5.0 | 13 + 15 | IR styles, edit engine, recipes, offline AI, cloud tool jobs + every tool in the web UI |
 | 0.6.0 | 16 | Web editor (Document/Page modes) + AI panel |
-| 0.7.0 | 18 | macOS preview |
-| 0.8.0 | 19 | macOS integrations |
+| 0.7.0 | (dev promotion) | Shipped as a dev promotion, not a macOS preview |
+| 0.8.0 | 18a + 18 | macOS preview |
+| 0.9.0 | 19 | macOS integrations |
 | 1.0.0 | 20 | Web + macOS 1.0 |
 
 Packs (`pdfium`, `qpdf`, `tesseract`, `sign`, `verapdf`, `ai`, `inpaint`) are versioned `0.x` and declared unstable until `ariad-engine/2` is final in phase 20; each manifest carries `engine_protocol`.

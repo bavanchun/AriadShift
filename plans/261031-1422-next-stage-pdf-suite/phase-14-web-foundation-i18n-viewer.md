@@ -1,7 +1,7 @@
 ---
 phase: 14
 title: "Web foundation: app shell, i18n for 40+ locales, PDF viewer, tool runner"
-status: pending
+status: in-progress
 priority: P1
 effort: "6 tasks, ~10-12 worker-days"
 dependencies: [3, 4]

@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Annotations and forms: annotate, flatten, fill, create/design fields, FDF/XFDF import-export, auto-detect fields"
-status: pending
+status: completed
 priority: P1
 effort: "5 tasks, ~9 worker-days"
 dependencies: [4]

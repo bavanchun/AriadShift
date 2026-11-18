@@ -35,7 +35,7 @@ Worker models (owner decision D13):
 7. **Gate report (coordinator → PM).** `to-mac/pNN-gate.md`: commits, files, test commands + results, screenshots for UI, open risks, acceptance checklist with evidence per item.
 8. **Acceptance (PM).** PM reviews diff (or spawns `code-reviewer`), checks acceptance evidence, answers `approved` or `rejected` with reasons.
 9. **Merge (coordinator, flash-low worker).** Push branch, `gh pr create --base dev`, rebase-merge (squash only for noisy branches) as soon as GitHub allows (do not wait for CI, owner decision D14); delete the head branch after merge (`gh pr merge --rebase --delete-branch`; the repo no longer auto-deletes because promotions would delete `dev`). Red CI later → deduped `gh issue create` with run URL, failing step, first error lines; continue. **A red `dev` must be fixed before any new phase worktree branches from it.** Never `--admin`, never change branch protection or the `protect-main-dev` ruleset.
-10. **Close-out.** Close worker tabs (`--close`), remove the worktree, tick the phase checkboxes and status (`ak plan` CLI), write `to-mac/pNN-done.md`.
+10. **Close-out.** Close worker tabs (`--close`), remove the worktree, tick the phase checkboxes and status (`ak plan` CLI), write `to-mac/pNN-done.md`. A phase PR is not done until its merge commit, or a follow-up commit in the same wave, updates plan.md's Status row and ticks the proven acceptance boxes. The lead rejects phase PRs that skip this.
 
 **Cleanup after every worker (owner rule, 2026-11-01).** As soon as a worker's task is accepted (or abandoned), the coordinator cleans up everything that worker created, before dispatching the next one — not only at phase end:
 - close its Rex tab (`agent-rex.py --close <name>`);

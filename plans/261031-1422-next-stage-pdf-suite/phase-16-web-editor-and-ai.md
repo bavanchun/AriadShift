@@ -1,7 +1,7 @@
 ---
 phase: 16
 title: "Web editor: Document mode, Page mode, annotations/forms surface, AI panel"
-status: pending
+status: in-progress
 priority: P1
 effort: "6 tasks, ~12-15 worker-days"
 dependencies: [15, 12, 13]
@@ -49,7 +49,7 @@ Deliver the gem on the web: open any PDF/scan and edit it like Word (Document mo
 - [ ] Document-mode export of the benchmark corpus meets the phase-11 fidelity thresholds.
 - [ ] Page mode edits Vietnamese text in `vi-diacritics-subset-font.pdf` without broken glyphs (substitution warning shown when needed).
 - [ ] No document leaves the device without an explicit consent dialog (e2e asserts zero network requests carrying document bytes in offline mode).
-- [ ] Web preview 0.6.0 (owner GO).
+- [x] Web preview 0.6.0 (owner GO) (shipped 0.6.0, #275).
 
 ## Design reference (owner-approved direction, 2026-11-01)
 

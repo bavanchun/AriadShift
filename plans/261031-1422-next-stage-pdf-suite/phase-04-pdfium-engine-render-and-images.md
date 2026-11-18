@@ -20,7 +20,7 @@ Add PDFium as the first `ariad-engine/2` out-of-process engine (AD-4), shipped a
 ## Stack (verified 2026-10-31, `plans/reports/researcher-261031-2113-permissive-pdf-engine-stack.md` §2.2)
 
 - PDFium `chromium/8125` (PDFium 158.0.8125.0, 2026-10-26) from `bblanchon/pdfium-binaries` (wrapper MIT, engine BSD-3-Clause; bundled third-party notices in `licenses/` — FreeType FTL, ICU, libjpeg-turbo, OpenJPEG, LCMS, libpng, zlib, HarfBuzz, Abseil, AGG — must ship).
-- Binding: `pdfium-render 0.9.4` (MIT OR Apache-2.0). Its `pdfium_latest` feature targets 7881; T1 proves 8125 works with the feature we pick (or pins a binary build that matches).
+- Binding: `pdfium-render =0.9.5` (MIT OR Apache-2.0). Its `pdfium_latest` feature targets 7881; T1 proves 8125 works with the feature we pick (or pins a binary build that matches).
 - Targets: mac-arm64, mac-x64 (or mac-univ), linux-x64, linux-arm64, linux-musl-x64/arm64. Windows packs stay deferred (ARCHITECTURE §7.1 defers Windows packs; Windows engines have no filesystem/network sandbox).
 - Browser: not this phase (phase 14 uses `@embedpdf/pdfium`; note the bblanchon WASM heap is non-growable).
 
@@ -51,7 +51,7 @@ Add PDFium as the first `ariad-engine/2` out-of-process engine (AD-4), shipped a
 
 | Task | Owner (model) | Files owned |
 |---|---|---|
-| T1 | Gemini 4 Argon high | Spike + report `plans/reports/spike-pdfium-8125.md`: bind 8125 via pdfium-render 0.9.4 on macOS arm64 and Linux x64 (dynamic load; also test linux-musl `dlopen`), render a page, extract text boxes, load a font from bytes and draw Vietnamese text, **`FPDFText_SetText` on an existing subset-font text object with Vietnamese replacement text**, and **incremental save over a signed PDF keeping the earlier signature valid** (validate with pyHanko locally); decide the pin. No product code. Stop and report after 1 day. |
+| T1 | Gemini 4 Argon high | Spike + report `plans/reports/spike-pdfium-8125.md`: bind 8125 via pdfium-render =0.9.5 on macOS arm64 and Linux x64 (dynamic load; also test linux-musl `dlopen`), render a page, extract text boxes, load a font from bytes and draw Vietnamese text, **`FPDFText_SetText` on an existing subset-font text object with Vietnamese replacement text**, and **incremental save over a signed PDF keeping the earlier signature valid** (validate with pyHanko locally); decide the pin. No product code. Stop and report after 1 day. |
 | T2 | Gemini 4 Argon high | `crates/ariad-pdfium-engine/**` (engine skeleton, session cache, describe/capabilities, render/thumbnails/text_layout/extract_images/detect_scanned) |
 | T3 | Gemini 4 Argon high | `pdf.remove_blank`, `pdf.crop_whitespace`, blank split, `image.to_pdf` (split between `ariad-pdf` and engine as designed) |
 | T4 | Gemini 4 Argon high | Shared pack builder first (`scripts/pack/build-pack.sh` + manifest templating, signing, `engine_protocol` field, upstream SHA-256 pins, macOS codesign) reused by later packs; then `engines/pdfium/pack/**` (licence bundling incl. third-party notices), `just pack-pdfium`, `.github/workflows/pack-pdfium.yml` (matrix of targets; signing only on `pack-pdfium-v*` tags under the protected `release` environment) |
