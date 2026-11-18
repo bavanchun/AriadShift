@@ -527,7 +527,7 @@ macos-install-dev:
     install_dir="${ASHIFT_DEV_APP_DIR:-$HOME/Applications}"
     sha="$(git rev-parse --short HEAD)"
     # Highest version tag, not `git describe`: release tags live on main and are not ancestors of dev.
-    base="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+    base="$(git tag --list 'v*' --sort=-v:refname | sed -n 1p)"
     base="${base#v}"
     version="${base:-0.0.0}-dev+${sha}"
     build="$(git rev-list --count HEAD)"
@@ -550,7 +550,6 @@ macos-install-dev:
     "$pb" -c "Delete :SUFeedURL" "$plist"
     "$pb" -c "Set :SUEnableAutomaticChecks false" "$plist"
     "$pb" -c "Set :SUAutomaticallyUpdate false" "$plist"
-    "$pb" -c "Set :SUPublicEDKey ''" "$plist"
     xattr -cr "$app"
     codesign --force --deep --sign - "$app"
     codesign --verify --deep --strict "$app"
@@ -558,14 +557,14 @@ macos-install-dev:
     rm -rf "${install_dir:?}/$dev_name.app"
     ditto "$app" "$install_dir/$dev_name.app"
     if [[ "${ASHIFT_KEEP_BUILD:-0}" != "1" ]]; then
-        # Only directories inside this checkout are removed; a shared target or derived-data directory is left alone.
+        # Only directories inside this checkout and named target or derived-data are removed; anything else is left alone.
         target_dir="${CARGO_TARGET_DIR:-target}"
         for dir in "$derived_dir" "$target_dir"; do
             abs="$(cd "$dir" 2>/dev/null && pwd -P || true)"
-            if [[ -n "$abs" && "$abs" == "$(pwd -P)"/* ]]; then
+            if [[ -n "$abs" && "$abs" == "$(pwd -P)"/* && ( "${abs##*/}" == target || "${abs##*/}" == derived-data ) ]]; then
                 rm -rf "$abs"
             elif [[ -n "$abs" ]]; then
-                echo "keeping build output outside the checkout: $abs"
+                echo "keeping build output outside the checkout or not named target or derived-data: $abs"
             fi
         done
     fi
