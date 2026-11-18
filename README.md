@@ -2,14 +2,17 @@
 
 ![AriadShift logo](brand/png/ariadshift-lockup-1200.png)
 
-AriadShift is an open-source, local-first document transformation platform in
-early development. Its goal is to turn documents into clean Markdown and
-structured data through a shared engine used by local and hosted interfaces.
+AriadShift is an open-source, local-first document conversion and PDF toolkit.
+A shared engine powers the `ashift` command line, an MCP server, a desktop app,
+a browser app and a hosted API.
 
-The repository converts Markdown, HTML, DOCX and EPUB, extracts digital PDF text, writes PDF with embedded Vietnamese fonts, and exports IR JSON. A system LibreOffice adds legacy Office and ODF conversion.
+It converts between Markdown, HTML, DOCX and EPUB, reads digital PDF text and
+tables, writes PDF with embedded Vietnamese fonts and exports IR JSON. A system
+LibreOffice adds legacy Office and ODF conversion. A registry of PDF tools
+covers organising, compressing, redacting, signing, forms, OCR, comparison and
+editing; see [`docs/tools.md`](docs/tools.md) and the [release notes](docs/release-notes.md).
 
-The website converts Markdown, HTML, DOCX, EPUB and AriadShift IR JSON entirely
-in the browser, reads digital PDF text and writes PDF; files never leave the device.
+The web app runs the same core in the browser: files stay on the device.
 
 ## Installation
 
@@ -37,7 +40,7 @@ Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHu
 
 ### Package managers
 
-v0.3.0 is published to crates.io (ariad-core, ariad-pdf, ariad-engine-io, ariad-typst, ariad-host, ariad-cli) and the Homebrew tap, and the release smoke run passed on the Homebrew, shell installer, PowerShell installer and cargo-binstall channels; current Homebrew needs the tap trust step shown in the commands below; no WinGet submission exists yet.
+The current release is [v0.7.0](https://github.com/bavanchun/AriadShift/releases/tag/v0.7.0). The `ariad-cli` crate and its libraries are on crates.io, and the formula is in the Homebrew tap; current Homebrew needs the tap trust step shown below. WinGet is submitted and pending review.
 
 ```sh
 # Homebrew (macOS & Linux; current Homebrew requires trusting third-party taps)
@@ -51,7 +54,7 @@ cargo install ariad-cli
 ```
 
 ```powershell
-# Windows Package Manager
+# Windows Package Manager (pending review, coming soon)
 winget install VChun.AriadShift
 ```
 
@@ -99,12 +102,13 @@ ashift doctor
 
 Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
 
-Heavy engines ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the PDFium pack is installable with `ashift engines install pdfium` (macOS and Linux glibc; Windows not yet supported), while the Docling pack is not yet published ([#204](https://github.com/bavanchun/AriadShift/issues/204)). See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
+Heavy engines ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the PDFium pack is installable with `ashift engines install pdfium` (macOS and Linux glibc; Windows not yet supported), while the Docling pack is not yet published ([#204](https://github.com/bavanchun/AriadShift/issues/204)). Without Docling, digital PDFs are read by the built-in reader, including ruled and whitespace-aligned tables; scanned PDFs need Docling. See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
 
 ## Convert in the Browser
 
 The web app in [`apps/web`](apps/web) runs the same core compiled to
-WebAssembly. Files stay in the browser's private storage, the converter keeps
+WebAssembly, with a tool hub, PDF workspace, visual recipe builder and
+document editors. Files stay in the browser's private storage, the converter keeps
 working offline with the engines already downloaded, and every route shows
 its measured quality when benchmark data exists. Run it locally:
 
@@ -129,7 +133,8 @@ The server exposes 6 tools (`list_engines`, `inspect`, `plan`, `convert`, `list_
 ## Desktop app
 
 The Tauri app in `apps/desktop` converts local files and batches, watches folders,
-manages signed engine packs and opens `ariadshift://` links. Run `just desktop-dev`
+manages signed engine packs and opens `ariadshift://` links. Desktop builds are
+unsigned for now. Run `just desktop-dev`
 for development or `just desktop-build` for installers. See
 [the desktop guide](docs/desktop.md) for setup, dependencies and updates.
 
