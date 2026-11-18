@@ -6,13 +6,15 @@ set -euo pipefail
 # `mode` step of .github/workflows/macos.yml the way the runner does (bash -eo pipefail), because
 # the exit status of a command substitution inside echo arguments is silently discarded.
 # The mode is signed (all six Apple secrets), adhoc (no Apple secret, Sparkle key set), unsigned (neither),
-# and a partial Apple set fails with no mode written, with or without the Sparkle key.
+# and a partial Apple set fails with no mode written, with or without the Sparkle key. The step receives only the boolean
+# SPARKLE_ED_KEY_PRESENT (`secrets.SPARKLE_ED_PRIVATE_KEY != ''`), never the key.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname -- "${SCRIPT_DIR}")"
 WORKFLOW="${REPO_ROOT}/.github/workflows/macos.yml"
 ALL=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY)
-KEY=SPARKLE_ED_PRIVATE_KEY
+KEY=SPARKLE_ED_KEY_PRESENT
+SECRET_KEY=SPARKLE_ED_PRIVATE_KEY
 CANARY="canary-value-that-must-never-be-printed"
 failures=0
 
@@ -42,13 +44,21 @@ if [[ -z "${block}" ]]; then
 fi
 
 # run_block LABEL BLOCK EXPECT(ok|fail) EXPECTED_OUTPUT_LINE_OR_EMPTY PRESENT_NAMES...
+# A bare name is exported as that Apple secret (set to the canary); the Sparkle flag name means KEY=true, and NAME=VALUE
+# is exported verbatim (for example a blank or false flag).
 run_block() {
     local label="$1" script="$2" expect="$3" want_line="$4"
     shift 4
     local -a env_args=()
     local name
     for name in "$@"; do
-        env_args+=("${name}=${CANARY}")
+        if [[ "${name}" == *=* ]]; then
+            env_args+=("${name}")
+        elif [[ "${name}" == "${KEY}" ]]; then
+            env_args+=("${KEY}=true")
+        else
+            env_args+=("${name}=${CANARY}")
+        fi
     done
     local out_file summary err log rc=0 ok=1
     out_file="$(mktemp)"
@@ -109,13 +119,30 @@ run_block "workflow step, 3 present" "${block}" fail "" APPLE_CERTIFICATE APPLE_
 run_block "workflow step, 5 present (key missing)" "${block}" fail "" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER
 run_block "workflow step, 1 present (api key only)" "${block}" fail "" APPLE_API_KEY
 
-# The Sparkle key decides only between adhoc and unsigned, and never rescues a partial Apple set.
+# The Sparkle flag decides only between adhoc and unsigned, and never rescues a partial Apple set.
 run_block "workflow step, Sparkle key only" "${block}" ok "mode=adhoc" "${KEY}"
 run_block "workflow step, 6 present + Sparkle key" "${block}" ok "mode=signed" "${ALL[@]}" "${KEY}"
 run_block "workflow step, 1 present + Sparkle key" "${block}" fail "" APPLE_CERTIFICATE "${KEY}"
 run_block "workflow step, 3 present + Sparkle key" "${block}" fail "" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY "${KEY}"
 run_block "workflow step, 5 present (key missing) + Sparkle key" "${block}" fail "" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER "${KEY}"
 run_block "workflow step, 1 present (api key only) + Sparkle key" "${block}" fail "" APPLE_API_KEY "${KEY}"
+
+# A false flag is the value an unset secret produces (`secrets.X != ''` is false for an unset or empty secret).
+run_block "workflow step, Sparkle flag false" "${block}" ok "mode=unsigned" "${KEY}=false"
+run_block "workflow step, 6 present + Sparkle flag false" "${block}" ok "mode=signed" "${ALL[@]}" "${KEY}=false"
+run_block "workflow step, 1 present + Sparkle flag false" "${block}" fail "" APPLE_CERTIFICATE "${KEY}=false"
+
+# Whitespace around the flag is trimmed: a blank flag counts as absent, never as present.
+BLANK=$' \t\n '
+run_block "workflow step, blank Sparkle flag" "${block}" ok "mode=unsigned" "${KEY}=${BLANK}"
+run_block "workflow step, 6 present + blank Sparkle flag" "${block}" ok "mode=signed" "${ALL[@]}" "${KEY}=${BLANK}"
+run_block "workflow step, 1 present + blank Sparkle flag" "${block}" fail "" APPLE_CERTIFICATE "${KEY}=${BLANK}"
+run_block "workflow step, true Sparkle flag with a trailing newline" "${block}" ok "mode=adhoc" "${KEY}=true"$'\n'
+
+# The step reads the boolean, not the key: the key alone selects nothing, and a flag carrying the key fails closed.
+run_block "workflow step, private key only, no flag" "${block}" ok "mode=unsigned" "${SECRET_KEY}"
+run_block "workflow step, private key wired into the flag" "${block}" fail "" "${KEY}=${CANARY}"
+run_block "workflow step, 6 present + private key wired into the flag" "${block}" fail "" "${ALL[@]}" "${KEY}=${CANARY}"
 
 if [[ "${failures}" -ne 0 ]]; then
     echo "${failures} case(s) failed" >&2

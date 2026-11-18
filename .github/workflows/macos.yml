@@ -125,11 +125,26 @@ jobs:
           bash scripts/macos-check-secrets.test.sh
           bash scripts/macos-check-secrets-workflow.test.sh
           bash scripts/macos-adhoc-sign.test.sh
+          bash scripts/macos-appcast.test.sh
           bash scripts/macos-check-release-plan.test.sh
       - name: Build macOS application bundle
         run: just macos-build
       - name: Verify Release app omits debug plan override
         run: bash scripts/macos-check-release-plan.sh target/derived-data/Build/Products/Release/AriadShift.app
+      # Every PR and branch build proves the real ad-hoc signing layout, not only the stubbed unit test. The release-sign
+      # job runs the same script for a tag. No secret, keychain or Apple credential is involved. The script signs
+      # whatever path it is given, so it gets a ditto copy: the Release app in DerivedData stays exactly as built for the
+      # tests (which may read its Helpers/ashift) and for the unsigned artifact below.
+      - name: Sign a copy of the Release app ad-hoc and verify it
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          APP_PATH="target/derived-data/Build/Products/Release/AriadShift.app"
+          COPY_DIR="${RUNNER_TEMP}/adhoc-sign-proof"
+          trap 'rm -rf "${COPY_DIR}"' EXIT
+          rm -rf "${COPY_DIR}"
+          mkdir -p "${COPY_DIR}"
+          ditto "${APP_PATH}" "${COPY_DIR}/AriadShift.app"
+          bash scripts/macos-adhoc-sign.sh app "${COPY_DIR}/AriadShift.app"
       - name: Run macOS tests
         env:
           # swift-snapshot-testing writes the image it rendered next to each failed reference here.
@@ -208,8 +223,8 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          # Only its presence is tested here: it decides between the adhoc and unsigned modes.
-          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          # A boolean string ("true" or "false"), never the key: only its presence decides between adhoc and unsigned.
+          SPARKLE_ED_KEY_PRESENT: ${{ secrets.SPARKLE_ED_PRIVATE_KEY != '' }}
         run: |
           mode="$(bash scripts/macos-check-secrets.sh)"
           echo "mode=${mode}" >> "$GITHUB_OUTPUT"
@@ -412,18 +427,21 @@ jobs:
       - name: Generate Sparkle appcast (ad-hoc)
         if: steps.mode.outputs.mode == 'adhoc'
         env:
-          # Only this step and the credential check receive the key. macos-appcast.sh pipes it to generate_appcast on
-          # standard input (--ed-key-file -): it never reaches an argument list or a file.
+          # Only the two appcast steps receive the key (the credential check gets a boolean). macos-appcast.sh unsets it
+          # from its own environment, then pipes it to generate_appcast on standard input (--ed-key-file -): it never
+          # reaches an argument list, a file or a child process environment.
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           # An ad-hoc release without a signed feed would strand every installed copy, so a missing key is an error here.
-          if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
-            echo "::error::SPARKLE_ED_PRIVATE_KEY is empty in ad-hoc mode; refusing to publish without an appcast."
+          # The credential check only learns that the secret is not the empty string, so a whitespace-only value reaches
+          # this step as "present": it must fail here, with the whitespace removed before the emptiness test.
+          # The runner masks the secret by itself. Do not mask the value again by hand: an explicit mask of a multi-line
+          # value registers each line on its own and leaks the others.
+          if [[ -z "${SPARKLE_ED_PRIVATE_KEY//[[:space:]]/}" ]]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY is empty or blank in ad-hoc mode; refusing to publish without an appcast."
             exit 1
           fi
-          # The runner already masks the secret; this also masks it in any log line a tool might derive from it.
-          echo "::add-mask::${SPARKLE_ED_PRIVATE_KEY}"
           DMG_PATH="target/release/AriadShift-${RELEASE_TAG}-universal.dmg"
           APPCAST_PATH="target/release/appcast.xml"
           rm -f "$APPCAST_PATH"

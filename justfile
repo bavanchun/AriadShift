@@ -221,13 +221,15 @@ test-docling-pack-inputs:
     shellcheck scripts/docling-pack-inputs.sh scripts/test-docling-pack-inputs.sh
     bash scripts/test-docling-pack-inputs.sh
 
-# The macOS release scripts that need no macOS tool: the release mode decision (Developer ID, ad-hoc, unsigned) and the
-# ad-hoc signing order and gates, the latter against a stub codesign. macos.yml runs the same tests on the macOS runner.
+# The macOS release scripts that need no macOS tool: the release mode decision (Developer ID, ad-hoc, unsigned), the
+# ad-hoc signing order and gates against a stub codesign, and the appcast script's key handling against stub child
+# commands. macos.yml runs the same tests on the macOS runner.
 test-macos-release-scripts:
-    shellcheck scripts/macos-check-secrets.sh scripts/macos-check-secrets.test.sh scripts/macos-check-secrets-workflow.test.sh scripts/macos-adhoc-sign.sh scripts/macos-adhoc-sign.test.sh
+    shellcheck scripts/macos-check-secrets.sh scripts/macos-check-secrets.test.sh scripts/macos-check-secrets-workflow.test.sh scripts/macos-adhoc-sign.sh scripts/macos-adhoc-sign.test.sh scripts/macos-appcast.sh scripts/macos-appcast.test.sh
     bash scripts/macos-check-secrets.test.sh
     bash scripts/macos-check-secrets-workflow.test.sh
     bash scripts/macos-adhoc-sign.test.sh
+    bash scripts/macos-appcast.test.sh
 
 test-ci-sccache:
     shellcheck -x scripts/ci-sccache.sh
