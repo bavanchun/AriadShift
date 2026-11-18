@@ -1,6 +1,6 @@
 # Web app
 
-`apps/web` is the AriadShift website and its in-browser converter, a Next.js 16 app. Every route is statically generated, and the converter runs Markdown, HTML, DOCX, EPUB, digital PDF and AriadShift IR JSON conversions on the user's device through [`ariad-wasm`](../crates/ariad-wasm). PDF -> XLSX and PDF -> CSV conversions and the `pdf.tables_to_csv` tool detect tables drawn with ruling lines in the browser; a PDF without such tables falls back to a text dump with the `no_tables_found` warning (the tool fails with `no tables found in document`), as Docling table extraction is available host-side only. Design background: [ARCHITECTURE.md §8.1](../ARCHITECTURE.md#81-browser-local).
+`apps/web` is the AriadShift website and its in-browser converter, a Next.js 16 app. Every route is statically generated, and the converter runs Markdown, HTML, DOCX, EPUB, digital PDF and AriadShift IR JSON conversions on the user's device through [`ariad-wasm`](../crates/ariad-wasm). PDF -> XLSX and PDF -> CSV conversions and the `pdf.tables_to_csv` tool detect tables drawn with ruling lines, and tables aligned with whitespace, in the browser; a PDF without such tables falls back to a text dump with the `no_tables_found` warning (the tool fails with `no tables found in document`), as Docling table extraction is available host-side only. Design background: [ARCHITECTURE.md §8.1](../ARCHITECTURE.md#81-browser-local).
 
 ## Layout
 
