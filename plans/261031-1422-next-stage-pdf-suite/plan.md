@@ -53,7 +53,7 @@ AriadShift today converts documents (36 routes, shared IR, CLI/MCP/web/desktop/c
 | 16 | [Web editor + AI panel](./phase-16-web-editor-and-ai.md) | D → 0.6.0 | 15, 12, 13 | Mostly done ~80%, shipped 0.6.0 (#275): Tiptap not adopted (custom schema), Noto font not bundled, IR round trip unverified |
 | 17 | [macOS foundation: ariad-ffi, shell, viewer, Sparkle](./phase-17-macos-foundation-ffi-shell.md) | E | 16 | Completed with gaps (#284): cold launch 444 ms vs 400 ms budget; no Sparkle E2E; Apple signing and Sparkle secrets not configured |
 | 18a | [macOS UI/UX redesign: design system, shell, motion, opening animation](./phase-18a-macos-design-system-and-motion.md) | E (before 0.8.0) | 17 | In progress ~75% (#341): 7 design-literal baseline entries left, hitch traces not run, accessibility screenshots missing |
-| 18 | [macOS tools + editor](./phase-18-macos-tools-and-editor.md) | E → 0.8.0 | 17 | In progress ~35% (#300, #308, #311, #348): tool browser, forms, Pro gate, page grid done; Document mode, custom panels, annotate/forms, batch, recipes, AI, IR FFI exports missing |
+| 18 | [macOS tools + editor](./phase-18-macos-tools-and-editor.md) | E → 0.8.0 (export) / 0.8.x | 17 | In progress ~35% (#300, #308, #311, #348): tool browser, forms, Pro gate, page grid done; Document mode, custom panels, annotate/forms, batch, recipes, AI, IR FFI exports missing |
 | 19 | [macOS native integrations](./phase-19-macos-native-integrations.md) | E → 0.9.0 | 18 | Not started |
 | 20 | [Hardening, benchmarks, 1.0 launch](./phase-20-hardening-benchmarks-and-1-0-launch.md) | F → 1.0.0 | 19 | Not started (~10% groundwork: fuzz nightly, bench harness) |
 

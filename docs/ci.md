@@ -341,7 +341,7 @@ foreign project volumes.
 - A skipped workflow is safe for merging: the `protect-main-dev` ruleset requires no status checks, and `desktop.yml` and the other path-filtered workflows rely on the same behaviour. If a macOS check is ever added to the ruleset, a path-filtered workflow would leave it pending on pull requests that skip it, and the job would need a `changes` job and an always-run gate like Cloud E2E's required check.
 - `just macos-test` writes an `.xcresult` bundle to `target/derived-data/AriadShift-tests.xcresult` (override with `MACOS_RESULT_BUNDLE`). When the job fails, [`scripts/macos-report-failures.sh`](../scripts/macos-report-failures.sh) prints the failed test cases, the test summary and the build issues from that bundle with `xcresulttool`, so a "TEST FAILED" run with an empty failing-tests list still names its cause. The bundle is uploaded as the `AriadShift-test-results` artifact (7 days).
 - On a `v*` tag, `release-sign` first requires the tagged commit to be an ancestor of `origin/main`, then decides the signing mode before the build. A partial Apple credential set fails the run; an unsigned run builds without the Sparkle public key and asserts the built app ships with the updater disabled (`SUPublicEDKey` empty).
-- The release flow, secrets and the unsigned fallback are described in [releasing.md](releasing.md#macos-release-signing-and-updates).
+- The release flow, signing modes (`signed`, `adhoc`, `unsigned`) and secrets are described in [releasing.md](releasing.md#macos-release-signing-and-updates).
 
 ## Commit rules
 
