@@ -1,3 +1,4 @@
+import AriadDesignSystem
 import SwiftUI
 
 /// Progress and failures of running imports. Opens when an import starts and closes itself
@@ -7,7 +8,7 @@ struct ImportStatusView: View {
     @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DSSpacing.m) {
             ForEach(model.jobs) { job in
                 HStack(alignment: .top) {
                     switch job.state {
@@ -17,8 +18,8 @@ struct ImportStatusView: View {
                         Spacer()
                         Button(String(localized: "mac.run.cancel"), role: .cancel) { model.dismiss(job) }
                     case let .failed(message):
-                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
-                        VStack(alignment: .leading, spacing: 2) {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(DSColor.danger)
+                        VStack(alignment: .leading, spacing: DSSpacing.xs) {
                             Text(String(localized: "mac.import.failed", defaultValue: "Could not import \(job.name)"))
                                 .bold()
                             Text(verbatim: message).font(.callout).textSelection(.enabled)
@@ -30,8 +31,8 @@ struct ImportStatusView: View {
                 .accessibilityElement(children: .contain)
             }
         }
-        .padding(20)
-        .frame(minWidth: 420)
+        .padding(DSSize.importStatusPadding)
+        .frame(minWidth: DSSize.importStatusMinWidth)
         .onChange(of: model.jobs.isEmpty) { _, empty in
             if empty { dismissWindow(id: "import") }
         }

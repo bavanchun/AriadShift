@@ -71,6 +71,12 @@ public enum DSSize {
     /// The thread bar that marks where dragged pages will land.
     public static let insertionBar: CGFloat = 3
 
+    /// The width of the Settings window.
+    public static let settingsWidth: CGFloat = 480
+    /// The import status window's minimum width, and the padding around its rows.
+    public static let importStatusMinWidth: CGFloat = 420
+    public static let importStatusPadding: CGFloat = 20
+
     public static let paletteWidth: CGFloat = 640
     /// The palette results list never grows past this height; it snaps to whole rows below it.
     public static let paletteListMaxHeight: CGFloat = 320
