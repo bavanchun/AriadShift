@@ -1,8 +1,9 @@
 name: Docling pack
 
 # Builds and checks the docling engine pack. What each job proves and how the pack is built:
-# docs/docling.md and docs/packs.md ("Building a pack"). Signing and publishing the pack are
-# release steps that happen elsewhere.
+# docs/docling.md and docs/packs.md ("Building a pack"). On pack-docling-v* tags whose commit
+# is on origin/main, the release job signs the merged manifest and publishes the release under
+# the release environment.
 on:
   workflow_dispatch:
     inputs:
@@ -15,22 +16,48 @@ on:
     branches: [dev, main]
     paths:
       - engines/docling/**
+      - engines/common/licenses/**
       - crates/ariad-core/src/docling/**
       - crates/ariad-host/src/engines/docling.rs
       - crates/ariad-cli/tests/docling_engine.rs
       - crates/ariad-cli/tests/docling_pack.rs
       - uv.lock
+      - pyproject.toml
       - justfile
+      - scripts/install-pandoc.sh
+      - LICENSE
+      - NOTICE
+      - fixtures/pdf/en-map-room.pdf
+      - fixtures/scan/vi-garden-300dpi.png
       - .github/workflows/pack-docling.yml
+      - scripts/docling-pack-inputs.sh
+  # dev builds its own pack whenever a pack input changes, so Cloud E2E can reuse it for PRs
+  # that leave the inputs alone. Keep this list equal to scripts/docling-pack-inputs.sh --paths
+  # (scripts/test-docling-pack-inputs.sh checks it).
   push:
+    branches: [dev]
+    paths:
+      - engines/docling/**
+      - engines/common/licenses/**
+      - uv.lock
+      - pyproject.toml
+      - justfile
+      - scripts/install-pandoc.sh
+      - LICENSE
+      - NOTICE
+      - fixtures/pdf/en-map-room.pdf
+      - fixtures/scan/vi-garden-300dpi.png
+      - .github/workflows/pack-docling.yml
+      - scripts/docling-pack-inputs.sh
     tags: ["pack-docling-v*"]
 
+# Pull request runs replace each other. Every other run has its own group and is never
+# cancelled: another PR's Cloud E2E may be waiting on a dispatched or dev run, and a newer
+# dispatch on the same ref must not cancel it (Cloud E2E already looks up a run by input hash
+# before dispatching, so this does not multiply builds).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: >-
-    ${{ github.event_name == 'pull_request' ||
-        (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/') &&
-         github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/main') }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -56,7 +83,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -66,9 +93,30 @@ jobs:
       - name: Decide which targets are ready to build
         id: scope
         env:
-          ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets }}
+          ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets || (github.ref == 'refs/heads/dev' && 'aarch64-apple-darwin') || '' }}
         run: >-
           uv run --no-project --python 3.14 python engines/docling/pack/ci_plan.py plan
+
+      # Cloud E2E finds a reusable pack by this hash (docs/ci.md, "Cloud E2E pack dependency").
+      # Only trusted dispatch, dev and tag runs publish it; pull request builds are never reused.
+      - name: Record the pack input hash
+        if: github.event_name != 'pull_request'
+        id: inputs
+        run: |
+          hash=$(bash scripts/docling-pack-inputs.sh HEAD)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          mkdir -p pack-inputs
+          printf '%s\n%s\n' "$hash" "$GITHUB_SHA" > pack-inputs/inputs.txt
+          bash scripts/docling-pack-inputs.sh --list HEAD >> pack-inputs/inputs.txt
+
+      - name: Publish the pack input hash
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docling-inputs-${{ steps.inputs.outputs.hash }}
+          path: pack-inputs/inputs.txt
+          retention-days: 14
+          if-no-files-found: error
 
   engine:
     name: Engine tests (${{ matrix.os }})
@@ -88,12 +136,12 @@ jobs:
           persist-credentials: false
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -121,17 +169,17 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0,cargo-nextest@0.9.146
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -189,18 +237,18 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0,sccache@0.19.0
 
@@ -220,7 +268,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/native
-          key: docling-native-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/torch_build.py', 'engines/docling/pack/torch-build.toml', 'engines/docling/pack/vcomp-*.cpp', 'engines/docling/pack/pins.toml', '.github/workflows/torch-docling.yml', 'uv.lock') }}
+          key: docling-native-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/torch_build.py', 'engines/docling/pack/torch-build.toml', 'engines/docling/pack/vcomp-*.cpp', 'engines/docling/pack/pins.toml', 'engines/docling/pyproject.toml', 'uv.lock') }}
 
       - name: Restore native compiler work
         if: startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true'
@@ -415,7 +463,7 @@ jobs:
       PACK_OUT: ${{ github.workspace }}/pack-out
       ASHIFT_BIN: ${{ github.workspace }}/target/debug/ashift
       PACK_CI_PLAN: ${{ needs.scope.outputs.plan }}
-      ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets }}
+      ALLOW_MISSING_TARGETS: ${{ inputs.allow_missing_targets || (github.ref == 'refs/heads/dev' && 'aarch64-apple-darwin') || '' }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -423,12 +471,12 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -458,3 +506,71 @@ jobs:
             ${{ env.PACK_OUT }}/pack-ci-plan.json
           retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
           if-no-files-found: error
+
+  release:
+    name: Sign and publish
+    needs: [engine, conformance, manifest]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/pack-docling-v')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      DIST: ${{ github.workspace }}/pack-dist
+      TAG: ${{ github.ref_name }}
+      PACK_SIGNING_KEY_ID: ${{ vars.PACK_SIGNING_KEY_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require stable branch ancestry
+        run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+
+      - name: Select the trusted public key
+        run: |
+          [[ "$PACK_SIGNING_KEY_ID" =~ ^[0-9A-Fa-f]{16}$ ]]
+          echo "PUBLIC_KEY=crates/ariad-host/data/pack-keys/${PACK_SIGNING_KEY_ID,,}.pub" >> "$GITHUB_ENV"
+
+      - name: Install minisign
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends minisign
+
+      - name: Download the components and the manifest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: docling-pack-*
+          path: ${{ env.DIST }}
+          merge-multiple: true
+
+      - name: Verify component checksums
+        run: |
+          python3 -c 'import json, pathlib, sys; sys.exit(0 if json.loads(pathlib.Path(sys.argv[1]).read_text("utf-8"))["release"] is True else 1)' "$DIST/pack-ci-plan.json"
+          (cd "$DIST" && sha256sum --check SHA256SUMS)
+
+      - name: Sign the manifest
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.PACK_MINISIGN_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.PACK_MINISIGN_KEY_PASSWORD }}
+        run: |
+          PACK_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("engines/docling/pyproject.toml", "rb"))["project"]["version"])')"
+          test -f "$PUBLIC_KEY"
+          bash scripts/pack/sign-pack.sh --name docling --version "$PACK_VERSION" \
+            --manifest "$DIST/pack.toml" --public-key "$PUBLIC_KEY"
+
+      - name: Verify the signed manifest
+        run: minisign -V -p "$PUBLIC_KEY" -m "$DIST/pack.toml" -x "$DIST/pack.toml.minisig"
+
+      - name: Publish the release
+        run: |
+          gh release create "$TAG" --verify-tag --title "$TAG" \
+            --notes "Signed Docling engine pack. Install with: ashift engines install docling" \
+            "$DIST/pack.toml" "$DIST/pack.toml.minisig" "$DIST/SHA256SUMS" "$DIST"/*.tar.zst

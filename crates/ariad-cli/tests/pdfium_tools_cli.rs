@@ -116,14 +116,17 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
     );
 
     // By contrast, pdf.compare with mode=text, pdf.split with detect=content and image.to_pdf run in-process without the pack.
+    // Copy the input PDF into TempDir so `pdf.compare`'s default `<stem>.diff.pdf` lands outside `fixtures/`.
+    let compare_in = temp.path().join("blank-separators.pdf");
+    fs::copy(&pdf_fixture, &compare_in).unwrap();
     let compare_ok = ashift_cmd()
         .env("ASHIFT_DATA_DIR", &empty_data)
         .env_remove("ASHIFT_PACK_PDFIUM")
         .args([
             "tool",
             "pdf.compare",
-            pdf_fixture.to_str().unwrap(),
-            pdf_fixture.to_str().unwrap(),
+            compare_in.to_str().unwrap(),
+            compare_in.to_str().unwrap(),
             "--param",
             "mode=text",
             "--json",
@@ -135,6 +138,13 @@ fn missing_pdfium_pack_fails_every_pdfium_tool_and_split_pixel_with_exit_5_and_i
         "pdf.compare mode=text must succeed without pdfium pack: {}",
         String::from_utf8_lossy(&compare_ok.stderr)
     );
+    assert!(
+        temp.path().join("blank-separators.diff.pdf").is_file(),
+        "pdf.compare without -o must publish <stem>.diff.pdf beside input"
+    );
+    let compare_json: Value =
+        serde_json::from_slice(&compare_ok.stdout).expect("parse pdf.compare --json outcome");
+    assert!(compare_json["inline_json"].is_object());
     let split_content_out = temp.path().join("split-content");
     fs::create_dir_all(&split_content_out).unwrap();
     let split_ok = ashift_cmd()

@@ -232,6 +232,8 @@ enum EnginesAction {
     Remove(PackRemoveArgs),
     /// Re-hash an installed engine pack's files and re-check its signature.
     Verify(PackVerifyArgs),
+    /// Print the licence notices shipped inside installed engine packs.
+    Notices(PackNoticesArgs),
     /// List, install, or remove extra OCR language models.
     Languages(LanguageArgs),
 }
@@ -245,11 +247,25 @@ struct LanguageArgs {
 #[derive(Subcommand)]
 enum LanguageAction {
     /// List available models and verified local cache entries.
-    List,
+    List {
+        /// Output the model list as a JSON array to stdout.
+        #[arg(long)]
+        json: bool,
+    },
     /// Download and verify one model from the pinned catalogue.
-    Install { language: String },
+    Install {
+        language: String,
+        /// Output the resulting model status as JSON to stdout.
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove one cached model.
-    Remove { language: String },
+    Remove {
+        language: String,
+        /// Output the resulting model status as JSON to stdout.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Arguments for installing an engine pack.
@@ -296,6 +312,20 @@ struct PackVerifyArgs {
     #[arg(long, value_name = "VERSION")]
     version: Option<String>,
     /// Output the verification report as JSON to stdout.
+    #[arg(long)]
+    json: bool,
+}
+
+/// Arguments for printing installed pack notices.
+#[derive(Args)]
+struct PackNoticesArgs {
+    /// Pack name; omit it to print the active version of every installed pack.
+    #[arg(value_name = "NAME")]
+    name: Option<String>,
+    /// Print this installed version instead of the active one (needs NAME).
+    #[arg(long, value_name = "VERSION", requires = "name")]
+    version: Option<String>,
+    /// Output the notices as JSON to stdout.
     #[arg(long)]
     json: bool,
 }
@@ -845,6 +875,7 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
         Some(EnginesAction::Install(args)) => return run_pack_install(args),
         Some(EnginesAction::Remove(args)) => return run_pack_remove(args),
         Some(EnginesAction::Verify(args)) => return run_pack_verify(args),
+        Some(EnginesAction::Notices(args)) => return run_pack_notices(args),
         Some(EnginesAction::Languages(args)) => return run_languages(args),
         None => {}
     }
@@ -877,24 +908,49 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
     )
 }
 
+/// Result of an `engines languages` action: a listing or the one model it acted on.
+enum LanguageOutput {
+    Listing(Vec<packs::languages::LanguageStatus>),
+    Model(packs::languages::LanguageStatus),
+}
+
 fn run_languages(args: LanguageArgs) -> ExitCode {
+    let is_json = match &args.action {
+        LanguageAction::List { json }
+        | LanguageAction::Install { json, .. }
+        | LanguageAction::Remove { json, .. } => *json,
+    };
     run_blocking(
         "OCR language operation",
         move |cancel| {
             let context = packs::PackContext::from_env()?;
             match args.action {
-                LanguageAction::List => packs::languages::list(&context, &cancel),
-                LanguageAction::Install { language } => {
-                    packs::languages::install(&context, &language, &cancel)
-                        .map(|status| vec![status])
+                LanguageAction::List { .. } => {
+                    packs::languages::list(&context, &cancel).map(LanguageOutput::Listing)
                 }
-                LanguageAction::Remove { language } => {
-                    packs::languages::remove(&context, &language)?;
-                    Ok(Vec::new())
+                LanguageAction::Install { language, .. } => {
+                    packs::languages::install(&context, &language, &cancel)
+                        .map(LanguageOutput::Model)
+                }
+                LanguageAction::Remove { language, .. } => {
+                    packs::languages::remove_status(&context, &language).map(LanguageOutput::Model)
                 }
             }
         },
-        |statuses| {
+        move |output| {
+            if is_json {
+                return match &output {
+                    LanguageOutput::Listing(statuses) => render::render_json(statuses),
+                    LanguageOutput::Model(status) => render::render_json(status),
+                }
+                .map_err(stdout_error);
+            }
+            let statuses = match output {
+                LanguageOutput::Listing(statuses) => statuses,
+                LanguageOutput::Model(status) if status.installed => vec![status],
+                // Removal has always printed nothing in human mode.
+                LanguageOutput::Model(_) => Vec::new(),
+            };
             for status in statuses {
                 writeln!(
                     io::stdout(),
@@ -1225,6 +1281,7 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
     };
     let is_json = args.json;
     let renders_info_human = args.tool == "pdf.info";
+    let prints_inline_compare_human = args.tool == "pdf.compare" && args.output.is_none();
     let stderr_is_terminal = io::stderr().is_terminal();
     let inputs: Vec<InputRef> = args.inputs.into_iter().map(InputRef::new).collect();
     let output = match args.output {
@@ -1277,6 +1334,22 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
                     render::render_json(inline_json)
                 }
                 .map_err(|err| ToolError::OutputIo(err.to_string()))
+            } else if prints_inline_compare_human && let Some(ref inline_json) = outcome.inline_json
+            {
+                render::render_json(inline_json)
+                    .map_err(|err| ToolError::OutputIo(err.to_string()))?;
+                let mut stderr = io::stderr().lock();
+                for artifact in &outcome.artifacts {
+                    writeln!(
+                        stderr,
+                        "{}",
+                        render::escape_control_chars(&artifact.path.display().to_string())
+                    )
+                    .map_err(|err| ToolError::OutputIo(err.to_string()))?;
+                }
+                stderr
+                    .flush()
+                    .map_err(|err| ToolError::OutputIo(err.to_string()))
             } else {
                 let mut stdout = io::stdout().lock();
                 for artifact in &outcome.artifacts {
@@ -1712,6 +1785,39 @@ fn run_pack_verify(args: PackVerifyArgs) -> ExitCode {
                     name: report.name,
                     version: report.version,
                 })
+            }
+        },
+    )
+}
+
+fn run_pack_notices(args: PackNoticesArgs) -> ExitCode {
+    let is_json = args.json;
+    run_blocking(
+        "pack notices",
+        move |_cancel| {
+            let context = packs::PackContext::from_env()?;
+            match args.name {
+                Some(name) => {
+                    let found = packs::notices(&context, &name, args.version.as_deref())?;
+                    Ok(vec![packs::PackNoticesEntry {
+                        name: found.name.clone(),
+                        version: found.version.clone(),
+                        result: Ok(found),
+                    }])
+                }
+                None => packs::active_notices(&context),
+            }
+        },
+        move |entries| {
+            if is_json {
+                render::render_pack_notices_json(&entries).map_err(stdout_error)?;
+            } else {
+                render::render_pack_notices_human(&entries).map_err(stdout_error)?;
+            }
+            // Every pack is printed first; the first failure then sets the exit code.
+            match entries.into_iter().find_map(|entry| entry.result.err()) {
+                Some(error) => Err(error),
+                None => Ok(()),
             }
         },
     )

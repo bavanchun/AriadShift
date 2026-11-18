@@ -230,7 +230,7 @@ describe("<PdfViewer />", () => {
       <PdfViewer source={source("one")} loadBackend={fake.load} />,
     );
     await screen.findByTestId("engine");
-    expect(fake.log.mounts).toBe(1);
+    await waitFor(() => expect(fake.log.mounts).toBe(1));
     rerender(<PdfViewer source={source("two")} loadBackend={fake.load} />);
     await waitFor(() =>
       expect(screen.getByTestId("engine").getAttribute("data-source")).toBe("two"),

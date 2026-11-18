@@ -50,7 +50,7 @@ pub const PER_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 pub fn preflight() -> Result<(), ToolError> {
     #[cfg(not(feature = "typst"))]
     {
-        return Err(ToolError::from_missing_engine("typst"));
+        Err(ToolError::from_missing_engine("typst"))
     }
     #[cfg(feature = "typst")]
     Ok(())
@@ -460,7 +460,7 @@ pub(crate) fn execute_with_client_deadline(
     params_value: &serde_json::Value,
     workspace: &Workspace,
     limits: &Limits,
-    _scrubber: &SecretScrubber,
+    scrubber: &SecretScrubber,
     cancel: &CancellationToken,
     _on_event: &mut dyn FnMut(ToolEvent),
     clock: HostClock,
@@ -772,8 +772,8 @@ pub(crate) fn execute_with_client_deadline(
 
     #[cfg(not(feature = "typst"))]
     {
-        let _ = (&document, &options, timestamp);
-        return Err(ToolError::from_missing_engine("typst"));
+        let _ = (&document, &options, timestamp, scrubber);
+        Err(ToolError::from_missing_engine("typst"))
     }
 
     #[cfg(feature = "typst")]
@@ -785,15 +785,19 @@ pub(crate) fn execute_with_client_deadline(
             warnings.push(safe_warning(w));
         }
 
-        let output_pdf_path = workspace.output_dir().join("document.pdf");
-        fs::write(&output_pdf_path, &rendered.bytes)
-            .map_err(|e| ToolError::OutputIo(e.to_string()))?;
+        let output_pdf_path = super::run::write_staged_artifact(
+            workspace,
+            "document.pdf",
+            &rendered.bytes,
+            scrubber,
+        )?;
 
         Ok(RawToolExecution {
             artifacts: vec![(output_pdf_path, "pdf".to_string())],
             warnings,
             metrics: std::collections::BTreeMap::new(),
             inline_json: None,
+            companion_report: false,
         })
     }
 }
@@ -1524,5 +1528,52 @@ mod tests {
             matches!(result, Err(ToolError::LimitExceeded)),
             "expected ToolError::LimitExceeded when total job deadline is exceeded across requests, got: {result:?}"
         );
+    }
+
+    #[cfg(all(unix, feature = "typst"))]
+    #[test]
+    fn web_to_pdf_does_not_follow_planted_symlink() {
+        let resolver = Arc::new(MockResolver::new());
+        let public_ip = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        resolver.insert("example.com", vec![public_ip]);
+        let transport = Arc::new(MockTransport::new(move |_, _| {
+            Ok(HttpResponse {
+                status: 200,
+                headers: vec![("content-type".into(), "text/html; charset=utf-8".into())],
+                body: b"<html><body><p>Staged web body</p></body></html>".to_vec(),
+            })
+        }));
+        let client = Client::builder()
+            .resolver(resolver)
+            .transport(transport)
+            .https_only(true)
+            .build()
+            .unwrap();
+
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.pdf");
+        fs::write(&victim, b"untouched-web-victim").unwrap();
+        let workspace = Workspace::new().unwrap();
+        let planted = workspace.output_dir().join("document.pdf");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+        let raw = execute_with_client(
+            &client,
+            ariad_core::tools::find("web.to_pdf").unwrap(),
+            &serde_json::json!({ "url": "https://example.com/index.html" }),
+            &workspace,
+            &Limits::local(),
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+            &mut |_| {},
+            dummy_clock(),
+        )
+        .expect("rendering replaces the planted link");
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-web-victim");
+        assert_eq!(raw.artifacts[0].0, planted);
+        let meta = fs::symlink_metadata(&planted).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        assert!(fs::read(&planted).unwrap().starts_with(b"%PDF-"));
     }
 }

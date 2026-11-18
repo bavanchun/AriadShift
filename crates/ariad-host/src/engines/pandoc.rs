@@ -452,10 +452,18 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 Err(pandoc_bin::PandocBinaryError::UnsupportedVersion { found }) => {
                     (ToolAvailability::WrongVersion, found)
                 }
-                Err(pandoc_bin::PandocBinaryError::Missing)
-                | Err(pandoc_bin::PandocBinaryError::TimedOut)
-                | Err(pandoc_bin::PandocBinaryError::Interrupted) => {
-                    (ToolAvailability::Missing, None)
+                Err(pandoc_bin::PandocBinaryError::Missing) => (ToolAvailability::Missing, None),
+                Err(pandoc_bin::PandocBinaryError::TimedOut) => {
+                    return Err(EngineFailure::new(
+                        ErrorCode::EngineFailure,
+                        "Pandoc timed out while checking version",
+                    ));
+                }
+                Err(pandoc_bin::PandocBinaryError::Interrupted) => {
+                    return Err(EngineFailure::new(
+                        ErrorCode::EngineFailure,
+                        "Pandoc locate was interrupted",
+                    ));
                 }
             };
             emit(
@@ -570,7 +578,10 @@ struct PandocWriterConfig<'a> {
     target_format: &'a str,
 }
 
-fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(), EngineFailure> {
+fn pandoc_writer_command(
+    config: &PandocWriterConfig<'_>,
+    source_date_epoch: Option<OsString>,
+) -> Command {
     let mut command = Command::new(config.binary_path);
     if let Some(reference) = config.reference_doc {
         command.arg("--reference-doc").arg(reference);
@@ -597,7 +608,7 @@ fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(),
         .env("TMPDIR", config.workspace.join("tmp"))
         .env("TMP", config.workspace.join("tmp"))
         .env("TEMP", config.workspace.join("tmp"));
-    if let Some(epoch) = env::var_os("SOURCE_DATE_EPOCH") {
+    if let Some(epoch) = source_date_epoch {
         command.env("SOURCE_DATE_EPOCH", epoch);
     }
     if let Some(path) = env::var_os("PATH") {
@@ -607,6 +618,11 @@ fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(),
     if let Some(system_root) = env::var_os("SYSTEMROOT") {
         command.env("SYSTEMROOT", system_root);
     }
+    command
+}
+
+fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(), EngineFailure> {
+    let mut command = pandoc_writer_command(config, env::var_os("SOURCE_DATE_EPOCH"));
 
     let timeout = config
         .limits
@@ -895,7 +911,38 @@ mod tests {
     use ariad_core::{limits::Limits, protocol::ErrorCode, protocol::Event};
     use tempfile::tempdir;
 
-    use super::{EngineFailure, pandoc_log_warnings, rts_memory_cap_mb};
+    use super::{
+        EngineFailure, PandocWriterConfig, pandoc_log_warnings, pandoc_writer_command,
+        rts_memory_cap_mb,
+    };
+
+    #[test]
+    fn forwards_source_date_epoch_to_the_pandoc_subprocess() {
+        let limits = Limits::default();
+        let workspace = std::path::Path::new("/workspace");
+        let config = PandocWriterConfig {
+            reference_doc: None,
+            binary_path: std::path::Path::new("pandoc"),
+            limits: &limits,
+            work_dir: "/workspace/tmp",
+            workspace,
+            log_path: std::path::Path::new("/workspace/tmp/log.json"),
+            output_path: std::path::Path::new("/workspace/out/document.docx"),
+            target_format: "docx",
+        };
+        let epoch_of = |command: &std::process::Command| {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == "SOURCE_DATE_EPOCH")
+                .map(|(_, value)| value.map(std::ffi::OsStr::to_os_string))
+        };
+
+        let forwarded = pandoc_writer_command(&config, Some("1700000000".into()));
+        assert_eq!(epoch_of(&forwarded), Some(Some("1700000000".into())));
+
+        let absent = pandoc_writer_command(&config, None);
+        assert_eq!(epoch_of(&absent), None);
+    }
 
     #[test]
     fn maps_pandoc_warning_log_entries_to_safe_warning_events() {
@@ -1508,5 +1555,69 @@ mod tests {
 
         // Other MetaValue variants are not considered empty or whitespace
         assert!(!is_meta_empty_or_whitespace(&MetaValue::MetaBool(true)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn describe_reports_engine_failure_when_pandoc_version_times_out() {
+        use std::io::Cursor;
+        use std::os::unix::fs::PermissionsExt;
+
+        use ariad_core::protocol::Request;
+
+        const CHILD: &str = "ARIAD_TEST_PANDOC_DESCRIBE_TIMEOUT_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let request = Request::Describe {
+                protocol: ariad_core::protocol::PROTOCOL.to_owned(),
+                job: "job-describe-timeout".to_owned(),
+            };
+            let request_bytes = serde_json::to_vec(&request).unwrap();
+            let mut output_bytes = Vec::new();
+            let exit_code = super::serve(Cursor::new(request_bytes), &mut output_bytes);
+            assert_ne!(exit_code, std::process::ExitCode::SUCCESS);
+
+            let output_str = String::from_utf8(output_bytes).unwrap();
+            let events: Vec<Event> = output_str
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("valid engine event"))
+                .collect();
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, Event::Capabilities { .. })),
+                "timed-out describe must not emit Capabilities (ToolAvailability::Missing): {events:?}"
+            );
+            let error = events
+                .iter()
+                .find_map(|event| match event {
+                    Event::Result {
+                        ok: false,
+                        error: Some(err),
+                        ..
+                    } => Some(err),
+                    _ => None,
+                })
+                .expect("must emit failed Event::Result with EngineError");
+            assert_eq!(error.code, ErrorCode::EngineFailure);
+            assert_eq!(error.message, "Pandoc timed out while checking version");
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let stub = dir.path().join("pandoc-hang");
+        std::fs::write(&stub, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engines::pandoc::tests::describe_reports_engine_failure_when_pandoc_version_times_out",
+            ])
+            .env(CHILD, "1")
+            .env("ASHIFT_PANDOC", &stub)
+            .env(crate::pandoc_bin::TEST_TIMEOUT_ENV, "80")
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 }

@@ -3,7 +3,8 @@
 //! The reader is I/O-free and WASM-safe. It parses the file with `lopdf`, interprets page
 //! content streams itself, and rebuilds reading order, paragraphs, headings, lists and running
 //! headers and footers from glyph positions. Pages without a text layer produce an
-//! `ocr_required` warning.
+//! `ocr_required` warning. With [`ReadOptions::detect_tables`], tables drawn with ruling lines,
+//! and tables whose columns are only separated by whitespace, become table blocks.
 //!
 //! Work is bounded: the page count by [`Limits::max_pages`], decoded stream bytes by
 //! [`Limits::max_decompressed_bytes`] (every use of a shared content stream is charged again),
@@ -18,6 +19,7 @@
 //! decompression limit, not by the amplification budget.
 
 mod assemble;
+mod cells;
 mod cmap;
 mod encoding;
 mod font;
@@ -27,8 +29,11 @@ mod layout;
 mod lexer;
 mod lists;
 mod objects;
+mod rules;
 mod symbolic;
+mod tables;
 mod text_decode;
+mod unruled;
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -43,7 +48,7 @@ pub use text_decode::{PdfDecodedGlyph, PdfTextDecoder};
 use self::{
     assemble::{PageBlocks, assemble},
     interpreter::{DocState, Matrix, interpret_page},
-    layout::layout_page,
+    layout::{TableScan, layout_page},
     objects::{Budget, get, get_dict, number, rectangle, resolve},
 };
 use crate::{
@@ -130,12 +135,40 @@ pub enum ReadError {
     InvalidLimits(#[from] LimitsError),
 }
 
+/// Choices that change what [`read_with_options`] produces. The default reads exactly like
+/// [`read`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ReadOptions {
+    /// Detect tables and emit them as table blocks instead of paragraphs: tables drawn with
+    /// ruling lines, and tables aligned with whitespace alone. Off by default.
+    pub detect_tables: bool,
+}
+
 /// Reads a PDF into document IR.
 ///
 /// The returned document carries `meta.source_format = pdf`, metadata from the information
 /// dictionary, `furniture` for running headers and footers, a [`crate::ir::LayoutIndex`] with
 /// page geometry and block boxes, and [`PdfStats`] under [`PROVENANCE_KEY`].
 pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
+    read_with_options(bytes, limits, &ReadOptions::default())
+}
+
+/// Reads a PDF into document IR like [`read`], with `options` applied.
+///
+/// With [`ReadOptions::detect_tables`], tables whose cells are bounded by ruling lines become
+/// [`crate::ir::Block::Table`] blocks, and so do tables whose columns are only separated by
+/// whitespace when at least three rows share two or more aligned column gaps and the result is
+/// unambiguous: lists, forms, code, tables of contents and other text that only happens to be
+/// aligned in columns stay text, and so does a table whose columns hold words only, with no
+/// column of numbers. A refused page frame, or a rule grid that spans the page, keeps whitespace
+/// detection off the whole page, so a table without rules inside such a frame stays text. Pages
+/// where a limit stopped detection and a table that would otherwise have been kept was lost add an
+/// `unsupported_node` warning.
+pub fn read_with_options(
+    bytes: &[u8],
+    limits: &Limits,
+    options: &ReadOptions,
+) -> Result<ReadOutput, ReadError> {
     let (doc, budget, page_ids, _repaired_xref) =
         load_bounded_inner(bytes, limits, LoadMode { repair_xref: false })?;
 
@@ -151,6 +184,7 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     let mut truncated = 0_u32;
     let mut unknown_color = false;
     let mut block_total = 0_usize;
+    let mut table_scan = TableScan::default();
     for (index, &page_id) in page_ids.iter().enumerate() {
         let page_no = u32::try_from(index + 1).unwrap_or(u32::MAX);
         let page = doc.get_dictionary(page_id).ok();
@@ -181,7 +215,13 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
         unmapped += content.unmapped;
         truncated += u32::from(content.truncated);
         unknown_color |= content.unknown_color;
-        let blocks = layout_page(&content, &state.styles, width, height);
+        let blocks = layout_page(
+            &content,
+            &state.styles,
+            width,
+            height,
+            options.detect_tables.then_some(&mut table_scan),
+        );
         block_total += blocks.len();
         if block_total > limits.max_blocks as usize {
             return Err(ReadError::TooManyBlocks {
@@ -253,10 +293,26 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
             ),
         ));
     }
+    if table_scan.capped_pages > 0 {
+        warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            table_limit_message(table_scan.capped_pages),
+        ));
+    }
     Ok(ReadOutput {
         document: document.finalize_import(),
         warnings,
     })
+}
+
+fn table_limit_message(pages: u32) -> String {
+    if pages == 1 {
+        "1 page exceeds the table detection limits; some of its tables were not detected".to_owned()
+    } else {
+        format!(
+            "{pages} pages exceed the table detection limits; some of their tables were not detected"
+        )
+    }
 }
 
 /// A [`lopdf::Document`] loaded within [`Limits`], together with cross-reference repair status.
@@ -538,8 +594,24 @@ fn split_list(value: &str, separators: &[char]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_text_string, page_geometry, split_list};
+    use super::{
+        LoadMode, decode_text_string, inherited, interpret_page, load_bounded_inner, page_geometry,
+        split_list, table_limit_message,
+    };
+    use crate::limits::Limits;
     use lopdf::{Document, Object, dictionary};
+
+    #[test]
+    fn the_table_limit_message_agrees_with_the_page_count() {
+        assert_eq!(
+            table_limit_message(1),
+            "1 page exceeds the table detection limits; some of its tables were not detected"
+        );
+        assert_eq!(
+            table_limit_message(3),
+            "3 pages exceed the table detection limits; some of their tables were not detected"
+        );
+    }
 
     #[test]
     fn rotation_maps_the_crop_box_to_a_top_left_display_space() {
@@ -589,5 +661,50 @@ mod tests {
     #[test]
     fn splits_metadata_lists() {
         assert_eq!(split_list(" a, b ;c,, ", &[',', ';']), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn ruled_table_fixture_records_rules_on_its_pages() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/pdf/arxiv-tableformer-2203-01017-v1.pdf"
+        );
+        let bytes = std::fs::read(path).unwrap();
+        let (doc, budget, page_ids, _) =
+            load_bounded_inner(&bytes, &Limits::default(), LoadMode { repair_xref: false })
+                .unwrap();
+        let mut state = super::DocState::new(&doc, budget);
+        let (mut rules, mut truncated) = (0, false);
+        let mut counts = Vec::new();
+        let mut table_page_rules = Vec::new();
+        for &page_id in &page_ids {
+            let page = doc.get_dictionary(page_id).ok();
+            let (display, _, _) = page_geometry(&doc, page);
+            let resources = page.and_then(|page| {
+                inherited(&doc, page, b"Resources").and_then(|object| object.as_dict().ok())
+            });
+            let contents = doc.get_page_contents(page_id);
+            let content = interpret_page(&mut state, &contents, resources, display).unwrap();
+            assert!(content.rules.iter().all(|r| r.x0 <= r.x1 && r.y0 <= r.y1));
+            counts.push(content.rules.len());
+            if counts.len() == 8 {
+                table_page_rules = content.rules.clone();
+            }
+            rules += content.rules.len();
+            truncated |= content.rules_truncated;
+        }
+        assert_eq!(counts, [128, 0, 17, 8, 162, 0, 11, 614, 0, 0]);
+        assert_eq!(rules, counts.iter().sum::<usize>());
+        assert!(!truncated);
+        // A thin filled rectangle in the first table row of page 8.
+        let expected = [273.03, 284.20, 298.33, 284.46];
+        assert!(table_page_rules.iter().any(|r| {
+            r.shape == crate::reader::pdf::rules::RuleShape::Rect
+                && r.paint == crate::reader::pdf::rules::RulePaint::Fill
+                && [r.x0, r.y0, r.x1, r.y1]
+                    .iter()
+                    .zip(expected)
+                    .all(|(got, want)| (got - want).abs() < 0.01)
+        }));
     }
 }

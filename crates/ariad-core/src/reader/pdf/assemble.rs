@@ -10,8 +10,8 @@ use super::{
 };
 use crate::{
     ir::{
-        Block, BlockPosition, BoundingBox, CharacterStyle, Colour, FontRef, Inline, ListItem,
-        ParagraphStyle, StyleSheet,
+        Alignment, Block, BlockPosition, BoundingBox, CharacterStyle, Colour, ColumnSpec, FontRef,
+        Inline, ListItem, ParagraphStyle, StyleSheet, TableCell,
     },
     limits::Limits,
     reader::common::nfc,
@@ -209,6 +209,67 @@ impl Emitter<'_> {
         Ok(())
     }
 
+    fn table(
+        &mut self,
+        table: &layout::TableLayout,
+        page_no: u32,
+        bbox: [f64; 4],
+    ) -> Result<(), ReadError> {
+        self.flush()?;
+        let mut head = Vec::new();
+        let mut body = Vec::new();
+        for (index, row) in table.rows.iter().enumerate() {
+            let is_head = index < table.head_rows;
+            let mut cells = Vec::with_capacity(row.len());
+            for cell in row {
+                let mut blocks = Vec::new();
+                for block in &cell.blocks {
+                    let spans = join_lines(&block.lines, self.vocabulary);
+                    let content = inlines(&spans, false, self.limits, 1)?;
+                    if !content.is_empty() {
+                        blocks.push(Block::Paragraph {
+                            id: Default::default(),
+                            style: None,
+                            direct: block.direct.clone(),
+                            content,
+                        });
+                    }
+                }
+                cells.push(TableCell {
+                    rowspan: u32::try_from(cell.rowspan).unwrap_or(u32::MAX),
+                    colspan: u32::try_from(cell.colspan).unwrap_or(u32::MAX),
+                    header: is_head.then_some(true),
+                    blocks,
+                });
+            }
+            if is_head {
+                head.push(cells);
+            } else {
+                body.push(cells);
+            }
+        }
+        self.push_body(
+            Block::Table {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                caption: None,
+                columns: vec![
+                    ColumnSpec {
+                        align: Alignment::Default
+                    };
+                    table.columns
+                ],
+                head,
+                body,
+                footnotes: Vec::new(),
+            },
+            page_no,
+            bbox,
+        );
+        Ok(())
+    }
+
     fn item(
         &mut self,
         spans: Vec<Span>,
@@ -300,7 +361,7 @@ pub(super) fn assemble(pages: &[PageBlocks], limits: &Limits) -> Result<Assemble
     let mut heading_sizes: Vec<f64> = Vec::new();
     for (page_index, page) in pages.iter().enumerate() {
         for (block_index, block) in page.blocks.iter().enumerate() {
-            if furniture.contains(&(page_index, block_index)) {
+            if furniture.contains(&(page_index, block_index)) || block.table.is_some() {
                 continue;
             }
             let kind = classify(block, body_size);
@@ -323,6 +384,10 @@ pub(super) fn assemble(pages: &[PageBlocks], limits: &Limits) -> Result<Assemble
     };
     for (page_index, page) in pages.iter().enumerate() {
         for (block_index, block) in page.blocks.iter().enumerate() {
+            if let Some(table) = &block.table {
+                emitter.table(table, page.page_no, block.bbox)?;
+                continue;
+            }
             let spans = join_lines(&block.lines, &vocabulary);
             let Some(kind) = kinds.get(&(page_index, block_index)) else {
                 let content = inlines(&spans, false, limits, 0)?;
@@ -417,7 +482,11 @@ fn find_furniture(pages: &[PageBlocks]) -> HashSet<(usize, usize)> {
     let text_pages = pages.iter().filter(|page| !page.blocks.is_empty()).count();
     for (page_index, page) in pages.iter().enumerate() {
         for (block_index, block) in page.blocks.iter().enumerate() {
-            if block.lines.len() > 2 || block.chars > 200 || page.height <= 0.0 {
+            if block.table.is_some()
+                || block.lines.len() > 2
+                || block.chars > 200
+                || page.height <= 0.0
+            {
                 continue;
             }
             let zone = if block.bbox[3] <= FURNITURE_ZONE * page.height {
@@ -926,6 +995,7 @@ mod tests {
             chars: lines.iter().map(|line| line.chars().count()).sum(),
             upright: true,
             direct: Default::default(),
+            table: None,
         }
     }
 
@@ -1098,6 +1168,7 @@ mod tests {
                 chars: 10,
                 upright: true,
                 direct: Default::default(),
+                table: None,
             }],
         }];
         let out = assemble(&pages, &Limits::local()).unwrap();

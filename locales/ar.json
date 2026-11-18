@@ -113,6 +113,107 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "استيراد…",
+      "print": "طباعة…",
+      "tools": "الأدوات",
+      "zoom": "{action, select, in {تكبير} out {تصغير} actual {الحجم الفعلي} other {تقريب}}",
+      "check_updates": "التحقق من وجود تحديثات…",
+      "show_welcome": "إظهار الترحيب",
+      "fit_width": "ملاءمة العرض",
+      "display_mode": "{mode, select, single {صفحة واحدة} continuous {تمرير متواصل} twoUp {صفحتان} other {عرض الصفحة}}",
+      "go_to_page": "انتقال إلى صفحة…",
+      "find": "بحث…",
+      "find_next": "البحث عن التالي",
+      "find_previous": "البحث عن السابق"
+    },
+    "tools": {
+      "group": "{group, select, organize {تنظيم} convert {تحويل} optimize {تحسين} security {الأمان} overlay {تراكب} ocr {OCR والمسوحات} annotate {إضافة تعليقات} forms {النماذج} sign {توقيع} redact {حجب} compare {مقارنة وتحقق} edit {تحرير} ai {الذكاء الاصطناعي} automation {الأتمتة} other {أدوات أخرى}}",
+      "disabled": "{reason, select, later {متاح في إصدار لاحق} format {يعمل مع صيغ أخرى. استخدم ملف > استيراد.} paid {يتطلب خطة مدفوعة} info {تعذّرت قراءة تفاصيل الأداة، لذا تبقى الأدوات متوقفة.} other {غير متاح}}",
+      "loading": "جارٍ تحميل الأدوات…"
+    },
+    "sidebar": {
+      "title": "الصفحات",
+      "placeholder": "ستظهر الصور المصغّرة للصفحات هنا.",
+      "page": "الصفحة {number} من {total}"
+    },
+    "viewer": {
+      "placeholder": "سيظهر عارض الصفحات هنا.",
+      "title": "عارض الصفحات",
+      "loading": "جارٍ فتح المستند…"
+    },
+    "toolbar": {
+      "inspector": "معلومات المستند",
+      "page_grid": "شبكة الصفحات",
+      "previous_page": "الصفحة السابقة",
+      "next_page": "الصفحة التالية",
+      "page_field": "رقم الصفحة"
+    },
+    "inspector": {
+      "title": "المستند",
+      "field": "{field, select, name {الاسم} format {الصيغة} size {الحجم} pages {الصفحات} words {الكلمات} title {العنوان} author {المؤلف} routes {يمكن تحويله إلى} other {الحقل}}",
+      "loading": "جارٍ قراءة المستند…",
+      "warnings": "{count, plural, zero {لا تحذيرات} one {تحذير واحد} two {تحذيران} few {# تحذيرات} many {# تحذيرًا} other {# تحذير}}"
+    },
+    "run": {
+      "run": "تشغيل",
+      "cancel": "إلغاء",
+      "close": "تم",
+      "working": "جارٍ التشغيل…",
+      "parameters": "الإعدادات",
+      "no_parameters": "لا تحتوي هذه الأداة على إعدادات.",
+      "extra_documents": "مستندات إضافية",
+      "add_documents": "إضافة…",
+      "remove": "إزالة",
+      "need_documents": "{count, plural, zero {لا حاجة إلى إضافة مستندات لتشغيل هذه الأداة.} one {أضف مستندًا واحدًا آخر لتشغيل هذه الأداة.} two {أضف مستندين آخرين لتشغيل هذه الأداة.} few {أضف # مستندات أخرى لتشغيل هذه الأداة.} many {أضف # مستندًا آخر لتشغيل هذه الأداة.} other {أضف # مستند آخر لتشغيل هذه الأداة.}}",
+      "failed": "لم تكتمل الأداة.",
+      "reveal": "إظهار في Finder",
+      "field_error": "{kind, select, missing {الحقل {field} مطلوب.} other {الحقل {field} غير صالح.}}",
+      "result": "النتيجة",
+      "presets": "إعدادات مسبقة"
+    },
+    "settings": {
+      "output_folder": "حفظ النتائج في",
+      "output_same": "بجوار المستند الأصلي",
+      "output_choose": "اختيار مجلد…",
+      "open_result": "فتح النتيجة عند انتهاء الأداة",
+      "updates": "التحديثات",
+      "updates_auto": "التحقق من وجود تحديثات تلقائيًا",
+      "updates_disabled": "التحديثات غير مُعدّة في هذا الإصدار."
+    },
+    "onboarding": {
+      "title": "مرحبًا بك في AriadShift",
+      "about": "افتح مستندات PDF وافحصها وعالجها بالمحرك نفسه الذي يعمل به سطر أوامر AriadShift. حوّل Markdown وHTML وWord وEPUB والصور إلى PDF عبر ملف > استيراد.",
+      "packs": "تُخزَّن حزم المحرك الاختيارية (OCR والتوقيع والتحقق) في {path}.",
+      "privacy": "يعمل AriadShift على جهاز Mac لديك. ولا يُجري أي اتصالات شبكية ما لم تُفعّل ميزة تحتاج إليها.",
+      "start": "ابدأ"
+    },
+    "import": {
+      "message": "اختر مستندًا لتحويله إلى PDF",
+      "running": "جارٍ استيراد {name}…",
+      "failed": "تعذّر استيراد {name}"
+    },
+    "document": {
+      "invalid": "هذا الملف ليس PDF صالحًا."
+    },
+    "find": {
+      "prompt": "بحث في المستند",
+      "count": "{current} من {total}",
+      "none": "لا توجد نتائج",
+      "searching": "جارٍ البحث…",
+      "done": "تم"
+    },
+    "grid": {
+      "hint": "اسحب الصفحات لإعادة ترتيبها. يُحفظ كل تغيير في ملف جديد بجوار الأصل.",
+      "unavailable": "تعديل الصفحات غير متاح إلى أن يصبح المحرّك جاهزًا.",
+      "rotate": "تدوير الصفحات المحددة",
+      "delete": "حذف الصفحات المحددة",
+      "move_earlier": "نقل قبل الصفحة السابقة",
+      "move_later": "نقل بعد الصفحة التالية",
+      "drop_end": "أفلِت هنا للنقل إلى النهاية"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: تحويل المستندات بخصوصية داخل متصفحك",

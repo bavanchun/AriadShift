@@ -42,9 +42,10 @@ use ariad_core::{
 use ariad_pdf::{
     ToolCtx,
     redact::{
-        Matrix, Region, has_signatures, plan, rewrite_document_with_evidence, verify_core_text,
-        verify_image_pixels, verify_object_graph, verify_pdfium_text, verify_raw_literals,
-        verify_raw_literals_for_plan, verify_rendered_pixels_with_overlay, verify_rewrite_history,
+        Matrix, ProbeVerdict, Region, has_signatures, plan, probe_pages, rewrite_document_probe,
+        rewrite_document_with_evidence, verify_core_text, verify_image_pixels, verify_object_graph,
+        verify_pdfium_text, verify_probe_render, verify_raw_literals, verify_raw_literals_for_plan,
+        verify_rendered_pixels_with_overlay, verify_rewrite_history,
     },
 };
 use serde_json::{Value, json};
@@ -202,34 +203,69 @@ impl RedactJob<'_> {
         dpi: u32,
         events: &mut dyn FnMut(ToolEvent),
     ) -> Result<image::RgbaImage, ToolError> {
+        let mut images = self.render_pages(pdf_path, &[page], dpi, events)?;
+        images
+            .pop()
+            .ok_or_else(|| ToolError::EngineFailure("PDFium did not return rendered page".into()))
+    }
+
+    /// Renders `pages` of one PDF in a single engine call, returned in the order requested.
+    ///
+    /// The engine validates the whole document on every call, so rendering a batch costs one
+    /// validation instead of one per page.
+    fn render_pages(
+        &mut self,
+        pdf_path: &Path,
+        pages: &[u32],
+        dpi: u32,
+        events: &mut dyn FnMut(ToolEvent),
+    ) -> Result<Vec<image::RgbaImage>, ToolError> {
         let spec = internal_spec("scan.render")?;
+        let list = pages
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
         let output = self.invoke(
             &spec,
             &[(pdf_path.to_owned(), "pdf".into())],
-            json!({"pages": page.to_string(), "dpi": dpi, "clean": false, "deskew": false}),
+            json!({"pages": list, "dpi": dpi, "clean": false, "deskew": false}),
             events,
         )?;
 
-        let mut image_bytes = None;
+        let mut by_page = std::collections::BTreeMap::new();
         for (artifact_path, format) in output.artifacts {
-            if format == "png" && image_bytes.is_none() {
+            let number = artifact_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| {
+                    name.strip_prefix('p')?
+                        .strip_suffix(".png")?
+                        .parse::<u32>()
+                        .ok()
+                });
+            if let (true, Some(number)) = (format == "png", number) {
                 let bytes = self.read_artifact(
                     &artifact_path,
                     self.limits.max_decompressed_bytes.min(128 * 1024 * 1024),
                 )?;
-                let _ = fs::remove_file(&artifact_path);
-                image_bytes = Some(bytes);
-            } else {
-                let _ = fs::remove_file(&artifact_path);
+                by_page.insert(number, bytes);
             }
+            let _ = fs::remove_file(&artifact_path);
         }
-
-        let bytes = image_bytes.ok_or_else(|| {
-            ToolError::EngineFailure("PDFium did not return rendered page".into())
-        })?;
-        let img = image::load_from_memory(&bytes)
-            .map_err(|_| ToolError::EngineFailure("Failed to decode rendered page image".into()))?;
-        Ok(img.to_rgba8())
+        pages
+            .iter()
+            .map(|page| {
+                let bytes = by_page.remove(page).ok_or_else(|| {
+                    ToolError::EngineFailure("PDFium did not return rendered page".into())
+                })?;
+                image::load_from_memory(&bytes)
+                    .map(|img| img.to_rgba8())
+                    .map_err(|_| {
+                        ToolError::EngineFailure("Failed to decode rendered page image".into())
+                    })
+            })
+            .collect()
     }
 }
 
@@ -351,13 +387,23 @@ pub fn verify_rect_overlay_text_gates(
     Ok((pdfium_text, core_text))
 }
 
+/// Test-only launcher for the private PDFium geometry evidence of one PDF.
+///
+/// Compiled only with the `test-probe` feature and hidden from the documentation. The input is
+/// read through the same bounded reader as `pdf.redact`, so `limits.max_input_bytes` applies.
+#[cfg(feature = "test-probe")]
+#[doc(hidden)]
 pub fn inspect_geometry_for_test(
     pdf_path: &Path,
     limits: &Limits,
 ) -> Result<RedactGeometry, ToolError> {
+    let bytes = read_bounded_file(pdf_path, limits.max_input_bytes).map_err(|e| match e {
+        crate::convert::ConvertError::LimitExceeded => ToolError::LimitExceeded,
+        other => ToolError::InputIo(other.to_string()),
+    })?;
     let ws = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
     let staged_path = ws.input_dir().join("input.pdf");
-    fs::copy(pdf_path, &staged_path).map_err(|e| ToolError::InputIo(e.to_string()))?;
+    fs::write(&staged_path, &bytes).map_err(|e| ToolError::InputIo(e.to_string()))?;
     let scrubber = SecretScrubber::default();
     let cancel = CancellationToken::new();
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -373,6 +419,66 @@ pub fn inspect_geometry_for_test(
         warnings: Vec::new(),
     };
     job.inspect_geometry(&staged_path, &mut |_| {})
+}
+
+/// Stage name emitted when the clean-candidate comparison runs. Host tests use it to prove the
+/// comparison stays wired into `execute_redact`.
+const CLEAN_CANDIDATE_STAGE: &str = "redact:clean-candidate";
+
+/// Whether a request needs the clean-candidate comparison: a rectangle target with an overlay.
+///
+/// An overlay may spell exactly the text it covers, so the text gates alone cannot tell a
+/// removed glyph from a repainted one. The same plan is rewritten without the overlay and must
+/// pass the text gates on its own.
+fn needs_clean_candidate(params: &RedactParams) -> bool {
+    params.overlay_text.is_some()
+        && params
+            .targets
+            .iter()
+            .any(|t| matches!(t, RedactionTarget::Rectangle { .. }))
+}
+
+type CleanCandidate = (Option<Vec<u8>>, Option<RedactGeometry>);
+
+fn build_clean_candidate(
+    job: &mut RedactJob<'_>,
+    input_bytes: &[u8],
+    params: &RedactParams,
+    geometry: &RedactGeometry,
+    events: &mut dyn FnMut(ToolEvent),
+) -> Result<CleanCandidate, ToolError> {
+    if !needs_clean_candidate(params) {
+        return Ok((None, None));
+    }
+    events(ToolEvent::Progress {
+        stage: CLEAN_CANDIDATE_STAGE.into(),
+        done: None,
+        total: None,
+    });
+    let mut unoverlayed_params = params.clone();
+    unoverlayed_params.overlay_text = None;
+    let unoverlayed_plan = ariad_pdf::redact::plan(
+        input_bytes,
+        &unoverlayed_params,
+        geometry,
+        job.limits,
+        &job.ctx,
+    )
+    .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+    let (unoverlayed_bytes, _) = rewrite_document_with_evidence(
+        input_bytes,
+        &unoverlayed_params,
+        &unoverlayed_plan,
+        geometry,
+        job.limits,
+        &job.ctx,
+    )
+    .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+    let unoverlayed_path = job.workspace.input_dir().join("clean_candidate.pdf");
+    fs::write(&unoverlayed_path, &unoverlayed_bytes)
+        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    let unoverlayed_geom = job.inspect_geometry(&unoverlayed_path, events)?;
+    Ok((Some(unoverlayed_bytes), Some(unoverlayed_geom)))
 }
 
 fn execute_redact(
@@ -427,41 +533,8 @@ fn execute_redact(
         .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
 
     // Step 4: Run mandatory verification gates on the candidate
-    // If an overlay is specified on rectangle targets, produce a clean candidate without overlay text
-    // to strictly verify that original text content was removed under every rectangle.
-    let has_rectangles = redact_params
-        .targets
-        .iter()
-        .any(|t| matches!(t, RedactionTarget::Rectangle { .. }));
     let (clean_candidate_bytes, clean_geometry) =
-        if redact_params.overlay_text.is_some() && has_rectangles {
-            let mut unoverlayed_params = redact_params.clone();
-            unoverlayed_params.overlay_text = None;
-            let unoverlayed_plan = ariad_pdf::redact::plan(
-                input_bytes,
-                &unoverlayed_params,
-                &geometry,
-                job.limits,
-                &job.ctx,
-            )
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
-            let (unoverlayed_bytes, _) = rewrite_document_with_evidence(
-                input_bytes,
-                &unoverlayed_params,
-                &unoverlayed_plan,
-                &geometry,
-                job.limits,
-                &job.ctx,
-            )
-            .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
-            let unoverlayed_path = job.workspace.input_dir().join("clean_candidate.pdf");
-            fs::write(&unoverlayed_path, &unoverlayed_bytes)
-                .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
-            let unoverlayed_geom = job.inspect_geometry(&unoverlayed_path, events)?;
-            (Some(unoverlayed_bytes), Some(unoverlayed_geom))
-        } else {
-            (None, None)
-        };
+        build_clean_candidate(job, input_bytes, &redact_params, &geometry, events)?;
 
     // Gate 1: PDFium text re-extraction check & Gate 2: Core reader text check
     let candidate_geometry = job.inspect_geometry(&candidate_path, events)?;
@@ -487,9 +560,21 @@ fn execute_redact(
         events,
     )?;
 
-    // Gate 4: Image pixels check
-    let image_pixels = verify_image_pixels(&candidate_bytes, &plan, job.limits, &job.ctx)
+    // Gate 4: Image pixels check. The in-process verifier shares the rewriter's placement
+    // scan, so a PDFium render comparison must agree with it; any disagreement fails.
+    let scan_pixels = verify_image_pixels(&candidate_bytes, &plan, job.limits, &job.ctx)
         .map_err(|e| inprocess::map_pdf_error(e, job.scrubber))?;
+    let probe_pixels = verify_image_render_probe(
+        job,
+        input_path,
+        input_bytes,
+        &candidate_bytes,
+        &plan,
+        &redact_params,
+        &geometry,
+        events,
+    )?;
+    let image_pixels = combine_image_gates(scan_pixels, probe_pixels);
 
     // Gate 5: Object graph scan (decoded streams & reachable strings)
     let object_graph = verify_object_graph(&candidate_bytes, &redact_params, job.limits, &job.ctx)
@@ -531,19 +616,22 @@ fn execute_redact(
     // Fail closed: never publish an unverified or failed intermediate artifact
     if overall_status == RedactionVerificationStatus::Failed {
         return Err(ToolError::EngineFailure(
-            "redaction verification failed".into(),
+            super::run::REDACTION_VERIFICATION_FAILED.into(),
         ));
     }
     if overall_status == RedactionVerificationStatus::Unverifiable {
         return Err(ToolError::EngineFailure(
-            "redaction could not be verified".into(),
+            super::run::REDACTION_NOT_VERIFIABLE.into(),
         ));
     }
 
     // Step 5: Publish candidate to output directory
-    let staged_output = job.workspace.output_dir().join("redacted.pdf");
-    fs::write(&staged_output, &candidate_bytes)
-        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    let staged_output = super::run::write_staged_artifact(
+        job.workspace,
+        "redacted.pdf",
+        &candidate_bytes,
+        job.scrubber,
+    )?;
 
     let mut warnings = Vec::new();
     if plan.invalidates_signatures() {
@@ -569,7 +657,7 @@ fn execute_redact(
         json!(plan.invalidates_signatures()),
     );
 
-    let convert_warnings: Vec<ConvertWarning> = warnings
+    let mut convert_warnings: Vec<ConvertWarning> = warnings
         .into_iter()
         .map(|msg| ConvertWarning {
             code: "signatures_invalidated".into(),
@@ -577,14 +665,289 @@ fn execute_redact(
         })
         .collect();
 
+    let report_val = serde_json::to_value(&report)
+        .map_err(|e| ToolError::EngineFailure(job.scrubber.scrub(&e.to_string())))?;
+    let (_, json_bytes, inline_json) =
+        super::run::scrub_and_cap_inline_json(report_val, job.limits, job.scrubber)?;
+    if (json_bytes.len() as u64) > job.limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    let mut artifacts = vec![(staged_output, "pdf".into())];
+    let companion_report = inline_json.is_none();
+    if companion_report {
+        let companion_path = super::run::write_staged_artifact(
+            job.workspace,
+            "report.json",
+            &json_bytes,
+            job.scrubber,
+        )?;
+        artifacts.push((companion_path, "json".into()));
+        convert_warnings.push(super::run::report_not_inlined_warning());
+    }
+
     Ok(RawToolExecution {
-        artifacts: vec![(staged_output, "pdf".into())],
+        artifacts,
         warnings: convert_warnings,
         metrics,
-        inline_json: Some(
-            serde_json::to_value(&report).map_err(|e| ToolError::EngineFailure(e.to_string()))?,
-        ),
+        inline_json,
+        companion_report,
     })
+}
+
+/// Maps the unit square of a rendered page raster to page points, following the crop box and
+/// the page rotation.
+fn render_matrix(doc: &ariad_pdf::PdfDoc, page_id: (u32, u16)) -> Matrix {
+    let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), page_id);
+    let rotation = ariad_pdf::xobject::resolve_page_rotation(doc.inner(), page_id).rem_euclid(360);
+    let [llx, lly, urx, ury] = [crop.left, crop.bottom, crop.right, crop.top];
+    let [w, h] = [urx - llx, ury - lly];
+    match rotation {
+        90 => Matrix([0.0, h, -w, 0.0, urx, lly]),
+        180 => Matrix([-w, 0.0, 0.0, -h, urx, ury]),
+        270 => Matrix([0.0, -h, w, 0.0, llx, ury]),
+        _ => Matrix([w, 0.0, 0.0, h, llx, lly]),
+    }
+}
+
+/// Resolution of the render-comparison check: the engine minimum of 72 dpi up to 100 dpi,
+/// lowered for large pages so that one raster never exceeds 16 megapixels. `None` when even
+/// the engine minimum would exceed that, which makes the check unavailable.
+fn probe_dpi(width_pt: f64, height_pt: f64) -> Option<u32> {
+    const MAX_PIXELS: f64 = 16_000_000.0;
+    let area_in2 = width_pt * height_pt / (72.0 * 72.0);
+    if !area_in2.is_finite() || area_in2 <= 0.0 {
+        return None;
+    }
+    let dpi = ((MAX_PIXELS / area_in2).sqrt().floor()).min(100.0);
+    (dpi >= 72.0).then_some(dpi as u32)
+}
+
+/// Combines the in-process image-pixel verdict with the render-comparison verdict.
+///
+/// Fail closed: either check failing fails the gate, and the gate passes only when both pass.
+/// A check that could not run leaves the gate unavailable, never passed by default.
+fn combine_image_gates(
+    scan: RedactionCheckStatus,
+    probe: RedactionCheckStatus,
+) -> RedactionCheckStatus {
+    match (scan, probe) {
+        (RedactionCheckStatus::Fail, _) | (_, RedactionCheckStatus::Fail) => {
+            RedactionCheckStatus::Fail
+        }
+        (RedactionCheckStatus::Pass, RedactionCheckStatus::Pass) => RedactionCheckStatus::Pass,
+        _ => RedactionCheckStatus::Unavailable,
+    }
+}
+
+/// Independent image-pixel check by rendering with PDFium.
+///
+/// Renders the original and a probe of the candidate (the same rewrite without the cover, kept
+/// in the private workspace and never published) and compares them: original content that
+/// survives under a rectangle, or pixels cleared outside what the redaction may change, fail.
+/// Only pages that can paint raster content are rendered, at a bounded resolution, with the
+/// request limits, deadline and cancellation. Render and engine errors refuse the redaction.
+#[allow(clippy::too_many_arguments)]
+fn verify_image_render_probe(
+    job: &mut RedactJob<'_>,
+    input_path: &Path,
+    input_bytes: &[u8],
+    candidate_bytes: &[u8],
+    plan: &ariad_pdf::redact::RedactionPlan,
+    params: &RedactParams,
+    geometry: &RedactGeometry,
+    events: &mut dyn FnMut(ToolEvent),
+) -> Result<RedactionCheckStatus, ToolError> {
+    if !plan.complete_scope() {
+        return Ok(RedactionCheckStatus::Unavailable);
+    }
+    let scrubber = job.scrubber;
+    let map = |e| inprocess::map_pdf_error(e, scrubber);
+    let pages = probe_pages(
+        input_bytes,
+        candidate_bytes,
+        plan,
+        geometry,
+        job.limits,
+        &job.ctx,
+    )
+    .map_err(map)?;
+    if pages.is_empty() {
+        return Ok(RedactionCheckStatus::Pass);
+    }
+    let probe_bytes =
+        rewrite_document_probe(input_bytes, params, plan, geometry, job.limits, &job.ctx)
+            .map_err(map)?;
+    let probe_path = job.workspace.input_dir().join("probe.pdf");
+    fs::write(&probe_path, &probe_bytes)
+        .map_err(|e| ToolError::OutputIo(job.scrubber.scrub(&e.to_string())))?;
+    compare_probe_renders(job, input_path, &probe_path, candidate_bytes, pages, events)
+}
+
+/// Renders the original and the probe of every page in `pages` and compares them.
+///
+/// The page geometry (crop box, rotation) comes from `candidate_bytes`, which has the pages of
+/// the original.
+fn compare_probe_renders(
+    job: &mut RedactJob<'_>,
+    input_path: &Path,
+    probe_path: &Path,
+    candidate_bytes: &[u8],
+    pages: Vec<ariad_pdf::redact::ProbePage>,
+    events: &mut dyn FnMut(ToolEvent),
+) -> Result<RedactionCheckStatus, ToolError> {
+    let scrubber = job.scrubber;
+    let map = |e| inprocess::map_pdf_error(e, scrubber);
+    let doc =
+        ariad_pdf::document::open_with_ctx(candidate_bytes, job.limits, &job.ctx).map_err(map)?;
+    let page_ids = doc.inner().get_pages();
+    // Pages are rendered in small batches that share one resolution, so the engine validates
+    // each document once per batch; a batch keeps at most `PROBE_BATCH` pairs of rasters.
+    const PROBE_BATCH: usize = 4;
+    let mut planned = Vec::with_capacity(pages.len());
+    for page in pages {
+        let page_id = page_ids
+            .get(&page.page)
+            .copied()
+            .ok_or_else(|| ToolError::EngineFailure("page missing in candidate".into()))?;
+        let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), page_id);
+        let Some(dpi) = probe_dpi(crop.right - crop.left, crop.top - crop.bottom) else {
+            return Ok(RedactionCheckStatus::Unavailable);
+        };
+        planned.push((page, page_id, dpi));
+    }
+    let mut rest = planned.as_slice();
+    while let Some(first) = rest.first() {
+        job.check()?;
+        let dpi = first.2;
+        let size = rest
+            .iter()
+            .take(PROBE_BATCH)
+            .take_while(|entry| entry.2 == dpi)
+            .count();
+        let (batch, tail) = rest.split_at(size);
+        rest = tail;
+        let numbers: Vec<u32> = batch.iter().map(|(page, _, _)| page.page).collect();
+        let originals = job.render_pages(input_path, &numbers, dpi, events)?;
+        let probes = job.render_pages(probe_path, &numbers, dpi, events)?;
+        for (((page, page_id, _), original), probe) in batch.iter().zip(originals).zip(probes) {
+            job.check()?;
+            // The raster must have the size the page mapping assumes: crop box (swapped for a
+            // quarter turn) times dpi / 72, give or take the engine's rounding.
+            let rotated = ariad_pdf::xobject::resolve_page_rotation(doc.inner(), *page_id)
+                .rem_euclid(180)
+                == 90;
+            let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), *page_id);
+            let (w, h) = (crop.right - crop.left, crop.top - crop.bottom);
+            let (w, h) = if rotated { (h, w) } else { (w, h) };
+            let scale = f64::from(dpi) / 72.0;
+            let size_ok =
+                |got: u32, expected: f64| (f64::from(got) - expected * scale).abs() <= 2.0;
+            if !size_ok(original.width(), w) || !size_ok(original.height(), h) {
+                return Ok(RedactionCheckStatus::Unavailable);
+            }
+            let verdict = verify_probe_render(
+                &original,
+                &probe,
+                render_matrix(&doc, *page_id),
+                page,
+                job.limits,
+                &job.ctx,
+            )
+            .map_err(map)?;
+            match verdict {
+                ProbeVerdict::Agree => {}
+                ProbeVerdict::Disagree => return Ok(RedactionCheckStatus::Fail),
+                ProbeVerdict::Unavailable => return Ok(RedactionCheckStatus::Unavailable),
+            }
+        }
+    }
+    Ok(RedactionCheckStatus::Pass)
+}
+
+/// Test-only: compares renders of `original` and a hand-made `probe` with the production
+/// comparison, covering the pages [`probe_pages`] selects for `params`. `candidate` is the
+/// real rewrite of `original`, used for page geometry and the cleared-image margins.
+#[cfg(feature = "test-probe")]
+#[doc(hidden)]
+pub fn compare_probe_for_test(
+    original: &Path,
+    probe: &Path,
+    candidate: &Path,
+    params: &RedactParams,
+    limits: &Limits,
+) -> Result<RedactionCheckStatus, ToolError> {
+    let ws = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    let staged = |name: &str, path: &Path| -> Result<(PathBuf, Vec<u8>), ToolError> {
+        let bytes = fs::read(path).map_err(|e| ToolError::InputIo(e.to_string()))?;
+        let to = ws.input_dir().join(name);
+        fs::write(&to, &bytes).map_err(|e| ToolError::InputIo(e.to_string()))?;
+        Ok((to, bytes))
+    };
+    let (input_path, input_bytes) = staged("input.pdf", original)?;
+    let (probe_path, _) = staged("probe.pdf", probe)?;
+    let (_, candidate_bytes) = staged("candidate.pdf", candidate)?;
+    let scrubber = SecretScrubber::default();
+    let cancel = CancellationToken::new();
+    let mut job = RedactJob {
+        workspace: &ws,
+        limits,
+        scrubber: &scrubber,
+        engine_program: None,
+        cancel: &cancel,
+        deadline: Instant::now() + Duration::from_secs(120),
+        ctx: ToolCtx::new(),
+        _bridge: CancelBridge::new(&cancel),
+        warnings: Vec::new(),
+    };
+    let map = |e| inprocess::map_pdf_error(e, &scrubber);
+    let geometry = job.inspect_geometry(&input_path, &mut |_| {})?;
+    let plan =
+        ariad_pdf::redact::plan(&input_bytes, params, &geometry, limits, &job.ctx).map_err(map)?;
+    let pages = probe_pages(
+        &input_bytes,
+        &candidate_bytes,
+        &plan,
+        &geometry,
+        limits,
+        &job.ctx,
+    )
+    .map_err(map)?;
+    compare_probe_renders(
+        &mut job,
+        &input_path,
+        &probe_path,
+        &candidate_bytes,
+        pages,
+        &mut |_| {},
+    )
+}
+
+/// Test-only: renders one page of `pdf` with the PDFium engine at `dpi`, as the comparison does.
+#[cfg(feature = "test-probe")]
+#[doc(hidden)]
+pub fn render_page_for_test(
+    pdf: &Path,
+    page: u32,
+    dpi: u32,
+    limits: &Limits,
+) -> Result<image::RgbaImage, ToolError> {
+    let ws = Workspace::new().map_err(|e| ToolError::OutputIo(e.to_string()))?;
+    let staged = ws.input_dir().join("render.pdf");
+    fs::copy(pdf, &staged).map_err(|e| ToolError::InputIo(e.to_string()))?;
+    let scrubber = SecretScrubber::default();
+    let cancel = CancellationToken::new();
+    let mut job = RedactJob {
+        workspace: &ws,
+        limits,
+        scrubber: &scrubber,
+        engine_program: None,
+        cancel: &cancel,
+        deadline: Instant::now() + Duration::from_secs(60),
+        ctx: ToolCtx::new(),
+        _bridge: CancelBridge::new(&cancel),
+        warnings: Vec::new(),
+    };
+    job.render_page(&staged, page, dpi, &mut |_| {})
 }
 
 fn verify_candidate_rendering(
@@ -632,10 +995,7 @@ fn verify_candidate_rendering(
             .ok_or_else(|| ToolError::EngineFailure("page missing in candidate".into()))?;
 
         let crop = ariad_pdf::xobject::resolve_page_crop_box(doc.inner(), page_id);
-        let rotation =
-            ariad_pdf::xobject::resolve_page_rotation(doc.inner(), page_id).rem_euclid(360);
         let [llx, lly, urx, ury] = [crop.left, crop.bottom, crop.right, crop.top];
-        let [w, h] = [urx - llx, ury - lly];
 
         let rendered = job.render_page(candidate_path, page_num, 150, events)?;
 
@@ -652,12 +1012,7 @@ fn verify_candidate_rendering(
             }
         }
 
-        let matrix = match rotation {
-            90 => Matrix([0.0, h, -w, 0.0, urx, lly]),
-            180 => Matrix([-w, 0.0, 0.0, -h, urx, ury]),
-            270 => Matrix([0.0, -h, w, 0.0, llx, ury]),
-            _ => Matrix([w, 0.0, 0.0, h, llx, lly]),
-        };
+        let matrix = render_matrix(&doc, page_id);
         let ok = verify_rendered_pixels_with_overlay(
             &rendered,
             matrix,
@@ -772,12 +1127,97 @@ fn execute_verify(
     metrics.insert("target_count".into(), json!(verify_params.targets.len()));
     metrics.insert("status".into(), json!(overall_status));
 
+    let report_val = serde_json::to_value(&report)
+        .map_err(|e| ToolError::EngineFailure(job.scrubber.scrub(&e.to_string())))?;
+    let (_, json_bytes, inline_json) =
+        super::run::scrub_and_cap_inline_json(report_val, job.limits, job.scrubber)?;
+    if (json_bytes.len() as u64) > job.limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+    let artifacts = if inline_json.is_none() {
+        let staged_output = super::run::write_staged_artifact(
+            job.workspace,
+            "output.json",
+            &json_bytes,
+            job.scrubber,
+        )?;
+        vec![(staged_output, "json".into())]
+    } else {
+        Vec::new()
+    };
+
     Ok(RawToolExecution {
-        artifacts: Vec::new(),
+        artifacts,
         warnings: Vec::new(),
         metrics,
-        inline_json: Some(
-            serde_json::to_value(&report).map_err(|e| ToolError::EngineFailure(e.to_string()))?,
-        ),
+        inline_json,
+        companion_report: false,
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redact_staged_report_replaces_planted_symlink_without_touching_target() {
+        let victim_dir = tempfile::tempdir().unwrap();
+        let victim = victim_dir.path().join("victim.txt");
+        fs::write(&victim, b"untouched-redact-victim").unwrap();
+
+        let ws = Workspace::new().unwrap();
+        let report_link = ws.output_dir().join("report.json");
+        std::os::unix::fs::symlink(&victim, &report_link).unwrap();
+
+        let scrubber = SecretScrubber::new();
+        let written = super::super::run::write_staged_artifact(
+            &ws,
+            "report.json",
+            b"{\"status\":\"verified\"}",
+            &scrubber,
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-redact-victim");
+        let meta = fs::symlink_metadata(&written).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        assert_eq!(fs::read(&written).unwrap(), b"{\"status\":\"verified\"}");
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+    use RedactionCheckStatus::{Fail, Pass, Unavailable};
+
+    #[test]
+    fn image_gates_never_pass_unless_both_checks_pass() {
+        // Disagreement in either direction fails; a check that did not run never passes.
+        assert_eq!(combine_image_gates(Pass, Pass), Pass);
+        assert_eq!(combine_image_gates(Pass, Fail), Fail);
+        assert_eq!(combine_image_gates(Fail, Pass), Fail);
+        assert_eq!(combine_image_gates(Fail, Unavailable), Fail);
+        assert_eq!(combine_image_gates(Unavailable, Fail), Fail);
+        assert_eq!(combine_image_gates(Pass, Unavailable), Unavailable);
+        assert_eq!(combine_image_gates(Unavailable, Pass), Unavailable);
+        assert_eq!(combine_image_gates(Unavailable, Unavailable), Unavailable);
+    }
+
+    #[test]
+    fn probe_resolution_is_bounded_by_the_raster_size() {
+        // A4 and US Letter keep the full 100 dpi (about 0.8 megapixel).
+        assert_eq!(probe_dpi(595.0, 842.0), Some(100));
+        assert_eq!(probe_dpi(612.0, 792.0), Some(100));
+        // A huge page lowers the resolution until its raster fits 16 megapixels ...
+        let dpi = probe_dpi(3000.0, 3000.0).unwrap();
+        assert!((72..100).contains(&dpi));
+        let side = 3000.0 / 72.0 * f64::from(dpi);
+        let pixels = side * side;
+        assert!(pixels <= 16_000_000.0, "{pixels}");
+        // ... and a page too large even at the engine minimum is unavailable.
+        assert_eq!(probe_dpi(5000.0, 5000.0), None);
+        assert_eq!(probe_dpi(14_400.0, 14_400.0), None);
+        assert_eq!(probe_dpi(0.0, 100.0), None);
+        assert_eq!(probe_dpi(f64::NAN, 100.0), None);
+    }
 }

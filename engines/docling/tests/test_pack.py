@@ -33,6 +33,131 @@ def test_pack_manifest_keeps_the_frozen_protocol_host_range():
     assert manifest["schema"] == "ariad-pack/1"
 
 
+def test_workspace_ashift_version_matches_live_cargo_toml():
+    cargo = tomllib.loads((REPOSITORY / "Cargo.toml").read_text(encoding="utf-8"))
+    raw_version = cargo["workspace"]["package"]["version"]
+    expected = tuple(int(part) for part in raw_version.split("."))
+    version = build.workspace_ashift_version()
+    assert version == expected
+    assert (0, 2, 0) <= version < (2, 0, 0)
+    assert build.requires_ashift() == ">=0.2.0, <2.0.0"
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("0.2.0", (0, 2, 0)),
+        ("0.6.0", (0, 6, 0)),
+        ("1.0.0", (1, 0, 0)),
+        ("1.9.3", (1, 9, 3)),
+    ],
+)
+def test_requires_ashift_accepts_supported_workspace_versions(tmp_path, version, expected):
+    cargo_toml = tmp_path / "Cargo.toml"
+    cargo_toml.write_text(f'[workspace.package]\nversion = "{version}"\n', encoding="utf-8")
+    assert build.workspace_ashift_version(cargo_toml) == expected
+    assert build.requires_ashift(cargo_toml) == ">=0.2.0, <2.0.0"
+    manifest = tomllib.loads(build.pack_fields("0.2.0", "Apache-2.0", cargo_toml=cargo_toml))
+    assert manifest["requires_ashift"] == ">=0.2.0, <2.0.0"
+
+
+@pytest.mark.parametrize(
+    ("version", "requires"),
+    [
+        ("0.1.9", build.REQUIRES_ASHIFT),
+        ("2.0.0", build.REQUIRES_ASHIFT),
+        ("2.1.0", build.REQUIRES_ASHIFT),
+        ("0.6.0", ">=0.2.0, <0.3.0"),
+        ("1.0.0", ">=0.2.0, <0.3.0"),
+    ],
+)
+def test_requires_ashift_rejects_drifted_workspace_or_range(tmp_path, version, requires):
+    cargo_toml = tmp_path / "Cargo.toml"
+    cargo_toml.write_text(f'[workspace.package]\nversion = "{version}"\n', encoding="utf-8")
+    with pytest.raises(SystemExit) as exc_info:
+        build.requires_ashift(cargo_toml, requires=requires)
+    message = str(exc_info.value)
+    assert str(cargo_toml) in message
+    assert version in message
+    assert requires in message
+    with pytest.raises(SystemExit) as pack_exc:
+        build.pack_fields("0.2.0", "Apache-2.0", cargo_toml=cargo_toml, requires=requires)
+    assert str(pack_exc.value) == message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '[workspace.package]\nversion = "1.0.0-rc.1"\n',
+        '[workspace.package]\nversion = "1.0.0+build.1"\n',
+        '[workspace.package]\nversion = "1.0"\n',
+        '[workspace.package]\nversion = "v1.0.0"\n',
+        '[workspace.package]\nversion = "01.2.0"\n',
+        "[workspace.package]\nversion = 1\n",
+        '[workspace.package]\nname = "missing-version"\n',
+        '[package]\nversion = "0.6.0"\n',
+        "not = [valid toml\n",
+    ],
+)
+def test_workspace_ashift_version_rejects_invalid_cargo_toml(tmp_path, content):
+    cargo_toml = tmp_path / "Cargo.toml"
+    cargo_toml.write_text(content, encoding="utf-8")
+    with pytest.raises(SystemExit, match=re.escape(str(cargo_toml))):
+        build.workspace_ashift_version(cargo_toml)
+
+
+def test_workspace_ashift_version_rejects_missing_cargo_toml(tmp_path):
+    missing = tmp_path / "missing" / "Cargo.toml"
+    with pytest.raises(SystemExit, match=re.escape(str(missing))):
+        build.workspace_ashift_version(missing)
+
+
+@pytest.mark.parametrize(
+    "requires",
+    [
+        ">=2.0.0, <0.2.0",
+        ">=0.2.0, <0.2.0",
+        "^0.2.0",
+        ">0.2.0, <2.0.0",
+        ">=0.2.0, <=2.0.0",
+        ">=0.2.0, <2.0",
+        ">=0.2.0, <2.0.0-rc.1",
+        ">=0.2.0, <02.0.0",
+        ">=0.2.0, <2.0.0, <3.0.0",
+        "",
+    ],
+)
+def test_requires_ashift_rejects_malformed_or_inverted_bounds(tmp_path, requires):
+    cargo_toml = tmp_path / "Cargo.toml"
+    cargo_toml.write_text('[workspace.package]\nversion = "0.6.0"\n', encoding="utf-8")
+    with pytest.raises(SystemExit, match="requires_ashift"):
+        build.requires_ashift(cargo_toml, requires=requires)
+
+
+def test_build_fails_fast_when_workspace_version_drifts(tmp_path, monkeypatch):
+    fake_repo = tmp_path / "repo"
+    fake_repo.mkdir()
+    cargo_toml = fake_repo / "Cargo.toml"
+    cargo_toml.write_text('[workspace.package]\nversion = "2.0.0"\n', encoding="utf-8")
+    monkeypatch.setattr(build, "REPOSITORY", fake_repo)
+
+    def must_not_run(*_args, **_kwargs):
+        pytest.fail("build() must validate requires_ashift before loading pins or fetching")
+
+    monkeypatch.setattr(build, "engine_version", must_not_run)
+    monkeypatch.setattr(fetch, "load_pins", must_not_run)
+    monkeypatch.setattr(fetch, "fetch", must_not_run)
+
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as exc_info:
+        build.build("x86_64-unknown-linux-gnu", out, tmp_path / "cache", "ashift")
+    message = str(exc_info.value)
+    assert str(cargo_toml) in message
+    assert "2.0.0" in message
+    assert build.REQUIRES_ASHIFT in message
+    assert not out.exists()
+
+
 def test_macos_opencv_uses_a_video_disabled_source_build():
     target = "aarch64-apple-darwin"
     assert build.source_opencv_required(target)

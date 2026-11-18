@@ -1,6 +1,7 @@
 //! Plain text document writer producing human-readable text.
 
 use crate::{
+    format::Format,
     ir::{Block, Document, Inline, TableCell},
     limits::Limits,
     warning::{Warning, WarningCode},
@@ -26,9 +27,11 @@ pub fn write(document: &Document) -> WriteOutput {
     let doc = normalize_document(document);
     let mut writer = TextWriter::new();
 
+    // A PDF's catalog language is reader bookkeeping, so only that field stays quiet.
+    let has_language = doc.meta.language.is_some() && doc.meta.source_format != Some(Format::Pdf);
     let has_metadata = doc.meta.title.is_some()
         || !doc.meta.authors.is_empty()
-        || doc.meta.language.is_some()
+        || has_language
         || doc.meta.date.is_some()
         || doc.meta.subject.is_some()
         || !doc.meta.keywords.is_empty();
@@ -1104,6 +1107,92 @@ mod tests {
                 .iter()
                 .any(|msg| msg.contains("rowspan and colspan"))
         );
+    }
+
+    fn document_with(meta: Metadata, body: Vec<Block>) -> Document {
+        Document {
+            styles: Default::default(),
+            sections: Vec::new(),
+            source_map: Default::default(),
+            version: crate::ir::IR_VERSION.to_owned(),
+            meta,
+            body,
+            assets: Default::default(),
+            layout: None,
+            provenance: None,
+            furniture: vec![],
+        }
+    }
+
+    fn metadata_warning_count(meta: Metadata) -> usize {
+        write(&document_with(meta, Vec::new()))
+            .warnings
+            .iter()
+            .filter(|warning| warning.message.contains("document metadata"))
+            .count()
+    }
+
+    #[test]
+    fn pdf_language_alone_does_not_warn_but_other_metadata_does() {
+        let meta = |source_format, title: Option<&str>, language: Option<&str>| Metadata {
+            title: title.map(Into::into),
+            language: language.map(Into::into),
+            source_format,
+            ..Default::default()
+        };
+        assert_eq!(
+            metadata_warning_count(meta(Some(Format::Pdf), None, Some("en"))),
+            0
+        );
+        assert_eq!(
+            metadata_warning_count(meta(Some(Format::Markdown), None, Some("en"))),
+            1
+        );
+        assert_eq!(metadata_warning_count(meta(None, None, Some("en"))), 1);
+        assert_eq!(
+            metadata_warning_count(meta(Some(Format::Pdf), Some("Title"), Some("en"))),
+            1
+        );
+        let authors = Metadata {
+            authors: vec!["Author".into()],
+            source_format: Some(Format::Pdf),
+            ..Default::default()
+        };
+        assert_eq!(metadata_warning_count(authors), 1);
+    }
+
+    #[test]
+    fn omits_table_columns_beyond_the_limit_with_a_warning() {
+        let cell = |text: String| TableCell {
+            rowspan: 1,
+            colspan: 1,
+            header: None,
+            blocks: vec![Block::Paragraph {
+                id: Default::default(),
+                style: None,
+                direct: Default::default(),
+                content: vec![Inline::Text { text }],
+            }],
+        };
+        let table = Block::Table {
+            id: Default::default(),
+            style: None,
+            direct: Default::default(),
+            caption: None,
+            columns: vec![],
+            head: vec![],
+            body: vec![(0..129).map(|index| cell(format!("c{index}x"))).collect()],
+            footnotes: vec![],
+        };
+        let output = write(&document_with(Metadata::default(), vec![table]));
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning.message == "table columns beyond 128 were omitted")
+        );
+        assert!(output.content.contains("c127x"));
+        assert!(!output.content.contains("c128x"));
     }
 
     #[test]

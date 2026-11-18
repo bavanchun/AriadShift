@@ -36,6 +36,10 @@ export type JobView = {
   stage: string;
   error: string | null;
   warnings: Array<string>;
+  /**
+   * Engine pack whose installation would resolve the failure or warning.
+   */
+  missing_pack: string | null;
 };
 export type WatchRequest = {
   interval_seconds: number;
@@ -62,6 +66,14 @@ export type PackRequest = {
   version: string | null;
   action: PackAction;
   from: string | null;
+};
+export type PackNoticesRequest = { name: string; version: string | null };
+export type PackNoticeView = { path: string; text: string };
+export type PackNoticesView = {
+  name: string;
+  version: string;
+  active: boolean;
+  notices: Array<PackNoticeView>;
 };
 export type Diagnostic = {
   id: string;

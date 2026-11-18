@@ -62,9 +62,10 @@ js:
 js-licenses:
     node scripts/check-js-licenses.mjs
 
-# Catalogue gate for locales/: ICU syntax, argument parity, completeness; see docs/i18n.md.
+# Catalogue gate for locales/: ICU syntax, argument parity, completeness, and the macOS
+# Localizable.xcstrings (fresh generation, every mac key used in Swift); see docs/i18n.md.
 i18n-check:
-    node --test scripts/i18n-lib.test.mjs
+    node --test scripts/i18n-lib.test.mjs scripts/i18n-xcstrings.test.mjs
     node scripts/i18n-check.mjs
 
 # Biome lint and format check of the JavaScript workspace.
@@ -159,9 +160,23 @@ test-ci-scope:
     uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
 
 licenses:
-    node scripts/generate-licenses.mjs > THIRD_PARTY_LICENSES
-    just desktop-licenses
-    just web-licenses
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="${ARIADSHIFT_ROOT_DIR:-{{justfile_directory()}}}"
+    node scripts/generate-desktop-licenses.mjs --check-preconditions
+    node apps/web/scripts/sync-notices.mjs --check-preconditions
+    node scripts/generate-licenses.mjs --check-preconditions --cargo-about-version "{{cargo_about_version}}"
+    tmp_rust=$(mktemp "$root/.THIRD_PARTY_LICENSES.XXXXXX")
+    tmp_desktop=$(mktemp "$root/apps/desktop/.THIRD_PARTY_JS_LICENSES.XXXXXX")
+    trap 'rm -f "$tmp_rust" "$tmp_desktop"' EXIT
+    node scripts/generate-licenses.mjs --cargo-about-version "{{cargo_about_version}}" > "$tmp_rust"
+    test -s "$tmp_rust"
+    ARIADSHIFT_DESKTOP_LICENSES_OUT="$tmp_desktop" just desktop-licenses
+    test -s "$tmp_desktop"
+    ARIADSHIFT_THIRD_PARTY_LICENSES="$tmp_rust" just web-licenses
+    chmod 0644 "$tmp_rust" "$tmp_desktop"
+    mv -f "$tmp_desktop" "$root/apps/desktop/THIRD_PARTY_JS_LICENSES"
+    mv -f "$tmp_rust" "$root/THIRD_PARTY_LICENSES"
 
 web-licenses:
     node apps/web/scripts/sync-notices.mjs
@@ -196,8 +211,15 @@ licenses-check:
         node apps/web/scripts/sync-notices.mjs --check-graph
     fi
 
+test-licenses-recipes:
+    node --test scripts/licenses-recipes.test.mjs
+
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope test-ci-sccache test-hardening-ci-wiring
+static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-licenses-recipes test-winget-manifest test-ci-scope test-ci-sccache test-docling-pack-inputs test-hardening-ci-wiring
+
+test-docling-pack-inputs:
+    shellcheck scripts/docling-pack-inputs.sh scripts/test-docling-pack-inputs.sh
+    bash scripts/test-docling-pack-inputs.sh
 
 test-ci-sccache:
     shellcheck -x scripts/ci-sccache.sh
@@ -433,7 +455,7 @@ fuzz target="" seconds="60":
         mkdir -p "fuzz/corpus/$t"
         build_options=()
         case "$t" in
-            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|reader_cbz) build_options=(--dev --features pdf-reader) ;;
+            pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|type1_to_cff|reader_cbz) build_options=(--dev --features pdf-reader) ;;
             typst_writer) build_options=(--dev --features typst-writer) ;;
         esac
         cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048
@@ -444,9 +466,129 @@ fuzz target="" seconds="60":
 fuzz target="" seconds="60":
     @echo "fuzzing runs on Linux only" && exit 1
 
+# Build the ariad-ffi universal XCFramework and Swift bindings.
+[macos]
+macos-ffi *args:
+    bash scripts/build-xcframework.sh "$@"
+
+# Generate apps/macos/AriadShift.xcodeproj from project.yml (needs `brew install xcodegen`) and install the tracked
+# apps/macos/Package.resolved, the one place Xcode reads SwiftPM pins from for the generated, gitignored project.
+[macos]
+macos-project:
+    cd apps/macos && xcodegen generate
+    mkdir -p apps/macos/AriadShift.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+    cp apps/macos/Package.resolved apps/macos/AriadShift.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+# Build the universal Release macOS application bundle. Extra xcodebuild settings may be passed as arguments
+# (each stays one argument: the global `set positional-arguments` forwards them with "$@" instead of textual substitution).
+[macos]
+macos-build *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The ashift helper is built in the same cargo invocation as the XCFramework slices and handed to the Xcode helper
+    # phase through ASHIFT_HELPER_PATH, so the dependency graph compiles once per target. A caller-provided
+    # ASHIFT_HELPER_PATH is kept and no helper is built.
+    target_dir="${CARGO_TARGET_DIR:-target}"
+    [[ "$target_dir" = /* ]] || target_dir="$PWD/$target_dir"
+    if [[ -z "${ASHIFT_HELPER_PATH:-}" ]]; then
+        ASHIFT_HELPER_OUT="$target_dir/universal/release/ashift" bash scripts/build-xcframework.sh
+        export ASHIFT_HELPER_PATH="$target_dir/universal/release/ashift"
+    else
+        bash scripts/build-xcframework.sh
+    fi
+    bash apps/macos/scripts/sync-ffi.sh
+    just macos-project
+    derived_dir="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-target/derived-data}}"
+    mkdir -p "$derived_dir"
+    # SWIFTPM_CACHE_PATH, when set, keeps SwiftPM's repository cache out of ~/Library/Caches.
+    xcode_cache_args=()
+    if [[ -n "${SWIFTPM_CACHE_PATH:-}" ]]; then
+        xcode_cache_args=(-packageCachePath "${SWIFTPM_CACHE_PATH}")
+    fi
+    xcodebuild -project apps/macos/AriadShift.xcodeproj \
+        -scheme AriadShift \
+        -configuration Release \
+        -destination 'generic/platform=macOS' \
+        -derivedDataPath "$derived_dir" \
+        ${xcode_cache_args[@]+"${xcode_cache_args[@]}"} \
+        -onlyUsePackageVersionsFromResolvedFile \
+        build "$@"
+
+# Run tests for AriadShiftCore and the AriadShift Xcode scheme.
+[macos]
+macos-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    REPO_ROOT="$(pwd)"
+    DERIVED_DATA="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-${REPO_ROOT}/target/derived-data}}"
+    mkdir -p "${DERIVED_DATA}"
+    if [[ -z "${ASHIFT_HELPER_PATH:-}" ]]; then
+        if [[ -x "${REPO_ROOT}/target/release/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${REPO_ROOT}/target/release/ashift"
+        elif [[ -x "${REPO_ROOT}/target/aarch64-apple-darwin/release/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${REPO_ROOT}/target/aarch64-apple-darwin/release/ashift"
+        elif [[ -x "${DERIVED_DATA}/Build/Products/Release/AriadShift.app/Contents/Helpers/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${DERIVED_DATA}/Build/Products/Release/AriadShift.app/Contents/Helpers/ashift"
+        elif [[ -x "${REPO_ROOT}/target/debug/ashift" ]]; then
+            export ASHIFT_HELPER_PATH="${REPO_ROOT}/target/debug/ashift"
+        fi
+    fi
+    # SWIFTPM_CACHE_PATH, when set, keeps SwiftPM's repository cache out of ~/Library/Caches.
+    cache_args=()
+    xcode_cache_args=()
+    if [[ -n "${SWIFTPM_CACHE_PATH:-}" ]]; then
+        cache_args=(--cache-path "${SWIFTPM_CACHE_PATH}")
+        xcode_cache_args=(-packageCachePath "${SWIFTPM_CACHE_PATH}")
+    fi
+    swift test --package-path apps/macos/AriadShiftCore
+    # Token, model and snapshot tests of the design system (reference images in Tests/**/__Snapshots__).
+    swift test --package-path apps/macos/AriadDesignSystem ${cache_args[@]+"${cache_args[@]}"}
+    # xcodebuild hands the test process only TEST_RUNNER_-prefixed variables (without the prefix), so the snapshot
+    # gate and the failed-render folder are passed through that way, each only when set: an empty SNAPSHOT_ARTIFACTS
+    # would make failed renders land in the working directory.
+    runner_env=()
+    for name in CI ARIAD_SNAPSHOTS SNAPSHOT_ARTIFACTS; do
+        if [[ -n "${!name:-}" ]]; then runner_env+=("TEST_RUNNER_${name}=${!name}"); fi
+    done
+    # The result bundle names the failing tests even when xcodebuild's own failure list is empty; xcodebuild refuses
+    # to overwrite an existing bundle, so a stale one is removed first.
+    RESULT_BUNDLE="${MACOS_RESULT_BUNDLE:-${DERIVED_DATA}/AriadShift-tests.xcresult}"
+    rm -rf "${RESULT_BUNDLE}"
+    env ${runner_env[@]+"${runner_env[@]}"} xcodebuild test \
+        -project apps/macos/AriadShift.xcodeproj \
+        -scheme AriadShift \
+        -destination 'platform=macOS' \
+        -derivedDataPath "${DERIVED_DATA}" \
+        -resultBundlePath "${RESULT_BUNDLE}" \
+        ${xcode_cache_args[@]+"${xcode_cache_args[@]}"} \
+        -onlyUsePackageVersionsFromResolvedFile
+
+# Fail on literal spacing, frame, color and font values in the macOS app outside AriadDesignSystem (new ones only;
+# design-literals-baseline.txt lists the old ones to drain), and on asset catalogs that differ from their sources.
+[macos]
+macos-lint:
+    python3 apps/macos/scripts/test-check-design-literals.py
+    python3 apps/macos/scripts/check-design-literals.py
+    node apps/macos/scripts/generate-design-assets.mjs --check
+
+# Regenerate the macOS color sets, AccentColor and AppIcon from tokens.json and brand/png.
+[macos]
+macos-assets:
+    node apps/macos/scripts/generate-design-assets.mjs
+
 # Generated IPC types and wrappers come only from Rust.
 desktop-licenses:
-    node scripts/generate-desktop-licenses.mjs > apps/desktop/THIRD_PARTY_JS_LICENSES
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="${ARIADSHIFT_ROOT_DIR:-{{justfile_directory()}}}"
+    out="${ARIADSHIFT_DESKTOP_LICENSES_OUT:-$root/apps/desktop/THIRD_PARTY_JS_LICENSES}"
+    node scripts/generate-desktop-licenses.mjs --check-preconditions
+    tmp=$(mktemp "$(dirname "$out")/.THIRD_PARTY_JS_LICENSES.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+    node scripts/generate-desktop-licenses.mjs > "$tmp"
+    test -s "$tmp"
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "$out"
 
 desktop-bindings:
     cargo run -p ariad-desktop --bin export-bindings

@@ -113,6 +113,107 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importă…",
+      "print": "Tipărește…",
+      "tools": "Instrumente",
+      "zoom": "{action, select, in {Mărește} out {Micșorează} actual {Dimensiune reală} other {Zoom}}",
+      "check_updates": "Caută actualizări…",
+      "show_welcome": "Afișează ecranul de bun venit",
+      "fit_width": "Potrivire la lățime",
+      "display_mode": "{mode, select, single {Pagină unică} continuous {Derulare continuă} twoUp {Două pagini} other {Afișarea paginilor}}",
+      "go_to_page": "Salt la pagina…",
+      "find": "Caută…",
+      "find_next": "Caută următorul",
+      "find_previous": "Caută anteriorul"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organizează} convert {Convertește} optimize {Optimizează} security {Securitate} overlay {Suprapunere} ocr {OCR și scanări} annotate {Adnotează} forms {Formulare} sign {Semnează} redact {Cenzurează} compare {Compară și validează} edit {Editează} ai {IA} automation {Automatizare} other {Alte instrumente}}",
+      "disabled": "{reason, select, later {Disponibil într-o versiune ulterioară} format {Funcționează cu alte formate. Folosește Fișier > Importă.} paid {Necesită un plan cu plată} info {Detaliile instrumentului nu au putut fi citite, așa că instrumentele rămân dezactivate.} other {Indisponibil}}",
+      "loading": "Se încarcă instrumentele…"
+    },
+    "sidebar": {
+      "title": "Pagini",
+      "placeholder": "Miniaturile paginilor vor apărea aici.",
+      "page": "Pagina {number} din {total}"
+    },
+    "viewer": {
+      "placeholder": "Vizualizatorul de pagini va apărea aici.",
+      "title": "Vizualizator de pagini",
+      "loading": "Se deschide documentul…"
+    },
+    "toolbar": {
+      "inspector": "Informații despre document",
+      "page_grid": "Grilă de pagini",
+      "previous_page": "Pagina anterioară",
+      "next_page": "Pagina următoare",
+      "page_field": "Numărul paginii"
+    },
+    "inspector": {
+      "title": "Document",
+      "field": "{field, select, name {Nume} format {Format} size {Dimensiune} pages {Pagini} words {Cuvinte} title {Titlu} author {Autor} routes {Poate fi convertit în} other {Câmp}}",
+      "loading": "Se citește documentul…",
+      "warnings": "{count, plural, one {# avertisment} few {# avertismente} other {# de avertismente}}"
+    },
+    "run": {
+      "run": "Rulează",
+      "cancel": "Anulează",
+      "close": "Gata",
+      "working": "Se rulează…",
+      "parameters": "Setări",
+      "no_parameters": "Acest instrument nu are setări.",
+      "extra_documents": "Documente suplimentare",
+      "add_documents": "Adaugă…",
+      "remove": "Elimină",
+      "need_documents": "{count, plural, one {Adaugă încă # document pentru a rula acest instrument.} few {Adaugă încă # documente pentru a rula acest instrument.} other {Adaugă încă # de documente pentru a rula acest instrument.}}",
+      "failed": "Instrumentul nu s-a încheiat.",
+      "reveal": "Afișează în Finder",
+      "field_error": "{kind, select, missing {{field} este obligatoriu.} other {{field} nu este valid.}}",
+      "result": "Rezultat",
+      "presets": "Presetări"
+    },
+    "settings": {
+      "output_folder": "Salvează rezultatele în",
+      "output_same": "Lângă documentul original",
+      "output_choose": "Alege un folder…",
+      "open_result": "Deschide rezultatul când se termină un instrument",
+      "updates": "Actualizări",
+      "updates_auto": "Caută actualizări automat",
+      "updates_disabled": "Actualizările nu sunt configurate în această versiune."
+    },
+    "onboarding": {
+      "title": "Bun venit în AriadShift",
+      "about": "Deschide, inspectează și procesează documente PDF cu același motor ca linia de comandă AriadShift. Convertește Markdown, HTML, Word, EPUB și imagini în PDF cu Fișier > Importă.",
+      "packs": "Pachetele opționale de motor (OCR, semnare, validare) sunt stocate în {path}.",
+      "privacy": "AriadShift funcționează pe Mac-ul tău. Nu face nicio conexiune la rețea decât dacă activezi o funcție care are nevoie de una.",
+      "start": "Începe"
+    },
+    "import": {
+      "message": "Alege un document de convertit în PDF",
+      "running": "Se importă {name}…",
+      "failed": "{name} nu a putut fi importat"
+    },
+    "document": {
+      "invalid": "Acest fișier nu este un PDF valid."
+    },
+    "find": {
+      "prompt": "Caută în document",
+      "count": "{current} din {total}",
+      "none": "Nicio potrivire",
+      "searching": "Se caută…",
+      "done": "Gata"
+    },
+    "grid": {
+      "hint": "Trageți paginile pentru a le reordona. Fiecare modificare este salvată ca fișier nou lângă original.",
+      "unavailable": "Editarea paginilor nu este disponibilă până când motorul este pregătit.",
+      "rotate": "Rotește paginile selectate",
+      "delete": "Șterge paginile selectate",
+      "move_earlier": "Mută înaintea paginii anterioare",
+      "move_later": "Mută după pagina următoare",
+      "drop_end": "Plasați aici pentru a muta la sfârșit"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: conversie privată a documentelor în browser",

@@ -34,10 +34,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+      - uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 12.9.1
           run_install: false
@@ -45,7 +45,7 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0,cargo-nextest@0.9.149
       - name: Linux desktop prerequisites
@@ -66,6 +66,30 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
           unshare --user --map-root-user --mount true
+      - name: Run desktop smoke script unit tests
+        run: |
+          for candidate in python3 python; do
+            if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+              "$candidate" scripts/desktop-smoke-test.py
+              exit 0
+            fi
+          done
+          if py -3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+            py -3 scripts/desktop-smoke-test.py
+            exit 0
+          fi
+          tool_cache="${RUNNER_TOOL_CACHE:-}"
+          tool_cache="${tool_cache//\\//}"
+          if [[ -n "$tool_cache" && -d "$tool_cache/Python" ]]; then
+            while IFS= read -r py_exe; do
+              if "$py_exe" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+                "$py_exe" scripts/desktop-smoke-test.py
+                exit 0
+              fi
+            done < <(find "$tool_cache/Python" -maxdepth 4 -type f -name 'python.exe' 2>/dev/null | { sort -Vr 2>/dev/null || sort -r; })
+          fi
+          echo "No Python 3 interpreter found" >&2
+          exit 1
       - run: pnpm install --frozen-lockfile
       - run: just pandoc
       - run: just desktop-bindings-check
@@ -138,10 +162,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+          fetch-depth: 0
+      - name: Require tag commit on main
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::Release tag must point to a commit on main."
+            exit 1
+          fi
+      - uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 12.9.1
           run_install: false
@@ -234,6 +266,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Require tag commit on main
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::Release tag must point to a commit on main."
+            exit 1
+          fi
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version

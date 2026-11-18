@@ -27,6 +27,43 @@ Every tool and both edit modes in the native app, feeling like a first-party App
 6. **AI panel**: Foundation Models (macOS 26+) for summarise/ask/translate/NL-recipe on device; fallback to the phase-13 local model pack on macOS 15-25; cloud (Pro) only with explicit consent.
 7. **Keyboard-first**: every command in menus with shortcuts; command palette (⌘K) as a native panel.
 
+## Carried from phase 17
+
+- **Task 0 (before T1): re-land the two UI changes that were reverted** to keep the macOS unit scheme green on CI. One change per commit, each with its own `macOS build & test` run: (a) the go-to-page field focus bridge (`PageFieldFocuser`), (b) the find-bar arrow hit area. The reverted layout commit is 4b4e4976. If the AppKit crash "window marked as needing another Update Constraints in Window pass" (`SplitViewChildController.hostingView(_:didUpdateMinSize:maxSize:)`) recurs in the hosted-window tests, revert the layout change first, then investigate.
+- **Sparkle manual path**: check the Check for Updates menu item and update window, the relaunch after install, and an https appcast under App Transport Security. Phase 17 proved the automatic path only.
+- **CI build time**: find why the Release build step of `macos.yml` takes 52-56 min (tests add ~3 min; job timeout is 90 min). Record before and after times in this file.
+  - Root causes found: the Xcode helper phase compiled the dependency graph a second time, and `uniffi-bindgen` was rebuilt through `cargo run` in the dev profile. There is also no compiler cache. The baseline build step is 49-63 min (typically 52-56).
+  - Fix is in PR #316, followed by sccache on R2 for `macos.yml` (#318). Results (job `macOS build & test`, step times from the run logs):
+
+    | State | Build step | Tests | Job | Run |
+    |---|---|---|---|---|
+    | Before (dev; range 49-63 min over 6 runs) | 54m28s | 2m49s-3m13s | n/a | 43459827099 |
+    | PR #316: Rust graph compiled once per target, release `uniffi-bindgen`, helper built in the same cargo call (PR run) | 34m55s | n/a | 38m58s | 43487412405 |
+    | #318 first dev push, cold cache: 0 hits, 1050 misses (994 Rust) | 31m28s | n/a | n/a | 43515736178 |
+    | #318 second dev push, warm cache: hit rate 99.52% (1045 of 1056; 5 Rust misses) | 8m31s | 1m58s | 11m36s | 43532587182 |
+
+  - Queue time before a macOS job starts is now the dominant delay (27 min to 3.5 h observed on the shared xcode-27 pool when many PR runs are open). PR runs read the cache read-only, so their hit rate is not yet measured; measure it on the next PR run.
+  - Follow-ups: report the R2 bucket size (prefix `ariadshift-sccache-v2/macos/`) after the first week (due 2026-11-21). Issue #320 (Release `ASHIFT_PLAN` guard) is separate.
+
+## Pro entitlement interim (decision by the lead)
+
+Evidence: `.p18/mail/report-p18-pro-scout-01.md` (findings 3, 4, 5, 6, 7 and the recommended design at lines 16-21).
+
+No Pro entitlement source exists in the repo. The Tauri desktop app has none (scout line 11). `ASHIFT_PLAN` is a CLI-only env var that authenticates nothing (`crates/ariad-cli/src/main.rs:1198-1205`; scout line 8). `ariad-ffi` pins `Plan::Free` (`crates/ariad-ffi/src/lib.rs:339-377`; scout line 9).
+
+Interim for T1 and T5:
+
+- `ariad-ffi` `ToolRunRequest` gets an optional `plan` field. Default is Free. `ariad-host` stays the only enforcement point; Swift never re-implements tier logic.
+- Swift `PlanProvider` returns Free in Release. A DEBUG-only `ASHIFT_PLAN` override unlocks Pro for tests, with a test that Release ignores it.
+- Pro tools sit behind a labelled Pro gate that shows the `tier_not_allowed` upgrade message. `ToolCatalog` (`ToolCatalog.swift:125-126`) uses the plan only as a UI hint.
+- No licence stub, no purchase flow, no UI Pro toggle.
+
+**OPEN QUESTION for the owner:** the real Pro grant mechanism. Options: StoreKit receipt, licence key, or cloud token. A signed offline token needs a signing key that the owner creates. Until answered, Release macOS stays Free (scout lines 23-28).
+
+Trust caveat: the `plan` field is caller-supplied in `ariad-ffi`, so a modified client can pass `pro`. Real enforcement needs the licence layer, which is why the grant mechanism stays an open question.
+
+Carried over from the scout (Q3, Q4): whether plan verification belongs in `ariad-host` or per surface, and whether to gate `ASHIFT_PLAN` in the release CLI. The Pro tool list is still open (ARCHITECTURE open question 9).
+
 ## Tasks
 
 | Task | Owner (model) | Files owned |
@@ -43,4 +80,8 @@ Every tool and both edit modes in the native app, feeling like a first-party App
 - [ ] Parity checklist: every row in `docs/parity-matrix.md` marked `mac` works in the app (UI test or recorded manual check).
 - [ ] Output bytes of each tool equal CLI output for the same inputs/params (determinism test via `ariad-ffi` vs `ashift`).
 - [ ] Document/Page mode acceptance identical to phase 16.
+- [ ] The two reverted UI changes are re-landed, each green on its own macOS CI run.
+- [ ] Sparkle menu/update-window, relaunch and https/ATS checks recorded.
+- [x] CI build-time investigation recorded with before (52-56 min build + ~3 min tests) and after times (PR #316 check, then the sccache PR).
+- [ ] Pro interim implemented as above; the owner answers the Pro grant open question before any purchase or licence work.
 - [ ] macOS preview 0.7.0 notarized DMG + Sparkle appcast (owner GO).

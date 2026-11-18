@@ -1,10 +1,27 @@
 //! Canonical serialization of PDF content operands and operators.
 use std::io::Write;
 
+use ariad_core::protocol::ErrorCode;
 use ariad_engine_io::EngineFailure;
 use lopdf::{Object, content::Content};
 
 use crate::extract_images::next_content_token;
+
+pub(crate) const OPERAND_MALFORMED: &str = "Content operand is malformed.";
+pub(crate) const OPERAND_UNTERMINATED: &str = "Content operand is unterminated.";
+pub(crate) const OPERAND_NESTED: &str = "Content operand nests unsupported containers.";
+pub(crate) const DICTIONARY_KEY_INVALID: &str = "Content dictionary key is invalid or repeated.";
+pub(crate) const DICTIONARY_VALUE_MISSING: &str = "Content dictionary key has no value.";
+pub(crate) const PROPERTY_LIST_UNSUPPORTED: &str =
+    "Marked-content property list has an unsupported value.";
+pub(crate) const NAME_UNSUPPORTED: &str = "Content name is not supported.";
+pub(crate) const NUMBER_UNSUPPORTED: &str = "Content number is out of range.";
+pub(crate) const NON_ASCII: &str = "Content stream contains bytes outside printable ASCII.";
+pub(crate) const OPERATOR_MALFORMED: &str = "Content operator is malformed.";
+
+const fn refusal(message: &'static str) -> EngineFailure {
+    EngineFailure::new(ErrorCode::LimitExceeded, message)
+}
 
 fn safe_name(token: &[u8]) -> bool {
     token.len() > 1
@@ -32,9 +49,9 @@ fn write_operand(
 ) -> Result<(), EngineFailure> {
     let mut source = bytes.to_vec();
     source.extend_from_slice(b" q");
-    let content = Content::decode(&source).map_err(|_| EngineFailure::limit_exceeded())?;
+    let content = Content::decode(&source).map_err(|_| refusal(OPERAND_MALFORMED))?;
     if content.operations.len() != 1 || content.operations[0].operands.len() != 1 {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(refusal(OPERAND_MALFORMED));
     }
     let object = &content.operations[0].operands[0];
     write_content_object_inner(out, object, property_array)
@@ -54,11 +71,11 @@ fn write_content_object_inner(
 ) -> Result<(), EngineFailure> {
     if property_array {
         let Object::Dictionary(dict) = object else {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(refusal(PROPERTY_LIST_UNSUPPORTED));
         };
         for (key, value) in dict.iter() {
             if !safe_name(&[b"/".as_slice(), key].concat()) {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(refusal(DICTIONARY_KEY_INVALID));
             }
             if let Object::Array(items) = value {
                 for item in items {
@@ -69,7 +86,7 @@ fn write_content_object_inner(
                             | Object::Real(_)
                             | Object::String(_, _)
                     ) {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(refusal(PROPERTY_LIST_UNSUPPORTED));
                     }
                     validate_object(item, 2)?;
                 }
@@ -124,13 +141,16 @@ pub(crate) fn validate_object(object: &Object, depth: usize) -> Result<(), Engin
         Object::Dictionary(dict) if depth == 0 => {
             for (key, value) in dict.iter() {
                 if !safe_name(&[b"/".as_slice(), key].concat()) {
-                    return Err(EngineFailure::limit_exceeded());
+                    return Err(refusal(DICTIONARY_KEY_INVALID));
                 }
                 validate_object(value, depth + 1)?;
             }
             Ok(())
         }
-        _ => Err(EngineFailure::limit_exceeded()),
+        Object::Name(_) => Err(refusal(NAME_UNSUPPORTED)),
+        Object::Integer(_) | Object::Real(_) => Err(refusal(NUMBER_UNSUPPORTED)),
+        Object::Array(_) | Object::Dictionary(_) => Err(refusal(OPERAND_NESTED)),
+        _ => Err(refusal(OPERAND_MALFORMED)),
     }
 }
 
@@ -151,12 +171,12 @@ pub(crate) fn emit_token(
         loop {
             let before = *cursor;
             let (s, e) =
-                next_content_token(bytes, cursor)?.ok_or_else(EngineFailure::limit_exceeded)?;
+                next_content_token(bytes, cursor)?.ok_or_else(|| refusal(OPERAND_UNTERMINATED))?;
             validate_gap(&bytes[before..s])?;
             let part = &bytes[s..e];
             if part == if is_dict { b">>".as_slice() } else { b"]" } {
                 if is_dict && !key {
-                    return Err(EngineFailure::limit_exceeded());
+                    return Err(refusal(DICTIONARY_VALUE_MISSING));
                 }
                 break;
             }
@@ -165,22 +185,25 @@ pub(crate) fn emit_token(
                 loop {
                     let before = *cursor;
                     let (a, b) = next_content_token(bytes, cursor)?
-                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                        .ok_or_else(|| refusal(OPERAND_UNTERMINATED))?;
                     validate_gap(&bytes[before..a])?;
                     let item = &bytes[a..b];
                     if item == b"]" {
                         break;
                     }
                     if !scalar(item) || matches!(item, b"true" | b"false" | b"null") {
-                        return Err(EngineFailure::limit_exceeded());
+                        return Err(refusal(PROPERTY_LIST_UNSUPPORTED));
                     }
                     validate_token(item)?;
                 }
                 key = true;
                 continue;
             }
-            if !scalar(part) || (is_dict && key && (!safe_name(part) || !keys.insert(part))) {
-                return Err(EngineFailure::limit_exceeded());
+            if !scalar(part) {
+                return Err(refusal(OPERAND_NESTED));
+            }
+            if is_dict && key && (!safe_name(part) || !keys.insert(part)) {
+                return Err(refusal(DICTIONARY_KEY_INVALID));
             }
             validate_token(part)?;
             if is_dict {
@@ -190,10 +213,10 @@ pub(crate) fn emit_token(
         if property_array {
             let mut lookahead = *cursor;
             let (s, e) = next_content_token(bytes, &mut lookahead)?
-                .ok_or_else(EngineFailure::limit_exceeded)?;
+                .ok_or_else(|| refusal(PROPERTY_LIST_UNSUPPORTED))?;
             validate_gap(&bytes[*cursor..s])?;
             if !matches!(&bytes[s..e], b"BDC" | b"DP") {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(refusal(PROPERTY_LIST_UNSUPPORTED));
             }
         }
         write_operand(out, &bytes[start..*cursor], property_array)?;
@@ -207,7 +230,7 @@ pub(crate) fn emit_token(
                 .iter()
                 .all(|b| b.is_ascii_alphanumeric() || b"*'\"".contains(b))
         {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(refusal(OPERATOR_MALFORMED));
         }
         out.write_all(token)
             .map_err(|_| EngineFailure::limit_exceeded())?;
@@ -217,14 +240,14 @@ pub(crate) fn emit_token(
 }
 
 pub(crate) fn validate_token(token: &[u8]) -> Result<(), EngineFailure> {
-    if token.starts_with(b"/") && !safe_name(token) {
-        return Err(EngineFailure::limit_exceeded());
-    }
     if !token.starts_with(b"(")
         && !token.starts_with(b"<")
         && token.iter().any(|b| !(0x21..=0x7e).contains(b))
     {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(refusal(NON_ASCII));
+    }
+    if token.starts_with(b"/") && !safe_name(token) {
+        return Err(refusal(NAME_UNSUPPORTED));
     }
     Ok(())
 }
@@ -234,7 +257,7 @@ pub(crate) fn validate_gap(bytes: &[u8]) -> Result<(), EngineFailure> {
         .iter()
         .any(|b| !(0x20..=0x7e).contains(b) && !matches!(*b, 0 | 9 | 10 | 12 | 13))
     {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(refusal(NON_ASCII));
     }
     Ok(())
 }
@@ -257,27 +280,42 @@ mod tests {
                 output.windows(4).any(|w| w == b"<78>") || output.windows(4).any(|w| w == b"/Top")
             );
         }
-        for input in [
-            b"<< /K [[/A]] >> BDC".as_slice(),
-            b"<< /K [<< /A 1 >>] >> BDC",
-            b"<< /K << /A 1 >> >> BDC",
-            b"<< /K [true] >> BDC",
-            b"<< /K [/A] >> q",
-            b"[[/A]] TJ",
+        for (input, expected) in [
+            (b"<< /K [[/A]] >> BDC".as_slice(), PROPERTY_LIST_UNSUPPORTED),
+            (b"<< /K [<< /A 1 >>] >> BDC", PROPERTY_LIST_UNSUPPORTED),
+            (b"<< /K << /A 1 >> >> BDC", OPERAND_NESTED),
+            (b"<< /K [true] >> BDC", PROPERTY_LIST_UNSUPPORTED),
+            (b"<< /K [/A] >> q", PROPERTY_LIST_UNSUPPORTED),
+            (b"[[/A]] TJ", OPERAND_NESTED),
         ] {
             let mut cursor = 0;
             let (start, end) = next_content_token(input, &mut cursor).unwrap().unwrap();
-            assert!(emit_token(input, start, end, &mut cursor, &mut Vec::new()).is_err());
+            let err = emit_token(input, start, end, &mut cursor, &mut Vec::new()).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, expected, "{input:?}");
         }
     }
 
     #[test]
     fn writes_simple_operands_and_rejects_ambiguous_structure() {
-        for input in [b"[[ ]]".as_slice(), b"<< 1 2 >>", b"/Bad#20Name", b"q\xff"] {
+        for (input, expected) in [
+            (b"[[ ]]".as_slice(), OPERAND_NESTED),
+            (b"<< 1 2 >>", DICTIONARY_KEY_INVALID),
+            (b"<< /A >>", DICTIONARY_VALUE_MISSING),
+            (b"[ /A", OPERAND_UNTERMINATED),
+            (b"/Bad#20Name", NAME_UNSUPPORTED),
+            (b"q\xff", NON_ASCII),
+        ] {
             let mut cursor = 0;
             let (s, e) = next_content_token(input, &mut cursor).unwrap().unwrap();
-            assert!(emit_token(input, s, e, &mut cursor, &mut Vec::new()).is_err());
+            let err = emit_token(input, s, e, &mut cursor, &mut Vec::new()).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, expected, "{input:?}");
         }
+        let err = validate_object(&Object::Real(f32::INFINITY), 0).unwrap_err();
+        assert_eq!(err.message, NUMBER_UNSUPPORTED);
+        let err = validate_object(&Object::Array(vec![Object::Array(vec![])]), 0).unwrap_err();
+        assert_eq!(err.message, OPERAND_NESTED);
         let input = b"(hello)";
         let mut cursor = 0;
         let (s, e) = next_content_token(input, &mut cursor).unwrap().unwrap();

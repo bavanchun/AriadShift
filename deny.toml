@@ -10,12 +10,6 @@ targets = [
 yanked = "deny"
 unmaintained = "workspace"
 ignore = [
-    # The approved font subsetting implementation uses ttf-parser 0.25.1 on
-    # bundled, hash-pinned fonts only, never input or system font bytes.
-    # Typst also parses bundled fonts, including Source Code Pro. This
-    # advisory records maintenance status, not a reported vulnerability.
-    # Track replacement in https://github.com/bavanchun/AriadShift/issues/205.
-    { id = "RUSTSEC-2026-0192", reason = "unmaintained parser restricted to bundled, hash-pinned fonts; replacement tracked in issue 205" },
     # The Marvin attack is a timing side channel in RSA private-key
     # operations. rsa reaches the build only through jsonwebtoken's verifier
     # in ariad-server, which checks signatures with public keys and never
@@ -33,6 +27,13 @@ ignore = [
     # parsing paths never run. Drop both entries once citationberg moves to >= 0.41.
     { id = "RUSTSEC-2026-0194", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
     { id = "RUSTSEC-2026-0195", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
+    # chrono 0.4.45 is flagged as unmaintained ("no safe upgrade"); the advisory
+    # records maintenance status, not a vulnerability. It is a direct dependency
+    # of ariad-server (timestamps in the API, blob expiry, sweeper) and reaches the
+    # build through sqlx, utoipa, object_store, pdfium-render, rmcp and schemars,
+    # so no single bump removes it. Reassess when upstream publishes a maintained
+    # release or when the server migrates its timestamps to another time crate.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no safe upgrade; direct in ariad-server and transitive via object_store, pdfium-render, rmcp, schemars; migration to be tracked in a follow-up issue" },
 ]
 
 [licenses]
@@ -88,6 +89,39 @@ name = "cssparser-macros"
 [[licenses.exceptions]]
 allow = ["0BSD"]
 name = "roman-numerals-rs"
+
+# Unmodified UniFFI crates for macOS Swift bindings (ariad-ffi).
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_bindgen"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_core"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_internal_macros"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_macros"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_meta"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_pipeline"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "uniffi_udl"
 
 [bans]
 multiple-versions = "warn"

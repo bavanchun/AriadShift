@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import base64
+import csv
 import hashlib
 import importlib
+import importlib.util
 import io
 import json
 import os
+import pathlib
 import runpy
 import shlex
 import subprocess
 import sys
 import tarfile
 import tomllib
+import zipfile
 from dataclasses import asdict
 from types import SimpleNamespace
 
@@ -51,17 +56,96 @@ def workflow_condition(expression, **context):
     "event,ref,expected",
     [
         ("pull_request", "refs/pull/271/merge", True),
-        ("workflow_dispatch", "refs/heads/feat/web-tool-suite", True),
+        # Another PR's Cloud E2E may be waiting on a dispatched or dev run, so no non-PR run is
+        # ever cancelled by a newer one.
+        ("workflow_dispatch", "refs/heads/feat/web-tool-suite", False),
         ("workflow_dispatch", "refs/heads/dev", False),
         ("workflow_dispatch", "refs/heads/main", False),
         ("workflow_dispatch", "refs/tags/pack-docling-v0.2.0", False),
+        ("push", "refs/heads/dev", False),
         ("push", "refs/tags/pack-docling-v0.2.0", False),
     ],
 )
-def test_pack_supersession_preserves_trusted_branches_and_tags(pack_workflow, event, ref, expected):
+def test_pack_supersession_cancels_only_pull_request_runs(pack_workflow, event, ref, expected):
     condition = pack_workflow["concurrency"]["cancel-in-progress"]
     github = SimpleNamespace(event_name=event, ref=ref)
     assert workflow_condition(condition, github=github) is expected
+
+
+def test_non_pull_request_pack_runs_have_their_own_concurrency_group(pack_workflow):
+    group = pack_workflow["concurrency"]["group"]
+    assert "pull_request.number" in group
+    assert "github.run_id" in group
+    assert "github.ref" not in group
+
+
+@pytest.mark.parametrize(
+    "ref,inputs,expected",
+    [
+        ("refs/heads/dev", "", MACOS),
+        ("refs/heads/dev", "other", "other"),
+        ("refs/heads/feat/x", "", ""),
+        ("refs/tags/pack-docling-v0.2.0", "", ""),
+    ],
+)
+def test_dev_push_declares_the_macos_omission_like_a_dispatch(pack_workflow, ref, inputs, expected):
+    scope = next(
+        step for step in pack_workflow["jobs"]["scope"]["steps"] if step.get("id") == "scope"
+    )
+    expression = scope["env"]["ALLOW_MISSING_TARGETS"]
+    github = SimpleNamespace(ref=ref)
+    context = {"github": github, "inputs": SimpleNamespace(allow_missing_targets=inputs)}
+    assert workflow_condition(expression, **context) == expected
+
+
+@pytest.mark.parametrize(
+    "event,ref,expected",
+    [
+        ("push", "refs/tags/pack-docling-v0.2.0", True),
+        ("pull_request", "refs/pull/271/merge", False),
+        ("workflow_dispatch", "refs/tags/pack-docling-v0.2.0", False),
+        ("push", "refs/tags/v0.6.0", False),
+        ("push", "refs/tags/pack-pdfium-v0.1.0", False),
+    ],
+)
+def test_release_job_condition_selects_docling_tag_pushes_only(pack_workflow, event, ref, expected):
+    release = pack_workflow["jobs"]["release"]
+    github = SimpleNamespace(event_name=event, ref=ref)
+    assert bool(workflow_condition(release["if"], github=github)) is expected
+
+
+def test_release_job_configuration_and_steps(pack_workflow):
+    release = pack_workflow["jobs"]["release"]
+    assert release["needs"] == ["engine", "conformance", "manifest"]
+    assert release["environment"] == "release"
+    assert release["permissions"] == {"contents": "write"}
+
+    steps = {step["name"]: step for step in release["steps"]}
+
+    checkout = steps["Check out source"]
+    assert checkout["uses"].startswith("actions/checkout@")
+    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["persist-credentials"] is False
+
+    ancestry = steps["Require stable branch ancestry"]
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main' in ancestry["run"]
+
+    checksums = steps["Verify component checksums"]
+    assert "sha256sum --check SHA256SUMS" in checksums["run"]
+
+    signing = steps["Sign the manifest"]
+    assert "scripts/pack/sign-pack.sh" in signing["run"]
+    assert signing.get("env", {}).get("MINISIGN_SECRET_KEY") == "${{ secrets.PACK_MINISIGN_KEY }}"
+
+    for job_name, job in pack_workflow["jobs"].items():
+        assert "PACK_MINISIGN_KEY" not in str(job.get("env", {}))
+        for step in job.get("steps", []):
+            if job_name == "release" and step.get("name") == "Sign the manifest":
+                continue
+            assert "PACK_MINISIGN_KEY" not in str(step.get("env", {}))
+
+    publish = steps["Publish the release"]
+    assert 'gh release create "$TAG" --verify-tag' in publish["run"]
 
 
 @pytest.mark.parametrize(
@@ -156,6 +240,44 @@ def test_pack_cleanup_stops_only_its_named_container(
         assert calls[-1] == ["sccache", "--stop-server"]
 
 
+def test_toolchain_linux_opencv_step_runs_inside_uv_project_environment(tmp_path, monkeypatch):
+    workflow = yaml.safe_load(
+        (REPOSITORY / ".github/workflows/toolchain-wheels.yml").read_text("utf-8")
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name")
+        == "Build IPP-free OpenCV wheel, collate toolchain artifacts and audit wheels"
+    )
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    script = tmp_path / "step.py"
+    script.write_text(step["run"], "utf-8")
+    runpy.run_path(str(script))
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:8] == [
+        "uv",
+        "run",
+        "--package",
+        "ariad-docling",
+        "--group",
+        "pack-build",
+        "--frozen",
+        "python",
+    ]
+    assert command[8] == "-c"
+    compile(command[9], "<toolchain-linux-step>", "exec")
+    for fragment in ("uv", "pip", "sys.executable", "licenses.check_wheel_files"):
+        assert fragment in command[9]
+
+
 @pytest.fixture
 def planner():
     return importlib.import_module("ci_plan")
@@ -194,6 +316,16 @@ def test_unpinned_pull_request_keeps_both_linux_targets_and_explains_macos(plann
 def test_release_without_an_explicit_macos_omission_fails(planner, event):
     with pytest.raises(SystemExit, match=r"explicit.*omission"):
         planner.plan(fetch.load_pins(), event, "pack-docling-v0.2.0")
+
+
+def test_dev_push_is_planned_like_a_dispatch(planner):
+    pins = fetch.load_pins()
+    result = planner.plan(pins, "push", "dev", allowed_skips=MACOS)
+    assert result["targets"] == LINUX
+    assert result["allowed_skips"] == [MACOS]
+    assert result["release"] is True
+    with pytest.raises(SystemExit, match="release requires an explicit macOS omission"):
+        planner.plan(pins, "push", "dev")
 
 
 def test_cloud_ci_dispatch_explicitly_omits_only_macos_without_relaxing_release(planner):
@@ -338,3 +470,370 @@ def test_real_manifest_and_checksums_contain_only_built_targets(planner, tmp_pat
     for line in checksums:
         digest, filename = line.split("  ", 1)
         assert hashlib.sha256((tmp_path / filename).read_bytes()).hexdigest() == digest
+
+
+TORCH_WHEEL = "torch-2.14.1+cpu-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+TORCH_DIST_INFO = "torch-2.14.1+cpu.dist-info"
+TORCH_NOTICES = {
+    f"{TORCH_DIST_INFO}/licenses/pytorch-2.14.1-native-notices.txt": (
+        "pytorch-2.14.1-native-notices.txt"
+    ),
+    f"{TORCH_DIST_INFO}/licenses/llvm-openmp-notice.txt": "llvm-openmp-notice.txt",
+    f"{TORCH_DIST_INFO}/licenses/ittapi.txt": "ittapi.txt",
+}
+
+
+def toolchain_build_script(monkeypatch, tmp_path):
+    """The audited inner program of the Linux toolchain job, as the runner would receive it."""
+    workflow = yaml.safe_load(
+        (REPOSITORY / ".github/workflows/toolchain-wheels.yml").read_text("utf-8")
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name")
+        == "Build IPP-free OpenCV wheel, collate toolchain artifacts and audit wheels"
+    )
+    commands = []
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            subprocess, "run", lambda command, **_: commands.append(command) or SimpleNamespace()
+        )
+        outer = tmp_path / "outer-step.py"
+        outer.write_text(step["run"], "utf-8")
+        runpy.run_path(str(outer))
+    return commands[0][9]
+
+
+def unpack_wheel_without_wheel_package(command):
+    """Unpack a wheel and verify its RECORD as ``python -m wheel unpack`` does."""
+    dest = pathlib.Path(command[command.index("--dest") + 1])
+    wheel = pathlib.Path(command[-1])
+
+    def fail(reason):
+        raise subprocess.CalledProcessError(1, command, stderr=f"{wheel.name}: {reason}")
+
+    with zipfile.ZipFile(wheel) as archive:
+        members = {info.filename: info for info in archive.infolist() if not info.is_dir()}
+        records = [name for name in members if name.endswith(".dist-info/RECORD")]
+        if len(records) != 1:
+            fail("expected exactly one RECORD")
+        hashed = set()
+        for name, checksum, size in csv.reader(io.StringIO(archive.read(records[0]).decode())):
+            if name == records[0]:
+                continue
+            if name not in members:
+                fail(f"RECORD lists a missing member: {name}")
+            data = archive.read(name)
+            algorithm, _, expected = checksum.partition("=")
+            digest = base64.urlsafe_b64encode(hashlib.new(algorithm, data).digest())
+            if algorithm != "sha256" or digest.decode().rstrip("=") != expected:
+                fail(f"RECORD digest mismatch: {name}")
+            if size and int(size) != len(data):
+                fail(f"RECORD size mismatch: {name}")
+            hashed.add(name)
+        if unhashed := set(members) - hashed - {records[0]}:
+            fail(f"members without a RECORD hash: {sorted(unhashed)}")
+        archive.extractall(dest / wheel.stem)  # noqa: S202 - the test's own synthetic wheel
+
+
+def synthetic_torch_wheel(path):
+    members = {
+        "torch/__init__.py": b"# synthetic torch\n",
+        "torch/lib/data.bin": bytes(range(256)) * 64,
+        f"{TORCH_DIST_INFO}/METADATA": b"Metadata-Version: 2.1\nName: torch\nVersion: 2.14.1+cpu\n",
+        f"{TORCH_DIST_INFO}/WHEEL": (
+            b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\n"
+            b"Tag: cp314-cp314-manylinux_2_27_x86_64\nTag: cp314-cp314-manylinux_2_28_x86_64\n"
+        ),
+    }
+    record = "".join(f"{name},,\n" for name in members) + f"{TORCH_DIST_INFO}/RECORD,,\n"
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            info = zipfile.ZipInfo(name, date_time=(2026, 1, 2, 3, 4, 6))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100755 << 16
+            archive.writestr(info, data)
+        archive.writestr(f"{TORCH_DIST_INFO}/RECORD", record)
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or sys.version_info[:2] != (3, 14),
+    reason="the synthetic wheel carries the Linux x86_64 cp314 tags the toolchain job produces",
+)
+def test_toolchain_job_repacks_the_torch_wheel_with_reviewed_notices(tmp_path, monkeypatch):
+    import licenses
+
+    script = toolchain_build_script(monkeypatch, tmp_path)
+    work = tmp_path / "work"
+    (work / "torch-out").mkdir(parents=True)
+    (work / "engines").symlink_to(REPOSITORY / "engines")
+    wheel = work / "torch-out" / TORCH_WHEEL
+    synthetic_torch_wheel(wheel)
+    openblas = work / "torch-out/OpenBLAS-LICENSE.txt"
+    openblas.write_bytes(b"OpenBLAS licence\n")
+    target = "x86_64-unknown-linux-gnu"
+    build_record = {
+        "schema": 1,
+        "target": target,
+        "build_key": "synthetic-key",
+        "files": {
+            TORCH_WHEEL: {"sha256": fetch._sha256(wheel), "size": wheel.stat().st_size},
+            openblas.name: {"sha256": fetch._sha256(openblas), "size": openblas.stat().st_size},
+        },
+    }
+    build_json = work / "torch-out/build.json"
+    build_json.write_text(json.dumps(build_record, indent=2) + "\n", "utf-8")
+    original = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in (wheel, openblas, build_json)
+    }
+
+    audits = []
+    installs = []
+    installed_sites = []
+    real_run = subprocess.run
+
+    def run(command, **kwargs):
+        # Only the OpenCV reinstall into the build environment is replaced; the virtual-environment
+        # install of the repacked wheel runs for real. The unpack runs through the ``wheel`` package
+        # when it is installed (``pack-build`` group) and through an equivalent RECORD-verifying
+        # unpack otherwise, as in the plain ``just docling-test`` environment.
+        if "--reinstall" in command:
+            installs.append(command)
+            return subprocess.CompletedProcess(command, 0)
+        result = _run_with_wheel_unpack_fallback(real_run, command, **kwargs)
+        if command[:3] == ["uv", "pip", "install"]:
+            venv_python = command[command.index("--python") + 1]
+            platlib = pathlib.Path(
+                real_run(
+                    [venv_python, "-c", "import sysconfig; print(sysconfig.get_path('platlib'))"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            )
+            licenses_dir = platlib / TORCH_DIST_INFO / "licenses"
+            installed_sites.append(
+                {
+                    "has_notices": (platlib / "notices").exists()
+                    or (platlib / "notices").is_symlink(),
+                    "dist_info_licenses": (
+                        {path.name: path.read_bytes() for path in licenses_dir.iterdir()}
+                        if licenses_dir.is_dir()
+                        else {}
+                    ),
+                }
+            )
+        return result
+
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("TARGET", target)
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(native_build, "opencv", lambda *_: work / "opencv.whl")
+    monkeypatch.setattr(native_build, "verify_opencv", lambda *_, **__: None)
+    monkeypatch.setattr(native_build, "export_opencv", lambda *_: None)
+    monkeypatch.setattr(
+        licenses,
+        "check_wheel_files",
+        lambda artifacts, **options: audits.append((list(artifacts), options)),
+    )
+    exec(compile(script, "<toolchain-linux-step>", "exec"), {"__name__": "__main__"})  # noqa: S102
+
+    assert len(installs) == 1
+    assert len(installed_sites) == 1
+    assert installed_sites[0]["has_notices"] is False
+    assert installed_sites[0]["dist_info_licenses"] == {
+        source: (REPOSITORY / "engines/docling/pack/licenses" / source).read_bytes()
+        for source in TORCH_NOTICES.values()
+    }
+    # The cache-keyed inputs are byte-for-byte what the build produced.
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in (wheel, openblas, build_json)
+    } == original
+
+    released = work / "wheels-out" / TORCH_WHEEL
+    reviewed = {
+        notice["path"]: notice["sha256"]
+        for notice in licenses._NATIVE_COMPONENTS["torch-native"]["notices"]
+    }
+    with zipfile.ZipFile(released) as archive:
+        assert not any(
+            name.rstrip("/") == "notices" or name.startswith("notices/")
+            for name in archive.namelist()
+        )
+        for member, source in TORCH_NOTICES.items():
+            data = archive.read(member)
+            assert data == (REPOSITORY / "engines/docling/pack/licenses" / source).read_bytes()
+            assert hashlib.sha256(data).hexdigest() == reviewed[source]
+        rows = list(csv.reader(io.StringIO(archive.read(f"{TORCH_DIST_INFO}/RECORD").decode())))
+        assert rows[-1] == [f"{TORCH_DIST_INFO}/RECORD", "", ""]
+        assert {row[0] for row in rows} == set(archive.namelist())
+        for name, checksum, size in rows[:-1]:
+            data = archive.read(name)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+            assert (checksum, size) == (f"sha256={digest}", str(len(data)))
+        with zipfile.ZipFile(wheel) as source:
+            for info in source.infolist():
+                if info.filename.endswith("/RECORD"):
+                    continue
+                copied = archive.getinfo(info.filename)
+                assert (copied.date_time, copied.external_attr, copied.compress_type) == (
+                    info.date_time,
+                    info.external_attr,
+                    info.compress_type,
+                )
+                assert archive.read(info.filename) == source.read(info.filename)
+
+    record = json.loads((work / "wheels-out" / f"torch-build-{target}.json").read_text("utf-8"))
+    entry = record["files"][TORCH_WHEEL]
+    assert entry["sha256"] == hashlib.sha256(released.read_bytes()).hexdigest()
+    assert entry["sha256"] != build_record["files"][TORCH_WHEEL]["sha256"]
+    assert entry["size"] == released.stat().st_size != build_record["files"][TORCH_WHEEL]["size"]
+    sidecar = record["files"][openblas.name]
+    assert sidecar["asset"] == f"OpenBLAS-LICENSE-{target}.txt"
+    assert (sidecar["sha256"], sidecar["size"]) == (
+        build_record["files"][openblas.name]["sha256"],
+        build_record["files"][openblas.name]["size"],
+    )
+    assert (work / "wheels-out" / sidecar["asset"]).read_bytes() == openblas.read_bytes()
+    assert len(audits) == 1
+    artifacts, options = audits[0]
+    assert pathlib.Path("wheels-out", TORCH_WHEEL) in artifacts and options["target"] == target
+
+
+def _run_with_wheel_unpack_fallback(real_run, command, **kwargs):
+    if (
+        len(command) >= 6
+        and command[1:4] == ["-m", "wheel", "unpack"]
+        and importlib.util.find_spec("wheel") is None
+    ):
+        unpack_wheel_without_wheel_package(command)
+        return subprocess.CompletedProcess(command, 0)
+    return real_run(command, **kwargs)
+
+
+def load_toolchain_helpers(monkeypatch, tmp_path):
+    script = toolchain_build_script(monkeypatch, tmp_path)
+    namespace = {"__name__": "toolchain_helpers"}
+    monkeypatch.chdir(REPOSITORY)
+    exec(compile(script, "<toolchain-linux-helpers>", "exec"), namespace)  # noqa: S102
+    return namespace
+
+
+def _write_wheel_with_hashed_record(dest, members, dist_info):
+    rows = []
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+            rows.append([name, f"sha256={digest}", str(len(data))])
+        rows.append([f"{dist_info}/RECORD", "", ""])
+        buf = io.StringIO()
+        csv.writer(buf, lineterminator="\n").writerows(rows)
+        archive.writestr(f"{dist_info}/RECORD", buf.getvalue().encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    "conflicting",
+    [
+        f"{TORCH_DIST_INFO}/licenses/ittapi.txt",
+        "notices/ittapi.txt",
+        "notices/",
+        f"{TORCH_DIST_INFO}/licenses",
+    ],
+)
+def test_repack_torch_wheel_rejects_existing_notice_or_legacy_collisions(
+    tmp_path, monkeypatch, conflicting
+):
+    helpers = load_toolchain_helpers(monkeypatch, tmp_path)
+    source = tmp_path / TORCH_WHEEL
+    synthetic_torch_wheel(source)
+    with zipfile.ZipFile(source, "a") as archive:
+        if conflicting.endswith("/"):
+            archive.mkdir(conflicting.rstrip("/"))
+        else:
+            archive.writestr(conflicting, b"stale notice\n")
+    dest = tmp_path / "repacked.whl"
+    with pytest.raises(SystemExit, match="conflicting notice path"):
+        helpers["repack_torch_wheel"](source, dest)
+    assert not dest.exists()
+
+
+@pytest.mark.parametrize(
+    "dist_infos",
+    [
+        [],
+        [TORCH_DIST_INFO, "other-1.0.dist-info"],
+        ["not_torch-1.0.dist-info"],
+        ["torch-..bad.dist-info"],
+    ],
+)
+def test_repack_torch_wheel_requires_single_canonical_torch_dist_info(
+    tmp_path, monkeypatch, dist_infos
+):
+    helpers = load_toolchain_helpers(monkeypatch, tmp_path)
+    source = tmp_path / TORCH_WHEEL
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("torch/__init__.py", b"# synthetic\n")
+        for index, dist_info in enumerate(dist_infos):
+            archive.writestr(f"{dist_info}/METADATA", b"Name: torch\nVersion: 2.14.1+cpu\n")
+            if index == 0:
+                archive.writestr(f"{dist_info}/RECORD", f"{dist_info}/RECORD,,\n")
+    dest = tmp_path / "repacked.whl"
+    with pytest.raises(SystemExit):
+        helpers["repack_torch_wheel"](source, dest)
+    assert not dest.exists()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or sys.version_info[:2] != (3, 14),
+    reason="the synthetic wheel carries the Linux x86_64 cp314 tags the toolchain job produces",
+)
+def test_verify_repacked_wheel_rejects_site_packages_notices_and_missing_license(
+    tmp_path, monkeypatch
+):
+    helpers = load_toolchain_helpers(monkeypatch, tmp_path)
+    real_run = subprocess.run
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kwargs: _run_with_wheel_unpack_fallback(real_run, command, **kwargs),
+    )
+
+    base_members = {
+        "torch/__init__.py": b"# synthetic torch\n",
+        f"{TORCH_DIST_INFO}/METADATA": b"Metadata-Version: 2.1\nName: torch\nVersion: 2.14.1+cpu\n",
+        f"{TORCH_DIST_INFO}/WHEEL": (
+            b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\n"
+            b"Tag: cp314-cp314-manylinux_2_27_x86_64\nTag: cp314-cp314-manylinux_2_28_x86_64\n"
+        ),
+    }
+    notice_root = REPOSITORY / "engines/docling/pack/licenses"
+    full_notices = {
+        member: (notice_root / source).read_bytes() for member, source in TORCH_NOTICES.items()
+    }
+
+    stale_wheel = tmp_path / "stale-notices" / TORCH_WHEEL
+    stale_wheel.parent.mkdir()
+    _write_wheel_with_hashed_record(
+        stale_wheel,
+        {**base_members, **full_notices, "notices/stale.txt": b"stale\n"},
+        TORCH_DIST_INFO,
+    )
+    with pytest.raises(SystemExit, match="unexpected site-packages/notices"):
+        helpers["verify_repacked_wheel"](stale_wheel)
+
+    incomplete_wheel = tmp_path / "missing-itt" / TORCH_WHEEL
+    incomplete_wheel.parent.mkdir()
+    incomplete_notices = {
+        member: data for member, data in full_notices.items() if not member.endswith("/ittapi.txt")
+    }
+    _write_wheel_with_hashed_record(
+        incomplete_wheel,
+        {**base_members, **incomplete_notices},
+        TORCH_DIST_INFO,
+    )
+    with pytest.raises(SystemExit, match="missing installed notice"):
+        helpers["verify_repacked_wheel"](incomplete_wheel)

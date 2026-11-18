@@ -69,18 +69,18 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           components: rustfmt
           cache: false
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0,cargo-deny@0.20.2,typos@1.50.3,cargo-about@0.9.2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 12.9.1
           run_install: false
@@ -93,7 +93,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -137,7 +137,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           components: clippy
           cache-save-if: ${{ github.event_name == 'push' }}
@@ -175,13 +175,13 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: wasm32-unknown-unknown
           cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
 
@@ -210,7 +210,7 @@ jobs:
         run: bash scripts/ci-sccache.sh start
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -302,7 +302,11 @@ jobs:
       - name: Check capabilities registry
         run: just bench-check
 
+      # Packaging is the same on every host, and on macOS it recompiles the dependency graph from
+      # cold (6 to 14 minutes there, 3 to 5 on Linux and Windows), which pushed cold macOS runs past
+      # the timeout and kept the macOS cache from ever being saved.
       - name: Check packaging
+        if: runner.os != 'macOS'
         run: just package-check
 
       - name: Stop sccache and report stats
@@ -351,12 +355,12 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
 
@@ -415,8 +419,30 @@ jobs:
       - name: Build the engine program
         run: cargo build -p ariad-cli --bin ashift
 
+      # The pack is built from this commit, unsigned, as the PDFium pack workflow's
+      # development route does, so no signing key or published pack is involved.
+      - name: Install pack build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
+      - name: Build the PDFium engine
+        run: cargo build -p ariad-pdfium-engine --bin ariad-pdfium-engine
+
+      - name: Build the source-matched PDFium pack
+        run: >-
+          bash engines/pdfium/pack/make.sh dev
+          --engine "$GITHUB_WORKSPACE/target/debug/ariad-pdfium-engine"
+          --ashift "$GITHUB_WORKSPACE/target/debug/ashift"
+          --out "$RUNNER_TEMP/pdfium-dist" --unpack-dir "$RUNNER_TEMP/pdfium-pack"
+
+      # The pass line for cloud_tool_jobs redaction_refusals_reach_the_client_and_are_not_retried
+      # appears in this step's log; a missing pack fails it instead of skipping.
       - name: Run server tests
-        run: cargo nextest run -p ariad-server
+        env:
+          ASHIFT_PACK_PDFIUM: ${{ runner.temp }}/pdfium-pack
+          ARIAD_REQUIRE_PDFIUM_PACK: "1"
+        run: cargo nextest run -p ariad-server --status-level pass --final-status-level pass
 
       - name: Check required sandbox failure through the helper
         env:
@@ -428,7 +454,7 @@ jobs:
         run: just test-server-container
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 12.9.1
           run_install: false
@@ -468,7 +494,7 @@ jobs:
 
       - name: Set up uv
         if: always()
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -521,12 +547,12 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: sccache@0.19.0
 
@@ -608,13 +634,13 @@ jobs:
             fuzz_args=(-- -max_total_time=60 -timeout=10 -rss_limit_mb=2048)
           fi
           echo "Running fuzz targets with max_total_time=${fuzz_seconds}s per target"
-          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure pdf_redact_params typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned reader_text reader_csv reader_eml reader_msg reader_svg reader_cbz"
+          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure pdf_redact_params type1_to_cff typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned reader_text reader_csv reader_eml reader_msg reader_svg reader_cbz"
           for t in $targets; do
             echo "=== Running fuzz target: $t (${fuzz_seconds}s) ==="
             mkdir -p "fuzz/corpus/$t"
             build_options=()
             case "$t" in
-              pdf_reader|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|reader_cbz) build_options=(--dev --features pdf-reader) ;;
+              pdf_reader|pdf_draw_params|pdf_form_interchange|pdf_form_structure|pdf_redact_params|type1_to_cff|reader_cbz) build_options=(--dev --features pdf-reader) ;;
               typst_writer) build_options=(--dev --features typst-writer) ;;
             esac
             cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" "${fuzz_args[@]}"
@@ -673,18 +699,18 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: wasm32-unknown-unknown
           cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: just@1.58.0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 12.9.1
           run_install: false

@@ -5,7 +5,12 @@ use ariad_pdf::fonts::{
     check_font_coverage, embed_subset_type0_font, match_bundled_font, resolve_font_for_text,
 };
 use lopdf::{Document, Object, Stream, dictionary};
-use ttf_parser::{Face, GlyphId};
+use skrifa::{
+    FontRef, GlyphId, MetadataProvider,
+    instance::{LocationRef, Size},
+    raw::TableProvider,
+    string::StringId,
+};
 use unicode_normalization::UnicodeNormalization;
 
 const VIETNAMESE: &str = "Tiếng Việt có đầy đủ dấu thanh: sắc, huyền, hỏi, ngã, nặng; ă, â, đ, ê, ô, ơ, ư, Ă, Â, Đ, Ê, Ô, Ơ, Ư.";
@@ -42,12 +47,10 @@ fn every_bundled_style_covers_vietnamese_in_nfc_and_nfd() {
             "{choice:?}"
         );
         assert!(check_font_coverage(choice.bytes(), "a\nb").unwrap());
-        let face = Face::parse(choice.bytes(), 0).unwrap();
+        let face = FontRef::new(choice.bytes()).unwrap();
         assert!(
-            face.names()
-                .into_iter()
-                .any(|name| name.name_id == ttf_parser::name_id::POST_SCRIPT_NAME
-                    && name.to_string().as_deref() == Some(choice.postscript_name()))
+            face.localized_strings(StringId::POSTSCRIPT_NAME)
+                .any(|name| name.to_string() == choice.postscript_name())
         );
     }
 }
@@ -309,29 +312,33 @@ fn vietnamese_subset_preserves_unicode_widths_and_glyphs_for_every_style() {
                 .unwrap(),
         );
         assert!(program.len() < choice.bytes().len());
-        let subset = Face::parse(&program, 0).unwrap();
-        let original = Face::parse(choice.bytes(), 0).unwrap();
+        let unscaled =
+            |font| FontRef::glyph_metrics(font, Size::unscaled(), LocationRef::default());
+        let subset_font = FontRef::new(&program).unwrap();
+        let original_font = FontRef::new(choice.bytes()).unwrap();
+        let subset = unscaled(&subset_font);
+        let original = unscaled(&original_font);
         let widths = descendant.get(b"W").unwrap().as_array().unwrap()[1]
             .as_array()
             .unwrap();
         let chars: std::collections::BTreeSet<_> = VIETNAMESE.chars().collect();
         for (index, ch) in chars.iter().enumerate() {
             let code = index + 1;
-            let subset_gid = GlyphId(u16::from_be_bytes([
+            let subset_gid = GlyphId::new(u32::from(u16::from_be_bytes([
                 cid_map[code * 2],
                 cid_map[code * 2 + 1],
-            ]));
-            let original_gid = original.glyph_index(*ch).unwrap();
-            assert_ne!(subset_gid.0, 0);
+            ])));
+            let original_gid = original_font.charmap().map(*ch).unwrap();
+            assert_ne!(subset_gid.to_u32(), 0);
             assert_eq!(
-                subset.glyph_bounding_box(subset_gid),
-                original.glyph_bounding_box(original_gid),
+                subset.bounds(subset_gid),
+                original.bounds(original_gid),
                 "{choice:?}: {ch}"
             );
             assert_eq!(
                 widths[index].as_i64().unwrap(),
-                i64::from(original.glyph_hor_advance(original_gid).unwrap()) * 1000
-                    / i64::from(original.units_per_em())
+                original.advance_width(original_gid).unwrap() as i64 * 1000
+                    / i64::from(original_font.head().unwrap().units_per_em())
             );
         }
         let mut bytes = Vec::new();

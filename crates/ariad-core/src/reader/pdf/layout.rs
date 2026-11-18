@@ -16,7 +16,7 @@ use unicode_normalization::char::is_combining_mark;
 
 use super::{
     interpreter::{CHUNK_START, FontStyle, Glyph, INVISIBLE, PageContent, SPACE, STROKED},
-    lists,
+    lists, tables, unruled,
 };
 
 /// Gap, in font sizes, beyond which glyphs on one baseline belong to separate segments.
@@ -76,18 +76,220 @@ pub(super) struct Block {
     /// Whether the text runs left to right on the displayed page.
     pub(super) upright: bool,
     pub(super) direct: ParagraphStyle,
+    /// Set for a ruled table, whose `lines` are empty.
+    pub(super) table: Option<Box<TableLayout>>,
 }
 
-/// Lays out one page whose display box is `width` by `height` points.
+/// A detected table with the laid-out text of its cells.
+#[derive(Clone, Debug)]
+pub(super) struct TableLayout {
+    pub(super) columns: usize,
+    /// Rows, top to bottom; each holds the cells that start in it, left to right.
+    pub(super) rows: Vec<Vec<CellLayout>>,
+    /// Rows from the top that form the table head.
+    pub(super) head_rows: usize,
+}
+
+/// One cell of a [`TableLayout`].
+#[derive(Clone, Debug)]
+pub(super) struct CellLayout {
+    pub(super) rowspan: usize,
+    pub(super) colspan: usize,
+    pub(super) blocks: Vec<Block>,
+}
+
+/// Page-level counters for table detection.
+#[derive(Debug, Default)]
+pub(super) struct TableScan {
+    /// Pages where a limit stopped detection, so tables may be missing.
+    pub(super) capped_pages: u32,
+}
+
+/// Lays out one page whose display box is `width` by `height` points. With `scan`, tables are
+/// detected and replace the text blocks they cover: ruled tables first, then tables whose columns
+/// are only separated by whitespace in the text that is left, outside every region of rules.
+///
+/// Regions of rules that the ruled detector refused count as well: a page frame, or any grid of
+/// rules that spans the page, keeps whitespace detection away from the whole page. A table drawn
+/// without rules inside such a frame stays text, which costs recall and avoids reading one region
+/// twice.
 pub(super) fn layout_page(
     content: &PageContent,
     styles: &[FontStyle],
     width: f64,
     height: f64,
+    scan: Option<&mut TableScan>,
 ) -> Vec<Block> {
+    let Some(scan) = scan else {
+        return layout_glyphs(content, styles, width, height, 0..content.glyphs.len());
+    };
+    let ruled = tables::detect(content, width, height);
+    let mut claimed = vec![false; content.glyphs.len()];
+    for grid in &ruled.grids {
+        for cell in &grid.cells {
+            for &index in &cell.glyphs {
+                claimed[index] = true;
+            }
+        }
+    }
+    let rest = (0..content.glyphs.len()).filter(|&index| !claimed[index]);
+    // Ruled tables, and rule grids that were refused, are not read again as whitespace tables. A
+    // refused grid is the extent of its rules, so one that spans the page puts the whole page here.
+    let avoid: Vec<[f64; 4]> = ruled
+        .grids
+        .iter()
+        .map(|grid| grid.bbox)
+        .chain(ruled.rejected.iter().copied())
+        .collect();
+    let budget = unruled::Budget {
+        tables: tables::MAX_TABLES.saturating_sub(ruled.grids.len()),
+        cells: tables::MAX_CELLS.saturating_sub(
+            ruled
+                .grids
+                .iter()
+                .map(|grid| grid.cells.len())
+                .sum::<usize>(),
+        ),
+    };
+    let laid = layout_glyphs_with(
+        content,
+        styles,
+        width,
+        height,
+        rest,
+        Some(&Detection {
+            avoid: &avoid,
+            budget,
+            page_height: height,
+        }),
+    );
+    scan.capped_pages += u32::from(ruled.capped || laid.capped);
+    let mut blocks = laid.blocks;
+    for grid in ruled.grids.iter().chain(&laid.grids) {
+        let block = table_block(grid, content, styles, width, height);
+        let at = table_position(&blocks, &block.bbox);
+        blocks.insert(at, block);
+    }
+    blocks
+}
+
+fn table_block(
+    grid: &tables::Grid,
+    content: &PageContent,
+    styles: &[FontStyle],
+    width: f64,
+    height: f64,
+) -> Block {
+    let mut rows: Vec<Vec<CellLayout>> = (0..grid.rows).map(|_| Vec::new()).collect();
+    for cell in &grid.cells {
+        let blocks = layout_glyphs(content, styles, width, height, cell.glyphs.iter().copied());
+        rows[cell.row].push(CellLayout {
+            rowspan: cell.rowspan,
+            colspan: cell.colspan,
+            blocks,
+        });
+    }
+    let head_rows = usize::from(has_head(grid, &rows));
+    Block {
+        lines: Vec::new(),
+        bbox: grid.bbox,
+        size: 0.0,
+        bold: false,
+        chars: 0,
+        upright: true,
+        direct: ParagraphStyle::default(),
+        table: Some(Box::new(TableLayout {
+            columns: grid.columns,
+            rows,
+            head_rows,
+        })),
+    }
+}
+
+/// Whether the first row is a head: the rule under it is distinctly heavier, or its text is bold
+/// while the body text is not all bold. A first-row cell that spans several rows rules out a head;
+/// cells that span several columns do not.
+fn has_head(grid: &tables::Grid, rows: &[Vec<CellLayout>]) -> bool {
+    let first = &rows[0];
+    if rows.len() < 2 || first.iter().any(|cell| cell.rowspan != 1) {
+        return false;
+    }
+    if first.iter().all(|cell| cell.blocks.is_empty()) {
+        return false;
+    }
+    let bold = |cell: &CellLayout| cell.blocks.iter().all(|block| block.bold);
+    let filled = |cell: &&CellLayout| !cell.blocks.is_empty();
+    let first_bold = first.iter().filter(filled).all(bold);
+    let body_all_bold = rows[1..].iter().flatten().filter(filled).all(bold);
+    grid.heavy_head_rule || (first_bold && !body_all_bold)
+}
+
+/// Index at which a table block enters the reading order. The anchor is the last text block above
+/// the table that shares its columns, which may be a heading across all of them. Columns are read
+/// left to right, so the blocks that follow the anchor and lie wholly left of the table belong to
+/// an earlier column and come first: a table at the top of the right-hand column enters after the
+/// left-hand column, not right under the heading. With no such anchor the table goes before the
+/// first block that shares its columns, otherwise at the end.
+fn table_position(blocks: &[Block], bbox: &[f64; 4]) -> usize {
+    let shares_columns = |block: &Block| block.bbox[0] < bbox[2] && bbox[0] < block.bbox[2];
+    let in_earlier_column = |block: &Block| block.bbox[2] <= bbox[0];
+    if let Some(above) = blocks
+        .iter()
+        .rposition(|block| shares_columns(block) && block.bbox[1] < bbox[1])
+    {
+        let earlier = blocks[above + 1..]
+            .iter()
+            .take_while(|block| in_earlier_column(block))
+            .count();
+        return above + 1 + earlier;
+    }
+    blocks
+        .iter()
+        .position(shares_columns)
+        .unwrap_or(blocks.len())
+}
+
+/// Where to look for tables without ruling lines while laying out glyphs.
+struct Detection<'a> {
+    /// Boxes that detected tables must stay clear of.
+    avoid: &'a [[f64; 4]],
+    budget: unruled::Budget,
+    page_height: f64,
+}
+
+/// Blocks of laid-out glyphs, and the tables found among them.
+struct Laid {
+    blocks: Vec<Block>,
+    grids: Vec<tables::Grid>,
+    /// A limit stopped table detection.
+    capped: bool,
+}
+
+/// Lays out the glyphs at `indices` (ascending positions in [`PageContent::glyphs`]).
+fn layout_glyphs(
+    content: &PageContent,
+    styles: &[FontStyle],
+    width: f64,
+    height: f64,
+    indices: impl Iterator<Item = usize>,
+) -> Vec<Block> {
+    layout_glyphs_with(content, styles, width, height, indices, None).blocks
+}
+
+/// Like [`layout_glyphs`]; with `detection`, upright text rows whose columns are separated by
+/// whitespace only are taken out of the blocks and returned as tables.
+fn layout_glyphs_with(
+    content: &PageContent,
+    styles: &[FontStyle],
+    width: f64,
+    height: f64,
+    indices: impl Iterator<Item = usize>,
+    detection: Option<&Detection>,
+) -> Laid {
     let mut groups: [Vec<CGlyph>; 4] = Default::default();
     let mut seen = HashSet::new();
-    for (index, glyph) in content.glyphs.iter().enumerate() {
+    for index in indices {
+        let glyph = &content.glyphs[index];
         let margin = glyph.size;
         if glyph.x < -margin
             || glyph.y < -margin
@@ -136,26 +338,113 @@ pub(super) fn layout_page(
     }
 
     let mut blocks = Vec::new();
+    let mut grids = Vec::new();
+    let mut capped = false;
     for (orientation, glyphs) in groups.iter().enumerate() {
         if glyphs.is_empty() {
             continue;
         }
         let runs = build_runs(glyphs);
-        let segments = build_segments(glyphs, &runs, content, styles);
+        let keep_runs = orientation == 0 && detection.is_some();
+        let segments = build_segments(glyphs, &runs, content, styles, keep_runs);
         if segments.is_empty() {
             continue;
         }
-        let flows = if orientation == 0 {
+        let mut flows = if orientation == 0 {
             order_flows(&segments)
         } else {
             vec![rows_of(&segments, (0..segments.len()).collect())]
         };
+        if orientation == 0
+            && let Some(detection) = detection
+        {
+            let rows: Vec<Vec<unruled::Row>> = flows
+                .iter()
+                .map(|flow| {
+                    flow.iter()
+                        .map(|row| scan_row(row, &segments, glyphs, content))
+                        .collect()
+                })
+                .collect();
+            let detected = unruled::detect(
+                &rows,
+                detection.avoid,
+                detection.budget,
+                detection.page_height,
+            );
+            capped |= detected.capped;
+            let mut taken: Vec<Vec<bool>> =
+                flows.iter().map(|flow| vec![false; flow.len()]).collect();
+            for found in detected.found {
+                for row in found.rows {
+                    taken[found.flow][row] = true;
+                }
+                grids.push(found.grid);
+            }
+            for (flow, taken) in flows.iter_mut().zip(&taken) {
+                let mut position = 0;
+                flow.retain(|_| {
+                    position += 1;
+                    !taken[position - 1]
+                });
+            }
+            flows.retain(|flow| !flow.is_empty());
+        }
         let pitch = typical_pitch(&segments, &flows);
         for flow in &flows {
             group_blocks(&segments, flow, pitch, orientation as u8, &mut blocks);
         }
     }
-    blocks
+    Laid {
+        blocks,
+        grids,
+        capped,
+    }
+}
+
+/// The glyphs of one row of segments, for table detection.
+fn scan_row(
+    row: &[usize],
+    segments: &[Segment],
+    glyphs: &[CGlyph],
+    content: &PageContent,
+) -> unruled::Row {
+    let dominant = row
+        .iter()
+        .map(|&index| &segments[index])
+        .max_by_key(|segment| segment.chars)
+        .unwrap_or(&segments[row[0]]);
+    let mut boxes = Vec::new();
+    let (mut top, mut bottom) = (f64::INFINITY, f64::NEG_INFINITY);
+    for &index in row {
+        let segment = &segments[index];
+        top = top.min(segment.top());
+        bottom = bottom.max(segment.bottom());
+        for &(from, to) in &segment.runs {
+            for glyph in &glyphs[from..to] {
+                let text = content.glyph_text(&content.glyphs[glyph.index]);
+                let visible = !glyph.is_space() && !text.is_empty();
+                boxes.push(unruled::GlyphBox {
+                    x0: glyph.x0,
+                    x1: glyph.x1,
+                    index: glyph.index,
+                    visible,
+                    letter: visible
+                        && !glyph.mark
+                        && text.chars().next().is_some_and(char::is_alphabetic),
+                    ch: text.chars().next().unwrap_or(' '),
+                });
+            }
+        }
+    }
+    boxes.sort_by(|a, b| a.x0.total_cmp(&b.x0));
+    unruled::Row {
+        base: dominant.base,
+        size: dominant.size,
+        top,
+        bottom,
+        glyphs: boxes,
+    }
 }
 
 fn orientation(glyph: &Glyph) -> u8 {
@@ -316,6 +605,9 @@ pub(super) struct Segment {
     /// Start of the text after a leading list marker.
     text_x: Option<f64>,
     marker: lists::MarkerStrength,
+    /// Ranges of the glyphs of the page group this segment was built from; kept only when tables
+    /// are detected.
+    runs: Vec<(usize, usize)>,
 }
 
 impl Segment {
@@ -342,6 +634,7 @@ fn build_segments(
     runs: &[Run],
     content: &PageContent,
     styles: &[FontStyle],
+    keep_runs: bool,
 ) -> Vec<Segment> {
     let mut order: Vec<usize> = (0..runs.len()).collect();
     order.sort_by(|&a, &b| runs[a].base.total_cmp(&runs[b].base));
@@ -372,7 +665,9 @@ fn build_segments(
         for index in members {
             let run = &runs[index];
             if !current.is_empty() && run.x0 - right > SEGMENT_GAP * edge_size.min(run.size) {
-                segments.extend(assemble_segment(glyphs, runs, &current, content, styles));
+                segments.extend(assemble_segment(
+                    glyphs, runs, &current, content, styles, keep_runs,
+                ));
                 current.clear();
                 right = f64::NEG_INFINITY;
             }
@@ -383,7 +678,9 @@ fn build_segments(
             }
         }
         if !current.is_empty() {
-            segments.extend(assemble_segment(glyphs, runs, &current, content, styles));
+            segments.extend(assemble_segment(
+                glyphs, runs, &current, content, styles, keep_runs,
+            ));
         }
     }
     merge_markers(segments)
@@ -396,6 +693,7 @@ fn assemble_segment(
     members: &[usize],
     content: &PageContent,
     styles: &[FontStyle],
+    keep_runs: bool,
 ) -> Option<Segment> {
     let dominant = members.iter().map(|&index| &runs[index]).max_by(|a, b| {
         (a.size, a.glyph_count)
@@ -429,6 +727,14 @@ fn assemble_segment(
         first_word_width: 0.0,
         text_x: None,
         marker: lists::MarkerStrength::None,
+        runs: if keep_runs {
+            members
+                .iter()
+                .map(|&index| (runs[index].start, runs[index].end))
+                .collect()
+        } else {
+            Vec::new()
+        },
     };
     let mut previous: Option<&CGlyph> = None;
     let mut pending_space = false;
@@ -639,6 +945,7 @@ fn merge_markers(segments: Vec<Segment>) -> Vec<Segment> {
             previous.x1 = segment.x1;
             previous.chars += segment.chars;
             previous.bold_chars += segment.bold_chars;
+            previous.runs.extend(segment.runs);
             if previous.size < segment.size {
                 previous.size = segment.size;
                 previous.base = segment.base;
@@ -1067,6 +1374,7 @@ fn finish(segments: &[Segment], members: &[usize], orientation: u8) -> Block {
         bold: chars > 0 && bold_chars as f64 >= BOLD_SHARE * chars as f64,
         chars,
         upright: orientation == 0,
+        table: None,
         direct: if orientation == 0 {
             paragraph_style(segments, members, size)
         } else {
@@ -1136,7 +1444,7 @@ fn paragraph_style(segments: &[Segment], members: &[usize], size: f64) -> Paragr
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, layout_page};
+    use super::{Block, Detection, TableScan, layout_glyphs_with, layout_page, unruled};
     use crate::reader::pdf::interpreter::{FontStyle, Glyph, PageContent, SPACE};
 
     /// Places `text` as glyphs of `width` per character starting at `(x, y)`.
@@ -1200,7 +1508,7 @@ mod tests {
         for (line, x, y) in body {
             place(&mut page, line, x, y, 10.0, 0);
         }
-        let blocks = layout_page(&page, &styles(), 400.0, 400.0);
+        let blocks = layout_page(&page, &styles(), 400.0, 400.0, None);
         let texts: Vec<Vec<String>> = blocks.iter().map(text).collect();
         assert_eq!(texts.len(), 4, "{texts:?}");
         assert_eq!(texts[0], vec!["Title here"]);
@@ -1241,7 +1549,7 @@ mod tests {
                 0,
             );
         }
-        let blocks = layout_page(&page, &styles(), 612.0, 792.0);
+        let blocks = layout_page(&page, &styles(), 612.0, 792.0, None);
         let texts: Vec<String> = blocks.iter().map(|b| text(b).join("|")).collect();
         assert_eq!(texts.len(), 3, "{texts:?}");
         assert!(texts[0].starts_with("A Spanning"));
@@ -1258,7 +1566,7 @@ mod tests {
         place(&mut page, "TH", 10.0, 50.0, 10.0, 0);
         place(&mut page, "Ủ", 20.0, 50.0, 10.0, 1);
         place(&mut page, "TƯỚNG", 32.0, 50.0, 10.0, 0);
-        let blocks = layout_page(&page, &styles(), 200.0, 200.0);
+        let blocks = layout_page(&page, &styles(), 200.0, 200.0, None);
         let line: String = blocks[0].lines[0].iter().map(|s| s.text.as_str()).collect();
         assert_eq!(line, "THỦ TƯỚNG");
     }
@@ -1270,12 +1578,126 @@ mod tests {
         place(&mut page, "1", 30.0, 46.0, 6.0, 0);
         place(&mut page, "e", 40.0, 50.0, 10.0, 0);
         place(&mut page, "\u{0301}", 41.0, 50.0, 10.0, 0);
-        let blocks = layout_page(&page, &styles(), 200.0, 200.0);
+        let blocks = layout_page(&page, &styles(), 200.0, 200.0, None);
         let spans = &blocks[0].lines[0];
         assert_eq!(spans[0].text, "note");
         assert_eq!(spans[1].text, "1 ");
         assert_eq!(spans[1].script, super::Script::Super);
         assert_eq!(spans[2].text, "é");
+    }
+
+    #[test]
+    fn whitespace_aligned_rows_become_a_table_only_when_scanning() {
+        let mut page = PageContent::default();
+        place(
+            &mut page,
+            "A table follows this sentence, which is long enough.",
+            50.0,
+            60.0,
+            10.0,
+            0,
+        );
+        let rows = [
+            ["Item", "Qty", "Sum"],
+            ["ab", "12", "3.5"],
+            ["cd", "48", "1.2"],
+            ["ef", "96", "7.7"],
+        ];
+        for (index, row) in rows.iter().enumerate() {
+            for (cell, x) in row.iter().zip([50.0, 150.0, 250.0]) {
+                place(&mut page, cell, x, 100.0 + 14.0 * index as f64, 10.0, 0);
+            }
+        }
+        place(
+            &mut page,
+            "This sentence comes after the table.",
+            50.0,
+            190.0,
+            10.0,
+            0,
+        );
+
+        let plain = layout_page(&page, &styles(), 400.0, 400.0, None);
+        assert!(plain.iter().all(|block| block.table.is_none()));
+        assert_eq!(plain.len(), 14);
+
+        let mut scan = TableScan::default();
+        let blocks = layout_page(&page, &styles(), 400.0, 400.0, Some(&mut scan));
+        assert_eq!(scan.capped_pages, 0);
+        let kinds: Vec<bool> = blocks.iter().map(|block| block.table.is_some()).collect();
+        assert_eq!(kinds, [false, true, false]);
+        let table = blocks[1].table.as_ref().expect("table block");
+        assert_eq!((table.columns, table.rows.len()), (3, 4));
+        // Every row has one cell per column and each cell holds its own word.
+        let words: Vec<Vec<String>> = table
+            .rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|cell| text(&cell.blocks[0]).join(" "))
+                    .collect()
+            })
+            .collect();
+        assert_eq!(words[0], ["Item", "Qty", "Sum"]);
+        assert_eq!(words[3], ["ef", "96", "7.7"]);
+        assert_eq!(
+            text(&blocks[0]),
+            vec!["A table follows this sentence, which is long enough."]
+        );
+        assert_eq!(
+            text(&blocks[2]),
+            vec!["This sentence comes after the table."]
+        );
+    }
+
+    /// Places a table of three columns and four rows whose first baseline is `y`.
+    fn place_table(page: &mut PageContent, y: f64) {
+        let rows = [
+            ["Item", "Qty", "Sum"],
+            ["ab", "12", "3.5"],
+            ["cd", "48", "1.2"],
+            ["ef", "96", "7.7"],
+        ];
+        for (index, row) in rows.iter().enumerate() {
+            for (cell, x) in row.iter().zip([50.0, 150.0, 250.0]) {
+                place(page, cell, x, y + 14.0 * index as f64, 10.0, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn a_table_that_would_be_dropped_anyway_does_not_set_the_limit_flag() {
+        let mut page = PageContent::default();
+        place_table(&mut page, 100.0);
+        place_table(&mut page, 250.0);
+        // The budget holds one table.
+        let laid = |avoid: &[[f64; 4]]| {
+            let detection = Detection {
+                avoid,
+                budget: unruled::Budget {
+                    tables: 1,
+                    cells: 1_000,
+                },
+                page_height: 400.0,
+            };
+            layout_glyphs_with(
+                &page,
+                &styles(),
+                400.0,
+                400.0,
+                0..page.glyphs.len(),
+                Some(&detection),
+            )
+        };
+        // The second table lies inside the box of a ruled table, so it is dropped for its place
+        // and not for the budget.
+        let laid_avoiding = laid(&[[40.0, 200.0, 300.0, 400.0]]);
+        assert_eq!(laid_avoiding.grids.len(), 1);
+        assert!(!laid_avoiding.capped);
+        // With nothing in the way, the second table is lost to the budget, and that is reported.
+        let laid_free = laid(&[]);
+        assert_eq!(laid_free.grids.len(), 1);
+        assert!(laid_free.capped);
     }
 
     #[test]
@@ -1298,7 +1720,7 @@ mod tests {
                 flags: 0,
             });
         }
-        let blocks = layout_page(&page, &styles(), 400.0, 400.0);
+        let blocks = layout_page(&page, &styles(), 400.0, 400.0, None);
         assert_eq!(text(&blocks[0]), vec!["UP"]);
         let [left, top, right, bottom] = blocks[0].bbox;
         assert!(left < 20.0 && right > 20.0 && top < 300.0 && bottom > 290.0);

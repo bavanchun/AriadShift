@@ -127,7 +127,8 @@ for (const [name, svg] of Object.entries(iconComposerLayers())) fs.writeFileSync
 const pngs = [
   ['ariadshift-app-icon.svg', [1024, 512, 256, 128, 64, 32, 16]],
   ['ariadshift-app-icon-dark.svg', [1024, 512]],
-  ['ariadshift-app-icon-macos.svg', [1024]],
+  // Every size of the macOS app icon set (apps/macos/scripts/generate-design-assets.mjs copies them into AppIcon).
+  ['ariadshift-app-icon-macos.svg', [1024, 512, 256, 128, 64, 32, 16]],
   ['ariadshift-lockup.svg', [1200]],
   ['ariadshift-lockup-dark.svg', [1200]],
 ];

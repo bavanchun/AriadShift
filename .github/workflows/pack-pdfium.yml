@@ -13,6 +13,12 @@ on:
       - engines/pdfium/**
       - scripts/pack/**
       - crates/ariad-pdfium-engine/**
+      # The redaction pipeline tests only run for real here (with ARIAD_REQUIRE_PDFIUM_PACK),
+      # so changes to the redaction code must trigger this workflow.
+      - crates/ariad-host/src/tools/redact.rs
+      - crates/ariad-host/tests/redact_pipeline.rs
+      - crates/ariad-pdf/src/redact/**
+      - crates/ariad-core/src/tools/params/redact*
       - justfile
       - .github/workflows/pack-pdfium.yml
   push:
@@ -62,9 +68,10 @@ jobs:
         include:
           - {slug: linux-x64, triple: x86_64-unknown-linux-gnu, os: ubuntu-26.04, musl: false}
           - {slug: linux-arm64, triple: aarch64-unknown-linux-gnu, os: ubuntu-26.04-arm, musl: false}
-          # The musl targets stay out of the matrix until the engine's unwinder
-          # symbols resolve on Alpine: https://github.com/bavanchun/AriadShift/issues/132
-          # Re-add {slug: linux-musl-x64|linux-musl-arm64, ..., musl: true} with the fix.
+          # linux-musl-x64 and linux-musl-arm64 are deferred until musl libpdfium comes from a
+          # Clang/libc++ build or hash-pinned toolchain sources (upstream statically links GNU
+          # libstdc++ and libgcc from an unpinned musl.cc GCC 11.2.1 toolchain):
+          # https://github.com/bavanchun/AriadShift/issues/132
           - {slug: mac-arm64, triple: aarch64-apple-darwin, os: macos-26, musl: false}
           # Cross-built on the arm64 runner; the smoke test needs Rosetta and is skipped without it.
           - {slug: mac-x64, triple: x86_64-apple-darwin, os: macos-26, musl: false}
@@ -84,7 +91,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: ${{ matrix.triple }}
           cache: false
@@ -115,6 +122,9 @@ jobs:
       # A musl engine links libc dynamically, because a static musl binary cannot dlopen
       # libpdfium. The Rust image (digest-pinned, toolchain 1.99.0 as in rust-toolchain.toml)
       # runs on the runner's own architecture, so its host triple is the pack triple.
+      # When #132 is revisited, compute target-libdir inside Alpine and pass RUSTFLAGS:
+      #   -C target-feature=-crt-static -L native=$(rustc --print target-libdir)/self-contained -l static:+whole-archive=unwind
+      # to link Rust's bundled LLVM libunwind.a (Apache-2.0 WITH LLVM-exception).
       - name: Build the musl engine in Alpine
         if: matrix.musl
         run: |
@@ -198,6 +208,7 @@ jobs:
           fi
           cargo test -p ariad-host --test redact_pipeline
           cargo test -p ariad-cli --test pdfium_tools_cli
+          cargo test --locked -p ariad-pdfium-engine --test extract_images
 
       - name: Upload the component
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -221,7 +232,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
 

@@ -14,7 +14,15 @@ pub(crate) mod tesseract_image;
 pub mod typst;
 pub mod verapdf;
 
-pub use resolve::{ResolveError, resolve_pack, resolve_pack_in, resolve_pack_with_options};
+pub use resolve::{
+    ResolveError, resolve_engine_program, resolve_pack, resolve_pack_in, resolve_pack_with_options,
+};
+
+/// Returns the builtin capabilities for the planner.
+pub fn builtin_capabilities() -> ariad_core::planner::Capabilities {
+    crate::commands::active_capabilities()
+        .unwrap_or_else(|_| ariad_core::planner::embedded().clone())
+}
 
 use std::{
     collections::HashMap,
@@ -25,7 +33,7 @@ use std::{
 
 use ariad_core::{
     format::Format,
-    protocol::{Event, PROTOCOL, ToolAvailability, ToolStatus, v2::PROTOCOL_V2},
+    protocol::{ErrorCode, Event, PROTOCOL, ToolAvailability, ToolStatus, v2::PROTOCOL_V2},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -708,10 +716,21 @@ impl<'a> EngineInvocation<'a> {
     /// The command shared by describe, one-shot execution and warm sessions.
     #[must_use]
     pub fn command_for(&self, id: &str) -> crate::runner::EngineCommand {
-        match self.args_override {
+        #[cfg_attr(not(any(test, feature = "test-probe")), allow(unused_mut))]
+        let mut command = match self.args_override {
             Some(args) => crate::runner::EngineCommand::from_parts(self.program, args),
             None => crate::runner::EngineCommand::builtin(self.program, id),
+        };
+        #[cfg(any(test, feature = "test-probe"))]
+        if id == PANDOC.id
+            && let Some(timeout_ms) = std::env::var_os(crate::pandoc_bin::TEST_TIMEOUT_ENV)
+        {
+            command.env.push((
+                OsString::from(crate::pandoc_bin::TEST_TIMEOUT_ENV),
+                timeout_ms,
+            ));
         }
+        command
     }
 
     /// Arguments that start the engine `id`.
@@ -830,6 +849,63 @@ pub fn availability(
     availability_of(&invocation, &ids, cancel)
 }
 
+/// Classifies an unexpected engine `describe` failure so callers never treat timeouts,
+/// engine errors, crashes, or protocol violations as a missing or uninstalled tool.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum DescribeFailure {
+    /// The engine process itself exceeded `DESCRIBE_TIMEOUT` or hit `LimitExceeded` (exit code 4).
+    LimitTimeout,
+    /// An external tool probe (e.g. `pandoc --version`) timed out (unavailable/timed-out, exit code 1).
+    ProbeTimeout { detail: String },
+    /// The `describe` invocation crashed, reported an internal failure, or violated the protocol.
+    Failed { detail: String },
+}
+
+impl DescribeFailure {
+    /// Human-safe explanation suitable for CLI status notes and error messages.
+    pub(crate) fn detail(&self) -> &str {
+        match self {
+            Self::LimitTimeout => "engine describe timed out",
+            Self::ProbeTimeout { detail } | Self::Failed { detail } => detail.as_str(),
+        }
+    }
+
+    pub(crate) const fn is_timeout(&self) -> bool {
+        matches!(self, Self::LimitTimeout | Self::ProbeTimeout { .. })
+    }
+}
+
+fn sanitize_describe_detail(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|ch| !ch.is_control() || *ch == ' ')
+        .take(200)
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        "engine describe failed".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
+/// Internal result of probing engine availability together with any transient `describe`
+/// failures keyed by engine identifier.
+#[derive(Clone, Debug)]
+pub(crate) struct DetailedAvailability {
+    pub report: AvailabilityReport,
+    pub describe_failures: HashMap<String, DescribeFailure>,
+}
+
+/// Internal counterpart to [`availability`] that retains per-engine `describe` failures.
+pub(crate) fn availability_detailed(
+    invocation: &EngineInvocation<'_>,
+    cancel: CancellationToken,
+) -> Result<DetailedAvailability, RunError> {
+    let ids: Vec<&str> = REGISTRY.iter().map(|spec| spec.id).collect();
+    availability_of_detailed(invocation, &ids, cancel)
+}
+
 /// Reports `ariad-core` plus the listed out-of-process engines, querying each with `describe`.
 ///
 /// A missing executable or a failed `describe` marks the engine unavailable. Launcher failures
@@ -840,35 +916,57 @@ pub fn availability_of(
     engines: &[&str],
     cancel: CancellationToken,
 ) -> Result<AvailabilityReport, RunError> {
+    availability_of_detailed(invocation, engines, cancel).map(|detailed| detailed.report)
+}
+
+/// Internal counterpart to [`availability_of`] that distinguishes transient `describe` failures
+/// from genuine missing/unsupported-version tool states.
+pub(crate) fn availability_of_detailed(
+    invocation: &EngineInvocation<'_>,
+    engines: &[&str],
+    cancel: CancellationToken,
+) -> Result<DetailedAvailability, RunError> {
     let mut report = AvailabilityReport {
         engines: vec![in_process_availability(), in_process_pdf_availability()],
     };
+    let mut describe_failures = HashMap::new();
     for &id in engines {
         if id == IN_PROCESS_ENGINE || id == IN_PROCESS_PDF_ENGINE || report.get(id).is_some() {
             continue;
         }
-        report
-            .engines
-            .push(engine_availability(invocation, id, cancel.clone())?);
+        let (entry, failure) = engine_availability_detailed(invocation, id, cancel.clone())?;
+        report.engines.push(entry);
+        if let Some(failure) = failure {
+            describe_failures.insert(id.to_owned(), failure);
+        }
     }
-    Ok(report)
+    Ok(DetailedAvailability {
+        report,
+        describe_failures,
+    })
 }
 
-fn engine_availability(
+fn unavailable_entry(id: &str) -> EngineAvailability {
+    EngineAvailability {
+        engine: id.to_owned(),
+        available: false,
+        tool_status: None,
+        version: None,
+        startup_failure: None,
+    }
+}
+
+fn engine_availability_detailed(
     invocation: &EngineInvocation<'_>,
     id: &str,
     cancel: CancellationToken,
-) -> Result<EngineAvailability, RunError> {
+) -> Result<(EngineAvailability, Option<DescribeFailure>), RunError> {
     if id == docling::ENGINE_ID {
-        return Ok(
-            docling::availability(invocation.program, cancel)?.unwrap_or(EngineAvailability {
-                engine: id.to_owned(),
-                available: false,
-                tool_status: None,
-                version: None,
-                startup_failure: None,
-            }),
-        );
+        return Ok((
+            docling::availability(invocation.program, cancel)?
+                .unwrap_or_else(|| unavailable_entry(id)),
+            None,
+        ));
     }
     let command = invocation.command_for(id);
     let key = command.clone();
@@ -877,39 +975,80 @@ fn engine_availability(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(entry) = cache.get(&key) {
-            return Ok(entry.clone());
+            return Ok((entry.clone(), None));
         }
     }
 
-    let entry = match runner::describe_command(&command, runner::DESCRIBE_TIMEOUT, cancel) {
-        Ok(Event::Capabilities { version, tool, .. }) => EngineAvailability {
-            engine: id.to_owned(),
-            available: tool.status == ToolAvailability::Found,
-            tool_status: Some(tool),
-            version: Some(version),
-            startup_failure: None,
-        },
-        Err(error @ (RunError::Cancelled | RunError::SandboxUnavailable(_))) => return Err(error),
-        Err(RunError::SandboxLaunchFailed(message)) => EngineAvailability {
-            engine: id.to_owned(),
-            available: false,
-            tool_status: None,
-            version: None,
-            startup_failure: Some(message),
-        },
-        Ok(_) | Err(_) => EngineAvailability {
-            engine: id.to_owned(),
-            available: false,
-            tool_status: None,
-            version: None,
-            startup_failure: None,
-        },
-    };
-    let mut cache = availability_cache()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    cache.insert(key, entry.clone());
-    Ok(entry)
+    match runner::describe_command(&command, runner::DESCRIBE_TIMEOUT, cancel) {
+        Ok(Event::Capabilities { version, tool, .. }) => {
+            let entry = EngineAvailability {
+                engine: id.to_owned(),
+                available: tool.status == ToolAvailability::Found,
+                tool_status: Some(tool),
+                version: Some(version),
+                startup_failure: None,
+            };
+            let mut cache = availability_cache()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cache.insert(key, entry.clone());
+            Ok((entry, None))
+        }
+        Err(error @ (RunError::Cancelled | RunError::SandboxUnavailable(_))) => Err(error),
+        Err(RunError::SandboxLaunchFailed(message)) => Ok((
+            EngineAvailability {
+                engine: id.to_owned(),
+                available: false,
+                tool_status: None,
+                version: None,
+                startup_failure: Some(message),
+            },
+            None,
+        )),
+        Err(RunError::EngineFailed {
+            code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
+            ..
+        }) => Ok((unavailable_entry(id), None)),
+        Err(RunError::Spawn(_)) if is_pack_engine(id) => Ok((unavailable_entry(id), None)),
+        Err(RunError::Timeout)
+        | Err(RunError::EngineFailed {
+            code: ErrorCode::LimitExceeded,
+            ..
+        }) => Ok((unavailable_entry(id), Some(DescribeFailure::LimitTimeout))),
+        Err(RunError::EngineFailed { message, .. }) => {
+            let detail = sanitize_describe_detail(&message);
+            let failure = if message.to_ascii_lowercase().contains("timed out") {
+                DescribeFailure::ProbeTimeout { detail }
+            } else {
+                DescribeFailure::Failed { detail }
+            };
+            Ok((unavailable_entry(id), Some(failure)))
+        }
+        Err(RunError::Spawn(_)) => Ok((
+            unavailable_entry(id),
+            Some(DescribeFailure::Failed {
+                detail: "could not spawn engine process".to_owned(),
+            }),
+        )),
+        Err(RunError::Io(_)) => Ok((
+            unavailable_entry(id),
+            Some(DescribeFailure::Failed {
+                detail: "engine communication I/O failure".to_owned(),
+            }),
+        )),
+        Err(RunError::Crash { .. }) => Ok((
+            unavailable_entry(id),
+            Some(DescribeFailure::Failed {
+                detail: "engine process crashed during describe".to_owned(),
+            }),
+        )),
+        Ok(_) | Err(_) => Ok((
+            unavailable_entry(id),
+            Some(DescribeFailure::Failed {
+                detail: "engine describe failed".to_owned(),
+            }),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -949,6 +1088,94 @@ mod tests {
         assert!(!is_executable(Format::Docx, Format::AriadIrJson, "typst"));
         assert!(!is_executable(Format::Docx, Format::Pdf, "unknown"));
         assert!(spec("libreoffice").is_some_and(|spec| !spec.required));
+    }
+
+    #[test]
+    fn command_for_forwards_pandoc_probe_timeout_env_only_to_pandoc() {
+        const CHILD: &str = "ARIAD_TEST_COMMAND_FOR_TIMEOUT_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let invocation = super::EngineInvocation::new(std::path::Path::new("ashift"));
+            let pandoc_cmd = invocation.command_for("pandoc");
+            assert!(
+                pandoc_cmd
+                    .env
+                    .iter()
+                    .any(|(k, v)| { k == crate::pandoc_bin::TEST_TIMEOUT_ENV && v == "150" })
+            );
+            let pdf_cmd = invocation.command_for("pdf");
+            assert!(pdf_cmd.env.is_empty());
+            return;
+        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engines::tests::command_for_forwards_pandoc_probe_timeout_env_only_to_pandoc",
+            ])
+            .env(CHILD, "1")
+            .env(crate::pandoc_bin::TEST_TIMEOUT_ENV, "150")
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn transient_describe_failure_is_not_cached_and_recovers_on_retry() {
+        use std::os::unix::fs::PermissionsExt;
+
+        const CHILD: &str = "ARIAD_TEST_ENGINE_CACHE_POISON_CHILD";
+        if let Some(script_path) = std::env::var_os(CHILD) {
+            let script = std::path::PathBuf::from(script_path);
+            let invocation = super::EngineInvocation::with_args(&script, &[]);
+
+            let first = super::availability_of_detailed(
+                &invocation,
+                &["pandoc"],
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .expect("detailed availability must not hard-error on transient failure");
+            assert!(!first.report.is_available("pandoc"));
+            assert_eq!(
+                first.describe_failures.get("pandoc"),
+                Some(&super::DescribeFailure::Failed {
+                    detail: "transient".to_owned(),
+                })
+            );
+
+            // Same process, same invocation: must NOT hit a poisoned cache entry.
+            let second = super::availability_of_detailed(
+                &invocation,
+                &["pandoc"],
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .expect("subsequent availability check succeeds");
+            assert!(second.report.is_available("pandoc"));
+            assert!(second.describe_failures.is_empty());
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let flag = dir.path().join("fail-once");
+        std::fs::write(&flag, b"1").unwrap();
+        let script = dir.path().join("mock-engine.sh");
+        let body = format!(
+            "#!/bin/sh\nread _req\nif [ -f '{}' ]; then\n  rm -f '{}'\n  printf '{{\"type\":\"result\",\"ok\":false,\"metrics\":null,\"error\":{{\"code\":\"engine_failure\",\"message\":\"transient\"}}}}\\n'\n  exit 1\nfi\nprintf '{{\"type\":\"capabilities\",\"engine\":\"pandoc\",\"version\":\"0.6.0\",\"tool\":{{\"name\":\"pandoc\",\"version\":\"3.12\",\"status\":\"found\"}},\"license\":\"GPL-2.0-or-later\",\"routes\":[],\"enforces_memory_limit\":false,\"supports_session\":false}}\\n'\nprintf '{{\"type\":\"result\",\"ok\":true,\"metrics\":null,\"error\":null}}\\n'\n",
+            flag.display(),
+            flag.display()
+        );
+        std::fs::write(&script, body).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engines::tests::transient_describe_failure_is_not_cached_and_recovers_on_retry",
+            ])
+            .env(CHILD, &script)
+            .env("ASHIFT_SANDBOX", "off")
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 }
 

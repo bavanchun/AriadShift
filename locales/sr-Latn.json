@@ -113,6 +113,107 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Uvezi…",
+      "print": "Štampaj…",
+      "tools": "Alati",
+      "zoom": "{action, select, in {Uvećaj} out {Umanji} actual {Stvarna veličina} other {Zumiranje}}",
+      "check_updates": "Proveri ažuriranja…",
+      "show_welcome": "Prikaži dobrodošlicu",
+      "fit_width": "Prilagodi širini",
+      "display_mode": "{mode, select, single {Jedna stranica} continuous {Neprekidno pomeranje} twoUp {Dve stranice} other {Prikaz stranica}}",
+      "go_to_page": "Idi na stranicu…",
+      "find": "Pronađi…",
+      "find_next": "Pronađi sledeće",
+      "find_previous": "Pronađi prethodno"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organizuj} convert {Konvertuj} optimize {Optimizuj} security {Bezbednost} overlay {Preklapanje} ocr {OCR i skeniranja} annotate {Dodaj beleške} forms {Obrasci} sign {Potpiši} redact {Zacrni} compare {Uporedi i proveri} edit {Uredi} ai {VI} automation {Automatizacija} other {Ostali alati}}",
+      "disabled": "{reason, select, later {Dostupno u kasnijoj verziji} format {Radi sa drugim formatima. Koristite Datoteka > Uvezi.} paid {Zahteva plaćeni paket} info {Detalji alata nisu mogli da se pročitaju, pa alati ostaju isključeni.} other {Nije dostupno}}",
+      "loading": "Učitavanje alata…"
+    },
+    "sidebar": {
+      "title": "Stranice",
+      "placeholder": "Sličice stranica pojaviće se ovde.",
+      "page": "Stranica {number} od {total}"
+    },
+    "viewer": {
+      "placeholder": "Pregledač stranica pojaviće se ovde.",
+      "title": "Pregledač stranica",
+      "loading": "Otvaranje dokumenta…"
+    },
+    "toolbar": {
+      "inspector": "Podaci o dokumentu",
+      "page_grid": "Mreža stranica",
+      "previous_page": "Prethodna stranica",
+      "next_page": "Sledeća stranica",
+      "page_field": "Broj stranice"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Naziv} format {Format} size {Veličina} pages {Stranice} words {Reči} title {Naslov} author {Autor} routes {Može da se konvertuje u} other {Polje}}",
+      "loading": "Čitanje dokumenta…",
+      "warnings": "{count, plural, one {# upozorenje} few {# upozorenja} other {# upozorenja}}"
+    },
+    "run": {
+      "run": "Pokreni",
+      "cancel": "Otkaži",
+      "close": "Gotovo",
+      "working": "Pokretanje…",
+      "parameters": "Podešavanja",
+      "no_parameters": "Ovaj alat nema podešavanja.",
+      "extra_documents": "Dodatni dokumenti",
+      "add_documents": "Dodaj…",
+      "remove": "Ukloni",
+      "need_documents": "{count, plural, one {Dodajte još # dokument da biste pokrenuli ovaj alat.} few {Dodajte još # dokumenta da biste pokrenuli ovaj alat.} other {Dodajte još # dokumenata da biste pokrenuli ovaj alat.}}",
+      "failed": "Alat nije završen.",
+      "reveal": "Prikaži u Finderu",
+      "field_error": "{kind, select, missing {Polje {field} je obavezno.} other {Polje {field} nije važeće.}}",
+      "result": "Rezultat",
+      "presets": "Šabloni"
+    },
+    "settings": {
+      "output_folder": "Sačuvaj rezultate u",
+      "output_same": "Pored originalnog dokumenta",
+      "output_choose": "Izaberi fasciklu…",
+      "open_result": "Otvori rezultat kada se alat završi",
+      "updates": "Ažuriranja",
+      "updates_auto": "Automatski proveravaj ažuriranja",
+      "updates_disabled": "Ažuriranja nisu podešena u ovoj verziji."
+    },
+    "onboarding": {
+      "title": "Dobrodošli u AriadShift",
+      "about": "Otvarajte, pregledajte i obrađujte PDF dokumente istim pogonom kao komandna linija programa AriadShift. Konvertujte Markdown, HTML, Word, EPUB i slike u PDF preko Datoteka > Uvezi.",
+      "packs": "Opcioni paketi pogona (OCR, potpisivanje, provera) čuvaju se u {path}.",
+      "privacy": "AriadShift radi na vašem Mac-u. Ne uspostavlja mrežne veze osim ako uključite funkciju koja ih zahteva.",
+      "start": "Započni"
+    },
+    "import": {
+      "message": "Izaberite dokument za konverziju u PDF",
+      "running": "Uvoz datoteke {name}…",
+      "failed": "Uvoz datoteke {name} nije uspeo"
+    },
+    "document": {
+      "invalid": "Ova datoteka nije važeći PDF."
+    },
+    "find": {
+      "prompt": "Pronađi u dokumentu",
+      "count": "{current} od {total}",
+      "none": "Nema podudaranja",
+      "searching": "Pretraga…",
+      "done": "Gotovo"
+    },
+    "grid": {
+      "hint": "Prevucite stranice da ih preuredite. Svaka izmena se čuva kao nova datoteka pored originala.",
+      "unavailable": "Uređivanje stranica nije dostupno dok mehanizam nije spreman.",
+      "rotate": "Rotiraj izabrane stranice",
+      "delete": "Obriši izabrane stranice",
+      "move_earlier": "Premesti pre prethodne stranice",
+      "move_later": "Premesti posle sledeće stranice",
+      "drop_end": "Otpustite ovde da premestite na kraj"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: privatna konverzija dokumenata u pregledaču",

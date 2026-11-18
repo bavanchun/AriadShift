@@ -6,6 +6,7 @@ import hashlib
 import sys
 import zipfile
 from importlib import metadata
+from pathlib import Path
 
 import pytest
 from conftest import REPOSITORY, native_record_rows
@@ -13,6 +14,7 @@ from conftest import REPOSITORY, native_record_rows
 sys.path.insert(0, str(REPOSITORY / "engines/docling/pack"))
 import build
 import licenses
+import native_build
 
 TRIPLE = "x86_64-unknown-linux-gnu"
 EXTENSION = "demo/extension.cpython-314-x86_64-linux-gnu.so"
@@ -634,3 +636,51 @@ def test_new_permissive_reviews_all_declare_their_reviewed_wheel_inputs():
         component = licenses._NATIVE_COMPONENTS[name]
         assert component["reviewed_wheels"], name
         assert "shared_objects" not in component, name
+
+
+def test_export_only_receipts_stay_out_of_the_installed_vendor_inventory(tmp_path):
+    exports = {
+        name: component
+        for name, component in licenses._NATIVE_COMPONENTS.items()
+        if component.get("export_only")
+    }
+    assert {"opencv-export-macos", "opencv-export-linux"} <= set(exports)
+    for name, component in exports.items():
+        assert name not in licenses.NATIVE_LIBRARIES
+        for relative in component["files"]:
+            assert not licenses._vendor_path(relative)
+            owner = component["distribution"]
+            assert licenses._native_family(owner, Path(relative).name) is None
+
+    # The installed pack validates the extension as a RECORD-owned module, and the digest
+    # of its notice changes once the inapplicable IPP section is removed.
+    notice = tmp_path / "cv2/LICENSE-3RD-PARTY.txt"
+    extension = tmp_path / "cv2/cv2.abi3.so"
+    notice.parent.mkdir()
+    extension.write_bytes(b"\x7fELF" + b"synthetic OpenCV extension")
+    separator = native_build.NOTICE_SEPARATOR
+    notice.write_text(
+        f"OpenCV notices\n{separator}\n{native_build.IPP_HEADING}\n"
+        "Intel Simplified Software License\n",
+        encoding="utf-8",
+    )
+    info = tmp_path / "opencv_python_headless-5.0.0.93.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(
+        "Name: opencv-python-headless\nVersion: 5.0.0.93\nLicense-Expression: Apache-2.0\n",
+        encoding="utf-8",
+    )
+    (info / "LICENSE").write_text("Apache License\n", encoding="utf-8")
+    paths = ["cv2/cv2.abi3.so", "cv2/LICENSE-3RD-PARTY.txt", f"{info.name}/LICENSE"]
+
+    def refresh_record():
+        rows = native_record_rows(tmp_path, paths) + f"{info.name}/RECORD,,\n"
+        (info / "RECORD").write_text(rows, encoding="utf-8")
+
+    for stripped in (False, True):
+        if stripped:
+            native_build.remove_inapplicable_ipp_notice(notice)
+            assert native_build.IPP_HEADING not in notice.read_text(encoding="utf-8")
+        refresh_record()
+        assert licenses.vendored_libraries(tmp_path, TRIPLE) == []
+        assert licenses.check_vendored_native_files(tmp_path, [], TRIPLE) == []

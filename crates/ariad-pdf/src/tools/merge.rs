@@ -1,6 +1,9 @@
 //! Implementation of the `pdf.merge` tool.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::RandomState},
+    hash::{BuildHasher, Hash, Hasher},
+};
 
 use ariad_core::{
     reader::pdf::ReadError,
@@ -92,11 +95,12 @@ pub fn run(
     let mut merged_need_appearances = false;
     let mut merged_acro_da: Option<Object> = None;
     let mut merged_acro_q: Option<Object> = None;
-    let mut seen_field_names: BTreeSet<Vec<u8>> = BTreeSet::new();
+    let mut seen_field_names: NameDisambiguator<String> = NameDisambiguator::default();
 
     let mut merged_embedded_files: Vec<(Vec<u8>, Object)> = Vec::new();
-    let mut seen_attachment_names: BTreeSet<Vec<u8>> = BTreeSet::new();
-    let mut merged_af: Vec<Object> = Vec::new();
+    let mut seen_attachment_names: NameDisambiguator<(String, String)> =
+        NameDisambiguator::default();
+    let mut merged_af = MergedAf::default();
 
     let mut page_offset_0_based = 0_u32;
 
@@ -414,8 +418,8 @@ pub fn run(
         names_dict.set(b"EmbeddedFiles".to_vec(), Object::Reference(ef_tree_id));
         catalog_dict.set(b"Names".to_vec(), Object::Dictionary(names_dict));
     }
-    if !merged_af.is_empty() {
-        catalog_dict.set(b"AF".to_vec(), Object::Array(merged_af));
+    if !merged_af.entries.is_empty() {
+        catalog_dict.set(b"AF".to_vec(), Object::Array(merged_af.entries));
     }
 
     // Attach merged `/Outlines`.
@@ -469,7 +473,7 @@ fn collect_input_acroform(
     src_doc: &Document,
     src_catalog: &Dictionary,
     kept_annot_ids: &BTreeMap<ObjectId, Vec<ObjectId>>,
-    seen_field_names: &mut BTreeSet<Vec<u8>>,
+    seen_field_names: &mut NameDisambiguator<String>,
     merged_fields: &mut Vec<Object>,
     merged_dr: &mut Dictionary,
     merged_need_appearances: &mut bool,
@@ -574,7 +578,7 @@ fn collect_input_acroform(
         };
 
         if let Some(fid) = target_field_id {
-            disambiguate_field_name(copier.target, fid, seen_field_names);
+            disambiguate_field_name(copier.target, fid, seen_field_names, ctx)?;
             merged_fields.push(Object::Reference(fid));
         }
     }
@@ -585,35 +589,33 @@ fn collect_input_acroform(
 fn disambiguate_field_name(
     target_doc: &mut Document,
     field_id: ObjectId,
-    seen_field_names: &mut BTreeSet<Vec<u8>>,
-) {
+    seen_field_names: &mut NameDisambiguator<String>,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
     let Some(Object::Dictionary(dict)) = target_doc.objects.get_mut(&field_id) else {
-        return;
+        return Ok(());
     };
     let Ok(Object::String(name_bytes, fmt)) = dict.get(b"T").cloned() else {
-        return;
+        return Ok(());
     };
-    if seen_field_names.insert(name_bytes.clone()) {
-        return;
+    if let Some(candidate) = seen_field_names.disambiguate(
+        &name_bytes,
+        ctx,
+        |raw| String::from_utf8_lossy(raw).into_owned(),
+        |base, counter| format!("{base}_{counter}").into_bytes(),
+    )? {
+        dict.set(b"T".to_vec(), Object::String(candidate, fmt));
     }
-    let base = String::from_utf8_lossy(&name_bytes);
-    let mut counter = 2_u32;
-    loop {
-        let candidate = format!("{base}_{counter}").into_bytes();
-        if seen_field_names.insert(candidate.clone()) {
-            dict.set(b"T".to_vec(), Object::String(candidate, fmt));
-            break;
-        }
-        counter = counter.saturating_add(1);
-    }
+    Ok(())
 }
 
 fn collect_input_attachments(
     src_doc: &Document,
     src_catalog: &Dictionary,
-    seen_attachment_names: &mut BTreeSet<Vec<u8>>,
+    seen_attachment_names: &mut NameDisambiguator<(String, String)>,
     merged_embedded_files: &mut Vec<(Vec<u8>, Object)>,
-    merged_af: &mut Vec<Object>,
+    merged_af: &mut MergedAf,
     copier: &mut SelectiveCopier<'_>,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
@@ -644,9 +646,7 @@ fn collect_input_attachments(
         for item in af_items {
             ctx.check()?;
             let copied = copier.copy_object(item, ctx)?;
-            if !matches!(copied, Object::Null) && !merged_af.contains(&copied) {
-                merged_af.push(copied);
-            }
+            merged_af.push_unique(copied);
         }
     }
     Ok(())
@@ -657,7 +657,7 @@ fn collect_name_tree_entries(
     src_doc: &Document,
     node_dict: &Dictionary,
     visited: &mut BTreeSet<ObjectId>,
-    seen_names: &mut BTreeSet<Vec<u8>>,
+    seen_names: &mut NameDisambiguator<(String, String)>,
     out: &mut Vec<(Vec<u8>, Object)>,
     copier: &mut SelectiveCopier<'_>,
     depth: usize,
@@ -678,7 +678,7 @@ fn collect_name_tree_entries(
             else {
                 continue;
             };
-            let unique_name = disambiguate_attachment_name(&name_bytes, seen_names);
+            let unique_name = disambiguate_attachment_name(&name_bytes, seen_names, ctx)?;
             let copied_filespec = copier.copy_object(&pair[1], ctx)?;
             out.push((unique_name, copied_filespec));
         }
@@ -710,21 +710,562 @@ fn collect_name_tree_entries(
     Ok(())
 }
 
-fn disambiguate_attachment_name(raw: &[u8], seen: &mut BTreeSet<Vec<u8>>) -> Vec<u8> {
-    if seen.insert(raw.to_vec()) {
-        return raw.to_vec();
-    }
+fn disambiguate_attachment_name(
+    raw: &[u8],
+    seen: &mut NameDisambiguator<(String, String)>,
+    ctx: &ToolCtx,
+) -> Result<Vec<u8>, PdfError> {
+    Ok(seen
+        .disambiguate(raw, ctx, split_attachment_name, |(stem, ext), counter| {
+            format!("{stem}_{counter}{ext}").into_bytes()
+        })?
+        .unwrap_or_else(|| raw.to_vec()))
+}
+
+fn split_attachment_name(raw: &[u8]) -> (String, String) {
     let name_str = String::from_utf8_lossy(raw);
-    let (stem, ext) = match name_str.rfind('.') {
-        Some(pos) if pos > 0 => (&name_str[..pos], &name_str[pos..]),
-        _ => (name_str.as_ref(), ""),
-    };
-    let mut counter = 2_u32;
-    loop {
-        let candidate = format!("{stem}_{counter}{ext}").into_bytes();
-        if seen.insert(candidate.clone()) {
-            return candidate;
+    match name_str.rfind('.') {
+        Some(pos) if pos > 0 => (name_str[..pos].to_owned(), name_str[pos..].to_owned()),
+        _ => (name_str.into_owned(), String::new()),
+    }
+}
+
+pub(crate) fn name_disambiguation_exhausted() -> PdfError {
+    PdfError::LimitExceeded(ReadError::TooManyObjects {
+        limit: usize::try_from(u32::MAX).unwrap_or(usize::MAX),
+    })
+}
+
+/// Tracks seen names alongside monotonic per-base suffix counters so repeated name
+/// disambiguation performs $O(N)$ probes total across $N$ inputs.
+#[derive(Debug)]
+pub(crate) struct NameDisambiguator<K> {
+    seen: HashSet<Vec<u8>>,
+    next_counters: HashMap<K, Option<u32>>,
+    #[cfg(test)]
+    probe_count: usize,
+    #[cfg(test)]
+    cancel_on_probe: Option<(usize, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
+}
+
+impl<K> Default for NameDisambiguator<K> {
+    fn default() -> Self {
+        Self {
+            seen: HashSet::new(),
+            next_counters: HashMap::new(),
+            #[cfg(test)]
+            probe_count: 0,
+            #[cfg(test)]
+            cancel_on_probe: None,
         }
-        counter = counter.saturating_add(1);
+    }
+}
+
+impl<K: Eq + Hash> NameDisambiguator<K> {
+    /// Marks `raw` as taken without disambiguating it, so later candidates never reuse it.
+    pub(crate) fn reserve(&mut self, raw: &[u8]) {
+        self.seen.insert(raw.to_vec());
+    }
+
+    pub(crate) fn disambiguate<F, G>(
+        &mut self,
+        raw: &[u8],
+        ctx: &ToolCtx,
+        split_key: F,
+        format_candidate: G,
+    ) -> Result<Option<Vec<u8>>, PdfError>
+    where
+        F: FnOnce(&[u8]) -> K,
+        G: Fn(&K, u32) -> Vec<u8>,
+    {
+        ctx.check()?;
+        if self.seen.insert(raw.to_vec()) {
+            return Ok(None);
+        }
+        let key = split_key(raw);
+        let mut counter = match self.next_counters.get(&key).copied() {
+            Some(Some(next)) => next,
+            Some(None) => return Err(name_disambiguation_exhausted()),
+            None => 2,
+        };
+        loop {
+            #[cfg(test)]
+            if let Some((target_probe, ref flag)) = self.cancel_on_probe
+                && self.probe_count == target_probe
+            {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            ctx.check()?;
+            #[cfg(test)]
+            {
+                self.probe_count = self.probe_count.saturating_add(1);
+            }
+            let candidate = format_candidate(&key, counter);
+            if self.seen.insert(candidate.clone()) {
+                self.next_counters.insert(key, counter.checked_add(1));
+                return Ok(Some(candidate));
+            }
+            let Some(next) = counter.checked_add(1) else {
+                self.next_counters.insert(key, None);
+                return Err(name_disambiguation_exhausted());
+            };
+            counter = next;
+        }
+    }
+}
+
+/// Deduplicates catalog `/AF` entries in $O(1)$ amortized time while preserving insertion order
+/// and matching `Object::PartialEq` semantics.
+#[derive(Debug)]
+struct MergedAf {
+    entries: Vec<Object>,
+    seen_refs: HashSet<ObjectId>,
+    inline_buckets: HashMap<u64, Vec<usize>>,
+    hash_builder: RandomState,
+}
+
+impl Default for MergedAf {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            seen_refs: HashSet::new(),
+            inline_buckets: HashMap::new(),
+            hash_builder: RandomState::new(),
+        }
+    }
+}
+
+impl MergedAf {
+    fn push_unique(&mut self, obj: Object) {
+        if matches!(obj, Object::Null) {
+            return;
+        }
+        if let Object::Reference(id) = obj {
+            if self.seen_refs.insert(id) {
+                self.entries.push(obj);
+            }
+            return;
+        }
+        let hash = hash_pdf_object(&obj, &self.hash_builder);
+        let bucket = self.inline_buckets.entry(hash).or_default();
+        if bucket.iter().any(|&idx| self.entries[idx] == obj) {
+            return;
+        }
+        let idx = self.entries.len();
+        self.entries.push(obj);
+        bucket.push(idx);
+    }
+}
+
+fn hash_pdf_object(obj: &Object, hash_builder: &impl BuildHasher) -> u64 {
+    let mut hasher = hash_builder.build_hasher();
+    hash_pdf_object_into(obj, &mut hasher, hash_builder, 0);
+    hasher.finish()
+}
+
+fn hash_pdf_object_into(
+    obj: &Object,
+    hasher: &mut impl Hasher,
+    hash_builder: &impl BuildHasher,
+    depth: usize,
+) {
+    if depth > 128 {
+        0xff_u8.hash(hasher);
+        return;
+    }
+    match obj {
+        Object::Null => 0_u8.hash(hasher),
+        Object::Boolean(b) => {
+            1_u8.hash(hasher);
+            b.hash(hasher);
+        }
+        Object::Integer(i) => {
+            2_u8.hash(hasher);
+            i.hash(hasher);
+        }
+        Object::Real(f) => {
+            3_u8.hash(hasher);
+            // Canonicalize -0.0 to +0.0 because PartialEq treats -0.0 == 0.0.
+            let canonical = if *f == 0.0 { 0.0_f32 } else { *f };
+            canonical.to_bits().hash(hasher);
+        }
+        Object::Name(name) => {
+            4_u8.hash(hasher);
+            name.hash(hasher);
+        }
+        Object::String(bytes, fmt) => {
+            5_u8.hash(hasher);
+            bytes.hash(hasher);
+            match fmt {
+                StringFormat::Literal => 0_u8.hash(hasher),
+                StringFormat::Hexadecimal => 1_u8.hash(hasher),
+            }
+        }
+        Object::Array(items) => {
+            6_u8.hash(hasher);
+            items.len().hash(hasher);
+            for item in items {
+                hash_pdf_object_into(item, hasher, hash_builder, depth + 1);
+            }
+        }
+        Object::Dictionary(dict) => {
+            7_u8.hash(hasher);
+            hash_pdf_dict_into(dict, hasher, hash_builder, depth + 1);
+        }
+        Object::Stream(stream) => {
+            8_u8.hash(hasher);
+            hash_pdf_dict_into(&stream.dict, hasher, hash_builder, depth + 1);
+            stream.content.hash(hasher);
+            stream.allows_compression.hash(hasher);
+            stream.start_position.hash(hasher);
+        }
+        Object::Reference(id) => {
+            9_u8.hash(hasher);
+            id.hash(hasher);
+        }
+    }
+}
+
+fn hash_pdf_dict_into(
+    dict: &Dictionary,
+    hasher: &mut impl Hasher,
+    hash_builder: &impl BuildHasher,
+    depth: usize,
+) {
+    dict.len().hash(hasher);
+    // Dictionary equality in lopdf is key-order-independent, so combine per-entry hashes
+    // commutatively.
+    let mut acc = 0_u64;
+    for (k, v) in dict.iter() {
+        let mut entry_hasher = hash_builder.build_hasher();
+        0_u8.hash(&mut entry_hasher);
+        k.hash(&mut entry_hasher);
+        1_u8.hash(&mut entry_hasher);
+        hash_pdf_object_into(v, &mut entry_hasher, hash_builder, depth);
+        acc = acc.wrapping_add(entry_hasher.finish());
+    }
+    acc.hash(hasher);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, atomic::AtomicBool};
+
+    use lopdf::dictionary;
+
+    use super::*;
+
+    #[test]
+    fn field_disambiguator_probes_linearly_with_preexisting_suffixes() {
+        let ctx = ToolCtx::default();
+        let mut doc = Document::with_version("1.5");
+        let mut disambiguator = NameDisambiguator::default();
+
+        let mut field_ids = Vec::with_capacity(252);
+        for name in ["foo_2", "foo_3"]
+            .into_iter()
+            .chain(std::iter::repeat_n("foo", 250))
+        {
+            let fid = doc.add_object(dictionary! {
+                "Subtype" => "Widget",
+                "FT" => "Tx",
+                "T" => Object::String(name.as_bytes().to_vec(), StringFormat::Literal),
+            });
+            field_ids.push(fid);
+        }
+
+        for &fid in &field_ids {
+            disambiguate_field_name(&mut doc, fid, &mut disambiguator, &ctx)
+                .expect("field disambiguation should succeed");
+        }
+
+        let actual: Vec<String> = field_ids
+            .iter()
+            .map(|&fid| {
+                let dict = doc.get_dictionary(fid).expect("field dict");
+                let raw = dict.get(b"T").and_then(Object::as_str).expect("field /T");
+                String::from_utf8(raw.to_vec()).expect("utf-8")
+            })
+            .collect();
+
+        let mut expected = vec!["foo_2".to_owned(), "foo_3".to_owned(), "foo".to_owned()];
+        for suffix in 4..=252 {
+            expected.push(format!("foo_{suffix}"));
+        }
+        assert_eq!(actual, expected);
+        // 3 probes on the first collision (foo_2, foo_3, foo_4) + 1 probe per remaining 248 collisions.
+        assert_eq!(disambiguator.probe_count, 251);
+    }
+
+    #[test]
+    fn attachment_disambiguator_probes_linearly_and_preserves_stem_ext() {
+        let ctx = ToolCtx::default();
+        let mut disambiguator = NameDisambiguator::default();
+
+        let mut inputs = vec![
+            "report_2.txt",
+            "report_3.txt",
+            ".hidden",
+            ".hidden",
+            "archive.tar.gz",
+            "archive.tar.gz",
+            "readme_2",
+            "readme",
+        ];
+        inputs.extend(std::iter::repeat_n("report.txt", 200));
+        inputs.extend(std::iter::repeat_n("readme", 200));
+
+        let actual: Vec<String> = inputs
+            .iter()
+            .map(|name| {
+                let out = disambiguate_attachment_name(name.as_bytes(), &mut disambiguator, &ctx)
+                    .expect("attachment disambiguation should succeed");
+                String::from_utf8(out).expect("utf-8")
+            })
+            .collect();
+
+        let mut expected = vec![
+            "report_2.txt".to_owned(),
+            "report_3.txt".to_owned(),
+            ".hidden".to_owned(),
+            ".hidden_2".to_owned(),
+            "archive.tar.gz".to_owned(),
+            "archive.tar_2.gz".to_owned(),
+            "readme_2".to_owned(),
+            "readme".to_owned(),
+            "report.txt".to_owned(),
+        ];
+        for suffix in 4..=202 {
+            expected.push(format!("report_{suffix}.txt"));
+        }
+        for suffix in 3..=202 {
+            expected.push(format!("readme_{suffix}"));
+        }
+        assert_eq!(actual, expected);
+        // .hidden(1) + archive.tar.gz(1) + report.txt(3 + 198) + readme(2 + 199) = 404.
+        assert_eq!(disambiguator.probe_count, 404);
+    }
+
+    #[test]
+    fn disambiguate_helpers_respect_cancellation() {
+        let cancelled = ToolCtx::with_cancel(Arc::new(AtomicBool::new(true)));
+        let mut doc = Document::with_version("1.5");
+        let fid_with_t = doc.add_object(dictionary! {
+            "T" => Object::String(b"field".to_vec(), StringFormat::Literal),
+        });
+        let fid_without_t = doc.add_object(dictionary! { "Subtype" => "Widget" });
+
+        let mut field_disambig = NameDisambiguator::default();
+        assert_eq!(
+            disambiguate_field_name(&mut doc, fid_with_t, &mut field_disambig, &cancelled)
+                .unwrap_err(),
+            PdfError::CANCELLED
+        );
+        assert_eq!(
+            doc.get_dictionary(fid_with_t)
+                .unwrap()
+                .get(b"T")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            b"field"
+        );
+        assert_eq!(
+            disambiguate_field_name(&mut doc, fid_without_t, &mut field_disambig, &cancelled)
+                .unwrap_err(),
+            PdfError::CANCELLED
+        );
+
+        let mut att_disambig = NameDisambiguator::default();
+        assert_eq!(
+            disambiguate_attachment_name(b"report.txt", &mut att_disambig, &cancelled).unwrap_err(),
+            PdfError::CANCELLED
+        );
+
+        // Mid-probe cancellation when advancing past pre-seeded suffixed names.
+        let mid_flag = Arc::new(AtomicBool::new(false));
+        let mid_ctx = ToolCtx::with_cancel(Arc::clone(&mid_flag));
+        let mut mid_field_disambig = NameDisambiguator::default();
+        for name in [b"item".as_slice(), b"item_2", b"item_3", b"item_4"] {
+            mid_field_disambig.seen.insert(name.to_vec());
+        }
+        mid_field_disambig.cancel_on_probe = Some((2, Arc::clone(&mid_flag)));
+        let mid_field_id = doc.add_object(dictionary! {
+            "T" => Object::String(b"item".to_vec(), StringFormat::Literal),
+        });
+        assert_eq!(
+            disambiguate_field_name(&mut doc, mid_field_id, &mut mid_field_disambig, &mid_ctx)
+                .unwrap_err(),
+            PdfError::CANCELLED
+        );
+        assert_eq!(mid_field_disambig.probe_count, 2);
+
+        let mid_att_flag = Arc::new(AtomicBool::new(false));
+        let mid_att_ctx = ToolCtx::with_cancel(Arc::clone(&mid_att_flag));
+        let mut mid_att_disambig = NameDisambiguator::default();
+        for name in [
+            b"note.txt".as_slice(),
+            b"note_2.txt",
+            b"note_3.txt",
+            b"note_4.txt",
+        ] {
+            mid_att_disambig.seen.insert(name.to_vec());
+        }
+        mid_att_disambig.cancel_on_probe = Some((2, Arc::clone(&mid_att_flag)));
+        assert_eq!(
+            disambiguate_attachment_name(b"note.txt", &mut mid_att_disambig, &mid_att_ctx)
+                .unwrap_err(),
+            PdfError::CANCELLED
+        );
+        assert_eq!(mid_att_disambig.probe_count, 2);
+    }
+
+    #[test]
+    fn disambiguator_errors_on_u32_max_saturation() {
+        let ctx = ToolCtx::default();
+        let expected_limit = usize::try_from(u32::MAX).unwrap_or(usize::MAX);
+
+        let mut field_disambig = NameDisambiguator::default();
+        field_disambig.seen.insert(b"foo".to_vec());
+        field_disambig
+            .next_counters
+            .insert("foo".to_owned(), Some(u32::MAX));
+
+        let mut doc = Document::with_version("1.5");
+        let fid1 = doc.add_object(dictionary! {
+            "T" => Object::String(b"foo".to_vec(), StringFormat::Literal),
+        });
+        let fid2 = doc.add_object(dictionary! {
+            "T" => Object::String(b"foo".to_vec(), StringFormat::Literal),
+        });
+        disambiguate_field_name(&mut doc, fid1, &mut field_disambig, &ctx)
+            .expect("u32::MAX slot should succeed once when unused");
+        assert_eq!(
+            doc.get_dictionary(fid1)
+                .unwrap()
+                .get(b"T")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            format!("foo_{}", u32::MAX).as_bytes()
+        );
+        let err1 = disambiguate_field_name(&mut doc, fid2, &mut field_disambig, &ctx)
+            .expect_err("exhausted counter must error");
+        assert_eq!(
+            err1,
+            PdfError::LimitExceeded(ReadError::TooManyObjects {
+                limit: expected_limit
+            })
+        );
+
+        let mut att_disambig = NameDisambiguator::default();
+        att_disambig.seen.insert(b"doc.pdf".to_vec());
+        att_disambig
+            .seen
+            .insert(format!("doc_{}.pdf", u32::MAX).into_bytes());
+        att_disambig
+            .next_counters
+            .insert(("doc".to_owned(), ".pdf".to_owned()), Some(u32::MAX - 1));
+
+        let ok = disambiguate_attachment_name(b"doc.pdf", &mut att_disambig, &ctx)
+            .expect("u32::MAX - 1 should succeed");
+        assert_eq!(ok, format!("doc_{}.pdf", u32::MAX - 1).into_bytes());
+
+        let err2 = disambiguate_attachment_name(b"doc.pdf", &mut att_disambig, &ctx)
+            .expect_err("saturated attachment counter must error");
+        assert_eq!(
+            err2,
+            PdfError::LimitExceeded(ReadError::TooManyObjects {
+                limit: expected_limit
+            })
+        );
+    }
+
+    #[test]
+    fn merged_af_deduplicates_linearly_preserving_order() {
+        let mut af = MergedAf::default();
+        af.push_unique(Object::Null);
+        af.push_unique(Object::Reference((10, 0)));
+        af.push_unique(Object::Reference((10, 0)));
+        af.push_unique(Object::Reference((11, 0)));
+
+        let mut d1 = Dictionary::new();
+        d1.set(b"A".to_vec(), Object::Integer(1));
+        d1.set(b"B".to_vec(), Object::Integer(2));
+        let mut d2 = Dictionary::new();
+        d2.set(b"B".to_vec(), Object::Integer(2));
+        d2.set(b"A".to_vec(), Object::Integer(1));
+        af.push_unique(Object::Dictionary(d1.clone()));
+        af.push_unique(Object::Dictionary(d2));
+
+        af.push_unique(Object::Real(-0.0));
+        af.push_unique(Object::Real(0.0));
+
+        af.push_unique(Object::Real(f32::NAN));
+        af.push_unique(Object::Real(f32::NAN));
+
+        assert_eq!(af.entries.len(), 6);
+        assert_eq!(af.entries[0], Object::Reference((10, 0)));
+        assert_eq!(af.entries[1], Object::Reference((11, 0)));
+        assert_eq!(af.entries[2], Object::Dictionary(d1));
+        assert_eq!(af.entries[3], Object::Real(-0.0));
+        assert!(matches!(af.entries[4], Object::Real(v) if v.is_nan()));
+        assert!(matches!(af.entries[5], Object::Real(v) if v.is_nan()));
+    }
+
+    #[test]
+    fn merged_af_distinguishes_swapped_dict_values_and_uses_per_instance_random_state() {
+        let mut swapped_a = Dictionary::new();
+        swapped_a.set(b"A".to_vec(), Object::Integer(1));
+        swapped_a.set(b"B".to_vec(), Object::Integer(2));
+
+        let mut swapped_b = Dictionary::new();
+        swapped_b.set(b"A".to_vec(), Object::Integer(2));
+        swapped_b.set(b"B".to_vec(), Object::Integer(1));
+
+        let obj_a = Object::Dictionary(swapped_a);
+        let obj_b = Object::Dictionary(swapped_b);
+
+        let mut af = MergedAf::default();
+        let hash_a = hash_pdf_object(&obj_a, &af.hash_builder);
+        let hash_b = hash_pdf_object(&obj_b, &af.hash_builder);
+        assert_ne!(hash_a, hash_b);
+
+        // Nested dictionaries with swapped key/value bindings also stay in separate buckets.
+        let mut nested_a = Dictionary::new();
+        nested_a.set(b"Inner".to_vec(), obj_a.clone());
+        let mut nested_b = Dictionary::new();
+        nested_b.set(b"Inner".to_vec(), obj_b.clone());
+        assert_ne!(
+            hash_pdf_object(&Object::Dictionary(nested_a), &af.hash_builder),
+            hash_pdf_object(&Object::Dictionary(nested_b), &af.hash_builder)
+        );
+
+        af.push_unique(obj_a.clone());
+        af.push_unique(obj_b.clone());
+        assert_eq!(af.entries, vec![obj_a, obj_b]);
+        assert_eq!(af.inline_buckets.len(), 2);
+
+        // Two separately constructed MergedAf instances must use independent RandomState seeds.
+        let probes: Vec<Object> = (0_i64..8)
+            .map(|idx| {
+                let mut d = Dictionary::new();
+                d.set(b"F".to_vec(), Object::Integer(idx));
+                d.set(b"Type".to_vec(), Object::Name(b"Filespec".to_vec()));
+                Object::Dictionary(d)
+            })
+            .collect();
+
+        let af1 = MergedAf::default();
+        let af2 = MergedAf::default();
+        let hashes1: Vec<u64> = probes
+            .iter()
+            .map(|obj| hash_pdf_object(obj, &af1.hash_builder))
+            .collect();
+        let hashes2: Vec<u64> = probes
+            .iter()
+            .map(|obj| hash_pdf_object(obj, &af2.hash_builder))
+            .collect();
+        assert_ne!(hashes1, hashes2);
     }
 }

@@ -74,11 +74,11 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.thumbnails` | convert | — | — | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
 | `pdf.extract_images` | convert | S03 extract images; extract images from scans | Extract Images | 4 | pdfium | local, cloud (wasm in phase 14) | Free | CLI, MCP, web(h), mac |
 | `image.to_pdf` (JPEG, PNG, WebP, TIFF, BMP in-process via `ariad-pdf`; HEIC deferred — no permissive pure-Rust decoder) | convert | S12 image to PDF | Image to PDF; JPG to PDF; PNG to PDF; WebP to PDF; BMP to PDF; TIFF to PDF; HEIC to PDF | 4 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.tables_to_csv` | convert | S07 PDF to CSV | PDF to CSV; Extract Tables | 10 | ariad-host, docling, ariad-core | local (D4) | Free | CLI, MCP, web(h), mac |
+| `pdf.tables_to_csv` | convert | S07 PDF to CSV | PDF to CSV; Extract Tables | 10 | docling or ariad-pdf, ariad-core | wasm, local, cloud (ruled and whitespace-aligned tables without Docling) | Free | CLI, MCP, web, mac |
 | `web.to_pdf` (host fetch, offline render, AD-15) | convert | S12 web URL to PDF | — | 10 | ariad-host, ariad-core, typst | local | Free | CLI, MCP, web(h), mac |
 | `convert:pdf→docx` | convert | S06 PDF to DOCX | PDF to Word | 10 (styles in 11) | pdf or docling, ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→odt` | convert | S06 PDF to ODT | — | 10 | pdf or docling, ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `convert:pdf→xlsx` | convert | S06 PDF to XLSX | PDF to Excel | 10 | docling, ariad-core | local (D4; wasm/cloud table detector deferred) | Free | CLI, MCP, web(h), mac |
+| `convert:pdf→xlsx` | convert | S06 PDF to XLSX | PDF to Excel | 10 | docling or pdf, ariad-core | wasm, local, cloud (ruled and whitespace-aligned tables without Docling) | Free | CLI, MCP, web, mac |
 | `convert:pdf→pptx` | convert | S06 PDF to PPTX | — | 10 | libreoffice | local, cloud | Free | CLI, MCP, web(h), mac |
 | `convert:pdf→html` | convert | S04 PDF to HTML | — | 10 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `convert:pdf→md` | convert | — | PDF to Markdown; Prepare PDF for AI | 10 | ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
@@ -107,6 +107,10 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.linearize` | optimize | — | Linearize PDF | 5 | qpdf | local | Free | CLI, MCP, web(h), mac |
 
 Compression runs in-process; PDFium is used only for similarity measurement. The eligible tools expose Cloud runtimes through server tool jobs.
+
+Compression size parity against Stirling level 6 is measured by `crates/ariad-pdf/tests/compress_corpus.rs` (preset `ebook`, reference sizes in `crates/ariad-pdf/tests/data/stirling-level6.tsv`). Embedded simple Type 1 fonts (`/FontFile`, eexec) are converted to Type1C (`/FontFile3`) with glyph names, encoding and widths unchanged, as Stirling does; together with the object-stream and CFF glyph-pruning work this moved `arxiv-multilingual` from 164,289 to 110,226 bytes (Stirling 136,838), `arxiv-tableformer` from 449,727 to 362,571 bytes and `pd-en-gao-08-35-highlights` from 50,553 to 43,484 bytes (Stirling 40,911). Seven of the ten corpus files are at or below the Stirling size, and the assertion in `compress_corpus.rs` requires seven.
+
+`arxiv-tableformer` (Stirling 206,587 bytes) will not reach parity, by design: Stirling's output drops 5 of the 7 image streams and 10 of the 11 form XObjects, so the figures on pages 3 and 8 render blank. About 131 KB of its saving is deleted visible content, and a further 53 KB comes from dropping CID font subsets that lived in those figures. AriadShift keeps that content. The remaining size gaps are `pd-vi-decree-39-2022` (2,010,687 against 2,005,188 bytes, +5.5 KB; per the step-0 analysis the gap is object-stream content, the signature field and widgets that Stirling drops, not re-measured since) and `pd-en-gao-08-35-highlights` (+2.6 KB; per the step-0 analysis mostly a dropped attachment and container overhead, not re-measured since the CFF pruning), tracked in #187.
 
 ### security
 

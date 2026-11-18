@@ -11,6 +11,8 @@ Docling turns PDF (digital and scanned), Office files and images into a structur
 
 The planner appends any writer, so `ashift convert scan.pdf --to docx` is `pdf ─docling→ docling+json ─ariad-core→ ariad-ir+json ─pandoc→ docx`. In the format graph, PDF `editable` routes prefer Docling while `fast` routes prefer the Rust reader, based on [measured capabilities](bench-report.md). File-based conversion and plan previews first apply the existing content-aware policy: digital text uses the built-in reader, scans require Docling, and `--engine docling` explicitly requests digital layout extraction. DOCX readers compete by profile using the measured metrics.
 
+When Docling is not installed, a digital PDF, including a mixed PDF with some pages that have no text layer, falls back to the built-in PDF reader. The conversion succeeds and reports `warning[docling_fallback]`, which names how many pages were left without text and suggests installing Docling to OCR them; `PDF → XLSX` and `PDF → CSV` of a fully digital PDF report the same code to say that tables were detected from ruling lines and from columns aligned with whitespace, which favours precision: aligned text that is not clearly a table, a table of words with no column of numbers and a ledger with long descriptions stay text, and those need Docling. `pdf.tables_to_csv` uses the same detector without Docling and reports the same `docling_fallback` warning, and its result names the engine that ran (`docling` or `ariad-pdf`). A scanned PDF, with no text layer on any page, still needs Docling and exits with code 5. The desktop app shows an `Install Docling` action on both the failed job and the fallback warning.
+
 ## What it needs
 
 The 0.2.0 pack requires `ashift >=0.2.0, <2.0.0`: it speaks the frozen
@@ -120,8 +122,10 @@ notice layout or native artifact fails the build.
 
 The official Linux and Windows x86_64 CPU PyTorch wheels contain proprietary
 oneMKL. These targets use a source-built CPU wheel with static OpenBLAS and C
-LAPACK instead. Apache-2.0 oneDNN remains enabled; CUDA, ROCm, XPU and distributed
-execution are disabled. The official torchvision wheel is retained only after
+LAPACK instead. Apache-2.0 oneDNN remains enabled to keep CPU math
+and convolution paths; legacy NNPACK (`USE_NNPACK=0`, whose PeachPy codegen is
+ASLR-nondeterministic), CUDA, ROCm, XPU and distributed execution are disabled.
+The official torchvision wheel is retained only after
 its native NMS and ROIAlign operators pass against the replacement torch;
 otherwise the toolchain builds torchvision against that torch. ARM retains the
 official hash-locked PyTorch wheels, which were audited without MKL markers.
@@ -154,8 +158,9 @@ sidecar must additionally match one component's reviewed `export_objects`
 SHA-256 receipt in
 [`native-components.toml`](../engines/docling/pack/native-components.toml), with
 an allowed SPDX licence and all hash-verified notices bundled. Wheel-scoped
-notices retain their reviewed paths; upstream notices go inside the wheel at
-`notices/<path>`. Loose artifacts require those files beside the artifact.
+notices retain their reviewed paths; upstream notices go inside the wheel under
+`<dist-info>/licenses/<path>`. Loose artifacts keep upstream notices beside the
+artifact under `notices/<path>`.
 Renaming an object, a generated output checksum or an OpenMP sidecar hash cannot
 create an approval. ZIP directory entries must have zero declared/compressed
 size and no readable bytes; payloads still reach content scanning and are refused.
@@ -206,7 +211,7 @@ In 1.0, shipped pack targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-li
 
 ### CI
 
-[`.github/workflows/pack-docling.yml`](../.github/workflows/pack-docling.yml) runs on pull requests that touch the engine, the mapper, `uv.lock`, the `justfile` or the workflow, and on `pack-docling-v*` tags:
+[`.github/workflows/pack-docling.yml`](../.github/workflows/pack-docling.yml) runs on pull requests that touch the engine, the mapper, `uv.lock` or the workflow, on pushes to `dev` that touch a pack input (the files listed by `scripts/docling-pack-inputs.sh --paths`), and on `pack-docling-v*` tags:
 
 - **Engine tests** on `ubuntu-26.04` and `windows-2025`: ruff and pytest.
 - **Engine conformance** on Linux with cached models and Tesseract: `just docling-engine-test`.
@@ -234,9 +239,13 @@ before displaying them.
 Native pack jobs also sign a test copy of the manifest with an ephemeral key, install it through
 `ashift engines install docling --from`, convert a digital PDF using installed-pack resolution,
 and run two Office jobs in a shared session before checking a 64 MiB memory limit. The test
-copy accepts the development host version; the distributed manifest still requires 0.2.x.
+copy accepts the development host version; the distributed manifest requires `>=0.2.0, <2.0.0`.
 
-Signing the manifest and attaching it with the archives to the `pack-docling-v<version>` release is described in [packs.md](packs.md#signing-and-publishing).
+On a `pack-docling-v*` tag whose commit is on `origin/main`, the `Sign and publish` job
+(`environment: release`) verifies `SHA256SUMS`, signs `pack.toml` with
+`scripts/pack/sign-pack.sh`, and publishes `pack.toml`, `pack.toml.minisig`, `SHA256SUMS`, and
+`*.tar.zst` to the GitHub release. Signing and publishing the pack is described in
+[packs.md](packs.md#signing-and-publishing).
 
 ### Updating a pin
 

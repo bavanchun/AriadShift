@@ -809,10 +809,10 @@ fn redact_pipeline_refuses_inline_image() {
     }));
 
     let err = run_tool(&request).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("uninspected carrier refused: inline_image")
-    );
+    // The text reads as a safety refusal; the machine contract stays tool_missing / exit 5.
+    assert_eq!(err.to_string(), "uninspected carrier refused: inline_image");
+    assert_eq!((err.code(), err.exit_code()), ("tool_missing", 5));
+    assert!(err.is_safety_refusal());
 }
 
 #[test]
@@ -1302,6 +1302,18 @@ fn redact_pipeline_rect_overlay_noop_rewrite_fails() {
             },
         ],
     };
+    // mixed-sizes.pdf has three pages; the evidence must describe all of them.
+    let mut geom = geom;
+    geom.page_count = 3;
+    geom.pages.extend((2..=3).map(|page| {
+        ariad_core::tools::params::redact_internal::RedactGeometryPage {
+            page,
+            width: 595.0,
+            height: 842.0,
+            rotation: 0,
+            chars: Vec::new(),
+        }
+    }));
     let status = verify_pdfium_text(&input_bytes, &params, &geom, &Limits::local(), &ctx).unwrap();
     assert_eq!(
         status,
@@ -1369,6 +1381,18 @@ fn redact_pipeline_rect_overlay_fails_when_covered_glyph_remains() {
             },
         ],
     };
+    // mixed-sizes.pdf has three pages; the evidence must describe all of them.
+    let mut geom = geom;
+    geom.page_count = 3;
+    geom.pages.extend((2..=3).map(|page| {
+        ariad_core::tools::params::redact_internal::RedactGeometryPage {
+            page,
+            width: 595.0,
+            height: 842.0,
+            rotation: 0,
+            chars: Vec::new(),
+        }
+    }));
     let status = verify_pdfium_text(&input_bytes, &params, &geom, &Limits::local(), &ctx).unwrap();
     assert_eq!(
         status,
@@ -1506,6 +1530,369 @@ fn redact_pipeline_rect_overlay_guard_rejects_unredacted_clean_candidate() {
         RedactionCheckStatus::Fail,
         "clean candidate containing original target text must fail core text gate"
     );
+}
+
+fn redact_stages(params: serde_json::Value, file: &str) -> Vec<String> {
+    use ariad_host::tools::{ToolEvent, run_tool_with_events};
+    let temp = tempfile::tempdir().unwrap();
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(fixture(file))],
+        OutputTarget::Path(temp.path().join("out.pdf")),
+    )
+    .with_params(params);
+    let mut stages = Vec::new();
+    run_tool_with_events(&request, |event| {
+        let ToolEvent::Progress { stage, .. } = event;
+        stages.push(stage);
+    })
+    .expect("pdf.redact should succeed");
+    stages
+}
+
+#[test]
+fn redact_pipeline_rect_overlay_runs_clean_candidate_branch() {
+    if !child("redact_pipeline_rect_overlay_runs_clean_candidate_branch") {
+        return;
+    }
+    let rect = json!({ "left": 70.0, "bottom": 745.0, "right": 320.0, "top": 765.0 });
+    // Wiring guard: the clean-candidate comparison is the only defence against an overlay
+    // that spells the removed text. If `execute_redact` stops building the clean candidate
+    // for rectangle + overlay requests, this stage disappears and the test fails.
+    let with_overlay = redact_stages(
+        json!({
+            "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }],
+            "overlay_text": "REDACTED"
+        }),
+        "mixed-sizes.pdf",
+    );
+    assert!(
+        with_overlay.iter().any(|s| s == "redact:clean-candidate"),
+        "rectangle + overlay must build and verify a clean candidate: {with_overlay:?}"
+    );
+    // Neither a rectangle without overlay nor an overlay without a rectangle needs it.
+    let no_overlay = redact_stages(
+        json!({ "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }] }),
+        "mixed-sizes.pdf",
+    );
+    assert!(!no_overlay.iter().any(|s| s == "redact:clean-candidate"));
+    let no_rectangle = redact_stages(
+        json!({
+            "targets": [{ "kind": "exact", "text": "Portfolio" }],
+            "overlay_text": "REDACTED"
+        }),
+        "mixed-sizes.pdf",
+    );
+    assert!(!no_rectangle.iter().any(|s| s == "redact:clean-candidate"));
+}
+
+/// One page with "Hello World" at (72, 712) and two annotations: one overlapping the
+/// rectangle used by the tests below and one far away from it.
+fn write_annotated_pdf(path: &Path, indirect_annots: bool, rotation: Option<i64>) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let content = doc.add_object(Stream::new(
+        Dictionary::new(),
+        b"BT /F1 12 Tf 72 712 Td (Hello World) Tj ET\n".to_vec(),
+    ));
+    let mut annot = |name: &str, rect: [f32; 4]| {
+        doc.add_object(dictionary! {
+            "Type" => "Annot",
+            "Subtype" => "Text",
+            "Contents" => Object::string_literal(name),
+            "Rect" => rect.iter().map(|v| Object::Real(*v)).collect::<Vec<_>>(),
+        })
+    };
+    let near = annot("near", [100.0, 700.0, 140.0, 730.0]);
+    let far = annot("far", [400.0, 100.0, 440.0, 140.0]);
+    let refs = vec![Object::Reference(near), Object::Reference(far)];
+    let annots = if indirect_annots {
+        Object::Reference(doc.add_object(Object::Array(refs)))
+    } else {
+        Object::Array(refs)
+    };
+    let font = doc.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica"
+    });
+    let mut page = dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => content,
+        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } },
+        "Annots" => annots,
+    };
+    if let Some(angle) = rotation {
+        page.set("Rotate", angle);
+    }
+    let page_id = doc.add_object(page);
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page_id)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+fn redact_annotated(indirect: bool) -> ariad_core::tools::params::redact::RedactionCarrierEvidence {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("annotated.pdf");
+    write_annotated_pdf(&input, indirect, None);
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(input)],
+        OutputTarget::Path(temp.path().join("out.pdf")),
+    )
+    .with_params(json!({
+        "targets": [{
+            "kind": "rectangle", "page": 1,
+            "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 }
+        }]
+    }));
+    let outcome = run_tool(&request).expect("rectangle redaction over an annotation");
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    report.carriers.expect("carrier evidence")
+}
+
+#[test]
+fn redact_pipeline_rectangle_removes_intersecting_direct_annotation() {
+    if !child("redact_pipeline_rectangle_removes_intersecting_direct_annotation") {
+        return;
+    }
+    // Only the annotation under the rectangle goes; the distant one is kept.
+    assert_eq!(redact_annotated(false).annotations_removed, 1);
+}
+
+#[test]
+fn redact_pipeline_rectangle_removes_intersecting_indirect_annotation() {
+    if !child("redact_pipeline_rectangle_removes_intersecting_indirect_annotation") {
+        return;
+    }
+    assert_eq!(redact_annotated(true).annotations_removed, 1);
+}
+
+#[test]
+fn redact_pipeline_rect_overlay_on_all_page_rotations() {
+    if !child("redact_pipeline_rect_overlay_on_all_page_rotations") {
+        return;
+    }
+    for angle in [0_i64, 90, 180, 270] {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("rotated.pdf");
+        let out_path = temp.path().join("out.pdf");
+        write_annotated_pdf(&input, false, Some(angle));
+        let request = ToolRequest::new(
+            "pdf.redact",
+            vec![InputRef::new(input)],
+            OutputTarget::Path(out_path.clone()),
+        )
+        .with_params(json!({
+            "targets": [{
+                "kind": "rectangle", "page": 1,
+                "rect": { "left": 70.0, "bottom": 700.0, "right": 200.0, "top": 730.0 }
+            }],
+            "overlay_text": "REDACTED"
+        }));
+        let outcome = run_tool(&request)
+            .unwrap_or_else(|e| panic!("rectangle + overlay on /Rotate {angle}: {e:?}"));
+        let report: RedactionVerificationReport =
+            serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+        assert_eq!(
+            report.status,
+            RedactionVerificationStatus::Verified,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.pdfium_text,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.core_text,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        assert_eq!(
+            report.checks.region_render,
+            RedactionCheckStatus::Pass,
+            "{angle}"
+        );
+        let oracle = Command::new("pdftotext")
+            .arg(&out_path)
+            .arg("-")
+            .output()
+            .expect("run pdftotext oracle");
+        assert!(oracle.status.success());
+        let extracted = String::from_utf8_lossy(&oracle.stdout);
+        assert!(
+            !extracted.contains("Hello"),
+            "{angle}: original text must be gone"
+        );
+        assert!(
+            extracted.contains("REDACTED"),
+            "{angle}: overlay must be present"
+        );
+    }
+}
+
+#[test]
+fn redact_geometry_test_helper_refuses_input_over_the_limit() {
+    use ariad_core::limits::Limits;
+    use ariad_host::tools::redact::inspect_geometry_for_test;
+
+    // No PDFium pack is needed: the size cap applies before any engine runs.
+    let mut limits = Limits::local();
+    limits.max_input_bytes = Some(64);
+    match inspect_geometry_for_test(&fixture("mixed-sizes.pdf"), &limits) {
+        Err(ToolError::LimitExceeded) => {}
+        Err(other) => panic!("expected limit_exceeded, got {other:?}"),
+        Ok(_) => panic!("a PDF over max_input_bytes must be refused"),
+    }
+}
+
+/// One page with a 32x32 grey gradient image drawn through `cm`, and optionally the same image
+/// drawn a second time through `again`.
+fn write_raster_pdf(path: &Path, cm: [i64; 6], again: Option<[i64; 6]>) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let pixels: Vec<u8> = (0..32u32 * 32)
+        .map(|i| (40 + (i % 32) * 4 + (i / 32) * 2).min(250) as u8)
+        .collect();
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 32, "Height" => 32,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        pixels,
+    ));
+    let mut content = format!(
+        "q {} {} {} {} {} {} cm /Im0 Do Q\n",
+        cm[0], cm[1], cm[2], cm[3], cm[4], cm[5]
+    );
+    let resources = dictionary! { "XObject" => dictionary! { "Im0" => image } };
+    if let Some(cm) = again {
+        content.push_str(&format!(
+            "q {} {} {} {} {} {} cm /Im0 Do Q\n",
+            cm[0], cm[1], cm[2], cm[3], cm[4], cm[5]
+        ));
+    }
+    let contents = doc.add_object(Stream::new(Dictionary::new(), content.into_bytes()));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => resources, "Contents" => contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+fn redact_raster(
+    input: &Path,
+    rect: serde_json::Value,
+    out: &Path,
+) -> Result<ariad_host::tools::ToolOutcome, ToolError> {
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(input.to_path_buf())],
+        OutputTarget::Path(out.to_path_buf()),
+    )
+    .with_params(json!({ "targets": [{ "kind": "rectangle", "page": 1, "rect": rect }] }));
+    run_tool(&request)
+}
+
+#[test]
+fn redact_pipeline_partially_covered_image_passes_the_render_probe() {
+    if !child("redact_pipeline_partially_covered_image_passes_the_render_probe") {
+        return;
+    }
+    // The rectangle (x 250..350) covers the right part of a 200x200 image at x 100..300 and
+    // reaches past its edge. The image is drawn in each of four orientations.
+    let placements: [(&str, [i64; 6]); 4] = [
+        ("upright", [200, 0, 0, 200, 100, 300]),
+        ("mirrored in x", [-200, 0, 0, 200, 300, 300]),
+        ("mirrored in y", [200, 0, 0, -200, 100, 500]),
+        ("turned a quarter", [0, 200, -200, 0, 300, 300]),
+    ];
+    for (name, cm) in placements {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("raster.pdf");
+        let out = temp.path().join("out.pdf");
+        write_raster_pdf(&input, cm, None);
+        let outcome = redact_raster(
+            &input,
+            json!({ "left": 250.0, "bottom": 350.0, "right": 350.0, "top": 450.0 }),
+            &out,
+        )
+        .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let report: RedactionVerificationReport =
+            serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+        assert_eq!(
+            report.status,
+            RedactionVerificationStatus::Verified,
+            "{name}"
+        );
+        assert_eq!(
+            report.checks.image_pixels,
+            RedactionCheckStatus::Pass,
+            "{name}"
+        );
+        assert_eq!(report.carriers.unwrap().images_modified, 1, "{name}");
+        // The probe is verification evidence: only the redacted PDF is published.
+        assert_eq!(outcome.artifacts.len(), 1, "{name}");
+        // On macOS the temp dir sits behind the /var -> /private/var symlink: compare resolved paths.
+        assert_eq!(
+            fs::canonicalize(&outcome.artifacts[0].path).unwrap(),
+            fs::canonicalize(&out).unwrap(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn redact_pipeline_refuses_over_clearing_of_a_repeated_image() {
+    if !child("redact_pipeline_refuses_over_clearing_of_a_repeated_image") {
+        return;
+    }
+    // The same image is drawn twice on the page: once under the rectangle and once well away
+    // from it. Both placements share one image object, so clearing the pixels under the
+    // rectangle blanks the same pixels of the second placement. The in-process placement
+    // scan finds only what the rewriter cleared and agrees with it; rendering shows that
+    // content outside the rectangle changed.
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("repeated.pdf");
+    let out = temp.path().join("out.pdf");
+    write_raster_pdf(
+        &input,
+        [200, 0, 0, 200, 100, 300],
+        Some([200, 0, 0, 200, 100, 50]),
+    );
+    let result = redact_raster(
+        &input,
+        json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }),
+        &out,
+    );
+    match result {
+        Err(ToolError::EngineFailure(message)) => {
+            assert_eq!(message, "redaction verification failed");
+        }
+        Err(other) => panic!("expected a failed verification gate, got {other:?}"),
+        Ok(_) => panic!("redaction that damaged content outside the region must not publish"),
+    }
+    assert!(!out.exists(), "nothing may be published on a failed gate");
 }
 
 #[test]
@@ -1650,4 +2037,589 @@ fn redact_pipeline_counts_indirect_annotations_and_vector_paths() {
         report_vec.carriers.unwrap().vectors_inspected > 0,
         "vectors_inspected must be > 0 when scope.vectors is true"
     );
+}
+
+#[test]
+fn redact_oversized_companion_report_and_redact_verify_inline_contract() {
+    if !child("redact_oversized_companion_report_and_redact_verify_inline_contract") {
+        return;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("doc.pdf");
+    fs::copy(fixture("mixed-sizes.pdf"), &input).unwrap();
+    let targets = json!({
+        "targets": [{ "kind": "exact", "text": "Portfolio" }]
+    });
+
+    // 1. `pdf.redact` with oversized report on `-o custom-redacted.pdf` and DefaultBesideInput:
+    let explicit_pdf = temp.path().join("custom-redacted.pdf");
+    let explicit_json = temp.path().join("custom-redacted.redacted.json");
+    let explicit_req = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(&input)],
+        OutputTarget::Path(explicit_pdf.clone()),
+    )
+    .with_params(targets.clone());
+    let explicit_res =
+        ariad_host::tools::run::with_inline_json_cap_for_test(64, || run_tool(&explicit_req))
+            .expect("pdf.redact -o custom-redacted.pdf with companion report must succeed");
+    assert!(explicit_res.inline_json.is_none());
+    assert!(
+        explicit_res
+            .warnings
+            .iter()
+            .any(|w| w.code == "report_not_inlined")
+    );
+    assert_eq!(explicit_res.artifacts.len(), 2);
+    assert_eq!(
+        fs::canonicalize(&explicit_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(&explicit_pdf).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&explicit_res.artifacts[1].path).unwrap(),
+        fs::canonicalize(&explicit_json).unwrap()
+    );
+    let parsed_explicit: RedactionVerificationReport =
+        serde_json::from_slice(&fs::read(&explicit_json).unwrap()).unwrap();
+    assert_eq!(
+        parsed_explicit.status,
+        RedactionVerificationStatus::Verified
+    );
+
+    let default_req = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(&input)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(targets.clone());
+    let default_res =
+        ariad_host::tools::run::with_inline_json_cap_for_test(64, || run_tool(&default_req))
+            .expect("pdf.redact DefaultBesideInput with companion report must succeed");
+    assert!(default_res.inline_json.is_none());
+    assert_eq!(default_res.artifacts.len(), 2);
+    assert_eq!(
+        fs::canonicalize(&default_res.artifacts[0].path).unwrap(),
+        fs::canonicalize(temp.path().join("doc.redacted.pdf")).unwrap()
+    );
+    assert_eq!(
+        fs::canonicalize(&default_res.artifacts[1].path).unwrap(),
+        fs::canonicalize(temp.path().join("doc.redacted.json")).unwrap()
+    );
+
+    // 2. `pdf.redact_verify` within cap: returns inline_json + empty artifacts across
+    // OutputTarget::None, DefaultBesideInput, Directory, and recipe execution.
+    let verify_dir = temp.path().join("verify-dir");
+    fs::create_dir_all(&verify_dir).unwrap();
+    for target in [
+        OutputTarget::None,
+        OutputTarget::DefaultBesideInput,
+        OutputTarget::Directory(verify_dir.clone()),
+    ] {
+        let res = run_tool(
+            &ToolRequest::new("pdf.redact_verify", vec![InputRef::new(&input)], target)
+                .with_params(targets.clone()),
+        )
+        .expect("in-cap pdf.redact_verify must succeed");
+        assert!(res.inline_json.is_some());
+        assert!(
+            res.artifacts.is_empty(),
+            "in-cap pdf.redact_verify must emit zero artifacts"
+        );
+    }
+    assert_eq!(fs::read_dir(&verify_dir).unwrap().count(), 0);
+    assert!(!temp.path().join("doc.redact-verify.json").exists());
+
+    let recipe = ariad_core::tools::Recipe::from_json_str(
+        &json!({
+            "version": "ariad-recipe/1",
+            "steps": [{"tool": "pdf.redact_verify", "params": targets}]
+        })
+        .to_string(),
+        ariad_core::tools::RecipeOrigin::Trusted,
+    )
+    .unwrap();
+    let recipe_out = temp.path().join("recipe-out");
+    fs::create_dir_all(&recipe_out).unwrap();
+    let recipe_res =
+        ariad_host::tools::recipe::run_recipe(&ariad_host::tools::recipe::RecipeRequest::new(
+            recipe,
+            vec![InputRef::new(&input)],
+            recipe_out,
+        ))
+        .expect("recipe with pdf.redact_verify must succeed");
+    assert!(recipe_res.artifacts.is_empty());
+
+    // 3. `pdf.redact_verify` oversized: publishes `<stem>.redact-verify.json` beside input.
+    let over_verify = ariad_host::tools::run::with_inline_json_cap_for_test(64, || {
+        run_tool(
+            &ToolRequest::new(
+                "pdf.redact_verify",
+                vec![InputRef::new(&input)],
+                OutputTarget::DefaultBesideInput,
+            )
+            .with_params(targets),
+        )
+    })
+    .expect("oversized pdf.redact_verify must publish beside input");
+    assert!(over_verify.inline_json.is_none());
+    assert_eq!(over_verify.artifacts.len(), 1);
+    assert_eq!(
+        fs::canonicalize(&over_verify.artifacts[0].path).unwrap(),
+        fs::canonicalize(temp.path().join("doc.redact-verify.json")).unwrap()
+    );
+}
+
+/// Smallest valid ICC v2 CMYK input profile (`lut8`, two grid points per channel, Lab PCS).
+///
+/// The colours are invented, so a CMYK sample renders differently through this profile than
+/// through PDFium's device CMYK conversion. That difference is what re-encoding an ICC image
+/// to `/DeviceCMYK` causes in the render probe.
+fn synthetic_cmyk_icc() -> Vec<u8> {
+    fn tag_xyz() -> Vec<u8> {
+        let mut v = b"XYZ \0\0\0\0".to_vec();
+        for value in [0x0000_F6D6u32, 0x0001_0000, 0x0000_D32D] {
+            v.extend(value.to_be_bytes());
+        }
+        v
+    }
+    let mut lut = b"mft1\0\0\0\0".to_vec();
+    lut.extend([4, 3, 2, 0]);
+    for value in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] {
+        lut.extend(((value * 65536.0) as i32).to_be_bytes());
+    }
+    for _ in 0..4 {
+        lut.extend(0..=255u8);
+    }
+    for node in 0..16u32 {
+        let [c, m, y, k] = [
+            f64::from(node >> 3 & 1),
+            f64::from(node >> 2 & 1),
+            f64::from(node >> 1 & 1),
+            f64::from(node & 1),
+        ];
+        let lightness = (1.0 - 0.95 * k) * (100.0 - 40.0 * c - 30.0 * m - 15.0 * y);
+        let a = 60.0 * m - 40.0 * c;
+        let b = 70.0 * y - 30.0 * c;
+        lut.push((lightness * 255.0 / 100.0).round() as u8);
+        lut.push((a + 128.0).round() as u8);
+        lut.push((b + 128.0).round() as u8);
+    }
+    for _ in 0..3 {
+        lut.extend(0..=255u8);
+    }
+    let mut text = b"text\0\0\0\0synthetic test profile\0".to_vec();
+    text.resize(text.len().next_multiple_of(4), 0);
+    lut.resize(lut.len().next_multiple_of(4), 0);
+    let tags: [(&[u8; 4], Vec<u8>); 3] = [(b"A2B0", lut), (b"cprt", text), (b"wtpt", tag_xyz())];
+    let mut table = Vec::new();
+    let mut body: Vec<u8> = Vec::new();
+    let first = 128 + 4 + 12 * tags.len();
+    for (signature, data) in &tags {
+        table.extend(*signature);
+        table.extend(((first + body.len()) as u32).to_be_bytes());
+        table.extend((data.len() as u32).to_be_bytes());
+        body.extend(data);
+    }
+    let mut profile = vec![0u8; 128];
+    profile[8..12].copy_from_slice(&[2, 0x10, 0, 0]);
+    profile[12..16].copy_from_slice(b"prtr");
+    profile[16..20].copy_from_slice(b"CMYK");
+    profile[20..24].copy_from_slice(b"Lab ");
+    profile[36..40].copy_from_slice(b"acsp");
+    profile[68..72].copy_from_slice(&0x0000_F6D6u32.to_be_bytes());
+    profile[72..76].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    profile[76..80].copy_from_slice(&0x0000_D32Du32.to_be_bytes());
+    profile.extend((tags.len() as u32).to_be_bytes());
+    profile.extend(table);
+    profile.extend(body);
+    let size = profile.len() as u32;
+    profile[0..4].copy_from_slice(&size.to_be_bytes());
+    profile
+}
+
+/// How the 8x8 CMYK image of [`write_cmyk_pdf`] is filled. The cells in columns and rows 2..6
+/// (the 100 x 100 pt block under the redaction rectangle) hold mid-tones, everything else is
+/// blank paper.
+#[derive(Clone, Copy, PartialEq)]
+enum Block {
+    /// The original mid-tones.
+    Original,
+    /// Every cell of the block cleared to black.
+    Cleared,
+    /// Every cell cleared except the one at (column 3, row 3).
+    ClearedButOne,
+    /// The original mid-tones in every cell of the image, not only under the rectangle.
+    Everywhere,
+}
+
+/// One page (`/Rotate` `rotate`) with an 8x8 CMYK image at x 100..300, y 300..500, tagged with
+/// the synthetic ICC profile when `icc` is true and `/DeviceCMYK` otherwise.
+fn write_cmyk_pdf(path: &Path, icc: bool, block: Block, rotate: i64) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let mut data = Vec::new();
+    for row in 0..8u32 {
+        for col in 0..8u32 {
+            let in_block =
+                block == Block::Everywhere || (2..6).contains(&col) && (2..6).contains(&row);
+            let cell = if !in_block {
+                [0, 0, 0, 0]
+            } else if block == Block::Cleared
+                || (block == Block::ClearedButOne && (col, row) != (3, 3))
+            {
+                [0, 0, 0, 255]
+            } else {
+                [128 + (col * 8) as u8, 64 + (row * 8) as u8, 64, 64]
+            };
+            data.extend(cell);
+        }
+    }
+    let color_space: Object = if icc {
+        let profile = doc.add_object(Stream::new(
+            dictionary! { "N" => 4, "Alternate" => "DeviceCMYK" },
+            synthetic_cmyk_icc(),
+        ));
+        Object::Array(vec![Object::Name(b"ICCBased".to_vec()), profile.into()])
+    } else {
+        Object::Name(b"DeviceCMYK".to_vec())
+    };
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 8, "Height" => 8,
+            "ColorSpace" => color_space, "BitsPerComponent" => 8,
+        },
+        data,
+    ));
+    let contents = doc.add_object(Stream::new(
+        Dictionary::new(),
+        b"q 200 0 0 200 100 300 cm /Im0 Do Q\n".to_vec(),
+    ));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id, "Rotate" => rotate,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+        "Contents" => contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+fn block_params() -> ariad_core::tools::params::redact::RedactParams {
+    serde_json::from_value(json!({ "targets": [{
+        "kind": "rectangle", "page": 1,
+        "rect": { "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }
+    }] }))
+    .unwrap()
+}
+
+/// The real candidate of `original` (the shipped rewrite), for the comparison's geometry.
+fn real_candidate(original: &Path, out: &Path) {
+    let limits = ariad_core::limits::Limits::local();
+    let ctx = ariad_pdf::ToolCtx::new();
+    let params = block_params();
+    let bytes = fs::read(original).unwrap();
+    let geometry = ariad_host::tools::redact::inspect_geometry_for_test(original, &limits).unwrap();
+    let plan = ariad_pdf::redact::plan(&bytes, &params, &geometry, &limits, &ctx).unwrap();
+    let (candidate, _) = ariad_pdf::redact::rewrite_document_with_evidence(
+        &bytes, &params, &plan, &geometry, &limits, &ctx,
+    )
+    .unwrap();
+    fs::write(out, candidate).unwrap();
+}
+
+fn channel_gap(a: &image::Rgba<u8>, b: &image::Rgba<u8>) -> i32 {
+    (0..3)
+        .map(|i| (i32::from(a.0[i]) - i32::from(b.0[i])).abs())
+        .max()
+        .unwrap()
+}
+
+#[test]
+fn render_probe_fails_a_leftover_cell_of_a_cmyk_icc_image() {
+    if !child("render_probe_fails_a_leftover_cell_of_a_cmyk_icc_image") {
+        return;
+    }
+    use ariad_host::tools::redact::{compare_probe_for_test, render_page_for_test};
+    let temp = tempfile::tempdir().unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let original = temp.path().join("original.pdf");
+    let candidate = temp.path().join("candidate.pdf");
+    let cleared = temp.path().join("cleared.pdf");
+    let leftover = temp.path().join("leftover.pdf");
+    write_cmyk_pdf(&original, true, Block::Original, 0);
+    write_cmyk_pdf(&cleared, false, Block::Cleared, 0);
+    write_cmyk_pdf(&leftover, false, Block::ClearedButOne, 0);
+    real_candidate(&original, &candidate);
+    let params = block_params();
+
+    // The precondition that makes this test meaningful: the missed cell renders differently
+    // through /DeviceCMYK than through the ICC profile, by more than the "unchanged" tolerance.
+    // Cell (3, 3) centre is at (187.5, 412.5) pt; 100 dpi.
+    let at = |image: &image::RgbaImage| {
+        *image.get_pixel(
+            (187.5f64 * 100.0 / 72.0) as u32,
+            ((792.0 - 412.5) * 100.0 / 72.0) as u32,
+        )
+    };
+    let before = at(&render_page_for_test(&original, 1, 100, &limits).unwrap());
+    let after = at(&render_page_for_test(&leftover, 1, 100, &limits).unwrap());
+    assert!(
+        channel_gap(&before, &after) > 8,
+        "the colour must drift for this test to prove anything: {before:?} -> {after:?}"
+    );
+    let black = at(&render_page_for_test(&cleared, 1, 100, &limits).unwrap());
+    assert!(
+        black.0[..3].iter().all(|v| (24..=40).contains(v)),
+        "cleared CMYK renders as a neutral dark gray, not black: {black:?}"
+    );
+    let verdict = |probe: &Path| {
+        compare_probe_for_test(&original, probe, &candidate, &params, &limits).unwrap()
+    };
+    assert_eq!(
+        verdict(&cleared),
+        RedactionCheckStatus::Pass,
+        "control: a fully cleared block passes"
+    );
+    assert_eq!(
+        verdict(&leftover),
+        RedactionCheckStatus::Fail,
+        "an uncleared cell whose colour drifted is a leftover"
+    );
+}
+
+/// Largest per-channel gap between two renders over the pixels (100 dpi, 612 x 792 pt page)
+/// that lie inside `image` (page points) but outside `region`, padded by 3 pt.
+fn max_gap_outside(
+    a: &image::RgbaImage,
+    b: &image::RgbaImage,
+    image: [f64; 4],
+    region: [f64; 4],
+) -> i32 {
+    let scale = 100.0 / 72.0;
+    let mut gap = 0;
+    for (x, y, pa) in a.enumerate_pixels() {
+        let (px, py) = (f64::from(x) / scale, 792.0 - f64::from(y) / scale);
+        let inside = |r: [f64; 4], pad: f64| {
+            px >= r[0] - pad && px <= r[2] + pad && py >= r[1] - pad && py <= r[3] + pad
+        };
+        if inside(image, -3.0) && !inside(region, 3.0) {
+            gap = gap.max(channel_gap(pa, b.get_pixel(x, y)));
+        }
+    }
+    gap
+}
+
+const BLOCK_REGION: [f64; 4] = [150.0, 350.0, 250.0, 450.0];
+const BLOCK_IMAGE: [f64; 4] = [100.0, 300.0, 300.0, 500.0];
+
+#[test]
+fn redact_pipeline_partly_covered_cmyk_icc_image_is_not_falsely_refused() {
+    if !child("redact_pipeline_partly_covered_cmyk_icc_image_is_not_falsely_refused") {
+        return;
+    }
+    use ariad_host::tools::redact::render_page_for_test;
+    let temp = tempfile::tempdir().unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let input = temp.path().join("icc.pdf");
+    let out = temp.path().join("out.pdf");
+    write_cmyk_pdf(&input, true, Block::Everywhere, 0);
+    let outcome = redact_raster(
+        &input,
+        json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }),
+        &out,
+    )
+    .expect("a correct redaction of a partly covered ICC image must not be refused");
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    assert_eq!(report.checks.image_pixels, RedactionCheckStatus::Pass);
+    // The precondition: the untouched part of the image really renders differently now.
+    let before = render_page_for_test(&input, 1, 100, &limits).unwrap();
+    let after = render_page_for_test(&out, 1, 100, &limits).unwrap();
+    let gap = max_gap_outside(&before, &after, BLOCK_IMAGE, BLOCK_REGION);
+    assert!(gap > 8, "the colours must drift outside the region: {gap}");
+}
+
+/// One page with an 8x8 black and white checkerboard drawn at x 100..300, y 300..500, with
+/// `/Interpolate` set or not.
+fn write_checker_pdf(path: &Path, interpolate: bool) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let pixels: Vec<u8> = (0..64u32)
+        .map(|i| if (i % 8 + i / 8) % 2 == 0 { 0 } else { 255 })
+        .collect();
+    let image = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 8, "Height" => 8,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            "Interpolate" => interpolate,
+        },
+        pixels,
+    ));
+    let contents = doc.add_object(Stream::new(
+        Dictionary::new(),
+        b"q 200 0 0 200 100 300 cm /Im0 Do Q\n".to_vec(),
+    ));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+        "Contents" => contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+#[test]
+fn redact_pipeline_partly_covered_interpolated_image_is_not_falsely_refused() {
+    if !child("redact_pipeline_partly_covered_interpolated_image_is_not_falsely_refused") {
+        return;
+    }
+    use ariad_host::tools::redact::render_page_for_test;
+    let temp = tempfile::tempdir().unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let input = temp.path().join("interpolated.pdf");
+    let out = temp.path().join("out.pdf");
+    write_checker_pdf(&input, true);
+    let outcome = redact_raster(
+        &input,
+        json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 }),
+        &out,
+    )
+    .expect("a correct redaction of a partly covered /Interpolate image must not be refused");
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    assert_eq!(report.checks.image_pixels, RedactionCheckStatus::Pass);
+    let before = render_page_for_test(&input, 1, 100, &limits).unwrap();
+    let after = render_page_for_test(&out, 1, 100, &limits).unwrap();
+    let gap = max_gap_outside(&before, &after, BLOCK_IMAGE, BLOCK_REGION);
+    assert!(
+        gap > 8,
+        "/Interpolate must change the render outside the region: {gap}"
+    );
+}
+
+/// Three pages, each with its own 32x32 gray gradient image at x 100..300, y 300..500.
+fn write_three_raster_pages(path: &Path) {
+    use lopdf::{Dictionary, Object, Stream};
+    let mut doc = lopdf::Document::with_version("1.7");
+    let pages_id = doc.new_object_id();
+    let mut kids = Vec::new();
+    for shift in [0u32, 40, 80] {
+        let pixels: Vec<u8> = (0..32u32 * 32)
+            .map(|i| (40 + shift + (i % 32) * 3 + (i / 32) * 2).min(250) as u8)
+            .collect();
+        let image = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => 32, "Height" => 32,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            },
+            pixels,
+        ));
+        let contents = doc.add_object(Stream::new(
+            Dictionary::new(),
+            b"q 200 0 0 200 100 300 cm /Im0 Do Q\n".to_vec(),
+        ));
+        kids.push(Object::Reference(doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Resources" => dictionary! { "XObject" => dictionary! { "Im0" => image } },
+            "Contents" => contents,
+        })));
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => 3 }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+#[test]
+fn redact_pipeline_verifies_every_raster_page_of_a_batch() {
+    if !child("redact_pipeline_verifies_every_raster_page_of_a_batch") {
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("three.pdf");
+    let out = temp.path().join("out.pdf");
+    write_three_raster_pages(&input);
+    let rect = json!({ "left": 150.0, "bottom": 350.0, "right": 250.0, "top": 450.0 });
+    let request = ToolRequest::new(
+        "pdf.redact",
+        vec![InputRef::new(input.clone())],
+        OutputTarget::Path(out.clone()),
+    )
+    .with_params(json!({ "targets": [
+        { "kind": "rectangle", "page": 1, "rect": rect },
+        { "kind": "rectangle", "page": 2, "rect": rect },
+        { "kind": "rectangle", "page": 3, "rect": rect },
+    ] }));
+    let outcome = run_tool(&request).unwrap();
+    let report: RedactionVerificationReport =
+        serde_json::from_value(outcome.inline_json.unwrap()).unwrap();
+    assert_eq!(report.status, RedactionVerificationStatus::Verified);
+    assert_eq!(report.checks.image_pixels, RedactionCheckStatus::Pass);
+    assert_eq!(report.carriers.unwrap().images_modified, 3);
+}
+
+/// The original used as its own probe leaves everything under the rectangle in place, so the
+/// render comparison must fail on every page rotation. That proves the page mapping, the
+/// resolution and the region mask against real PDFium. A fully cleared probe passes and a
+/// probe with one missed cell fails, on the same rotations.
+#[test]
+fn render_probe_sees_leftovers_on_every_page_rotation() {
+    if !child("render_probe_sees_leftovers_on_every_page_rotation") {
+        return;
+    }
+    use ariad_host::tools::redact::compare_probe_for_test;
+    let limits = ariad_core::limits::Limits::local();
+    let params = block_params();
+    for rotate in [0, 90, 180, 270] {
+        let temp = tempfile::tempdir().unwrap();
+        let path = |name: &str| temp.path().join(name);
+        let (original, candidate) = (path("original.pdf"), path("candidate.pdf"));
+        let (cleared, leftover) = (path("cleared.pdf"), path("leftover.pdf"));
+        write_cmyk_pdf(&original, true, Block::Original, rotate);
+        write_cmyk_pdf(&cleared, false, Block::Cleared, rotate);
+        write_cmyk_pdf(&leftover, false, Block::ClearedButOne, rotate);
+        real_candidate(&original, &candidate);
+        let verdict = |probe: &Path| {
+            compare_probe_for_test(&original, probe, &candidate, &params, &limits).unwrap()
+        };
+        assert_eq!(
+            verdict(&original),
+            RedactionCheckStatus::Fail,
+            "rotate {rotate}: the original as its own probe must fail"
+        );
+        assert_eq!(
+            verdict(&leftover),
+            RedactionCheckStatus::Fail,
+            "rotate {rotate}: a missed cell must fail"
+        );
+        assert_eq!(
+            verdict(&cleared),
+            RedactionCheckStatus::Pass,
+            "rotate {rotate}: a cleared block must pass"
+        );
+    }
 }

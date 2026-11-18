@@ -181,50 +181,111 @@ pub fn plan_with_engine(
         });
     }
 
-    let default_exe = std::env::current_exe().map_err(|_| ConvertError::Failed)?;
-    let program = engine_program.unwrap_or(&default_exe);
-    let selected = crate::convert::routing::select(
-        path,
-        input_format,
-        to_fmt,
-        profile,
-        caps,
-        &EngineInvocation::new(program),
-        reader_engine,
-        &Limits::local(),
-        &cancel,
-    )?;
-    let plan = selected.plan;
+    let resolved_program = engines::resolve_engine_program(engine_program);
+    let (plan, available) = match resolved_program {
+        Some(ref program) => {
+            let invocation = EngineInvocation::new(program);
+            let selected = crate::convert::routing::select(
+                path,
+                input_format,
+                to_fmt,
+                profile,
+                caps,
+                &invocation,
+                reader_engine,
+                &Limits::local(),
+                &cancel,
+            )?;
+            let plan = selected.plan;
 
-    let summary = build_input_summary(path, input_format)?;
-
-    let available = {
-        let default_exe = std::env::current_exe().ok();
-        match engine_program.or(default_exe.as_deref()) {
-            Some(program) => {
-                let mut needed: Vec<&str> = plan
-                    .steps
-                    .iter()
-                    .chain(plan.alternatives.iter().flat_map(|alt| alt.steps.iter()))
-                    .map(|step| step.engine.as_str())
-                    .collect();
-                needed.sort_unstable();
-                needed.dedup();
-                match engines::availability_of(
-                    &EngineInvocation::new(program),
-                    &needed,
-                    cancel.clone(),
-                ) {
-                    Ok(report) => Some(report),
-                    Err(crate::runner::RunError::Cancelled) => {
-                        return Err(ConvertError::Interrupted);
-                    }
-                    Err(_) => None,
+            let mut needed: Vec<&str> = plan
+                .steps
+                .iter()
+                .chain(plan.alternatives.iter().flat_map(|alt| alt.steps.iter()))
+                .map(|step| step.engine.as_str())
+                .collect();
+            needed.sort_unstable();
+            needed.dedup();
+            let available = match engines::availability_of(&invocation, &needed, cancel.clone()) {
+                Ok(report) => Some(report),
+                Err(crate::runner::RunError::Cancelled) => {
+                    return Err(ConvertError::Interrupted);
                 }
+                Err(_) => None,
+            };
+            (plan, available)
+        }
+        None => {
+            let direct_non_ir_route = caps.edges.iter().any(|edge| {
+                edge.from == input_format && edge.to == to_fmt && edge.to != Format::AriadIrJson
+            });
+
+            if input_format == Format::Pdf && reader_engine.is_none() && !direct_non_ir_route {
+                return Err(ConvertError::missing_engine(
+                    if matches!(to_fmt, Format::Xlsx | Format::Csv) {
+                        engines::docling::ENGINE_ID
+                    } else {
+                        engines::PDF.id
+                    },
+                ));
             }
-            None => None,
+
+            let mut capabilities = caps.clone();
+            if let Some(reader) = reader_engine {
+                if !caps
+                    .edges
+                    .iter()
+                    .any(|edge| edge.from == input_format && edge.engine == reader)
+                {
+                    return Err(ConvertError::UnsupportedRoute {
+                        detail: Some(format!(
+                            "engine '{}' cannot read {}",
+                            crate::convert::sanitize_identifier(reader, 64),
+                            input_format.user_name()
+                        )),
+                    });
+                }
+                capabilities
+                    .edges
+                    .retain(|edge| edge.from != input_format || edge.engine == reader);
+            }
+
+            let plan = planner::plan(
+                &capabilities,
+                input_format,
+                to_fmt,
+                profile,
+                &registered_engines,
+            )
+            .map_err(|error| crate::convert::routing::plan_error(error, input_format))?;
+
+            if let Some(step) = plan
+                .steps
+                .iter()
+                .find(|s| s.engine != engines::IN_PROCESS_ENGINE)
+            {
+                return Err(ConvertError::EngineMissing {
+                    engine: step.engine.clone(),
+                    hint: engines::spec(&step.engine)
+                        .map(|s| s.install_hint.to_owned())
+                        .unwrap_or_else(|| format!("install the {} engine", step.engine)),
+                });
+            }
+
+            let available = AvailabilityReport {
+                engines: vec![engines::EngineAvailability {
+                    engine: engines::IN_PROCESS_ENGINE.to_owned(),
+                    available: true,
+                    tool_status: None,
+                    version: None,
+                    startup_failure: None,
+                }],
+            };
+            (plan, Some(available))
         }
     };
+
+    let summary = build_input_summary(path, input_format)?;
 
     let (runs_locally, missing_engine, startup_failure) =
         check_route_engines(&plan.steps, available.as_ref());

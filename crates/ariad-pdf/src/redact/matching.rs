@@ -3,9 +3,8 @@
 use ariad_core::tools::params::redact::{RedactionPreset, RedactionTarget};
 use regex::{Regex, RegexBuilder};
 use regex_syntax::hir::{Hir, HirKind};
-use unicode_normalization::UnicodeNormalization;
 
-use super::normalize::Normalized;
+use super::normalize::{Normalized, search_form};
 use crate::ToolCtx;
 
 const MAX_TEXT: usize = 16 * 1024 * 1024;
@@ -71,7 +70,10 @@ impl Matchers {
         let mut patterns = Vec::new();
         for (target, value) in targets.iter().enumerate() {
             if let RedactionTarget::Exact { text } = value {
-                let bytes = text.nfc().collect::<String>().into_bytes();
+                let bytes = search_form(text).into_bytes();
+                if bytes.is_empty() {
+                    return Err("redaction target is empty after normalization");
+                }
                 let mut prefix = vec![0; bytes.len()];
                 let mut length = 0;
                 for i in 1..bytes.len() {
@@ -268,7 +270,7 @@ fn normalize_regex(pattern: &str) -> Result<String, &'static str> {
         match hir.into_kind() {
             HirKind::Empty => Hir::empty(),
             HirKind::Literal(literal) => match std::str::from_utf8(&literal.0) {
-                Ok(text) => Hir::literal(text.nfc().collect::<String>().into_bytes()),
+                Ok(text) => Hir::literal(search_form(text).into_bytes()),
                 Err(_) => Hir::literal(literal.0),
             },
             HirKind::Class(class) => Hir::class(class),
@@ -538,6 +540,41 @@ mod tests {
         assert!(
             Matchers::new(&[RedactionTarget::Regex {
                 pattern: r"\b".into()
+            }])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn invisible_and_variant_characters_do_not_hide_targets() {
+        let matcher = Matchers::new(&[RedactionTarget::Exact {
+            text: "123-456".into(),
+        }])
+        .unwrap();
+        for source in [
+            "x 1\u{200B}23\u{2011}456 y",
+            "x 12\u{00AD}3-4\u{200C}56 y",
+            "x \u{0661}\u{0662}\u{0663}-\u{06F4}\u{06F5}\u{06F6} y",
+        ] {
+            let found = matcher.find(source, &mut MatchBudget::default()).unwrap();
+            assert_eq!(found.len(), 1, "{source:?}");
+            assert_eq!(&source[found[0].end..], " y");
+            assert_eq!(&source[..found[0].start], "x ");
+        }
+        let variant = Matchers::new(&[RedactionTarget::Exact {
+            text: "\u{0661}2\u{200B}3".into(),
+        }])
+        .unwrap();
+        assert_eq!(
+            variant
+                .find("123", &mut MatchBudget::default())
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            Matchers::new(&[RedactionTarget::Exact {
+                text: "\u{200B}\u{00AD}".into()
             }])
             .is_err()
         );

@@ -146,10 +146,26 @@ async fn assert_no_files(root: &Path) {
     .expect("staging files were cleaned up");
 }
 
+/// Clones `storage` with `WAIT` timeouts while sharing its underlying
+/// `object_store` and single-slot `ActiveTransfers` admission state.
+fn wait_limits(storage: &Storage) -> Storage {
+    storage
+        .clone()
+        .with_blob_transfer_limits(BlobTransferLimits {
+            max_concurrent: 1,
+            idle_timeout: WAIT,
+            transfer_timeout: WAIT,
+        })
+        .unwrap()
+        .with_blob_max_transfer_timeout(WAIT)
+        .unwrap()
+}
+
 async fn assert_slot_released(storage: &Storage) {
+    let probe = wait_limits(storage);
     timeout(WAIT, async {
         loop {
-            match storage.get_stream("absent").await {
+            match probe.get_stream("absent").await {
                 Err(StorageError::Busy) => tokio::task::yield_now().await,
                 Err(err) if err.is_not_found() => break,
                 _ => panic!("expected a released slot and a missing object"),
@@ -296,7 +312,8 @@ async fn total_deadline_stops_dripping_uploads_and_releases_admission() {
     .unwrap();
     assert!(matches!(result, Err(StorageError::Timeout)));
     assert_no_files(dir.path()).await;
-    round_trip(&storage, "drip").await;
+    assert_slot_released(&storage).await;
+    round_trip(&wait_limits(&storage), "drip").await;
 }
 
 #[tokio::test]
@@ -592,7 +609,8 @@ async fn stalled_body_fails_on_idle_timeout_despite_large_size_allowance() {
     let err_body = to_bytes(response.into_body(), 4096).await.unwrap();
     assert!(String::from_utf8_lossy(&err_body).contains("transfer_timeout"));
     assert_no_files(dir.path()).await;
-    round_trip(&storage, "stalled-large").await;
+    assert_slot_released(&storage).await;
+    round_trip(&wait_limits(&storage), "stalled-large").await;
 }
 
 #[tokio::test]
@@ -643,7 +661,9 @@ async fn absurd_declared_size_is_capped_by_hard_maximum_and_url_expiry() {
     .unwrap();
     assert!(matches!(result, Err(StorageError::Timeout)));
     assert_no_files(dir.path()).await;
-    round_trip(&url_capped, "absurd-url").await;
+    assert_slot_released(&url_capped).await;
+    // Check slot/key release and staging recovery without the 50 ms base floor.
+    round_trip(&wait_limits(&url_capped), "absurd-url").await;
 }
 
 #[test]

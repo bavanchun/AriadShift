@@ -9,6 +9,7 @@ use std::{
 
 use ariad_core::limits::Limits;
 use ariad_host::convert::{ConvertError, ConvertEvent, ConvertRequest};
+use ariad_host::tools::ToolError;
 use chrono::Utc;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -87,6 +88,7 @@ impl Failure {
             "database" => "job data is unavailable",
             "output_io" => "the output could not be written",
             "tool_missing" => "a required engine is missing on the worker",
+            "failed" => "the conversion engine failed",
             _ => "the conversion could not finish",
         };
         tracing::warn!(code, "conversion operation failed");
@@ -94,6 +96,27 @@ impl Failure {
             code,
             message: message.to_owned(),
             transient: true,
+        }
+    }
+
+    /// Maps a document-tool error to a failure.
+    ///
+    /// A redaction safety refusal keeps its message and error code (a fixed reason without
+    /// document content, already filtered by the tool helper) and is permanent: the same
+    /// input is refused again, so retrying only delays the answer. That covers the engine's
+    /// refusals (`tool_missing`) and the failed or unverifiable verification of a candidate
+    /// (`engine_failure`). A document without tables is the same: the fixed
+    /// `no tables found in document` is kept and never retried. Every other `tool_missing`,
+    /// `sandbox_unavailable` and `engine_failure` stays transient with a fixed text.
+    fn from_tool(error: &ToolError) -> Self {
+        if error.is_safety_refusal() || error.is_no_tables() {
+            return Self::permanent(error.code(), error.to_string());
+        }
+        match error.code() {
+            "tool_missing" | "sandbox_unavailable" | "engine_failure" => {
+                Self::transient(error.code(), "document tool failed")
+            }
+            code => Self::permanent(code, "the document tool could not finish"),
         }
     }
 
@@ -107,7 +130,9 @@ impl Failure {
             ConvertError::SandboxUnavailable(_) => {
                 Self::transient("sandbox_unavailable", "the conversion could not finish")
             }
-            ConvertError::Failed | ConvertError::FailedWithMemoryHint { .. } => {
+            ConvertError::Failed
+            | ConvertError::FailedWithMemoryHint { .. }
+            | ConvertError::EngineUnavailable { .. } => {
                 Self::transient("failed", "the conversion engine failed")
             }
             ConvertError::OutputIo => {
@@ -568,7 +593,7 @@ impl Worker {
         dir: &FsPath,
         cancel: &CancellationToken,
     ) -> Result<Done, Outcome> {
-        use ariad_host::tools::{InputRef, ToolError};
+        use ariad_host::tools::InputRef;
         if let Err(err) = tokio::fs::remove_dir_all(dir).await
             && err.kind() != std::io::ErrorKind::NotFound
         {
@@ -657,13 +682,7 @@ impl Worker {
             Ok(Ok(report)) => report,
             Ok(Err(ToolError::Interrupted)) => return Err(Outcome::Canceled),
             Ok(Err(error)) => {
-                let failure = match error.code() {
-                    "tool_missing" | "sandbox_unavailable" | "engine_failure" => {
-                        Failure::transient(error.code(), "document tool failed")
-                    }
-                    code => Failure::permanent(code, "the document tool could not finish"),
-                };
-                return Err(Outcome::Failed(failure, Vec::new()));
+                return Err(Outcome::Failed(Failure::from_tool(&error), Vec::new()));
             }
             Err(_) => return Err(Outcome::transient("failed", "tool helper failed")),
         };
@@ -1116,6 +1135,13 @@ mod tests {
     fn convert_errors_split_into_transient_and_permanent() {
         assert!(Failure::from_convert(&ConvertError::Failed).transient);
         assert!(Failure::from_convert(&ConvertError::ToolMissing).transient);
+        let unavailable = Failure::from_convert(&ConvertError::EngineUnavailable {
+            engine: "pandoc".to_owned(),
+            detail: "Pandoc timed out while checking version".to_owned(),
+        });
+        assert!(unavailable.transient);
+        assert_eq!(unavailable.code, "failed");
+        assert_eq!(unavailable.message, "the conversion engine failed");
         for error in [
             ConvertError::DoclingMissing,
             ConvertError::DoclingToolMissing,
@@ -1138,6 +1164,86 @@ mod tests {
             Failure::from_convert(&ConvertError::LimitExceeded).code,
             "limit_exceeded"
         );
+    }
+
+    #[test]
+    fn redaction_refusals_keep_their_reason_and_are_never_retried() {
+        let refusal = ToolError::ToolMissing {
+            engine: "ariad-pdf".into(),
+            hint: "redaction refused: original image remains reachable".into(),
+        };
+        let failure = Failure::from_tool(&refusal);
+        assert_eq!(failure.code, "tool_missing");
+        assert_eq!(
+            failure.message,
+            "redaction refused: original image remains reachable"
+        );
+        assert!(
+            !failure.transient,
+            "a refusal fails again, so it must not retry"
+        );
+    }
+
+    #[test]
+    fn failed_or_unverifiable_redactions_keep_their_reason_and_are_never_retried() {
+        use ariad_host::tools::{REDACTION_NOT_VERIFIABLE, REDACTION_VERIFICATION_FAILED};
+        for reason in [REDACTION_VERIFICATION_FAILED, REDACTION_NOT_VERIFIABLE] {
+            let failure = Failure::from_tool(&ToolError::EngineFailure(reason.into()));
+            assert_eq!(failure.code, "engine_failure");
+            assert_eq!(failure.message, reason);
+            assert!(
+                !failure.transient,
+                "{reason}: the same candidate fails again, so it must not retry"
+            );
+        }
+        // Any other engine failure is a crash or an I/O error, which can succeed on retry.
+        for text in [
+            "PDFium did not return rendered page",
+            "redaction verification failed: x",
+        ] {
+            let failure = Failure::from_tool(&ToolError::EngineFailure(text.into()));
+            assert!(failure.transient, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_document_without_tables_keeps_its_message_and_is_never_retried() {
+        let failure = Failure::from_tool(&ToolError::EngineFailure(
+            "no tables found in document".into(),
+        ));
+        assert_eq!(failure.code, "engine_failure");
+        assert_eq!(failure.message, "no tables found in document");
+        assert!(
+            !failure.transient,
+            "the same document has no tables again, so it must not retry"
+        );
+        let other = Failure::from_tool(&ToolError::EngineFailure(
+            "no tables found in document: x".into(),
+        ));
+        assert!(other.transient);
+    }
+
+    #[test]
+    fn other_tool_missing_failures_stay_transient_and_blanked() {
+        // Same hint text from a different engine, and a non-refusal hint from `ariad-pdf`.
+        for (engine, hint) in [
+            ("qpdf", "redaction refused: /home/someone/secret"),
+            ("ariad-pdf", "/home/someone/secret"),
+            ("pdfium", ""),
+        ] {
+            let failure = Failure::from_tool(&ToolError::ToolMissing {
+                engine: engine.into(),
+                hint: hint.into(),
+            });
+            assert!(failure.transient, "{engine}: {hint}");
+            assert_eq!(failure.code, "tool_missing");
+            assert_eq!(
+                failure.message,
+                "a required engine is missing on the worker"
+            );
+        }
+        let sandbox = Failure::from_tool(&ToolError::SandboxUnavailable("x".into()));
+        assert!(sandbox.transient);
     }
 
     #[test]

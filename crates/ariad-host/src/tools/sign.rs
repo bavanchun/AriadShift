@@ -16,7 +16,7 @@ use serde_json::Value;
 use url::Url;
 
 use crate::{
-    net::{Client, NetError},
+    net::{Client, ClientBuilder, NetError},
     tools::{run::ToolError, secrets::SecretBag},
     workspace::Workspace,
 };
@@ -36,7 +36,7 @@ impl Drop for SecretFileGuard {
     }
 }
 
-pub fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
+pub(crate) fn resolve_cert_bytes(input: &str) -> Result<Vec<u8>, ToolError> {
     let trimmed = input.trim();
 
     // The host strictly rejects filesystem paths. CLI (--secret certificate=@FILE)
@@ -229,6 +229,12 @@ pub fn check_tsa_policy(
     Ok(())
 }
 
+/// Builder for the default TSA client: the SSRF-safe defaults plus a hard
+/// refusal to follow redirects, so a TSA cannot bounce a request elsewhere.
+pub(crate) fn tsa_client_builder() -> ClientBuilder {
+    Client::builder().max_redirects(0)
+}
+
 /// Brokered TSA timestamp fetch using SSRF-safe network client.
 pub fn broker_tsa_timestamp(
     workspace: &Workspace,
@@ -253,7 +259,7 @@ pub fn broker_tsa_timestamp(
     let net_client = match client.or(seam_client.as_ref()) {
         Some(c) => c,
         None => {
-            default_client = Client::builder().max_redirects(0).build().map_err(|_| {
+            default_client = tsa_client_builder().build().map_err(|_| {
                 ToolError::EngineFailure("failed to initialize safe network client".to_owned())
             })?;
             &default_client
@@ -283,4 +289,173 @@ pub fn broker_tsa_timestamp(
 
     let target = workspace.work_dir().join("tsa_resp.bin");
     write_private_cert_bytes(&target, &response.body)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+        process::Command,
+        sync::Arc,
+    };
+
+    use super::*;
+    use crate::net::{HttpResponse, MockResolver, MockTransport};
+
+    const CHILD_CASE_VAR: &str = "ASHIFT_TSA_TEST_CASE";
+
+    fn mock_client(status: u16) -> Client {
+        let resolver = Arc::new(MockResolver::new());
+        resolver.insert(
+            "tsa.example.com",
+            vec![SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
+                443,
+            )],
+        );
+        let transport = Arc::new(MockTransport::fixed(HttpResponse {
+            status,
+            headers: vec![(
+                "location".to_owned(),
+                "https://tsa.example.com/redirected".to_owned(),
+            )],
+            body: b"token".to_vec(),
+        }));
+        Client::builder()
+            .resolver(resolver)
+            .transport(transport)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn default_tsa_client_refuses_redirects() {
+        let resolver = Arc::new(MockResolver::new());
+        resolver.insert(
+            "tsa.example.com",
+            vec![SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
+                443,
+            )],
+        );
+        let transport = Arc::new(MockTransport::fixed(HttpResponse {
+            status: 302,
+            headers: vec![(
+                "location".to_owned(),
+                "https://tsa.example.com/redirected".to_owned(),
+            )],
+            body: Vec::new(),
+        }));
+        let client = tsa_client_builder()
+            .resolver(resolver)
+            .transport(transport)
+            .build()
+            .unwrap();
+
+        let err = client
+            .post(
+                Url::parse("https://tsa.example.com/tsa").unwrap(),
+                b"data".to_vec(),
+                "application/timestamp-query",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, NetError::TooManyRedirects { max: 0 }),
+            "default TSA client must refuse redirects, got {err:?}"
+        );
+    }
+
+    /// Runs inside a re-executed test process whose environment the parent
+    /// test controls; does nothing in a normal run.
+    #[test]
+    fn tsa_env_child() {
+        let Ok(case) = std::env::var(CHILD_CASE_VAR) else {
+            return;
+        };
+        let workspace = Workspace::new().unwrap();
+        let client = mock_client(200);
+        let result = broker_tsa_timestamp(
+            &workspace,
+            "https://tsa.example.com/tsa",
+            b"query",
+            Some(&client),
+        );
+        match case.as_str() {
+            "denied" => {
+                let err = result.expect_err("cloud mode without allowlist must be denied");
+                assert!(
+                    err.to_string().contains("disabled in cloud"),
+                    "unexpected error: {err}"
+                );
+            }
+            "allowed" => {
+                let guard = result.expect("TSA request must be permitted");
+                let path = guard.0.as_ref().expect("response is staged");
+                assert_eq!(std::fs::read(path).unwrap(), b"token");
+            }
+            other => panic!("unknown case {other}"),
+        }
+    }
+
+    fn run_env_case(case: &str, cloud_mode: Option<&str>, allowlist: Option<&str>) {
+        let mut cmd = Command::new(std::env::current_exe().unwrap());
+        cmd.args([
+            "--exact",
+            "tools::sign::tests::tsa_env_child",
+            "--nocapture",
+        ])
+        .env(CHILD_CASE_VAR, case)
+        .env_remove("ASHIFT_CLOUD_MODE")
+        .env_remove("ASHIFT_TSA_ALLOWLIST");
+        if let Some(value) = cloud_mode {
+            cmd.env("ASHIFT_CLOUD_MODE", value);
+        }
+        if let Some(value) = allowlist {
+            cmd.env("ASHIFT_TSA_ALLOWLIST", value);
+        }
+        let out = cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("1 passed"),
+            "child case {case} failed:\n{stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn cloud_mode_env_is_detected_by_broker() {
+        run_env_case("denied", Some("1"), None);
+        run_env_case("allowed", Some("1"), Some("https://tsa.example.com"));
+        run_env_case("allowed", Some("0"), None);
+        run_env_case("allowed", None, None);
+    }
+
+    #[test]
+    fn resolve_cert_bytes_rejects_filesystem_paths() {
+        for path in [
+            "/private/var/folders/secret.p12",
+            "/etc/passwd",
+            "/proc/cpuinfo",
+            "~/.netrc",
+            "./cert.p12",
+            "../cert.p12",
+            r".\cert.p12",
+            r"..\cert.p12",
+            r"C:\cert.p12",
+            "C:/cert.p12",
+        ] {
+            let err = resolve_cert_bytes(path).expect_err(path);
+            assert!(
+                err.to_string().contains("not a filesystem path"),
+                "{path}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_cert_bytes_decodes_base64_and_bounds_size() {
+        assert_eq!(resolve_cert_bytes(" aGVsbG8= \n").unwrap(), b"hello");
+        assert!(resolve_cert_bytes("***not base64***").is_err());
+        assert!(resolve_cert_bytes("").is_err());
+    }
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -33,6 +34,7 @@ NOTICES = [
     "notices/Python-LICENSE.txt",
     "notices/OpenSSL-LICENSE.txt",
     "notices/libxml2-libxslt-LICENSES.txt",
+    "notices/libiconv-LICENSE.txt",
     "notices/libyaml-LICENSE.txt",
 ]
 
@@ -184,6 +186,67 @@ def entrypoint_for_target(target: str) -> list[str]:
     return ["python-env/bin/python", "-I", "-m", "ariad_sign"]
 
 
+_BUNDLED_INSTALLERS = frozenset({"pip", "setuptools", "wheel"})
+
+
+def prune_bundled_installers(py_env: Path, site: Path) -> None:
+    """Remove bundled installer packages (pip, setuptools, wheel) from staged python-env."""
+    py_env_root = py_env.resolve()
+    for info in list(site.glob("*.dist-info")):
+        dist_name = info.name.split("-", 1)[0].lower()
+        if dist_name not in _BUNDLED_INSTALLERS:
+            continue
+        record = info / "RECORD"
+        if record.is_file():
+            with record.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.reader(handle))
+            for row in rows:
+                if not row or not row[0]:
+                    continue
+                candidate = Path(os.path.normpath(site / row[0]))
+                parent_ok = candidate.parent.resolve().is_relative_to(py_env_root)
+                if not parent_ok:
+                    continue
+                if candidate.is_symlink() or (
+                    candidate.is_file() and candidate.resolve().is_relative_to(py_env_root)
+                ):
+                    candidate.unlink(missing_ok=True)
+        shutil.rmtree(info, ignore_errors=True)
+
+    for pkg_dir in ("pip", "setuptools", "wheel", "pkg_resources", "_distutils_hack"):
+        shutil.rmtree(site / pkg_dir, ignore_errors=True)
+    (site / "distutils-precedence.pth").unlink(missing_ok=True)
+
+    for script_dir in (py_env / "bin", py_env / "Scripts"):
+        if not script_dir.is_dir():
+            continue
+        for entry in list(script_dir.iterdir()):
+            if entry.name.lower().startswith(("pip", "wheel")) and (
+                entry.is_symlink() or entry.is_file()
+            ):
+                entry.unlink(missing_ok=True)
+
+
+def drop_build_records(site: Path) -> None:
+    """Remove unused `--target` console scripts and installer provenance records."""
+    shutil.rmtree(site / "bin", ignore_errors=True)
+    for info in site.glob("*.dist-info"):
+        dropped = [name for name in ("direct_url.json", "uv_cache.json") if (info / name).is_file()]
+        for name in dropped:
+            (info / name).unlink()
+        record = info / "RECORD"
+        if record.is_file():
+            entries = (
+                "bin/",
+                "bin\\",
+                *(f"{info.name}/{name}," for name in dropped),
+                *(f"{info.name}\\{name}," for name in dropped),
+            )
+            lines = record.read_text(encoding="utf-8").splitlines()
+            kept = [line for line in lines if not line.startswith(entries)]
+            record.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
 def build_pack_target(target: str, out_dir: Path, ashift_bin: Path | None = None) -> TargetBuild:
     pins = load_pins()
     target_info = pins["python"]["targets"].get(target)
@@ -212,6 +275,7 @@ def build_pack_target(target: str, out_dir: Path, ashift_bin: Path | None = None
 
         site = site_packages(py_env, target)
         site.mkdir(parents=True, exist_ok=True)
+        prune_bundled_installers(py_env, site)
 
         # 2. Export locked requirements
         reqs_file = stage / "requirements.txt"
@@ -258,6 +322,7 @@ def build_pack_target(target: str, out_dir: Path, ashift_bin: Path | None = None
             cwd=REPOSITORY,
             check=True,
         )
+        drop_build_records(site)
 
         # 5. Run license gate on site-packages
         print(f"Auditing license gate on {site} ...")

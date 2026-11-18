@@ -11,12 +11,13 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`codeql.yml`](../.github/workflows/codeql.yml) | Pull requests (code changes), pushes to `dev` or `main`, weekly, manual | CodeQL for Rust and for the workflows themselves; alerts go to the repository's Security tab |
 | [`security.yml`](../.github/workflows/security.yml) | Daily, manual, and pull requests that change it | `cargo deny check advisories` on `dev` and on `main`, so a newly published RustSec advisory fails a run even when no code changed |
 | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) | Daily, manual, and pull requests that change it | Date-pinned nightly AddressSanitizer fuzzing on unsafe-adjacent parsers (10 min per target) |
-| [`pack-docling.yml`](../.github/workflows/pack-docling.yml) | Pull requests that touch the Docling engine, its mapper, `uv.lock`, the `justfile` or the workflow; tags `pack-docling-v*`; manual | Engine tests on Linux/Windows and real-engine conformance; both Linux packs always build, with x86_64 converted offline. macOS requires its authoritative OpenCV pin: missing pins produce a visible PR skip; release runs fail unless that exact omission is explicitly declared. Windows packs stay deferred. Manifests/checksums cover only planned built targets. Details in [docling.md](docling.md#ci) |
+| [`pack-docling.yml`](../.github/workflows/pack-docling.yml) | Pull requests that touch the Docling engine, its mapper, `uv.lock`, the `justfile` or the workflow; pushes to `dev` that touch a pack input; tags `pack-docling-v*`; manual | Engine tests on Linux/Windows and real-engine conformance; both Linux packs always build, with x86_64 converted offline. macOS requires its authoritative OpenCV pin: missing pins produce a visible PR skip; release runs fail unless that exact omission is explicitly declared. Windows packs stay deferred. Manifests/checksums cover only planned built targets. Details in [docling.md](docling.md#ci) |
 | [`torch-docling.yml`](../.github/workflows/torch-docling.yml) | Pull requests changing the torch source build inputs, manual | Builds or reuses the MKL-free CPU wheels on native Linux and Windows x86_64, audits binaries and probes torch/torchvision. Maintainers publish reviewed outputs as checksummed toolchain inputs; see [docling.md](docling.md#the-pack). |
 | [`links.yml`](../.github/workflows/links.yml) | Weekly, manual, and pull requests that change it | lychee checks every Markdown link on `dev`, configured by [`lychee.toml`](../lychee.toml) |
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
 | [`release.yml`](../.github/workflows/release.yml) | Tag push `'**[0-9]+.[0-9]+.[0-9]+*'`, pull requests touching release paths (build-only rehearsal) | Builds 5 targets on 3 OSes, one CycloneDX SBOM per crate, Homebrew formula, and invokes `publish-crates.yml` (pull requests scoped via `paths:` filter) |
 | [`desktop.yml`](../.github/workflows/desktop.yml) | Desktop/shared/Rust changes in pull requests, `v*` tags, manual | Builds installers on three OSes, checks generated bindings and runs the real Linux WebDriver conversion; tag jobs attach signed updates to the CLI-owned release (see [desktop.md](desktop.md)) |
+| [`macos.yml`](../.github/workflows/macos.yml) | Changes to the macOS app, `ariad-ffi` or the crates it embeds in pull requests and pushes, `v*` tags, manual | Builds the universal XCFramework and Release app on the `xcode-27` runner image, runs Core and app tests; tag jobs sign and notarize under `environment: release`, then publish the signed DMG and Sparkle appcast from a separate small job. Without Apple credentials the tag run produces an unsigned DMG as a workflow artifact only (see [macOS workflow runner](#macos-workflow-runner)) |
 | [`cloud-e2e.yml`](../.github/workflows/cloud-e2e.yml) | Daily at 04:00 UTC on `dev`, manual, path-matched pushes and pull requests, or the `cloud-e2e` PR label | Builds all three Compose profiles, proves image-only Vietnamese PDF OCR through the completed Docling route, then checks DOCX content, deletion and quotas |
 | [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
 | [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
@@ -32,7 +33,7 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
    - each new commit against the commit rules (`just lint-commits`);
    - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, the license check of production JavaScript dependencies (`js-licenses`), Biome (`web-lint`), release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), WinGet manifest generator test (`test-winget-manifest`), scope classifier test (`test-ci-scope`), and database/E2E/fuzz wiring regression (`test-hardening-ci-wiring`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
-4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc (plus distribution-pinned LibreOffice Writer/Calc/Impress and qpdf on Linux), sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test` (including shared engine conformance, with LibreOffice required on Linux), `just bench-test`, `just bench-check`, and `just package-check`.
+4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc (plus distribution-pinned LibreOffice Writer/Calc/Impress and qpdf on Linux), sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test` (including shared engine conformance, with LibreOffice required on Linux), `just bench-test`, `just bench-check`, and `just package-check` (not on macOS: packaging does not depend on the host, and a cold macOS packaging run took 6 to 14 minutes).
 5. **Server integration** (Linux, `ubuntu-26.04`) runs the `ariad-server` tests against PostgreSQL 18 with pgmq (a service container) and SeaweedFS (started in a step, because service containers cannot take a command), with Pandoc installed and the `ashift` engine binary built. The database and S3 tests skip in the Verify job, where neither exists; `just test-server` runs the same suite locally in Docker. It installs Node.js, pnpm and the matching PostgreSQL 18 client, then runs `just test-auth-db` with mandatory database execution to prove OAuth serialization across replicas. The job also checks all three Dockerfiles, builds the server image and converts Markdown to DOCX using real Pandoc in required mode in a read-only container with tmpfs, then probes procfs access to the worker and its supervisor. The signed Docling image, the Office namespace profile and the direct-launch Kubernetes fragment are not exercised by this smoke.
 6. **Fuzz** (Linux, `ubuntu-26.04`) first runs `cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta`. On pull requests, it runs a fast smoke with a 5-minute maximum total fuzzing budget (10 seconds per target across all targets, ~3.5 min fuzz execution). Pushes to `dev` and `main` run full 60 seconds per target with cached corpus and crash artifact upload on failure or cancellation. The date-pinned nightly workflow (`fuzz-nightly.yml`) covers all targets for 10 minutes each under AddressSanitizer.
 7. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest against a PostgreSQL 18/pgmq service (including mandatory auth database tests), builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
@@ -84,7 +85,8 @@ The Rust cache is written only by pushes to `dev` and `main` (the web job shares
   - Only commits pushed or merged to `dev` or `main` (and maintainer manual dispatches on those refs) are bound to `ci-cache-write` to hold write credentials and populate or prune the R2 cache.
   - Pull requests operate strictly in read-only mode (`SCCACHE_S3_RW_MODE=READ_ONLY`) using the dedicated read-only token. Any compilation cache miss during a PR run compiles directly without writing back to R2.
   - External fork pull requests receive no secrets at all; `scripts/ci-sccache.sh` detects missing credentials, logs a diagnostic notice, and gracefully bypasses `sccache` with exit code 0.
-  - If cache poisoning is ever suspected on `dev`, maintainers can immediately invalidate the entire cache by bumping the prefix string (e.g. from `ariadshift-sccache-v2/` to `ariadshift-sccache-v3/`) across `.github/workflows/ci.yml`, `scripts/ci-sccache.sh`, `scripts/r2-cache-prune.py`, and the test suite `scripts/test-r2-cache-prune.py` (`EXPECTED_PREFIX` constant).
+  - If cache poisoning is ever suspected on `dev`, maintainers can immediately invalidate the entire cache by bumping the prefix string (e.g. from `ariadshift-sccache-v2/` to `ariadshift-sccache-v3/`) across `.github/workflows/ci.yml`, `.github/workflows/macos.yml` (its prefix has the `ariadshift-sccache-v2/macos/` form, so bump it to `ariadshift-sccache-v3/macos/`), `scripts/ci-sccache.sh`, `scripts/r2-cache-prune.py`, and the test suite `scripts/test-r2-cache-prune.py` (`EXPECTED_PREFIX` constant).
+- **macOS workflow:** `macos.yml` (`macOS build & test` job only) uses the same bucket, credentials split, `ci-cache-write` environment rule and `scripts/ci-sccache.sh` fallback, under its own key prefix `ariadshift-sccache-v2/macos/`. The separate prefix lets maintainers trim or purge the macOS objects without touching the `ci.yml` cache. `RUSTC_WRAPPER` is exported through `GITHUB_ENV`, so the `cargo` calls inside `scripts/build-xcframework.sh` (run by `just macos-build`) use it too; until the helper-binary change in #316 lands, the xcodebuild helper phase also compiles with `cargo` and uses it. The tag-only `release-sign` job stays cold. The macOS objects share the 8 GB budget and oldest-written eviction below with the `ci.yml` objects, and the 14-day lifecycle rule expires them too, so a cache hit does not keep them alive. Follow-up: report the R2 bucket size one week after this workflow first writes the cache.
 - **Workflows that never use the R2 cache:**
   - Other workflows never touch or read the R2 cache:
     - `bench.yml`
@@ -189,7 +191,7 @@ uses the same direct event-ref selection as Scope: the PR head for PRs, the
 trusted `dev` branch for schedules, and `github.sha` for push and manual runs.
 It immediately verifies checkout against Scope's recorded SHA before executing
 repository code. If `dev` moves between jobs, the run fails and must be retried;
-the tested tree and pack still have to match the original SHA. Job outputs
+the tested tree and the pack's inputs still have to match the original SHA. Job outputs
 serve as comparison values, not checkout authority.
 
 The Compose job disables setup-uv's shared dependency cache explicitly. It
@@ -198,13 +200,72 @@ cache. Dockerfile cache mounts remain local to the disposable runner's builder.
 Removing dependency caching alone would not protect the default-branch cache
 token from arbitrary code, so the direct event refs and SHA check are required.
 
-The isolated **Request source-matched CI
-pack** job searches `pack-docling.yml` runs for that SHA and accepts only
-`workflow_dispatch` or `push` builds. A PR pack run's API `head_sha` identifies
-the PR head even though checkout built a merge, so those artifacts are rejected.
-If no usable pack exists, the request job dispatches **Docling pack** on the
-matching branch after checking that its ref still points to the recorded SHA.
-Only this job has `actions: write`; it executes no checked-out code.
+The pack is keyed by its inputs, not by the commit. `scripts/docling-pack-inputs.sh`
+prints `PACK_INPUT_HASH`, a SHA-256 over the git tree entries of the files the pack is built
+from: `engines/docling`, `engines/common/licenses` (its `core.py` is executed by the pack
+scripts), `uv.lock`, the root `pyproject.toml`, the `justfile`, `scripts/install-pandoc.sh`,
+`LICENSE`, `NOTICE`, the two fixtures the pack job converts, the pack workflow and the script
+itself. The workspace crates, `Cargo.toml`, `Cargo.lock` and `rust-toolchain.toml` are
+deliberately **not** inputs: they do not change the archives of an honest build, because the
+Compose job rebuilds `ashift` from the tested commit and regenerates the manifest with it
+(which re-checks `requires_ashift`), and only reviewed `dev` or `main` code can supply a
+reusable pack (below). The script fails closed on an unknown revision or an empty input set.
+`test-docling-pack-inputs` (part of `just static`) checks that the hash moves with each input
+and nothing else, and that the pack workflow's pull request and push path filters list every
+input.
+
+Runs publish a small `docling-inputs-<hash>` artifact from their first job (the name does not
+match the release job's `docling-pack-*` download pattern), so builds still in progress can be
+found as well as finished ones. Pull request runs do not publish it and are never reused.
+
+Trust. A pack from another commit is reused only when it was built from reviewed code, and
+being an ancestor of `dev` is not enough: a merge commit also makes the unreviewed
+intermediate commits of a PR branch ancestors. The run must have been started on the `dev` or
+`main` branch itself (its `head_branch`) *and* its commit must be an ancestor of that
+branch's tip. Branch tips are resolved to SHAs through the branches API and compared by SHA,
+so a tag named `dev` or `main` cannot stand in for the branch. Anything else needs a run of
+the exact tested commit, as before. `pack-docling.yml` therefore also runs on pushes to `dev`
+that touch a pack input, giving `dev` its own pack source. Tag-pushed pack runs (release
+builds) are not reused across commits, and a pack built on a PR branch serves only that
+branch's own commit.
+
+Artifacts last 14 days, so a nightly Cloud E2E job (**Refresh the dev Docling pack**) checks
+that `dev`'s current inputs have a running or younger-than-7-days pack and dispatches one on
+`dev` if not. It is a Cloud E2E job rather than a `schedule` of `pack-docling.yml` because
+GitHub runs schedules only for the default branch `main`, while the pack must come from `dev`.
+For the same reason the nightly refresh becomes active only once this workflow reaches `main`
+(a schedule runs `main`'s copy of the workflow); until then packs are built when a PR or a push
+to `dev` needs them. The refresh logs a notice and stops when `dev` has moved since the nightly
+started, and logs a warning instead of dispatching when the newest `dev` pack run for the same
+inputs failed, so a pack that fails deterministically is not rebuilt every night.
+
+The isolated **Request source-matched CI pack** job lists runs that published the tested
+hash, plus dispatch and push runs of the exact tested commit (found before their first job has
+published anything), and keeps only dispatch or push runs of this repository's pack workflow
+that pass the trust rule. It prefers a finished successful run that still has both Linux
+artifacts, then a run in progress. Only when neither exists does it dispatch **Docling pack**
+on the PR branch (after checking that the ref still points to the recorded SHA). A PR that does
+not change the pack inputs therefore waits minutes for the pack. The waiter applies the same
+filters to the run it picks up, including a run handed over by the request job, and fails at
+once when that run is not eligible or has completed without success. It classifies a run once
+and afterwards only re-reads its status; a failing API call is retried with backoff and does
+not end the job.
+
+Dispatched, dev and tag pack runs are never cancelled by a newer run: their concurrency group
+is the run itself, so a newer dispatch on the same ref cannot cancel a run another PR is
+waiting on, and nothing is serialized behind them. Pull request pack runs still replace each
+other per PR. The cost is that superseded runs are not cut short: a PR that keeps changing
+the pack inputs and re-dispatching can leave several full pack runs executing in parallel
+until they finish. The lookup prevents duplicates for equal inputs only; it cannot avoid runs
+for inputs that really differ.
+
+The name is not trusted. Before downloading, the Compose job applies the same trust rule to
+the run (tested commit, or `dev`/`main` branch run whose commit is an ancestor of the tip), fetches it (the token goes to git through
+`GIT_CONFIG_*` environment variables) and requires `docling-pack-inputs.sh <that commit>` to
+equal the tested commit's hash; any difference fails the job. Fetching a pack commit by SHA
+keeps working after its branch is deleted (checked with merged PR heads), and commits on `dev`
+or `main` stay reachable anyway. The manifest, hash and extraction checks that follow are
+unchanged. If a run being waited on is cancelled or fails, rerun Cloud E2E.
 
 The request shell sets a polling deadline 540 minutes after it obtains a
 runner. An active waiter accounts for request overhead, the pack workflow's
@@ -229,20 +290,20 @@ The Compose job has `actions: read` and waits for
 **Pack (x86_64-unknown-linux-gnu)** to succeed and publish both
 `docling-pack-x86_64-unknown-linux-gnu` and `docling-pack-shared`. Before
 [`gh run download`](https://cli.github.com/manual/gh_run_download), it rechecks
-the artifact run's source SHA and event against its own checkout. A mismatch
-fails with an explanation before download. It generates the unsigned manifest
+the artifact run's workflow, event and the input hash of the commit that built it
+against the tested commit. A mismatch fails with an explanation before download. It generates the unsigned manifest
 with the built server image's `ashift __pack manifest`, safely extracts the
 components, and sets `E2E_DOCLING_PACK_DIR` for the read-only bind mount override.
 This development route skips signature installation and its `requires_ashift`
 check; it proves runtime conversion, not signed installation. No component is
-borrowed from a different commit or an unverified PR merge tree.
+borrowed from a build with different inputs or an unverified PR merge tree.
 
 Fork tokens cannot dispatch repository workflows. A fork needs an existing
-push or dispatch pack for the exact tested commit; otherwise a maintainer must
+push or dispatch pack built from the same inputs; otherwise a maintainer must
 bring that head into a repository branch and run both workflows there. Approving
 a PR merge build alone does not establish matching sources. Expired one-day PR
 artifacts are not reused; expired push or dispatch artifacts trigger a new
-source-matched build through the dispatch mechanism.
+build of the same inputs through the dispatch mechanism.
 
 The nightly deliberately retains the production Dockerfile's signed-release
 installer. It requires a published signed pack compatible with the host version;
@@ -266,6 +327,21 @@ flow. Both E2E scripts explicitly enable signup in
 their private generated environment; deployments retain the default-off setting.
 OAuth request credentials use private temporary files, and reset/cleanup refuses
 foreign project volumes.
+
+## macOS workflow runner
+
+[`macos.yml`](../.github/workflows/macos.yml) needs Xcode 27 (the `apps/macos/AriadShiftCore` package declares `swift-tools-version` 6.4). The GA label `macos-26` stops at Xcode 26.6, so the build and release-sign jobs run on the preview label `xcode-27`, which ships Xcode 27.2 (build 27B52) at `/Applications/Xcode_27.2.app`.
+
+- [`scripts/macos-select-xcode.sh`](../scripts/macos-select-xcode.sh) selects exactly that path and fails the job when the app is missing or `xcodebuild -version` reports anything but `Xcode 27.2` and `Build version 27B52`. There is no fallback to another installed Xcode.
+- Risk: `xcode-27` is a preview image label. Jobs may queue longer than on GA images, and the label or its Xcode set can change without notice. The label has not been exercised on this repository yet.
+- Fallback: switch `runs-on` to `macos-26` (or a GA `macos-27`) once that image ships Xcode 27.2 or newer, and keep the exact `Xcode_27.2.app` pin check in `macos-select-xcode.sh` (change the pinned path, version and build together when the pin moves).
+- Before the first release tag, the `build` job of this workflow must be green on a pull request run. A tag run cannot prove the runner label or the Xcode pin; only a real run on the runner can.
+- `actionlint` only knows hosted labels listed in its version or in [`actionlint.yaml`](../.github/actionlint.yaml). `xcode-27` has to be listed there as a custom label until actionlint knows it.
+- Path filters list the crates the app embeds instead of `crates/**`: `ariad-ffi` and the other workspace crates in its dependency closure (`ariad-core`, `ariad-engine-io`, `ariad-host`, `ariad-pdf`, `ariad-typst`), plus `ariad-cli`, which `just macos-build` compiles into the embedded `ashift` helper. The workspace manifest, `Cargo.lock`, `rust-toolchain.toml` and the `justfile` stay in the list. A pull request that touches none of these paths (for example only `ariad-server` or `ariad-wasm`) does not start the macOS job. To re-derive the list after a dependency change, run `cargo metadata --locked` and walk the normal and build dependencies of `ariad-ffi` and `ariad-cli`; add any new workspace crate to both `paths:` lists in `macos.yml`.
+- A skipped workflow is safe for merging: the `protect-main-dev` ruleset requires no status checks, and `desktop.yml` and the other path-filtered workflows rely on the same behaviour. If a macOS check is ever added to the ruleset, a path-filtered workflow would leave it pending on pull requests that skip it, and the job would need a `changes` job and an always-run gate like Cloud E2E's required check.
+- `just macos-test` writes an `.xcresult` bundle to `target/derived-data/AriadShift-tests.xcresult` (override with `MACOS_RESULT_BUNDLE`). When the job fails, [`scripts/macos-report-failures.sh`](../scripts/macos-report-failures.sh) prints the failed test cases, the test summary and the build issues from that bundle with `xcresulttool`, so a "TEST FAILED" run with an empty failing-tests list still names its cause. The bundle is uploaded as the `AriadShift-test-results` artifact (7 days).
+- On a `v*` tag, `release-sign` first requires the tagged commit to be an ancestor of `origin/main`, then decides the signing mode before the build. A partial Apple credential set fails the run; an unsigned run builds without the Sparkle public key and asserts the built app ships with the updater disabled (`SUPublicEDKey` empty).
+- The release flow, secrets and the unsigned fallback are described in [releasing.md](releasing.md#macos-release-signing-and-updates).
 
 ## Commit rules
 

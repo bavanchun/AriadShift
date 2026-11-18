@@ -113,6 +113,107 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importálás…",
+      "print": "Nyomtatás…",
+      "tools": "Eszközök",
+      "zoom": "{action, select, in {Nagyítás} out {Kicsinyítés} actual {Tényleges méret} other {Zoom}}",
+      "check_updates": "Frissítések keresése…",
+      "show_welcome": "Üdvözlőképernyő megjelenítése",
+      "fit_width": "Szélességhez igazítás",
+      "display_mode": "{mode, select, single {Egy oldal} continuous {Folyamatos görgetés} twoUp {Két oldal} other {Oldalmegjelenítés}}",
+      "go_to_page": "Ugrás oldalra…",
+      "find": "Keresés…",
+      "find_next": "Következő keresése",
+      "find_previous": "Előző keresése"
+    },
+    "tools": {
+      "group": "{group, select, organize {Rendezés} convert {Átalakítás} optimize {Optimalizálás} security {Biztonság} overlay {Rátét} ocr {OCR és szkennelések} annotate {Jegyzetelés} forms {Űrlapok} sign {Aláírás} redact {Kitakarás} compare {Összehasonlítás és ellenőrzés} edit {Szerkesztés} ai {MI} automation {Automatizálás} other {További eszközök}}",
+      "disabled": "{reason, select, later {Egy későbbi kiadásban lesz elérhető} format {Más formátumokkal működik. Használja a Fájl > Importálás parancsot.} paid {Fizetős csomagot igényel} info {Az eszköz adatait nem sikerült beolvasni, ezért az eszközök kikapcsolva maradnak.} other {Nem érhető el}}",
+      "loading": "Eszközök betöltése…"
+    },
+    "sidebar": {
+      "title": "Oldalak",
+      "placeholder": "Az oldalak miniatűrjei itt jelennek meg.",
+      "page": "{number}. oldal, összesen {total}"
+    },
+    "viewer": {
+      "placeholder": "Az oldalmegjelenítő itt jelenik meg.",
+      "title": "Oldalmegjelenítő",
+      "loading": "Dokumentum megnyitása…"
+    },
+    "toolbar": {
+      "inspector": "Dokumentuminformáció",
+      "page_grid": "Oldalrács",
+      "previous_page": "Előző oldal",
+      "next_page": "Következő oldal",
+      "page_field": "Oldalszám"
+    },
+    "inspector": {
+      "title": "Dokumentum",
+      "field": "{field, select, name {Név} format {Formátum} size {Méret} pages {Oldalak} words {Szavak} title {Cím} author {Szerző} routes {Átalakítható erre} other {Mező}}",
+      "loading": "Dokumentum beolvasása…",
+      "warnings": "{count, plural, one {# figyelmeztetés} other {# figyelmeztetés}}"
+    },
+    "run": {
+      "run": "Futtatás",
+      "cancel": "Mégse",
+      "close": "Kész",
+      "working": "Futtatás…",
+      "parameters": "Beállítások",
+      "no_parameters": "Ennek az eszköznek nincsenek beállításai.",
+      "extra_documents": "További dokumentumok",
+      "add_documents": "Hozzáadás…",
+      "remove": "Eltávolítás",
+      "need_documents": "{count, plural, one {Adjon hozzá még # dokumentumot az eszköz futtatásához.} other {Adjon hozzá még # dokumentumot az eszköz futtatásához.}}",
+      "failed": "Az eszköz nem fejeződött be.",
+      "reveal": "Megjelenítés a Finderben",
+      "field_error": "{kind, select, missing {A(z) {field} megadása kötelező.} other {A(z) {field} érvénytelen.}}",
+      "result": "Eredmény",
+      "presets": "Előbeállítások"
+    },
+    "settings": {
+      "output_folder": "Az eredmények mentési helye",
+      "output_same": "Az eredeti dokumentum mellett",
+      "output_choose": "Mappa kiválasztása…",
+      "open_result": "Az eredmény megnyitása az eszköz befejezésekor",
+      "updates": "Frissítések",
+      "updates_auto": "Frissítések automatikus keresése",
+      "updates_disabled": "A frissítések ebben a buildben nincsenek beállítva."
+    },
+    "onboarding": {
+      "title": "Üdvözli az AriadShift",
+      "about": "Nyisson meg, vizsgáljon és dolgozzon fel PDF dokumentumokat ugyanazzal a motorral, mint az AriadShift parancssor. Alakítsa át a Markdown, HTML, Word, EPUB és képfájlokat PDF-be a Fájl > Importálás paranccsal.",
+      "packs": "Az opcionális motorcsomagok (OCR, aláírás, ellenőrzés) a következő helyen vannak tárolva: {path}.",
+      "privacy": "Az AriadShift az Ön Macjén működik. Nem létesít hálózati kapcsolatot, amíg be nem kapcsol egy olyan funkciót, amelynek erre szüksége van.",
+      "start": "Első lépések"
+    },
+    "import": {
+      "message": "Válasszon egy PDF-be alakítandó dokumentumot",
+      "running": "{name} importálása…",
+      "failed": "A(z) {name} importálása nem sikerült"
+    },
+    "document": {
+      "invalid": "Ez a fájl nem érvényes PDF."
+    },
+    "find": {
+      "prompt": "Keresés a dokumentumban",
+      "count": "{current} / {total}",
+      "none": "Nincs találat",
+      "searching": "Keresés…",
+      "done": "Kész"
+    },
+    "grid": {
+      "hint": "Húzza az oldalakat az átrendezésükhöz. Minden módosítás új fájlként mentődik az eredeti mellé.",
+      "unavailable": "Az oldalszerkesztés addig nem érhető el, amíg a motor nem áll készen.",
+      "rotate": "Kijelölt oldalak elforgatása",
+      "delete": "Kijelölt oldalak törlése",
+      "move_earlier": "Áthelyezés az előző oldal elé",
+      "move_later": "Áthelyezés a következő oldal mögé",
+      "drop_end": "Engedje ide a végére helyezéshez"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: privát dokumentumátalakítás a böngészőjében",

@@ -457,6 +457,54 @@ class TestR2CachePrune(unittest.TestCase):
     def test_default_prefix_matches_expected(self):
         self.assertEqual(prune_mod.DEFAULT_PREFIX, EXPECTED_PREFIX)
 
+    def test_macos_workflow_secret_isolation(self):
+        workflow_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "macos.yml"
+        content = workflow_path.read_text(encoding="utf-8")
+
+        base_rw_cond = (
+            "(github.event_name == 'push' || github.event_name == 'workflow_dispatch') && "
+            "(github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')"
+        )
+        expected_env_decl = f"environment: ${{{{ {base_rw_cond} && 'ci-cache-write' || '' }}}}"
+        expected_rw_if = f"if: {base_rw_cond}"
+
+        jobs_section = content.split("\njobs:\n", 1)[1]
+        jobs_raw = re.split(r"\n  ([a-zA-Z0-9_-]+):\n", "\n" + jobs_section)
+        jobs = {jobs_raw[i]: jobs_raw[i + 1] for i in range(1, len(jobs_raw), 2)}
+
+        # Only the build job binds the write environment; every other job
+        # (release-sign, release-publish) has no R2 reference of any kind.
+        self.assertIn("build", jobs)
+        self.assertIn(expected_env_decl, jobs["build"])
+        for jname, jbody in jobs.items():
+            if jname == "build":
+                continue
+            self.assertNotIn("ci-cache-write", jbody, f"Job {jname} must not reference ci-cache-write")
+            self.assertNotIn("R2_", jbody, f"Job {jname} must not reference R2 secrets or variables")
+            self.assertNotIn("SCCACHE", jbody, f"Job {jname} must stay cold")
+        self.assertEqual(content.count("ci-cache-write"), 1, "ci-cache-write must appear only in the build job")
+
+        # RW secrets appear only in the step guarded by the exact RW condition.
+        rw_steps = 0
+        for step in re.split(r"\n\s+-\s+name:\s+", jobs["build"])[1:]:
+            has_rw = "secrets.R2_ACCESS_KEY_ID" in step or "secrets.R2_SECRET_ACCESS_KEY" in step
+            if not has_rw:
+                continue
+            rw_steps += 1
+            if_lines = [l.strip() for l in step.splitlines() if l.strip().startswith("if:")]
+            self.assertEqual(if_lines, [expected_rw_if], "RW secret step must carry the exact RW condition")
+            self.assertNotIn("secrets.R2_RO_", step)
+            self.assertIn("SCCACHE_S3_RW_MODE: READ_WRITE", step)
+        self.assertEqual(rw_steps, 1, "Expected exactly one read-write step in the macOS build job")
+        self.assertEqual(content.count("secrets.R2_ACCESS_KEY_ID"), 1)
+        self.assertEqual(content.count("secrets.R2_SECRET_ACCESS_KEY"), 1)
+
+        # Every sccache prefix is the shared prefix plus the macos/ namespace.
+        prefixes = re.findall(r"SCCACHE_S3_KEY_PREFIX:\s*([^\s]+)", content)
+        self.assertEqual(len(prefixes), 2, "Expected the RW and RO steps to set a prefix")
+        for p in prefixes:
+            self.assertEqual(p, EXPECTED_PREFIX + "macos/")
+
 
 if __name__ == "__main__":
     unittest.main()

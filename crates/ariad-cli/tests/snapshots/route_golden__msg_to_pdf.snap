@@ -13,11 +13,15 @@ author:
 lang: en
 ---
 
-**From:** Alice Walker \<alice\@example.com> **To:** Bob Smith \<bob\@example.com> **Subject:** Project Update
+**From:** Alice Walker \<alice\@example.com> **To:** Bob Smith \<bob\@example.com> **Date:** 2026-04-15T10\:30:00Z
+
+**Subject:** Project Update
 
 Hello Bob,
 
-Here is the latest progress report on the document pipeline. Best regards, Alice
+Here is the latest progress report on the document pipeline.
+
+Best regards, Alice
 
 # Attachments
 

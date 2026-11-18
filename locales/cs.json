@@ -113,6 +113,107 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importovat…",
+      "print": "Tisknout…",
+      "tools": "Nástroje",
+      "zoom": "{action, select, in {Přiblížit} out {Oddálit} actual {Skutečná velikost} other {Zoom}}",
+      "check_updates": "Zkontrolovat aktualizace…",
+      "show_welcome": "Zobrazit uvítání",
+      "fit_width": "Přizpůsobit šířce",
+      "display_mode": "{mode, select, single {Jedna stránka} continuous {Souvislé posouvání} twoUp {Dvě stránky} other {Zobrazení stránek}}",
+      "go_to_page": "Přejít na stránku…",
+      "find": "Najít…",
+      "find_next": "Najít další",
+      "find_previous": "Najít předchozí"
+    },
+    "tools": {
+      "group": "{group, select, organize {Uspořádat} convert {Převést} optimize {Optimalizovat} security {Zabezpečení} overlay {Překrytí} ocr {OCR a skeny} annotate {Anotovat} forms {Formuláře} sign {Podepsat} redact {Začernit} compare {Porovnat a ověřit} edit {Upravit} ai {AI} automation {Automatizace} other {Další nástroje}}",
+      "disabled": "{reason, select, later {Dostupné v pozdější verzi} format {Funguje s jinými formáty. Použijte Soubor > Importovat.} paid {Vyžaduje placený tarif} info {Podrobnosti o nástroji se nepodařilo načíst, proto zůstávají nástroje vypnuté.} other {Nedostupné}}",
+      "loading": "Načítání nástrojů…"
+    },
+    "sidebar": {
+      "title": "Stránky",
+      "placeholder": "Zde se zobrazí náhledy stránek.",
+      "page": "Stránka {number} z {total}"
+    },
+    "viewer": {
+      "placeholder": "Zde se zobrazí prohlížeč stránek.",
+      "title": "Prohlížeč stránek",
+      "loading": "Otevírání dokumentu…"
+    },
+    "toolbar": {
+      "inspector": "Informace o dokumentu",
+      "page_grid": "Mřížka stránek",
+      "previous_page": "Předchozí stránka",
+      "next_page": "Další stránka",
+      "page_field": "Číslo stránky"
+    },
+    "inspector": {
+      "title": "Dokument",
+      "field": "{field, select, name {Jméno} format {Formát} size {Velikost} pages {Stránky} words {Slova} title {Název} author {Autor} routes {Lze převést na} other {Pole}}",
+      "loading": "Čtení dokumentu…",
+      "warnings": "{count, plural, one {# upozornění} few {# upozornění} many {# upozornění} other {# upozornění}}"
+    },
+    "run": {
+      "run": "Spustit",
+      "cancel": "Zrušit",
+      "close": "Hotovo",
+      "working": "Probíhá spuštění…",
+      "parameters": "Nastavení",
+      "no_parameters": "Tento nástroj nemá žádná nastavení.",
+      "extra_documents": "Další dokumenty",
+      "add_documents": "Přidat…",
+      "remove": "Odebrat",
+      "need_documents": "{count, plural, one {Přidejte ještě # dokument, abyste mohli tento nástroj spustit.} few {Přidejte ještě # dokumenty, abyste mohli tento nástroj spustit.} many {Přidejte ještě # dokumentu, abyste mohli tento nástroj spustit.} other {Přidejte ještě # dokumentů, abyste mohli tento nástroj spustit.}}",
+      "failed": "Nástroj nedokončil práci.",
+      "reveal": "Zobrazit ve Finderu",
+      "field_error": "{kind, select, missing {Položka {field} je povinná.} other {Položka {field} není platná.}}",
+      "result": "Výsledek",
+      "presets": "Předvolby"
+    },
+    "settings": {
+      "output_folder": "Ukládat výsledky do",
+      "output_same": "Vedle původního dokumentu",
+      "output_choose": "Vybrat složku…",
+      "open_result": "Po dokončení nástroje otevřít výsledek",
+      "updates": "Aktualizace",
+      "updates_auto": "Kontrolovat aktualizace automaticky",
+      "updates_disabled": "Aktualizace nejsou v tomto sestavení nastaveny."
+    },
+    "onboarding": {
+      "title": "Vítejte v AriadShift",
+      "about": "Otevírejte, kontrolujte a zpracovávejte dokumenty PDF stejným jádrem jako příkazový řádek AriadShift. Převádějte Markdown, HTML, Word, EPUB a obrázky do PDF přes Soubor > Importovat.",
+      "packs": "Volitelné balíčky jádra (OCR, podepisování, ověřování) se ukládají do {path}.",
+      "privacy": "AriadShift funguje na vašem Macu. Nenavazuje žádná síťová spojení, dokud nezapnete funkci, která je potřebuje.",
+      "start": "Začít"
+    },
+    "import": {
+      "message": "Vyberte dokument, který chcete převést do PDF",
+      "running": "Importuje se {name}…",
+      "failed": "Položku {name} se nepodařilo importovat"
+    },
+    "document": {
+      "invalid": "Tento soubor není platný PDF."
+    },
+    "find": {
+      "prompt": "Hledat v dokumentu",
+      "count": "{current} z {total}",
+      "none": "Žádné shody",
+      "searching": "Hledání…",
+      "done": "Hotovo"
+    },
+    "grid": {
+      "hint": "Přetažením stránek změníte jejich pořadí. Každá změna se uloží jako nový soubor vedle originálu.",
+      "unavailable": "Úpravy stránek nejsou dostupné, dokud není modul připraven.",
+      "rotate": "Otočit vybrané stránky",
+      "delete": "Smazat vybrané stránky",
+      "move_earlier": "Přesunout před předchozí stránku",
+      "move_later": "Přesunout za další stránku",
+      "drop_end": "Pusťte zde pro přesun na konec"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: soukromý převod dokumentů ve vašem prohlížeči",

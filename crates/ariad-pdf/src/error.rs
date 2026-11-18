@@ -36,9 +36,51 @@ pub enum PdfError {
     #[error("invalid tool parameters: {0}")]
     InvalidParams(String),
 
-    /// The requested tool is not implemented yet.
-    #[error("tool `{0}` is not implemented")]
+    /// The document has no table to extract.
+    #[error("{}", ariad_core::tools::tables_csv::NO_TABLES_MESSAGE)]
+    NoTables,
+
+    /// The tool cannot read this document with the built-in reader and needs an engine that does
+    /// not run in this process, such as Docling for a PDF without any text layer.
+    #[error("this document needs the {engine} engine, which is not available here")]
+    EngineRequired {
+        /// Identifier of the engine that could read the document.
+        engine: &'static str,
+    },
+
+    /// The extracted tables exceed the output size cap.
+    #[error("the extracted tables exceed the output size limit")]
+    TablesTooLarge,
+
+    /// The requested tool is not implemented yet, or a redaction safety refusal.
+    ///
+    /// Safety refusals carry a message starting with one of [`REFUSAL_PREFIXES`]; they keep
+    /// this variant so the machine contract (`tool_missing`, exit 5) stays stable, but their
+    /// text reads as a refusal, not as a missing tool.
+    #[error("{}", format_not_implemented(.0))]
     NotImplemented(String),
+}
+
+/// Message prefixes that mark a [`PdfError::NotImplemented`] as a redaction safety refusal.
+///
+/// Every refusal reason following these prefixes is a fixed string and never carries
+/// document content, names, paths or secret values.
+pub const REFUSAL_PREFIXES: [&str; 2] = ["redaction refused: ", "uninspected carrier refused: "];
+
+/// Reports whether `message` is a redaction safety refusal (see [`REFUSAL_PREFIXES`]).
+#[must_use]
+pub fn is_refusal_message(message: &str) -> bool {
+    REFUSAL_PREFIXES
+        .iter()
+        .any(|prefix| message.starts_with(prefix))
+}
+
+fn format_not_implemented(message: &str) -> String {
+    if is_refusal_message(message) {
+        message.to_owned()
+    } else {
+        format!("tool `{message}` is not implemented")
+    }
 }
 
 fn format_limit_or_ctx_error(error: &ReadError) -> String {
@@ -118,6 +160,9 @@ impl PdfError {
             Self::Encrypted { .. } => "encrypted",
             Self::LimitExceeded(_) => "limit_exceeded",
             Self::InvalidParams(_) => "invalid_input",
+            Self::NoTables => "no_tables",
+            Self::EngineRequired { .. } => "engine_required",
+            Self::TablesTooLarge => "limit_exceeded",
             Self::NotImplemented(_) => "not_implemented",
         }
     }
@@ -130,8 +175,9 @@ impl PdfError {
         }
         match self {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => "invalid_input",
-            Self::LimitExceeded(_) => "limit_exceeded",
-            Self::NotImplemented(_) => "engine_failed",
+            Self::LimitExceeded(_) | Self::TablesTooLarge => "limit_exceeded",
+            Self::NoTables | Self::NotImplemented(_) => "engine_failed",
+            Self::EngineRequired { .. } => "tool_missing",
         }
     }
 
@@ -143,8 +189,9 @@ impl PdfError {
         }
         match self {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => 2,
-            Self::LimitExceeded(_) => 7,
-            Self::NotImplemented(_) => 6,
+            Self::LimitExceeded(_) | Self::TablesTooLarge => 7,
+            Self::NoTables | Self::NotImplemented(_) => 6,
+            Self::EngineRequired { .. } => 5,
         }
     }
 }
@@ -158,5 +205,44 @@ impl From<ReadError> for PdfError {
             },
             other => Self::LimitExceeded(other),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refusals_read_as_refusals_and_keep_the_contract() {
+        for text in [
+            "redaction refused: original image remains reachable",
+            "uninspected carrier refused: inline_image",
+        ] {
+            let error = PdfError::NotImplemented(text.into());
+            assert_eq!(error.to_string(), text);
+            assert!(is_refusal_message(text));
+            assert_eq!(error.code(), "not_implemented");
+            assert_eq!(error.cli_error_code(), "engine_failed");
+            assert_eq!(error.exit_code(), 6);
+        }
+    }
+
+    #[test]
+    fn a_missing_engine_is_a_tool_missing_failure() {
+        let error = PdfError::EngineRequired { engine: "docling" };
+        assert_eq!(
+            error.to_string(),
+            "this document needs the docling engine, which is not available here"
+        );
+        assert_eq!(error.code(), "engine_required");
+        assert_eq!(error.cli_error_code(), "tool_missing");
+        assert_eq!(error.exit_code(), 5);
+    }
+
+    #[test]
+    fn unimplemented_tools_keep_their_text() {
+        let error = PdfError::NotImplemented("pdf.future".into());
+        assert_eq!(error.to_string(), "tool `pdf.future` is not implemented");
+        assert!(!is_refusal_message("pdf.future"));
     }
 }

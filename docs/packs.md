@@ -11,6 +11,7 @@ ashift engines install docling --manifest https://example.org/pack.toml
 ashift engines install docling --from ./docling-pack   # offline, no network
 ashift engines                                 # engines, plus a section for installed packs
 ashift engines verify docling                  # re-hash every file against the install receipt
+ashift engines notices [docling]               # licence notices of installed packs
 ashift engines remove docling [--version 0.2.0]
 ```
 
@@ -152,6 +153,12 @@ Installation refuses an executable archive member unless the signed manifest dec
 
 `receipt.toml` (`ariad-pack-receipt/1`) holds the manifest and signature as installed, the install time, the `ashift` version, the signing key id, and the path, size and SHA-256 of every file plus every link target. `ashift engines verify` re-hashes against it and re-checks the signature with the keys of the running `ashift`.
 
+## Notices
+
+Every pack lists its licence and notice files in the manifest `notices` field, and the signature covers that list. Installed packs expose those files through three surfaces: `ashift engines notices` ([cli.md](cli.md#ashift-engines-notices)), the Licences action of the Engine packs view in the desktop app ([desktop.md](desktop.md#engine-packs-and-diagnostics)), and the `pack_notices` function of `crates/ariad-ffi` for the macOS licence screen. All three call `packs::notices` in `ariad-host`. It re-checks the signature of the manifest stored in the install receipt, then reads each listed notice only if the file is a regular file that no symbolic link leads to, its size equals the size recorded in the receipt (compared before the file is read, which is also the size limit), and its SHA-256 equals the recorded digest. A notice that is missing, absent from the receipt or altered since install is an error and its text is never shown. The receipt is a local file that the signature does not cover, so this protects against changed notice files, not against a local user who rewrites the receipt too; `ashift engines verify` and the manifest signature remain the check for that. Without a pack name, the CLI and the macOS function report each pack on its own, so one damaged pack does not hide the others, and the CLI exits non-zero when any failed. The CLI also strips terminal control characters other than newline and tab from notice text before printing it.
+
+The root [`THIRD_PARTY_LICENSES`](../THIRD_PARTY_LICENSES) stays separate. It is generated from `Cargo.lock` for the code in the `ashift` release archive, so it can only describe what that archive contains. A pack is built, signed and versioned on its own, and the user may never install it; its components (libjpeg-turbo, PDFium, a Python runtime and its wheels) change with the pack version and not with the `ashift` version. Copying them into the root file would list code that a given install does not ship, and would go stale at each pack release. Each pack carries the notices for exactly the bytes it installs, which are the notices the licences require to travel with those binaries.
+
 ## Resolution
 
 `ariad_host::packs::resolve(name)` returns the active version's `InstalledPack`: install root, target, program (`entrypoint[0]` under the root), arguments, environment and options with `{root}` substituted. Create `runner::EngineCommand::from_pack(ashift, &pack)` and pass it to `runner::run_command` or `SessionPool::lease`. The command adds the pack's allow-listed environment to the cleared engine environment and grants its install root read and execute access through the Linux sandbox. The explicit environment and root participate in the session-pool key. `runner::run_with_env` and `describe_with_env` remain available for callers supplying their own launch policy. A pack built for another platform or another `ashift` range does not resolve.
@@ -207,18 +214,23 @@ the notices. The final gate checks wheel binaries and notice contents as well
 as distribution metadata. Build prerequisites, ARM notice handling and real
 conversion comparisons are described in [the Docling build](docling.md#the-pack).
 Linux and Windows x86_64 also replace the MKL-bearing PyTorch wheels with
-source-built OpenBLAS CPU wheels, retaining Apache-2.0 oneDNN. Once a
+source-built OpenBLAS CPU wheels, retaining Apache-2.0 oneDNN while disabling
+legacy NNPACK (`USE_NNPACK=0`, because PeachPy codegen is ASLR-nondeterministic
+and OpenBLAS plus oneDNN keep the CPU math and convolution paths). Once a
 `toolchain-wheels-v*` release is published by
 [`.github/workflows/toolchain-wheels.yml`](../.github/workflows/toolchain-wheels.yml)
 and pinned under `[toolchain]` in `engines/docling/pack/pins.toml`, the pack
 consumes those hash-verified release wheels and sidecars (falling back to the
 pinned source build only while a target's `[toolchain]` entry is omitted during
 bootstrap). Official ARM PyTorch wheels remain; BSD-3-Clause ITT is permitted
-there and its license is included in the third-party notices, while source-built
-toolchain wheels disable ITT (`USE_ITT=0`, `-DWITH_ITT=OFF`,
-`-DLIBOMP_USE_ITT_NOTIFY=OFF`). The gate distinguishes ITT/oneDNN from
-proprietary MKL, IPP and Intel OpenMP. The owning build and update route is in
-the [Docling guide](docling.md#the-pack).
+there and its license is included in the third-party notices. Source-built
+OpenCV (`-DWITH_ITT=OFF`) and LLVM OpenMP (`-DLIBOMP_USE_ITT_NOTIFY=OFF`)
+disable ITT (`allow_itt=False`); CPU `torch` passes `USE_ITT=0`, yet vendored
+oneDNN (`DNNL_ENABLE_ITT_TASKS=ON`) still compiles BSD-3-Clause `ittnotify`
+into `libtorch_cpu.so`, so the exported `torch` wheel carries
+`torch-*.dist-info/licenses/ittapi.txt`.
+The gate distinguishes ITT/oneDNN from proprietary MKL, IPP and Intel OpenMP.
+The owning build and update route is in the [Docling guide](docling.md#the-pack).
 
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
@@ -229,7 +241,7 @@ The `pdfium` pack provides the PDFium engine (`ariad-engine/2`, stateless per re
 | Item | Value |
 |---|---|
 | Contents | `ariad-pdfium-engine` binary, pinned `libpdfium` (PDFium `chromium/8125`, from `bblanchon/pdfium-binaries`, SHA-256 pinned per target), and the bundled third-party notices (FreeType, ICU, libjpeg-turbo, OpenJPEG, LCMS, libpng, zlib, HarfBuzz, Abseil, AGG) |
-| Targets | `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` (`"unverified"`, [#132](https://github.com/bavanchun/AriadShift/issues/132)), `aarch64-unknown-linux-musl` (`"unverified"`, [#132](https://github.com/bavanchun/AriadShift/issues/132)). Windows packs are deferred because Windows engines have no filesystem or network sandbox |
+| Targets | `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`. Linux musl is deferred ([#132](https://github.com/bavanchun/AriadShift/issues/132)) until musl `libpdfium` is built with Clang/`libc++` or pinned toolchain sources, and Windows packs remain deferred because Windows engines have no filesystem or network sandbox |
 | Manifest | `engine_protocol = "ariad-engine/2"`; `requires_ashift` names the release that adds the field |
 | Library lookup | The engine loads `libpdfium` from the directory of its own binary. The manifest sets no library-path variable, and `ALLOWED_ENV` has none |
 | Sandbox | `sandbox_required`: the pack root is readable and executable but not writable, `/tmp` is private to the job, the job directory is the only writable location and the network is closed. `best-effort` mode refuses to start the engine when isolation is unavailable; only `ASHIFT_SANDBOX=off` runs it unsandboxed |
@@ -276,7 +288,7 @@ The pack is under development and is not yet published as an official release. I
 
 ## Signing and publishing
 
-The PDFium and qpdf release workflows read `PACK_MINISIGN_KEY` and the optional `PACK_MINISIGN_KEY_PASSWORD` from the `release` environment, and select the committed public key using `PACK_SIGNING_KEY_ID`. Both require the tag commit to be an ancestor of `origin/main`. The manually dispatched `verify-pack-signing-key.yml` verifies that the configured key signs against the committed public key without publishing a pack; it cannot run until an owner or maintainer permits the dispatch ref in the `release` environment. `PACK_MINISIGN_KEY` must contain the complete two-line secret key file written by `minisign -G`, not just its base64 line. Docling signing and release publication are not automated yet ([#204](https://github.com/bavanchun/AriadShift/issues/204)).
+The Docling, PDFium, and qpdf release workflows read `PACK_MINISIGN_KEY` and the optional `PACK_MINISIGN_KEY_PASSWORD` from the `release` environment, and select the committed public key using `PACK_SIGNING_KEY_ID`. All require the tag commit to be an ancestor of `origin/main`. The manually dispatched `verify-pack-signing-key.yml` verifies that the configured key signs against the committed public key without publishing a pack; it cannot run until an owner or maintainer permits the dispatch ref in the `release` environment. `PACK_MINISIGN_KEY` must contain the complete two-line secret key file written by `minisign -G`, not just its base64 line.
 
 1. Create the signing key once with `minisign -G -p ariadshift-packs.pub -s ariadshift-packs.key`. The secret key and its password live only in the `release` environment secrets and an offline backup; never in the repository. Commit the public key as `crates/ariad-host/data/pack-keys/<key-id>.pub` and release an `ashift` that contains it before the first pack signed with it.
 2. Build every target and merge the manifests with `ashift __pack manifest --base`.

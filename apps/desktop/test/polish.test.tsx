@@ -58,6 +58,7 @@ const job = (id: string, status: JobView["status"], extra: Partial<JobView> = {}
   stage: status,
   error: null,
   warnings: [],
+  missing_pack: null,
   ...extra,
 });
 let jobs: JobView[] = [];
@@ -171,6 +172,28 @@ describe("helpers", () => {
       "new-done",
       "old-done",
     ]);
+  });
+
+  it("adds Install Docling to finished toasts that need the pack", () => {
+    const installPack = vi.fn();
+    const handlers = { reveal: vi.fn(), retry: vi.fn(), viewQueue: vi.fn(), installPack };
+    const [failed, converted] = finishedToasts(
+      [
+        job("scan", "failed", { error: "Docling missing", missing_pack: "docling" }),
+        job("mixed", "succeeded", { missing_pack: "docling" }),
+      ],
+      handlers,
+    );
+    expect(failed?.actions.map((a) => a.label)).toEqual(["Install Docling", "Retry", "View queue"]);
+    expect(converted?.actions.map((a) => a.label)).toEqual(["Show output", "Install Docling"]);
+    failed?.actions[0]?.run();
+    expect(installPack).toHaveBeenCalledWith("docling");
+    const [plain] = finishedToasts([job("scan", "failed", { missing_pack: "docling" })], {
+      reveal: vi.fn(),
+      retry: vi.fn(),
+      viewQueue: vi.fn(),
+    });
+    expect(plain?.actions.map((a) => a.label)).toEqual(["Retry", "View queue"]);
   });
 
   it("collapses a large batch into one summary toast", () => {

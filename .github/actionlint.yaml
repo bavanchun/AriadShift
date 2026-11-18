@@ -4,3 +4,5 @@ self-hosted-runner:
   labels:
     - ubuntu-26.04
     - ubuntu-26.04-arm
+    # actionlint 1.7.12 predates the xcode-27 hosted (preview) macOS label used by macos.yml.
+    - xcode-27

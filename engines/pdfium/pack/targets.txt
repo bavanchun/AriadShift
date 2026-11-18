@@ -6,7 +6,8 @@
 # without a SHA-256 makes the pack refuse. Only non-V8 assets are allowed (no pdfium-v8-*).
 linux-x64        x86_64-unknown-linux-gnu    pdfium-linux-x64.tgz e1c3ce6e270cb5e0c20816b379ad9f2c1309972697c505f508de92bf5e7d6659
 linux-arm64      aarch64-unknown-linux-gnu   pdfium-linux-arm64.tgz 8b8818f2ec57d1b213d952ca6d7f0ffeca9d0110487d0e20ad83ba918bc92efa
-linux-musl-x64   x86_64-unknown-linux-musl   pdfium-linux-musl-x64.tgz 280e965dd262d22e7c34e5eda1052a072553db50fa4e92be3399ac484e43eb39
-linux-musl-arm64 aarch64-unknown-linux-musl  pdfium-linux-musl-arm64.tgz d13a4e6e7863b9223f80a0cf55421d929e51943a3e39f34b4b7ae5446b1ce764
+# linux-musl-x64 and linux-musl-arm64 are deferred (#132): upstream bblanchon/pdfium-binaries
+# musl libpdfium.so statically links GNU libstdc++ and libgcc from an unpinned musl.cc GCC 11.2.1
+# cross-toolchain, which does not satisfy the GNU runtime provenance and notice requirements in AGENTS.md.
 mac-arm64        aarch64-apple-darwin        pdfium-mac-arm64.tgz 4939bd935ac83ddc09a3a4f038bc43a19cea1660316a3667f26cb07a070e139d
 mac-x64          x86_64-apple-darwin         pdfium-mac-x64.tgz 8a5193535b80c7215d8932f6647ae5097465b6dba2811602c21e120c2af112b0

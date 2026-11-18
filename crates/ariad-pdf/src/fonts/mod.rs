@@ -1,9 +1,12 @@
 //! Font coverage, bundled edit fallbacks and conservative font program subsetting.
 
+pub mod cff;
+mod cff_prune;
 pub mod fallback;
 mod truetype;
 mod type1;
 
+pub use cff_prune::subset_simple_cff;
 pub use fallback::{
     BundledFontChoice, BundledFontFamily, BundledFontStyle, FontFallbackError, ResolvedEditFont,
     check_font_coverage, embed_subset_type0_font, match_bundled_font, resolve_font_for_text,
@@ -771,4 +774,135 @@ pub fn subset_simple_type1(
     Ok(SubsetOutcome::Subset {
         glyphs: names.len(),
     })
+}
+
+/// Whether the font dictionary `/Encoding` is one the converter leaves valid unchanged.
+fn plain_encoding(pdf: &lopdf::Document, font: &Dictionary, limit: u16) -> bool {
+    let Ok(encoding) = font.get(b"Encoding") else {
+        return true;
+    };
+    match resolve(pdf, encoding, limit) {
+        Some(Object::Name(_)) => true,
+        Some(Object::Dictionary(d)) => match d.get(b"Differences") {
+            Err(_) => true,
+            Ok(items) => resolve(pdf, items, limit)
+                .and_then(|o| o.as_array().ok())
+                .is_some_and(|items| {
+                    items
+                        .iter()
+                        .all(|i| matches!(i, Object::Integer(_) | Object::Name(_)))
+                }),
+        },
+        _ => false,
+    }
+}
+
+/// Rewrite an embedded simple Type 1 program (`/FontFile`) as Type1C (`/FontFile3`).
+///
+/// Glyph names, the built-in encoding and every other descriptor key stay as they are. Anything
+/// the converter does not understand, or a result that is not strictly smaller after Flate,
+/// leaves the font untouched (`Skipped`). `Subset` reports the glyph count of the rewritten font.
+pub fn convert_simple_type1_to_cff(
+    doc: &mut PdfDoc,
+    font_id: ObjectId,
+    limits: &Limits,
+) -> Result<SubsetOutcome, FontError> {
+    use flate2::{Compression, write::ZlibEncoder};
+    use std::io::Write;
+
+    let limit = limits.max_nesting_depth;
+    let pdf = doc.inner();
+    let Some(font) = pdf.get_object(font_id).ok().and_then(|o| o.as_dict().ok()) else {
+        return Ok(SubsetOutcome::Skipped("missing font"));
+    };
+    if font.get(b"Subtype").and_then(Object::as_name).ok() != Some(b"Type1") {
+        return Ok(SubsetOutcome::Skipped("font is not Type 1"));
+    }
+    if !plain_encoding(pdf, font, limit) {
+        return Ok(SubsetOutcome::Skipped("unsupported Type 1 encoding"));
+    }
+    let Some(descriptor_object) = font.get(b"FontDescriptor").ok() else {
+        return Ok(SubsetOutcome::Skipped("missing font descriptor"));
+    };
+    if shared_font_program(pdf, descriptor_object, b"FontFile", limit) {
+        return Ok(SubsetOutcome::Skipped("shared font program"));
+    }
+    let Some(mut descriptor) = dict(pdf, descriptor_object, limit).cloned() else {
+        return Ok(SubsetOutcome::Skipped("missing font descriptor"));
+    };
+    if descriptor.has(b"FontFile3") || descriptor.has(b"FontFile2") {
+        return Ok(SubsetOutcome::Skipped("not a plain Type 1 program"));
+    }
+    let Some(program) = descriptor
+        .get(b"FontFile")
+        .ok()
+        .and_then(|o| resolve(pdf, o, limit))
+        .and_then(|o| o.as_stream().ok())
+    else {
+        return Ok(SubsetOutcome::Skipped("missing Type 1 program"));
+    };
+    let length = |key: &[u8]| {
+        program
+            .dict
+            .get(key)
+            .and_then(Object::as_i64)
+            .ok()
+            .and_then(|v| usize::try_from(v).ok())
+    };
+    let (Some(length1), Some(length2), Some(length3)) =
+        (length(b"Length1"), length(b"Length2"), length(b"Length3"))
+    else {
+        return Ok(SubsetOutcome::Skipped("invalid Type 1 lengths"));
+    };
+    let mut budget = doc.decode_budget();
+    let bytes = match content_bytes(program, &mut budget) {
+        Ok(bytes) => bytes,
+        Err(FontError::Malformed) => return Ok(SubsetOutcome::Skipped("unsupported font stream")),
+        Err(e) => return Err(e),
+    };
+    if length1
+        .checked_add(length2)
+        .and_then(|v| v.checked_add(length3))
+        != Some(bytes.len())
+    {
+        return Ok(SubsetOutcome::Skipped("invalid Type 1 lengths"));
+    }
+    let max_bytes = usize::try_from(limits.max_decompressed_bytes).unwrap_or(usize::MAX);
+    let Some(converted) = cff::type1_to_cff(&bytes, Some((length1, length2)), max_bytes) else {
+        return Ok(SubsetOutcome::Skipped("unsupported Type 1 program"));
+    };
+    let flate = |data: &[u8]| -> Option<Vec<u8>> {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+        encoder.write_all(data).ok()?;
+        encoder.finish().ok()
+    };
+    let Some(new_stream) = flate(&converted.bytes) else {
+        return Ok(SubsetOutcome::Skipped("compression failed"));
+    };
+    // Compare with the original as it will be stored: Flate when it is plain.
+    let original = if program.dict.has(b"Filter") {
+        program.content.len()
+    } else {
+        flate(&program.content).map_or(program.content.len(), |c| {
+            c.len().min(program.content.len())
+        })
+    };
+    if new_stream.len() >= original {
+        return Ok(SubsetOutcome::Skipped("no size gain"));
+    }
+    let glyphs = converted.glyphs;
+    let pdf = doc.inner_mut()?;
+    let mut dictionary = Dictionary::new();
+    dictionary.set("Subtype", "Type1C");
+    dictionary.set("Filter", "FlateDecode");
+    dictionary.set("Length", new_stream.len() as i64);
+    let file_id = pdf.add_object(Stream::new(dictionary, new_stream));
+    descriptor.remove(b"FontFile");
+    descriptor.set("FontFile3", file_id);
+    let descriptor_id = pdf.add_object(descriptor);
+    pdf.get_object_mut(font_id)
+        .and_then(Object::as_dict_mut)
+        .map_err(|_| FontError::Malformed)?
+        .set("FontDescriptor", descriptor_id);
+    Ok(SubsetOutcome::Subset { glyphs })
 }

@@ -1195,20 +1195,38 @@ fn test_sign_engine_sandbox_network_denial() {
     cmd.sandbox = Some(SandboxMode::Required);
     cmd.launcher = Some(launcher);
 
+    // A local listener proves the port is reachable without the sandbox, so a
+    // denial inside the sandbox cannot be explained by a missing network.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let addr = listener.local_addr().unwrap();
+    let probe = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2))
+        .expect("unsandboxed connect to the loopback listener must succeed");
+    drop(probe);
+    listener.set_nonblocking(true).unwrap();
+    listener
+        .accept()
+        .expect("listener must accept the unsandboxed probe connection");
+
+    // Exit 42 only for EPERM/EACCES (the sandbox denial). Any other failure
+    // (refused, timeout) exits 43 and a successful connect exits 0.
+    let script = format!(
+        "import errno, socket, sys\n\
+        try:\n    \
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    \
+            s.settimeout(1.0)\n    \
+            s.connect(('127.0.0.1', {port}))\n    \
+            sys.exit(0)\n\
+        except OSError as e:\n    \
+            sys.exit(42 if e.errno in (errno.EPERM, errno.EACCES) else 43)\n\
+        except Exception:\n    \
+            sys.exit(44)\n",
+        port = addr.port()
+    );
     let mut test_cmd = cmd.clone();
     test_cmd.args = vec![
         OsString::from("-I"),
         OsString::from("-c"),
-        OsString::from(
-            "import socket, sys\n\
-            try:\n    \
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    \
-                s.settimeout(0.5)\n    \
-                s.connect(('1.1.1.1', 80))\n    \
-                sys.exit(0)\n\
-            except Exception:\n    \
-                sys.exit(42)\n",
-        ),
+        OsString::from(script),
     ];
 
     let req = ariad_core::protocol::v2::RequestV2::Describe {
@@ -1218,12 +1236,19 @@ fn test_sign_engine_sandbox_network_denial() {
     let outcome = runner::run_command_v2(&test_cmd, &req, CancellationToken::new(), |_| {});
 
     match outcome {
-        Err(runner::RunError::Crash { exit, .. }) => {
+        Err(runner::RunError::Crash {
+            exit, stderr_tail, ..
+        }) => {
             assert_eq!(
                 exit,
                 Some(42),
-                "sandboxed network connection was denied (exit 42)"
+                "sandboxed connect must fail with EPERM/EACCES (exit 42); 43 is another OSError, 44 a non-OS error; stderr: {stderr_tail:?}"
             );
+            match listener.accept() {
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Ok((_, peer)) => panic!("listener accepted a connection from {peer}"),
+                Err(e) => panic!("unexpected accept error: {e}"),
+            }
         }
         Err(runner::RunError::SandboxUnavailable(err)) => {
             panic!("sandbox setup unavailable instead of executing network denial: {err}");

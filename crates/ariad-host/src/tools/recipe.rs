@@ -14,6 +14,7 @@ use std::{
 };
 
 use ariad_core::{
+    format::Format,
     limits::Limits,
     planner::Profile,
     tools::recipe::{ConditionContext, StepErrorPolicy, eval_step_condition},
@@ -42,7 +43,7 @@ use crate::{
             InputRef, OutputTarget, ToolError, ToolEvent, ToolMetrics, ToolRequest,
             run_tool_with_clock,
         },
-        secrets::SecretBag,
+        secrets::{SecretBag, SecretScrubber},
     },
     workspace::Workspace,
 };
@@ -238,6 +239,26 @@ pub fn run_recipe(request: &RecipeRequest) -> Result<RecipeOutcome, ToolError> {
     run_recipe_with_events(request, |_| {})
 }
 
+/// Event emitted while a recipe runs: step boundaries plus the progress of the running tool.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecipeEvent {
+    /// A step is about to run.
+    StepStarted {
+        /// 0-based step index.
+        step_index: usize,
+        /// Total number of steps in the recipe.
+        total: usize,
+        /// Step kind (`"tool"` or `"convert"`).
+        kind: String,
+        /// Tool ID or target conversion format.
+        target: String,
+    },
+    /// Progress reported by the tool running inside the current step.
+    Tool(ToolEvent),
+    /// A step completed.
+    StepFinished(StepOutcome),
+}
+
 /// Executes a [`RecipeRequest`] synchronously, streaming [`ToolEvent`]s to `on_event`.
 pub fn run_recipe_with_events<F>(
     request: &RecipeRequest,
@@ -245,6 +266,24 @@ pub fn run_recipe_with_events<F>(
 ) -> Result<RecipeOutcome, ToolError>
 where
     F: FnMut(ToolEvent),
+{
+    run_recipe_with_step_events(request, |event| {
+        if let RecipeEvent::Tool(tool_event) = event {
+            on_event(tool_event);
+        }
+    })
+}
+
+/// Executes a [`RecipeRequest`] synchronously, streaming step boundaries and tool progress.
+///
+/// A failing step emits no finish event: the run returns the error and the caller knows the
+/// failing step from the last [`RecipeEvent::StepStarted`].
+pub fn run_recipe_with_step_events<F>(
+    request: &RecipeRequest,
+    mut on_event: F,
+) -> Result<RecipeOutcome, ToolError>
+where
+    F: FnMut(RecipeEvent),
 {
     let scrubber = request.secrets.scrubber();
     run_recipe_inner(request, &mut on_event)
@@ -256,12 +295,24 @@ where
 pub(crate) fn run_recipe_with_sources(
     request: &RecipeRequest,
 ) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
-    run_recipe_inner(request, &mut |_| {}).map_err(|e| e.scrubbed(&request.secrets.scrubber()))
+    run_recipe_inner(request, &mut |_: RecipeEvent| {})
+        .map_err(|e| e.scrubbed(&request.secrets.scrubber()))
+}
+
+/// Copies a final step output into `<workspace>/out/` without following planted links there.
+fn stage_final_item(
+    workspace: &Workspace,
+    source: &Path,
+    staged_name: &str,
+    scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
+) -> Result<PathBuf, ToolError> {
+    super::run::write_staged_artifact_from_file(workspace, staged_name, source, scrubber, cancel)
 }
 
 fn run_recipe_inner(
     request: &RecipeRequest,
-    on_event: &mut dyn FnMut(ToolEvent),
+    on_event: &mut dyn FnMut(RecipeEvent),
 ) -> Result<(RecipeOutcome, Vec<Vec<usize>>), ToolError> {
     let started = Instant::now();
     let scrubber = request.secrets.scrubber();
@@ -415,6 +466,16 @@ fn run_recipe_inner(
             return Err(ToolError::Interrupted);
         }
         let step_started = Instant::now();
+        let (announced_kind, announced_target) = match step {
+            Step::Tool { tool, .. } => ("tool", tool.to_string()),
+            Step::Convert { to, .. } => ("convert", to.user_name().to_owned()),
+        };
+        on_event(RecipeEvent::StepStarted {
+            step_index: step_idx,
+            total: request.recipe.steps.len(),
+            kind: announced_kind.to_owned(),
+            target: announced_target,
+        });
         let step_dir = workspace.work_dir().join(format!("step-{step_idx:03}"));
         fs::create_dir_all(&step_dir)
             .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
@@ -475,7 +536,7 @@ fn run_recipe_inner(
                         params,
                         items.iter().map(|item| InputRef::new(&item.path)).collect(),
                         &item_out_dir,
-                        on_event,
+                        &mut |event| on_event(RecipeEvent::Tool(event)),
                         clock,
                     );
                     let mut outputs = Vec::new();
@@ -531,16 +592,71 @@ fn run_recipe_inner(
             }
             Step::Convert { to, profile, .. } => {
                 let target_ext = to.user_name();
-                let engine_prog = request
-                    .engine_program
-                    .clone()
-                    .or_else(|| std::env::current_exe().ok())
-                    .unwrap_or_else(|| PathBuf::from("ashift"));
+                let resolved_prog =
+                    crate::engines::resolve_engine_program(request.engine_program.as_deref());
                 for idx in selected {
                     let item = &current_items[idx];
                     let out_path = step_dir.join(format!("{idx:03}-{}.{target_ext}", item.stem));
+                    let conv_req_prog = match resolved_prog {
+                        Some(ref engine_prog) => engine_prog.clone(),
+                        None => {
+                            let from_fmt = Format::from_user_name(&item.format)
+                                .or_else(|| {
+                                    item.path
+                                        .extension()
+                                        .and_then(|s| s.to_str())
+                                        .and_then(Format::from_extension)
+                                })
+                                .unwrap_or(Format::AriadIrJson);
+                            let to_fmt = *to;
+                            let caps = crate::engines::builtin_capabilities();
+                            let registered = caps.registered_engines();
+                            let prof = profile.unwrap_or(Profile::Editable);
+                            match ariad_core::planner::plan(
+                                &caps,
+                                from_fmt,
+                                to_fmt,
+                                prof,
+                                &registered,
+                            ) {
+                                Ok(plan) => {
+                                    if let Some(step) = plan
+                                        .steps
+                                        .iter()
+                                        .find(|s| s.engine != crate::engines::IN_PROCESS_ENGINE)
+                                    {
+                                        let err = ToolError::from_missing_engine(&step.engine);
+                                        handle_step_error(
+                                            policy,
+                                            err,
+                                            step_idx,
+                                            std::slice::from_ref(item),
+                                            &mut slots[idx],
+                                            &mut warnings,
+                                        )?;
+                                        continue;
+                                    }
+                                    PathBuf::new()
+                                }
+                                Err(err) => {
+                                    let conv_err =
+                                        crate::convert::routing::plan_error(err, from_fmt);
+                                    let err = map_convert_error(conv_err);
+                                    handle_step_error(
+                                        policy,
+                                        err,
+                                        step_idx,
+                                        std::slice::from_ref(item),
+                                        &mut slots[idx],
+                                        &mut warnings,
+                                    )?;
+                                    continue;
+                                }
+                            }
+                        }
+                    };
                     let mut conv_req =
-                        ConvertRequest::new(&item.path, &out_path, target_ext, &engine_prog);
+                        ConvertRequest::new(&item.path, &out_path, target_ext, conv_req_prog);
                     conv_req.profile = profile.unwrap_or(Profile::Editable);
                     conv_req.overwrite = true;
                     let result = convert_with_limits(
@@ -578,24 +694,29 @@ fn run_recipe_inner(
             }
         };
         current_items = slots.into_iter().flatten().collect();
-        step_outcomes.push(StepOutcome {
+        let step_outcome = StepOutcome {
             step_index: step_idx,
             kind: kind.to_owned(),
             target,
             artifacts: current_items.len(),
             elapsed_ms: u64::try_from(step_started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        });
+        };
+        on_event(RecipeEvent::StepFinished(step_outcome.clone()));
+        step_outcomes.push(step_outcome);
     }
 
     // 7. Stage final step outputs into `workspace.output_dir()` and atomically publish.
     let mut staged_final = Vec::with_capacity(current_items.len());
     for (idx, item) in current_items.iter().enumerate() {
         let index_1_based = idx + 1;
-        let staged_file = workspace
-            .output_dir()
-            .join(format!("final-{idx:03}.{}", item.format));
-        fs::copy(&item.path, &staged_file)
-            .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+        let staged_name = format!("final-{idx:03}.{}", item.format);
+        let staged_file = stage_final_item(
+            &workspace,
+            &item.path,
+            &staged_name,
+            &scrubber,
+            &request.cancel,
+        )?;
 
         let target_name = if let Some(ref template) = request.recipe.naming {
             let title = if template.contains("{title}") {
@@ -791,6 +912,78 @@ fn map_convert_error(err: ConvertError) -> ToolError {
         ConvertError::UnsupportedIrVersion
         | ConvertError::InvalidCapabilities(_)
         | ConvertError::FailedWithMemoryHint { .. }
+        | ConvertError::EngineUnavailable { .. }
         | ConvertError::Failed => ToolError::EngineFailure(err.to_string()),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stage_final_item_does_not_follow_planted_symlink() {
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.pdf");
+        fs::write(&victim, b"untouched-recipe-victim").unwrap();
+        let source = outside.path().join("step-output.pdf");
+        fs::write(&source, b"%PDF-1.7\nfinal").unwrap();
+
+        let workspace = Workspace::new().unwrap();
+        let planted = workspace.output_dir().join("final-000.pdf");
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+        let staged = stage_final_item(
+            &workspace,
+            &source,
+            "final-000.pdf",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect("staging replaces the planted link");
+
+        assert_eq!(fs::read(&victim).unwrap(), b"untouched-recipe-victim");
+        assert_eq!(staged, planted);
+        let meta = fs::symlink_metadata(&staged).unwrap();
+        assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        assert_eq!(fs::read(&staged).unwrap(), b"%PDF-1.7\nfinal");
+    }
+
+    #[test]
+    fn stage_final_item_streams_a_large_file_intact() {
+        let outside = tempfile::tempdir().unwrap();
+        let source = outside.path().join("big.bin");
+        let payload: Vec<u8> = (0..(3 * 1024 * 1024 + 17))
+            .map(|i| (i % 251) as u8)
+            .collect();
+        fs::write(&source, &payload).unwrap();
+
+        let workspace = Workspace::new().unwrap();
+        let staged = stage_final_item(
+            &workspace,
+            &source,
+            "final-001.bin",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect("large file stages");
+
+        assert_eq!(fs::read(&staged).unwrap(), payload);
+    }
+
+    #[test]
+    fn stage_final_item_rejects_a_non_regular_source() {
+        let outside = tempfile::tempdir().unwrap();
+        let workspace = Workspace::new().unwrap();
+        let error = stage_final_item(
+            &workspace,
+            outside.path(),
+            "final-002.bin",
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect_err("a directory is not a stageable output");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+        assert!(!workspace.output_dir().join("final-002.bin").exists());
     }
 }

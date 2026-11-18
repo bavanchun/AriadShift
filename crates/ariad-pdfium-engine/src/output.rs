@@ -524,6 +524,17 @@ pub fn map_pdf_open_error(err: PdfError) -> EngineFailure {
         PdfError::InvalidParams(message) => {
             EngineFailure::owned(ErrorCode::InvalidRequest, message)
         }
+        PdfError::TablesTooLarge => EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "The extracted tables exceed the output size limit.",
+        ),
+        PdfError::NoTables => {
+            EngineFailure::new(ErrorCode::EngineFailure, "No tables found in the document.")
+        }
+        PdfError::EngineRequired { .. } => EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "The document needs an engine that is not available here.",
+        ),
         PdfError::NotImplemented(message) => {
             EngineFailure::owned(ErrorCode::EngineFailure, message)
         }

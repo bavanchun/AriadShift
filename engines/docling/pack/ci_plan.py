@@ -60,7 +60,8 @@ def validate_selection(result):
 def plan(pins, event, ref_name="", allowed_skips=""):
     if event not in {"pull_request", "push", "workflow_dispatch"}:
         raise SystemExit(f"unsupported pack CI event: {event}")
-    if event == "push":
+    # A push to dev is a trusted non-release build, planned like a dispatch.
+    if event == "push" and ref_name != "dev":
         if not re.fullmatch(r"pack-docling-v[0-9][A-Za-z0-9.+-]*", ref_name):
             raise SystemExit("release push must name an exact pack-docling-v* tag")
         allowed = pins.get("pack_release_skips", {}).get(ref_name, [])

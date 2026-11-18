@@ -2,7 +2,7 @@
 //! `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.split`, `pdf.merge`, and
 //! `pdf.insert_blank`.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use ariad_core::{
     reader::pdf::ReadError,
@@ -14,7 +14,7 @@ use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
     naming,
-    tools::OutputDoc,
+    tools::{OutputDoc, duplicate_fields},
 };
 
 /// Upper bound on total output pages produced by a single structural tool invocation.
@@ -255,6 +255,9 @@ fn build_page_set_doc_with_warnings(
     let mut page_rotations: Vec<(ObjectId, i64, bool, bool)> =
         Vec::with_capacity(selected_pages.len());
     let mut kept_annot_ids: BTreeMap<ObjectId, Vec<ObjectId>> = BTreeMap::new();
+    // Cloned widgets grouped by copy of the page set: the n-th repeat of every page.
+    let mut duplicate_occurrences: Vec<Vec<ObjectId>> = Vec::new();
+    let mut repeats: HashMap<ObjectId, usize> = HashMap::new();
 
     for (idx, &page_num) in selected_pages.iter().enumerate() {
         ctx.check()?;
@@ -321,6 +324,14 @@ fn build_page_set_doc_with_warnings(
             &mut copier,
             ctx,
         )?;
+        if !is_first_occurrence {
+            let repeat = repeats.entry(src_page_id).or_default();
+            if duplicate_occurrences.len() <= *repeat {
+                duplicate_occurrences.push(Vec::new());
+            }
+            duplicate_occurrences[*repeat].extend(widget_ids(copier.target, &page_annots));
+            *repeat += 1;
+        }
         if !page_annots.is_empty() {
             new_page_dict.set(b"Annots".to_vec(), Object::Array(page_annots));
         }
@@ -520,12 +531,42 @@ fn build_page_set_doc_with_warnings(
             .set(b"Info".to_vec(), Object::Reference(info_id));
     }
 
+    // Pair each cloned widget with the widget of the first occurrence it was cloned from.
+    let origins: HashMap<ObjectId, ObjectId> = kept_annot_ids
+        .values()
+        .flat_map(|ids| ids.iter().skip(1).map(|&clone| (clone, ids[0])))
+        .collect();
+    let duplicate_occurrences: Vec<Vec<(ObjectId, ObjectId)>> = duplicate_occurrences
+        .iter()
+        .map(|widgets| {
+            widgets
+                .iter()
+                .filter_map(|clone| origins.get(clone).map(|&source| (source, *clone)))
+                .collect()
+        })
+        .collect();
+    duplicate_fields::rename_duplicated_fields(&mut target_doc, &duplicate_occurrences, ctx)?;
+
     let mut out_pdf = source.clone();
     *out_pdf.inner_mut()? = target_doc;
     if let Some(stem) = naming::doc_stem(source) {
         naming::set_doc_stem(&mut out_pdf, &stem);
     }
     Ok((out_pdf, warnings))
+}
+
+/// Returns the ids of the widget annotations among `annots`.
+fn widget_ids(doc: &Document, annots: &[Object]) -> Vec<ObjectId> {
+    annots
+        .iter()
+        .filter_map(|annot| annot.as_reference().ok())
+        .filter(|&id| {
+            doc.get_dictionary(id)
+                .and_then(|dict| dict.get(b"Subtype"))
+                .and_then(Object::as_name)
+                .is_ok_and(|name| name == b"Widget")
+        })
+        .collect()
 }
 
 /// Collects all `/Pages` tree node IDs and `/Page` object IDs in `doc`.
@@ -1338,7 +1379,9 @@ fn copy_acroform_field_recursive(
 
     let mut surviving_kids = Vec::new();
     let mut seen_kid_ids = BTreeSet::new();
-    for kid in kids {
+    // Source kid positions that survive; `/Opt` is indexed by `/Kids` position and is trimmed to them.
+    let mut surviving_positions = Vec::new();
+    for (position, kid) in kids.iter().enumerate() {
         ctx.check()?;
         let Ok(src_kid_id) = kid.as_reference() else {
             continue;
@@ -1352,12 +1395,16 @@ fn copy_acroform_field_recursive(
             depth + 1,
             ctx,
         )?;
+        let before = surviving_kids.len();
         for kr in kid_refs {
             if let Ok(kid_obj_id) = kr.as_reference()
                 && seen_kid_ids.insert(kid_obj_id)
             {
                 surviving_kids.push(kr);
             }
+        }
+        if surviving_kids.len() > before {
+            surviving_positions.push(position);
         }
     }
 
@@ -1394,13 +1441,123 @@ fn copy_acroform_field_recursive(
             kid_dict.set(b"Parent".to_vec(), Object::Reference(new_parent_id));
         }
     }
+    // The parent may already exist (copied through a widget's `/Parent`) with the full source
+    // `/Opt`, so the trim happens here for both paths.
+    let mut trimmed_opt = None;
+    // Only button fields index `/Opt` by `/Kids` position; choice fields list their options.
+    if is_button_field(src_doc, src_field_id)
+        && let Ok(source_opt) = field_dict.get(b"Opt")
+        && let Some(Object::Array(options)) = resolve_object(src_doc, source_opt)
+    {
+        let mut trimmed = Vec::with_capacity(surviving_positions.len());
+        for &position in &surviving_positions {
+            if let Some(option) = options.get(position) {
+                trimmed.push(copier.copy_object(option, ctx)?);
+            }
+        }
+        trimmed_opt = Some(trimmed);
+    }
     if let Some(Object::Dictionary(parent_dict)) = copier.target.objects.get_mut(&new_parent_id) {
         parent_dict.set(b"Kids".to_vec(), Object::Array(surviving_kids));
+        if let Some(trimmed) = trimmed_opt {
+            parent_dict.set(b"Opt".to_vec(), Object::Array(trimmed));
+        }
+    }
+    if is_button_field(src_doc, src_field_id) {
+        drop_unmatched_button_value(copier.target, new_parent_id);
     }
 
     let out = vec![Object::Reference(new_parent_id)];
     visited.insert(src_field_id, out.clone());
     Ok(out)
+}
+
+/// Sets `/V` and `/DV` of a button field to `/Off` when none of its widgets has an appearance for
+/// the stored state, so a copied or partially kept group never names a state it cannot show. A
+/// widget whose normal appearance is not a dictionary of states leaves the entry alone, and so
+/// does an entry that is not a name or already `/Off`.
+pub(crate) fn drop_unmatched_button_value(doc: &mut Document, field_id: ObjectId) {
+    for key in [&b"V"[..], &b"DV"[..]] {
+        let Ok(field) = doc.get_dictionary(field_id) else {
+            return;
+        };
+        let Ok(Object::Name(value)) = field.get(key) else {
+            continue;
+        };
+        if value.as_slice() == b"Off" {
+            continue;
+        }
+        let value = value.clone();
+        let mut visited = BTreeSet::from([field_id]);
+        let unmatched = widget_states_lack(doc, field_id, &value, &mut visited, 0) == Some(true);
+        if unmatched && let Ok(field) = doc.get_dictionary_mut(field_id) {
+            field.set(key, Object::Name(b"Off".to_vec()));
+        }
+    }
+}
+
+/// Whether every widget below `node_id` has a dictionary of appearance states without `value`.
+/// Intermediate nodes (no `/AP`, with `/Kids`) are traversed within `MAX_TREE_DEPTH` and a visited
+/// set. `None` means unknown: a widget without a dictionary of states, a missing node, or a tree
+/// too deep to read, so the caller leaves the entry alone.
+fn widget_states_lack(
+    doc: &Document,
+    node_id: ObjectId,
+    value: &[u8],
+    visited: &mut BTreeSet<ObjectId>,
+    depth: usize,
+) -> Option<bool> {
+    if depth >= MAX_TREE_DEPTH {
+        return None;
+    }
+    let node = doc.get_dictionary(node_id).ok()?;
+    // The field itself is only ever a container here; a merged field/widget has no kids to judge.
+    if depth == 0 || node.get(b"AP").is_err() {
+        let kids = node
+            .get(b"Kids")
+            .ok()
+            .and_then(|k| resolve_object(doc, k))?;
+        let Object::Array(kids) = kids else {
+            return None;
+        };
+        let mut all_lack = true;
+        let mut any = false;
+        for kid in kids {
+            let kid_id = kid.as_reference().ok()?;
+            if !visited.insert(kid_id) {
+                continue;
+            }
+            any = true;
+            all_lack &= widget_states_lack(doc, kid_id, value, visited, depth + 1)?;
+        }
+        return any.then_some(all_lack);
+    }
+    let states = node
+        .get(b"AP")
+        .ok()
+        .and_then(|ap| resolve_dict(doc, ap))
+        .and_then(|ap| ap.get(b"N").ok())
+        .and_then(|normal| resolve_dict(doc, normal))?;
+    Some(!states.has(value))
+}
+
+/// True when the field's effective `/FT` is `/Btn`, following an inherited `/FT` up a bounded
+/// `/Parent` chain. A field without any `/FT` is not a button.
+pub(crate) fn is_button_field(doc: &Document, field_id: ObjectId) -> bool {
+    let mut current = field_id;
+    for _ in 0..64 {
+        let Ok(dict) = doc.get_dictionary(current) else {
+            return false;
+        };
+        if let Ok(ft) = dict.get(b"FT") {
+            return matches!(resolve_object(doc, ft), Some(Object::Name(n)) if n.as_slice() == b"Btn");
+        }
+        match dict.get(b"Parent").and_then(Object::as_reference) {
+            Ok(parent) => current = parent,
+            Err(_) => return false,
+        }
+    }
+    false
 }
 
 /// Parses the `/Outlines` hierarchy from `doc`, mapping destination page references, integer page

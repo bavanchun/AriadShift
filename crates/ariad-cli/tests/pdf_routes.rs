@@ -2,6 +2,8 @@
 
 mod support;
 
+use support::engine_probe_path;
+
 use std::{fs, path::Path, process::Command};
 
 use ariad_core::{limits::Limits, reader::pdf, writer::markdown};
@@ -20,34 +22,6 @@ fn pandoc_path() -> std::path::PathBuf {
     support::fixtures::repository_root()
         .join(".tools/pandoc/bin")
         .join(name)
-}
-
-fn engine_probe_path() -> std::path::PathBuf {
-    let probe = Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX));
-    if probe.exists() {
-        return probe;
-    }
-    let repo_probe = support::fixtures::repository_root().join("target/debug/engine-probe");
-    if repo_probe.exists() {
-        return repo_probe;
-    }
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    let mut cmd = std::process::Command::new(cargo);
-    cmd.args([
-        "build",
-        "-p",
-        "ariad-host",
-        "--bin",
-        "engine-probe",
-        "--features",
-        "ariad-host/test-probe",
-    ]);
-    if let Some(target_dir) = std::env::var_os("CARGO_TARGET_DIR") {
-        cmd.env("CARGO_TARGET_DIR", target_dir);
-    }
-    let _ = cmd.status();
-    if probe.exists() { probe } else { repo_probe }
 }
 
 fn locate_libreoffice() -> Option<std::path::PathBuf> {
@@ -433,11 +407,25 @@ fn odt_package_stamping_honours_source_date_epoch_determinism() {
     let dir = tempdir().unwrap();
     let out1 = dir.path().join("first.odt");
     let out2 = dir.path().join("second.odt");
+    let out_other = dir.path().join("other-epoch.odt");
 
     convert(&input, "odt", &out1);
-    // Sleep across ZIP timestamp resolution boundary (2 seconds) to verify determinism
-    std::thread::sleep(std::time::Duration::from_millis(2500));
     convert(&input, "odt", &out2);
+    // 2023-11-15T22:13:20Z, a whole day after the default epoch.
+    let mut other = cli();
+    other.env("SOURCE_DATE_EPOCH", "1700086400");
+    let result = other
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "odt", "--json", "-o"])
+        .arg(&out_other)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
 
     let bytes1 = fs::read(&out1).unwrap();
     let bytes2 = fs::read(&out2).unwrap();
@@ -445,13 +433,25 @@ fn odt_package_stamping_honours_source_date_epoch_determinism() {
         bytes1, bytes2,
         "ODT output must be byte-identical across runs under SOURCE_DATE_EPOCH"
     );
+    assert_ne!(
+        bytes1,
+        fs::read(&out_other).unwrap(),
+        "a different SOURCE_DATE_EPOCH must change the stamped output"
+    );
 
-    // Verify meta.xml contains fixed timestamp from SOURCE_DATE_EPOCH=1700000000 (2023-11-14T22:13:20Z)
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes1)).unwrap();
-    let mut meta = String::new();
-    std::io::Read::read_to_string(&mut archive.by_name("meta.xml").unwrap(), &mut meta).unwrap();
+    let meta_of = |bytes: &[u8]| {
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut meta = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("meta.xml").unwrap(), &mut meta)
+            .unwrap();
+        meta
+    };
+    // SOURCE_DATE_EPOCH=1700000000 is 2023-11-14T22:13:20Z.
+    let meta = meta_of(&bytes1);
     assert!(meta.contains("<meta:creation-date>2023-11-14T22:13:20Z</meta:creation-date>"));
     assert!(meta.contains("<dc:date>2023-11-14T22:13:20Z</dc:date>"));
+    let other_meta = meta_of(&fs::read(&out_other).unwrap());
+    assert!(other_meta.contains("<meta:creation-date>2023-11-15T22:13:20Z</meta:creation-date>"));
 }
 
 #[test]
@@ -520,11 +520,4 @@ fn docling_scan_path_maps_tables_to_ir_tables() {
         txt_content.contains('|'),
         "TXT table output must contain pipe delimiters"
     );
-
-    // Optional check for real Docling pack when installed/configured
-    if ariad_host::engines::docling::resolve().is_none() {
-        eprintln!(
-            "skipping: docling pack is not installed or configured; set ASHIFT_PACK_DOCLING or ASHIFT_DOCLING_ENGINE to run this test"
-        );
-    }
 }

@@ -1,0 +1,12 @@
+# Global code ownership rules for AriadShift.
+# Sensitive workflows, security policies, and release automation require maintainer review.
+
+.github/workflows/** @bavanchun
+.github/CODEOWNERS @bavanchun
+scripts/macos-* @bavanchun
+apps/macos/project.yml @bavanchun
+apps/macos/AriadShift/Info.plist @bavanchun
+scripts/build-xcframework.sh @bavanchun
+justfile @bavanchun
+apps/macos/scripts/ @bavanchun
+docs/releasing.md @bavanchun

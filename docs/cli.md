@@ -17,6 +17,7 @@ All conversion and transformation logic lives in `ariad-host` and `ariad-core`; 
   - [`ashift engines install`](#ashift-engines-install)
   - [`ashift engines remove`](#ashift-engines-remove)
   - [`ashift engines verify`](#ashift-engines-verify)
+  - [`ashift engines notices`](#ashift-engines-notices)
   - [`ashift engines languages`](#ashift-engines-languages)
   - [`ashift doctor`](#ashift-doctor)
   - [`ashift tools`](#ashift-tools)
@@ -41,11 +42,11 @@ All CLI commands adhere to a single unified exit-code table:
 | Exit Code | Name | Meaning |
 |---|---|---|
 | `0` | Success | Command completed successfully. All required checks passed for `doctor`. |
-| `1` | Failure | Conversion or operation failed, input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive, rejected manifest (including an `engine_protocol` that differs from the engine's) or I/O failure, or `engines verify` found differences. |
+| `1` | Failure | Conversion or operation failed, engine availability probe timed out or failed `describe` (`error[engine_unavailable]`, distinct from exit `5` `Tool Missing`), input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive, rejected manifest (including an `engine_protocol` that differs from the engine's) or I/O failure, or `engines verify` found differences. |
 | `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
 | `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
 | `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
-| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. PDFium tools (`pdf.render` and the other tools of the `pdfium` engine): the `pdfium` pack is not installed or fails verification at resolve (damaged files, a mismatched `engine_protocol`, or an entrypoint outside the pack root); the error carries the install hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. Digital signature tools (`pdf.sign`, `pdf.sign_token`, `pdf.timestamp`, `pdf.sign_verify`, `pdf.sign_remove`): the `sign` pack is not installed; the error carries the install hint `run 'ashift engines install sign' to install the sign engine pack`. |
+| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. PDFium tools (`pdf.render` and the other tools of the `pdfium` engine): the `pdfium` pack is not installed or fails verification at resolve (damaged files, a mismatched `engine_protocol`, or an entrypoint outside the pack root); the error carries the install hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. Digital signature tools (`pdf.sign`, `pdf.sign_token`, `pdf.timestamp`, `pdf.sign_verify`, `pdf.sign_remove`): the `sign` pack is not installed; the error carries the install hint `run 'ashift engines install sign' to install the sign engine pack`. Redaction (`pdf.redact`): a safety refusal also exits 5 (`error[tool_missing]`) with no output published, and the message is the fixed reason `redaction refused: <reason>`, not a "tool is not implemented" text (an uninspected carrier reads `uninspected carrier refused: <carrier>`). Refusals cover an image with an explicit `/Mask`, an image placement scan that cannot account for every image, a rewritten image that another page may draw but cannot be scanned (unscannable page, form XObject resources, annotation `/AP`), and an original image that would stay reachable. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
 | `8` | Unknown Tool | Requested tool ID (`ashift tool <id>`) is not in the tool registry (`error[unknown_tool]`). |
 | `9` | Invalid Params | Tool parameters failed JSON Schema validation, violated `x-ariad-secret` rules (such as an inline secret on `--param` or `--params-json`), or an imported recipe was not confirmed (`error[invalid_params]`). |
@@ -60,6 +61,7 @@ All CLI commands adhere to a single unified exit-code table:
 
 - **Stdout**:
   - In default human mode, `ashift convert` prints one output path per successful input. Other commands print formatted, human-readable text and tables.
+  - For `ashift tool` in human mode (without `--json`): `pdf.compare` without `-o` prints its inline JSON report to `stdout` (so pipelines like `ashift tool pdf.compare a.pdf b.pdf | jq .summary` keep working) and writes `<stem>.diff.pdf` to `stderr`. Pure inline-JSON tools without `-o` print JSON (`pdf.info` prints a human summary). PDF-producing tools (`pdf.redact`, `pdf.to_pdfa`, `pdf.to_pdfua`, `pdf.watermark_remove`, `pdf.compare` with `-o`) and tools whose primary or companion artifacts are written to disk print the published artifact path(s) to `stdout`.
   - When `--json` is supplied, exactly one valid JSON document is printed to stdout on success. Single-input failures leave stdout empty and write diagnostics to stderr. Multi-input conversion prints a `results` array even when individual inputs fail; command-level usage errors still leave stdout empty.
 - **Stderr**:
   - Diagnostics and warnings are written to stderr as `warning[<code>]: <message>`. Warning messages never contain confidential document contents.
@@ -201,10 +203,20 @@ ashift convert drawing.odg --to pdf
 ```
 
 PDF to ODT/RTF uses the PDF reader → IR → Pandoc; TXT uses the native writer.
-PDF to XLSX with table extraction requires local Docling. The native PDF reader
-has no table detector: without Docling, XLSX contains a text-dump sheet and emits
-`no_tables_found`. CSV conversion produces one artifact; use `pdf.tables_to_csv`
-for one CSV per detected table. PDF to PPTX uses the system LibreOffice PDF import
+PDF to XLSX and CSV extract tables with Docling when its pack is installed. Without
+Docling, the native PDF reader detects tables drawn with ruling lines (cell borders)
+and tables whose columns are aligned with whitespace, and emits `docling_fallback`.
+The whitespace detector favours precision over recall: lists, forms, code, tables of
+contents and other aligned text stay text, and so does a table of words with no column
+of numbers (a Yes and No matrix, a feature list) or a ledger whose description column
+is long phrases, so such tables still need Docling. On a page with a frame, or with a
+grid of ruling lines that is not read as a table, whitespace detection is off for the
+whole page, so a table without rules on that page stays text too. A PDF with no table
+yields a text-dump sheet with `no_tables_found`. When tables are found, XLSX and CSV keep only
+the tables: the surrounding prose is dropped, so a document that mixes prose and
+tables loses its prose in these two outputs.
+CSV conversion produces one artifact; use `pdf.tables_to_csv` for one CSV per
+detected table. PDF to PPTX uses the system LibreOffice PDF import
 filter directly, without a PDFium rendering stage. Email attachments are listed,
 not opened or rendered. CBZ uses natural page order and preserves image page sizes.
 
@@ -427,7 +439,7 @@ Lists installed and known engines, versions, licenses, readiness status, and the
 
 ```bash
 ashift engines [OPTIONS]
-ashift engines <install|remove|verify> ...
+ashift engines <install|remove|verify|notices> ...
 ```
 
 #### Options
@@ -504,7 +516,7 @@ An array of engine rows. `pack` appears only on rows backed by an engine pack:
 ]
 ```
 
-`status` is one of `ready`, `missing`, `wrong version`, `not installed`; `pack.source` is `installed` or `override`.
+`status` is one of `ready`, `missing`, `wrong version`, `not installed`, `cannot start`, `timed out`, `unavailable`; `pack.source` is `installed` or `override`.
 
 ---
 
@@ -603,17 +615,63 @@ ashift engines verify <NAME> [--version <VERSION>] [--json]
 
 ---
 
+### `ashift engines notices`
+
+Prints the licence and notice files that an installed pack ships, as listed by its signed manifest. Third-party terms such as the IJG acknowledgement of the qpdf pack are reachable here without opening the data directory.
+
+```bash
+ashift engines notices [<NAME>] [--version <VERSION>] [--json]
+```
+
+- Without `<NAME>`, prints the active version of every installed pack, in name order. `--version` needs `<NAME>` and selects an installed version instead of the active one.
+- The text view prints `=== <name> <version> ===` for each pack and `--- <path> ---` before each notice file, followed by the file as shipped. With no pack installed it prints `No engine packs are installed.`
+- `--json` prints an array with one object per pack: `name`, `version`, `active` and `notices`, a list of `{ "path", "text" }` objects. Paths are relative to the pack and never absolute.
+- The command re-checks the manifest signature stored in the install receipt first, and each notice must match the size and SHA-256 recorded at install. It exits 1 when the signature no longer verifies, or when a listed notice is missing, altered, not a regular file or behind a symbolic link; it exits 3 when the pack or version is not installed. Run `ashift engines verify` for the full file check.
+- Without `<NAME>`, a failing pack does not hide the others: the text view prints `error: <message>` under its heading, the JSON array holds `{ "name", "version", "error": { "code", "message" } }` in place of its notices, and the exit code is non-zero.
+- Control characters other than newline and tab are removed from notice text in the text view, so a notice cannot send terminal escape sequences. JSON keeps the text as shipped.
+
+```json
+[
+  {
+    "name": "qpdf",
+    "version": "0.1.0",
+    "active": true,
+    "notices": [{ "path": "notices/THIRD_PARTY_NOTICES.txt", "text": "..." }]
+  }
+]
+```
+
+---
+
 ### `ashift engines languages`
 
 List, install or remove pinned extra Tesseract language models:
 
 ```bash
-ashift engines languages list
-ashift engines languages install fra
-ashift engines languages remove fra
+ashift engines languages list [--json]
+ashift engines languages install fra [--json]
+ashift engines languages remove fra [--json]
 ```
 
 Only explicit installation downloads a model. See [packs.md](packs.md#the-tesseract-pack) for verification and cache behavior.
+
+Each action takes `--json`, which replaces the tab-separated human output (`<language>\t<installed|available>\t<size> bytes`) with JSON on stdout:
+
+- `list --json` prints an array with one entry per catalogue model.
+- `install <LANGUAGE> --json` and `remove <LANGUAGE> --json` print the single model's status. After `remove` it always has `"installed": false`, even when the model was not cached. Without `--json`, `remove` prints nothing.
+- `installed` is true only when the cached file still matches its pinned size and SHA-256. `size` is the pinned model size in bytes. No local paths are included.
+- Errors (for example an unknown language, exit code 2, or a failed download) go to stderr with nothing on stdout, as for the other `engines` subcommands.
+
+```json
+[
+  { "language": "fra", "installed": true, "size": 1234567 },
+  { "language": "deu", "installed": false, "size": 2345678 }
+]
+```
+
+```json
+{ "language": "fra", "installed": false, "size": 1234567 }
+```
 
 ---
 
@@ -809,12 +867,12 @@ ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--param
 
 - `<ID>`: Canonical `<domain>.<action>` tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
 - `<INPUT>...`: One or more input document paths.
-- `-o, --output <DIR_OR_FILE>`: Explicit output file or directory. When omitted, single-output and multi-output tools publish beside the first input using default naming, while `pdf.info` prints its inspection summary (or structured JSON with `--json`) without writing a file to disk.
+- `-o, --output <DIR_OR_FILE>`: Explicit output file or directory. When omitted, single-output and multi-output tools publish beside the first input using default naming (`<stem>.<suffix>-<NNN>.json` when a JSON tool emits multiple JSON files). `pdf.compare` without `-o` writes `<stem>.diff.pdf` beside the first input while returning its report inline (`<stem>.compare.json` is written beside it only if the report exceeds the 32 MiB inline cap); `-o <dir>/` publishes `<stem>.compared.pdf` and `<stem>.compared.json`, while `-o <file>.pdf` or `-o <file>.json` publishes only that artifact. Single-PDF tools with an inline report (`pdf.redact`, `pdf.to_pdfa`, `pdf.to_pdfua`, `pdf.watermark_remove`) emit a `report_not_inlined` warning and publish a companion `<stem>.<suffix>.json` (or `<file_stem>.<suffix>.json` beside `<file>.pdf` for `-o <file>.pdf`) only if the report exceeds the 32 MiB inline cap. `pdf.redact_verify` emits inline JSON only (`artifacts: []`, even with `-o <dir>/` or in recipes) unless its report exceeds the 32 MiB inline cap (`<stem>.redact-verify.json`). JSON-only tools with document inputs omit writing to disk when `-o` is omitted unless the payload exceeds the 32 MiB inline cap (`<stem>.<suffix>.json` beside input); inputless JSON tools (`ai.recipe_from_text`) fail with exit code `2` (`usage`) instead of writing to the current working directory if `-o` is omitted when the payload exceeds the inline cap or uses a naming template.
 - `--param <KEY=VALUE>`: Repeatable parameter override (`VALUE` is parsed as JSON when valid, otherwise as a string).
 - `--params-json <FILE|->`: Read the tool parameter JSON object from a file or `-` (stdin). Explicit `--param` flags override keys from `--params-json`.
-- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Text secrets (such as passwords and passphrases) are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Binary secrets (such as PKCS#12 certificates for `pdf.sign`: `--secret certificate=@cert.p12` or stdin `-`) are read directly by the CLI up to 10 MiB, base64-encoded, and provided to the host. The host strictly rejects filesystem paths passed in the `certificate` secret, accepting only base64 data. Staged certificate material is written to isolated 0600 workspace files and scrubbed immediately after execution. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
+- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Text secrets (such as passwords and passphrases) are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Binary secrets (such as PKCS#12 certificates for `pdf.sign`: `--secret certificate=@cert.p12` or stdin `-`) are read by the CLI up to 10 MiB. If the file content is valid UTF-8 text that already decodes as standard base64 (surrounding whitespace is trimmed), it is passed through unchanged as base64 text; otherwise the raw bytes (for example a binary `.p12` or DER file) are base64-encoded by the CLI. The host then decodes the base64 and stages the bytes. It rejects any certificate value that looks like a filesystem path, so only the file contents travel, never the path. Staged certificate material is written to isolated 0600 workspace files and scrubbed immediately after execution. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
 - `--overwrite`: Replace existing destination file(s).
-- `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
+- `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` when any artifact is published to disk, including `pdf.compare` without `-o` and oversized JSON outputs). In human mode (without `--json`), pure inline-JSON tools without `-o` print JSON to `stdout` (`pdf.info` prints a human summary), `pdf.compare` without `-o` prints its inline JSON report to `stdout` and `<stem>.diff.pdf` to `stderr`, and all other artifact-publishing invocations (including `pdf.compare` with `-o`, `pdf.redact`, `pdf.to_pdfa`, `pdf.to_pdfua`, `pdf.watermark_remove`, and tools writing primary or companion artifacts to disk) print published artifact path(s) to `stdout`.
 
 `ASHIFT_PLAN` supplies the local plan context for `tool`, `recipe run`, and MCP `run_doc_tool`. Unset defaults to `free`; set values are trimmed and must be `free`, `pro`, `team`, or `enterprise`. Empty, invalid or non-UTF-8 values return `invalid_params` (exit 9). Pro page editing uses `ASHIFT_PLAN=pro`; recipes pass this plan through to every step and quota check. For MCP, set it when launching the server (`ASHIFT_PLAN=pro ashift mcp --allow-dir "$PWD"`). This local context does not authenticate a subscription; see [tool access control](tools.md#local-plan-context-ashift_plan).
 

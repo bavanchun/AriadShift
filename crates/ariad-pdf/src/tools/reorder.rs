@@ -16,7 +16,7 @@ use crate::{
     error::PdfError,
     gc,
     tools::{
-        OutputDoc,
+        OutputDoc, duplicate_fields,
         page_set::{
             self, TAGGED_STRUCTURE_WARNING, build_page_labels_object, collect_named_destinations,
             default_xyz_tail, expand_page_range_capped, output_page_cap, parse_page_labels,
@@ -103,6 +103,9 @@ pub fn run(
     let mut placed = HashSet::new();
     let mut new_kids: Vec<ObjectId> = Vec::with_capacity(target_ids.len());
     let mut cloned_widgets = Vec::new();
+    // Cloned widgets grouped by copy of the page set: the n-th repeat of every page.
+    let mut duplicate_occurrences: Vec<Vec<(ObjectId, ObjectId)>> = Vec::new();
+    let mut repeats: HashMap<ObjectId, usize> = HashMap::new();
     for &src_id in &target_ids {
         ctx.check()?;
         if placed.insert(src_id) {
@@ -110,12 +113,19 @@ pub fn run(
             new_kids.push(src_id);
         } else {
             let (dup_id, widgets) = clone_page_for_duplicate(inner, src_id, pages_root, ctx)?;
+            let repeat = repeats.entry(src_id).or_default();
+            if duplicate_occurrences.len() <= *repeat {
+                duplicate_occurrences.push(Vec::new());
+            }
+            duplicate_occurrences[*repeat].extend(widgets.iter().copied());
+            *repeat += 1;
             cloned_widgets.extend(widgets);
             new_kids.push(dup_id);
         }
     }
     rebuild_pages_root(inner, pages_root, &new_kids);
     register_cloned_widgets(inner, &cloned_widgets, ctx)?;
+    duplicate_fields::rename_duplicated_fields(inner, &duplicate_occurrences, ctx)?;
 
     let mut warnings = Vec::new();
     if !removed.is_empty() {
@@ -484,7 +494,7 @@ fn register_cloned_widgets(
 
 /// Location of a dictionary that may be stored inline inside another dictionary.
 #[derive(Clone, Debug)]
-enum DictLoc {
+pub(crate) enum DictLoc {
     /// An indirect object.
     Id(ObjectId),
     /// A direct dictionary stored under `key` in the dictionary at the boxed location.
@@ -513,7 +523,7 @@ fn dict_at_mut<'a>(doc: &'a mut Document, loc: &DictLoc) -> Option<&'a mut Dicti
 
 /// Locates the dictionary stored under `key` in the dictionary at `holder`, following one
 /// indirect reference.
-fn entry_loc(doc: &Document, holder: &DictLoc, key: &'static [u8]) -> Option<DictLoc> {
+pub(crate) fn entry_loc(doc: &Document, holder: &DictLoc, key: &'static [u8]) -> Option<DictLoc> {
     match dict_at(doc, holder)?.get(key).ok()? {
         Object::Reference(id) => doc.get_dictionary(*id).ok().map(|_| DictLoc::Id(*id)),
         Object::Dictionary(_) => Some(DictLoc::Nested(Box::new(holder.clone()), key)),
@@ -522,7 +532,11 @@ fn entry_loc(doc: &Document, holder: &DictLoc, key: &'static [u8]) -> Option<Dic
 }
 
 /// Borrows the array stored under `key` in the dictionary at `loc` (inline or indirect).
-fn array_entry<'a>(doc: &'a Document, loc: &DictLoc, key: &[u8]) -> Option<&'a Vec<Object>> {
+pub(crate) fn array_entry<'a>(
+    doc: &'a Document,
+    loc: &DictLoc,
+    key: &[u8],
+) -> Option<&'a Vec<Object>> {
     match dict_at(doc, loc)?.get(key).ok()? {
         Object::Array(items) => Some(items),
         Object::Reference(id) => doc.objects.get(id)?.as_array().ok(),
@@ -530,7 +544,7 @@ fn array_entry<'a>(doc: &'a Document, loc: &DictLoc, key: &[u8]) -> Option<&'a V
     }
 }
 
-fn array_entry_mut<'a>(
+pub(crate) fn array_entry_mut<'a>(
     doc: &'a mut Document,
     loc: &DictLoc,
     key: &[u8],

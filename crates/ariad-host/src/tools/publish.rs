@@ -127,15 +127,25 @@ pub fn validate_artifact_extensions(
 
 /// Validates that every staged artifact's reported format, staged filename extension, and target
 /// filename extension are allowed by `spec` (`output_format` / `output_formats`) and `params`.
+///
+/// When `allow_companion_json` is `true` on a non-JSON tool (`!emits_json`), at most one staged
+/// `"json"` companion report artifact is permitted alongside the primary output while still
+/// requiring `.json` extensions on both the staged file and target name.
 pub fn validate_spec_artifact_extensions(
     spec: &ToolSpec,
     params: &Value,
     emits_json: bool,
+    allow_companion_json: bool,
     staged: &[StagedArtifact],
 ) -> Result<(), ToolError> {
     if emits_json {
         return validate_artifact_extensions("json", staged);
     }
+
+    let companion_json_count = staged
+        .iter()
+        .filter(|item| item.format.trim().eq_ignore_ascii_case("json"))
+        .count();
 
     for item in staged {
         let Some(reported_fmt) = normalize_tool_format(&item.format) else {
@@ -145,7 +155,9 @@ pub fn validate_spec_artifact_extensions(
                 item.format
             )));
         };
-        if !spec.allows_artifact_format(reported_fmt, params) {
+        let is_permitted_companion =
+            allow_companion_json && reported_fmt == "json" && companion_json_count == 1;
+        if !spec.allows_artifact_format(reported_fmt, params) && !is_permitted_companion {
             return Err(ToolError::EngineFailure(format!(
                 "artifact '{}' reported format '{}', which is not allowed for tool '{}'",
                 item.staged_path.display(),
@@ -532,6 +544,17 @@ pub fn default_single_artifact_name(input_path: &Path, tool_id: &str, ext: &str)
     let suffix = default_tool_suffix(tool_id);
     let clean_ext = ext.trim_start_matches('.');
     format!("{stem}.{suffix}.{clean_ext}")
+}
+
+/// Computes the sanitized filename stem for `input_path`, falling back to `"document"`.
+#[must_use]
+pub fn default_input_stem(input_path: &Path) -> String {
+    sanitize_stem(
+        input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("document"),
+    )
 }
 
 /// Computes the default multi-artifact filename `<stem>.<suffix>-<NNN>.<ext>` (`docs/tools.md` §6).

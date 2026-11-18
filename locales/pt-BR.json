@@ -113,6 +113,107 @@
       }
     }
   },
+  "mac": {
+    "menu": {
+      "import": "Importar…",
+      "print": "Imprimir…",
+      "tools": "Ferramentas",
+      "zoom": "{action, select, in {Ampliar} out {Reduzir} actual {Tamanho real} other {Zoom}}",
+      "check_updates": "Buscar atualizações…",
+      "show_welcome": "Mostrar boas-vindas",
+      "fit_width": "Ajustar à largura",
+      "display_mode": "{mode, select, single {Página única} continuous {Rolagem contínua} twoUp {Duas páginas} other {Exibição de páginas}}",
+      "go_to_page": "Ir para a página…",
+      "find": "Buscar…",
+      "find_next": "Buscar próximo",
+      "find_previous": "Buscar anterior"
+    },
+    "tools": {
+      "group": "{group, select, organize {Organizar} convert {Converter} optimize {Otimizar} security {Segurança} overlay {Sobrepor} ocr {OCR e digitalizações} annotate {Anotar} forms {Formulários} sign {Assinar} redact {Tarjar} compare {Comparar e validar} edit {Editar} ai {IA} automation {Automação} other {Outras ferramentas}}",
+      "disabled": "{reason, select, later {Disponível em uma versão futura} format {Funciona com outros formatos. Use Arquivo > Importar.} paid {Requer um plano pago} info {Não foi possível ler os detalhes da ferramenta, então as ferramentas permanecem desativadas.} other {Indisponível}}",
+      "loading": "Carregando ferramentas…"
+    },
+    "sidebar": {
+      "title": "Páginas",
+      "placeholder": "As miniaturas das páginas aparecerão aqui.",
+      "page": "Página {number} de {total}"
+    },
+    "viewer": {
+      "placeholder": "O visualizador de páginas aparecerá aqui.",
+      "title": "Visualizador de páginas",
+      "loading": "Abrindo o documento…"
+    },
+    "toolbar": {
+      "inspector": "Informações do documento",
+      "page_grid": "Grade de páginas",
+      "previous_page": "Página anterior",
+      "next_page": "Próxima página",
+      "page_field": "Número da página"
+    },
+    "inspector": {
+      "title": "Documento",
+      "field": "{field, select, name {Nome} format {Formato} size {Tamanho} pages {Páginas} words {Palavras} title {Título} author {Autor} routes {Pode ser convertido em} other {Campo}}",
+      "loading": "Lendo o documento…",
+      "warnings": "{count, plural, one {# aviso} many {# de avisos} other {# avisos}}"
+    },
+    "run": {
+      "run": "Executar",
+      "cancel": "Cancelar",
+      "close": "Concluído",
+      "working": "Executando…",
+      "parameters": "Ajustes",
+      "no_parameters": "Esta ferramenta não tem ajustes.",
+      "extra_documents": "Documentos adicionais",
+      "add_documents": "Adicionar…",
+      "remove": "Remover",
+      "need_documents": "{count, plural, one {Adicione mais # documento para executar esta ferramenta.} many {Adicione mais # de documentos para executar esta ferramenta.} other {Adicione mais # documentos para executar esta ferramenta.}}",
+      "failed": "A ferramenta não terminou.",
+      "reveal": "Mostrar no Finder",
+      "field_error": "{kind, select, missing {{field} é obrigatório.} other {{field} não é válido.}}",
+      "result": "Resultado",
+      "presets": "Predefinições"
+    },
+    "settings": {
+      "output_folder": "Salvar os resultados em",
+      "output_same": "Ao lado do documento original",
+      "output_choose": "Escolher pasta…",
+      "open_result": "Abrir o resultado quando uma ferramenta terminar",
+      "updates": "Atualizações",
+      "updates_auto": "Buscar atualizações automaticamente",
+      "updates_disabled": "As atualizações não estão configuradas nesta versão."
+    },
+    "onboarding": {
+      "title": "Boas-vindas ao AriadShift",
+      "about": "Abra, inspecione e processe documentos PDF com o mesmo mecanismo da linha de comando do AriadShift. Converta Markdown, HTML, Word, EPUB e imagens em PDF com Arquivo > Importar.",
+      "packs": "Os pacotes de mecanismo opcionais (OCR, assinatura, validação) ficam armazenados em {path}.",
+      "privacy": "O AriadShift funciona no seu Mac. Ele não faz conexões de rede, a menos que você ative um recurso que precise de uma.",
+      "start": "Começar"
+    },
+    "import": {
+      "message": "Escolha um documento para converter em PDF",
+      "running": "Importando {name}…",
+      "failed": "Não foi possível importar {name}"
+    },
+    "document": {
+      "invalid": "Este arquivo não é um PDF válido."
+    },
+    "find": {
+      "prompt": "Buscar no documento",
+      "count": "{current} de {total}",
+      "none": "Nenhuma correspondência",
+      "searching": "Buscando…",
+      "done": "Concluído"
+    },
+    "grid": {
+      "hint": "Arraste as páginas para reordená-las. Cada alteração é salva como um novo arquivo ao lado do original.",
+      "unavailable": "A edição de páginas não está disponível até o mecanismo estar pronto.",
+      "rotate": "Girar as páginas selecionadas",
+      "delete": "Excluir as páginas selecionadas",
+      "move_earlier": "Mover antes da página anterior",
+      "move_later": "Mover depois da próxima página",
+      "drop_end": "Solte aqui para mover para o final"
+    }
+  },
   "web": {
     "meta": {
       "site_title": "{site}: conversão privada de documentos no seu navegador",

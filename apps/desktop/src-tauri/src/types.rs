@@ -97,6 +97,9 @@ pub struct JobView {
     pub stage: String,
     pub error: Option<String>,
     pub warnings: Vec<String>,
+    /// Engine pack whose installation would resolve the failure or warning.
+    #[serde(default)]
+    pub missing_pack: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
 pub struct WatchRequest {
@@ -145,6 +148,23 @@ pub struct PackRequest {
     pub version: Option<String>,
     pub action: PackAction,
     pub from: Option<String>,
+}
+#[derive(Clone, Deserialize, Serialize, TS)]
+pub struct PackNoticesRequest {
+    pub name: String,
+    pub version: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+pub struct PackNoticeView {
+    pub path: String,
+    pub text: String,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+pub struct PackNoticesView {
+    pub name: String,
+    pub version: String,
+    pub active: bool,
+    pub notices: Vec<PackNoticeView>,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
 pub struct Diagnostic {

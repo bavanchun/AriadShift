@@ -51,11 +51,7 @@ on:
       - 'LICENSE'
       - 'THIRD_PARTY_LICENSES'
   push:
-    tags:
-      - '**[0-9]+.[0-9]+.[0-9]+*'
-      - '!toolchain-torch-*'
-      - '!toolchain-wheels-*'
-      - '!pack-*'
+    tags: ["v*"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -190,7 +186,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $binDir
 
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-auditable@0.7.7
 

@@ -5,10 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use ariad_core::tools::params::FontFace;
 use lopdf::{Document, Object, ObjectId, dictionary};
 use subsetter::GlyphRemapper;
-use ttf_parser::{Face, GlyphId, RawFace, Tag};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::PdfError;
+use crate::{PdfError, font_face::Face};
 
 /// Maximum number of Unicode scalars in a single drawing run.
 pub const MAX_TEXT_CHARS: usize = 4096;
@@ -24,7 +23,7 @@ fn bytes(face: FontFace) -> &'static [u8] {
 fn parsed(face: FontFace) -> Result<Face<'static>, PdfError> {
     // Only bundled Libertinus faces selected by FontFace reach this parser;
     // fonts from an input PDF or user-supplied file cannot be passed here.
-    Face::parse(bytes(face), 0).map_err(|_| PdfError::Malformed)
+    Face::parse(bytes(face)).ok_or(PdfError::Malformed)
 }
 
 /// Accumulates all text for a face before embedding it once in a document.
@@ -55,16 +54,9 @@ impl FontPlan {
         let font = parsed(self.face)?;
         let mut added = self.glyphs.clone();
         for ch in normalized.chars().filter(|c| *c != '\n') {
-            let gid = font
-                .glyph_index(ch)
-                .filter(|g| g.0 != 0)
-                .ok_or_else(|| {
-                    PdfError::InvalidParams(format!(
-                        "font has no glyph for U+{:04X}",
-                        u32::from(ch)
-                    ))
-                })?
-                .0;
+            let gid = font.glyph_index(ch).filter(|g| *g != 0).ok_or_else(|| {
+                PdfError::InvalidParams(format!("font has no glyph for U+{:04X}", u32::from(ch)))
+            })?;
             added.insert(ch, gid);
             if added.len() > MAX_GLYPHS {
                 return Err(PdfError::InvalidParams("too many font glyphs".into()));
@@ -85,10 +77,7 @@ impl FontPlan {
             let gid = *self.glyphs.get(&ch).ok_or_else(|| {
                 PdfError::InvalidParams("text was not included in font subset".into())
             })?;
-            advance += u64::from(
-                font.glyph_hor_advance(GlyphId(gid))
-                    .ok_or(PdfError::Malformed)?,
-            );
+            advance += u64::from(font.glyph_hor_advance(gid).ok_or(PdfError::Malformed)?);
         }
         Ok(advance as f64 * size_pt / f64::from(font.units_per_em()))
     }
@@ -118,10 +107,7 @@ impl FontPlan {
         let remap = GlyphRemapper::new_from_glyphs_sorted(&glyphs.into_iter().collect::<Vec<_>>());
         let subset =
             subsetter::subset(bytes(self.face), 0, &remap).map_err(|_| PdfError::Malformed)?;
-        let raw = RawFace::parse(&subset, 0).map_err(|_| PdfError::Malformed)?;
-        let cff = raw
-            .table(Tag::from_bytes(b"CFF "))
-            .ok_or(PdfError::Malformed)?;
+        let cff = crate::font_face::raw_table(&subset, b"CFF ").ok_or(PdfError::Malformed)?;
         let cids: BTreeMap<char, u16> = self
             .glyphs
             .iter()
@@ -202,11 +188,8 @@ impl FontPlan {
         let mut widths = BTreeMap::new();
         for (ch, cid) in &cids {
             let gid = self.glyphs[ch];
-            let advance = i64::from(
-                font.glyph_hor_advance(GlyphId(gid))
-                    .ok_or(PdfError::Malformed)?,
-            ) * 1000
-                / units;
+            let advance =
+                i64::from(font.glyph_hor_advance(gid).ok_or(PdfError::Malformed)?) * 1000 / units;
             widths.insert(*cid, advance);
             // The native reader uses source codes to look up widths. Alias
             // entries are unused by the renderer but preserve its positioning.
@@ -342,7 +325,7 @@ mod tests {
 
     #[derive(Default, Debug, PartialEq)]
     struct Outline(Vec<(u8, Vec<u32>)>);
-    impl ttf_parser::OutlineBuilder for Outline {
+    impl skrifa::outline::OutlinePen for Outline {
         fn move_to(&mut self, x: f32, y: f32) {
             self.0.push((0, vec![x.to_bits(), y.to_bits()]));
         }
@@ -370,6 +353,28 @@ mod tests {
         }
         fn close(&mut self) {
             self.0.push((4, vec![]));
+        }
+    }
+
+    /// Unhinted outlines in font units, keyed by glyph ID.
+    fn outlines(font: &[u8]) -> impl Fn(u16) -> Outline + '_ {
+        use skrifa::{
+            FontRef, GlyphId, MetadataProvider,
+            instance::{LocationRef, Size},
+            outline::DrawSettings,
+        };
+        let font = FontRef::new(font).unwrap();
+        move |gid| {
+            let mut outline = Outline::default();
+            font.outline_glyphs()
+                .get(GlyphId::new(u32::from(gid)))
+                .unwrap()
+                .draw(
+                    DrawSettings::unhinted(Size::unscaled(), LocationRef::default()),
+                    &mut outline,
+                )
+                .unwrap();
+            outline
         }
     }
 
@@ -404,15 +409,15 @@ mod tests {
                 .collect();
             let remap = GlyphRemapper::new_from_glyphs_sorted(&ids.into_iter().collect::<Vec<_>>());
             let subset = subsetter::subset(bytes(face), 0, &remap).unwrap();
-            let original = parsed(face).unwrap();
-            let subset = Face::parse(&subset, 0).unwrap();
+            let original = outlines(bytes(face));
+            let subset = outlines(&subset);
             for (ch, gid) in &plan.glyphs {
-                let mut expected = Outline::default();
-                let mut actual = Outline::default();
-                let source_box = original.outline_glyph(GlyphId(*gid), &mut expected);
-                let subset_box =
-                    subset.outline_glyph(GlyphId(remap.get(*gid).unwrap()), &mut actual);
-                assert_eq!(source_box, subset_box, "bounding box for {ch}");
+                let expected = original(*gid);
+                let actual = subset(remap.get(*gid).unwrap());
+                assert!(
+                    ch.is_whitespace() || !expected.0.is_empty(),
+                    "outline for {ch}"
+                );
                 assert_eq!(expected, actual, "outline for {ch}");
             }
         }
@@ -451,10 +456,10 @@ mod tests {
             if ch.is_control() {
                 continue;
             }
-            let Some(gid) = face.glyph_index(ch).filter(|g| g.0 != 0) else {
+            let Some(gid) = face.glyph_index(ch).filter(|g| *g != 0) else {
                 continue;
             };
-            if let Some(previous) = seen.insert(gid.0, ch)
+            if let Some(previous) = seen.insert(gid, ch)
                 && format!("{previous}{ch}").nfc().collect::<String>() == format!("{previous}{ch}")
             {
                 alias = Some((previous, ch));

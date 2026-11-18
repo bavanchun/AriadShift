@@ -6,6 +6,11 @@
       }
     }
   },
+  "mac": {
+    "tools": {
+      "group": "{group, select, organize {Organise} convert {Convert} optimize {Optimise} security {Security} overlay {Overlay} ocr {OCR and scans} annotate {Annotate} forms {Forms} sign {Sign} redact {Redact} compare {Compare and validate} edit {Edit} ai {AI} automation {Automation} other {Other tools}}"
+    }
+  },
   "web": {
     "shell": {
       "footer": {

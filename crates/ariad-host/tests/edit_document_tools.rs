@@ -613,3 +613,51 @@ fn reports_password_protected_pdfs_consistently_with_or_without_page_selection()
         assert!(!output.exists());
     }
 }
+
+#[test]
+fn open_document_empty_scrubber_omits_oversized_inline_json_and_publishes_ir() {
+    let directory = TempDir::new().unwrap();
+    let input = directory.path().join("note.md");
+    fs::write(&input, "# Title\n\nShort paragraph.\n").unwrap();
+    let output = directory.path().join("opened.json");
+    let tight_limits = Limits {
+        max_decompressed_bytes: 256,
+        max_ir_json_bytes: 1024 * 1024,
+        ..Limits::local()
+    };
+    let req =
+        request("edit.open_document", &[&input], &output, json!({})).with_limits(tight_limits);
+    let outcome = run_tool(&req).unwrap();
+    assert!(
+        outcome.inline_json.is_none(),
+        "IR > inline cap must omit inline_json on empty scrubber path"
+    );
+    assert_eq!(outcome.artifacts.len(), 1);
+    assert_eq!(outcome.artifacts[0].format, "json");
+    let opened = read_ir(&output);
+    assert_eq!(opened.version, "ariad-ir/2");
+}
+
+#[test]
+fn open_document_scrubs_secrets_in_inline_json_and_published_file() {
+    let directory = TempDir::new().unwrap();
+    let secret = "edit-open-secret-token-9876";
+    let input = directory.path().join("secret.md");
+    fs::write(&input, format!("Leak check: {secret}\n")).unwrap();
+    let output = directory.path().join("opened.json");
+    let secrets = ariad_host::tools::SecretBag::new()
+        .with("api_key", secret)
+        .unwrap();
+    let req = request("edit.open_document", &[&input], &output, json!({})).with_secrets(secrets);
+    let outcome = run_tool(&req).unwrap();
+    let inline = outcome
+        .inline_json
+        .expect("small opened document must be returned inline");
+    let inline_text = serde_json::to_string(&inline).unwrap();
+    assert!(!inline_text.contains(secret));
+    assert!(inline_text.contains("[REDACTED]"));
+
+    let published_text = fs::read_to_string(&output).unwrap();
+    assert!(!published_text.contains(secret));
+    assert!(published_text.contains("[REDACTED]"));
+}

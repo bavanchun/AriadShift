@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import csv
+import hashlib
+import io
 import shutil
+import subprocess
 import sys
+import zipfile
 from importlib import metadata
+from pathlib import Path
 
 import pytest
 from conftest import REPOSITORY, native_record_rows, reviewed_native_file
 
 sys.path.insert(0, str(REPOSITORY / "engines/docling/pack"))
 
+import build
 import licenses
 
 
@@ -339,3 +347,124 @@ def test_quadmath_bundles_full_lgpl_and_retains_wheel_attribution(tmp_path):
     summary = (notices / "vendored-libraries.txt").read_text(encoding="utf-8")
     assert summary.count("  Text:") == 6
     assert licenses._LGPL_21_SOURCE in summary
+
+
+def test_installed_repacked_torch_wheel_passes_installed_pack_gates(tmp_path):
+    target = "x86_64-unknown-linux-gnu"
+    dist_info = "torch-2.14.1+cpu.dist-info"
+    notice_names = (
+        "pytorch-2.14.1-native-notices.txt",
+        "llvm-openmp-notice.txt",
+        "ittapi.txt",
+    )
+    notice_root = REPOSITORY / "engines/docling/pack/licenses"
+    elf = b"\x7fELF\x02\x01\x01\x00" + bytes(8) + (3).to_bytes(2, "little") + b"\x3e\x00"
+    members = {
+        "torch/__init__.py": b"# synthetic torch\n",
+        "torch/lib/libtorch_cpu.so": elf + b"synthetic torch runtime\n",
+        f"{dist_info}/METADATA": (
+            b"Metadata-Version: 2.1\nName: torch\nVersion: 2.14.1+cpu\n"
+            b"License-Expression: BSD-3-Clause\n"
+        ),
+        f"{dist_info}/WHEEL": (
+            b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\nTag: py3-none-any\n"
+        ),
+        **{
+            f"{dist_info}/licenses/{name}": (notice_root / name).read_bytes()
+            for name in notice_names
+        },
+    }
+    wheel = tmp_path / "torch-2.14.1+cpu-py3-none-any.whl"
+    rows = []
+    with zipfile.ZipFile(wheel, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+            rows.append([name, f"sha256={digest}", str(len(data))])
+        rows.append([f"{dist_info}/RECORD", "", ""])
+        buf = io.StringIO()
+        csv.writer(buf, lineterminator="\n").writerows(rows)
+        archive.writestr(f"{dist_info}/RECORD", buf.getvalue().encode("utf-8"))
+
+    venv = tmp_path / "venv"
+    subprocess.run(["uv", "venv", str(venv), "--python", sys.executable], check=True)
+    python = next(
+        path
+        for path in (venv / "bin" / "python", venv / "Scripts" / "python.exe")
+        if path.is_file()
+    )
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            "--no-deps",
+            "--offline",
+            "--no-cache",
+            "--link-mode",
+            "copy",
+            str(wheel),
+        ],
+        check=True,
+    )
+    platlib = Path(
+        subprocess.run(
+            [str(python), "-c", "import sysconfig; print(sysconfig.get_path('platlib'))"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+
+    assert not (platlib / "notices").exists() and not (platlib / "notices").is_symlink()
+    installed_licenses = {
+        path.name: path.read_bytes() for path in (platlib / dist_info / "licenses").iterdir()
+    }
+    assert installed_licenses == {name: (notice_root / name).read_bytes() for name in notice_names}
+
+    build.drop_build_records(platlib)
+    build.refresh_wheel_records(platlib)
+    assert not (platlib / dist_info / "direct_url.json").exists()
+    assert not (platlib / dist_info / "uv_cache.json").exists()
+
+    record_rows = list(
+        csv.reader((platlib / dist_info / "RECORD").read_text(encoding="utf-8").splitlines())
+    )
+    record_paths = [row[0] for row in record_rows]
+    assert len(record_paths) == len(set(record_paths))
+    for name in notice_names:
+        assert f"{dist_info}/licenses/{name}" in record_paths
+
+    distributions = list(metadata.distributions(path=[str(platlib)]))
+    assert len(distributions) == 1
+    assert licenses.check(distributions) == []
+    dist_notice_names = {path.name for path in licenses._distribution_notices(distributions[0])}
+    assert dist_notice_names == set(notice_names)
+
+    inventory = licenses.vendored_libraries(platlib, target)
+    assert len(inventory) == 1 and inventory[0]["name"] == "torch-native"
+    checked = licenses.check_vendored_native_files(platlib, inventory, target)
+    expression = licenses.pack_expression(distributions, [item["license"] for item in checked])
+    expected_expression = (
+        "(Apache-2.0) AND (BSD-2-Clause) AND (BSD-3-Clause) AND (BSL-1.0) AND (MIT)"
+    )
+    assert expression == expected_expression
+
+    notices_out = tmp_path / "pack-notices"
+    licenses.write_notices(distributions, notices_out, checked)
+    licenses.write_vendored_notices(platlib, notices_out, checked)
+    licenses.check_vendor_files(platlib, allow_itt=True)
+    assert licenses.main(["--site", str(platlib), "--notices", str(tmp_path / "cli-notices")]) == 0
+
+    for name in notice_names:
+        copied = notices_out / "python" / "torch-2.14.1+cpu" / "licenses" / name
+        assert copied.read_bytes() == (notice_root / name).read_bytes()
+    vendored_files = list((notices_out / "vendored").iterdir())
+    assert len(vendored_files) == len(notice_names)
+    summary = (notices_out / "vendored-libraries.txt").read_text(encoding="utf-8")
+    assert summary.count("torch: torch-native:") == 1
+    text_lines = [line for line in summary.splitlines() if line.startswith("  Text: ")]
+    assert len(text_lines) == len(notice_names)
+    assert all(any(line.endswith(f"-{name}") for line in text_lines) for name in notice_names)

@@ -492,3 +492,10 @@ footer {
     flex-direction: column;
   }
 }
+.pack-notice {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}

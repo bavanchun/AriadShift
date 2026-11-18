@@ -17,11 +17,17 @@ const MAX_PIXEL_WORK: u64 = 256 * 1024 * 1024;
 /// references or prior encoded image data into the replacement. Masked images
 /// need a separate mask rewrite and are deliberately rejected here.
 pub fn encode_unmasked_image(image: &DecodedImage, ctx: &ToolCtx) -> Result<Stream, PdfError> {
-    ctx.check()?;
-    validate(image)?;
     if image.has_mask || image.has_soft_mask {
         return Err(PdfError::NotImplemented("image mask encoding".into()));
     }
+    encode_lossless(image, ctx)
+}
+
+/// Encodes decoded pixels as a fresh lossless image stream without any mask entries.
+/// Callers attach freshly encoded mask streams themselves.
+pub(crate) fn encode_lossless(image: &DecodedImage, ctx: &ToolCtx) -> Result<Stream, PdfError> {
+    ctx.check()?;
+    validate(image)?;
     let (encoded, parameters) = crate::images::encode_flate(image, 6)
         .map_err(|_| PdfError::NotImplemented("image encoding".into()))?;
     ctx.check()?;
@@ -137,6 +143,32 @@ pub fn clear_pixels(
     limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<usize, PdfError> {
+    let mut work = 0u64;
+    clear_pixels_with_work(
+        image,
+        soft_mask,
+        explicit_mask,
+        image_to_page,
+        regions,
+        limits,
+        ctx,
+        &mut work,
+    )
+}
+
+/// [`clear_pixels`] drawing from a caller-owned pixel work counter, so several placements
+/// share one cumulative bound instead of each receiving a fresh one.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn clear_pixels_with_work(
+    image: &mut DecodedImage,
+    soft_mask: Option<&mut DecodedImage>,
+    explicit_mask: Option<&mut DecodedImage>,
+    image_to_page: Matrix,
+    regions: &[[f64; 4]],
+    limits: &Limits,
+    ctx: &ToolCtx,
+    work: &mut u64,
+) -> Result<usize, PdfError> {
     ctx.check()?;
     if image.has_mask != explicit_mask.is_some() || image.has_soft_mask != soft_mask.is_some() {
         return Err(PdfError::NotImplemented("image mask redaction".into()));
@@ -150,7 +182,6 @@ pub fn clear_pixels(
             ));
         }
     }
-    let mut work = 0u64;
     let selected = selection(
         image.width,
         image.height,
@@ -158,7 +189,7 @@ pub fn clear_pixels(
         regions,
         limits,
         ctx,
-        &mut work,
+        work,
         false,
     )?;
     let mask_selection = soft_mask
@@ -171,7 +202,7 @@ pub fn clear_pixels(
                 regions,
                 limits,
                 ctx,
-                &mut work,
+                &mut *work,
                 false,
             )
         })
@@ -186,7 +217,7 @@ pub fn clear_pixels(
                 regions,
                 limits,
                 ctx,
-                &mut work,
+                &mut *work,
                 false,
             )
         })

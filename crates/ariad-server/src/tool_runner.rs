@@ -232,6 +232,11 @@ fn execute(body: RequestBody, progress: &mut impl FnMut(ToolEvent)) -> Result<Re
 
 fn sanitize_error(error: ToolError) -> ToolError {
     use ToolError::*;
+    // A redaction refusal and a document without tables carry a fixed reason string (never
+    // document content), so HTTP clients keep it, as `docs/tools.md` promises.
+    if error.is_safety_refusal() || error.is_no_tables() {
+        return error;
+    }
     match error {
         UnknownTool(_) => UnknownTool(String::new()),
         TierNotAllowed { tier, plan, .. } => TierNotAllowed {
@@ -265,4 +270,143 @@ fn emit(output: &mut impl Write, event: &Event) -> io::Result<()> {
     serde_json::to_writer(&mut *output, event)?;
     writeln!(output)?;
     output.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn refusal(reason: &str) -> ToolError {
+        ToolError::ToolMissing {
+            engine: "ariad-pdf".into(),
+            hint: reason.into(),
+        }
+    }
+
+    #[test]
+    fn redaction_refusal_text_survives_sanitising_with_the_same_contract() {
+        for reason in [
+            "redaction refused: original image remains reachable",
+            "uninspected carrier refused: inline_image",
+        ] {
+            let safe = sanitize_error(refusal(reason));
+            assert_eq!(safe.to_string(), reason);
+            assert_eq!((safe.code(), safe.exit_code()), ("tool_missing", 5));
+        }
+    }
+
+    #[test]
+    fn a_document_without_tables_keeps_its_fixed_message_and_is_not_a_refusal() {
+        let safe = sanitize_error(ToolError::EngineFailure(
+            "no tables found in document".into(),
+        ));
+        assert_eq!(safe.to_string(), "no tables found in document");
+        assert_eq!((safe.code(), safe.exit_code()), ("engine_failure", 1));
+        assert!(safe.is_no_tables());
+        assert!(!safe.is_safety_refusal());
+        // Only the exact fixed text passes: anything around it may carry document content.
+        for leaky in [
+            "no tables found in document: /home/someone/secret",
+            "/home/someone/secret: no tables found in document",
+        ] {
+            let safe = sanitize_error(ToolError::EngineFailure(leaky.into()));
+            assert!(!safe.to_string().contains("secret"), "{safe}");
+            assert!(!safe.is_no_tables());
+        }
+    }
+
+    #[test]
+    fn verification_outcomes_survive_sanitising_and_other_engine_failures_do_not() {
+        for reason in [
+            "redaction verification failed",
+            "redaction could not be verified",
+        ] {
+            let safe = sanitize_error(ToolError::EngineFailure(reason.into()));
+            assert_eq!(safe.to_string(), reason);
+            assert_eq!((safe.code(), safe.exit_code()), ("engine_failure", 1));
+            assert!(safe.is_safety_refusal());
+        }
+        let leaky = sanitize_error(ToolError::EngineFailure("/home/someone/secret".into()));
+        assert!(!leaky.to_string().contains("secret"), "{leaky}");
+        assert!(!leaky.is_safety_refusal());
+    }
+
+    /// The helper writes `json!(Result<Report, ToolError>)` into the result event's
+    /// `tool_job` metric and `run` parses it back; the refusal must survive that trip.
+    #[test]
+    fn redaction_refusal_survives_the_helper_json_round_trip() {
+        for reason in [
+            "redaction refused: original image remains reachable",
+            "uninspected carrier refused: inline_image",
+        ] {
+            let sent: Result<Report, ToolError> = Err(sanitize_error(refusal(reason)));
+            let metrics = BTreeMap::from([("tool_job".to_owned(), json!(sent))]);
+            let line = serde_json::to_string(&Event::Result {
+                ok: false,
+                error: None,
+                metrics: Some(metrics),
+            })
+            .unwrap();
+            let Event::Result {
+                metrics: Some(mut metrics),
+                ..
+            } = serde_json::from_str(&line).unwrap()
+            else {
+                panic!("not a result event: {line}");
+            };
+            let received = serde_json::from_value::<Result<Report, ToolError>>(
+                metrics.remove("tool_job").unwrap(),
+            )
+            .unwrap();
+            let error = received.expect_err("an error result");
+            assert!(error.is_safety_refusal(), "{error:?}");
+            assert_eq!(error.to_string(), reason);
+        }
+    }
+
+    /// A blanked `tool_missing` keeps its code across the round trip and is not a refusal.
+    #[test]
+    fn blanked_tool_missing_round_trips_as_a_plain_failure() {
+        let sent: Result<Report, ToolError> = Err(sanitize_error(ToolError::ToolMissing {
+            engine: "pdfium".into(),
+            hint: "/home/someone/secret".into(),
+        }));
+        let value = json!(sent);
+        let error = serde_json::from_value::<Result<Report, ToolError>>(value)
+            .unwrap()
+            .expect_err("an error result");
+        assert_eq!(error.code(), "tool_missing");
+        assert!(!error.is_safety_refusal());
+        assert!(!error.to_string().contains("secret"), "{error}");
+    }
+
+    #[test]
+    fn other_tool_missing_messages_are_still_blanked() {
+        let leaky = ToolError::ToolMissing {
+            engine: "pdfium".into(),
+            hint: "/home/someone/secret/path".into(),
+        };
+        let safe = sanitize_error(leaky);
+        assert!(!safe.to_string().contains("secret"), "{safe}");
+        // An unrelated engine cannot smuggle text through the refusal prefix.
+        let spoof = ToolError::ToolMissing {
+            engine: "qpdf".into(),
+            hint: "redaction refused: /home/someone/secret".into(),
+        };
+        assert!(!sanitize_error(spoof).to_string().contains("secret"));
+        // The in-process engine with a hint that is not a refusal is blanked too.
+        for hint in [
+            "/home/someone/secret",
+            "tool `x` is not implemented: secret",
+            "xredaction refused: secret",
+        ] {
+            let spoof = ToolError::ToolMissing {
+                engine: "ariad-pdf".into(),
+                hint: hint.into(),
+            };
+            let safe = sanitize_error(spoof);
+            assert!(!safe.to_string().contains("secret"), "{hint}: {safe}");
+            assert!(!safe.is_safety_refusal());
+        }
+    }
 }

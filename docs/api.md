@@ -383,7 +383,7 @@ Every error from `/v1` has the body `{"error": {"code": "…", "message": "…"}
 
 Some failures happen before a handler runs and have no JSON body: a request body over 1 MiB returns `413`, and an ordinary request that outlives the server's timeout (30 seconds by default) returns `408`. Upload completion and event streams are exempt from that timeout. Presigned S3 URLs answer with the object store's own errors, usually XML.
 
-A failed job reports the cause in its `error`: `limit_exceeded` (the document exceeds the plan's limits), `unsupported_route`, `input_io` (the input is unreadable, no longer matches its hash, or was deleted), `output_io`, `tool_missing` (a worker lacks an engine), `storage` or `database` (a service stayed unreachable), or `failed` (the engine crashed or retries ran out).
+A failed job reports the cause in its `error`: `limit_exceeded` (the document exceeds the plan's limits), `unsupported_route`, `input_io` (the input is unreadable, no longer matches its hash, or was deleted), `output_io`, `tool_missing` (a worker lacks an engine, or `pdf.redact` refused the document for safety: then `message` is the fixed reason, such as `redaction refused: <reason>`, and the job is not retried), `engine_failure` (the engine crashed and the job retries; but when `pdf.redact` ends with the fixed message `redaction verification failed` or `redaction could not be verified`, the job is not retried and `message` is kept), `storage` or `database` (a service stayed unreachable), or `failed` (the engine crashed or retries ran out).
 
 Retry `429 rate_limited` after `Retry-After`, and `500`, `503` and network errors with backoff. Retry `409` from upload completion after sending the bytes. Other `4xx` errors need a changed request.
 

@@ -23,6 +23,8 @@ delocate = "delocate"
 # OpenDocument Format and the flate2 compression crate.
 ODF = "ODF"
 flate = "flate"
+# Type 1 charstring terminator alias (`ND`, like `RD` and `NP`) in synthetic font test data.
+ND = "ND"
 # Tesseract's language data name for Thai.
 tha = "tha"
 # XML Formatting Objects namespace used by OpenDocument styles.
@@ -37,6 +39,8 @@ IzPack = "IzPack"
 Iz = "Iz"
 # Vietnamese accent-folded compression-level keyword in the NL recipe parser.
 muc = "muc"
+# Name of the SAIS suffix-array library bundled in Sparkle's notices.
+sais = "sais"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".
@@ -60,6 +64,8 @@ extend-exclude = [
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
+    # Interactive design mockups: short script identifiers (sring, toword), not prose.
+    "plans/*/mockups/**",
     "fixtures/golden/*.snap",
     # Generated snapshots preserve multilingual text and hashed identities.
     "fixtures/golden/v2/*.snap",
@@ -71,6 +77,8 @@ extend-exclude = [
     "locales/[!e]*.json",
     "locales/e[!n]*.json",
     "locales/en-*.json",
+    # Generated from locales/*.json; it holds the translated text of every locale.
+    "apps/macos/AriadShift/Localizable.xcstrings",
 ]
 
 # Original wheel RECORD receipts contain URL-safe SHA-256 digests.

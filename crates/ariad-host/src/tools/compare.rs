@@ -546,24 +546,26 @@ pub fn execute(
     let report_pdf_bytes = build_report_pdf(&bytes_after, &report, limits, &ctx)
         .map_err(|e| ToolError::EngineFailure(format!("failed to build report PDF: {e}")))?;
 
-    let json_bytes = serde_json::to_vec_pretty(&report)
+    let report_val = serde_json::to_value(&report)
         .map_err(|e| ToolError::EngineFailure(format!("failed to serialize report JSON: {e}")))?;
+    let (_, json_bytes, inline_json) =
+        crate::tools::run::scrub_and_cap_inline_json(report_val, limits, scrubber)?;
 
-    let json_path = workspace.output_dir().join("report.json");
-    std::fs::write(&json_path, &json_bytes)
-        .map_err(|e| ToolError::OutputIo(format!("could not write report.json: {e}")))?;
-
-    let pdf_path = workspace.output_dir().join("report.pdf");
-    std::fs::write(&pdf_path, &report_pdf_bytes)
-        .map_err(|e| ToolError::OutputIo(format!("could not write report.pdf: {e}")))?;
-
-    let inline_json = serde_json::to_value(&report).ok();
+    let json_path =
+        crate::tools::run::write_staged_artifact(workspace, "report.json", &json_bytes, scrubber)?;
+    let pdf_path = crate::tools::run::write_staged_artifact(
+        workspace,
+        "report.pdf",
+        &report_pdf_bytes,
+        scrubber,
+    )?;
 
     Ok(RawToolExecution {
         artifacts: vec![(json_path, "json".to_owned()), (pdf_path, "pdf".to_owned())],
         warnings: Vec::new(),
         metrics: Default::default(),
         inline_json,
+        companion_report: false,
     })
 }
 
@@ -588,12 +590,11 @@ mod tests {
         assert!(preflight(&both_params, None, Some(&dummy)).is_ok());
     }
 
-    #[test]
-    fn visual_mode_exceeding_max_visual_pages_fails() {
+    fn build_empty_pdf(page_count: usize) -> lopdf::Document {
         let mut doc = lopdf::Document::with_version("1.7");
         let pages_id = doc.new_object_id();
-        let mut page_ids = Vec::new();
-        for _ in 0..=MAX_VISUAL_PAGES {
+        let mut page_ids = Vec::with_capacity(page_count);
+        for _ in 0..page_count {
             let page_id = doc.add_object(lopdf::Dictionary::from_iter(vec![
                 ("Type", lopdf::Object::Name(b"Page".to_vec())),
                 ("Parent", lopdf::Object::Reference(pages_id)),
@@ -606,10 +607,7 @@ mod tests {
         }
         let pages_dict = lopdf::Dictionary::from_iter(vec![
             ("Type", lopdf::Object::Name(b"Pages".to_vec())),
-            (
-                "Count",
-                lopdf::Object::Integer((MAX_VISUAL_PAGES + 1) as i64),
-            ),
+            ("Count", lopdf::Object::Integer(page_count as i64)),
             ("Kids", lopdf::Object::Array(page_ids)),
         ]);
         doc.set_object(pages_id, pages_dict);
@@ -619,6 +617,12 @@ mod tests {
         ]));
         doc.trailer
             .set("Root", lopdf::Object::Reference(catalog_id));
+        doc
+    }
+
+    #[test]
+    fn visual_mode_exceeding_max_visual_pages_fails() {
+        let mut doc = build_empty_pdf(MAX_VISUAL_PAGES + 1);
 
         let temp_dir = tempfile::tempdir().unwrap();
         let pdf_path = temp_dir.path().join("doc.pdf");
@@ -663,5 +667,66 @@ mod tests {
             err_str.contains("200") && err_str.contains("exceeds"),
             "error message must name the limit (200) and indicate exceeds: {err_str}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn text_compare_replaces_planted_symlinks_without_touching_targets() {
+        let mut doc = build_empty_pdf(1);
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("doc.pdf");
+        doc.save(&pdf_path).unwrap();
+
+        let victim_dir = tempfile::tempdir().unwrap();
+        let victim_json = victim_dir.path().join("victim.json");
+        let victim_pdf = victim_dir.path().join("victim.pdf");
+        std::fs::write(&victim_json, b"untouched-compare-json-victim").unwrap();
+        std::fs::write(&victim_pdf, b"untouched-compare-pdf-victim").unwrap();
+
+        let ws = Workspace::new().unwrap();
+        let staged_json = ws.output_dir().join("report.json");
+        let staged_pdf = ws.output_dir().join("report.pdf");
+        std::os::unix::fs::symlink(&victim_json, &staged_json).unwrap();
+        std::os::unix::fs::symlink(&victim_pdf, &staged_pdf).unwrap();
+
+        let spec = ariad_core::tools::find("pdf.compare").unwrap();
+        let staged_inputs = vec![
+            (pdf_path.clone(), "pdf".to_string()),
+            (pdf_path, "pdf".to_string()),
+        ];
+        let scrubber = SecretScrubber::default();
+        let cancel = CancellationToken::new();
+
+        let exec = execute(
+            spec,
+            &staged_inputs,
+            &json!({"mode": "text"}),
+            &ws,
+            &Limits::local(),
+            &scrubber,
+            None,
+            None,
+            &cancel,
+            &mut |_| {},
+            ariad_pdf::ToolClock {
+                epoch_secs: 0,
+                utc_offset_secs: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read(&victim_json).unwrap(),
+            b"untouched-compare-json-victim"
+        );
+        assert_eq!(
+            std::fs::read(&victim_pdf).unwrap(),
+            b"untouched-compare-pdf-victim"
+        );
+        assert_eq!(exec.artifacts.len(), 2);
+        for path in [&staged_json, &staged_pdf] {
+            let meta = std::fs::symlink_metadata(path).unwrap();
+            assert!(!meta.file_type().is_symlink() && meta.file_type().is_file());
+        }
     }
 }

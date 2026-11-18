@@ -416,3 +416,130 @@ fn clean_replaces_image_only_page_and_keeps_searchable_text() {
     assert!(extracted.status.success());
     assert!(String::from_utf8_lossy(&extracted.stdout).contains("Khu vườn đọc sách"));
 }
+
+/// Build a four-page PDF at test time from the licensed single-page fixture.
+fn four_page_pdf(dir: &std::path::Path) -> PathBuf {
+    let source = std::fs::read(fixture("vi-garden-300dpi.pdf")).unwrap();
+    let inputs: Vec<_> = (0..4)
+        .map(|i| ariad_pdf::InputDoc::new(format!("page-{i}.pdf"), source.clone()))
+        .collect();
+    let merged = ariad_pdf::run_tool(
+        "pdf.merge",
+        &inputs,
+        &json!({}),
+        &ariad_pdf::ToolCtx::default(),
+    )
+    .unwrap();
+    let path = dir.join("four-pages.pdf");
+    std::fs::write(&path, &merged.artifacts[0].bytes).unwrap();
+    path
+}
+
+/// Direct child processes of this test process (engine processes are direct children).
+fn child_pids() -> Vec<u32> {
+    let me = std::process::id();
+    let output = Command::new("pgrep").args(["-P", &me.to_string()]).output();
+    match output {
+        Ok(output) => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.trim().parse().ok())
+            .collect(),
+        Err(_) => {
+            assert!(
+                std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+                "pgrep is required to check for leaked engine processes"
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// Run the job with a memory-budgeted profile (one page worker) or the budget-free local profile
+/// (`min(cores, 4)` workers) and return the published artifact bytes keyed by format.
+fn ocr_four_pages(input: &std::path::Path, memory_budget: bool) -> Vec<(String, Vec<u8>)> {
+    let output = tempfile::tempdir().unwrap();
+    let mut limits = ariad_core::limits::Limits::local();
+    if memory_budget {
+        limits.max_memory_mb = Some(4_096);
+    }
+    let request = ToolRequest::new(
+        "pdf.ocr",
+        vec![InputRef::new(input)],
+        OutputTarget::Directory(output.path().into()),
+    )
+    .with_params(json!({"output":"pdf+hocr","clean":true}))
+    .with_engine_program(env!("CARGO_BIN_EXE_engine-probe"))
+    .with_limits(limits);
+    let result = run_tool(&request).unwrap();
+    let mut artifacts: Vec<_> = result
+        .artifacts
+        .iter()
+        .map(|a| (a.format.clone(), std::fs::read(&a.path).unwrap()))
+        .collect();
+    artifacts.sort();
+    artifacts
+}
+
+#[test]
+fn parallel_and_single_worker_runs_are_byte_identical() {
+    if !child("parallel_and_single_worker_runs_are_byte_identical") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = four_page_pdf(dir.path());
+    // The cloud/server profile sets a memory budget and runs one worker; the local profile runs
+    // up to four.
+    let single = ocr_four_pages(&input, true);
+    let parallel = ocr_four_pages(&input, false);
+    assert_eq!(single.len(), 2);
+    assert_eq!(
+        single.iter().map(|a| a.0.as_str()).collect::<Vec<_>>(),
+        ["hocr", "pdf"]
+    );
+    assert_eq!(single, parallel, "worker count must not change the output");
+}
+
+#[test]
+fn mid_job_cancel_on_a_multi_page_file_leaves_no_engine_processes() {
+    if !child("mid_job_cancel_on_a_multi_page_file_leaves_no_engine_processes") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = four_page_pdf(dir.path());
+    let dest = dir.path().join("out");
+    std::fs::create_dir(&dest).unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let trigger = cancel.clone();
+    let canceller = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        trigger.cancel();
+    });
+    let request = ToolRequest::new(
+        "pdf.ocr",
+        vec![InputRef::new(input)],
+        OutputTarget::Directory(dest.clone()),
+    )
+    .with_engine_program(env!("CARGO_BIN_EXE_engine-probe"))
+    .with_limits(ariad_core::limits::Limits::local())
+    .with_cancel(cancel);
+    let result = run_tool(&request);
+    canceller.join().unwrap();
+    assert!(
+        matches!(result, Err(ariad_host::tools::ToolError::Interrupted)),
+        "{result:?}"
+    );
+    assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 0);
+    // Give the OS a moment to reap, then require that no engine child survives the cancel.
+    let mut remaining = child_pids();
+    for _ in 0..20 {
+        if remaining.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        remaining = child_pids();
+    }
+    assert!(
+        remaining.is_empty(),
+        "leaked engine processes: {remaining:?}"
+    );
+}

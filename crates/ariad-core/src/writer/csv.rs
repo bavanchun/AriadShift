@@ -31,7 +31,7 @@ pub fn escape_csv_field(s: &str) -> String {
 }
 
 /// Protects against spreadsheet formula injection by prefixing triggering characters
-/// (`=`, `+`, `-`, `@`, `\t`, `\r`) with an apostrophe `'`, identical to forms export.
+/// (`=`, `+`, `-`, `@`, `\t`, `\r`) with an apostrophe `'`; forms export also guards apostrophe-prefixed triggers.
 #[must_use]
 pub fn guard_formula(s: &str) -> String {
     if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {

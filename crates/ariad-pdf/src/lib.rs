@@ -15,6 +15,7 @@ pub mod document;
 pub mod draw;
 pub mod error;
 pub mod flatten;
+mod font_face;
 #[cfg(feature = "codecs")]
 pub mod fonts;
 pub mod forms;

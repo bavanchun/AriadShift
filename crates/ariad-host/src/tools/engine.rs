@@ -31,10 +31,77 @@ use crate::{
     tools::{
         inprocess::RawToolExecution,
         run::{ToolError, ToolEvent},
-        secrets::SecretScrubber,
+        secrets::{ScrubJsonError, SecretScrubber},
     },
     workspace::Workspace,
 };
+
+/// Directory under a workspace's `work_dir` where the host stages verified extra OCR models.
+pub(super) const OCR_MODELS_DIR: &str = "ocr-models";
+
+/// Verifies and stages every extra OCR language model that the engine pack does not bundle.
+///
+/// Each model is hashed against its pinned digest and copied exactly once into `directory`;
+/// the Tesseract engine re-verifies the staged copy inside its sandbox. An OCR job calls this
+/// once and then reuses the staged files for every page (see [`execute_prestaged`]).
+pub(super) fn stage_ocr_models(
+    languages: &[String],
+    command: &EngineCommand,
+    directory: &Path,
+    cancel: &CancellationToken,
+) -> Result<(), ToolError> {
+    stage_models_with(
+        languages,
+        |language| {
+            command.install_root.as_ref().is_some_and(|root| {
+                root.join("tessdata")
+                    .join(format!("{language}.traineddata"))
+                    .is_file()
+            })
+        },
+        |language| {
+            let context =
+                crate::packs::PackContext::from_env().map_err(|_| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: "OCR language cache is unavailable".into(),
+                })?;
+            crate::packs::languages::verified_path(&context, language, cancel)
+                .map_err(|error| match error {
+                    crate::packs::PackError::Interrupted => ToolError::Interrupted,
+                    _ => ToolError::ToolMissing {
+                        engine: "tesseract".into(),
+                        hint: format!("OCR language '{language}' could not be verified"),
+                    },
+                })?
+                .ok_or_else(|| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: format!("OCR language '{language}' is not installed; run 'ashift engines languages install {language}'"),
+                })
+        },
+        directory,
+    )
+}
+
+/// Core of [`stage_ocr_models`], with the bundled-model test and the verified-source lookup
+/// injected so the once-per-model behaviour can be tested without a real pack.
+fn stage_models_with(
+    languages: &[String],
+    bundled: impl Fn(&str) -> bool,
+    mut verified_source: impl FnMut(&str) -> Result<PathBuf, ToolError>,
+    directory: &Path,
+) -> Result<(), ToolError> {
+    for language in languages {
+        if bundled(language) {
+            continue;
+        }
+        let source = verified_source(language)?;
+        fs::create_dir_all(directory)
+            .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+        fs::copy(source, directory.join(format!("{language}.traineddata")))
+            .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+    }
+    Ok(())
+}
 
 /// Executes an out-of-process tool over `ariad-engine/2` (`RequestV2::RunTool`).
 #[allow(clippy::too_many_arguments)]
@@ -53,6 +120,107 @@ pub fn execute(
     cancel: CancellationToken,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
+    execute_inner(
+        spec,
+        effective_engine,
+        staged_inputs,
+        engine_params,
+        has_secrets,
+        workspace,
+        limits,
+        scrubber,
+        secrets,
+        engine_program,
+        engine_command_override,
+        cancel,
+        on_event,
+        true,
+    )
+}
+
+/// Like [`execute`], but the caller has already placed the extra OCR models under
+/// `<work_dir>/ocr-models` with [`stage_ocr_models`], so none are hashed or copied here.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn execute_prestaged(
+    spec: &ToolSpec,
+    effective_engine: &str,
+    staged_inputs: &[(PathBuf, String)],
+    engine_params: &Value,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    engine_program: Option<&Path>,
+    cancel: CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+) -> Result<RawToolExecution, ToolError> {
+    execute_inner(
+        spec,
+        effective_engine,
+        staged_inputs,
+        engine_params,
+        false,
+        workspace,
+        limits,
+        scrubber,
+        &super::secrets::SecretBag::new(),
+        engine_program,
+        None,
+        cancel,
+        on_event,
+        false,
+    )
+}
+
+/// Builds the `ariad-engine/2` `run_tool` request for one engine call in `workspace`.
+///
+/// The engine validates that every input sits in `<workspace>/in`, so callers must stage inputs
+/// into the same workspace that is named here.
+pub(super) fn run_tool_request(
+    spec: &ToolSpec,
+    staged_inputs: &[(PathBuf, String)],
+    engine_params: &Value,
+    params_file: Option<PathBuf>,
+    workspace: &Workspace,
+    limits: Limits,
+) -> RequestV2 {
+    RequestV2::RunTool {
+        protocol: PROTOCOL_V2.to_owned(),
+        job: format!("tool-{}", Uuid::new_v4()),
+        tool: spec.id.to_owned(),
+        inputs: staged_inputs
+            .iter()
+            .map(|(path, format)| Input {
+                path: path.display().to_string(),
+                format: format.clone(),
+            })
+            .collect(),
+        output: OutputDir {
+            dir: workspace.output_dir().display().to_string(),
+        },
+        params: engine_params.clone(),
+        params_file,
+        work_dir: workspace.work_dir().display().to_string(),
+        limits,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_inner(
+    spec: &ToolSpec,
+    effective_engine: &str,
+    staged_inputs: &[(PathBuf, String)],
+    engine_params: &Value,
+    has_secrets: bool,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    secrets: &super::secrets::SecretBag,
+    engine_program: Option<&Path>,
+    engine_command_override: Option<&EngineCommand>,
+    cancel: CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+    stage_models: bool,
+) -> Result<RawToolExecution, ToolError> {
     if cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
@@ -60,41 +228,16 @@ pub fn execute(
     let command =
         resolve_engine_command(effective_engine, engine_program, engine_command_override)?;
 
-    if effective_engine == "tesseract" && spec.id == "ocr.recognize" {
+    if stage_models && effective_engine == "tesseract" && spec.id == "ocr.recognize" {
         let params: ariad_core::tools::params::OcrRecognizeParams =
             serde_json::from_value(engine_params.clone())
                 .map_err(|_| ToolError::EngineFailure("invalid OCR parameters".into()))?;
-        for language in params.languages {
-            if command.install_root.as_ref().is_some_and(|root| {
-                root.join("tessdata")
-                    .join(format!("{language}.traineddata"))
-                    .is_file()
-            }) {
-                continue;
-            }
-            let context =
-                crate::packs::PackContext::from_env().map_err(|_| ToolError::ToolMissing {
-                    engine: "tesseract".into(),
-                    hint: "OCR language cache is unavailable".into(),
-                })?;
-            let source = crate::packs::languages::verified_path(&context, &language, &cancel)
-                .map_err(|error| match error {
-                    crate::packs::PackError::Interrupted => ToolError::Interrupted,
-                    _ => ToolError::ToolMissing {
-                        engine: "tesseract".into(),
-                        hint: format!("OCR language '{language}' could not be verified"),
-                    },
-                })?
-                .ok_or_else(|| ToolError::ToolMissing {
-                    engine: "tesseract".into(),
-                    hint: format!("OCR language '{language}' is not installed; run 'ashift engines languages install {language}'"),
-                })?;
-            let directory = workspace.work_dir().join("ocr-models");
-            fs::create_dir_all(&directory)
-                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
-            fs::copy(source, directory.join(format!("{language}.traineddata")))
-                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
-        }
+        stage_ocr_models(
+            &params.languages,
+            &command,
+            &workspace.work_dir().join(OCR_MODELS_DIR),
+            &cancel,
+        )?;
     }
 
     let _cert_guard =
@@ -104,36 +247,17 @@ pub fn execute(
             super::sign::SecretFileGuard(None)
         };
 
-    let inputs: Vec<Input> = staged_inputs
-        .iter()
-        .map(|(path, format)| Input {
-            path: path.display().to_string(),
-            format: format.clone(),
-        })
-        .collect();
-
     // Force `params_file` (`0600`) whenever secrets are present in `SecretBag` or `params`.
     let params_file_path = workspace.work_dir().join("params.json");
-    let params_file = if has_secrets {
-        Some(params_file_path.clone())
-    } else {
-        None
-    };
-
-    let effective_limits = engine_limits(effective_engine, limits);
-    let request = RequestV2::RunTool {
-        protocol: PROTOCOL_V2.to_owned(),
-        job: format!("tool-{}", Uuid::new_v4()),
-        tool: spec.id.to_owned(),
-        inputs,
-        output: OutputDir {
-            dir: workspace.output_dir().display().to_string(),
-        },
-        params: engine_params.clone(),
+    let params_file = has_secrets.then(|| params_file_path.clone());
+    let request = run_tool_request(
+        spec,
+        staged_inputs,
+        engine_params,
         params_file,
-        work_dir: workspace.work_dir().display().to_string(),
-        limits: effective_limits,
-    };
+        workspace,
+        engine_limits(effective_engine, limits),
+    );
 
     let mut warnings = Vec::new();
     let mut tsa_guards = Vec::new();
@@ -203,23 +327,40 @@ pub fn execute(
         }
     }
 
-    // For JSON-emitting tools, capture the structured JSON payload inline
-    // using the workspace's O_NOFOLLOW handle rather than re-opening by raw path.
+    // For JSON-emitting tools, scrub any staged JSON artifacts when secrets are registered
+    // and capture the structured JSON payload inline when a single JSON output fits `inline_cap`.
     let mut inline_json = None;
-    let inline_cap = limits.max_decompressed_bytes.min(32 * 1024 * 1024);
-    if artifacts.len() == 1
-        && artifacts[0].1.eq_ignore_ascii_case("json")
-        && let Ok(file) = workspace.open_artifact(&artifacts[0].0)
-    {
-        let mut bytes = Vec::new();
-        if file
-            .take(inline_cap.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .is_ok()
-            && (bytes.len() as u64) <= inline_cap
-            && let Ok(parsed) = serde_json::from_slice::<Value>(&bytes)
-        {
-            inline_json = Some(scrubber.scrub_value(&parsed));
+    let inline_cap = super::run::json_inline_cap(limits);
+    let single_json = artifacts.len() == 1 && artifacts[0].1.eq_ignore_ascii_case("json");
+    if scrubber.is_empty() {
+        if single_json && let Ok(file) = workspace.open_artifact(&artifacts[0].0) {
+            let mut bytes = Vec::new();
+            if file
+                .take(inline_cap.saturating_add(1))
+                .read_to_end(&mut bytes)
+                .is_ok()
+                && (bytes.len() as u64) <= inline_cap
+                && let Ok(parsed) = serde_json::from_slice::<Value>(&bytes)
+            {
+                inline_json = Some(parsed);
+            }
+        }
+    } else {
+        for (idx, (path, fmt)) in artifacts.iter().enumerate() {
+            if !fmt.eq_ignore_ascii_case("json") {
+                continue;
+            }
+            let is_inline_candidate = single_json && idx == 0;
+            if let Some(val) = scrub_engine_json_artifact(
+                workspace,
+                path,
+                limits,
+                inline_cap,
+                is_inline_candidate,
+                scrubber,
+            )? {
+                inline_json = Some(val);
+            }
         }
     }
 
@@ -228,6 +369,7 @@ pub fn execute(
         warnings,
         metrics,
         inline_json,
+        companion_report: false,
     })
 }
 
@@ -239,6 +381,99 @@ fn engine_limits(engine: &str, limits: &Limits) -> Limits {
         effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);
     }
     effective
+}
+
+/// Scrubs one staged engine JSON artifact while secrets are registered.
+///
+/// The artifact is read only up to [`super::run::scrub_json_cap`], and the scrubbed output is
+/// bounded by the same cap, so peak memory depends on that cap rather than
+/// `limits.max_decompressed_bytes`. Input or output over the cap fails with
+/// [`ToolError::LimitExceeded`]. Every decoded string value and key is
+/// scrubbed ([`SecretScrubber::scrub_json_text`]); no raw-text pre-check gates it, because JSON
+/// escapes can spell a secret that the raw bytes do not contain. Invalid, non-UTF-8 or
+/// truncated JSON fails closed.
+fn scrub_engine_json_artifact(
+    workspace: &Workspace,
+    path: &Path,
+    limits: &Limits,
+    inline_cap: u64,
+    is_inline_candidate: bool,
+    scrubber: &SecretScrubber,
+) -> Result<Option<Value>, ToolError> {
+    let scrub_cap = super::run::scrub_json_cap(limits);
+    let file = workspace.open_artifact(path).map_err(|_| {
+        ToolError::EngineFailure("could not open staged engine JSON artifact".into())
+    })?;
+    // `Take<File>::read_to_end` gets no size hint, so size the buffer from the metadata and
+    // refuse an artifact already known to be over the cap before reading it. The file can
+    // still grow after the metadata call, so the `take` bound and length check stay.
+    let metadata_len = file.metadata().ok().map(|m| m.len());
+    if metadata_len.is_some_and(|len| len > scrub_cap) {
+        return Err(ToolError::LimitExceeded);
+    }
+    let mut raw_bytes = Vec::new();
+    let initial = metadata_len.unwrap_or(0).min(scrub_cap).saturating_add(1);
+    raw_bytes
+        .try_reserve_exact(usize::try_from(initial).map_err(|_| ToolError::LimitExceeded)?)
+        .map_err(|_| ToolError::LimitExceeded)?;
+    if file
+        .take(scrub_cap.saturating_add(1))
+        .read_to_end(&mut raw_bytes)
+        .is_err()
+    {
+        return Err(ToolError::OutputIo(
+            "failed to read staged engine JSON artifact".into(),
+        ));
+    }
+    if (raw_bytes.len() as u64) > scrub_cap {
+        return Err(ToolError::LimitExceeded);
+    }
+
+    let Ok(raw_str) = std::str::from_utf8(&raw_bytes) else {
+        return Err(ToolError::EngineFailure(
+            "staged engine JSON artifact is not valid UTF-8".into(),
+        ));
+    };
+    let scrubbed = match scrubber.scrub_json_text(raw_str, scrub_cap) {
+        Ok(scrubbed) => scrubbed,
+        Err(ScrubJsonError::LimitExceeded) => return Err(ToolError::LimitExceeded),
+        Err(ScrubJsonError::InvalidJson(_)) => {
+            return Err(ToolError::EngineFailure(
+                "staged engine JSON artifact is not valid JSON".into(),
+            ));
+        }
+    };
+
+    let final_bytes = match scrubbed {
+        None => raw_bytes,
+        Some(text) => {
+            drop(raw_bytes);
+            let bytes = text.into_bytes();
+            // `scrub_json_text` already bounds the output by `scrub_cap`; keep the check as a
+            // backstop.
+            if (bytes.len() as u64) > scrub_cap {
+                return Err(ToolError::LimitExceeded);
+            }
+            workspace.remove_staged_artifact(path).map_err(|e| {
+                ToolError::EngineFailure(scrubber.scrub(&format!(
+                    "could not safely clear staged engine JSON artifact: {e}"
+                )))
+            })?;
+            workspace
+                .write_staged_artifact(path, &bytes)
+                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            bytes
+        }
+    };
+
+    if is_inline_candidate && (final_bytes.len() as u64) <= inline_cap {
+        let parsed = serde_json::from_slice::<Value>(&final_bytes).map_err(|_| {
+            ToolError::EngineFailure("staged engine JSON artifact is not valid JSON".into())
+        })?;
+        Ok(Some(parsed))
+    } else {
+        Ok(None)
+    }
 }
 
 fn validate_engine_artifact(
@@ -329,9 +564,7 @@ pub fn resolve_engine_command(
         return Ok(cmd);
     }
     if let Some(spec) = engines::spec(engine_id) {
-        let program = engine_program
-            .map(Path::to_path_buf)
-            .or_else(|| std::env::current_exe().ok())
+        let program = crate::engines::resolve_engine_program(engine_program)
             .ok_or_else(|| ToolError::from_missing_engine(engine_id))?;
         return Ok(EngineCommand::builtin(&program, spec.id));
     }
@@ -483,5 +716,86 @@ mod pdfium_limit_tests {
             assert_eq!(engine_limits(engine, &explicit), explicit);
         }
         assert_eq!(engine_limits("qpdf", &local), local);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scrub_engine_json_artifact_rewrites_via_handle_and_fails_closed_on_non_utf8() {
+        let ws = Workspace::new().unwrap();
+        let sub = ws.output_dir().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let staged = sub.join("output.json");
+        fs::write(&staged, br#"{"secret":"top-secret-42"}"#).unwrap();
+
+        let mut scrubber = SecretScrubber::new();
+        scrubber.register("top-secret-42");
+
+        let inline =
+            scrub_engine_json_artifact(&ws, &staged, &Limits::local(), 1024, true, &scrubber)
+                .unwrap()
+                .expect("scrubbed JSON should remain inline");
+        assert_eq!(inline["secret"], "[REDACTED]");
+        let on_disk = fs::read_to_string(&staged).unwrap();
+        assert!(!on_disk.contains("top-secret-42"));
+        assert!(on_disk.contains("[REDACTED]"));
+
+        // Non-UTF-8 bytes with active scrubber must fail closed.
+        let bad = ws.output_dir().join("bad.json");
+        fs::write(&bad, [0xff_u8, 0xfe, b'{', b'}']).unwrap();
+        let err = scrub_engine_json_artifact(&ws, &bad, &Limits::local(), 1024, true, &scrubber)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ToolError::EngineFailure("staged engine JSON artifact is not valid UTF-8".into())
+        );
+    }
+}
+
+#[cfg(test)]
+mod ocr_model_staging_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn stages_each_extra_model_once_and_skips_bundled_ones() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("fra.traineddata"), b"fra").unwrap();
+        fs::write(source.path().join("deu.traineddata"), b"deu").unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let directory = target.path().join(OCR_MODELS_DIR);
+        let lookups = Cell::new(0);
+        let languages = ["eng", "fra", "deu"].map(String::from);
+        stage_models_with(
+            &languages,
+            |language| language == "eng",
+            |language| {
+                lookups.set(lookups.get() + 1);
+                Ok(source.path().join(format!("{language}.traineddata")))
+            },
+            &directory,
+        )
+        .unwrap();
+        assert_eq!(lookups.get(), 2, "one verification per extra model");
+        assert_eq!(fs::read(directory.join("fra.traineddata")).unwrap(), b"fra");
+        assert_eq!(fs::read(directory.join("deu.traineddata")).unwrap(), b"deu");
+        assert!(!directory.join("eng.traineddata").exists());
+    }
+
+    #[test]
+    fn missing_model_is_reported_as_tool_missing() {
+        let target = tempfile::tempdir().unwrap();
+        let error = stage_models_with(
+            &["fra".to_owned()],
+            |_| false,
+            |language| {
+                Err(ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: format!("{language} missing"),
+                })
+            },
+            &target.path().join(OCR_MODELS_DIR),
+        )
+        .unwrap_err();
+        assert!(matches!(error, ToolError::ToolMissing { .. }));
     }
 }

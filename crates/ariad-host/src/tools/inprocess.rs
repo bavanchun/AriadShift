@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, HashSet},
-    fs,
     path::PathBuf,
     sync::{
         Arc,
@@ -41,6 +40,8 @@ pub struct RawToolExecution {
     pub metrics: BTreeMap<String, Value>,
     /// Structured JSON payload for JSON-emitting tools such as `pdf.info`.
     pub inline_json: Option<Value>,
+    /// Whether the host itself staged an overflow companion JSON report alongside a primary artifact.
+    pub companion_report: bool,
 }
 
 struct ThreadWaker(Thread);
@@ -310,10 +311,10 @@ pub(crate) fn execute_with_names_and_clock(
         .iter()
         .any(|artifact| !artifact.format.trim().eq_ignore_ascii_case("json"));
 
+    let mut companion_json_bytes = None;
     if let Some(ref raw_value) = tool_output.json {
-        let scrubbed_value = scrubber.scrub_value(raw_value);
-        let json_bytes = serde_json::to_vec_pretty(&scrubbed_value)
-            .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+        let (scrubbed_value, json_bytes, cap_inline) =
+            super::run::scrub_and_cap_inline_json(raw_value.clone(), limits, scrubber)?;
 
         if (json_bytes.len() as u64) > limits.max_decompressed_bytes {
             return Err(ToolError::LimitExceeded);
@@ -334,10 +335,11 @@ pub(crate) fn execute_with_names_and_clock(
                 .unwrap_or("json");
             let staged_name =
                 sanitize_staged_artifact_name(raw_name, 1, out_format, &mut used_names);
-            let staged_out = workspace.output_dir().join(staged_name);
-            fs::write(&staged_out, &json_bytes)
-                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            let staged_out =
+                super::run::write_staged_artifact(workspace, &staged_name, &json_bytes, scrubber)?;
             artifacts.push((staged_out, out_format.to_owned()));
+        } else if cap_inline.is_none() {
+            companion_json_bytes = Some(json_bytes);
         }
 
         if let Some(pages) = scrubbed_value.get("page_count") {
@@ -346,8 +348,9 @@ pub(crate) fn execute_with_names_and_clock(
         if let Some(encrypted) = scrubbed_value.get("encrypted") {
             metrics.insert("encrypted".to_owned(), encrypted.clone());
         }
-        inline_json = Some(scrubbed_value);
+        inline_json = cap_inline;
     }
+    let companion_report = companion_json_bytes.is_some();
     if tool_output.json.is_none() || has_binary_artifacts {
         let mut total_out_bytes = 0_u64;
         for (idx, artifact) in tool_output.artifacts.iter().enumerate() {
@@ -362,10 +365,29 @@ pub(crate) fn execute_with_names_and_clock(
             };
             let staged_name =
                 sanitize_staged_artifact_name(&artifact.name, idx + 1, out_format, &mut used_names);
-            let staged_out = workspace.output_dir().join(staged_name);
-            fs::write(&staged_out, &artifact.bytes)
-                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            let staged_out = super::run::write_staged_artifact(
+                workspace,
+                &staged_name,
+                &artifact.bytes,
+                scrubber,
+            )?;
             artifacts.push((staged_out, out_format.to_owned()));
+        }
+        if let Some(json_bytes) = companion_json_bytes {
+            total_out_bytes = total_out_bytes.saturating_add(json_bytes.len() as u64);
+            if total_out_bytes > limits.max_decompressed_bytes {
+                return Err(ToolError::LimitExceeded);
+            }
+            let staged_name = sanitize_staged_artifact_name(
+                "report.json",
+                artifacts.len() + 1,
+                "json",
+                &mut used_names,
+            );
+            let staged_out =
+                super::run::write_staged_artifact(workspace, &staged_name, &json_bytes, scrubber)?;
+            artifacts.push((staged_out, "json".to_owned()));
+            warnings.push(super::run::report_not_inlined_warning());
         }
         metrics.insert("outputs".to_owned(), json!(artifacts.len()));
     }
@@ -381,6 +403,7 @@ pub(crate) fn execute_with_names_and_clock(
         warnings,
         metrics,
         inline_json,
+        companion_report,
     })
 }
 
@@ -455,10 +478,20 @@ pub fn map_pdf_error(err: PdfError, scrubber: &SecretScrubber) -> ToolError {
     }
     match err {
         PdfError::Encrypted { needs_password } => ToolError::EncryptedInput { needs_password },
-        PdfError::LimitExceeded(_) => ToolError::LimitExceeded,
+        PdfError::LimitExceeded(_) | PdfError::TablesTooLarge => ToolError::LimitExceeded,
         PdfError::InvalidParams(msg) => ToolError::InvalidParams(scrubber.scrub(&msg)),
         PdfError::Malformed => {
             ToolError::EngineFailure("the file is not a readable PDF".to_owned())
+        }
+        PdfError::NoTables => ToolError::EngineFailure(err.to_string()),
+        PdfError::EngineRequired { engine } => ToolError::from_missing_engine(engine),
+        PdfError::NotImplemented(message) if ariad_pdf::error::is_refusal_message(&message) => {
+            // Safety refusal: same `tool_missing` code and exit 5, but the hint is the
+            // refusal reason itself so the user does not read "tool ... is not implemented".
+            ToolError::ToolMissing {
+                engine: INPROCESS_PDF_ENGINE.to_owned(),
+                hint: scrubber.scrub(&message),
+            }
         }
         PdfError::NotImplemented(tool) => ToolError::ToolMissing {
             engine: INPROCESS_PDF_ENGINE.to_owned(),
@@ -469,7 +502,7 @@ pub fn map_pdf_error(err: PdfError, scrubber: &SecretScrubber) -> ToolError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{fs, path::Path};
 
     use ariad_core::tools::{
         InputArity, Tier, ToolGroup, ToolRuntime,
@@ -693,5 +726,29 @@ mod tests {
             map_pdf_error(PdfError::NotImplemented("pdf.future".to_owned()), &scrubber);
         assert_eq!(missing_err.code(), "tool_missing");
         assert_eq!(missing_err.exit_code(), 5);
+
+        // Every redaction refusal is a `NotImplemented` carrying the `redaction refused:`
+        // prefix, so it keeps the public contract `tool_missing` / exit 5.
+        let refused = map_pdf_error(
+            PdfError::NotImplemented("redaction refused: original image remains reachable".into()),
+            &scrubber,
+        );
+        assert_eq!(refused.code(), "tool_missing");
+        assert_eq!(refused.exit_code(), 5);
+        assert_eq!(
+            refused.to_string(),
+            "redaction refused: original image remains reachable"
+        );
+        let carrier = map_pdf_error(
+            PdfError::NotImplemented("uninspected carrier refused: shading".into()),
+            &scrubber,
+        );
+        assert_eq!(carrier.to_string(), "uninspected carrier refused: shading");
+        assert_eq!((carrier.code(), carrier.exit_code()), ("tool_missing", 5));
+        // A plain missing tool keeps the engine prefix.
+        assert_eq!(
+            missing_err.to_string(),
+            "the ariad-pdf engine is not available; tool 'pdf.future' is not implemented"
+        );
     }
 }

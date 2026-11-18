@@ -1,12 +1,11 @@
+mod support;
+
 use std::{
     path::{Path, PathBuf},
     process::{Command, Output},
 };
 
-fn engine_probe_path() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_ashift"))
-        .with_file_name(format!("engine-probe{}", std::env::consts::EXE_SUFFIX))
-}
+use support::engine_probe_path;
 
 fn cli() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_ashift"));
@@ -302,6 +301,18 @@ fn normalize_stderr(output: &Output) -> String {
     raw.replace("\r\n", "\n")
 }
 
+#[track_caller]
+fn assert_exit_code(output: &Output, expected: i32, context: &str) {
+    let actual = output.status.code();
+    assert_eq!(
+        actual,
+        Some(expected),
+        "{context}: expected exit code {expected}, got {actual:?}\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 fn redact_pandoc_version_token(line: &str) -> String {
     if let Some(start) = line.find("Pandoc ") {
         let prefix_end = start + 7;
@@ -464,7 +475,7 @@ fn inspect_markdown_human_output() {
         .arg(&file)
         .output()
         .expect("run inspect");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_markdown_human_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -478,7 +489,7 @@ fn inspect_markdown_json_output() {
         .arg("--json")
         .output()
         .expect("run inspect --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_markdown_json_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -491,7 +502,7 @@ fn inspect_pdf_human_output() {
         .arg(&file)
         .output()
         .expect("run inspect");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_pdf_human_output");
     insta::assert_snapshot!(normalize_stdout(&output));
     assert!(!normalize_stderr(&output).contains("engine_missing"));
 }
@@ -506,7 +517,7 @@ fn inspect_pdf_json_output() {
         .arg("--json")
         .output()
         .expect("run inspect --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_pdf_json_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -519,7 +530,7 @@ fn inspect_docx_human_output() {
         .arg(&file)
         .output()
         .expect("run inspect on docx");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_docx_human_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -533,7 +544,7 @@ fn inspect_docx_json_output() {
         .arg("--json")
         .output()
         .expect("run inspect on docx --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_docx_json_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -546,7 +557,7 @@ fn inspect_unknown_format_exit_code_3() {
         .arg(&file)
         .output()
         .expect("run inspect on unknown format");
-    assert_eq!(output.status.code(), Some(3));
+    assert_exit_code(&output, 3, "inspect_unknown_format_exit_code_3");
 }
 
 #[test]
@@ -558,7 +569,7 @@ fn inspect_missing_file_exit_code_1() {
         .arg(&file)
         .output()
         .expect("run inspect on missing file");
-    assert_eq!(output.status.code(), Some(1));
+    assert_exit_code(&output, 1, "inspect_missing_file_exit_code_1");
 }
 
 #[test]
@@ -571,7 +582,7 @@ fn plan_markdown_to_docx_human_output() {
         .args(["--to", "docx"])
         .output()
         .expect("run plan md to docx");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "plan_markdown_to_docx_human_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -585,7 +596,7 @@ fn plan_markdown_to_docx_json_output() {
         .args(["--to", "docx", "--json"])
         .output()
         .expect("run plan md to docx --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "plan_markdown_to_docx_json_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -599,7 +610,7 @@ fn plan_docx_to_markdown_human_output() {
         .args(["--to", "md"])
         .output()
         .expect("run plan docx to md");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "plan_docx_to_markdown_human_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -613,7 +624,7 @@ fn plan_docx_to_markdown_json_output() {
         .args(["--to", "md", "--json"])
         .output()
         .expect("run plan docx to md --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "plan_docx_to_markdown_json_output");
     insta::assert_snapshot!(normalize_stdout(&output));
 }
 
@@ -628,7 +639,7 @@ fn plan_embedded_capabilities_consistency() {
         .args(["--to", "docx", "--json"])
         .output()
         .expect("run plan with embedded capabilities");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "plan_embedded_capabilities_consistency");
 
     let plan_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("valid plan json");
@@ -695,7 +706,7 @@ fn plan_missing_file_exit_code_1() {
 #[test]
 fn engines_human_output() {
     let output = cli().args(["engines"]).output().expect("run engines");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "engines_human_output");
     insta::assert_snapshot!(normalize_engines_human_stdout(&output));
 }
 
@@ -705,7 +716,7 @@ fn engines_json_output() {
         .args(["engines", "--json"])
         .output()
         .expect("run engines --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "engines_json_output");
     insta::assert_snapshot!(normalize_engines_json_stdout(&output));
 }
 
@@ -716,7 +727,7 @@ fn engines_missing_pandoc() {
         .args(["engines"])
         .output()
         .expect("run engines with missing pandoc");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "engines_missing_pandoc");
     let stdout = normalize_stdout(&output);
     assert!(stdout.contains("pandoc"));
     assert!(stdout.contains("missing"));
@@ -725,7 +736,7 @@ fn engines_missing_pandoc() {
 #[test]
 fn doctor_human_output() {
     let output = cli().args(["doctor"]).output().expect("run doctor");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "doctor_human_output");
     insta::assert_snapshot!(normalize_doctor_human_stdout(&output));
 }
 
@@ -735,7 +746,7 @@ fn doctor_json_output() {
         .args(["doctor", "--json"])
         .output()
         .expect("run doctor --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "doctor_json_output");
     let raw_stdout = String::from_utf8_lossy(&output.stdout);
     let p_path = pandoc_path().to_string_lossy().to_string();
     assert!(
@@ -893,7 +904,7 @@ fn convert_markdown_to_docx_json_output() {
         .output()
         .expect("run convert --json");
 
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "convert_markdown_to_docx_json_output");
     assert!(output_file.exists());
     insta::assert_snapshot!(normalize_convert_json_stdout(&output));
 }
@@ -918,7 +929,7 @@ fn convert_format_mismatch_warning_json_output() {
         .output()
         .expect("run convert with mismatch --json");
 
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "convert_format_mismatch_warning_json_output");
     let stderr = normalize_stderr(&output);
     assert!(stderr.contains("warning[format_mismatch]:"));
 
@@ -943,7 +954,7 @@ fn inspect_safe_warning_does_not_leak_url() {
         .output()
         .expect("run inspect on unsafe link");
 
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_safe_warning_does_not_leak_url");
     let stdout = normalize_stdout(&output);
     let stderr = normalize_stderr(&output);
 
@@ -980,7 +991,7 @@ fn inspect_markdown_kitchen_sink_counts() {
         .arg(&file)
         .output()
         .expect("run inspect on full markdown");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect_markdown_kitchen_sink_counts");
     let stdout = normalize_stdout(&output);
     assert!(stdout.contains("1 table"));
     assert!(stdout.contains("1 link"));
@@ -992,7 +1003,11 @@ fn inspect_markdown_kitchen_sink_counts() {
         .arg("--json")
         .output()
         .expect("run inspect --json on full markdown");
-    assert_eq!(output_json.status.code(), Some(0));
+    assert_exit_code(
+        &output_json,
+        0,
+        "inspect_markdown_kitchen_sink_counts --json",
+    );
     let counts: serde_json::Value = serde_json::from_slice(&output_json.stdout).unwrap();
     assert_eq!(counts["counts"]["tables"], 1);
     assert_eq!(counts["counts"]["links"], 1);
@@ -1006,7 +1021,7 @@ fn engines_wrong_version_pandoc() {
         .args(["engines", "--json"])
         .output()
         .expect("run engines with stub pandoc");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "engines_wrong_version_pandoc");
     let stdout = normalize_stdout(&output);
     assert!(stdout.contains("\"version\": \"2.19.2\""));
     assert!(stdout.contains("\"status\": \"wrong version\""));
@@ -1273,7 +1288,7 @@ fn sparse_file_analysis_max_bytes_and_plan_summary_max_bytes() {
         .arg(&large_inspect_file)
         .output()
         .expect("run inspect on over-cap file");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "inspect over analysis cap --json");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("\"code\": \"document_too_large\""),
@@ -1296,7 +1311,7 @@ fn sparse_file_analysis_max_bytes_and_plan_summary_max_bytes() {
         .args(["--to", "html"])
         .output()
         .expect("run plan on over-summary-cap file");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "plan over summary cap");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let summary_line = stdout
         .lines()
@@ -1323,7 +1338,7 @@ fn plan_json_long_filename_not_truncated() {
         .args(["--to", "html"])
         .output()
         .expect("run plan --json");
-    assert_eq!(output.status.code(), Some(0));
+    assert_exit_code(&output, 0, "plan_json_long_filename_not_truncated");
 
     let v: serde_json::Value = serde_json::from_slice(&output.stdout).expect("parse json");
     let input_val = v["input"].as_str().expect("input field in json");
@@ -1475,7 +1490,7 @@ fn test_cross_command_consistency_invalid_utf8() {
         .arg(&valid_33mb)
         .output()
         .unwrap();
-    assert_eq!(insp_json.status.code(), Some(0));
+    assert_exit_code(&insp_json, 0, "inspect valid 33 MiB markdown --json");
     let insp_json_out = String::from_utf8_lossy(&insp_json.stdout);
     assert!(
         insp_json_out.contains("document_too_large"),
@@ -1669,4 +1684,224 @@ fn test_cross_command_consistency_zip64() {
     bytes[extra_pos + 4..extra_pos + 12].copy_from_slice(&huge_size.to_le_bytes());
     std::fs::write(&lying_bomb, &bytes).unwrap();
     assert_cross_command_exit_codes_to(&lying_bomb, "markdown", Some(4));
+}
+
+#[cfg(unix)]
+fn write_executable_stub(dir: &Path, name: &str, body: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = dir.join(name);
+    std::fs::write(&path, body).expect("write executable stub");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+        .expect("set stub permissions");
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn convert_slow_pandoc_stub_succeeds_under_default_timeout() {
+    let dir = tempfile::tempdir().expect("create test tempdir");
+
+    // 1. Standalone slow stub under the default sandbox reports Pandoc available.
+    let slow_describe_stub = write_executable_stub(
+        dir.path(),
+        "pandoc-slow-describe",
+        "#!/bin/sh\nsleep 0.15\nprintf 'pandoc 3.12\\n'\n",
+    );
+    let engines_out = cli()
+        .env("ASHIFT_PANDOC", &slow_describe_stub)
+        .args(["engines", "--json"])
+        .output()
+        .expect("run engines --json with slow pandoc stub");
+    assert_exit_code(&engines_out, 0, "engines with slow pandoc stub");
+    let engines_json: serde_json::Value =
+        serde_json::from_slice(&engines_out.stdout).expect("parse engines JSON");
+    let pandoc_row = engines_json
+        .as_array()
+        .expect("engines array")
+        .iter()
+        .find(|row| row["id"] == "pandoc")
+        .expect("pandoc engine row");
+    assert_eq!(pandoc_row["status"], "ready");
+
+    // 2. Wrapper adding 150ms to `--version` completes mismatch convert cleanly.
+    let real_pandoc = pandoc_path();
+    let wrapper_stub = write_executable_stub(
+        dir.path(),
+        "pandoc-slow-wrapper",
+        &format!(
+            "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"--version\" ]; then\n    sleep 0.15\n    break\n  fi\ndone\nexec '{}' \"$@\"\n",
+            real_pandoc.display()
+        ),
+    );
+    let input = dir.path().join("mismatched.md");
+    std::fs::write(
+        &input,
+        "<!DOCTYPE html><html><head><title>Test</title></head><body><p>Hello world</p></body></html>",
+    )
+    .expect("write mismatched input");
+    let output_file = dir.path().join("out.docx");
+
+    let convert_out = cli()
+        .env("ASHIFT_PANDOC", &wrapper_stub)
+        .env("ASHIFT_SANDBOX", "off")
+        .args(["convert"])
+        .arg(&input)
+        .args(["--to", "docx", "-o"])
+        .arg(&output_file)
+        .arg("--json")
+        .output()
+        .expect("run convert with slow pandoc wrapper");
+    assert_exit_code(&convert_out, 0, "convert with slow pandoc wrapper");
+    assert!(output_file.exists(), "output docx must exist");
+    let stderr = normalize_stderr(&convert_out);
+    assert!(stderr.contains("warning[format_mismatch]:"), "{stderr}");
+    let stdout = normalize_stdout(&convert_out);
+    assert!(stdout.contains("\"code\": \"format_mismatch\""), "{stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn hanging_pandoc_stub_exits_1_on_convert_and_doctor_never_5() {
+    use std::time::{Duration, Instant};
+
+    let dir = tempfile::tempdir().expect("create test tempdir");
+    let hang_stub = write_executable_stub(dir.path(), "pandoc-hang", "#!/bin/sh\nexec sleep 30\n");
+
+    let input = dir.path().join("mismatched.md");
+    std::fs::write(
+        &input,
+        "<!DOCTYPE html><html><head><title>Test</title></head><body><p>Hello world</p></body></html>",
+    )
+    .expect("write mismatched input");
+    let output_file = dir.path().join("out.docx");
+
+    let started = Instant::now();
+    let convert_out = cli()
+        .env("ASHIFT_PANDOC", &hang_stub)
+        .env("ARIAD_TEST_PANDOC_PROBE_TIMEOUT_MS", "100")
+        .args(["convert"])
+        .arg(&input)
+        .args(["--to", "docx", "-o"])
+        .arg(&output_file)
+        .arg("--json")
+        .output()
+        .expect("run convert with hanging pandoc stub");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "hanging convert must time out fast, took {:?}",
+        started.elapsed()
+    );
+    assert_exit_code(&convert_out, 1, "convert with hanging pandoc stub");
+    assert!(!output_file.exists(), "output docx must not be created");
+    let stderr = normalize_stderr(&convert_out);
+    assert!(
+        stderr
+            .contains("the pandoc engine is unavailable: Pandoc timed out while checking version"),
+        "expected dedicated timed-out outcome message, got stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("tool_missing") && !stderr.contains("just pandoc"),
+        "timeout must not misreport Pandoc as missing, got stderr:\n{stderr}"
+    );
+
+    let engines_started = Instant::now();
+    let engines_out = cli()
+        .env("ASHIFT_PANDOC", &hang_stub)
+        .env("ARIAD_TEST_PANDOC_PROBE_TIMEOUT_MS", "100")
+        .args(["engines", "--json"])
+        .output()
+        .expect("run engines with hanging pandoc stub");
+    assert!(
+        engines_started.elapsed() < Duration::from_secs(5),
+        "hanging engines probe must time out fast, took {:?}",
+        engines_started.elapsed()
+    );
+    assert_exit_code(&engines_out, 0, "engines with hanging pandoc stub");
+    let engines_json: serde_json::Value =
+        serde_json::from_slice(&engines_out.stdout).expect("parse engines JSON");
+    let pandoc_row = engines_json
+        .as_array()
+        .expect("engines array")
+        .iter()
+        .find(|row| row["id"] == "pandoc")
+        .expect("pandoc engine row");
+    assert_eq!(
+        pandoc_row["status"], "timed out",
+        "timed-out Pandoc probe must not report missing: {pandoc_row}"
+    );
+    assert_eq!(
+        pandoc_row["note"], "Pandoc timed out while checking version",
+        "expected clear timeout note in engines row: {pandoc_row}"
+    );
+
+    let doctor_started = Instant::now();
+    let doctor_out = cli()
+        .env("ASHIFT_PANDOC", &hang_stub)
+        .env("ARIAD_TEST_PANDOC_PROBE_TIMEOUT_MS", "100")
+        .args(["doctor", "--json"])
+        .output()
+        .expect("run doctor with hanging pandoc stub");
+    assert!(
+        doctor_started.elapsed() < Duration::from_secs(5),
+        "hanging doctor must time out fast, took {:?}",
+        doctor_started.elapsed()
+    );
+    assert_exit_code(&doctor_out, 1, "doctor with hanging pandoc stub");
+    let doctor_json: serde_json::Value =
+        serde_json::from_slice(&doctor_out.stdout).expect("parse doctor JSON");
+    let pandoc_check = doctor_json["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "pandoc_version")
+        .expect("pandoc_version check");
+    assert_eq!(pandoc_check["ok"], false);
+    assert_eq!(pandoc_check["required"], true);
+    assert_eq!(
+        pandoc_check["message"],
+        "Pandoc timed out while checking version"
+    );
+    let describe_check = doctor_json["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|check| check["id"] == "engine_describe")
+        .expect("engine_describe check");
+    assert_eq!(describe_check["ok"], false);
+    assert!(
+        describe_check["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Pandoc timed out while checking version"),
+        "expected engine_describe timeout detail, got: {describe_check}"
+    );
+}
+
+#[test]
+fn convert_missing_pandoc_still_exits_5() {
+    let dir = tempfile::tempdir().expect("create test tempdir");
+    let input = dir.path().join("mismatched.md");
+    std::fs::write(
+        &input,
+        "<!DOCTYPE html><html><head><title>Test</title></head><body><p>Hello world</p></body></html>",
+    )
+    .expect("write mismatched input");
+    let output_file = dir.path().join("out.docx");
+
+    let output = cli()
+        .env("ASHIFT_PANDOC", "/non_existent_path/pandoc")
+        .args(["convert"])
+        .arg(&input)
+        .args(["--to", "docx", "-o"])
+        .arg(&output_file)
+        .arg("--json")
+        .output()
+        .expect("run convert with missing pandoc");
+    assert_exit_code(&output, 5, "convert with missing pandoc");
+    let stderr = normalize_stderr(&output);
+    assert!(
+        stderr.contains("just pandoc") || stderr.contains("ASHIFT_PANDOC"),
+        "missing pandoc must keep install hint, got stderr:\n{stderr}"
+    );
 }

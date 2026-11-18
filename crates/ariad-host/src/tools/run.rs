@@ -23,6 +23,7 @@ use ariad_core::{
     tools::{
         Plan, RunSize, SecretSource, Tier, ToolId, ToolSpec,
         access::{allowed, within_run_quota},
+        tables_csv,
     },
 };
 use schemars::{JsonSchema, Schema};
@@ -39,8 +40,8 @@ use crate::{
         engine,
         inprocess::{self, INPROCESS_PDF_ENGINE},
         publish::{
-            PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
-            default_single_artifact_name, ensure_no_parent_traversal,
+            PublishError, PublishedArtifact, StagedArtifact, default_input_stem,
+            default_multi_artifact_name, default_single_artifact_name, ensure_no_parent_traversal,
             extracted_quarantine_warnings, is_safe_extracted_extension, open_confined_output_dir,
             publish_atomic, replace_staged_input_stem, validate_extracted_artifact_extensions,
             validate_output_path_for_spec, validate_spec_artifact_extensions,
@@ -48,7 +49,7 @@ use crate::{
         },
         secrets::{SecretBag, SecretScrubber},
     },
-    workspace::Workspace,
+    workspace::{Workspace, WorkspaceError},
 };
 
 /// Input file reference for a [`ToolRequest`].
@@ -377,7 +378,10 @@ pub enum ToolError {
     #[error("tool resource limit exceeded")]
     LimitExceeded,
     /// Exit code `5` (`tool_missing`): required engine pack is not installed or failed verification.
-    #[error("the {engine} engine is not available; {hint}")]
+    ///
+    /// A redaction safety refusal from the in-process PDF engine also uses this variant (same
+    /// code and exit code) but displays as its `redaction refused: ...` reason alone.
+    #[error("{}", tool_missing_text(engine, hint))]
     ToolMissing {
         /// Missing engine identifier.
         engine: String,
@@ -408,6 +412,27 @@ pub enum ToolError {
         standard: String,
         report: Box<Value>,
     },
+}
+
+fn tool_missing_text(engine: &str, hint: &str) -> String {
+    if is_safety_refusal(engine, hint) {
+        hint.to_owned()
+    } else {
+        format!("the {engine} engine is not available; {hint}")
+    }
+}
+
+/// Message of the `engine_failure` that ends a redaction whose candidate failed a verification
+/// gate. Nothing is published.
+pub const REDACTION_VERIFICATION_FAILED: &str = "redaction verification failed";
+
+/// Message of the `engine_failure` that ends a redaction whose candidate could not be verified
+/// (a gate was unavailable). Nothing is published.
+pub const REDACTION_NOT_VERIFIABLE: &str = "redaction could not be verified";
+
+/// Reports whether a `ToolMissing` payload is a redaction safety refusal from `ariad-pdf`.
+fn is_safety_refusal(engine: &str, hint: &str) -> bool {
+    engine == super::inprocess::INPROCESS_PDF_ENGINE && ariad_pdf::error::is_refusal_message(hint)
 }
 
 fn format_encrypted_error(needs_password: bool) -> String {
@@ -462,6 +487,35 @@ impl ToolError {
             Self::EncryptedInput { .. } => "encrypted_input",
             Self::Interrupted => "interrupted",
         }
+    }
+
+    /// Reports whether this is a redaction safety refusal: the same input is refused every
+    /// time, so a retry only delays the answer.
+    ///
+    /// Two shapes qualify. A refusal from the PDF engine is `tool_missing`, exit 5, with a
+    /// `redaction refused: ...` or `uninspected carrier refused: ...` reason. A verification
+    /// outcome of the redaction composite is `engine_failure`, exit 1, with exactly
+    /// [`REDACTION_VERIFICATION_FAILED`] or [`REDACTION_NOT_VERIFIABLE`]. Every reason is a
+    /// fixed string without document content, so it is safe to show to remote clients.
+    #[must_use]
+    pub fn is_safety_refusal(&self) -> bool {
+        match self {
+            Self::ToolMissing { engine, hint } => is_safety_refusal(engine, hint),
+            Self::EngineFailure(message) => {
+                message == REDACTION_VERIFICATION_FAILED || message == REDACTION_NOT_VERIFIABLE
+            }
+            _ => false,
+        }
+    }
+
+    /// Reports whether this is the `engine_failure` of a document without any table.
+    ///
+    /// The message is the fixed [`tables_csv::NO_TABLES_MESSAGE`] with no document content, so it
+    /// is safe to show to remote clients, and the same input has no tables every time, so a retry
+    /// only delays the answer.
+    #[must_use]
+    pub fn is_no_tables(&self) -> bool {
+        matches!(self, Self::EngineFailure(message) if message == tables_csv::NO_TABLES_MESSAGE)
     }
 
     /// Constructs a [`ToolError::ToolMissing`] with the install hint from [`crate::engines`].
@@ -637,11 +691,7 @@ fn run_tool_inner(
     }
 
     // 8. Pre-validate output target confinement and engine availability before staging or running.
-    let emits_json = (spec.id != "pdf.forms_export"
-        && spec.id != "pdf.compare"
-        && spec.id != "ai.summarize"
-        && spec.output_format.eq_ignore_ascii_case("json"))
-        || tool_action_emits_json(spec.id, &resolved_secrets.schema_params);
+    let emits_json = tool_emits_json(&spec, &resolved_secrets.schema_params);
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
@@ -652,6 +702,8 @@ fn run_tool_inner(
     let is_document_edit = matches!(spec.id, "edit.open_document" | "edit.export_document");
     let is_cbz = spec.id == "pdf.to_cbz";
     let is_tables_to_csv = spec.id == "pdf.tables_to_csv";
+    let table_reader = is_tables_to_csv
+        .then(|| super::tables::TableReader::detect(request.engine_program.as_deref()));
     let is_compare = spec.id == "pdf.compare";
     let is_web_to_pdf = spec.id == "web.to_pdf";
     let is_compliance = spec.id == "pdf.to_pdfa" || spec.id == "pdf.to_pdfua";
@@ -913,7 +965,7 @@ fn run_tool_inner(
             clock,
         )
         .map_err(|e| e.scrubbed(scrubber))?
-    } else if is_tables_to_csv {
+    } else if let Some(reader) = table_reader {
         super::tables::execute(
             &spec,
             &staged_inputs_with_format,
@@ -925,6 +977,7 @@ fn run_tool_inner(
             &request.cancel,
             on_event,
             clock,
+            reader,
         )
         .map_err(|e| e.scrubbed(scrubber))?
     } else if !is_out_of_process {
@@ -1014,6 +1067,8 @@ fn run_tool_inner(
     }
 
     // 11. Plan and execute atomic multi-artifact publication.
+    let has_companion_report =
+        !emits_json && raw_exec.inline_json.is_none() && raw_exec.companion_report;
     let (published, publish_warnings) = publish_tool_outputs(
         &workspace,
         &spec,
@@ -1021,6 +1076,8 @@ fn run_tool_inner(
         is_out_of_process,
         emits_json,
         extracts_attachments,
+        raw_exec.inline_json.is_some(),
+        has_companion_report,
         &raw_exec.artifacts,
         &input_paths,
         &request.output,
@@ -1044,7 +1101,11 @@ fn run_tool_inner(
     let mut outcome = ToolOutcome {
         tool: spec.id.to_owned(),
         version: spec.version.to_owned(),
-        engine: effective_engine.to_owned(),
+        // The engine that ran: `pdf.tables_to_csv` prefers Docling over its built-in reader.
+        engine: table_reader.map_or_else(
+            || effective_engine.to_owned(),
+            |reader| reader.engine_id(effective_engine),
+        ),
         artifacts: published,
         warnings,
         metrics,
@@ -1059,36 +1120,185 @@ fn run_tool_inner(
     Ok(outcome)
 }
 
-fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
-    if spec_id == "pdf.info" {
-        return true;
-    }
-    let action = params.get("action").and_then(Value::as_str);
-    match spec_id {
-        "ai.summarize" => params
-            .get("format")
-            .and_then(Value::as_str)
-            .unwrap_or("json")
-            .eq_ignore_ascii_case("json"),
-        "ai.translate" | "ai.extract_tables" => params
-            .get("format")
-            .and_then(Value::as_str)
-            .is_some_and(|f| f.eq_ignore_ascii_case("json")),
-        "pdf.outline" => action == Some("export"),
-        "pdf.forms_export" => params
-            .get("format")
-            .and_then(Value::as_str)
-            .unwrap_or("json")
-            .eq_ignore_ascii_case("json"),
-        "pdf.annotations_export" => params
-            .get("format")
-            .and_then(Value::as_str)
-            .is_some_and(|format| format.eq_ignore_ascii_case("json")),
-        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" | "pdf.annotations" => {
-            action == Some("list")
+/// Maximum JSON payload kept inline on [`ToolOutcome::inline_json`] (`32 MiB`, further bounded by
+/// `limits.max_decompressed_bytes`).
+pub(super) const MAX_INLINE_JSON_BYTES: u64 = 32 * 1024 * 1024;
+
+#[cfg(any(test, feature = "test-probe"))]
+thread_local! {
+    static TEST_INLINE_JSON_CAP: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Temporarily lowers `json_inline_cap` on the current thread so tests can verify
+/// oversized companion JSON fallback without allocating >32 MiB payloads.
+#[cfg(any(test, feature = "test-probe"))]
+#[doc(hidden)]
+pub fn with_inline_json_cap_for_test<T>(cap: u64, f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<u64>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_INLINE_JSON_CAP.with(|cell| cell.set(self.0));
         }
-        _ => false,
     }
+    let previous = TEST_INLINE_JSON_CAP.with(|cell| {
+        let old = cell.get();
+        cell.set(Some(cap));
+        old
+    });
+    let _reset = Reset(previous);
+    f()
+}
+
+pub(super) fn json_inline_cap(limits: &Limits) -> u64 {
+    let base = limits.max_decompressed_bytes.min(MAX_INLINE_JSON_BYTES);
+    #[cfg(any(test, feature = "test-probe"))]
+    if let Some(override_cap) = TEST_INLINE_JSON_CAP.with(|cell| cell.get()) {
+        return base.min(override_cap);
+    }
+    base
+}
+
+/// Maximum size of a staged engine JSON artifact the host scrubs when secrets are registered
+/// (`64 MiB`, further bounded by `limits.max_decompressed_bytes`).
+///
+/// The cap bounds both the staged input and the scrubbed output: redaction can grow the text
+/// (a one-byte secret becomes the ten-byte `[REDACTED]`), and any token or output expansion
+/// past the cap fails with `limit_exceeded` before the oversized text is allocated. The scrub
+/// holds the staged bytes, the output buffer, one decoded string token and one scrubbed copy of
+/// it, each at most this cap, so its peak memory stays under four times the cap (256 MiB)
+/// whatever `max_decompressed_bytes` allows and whatever the JSON shape. The cap is twice
+/// [`MAX_INLINE_JSON_BYTES`], so every JSON payload small enough to inline, and companion JSON
+/// up to twice that size, can still be scrubbed and published.
+pub(super) const MAX_SCRUB_JSON_BYTES: u64 = 64 * 1024 * 1024;
+
+#[cfg(any(test, feature = "test-probe"))]
+thread_local! {
+    static TEST_SCRUB_JSON_CAP: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Temporarily lowers `scrub_json_cap` on the current thread so tests can verify the
+/// over-cap refusal without allocating >64 MiB payloads.
+#[cfg(any(test, feature = "test-probe"))]
+#[doc(hidden)]
+pub fn with_scrub_json_cap_for_test<T>(cap: u64, f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<u64>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_SCRUB_JSON_CAP.with(|cell| cell.set(self.0));
+        }
+    }
+    let previous = TEST_SCRUB_JSON_CAP.with(|cell| {
+        let old = cell.get();
+        cell.set(Some(cap));
+        old
+    });
+    let _reset = Reset(previous);
+    f()
+}
+
+/// Largest staged engine JSON artifact scrubbed in memory when secrets are registered.
+pub(super) fn scrub_json_cap(limits: &Limits) -> u64 {
+    let base = limits.max_decompressed_bytes.min(MAX_SCRUB_JSON_BYTES);
+    #[cfg(any(test, feature = "test-probe"))]
+    if let Some(override_cap) = TEST_SCRUB_JSON_CAP.with(|cell| cell.get()) {
+        return base.min(override_cap);
+    }
+    base
+}
+
+pub(super) fn report_not_inlined_warning() -> ConvertWarning {
+    ConvertWarning {
+        code: "report_not_inlined".into(),
+        message: "JSON report exceeded the inline size limit and was written to a companion .json artifact".into(),
+    }
+}
+
+/// Safely replaces any pre-existing staged file or symlink named `name` inside `<workspace>/out/`
+/// through the workspace's capability handle and creates the new artifact with `create_new(true)`.
+pub(super) fn write_staged_artifact(
+    workspace: &Workspace,
+    name: &str,
+    bytes: &[u8],
+    scrubber: &SecretScrubber,
+) -> Result<PathBuf, ToolError> {
+    workspace.remove_artifact(name).map_err(|e| {
+        ToolError::OutputIo(scrubber.scrub(&format!(
+            "could not safely clear staged artifact '{name}': {e}"
+        )))
+    })?;
+    workspace
+        .write_artifact(name, bytes)
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))
+}
+
+/// Streams the regular file at `source` into the staged artifact `name` without buffering it,
+/// with the same link-safe clearing and creation as [`write_staged_artifact`].
+pub(super) fn write_staged_artifact_from_file(
+    workspace: &Workspace,
+    name: &str,
+    source: &Path,
+    scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
+) -> Result<PathBuf, ToolError> {
+    let mut file = open_staged_source(source)
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+    if !file
+        .metadata()
+        .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?
+        .is_file()
+    {
+        return Err(ToolError::OutputIo(
+            "staged source is not a regular file".into(),
+        ));
+    }
+    workspace.remove_artifact(name).map_err(|e| {
+        ToolError::OutputIo(scrubber.scrub(&format!(
+            "could not safely clear staged artifact '{name}': {e}"
+        )))
+    })?;
+    workspace
+        .write_artifact_from_reader(name, &mut file, cancel)
+        .map_err(|e| match e {
+            WorkspaceError::Io(io) if io.kind() == std::io::ErrorKind::Interrupted => {
+                ToolError::Interrupted
+            }
+            other => ToolError::OutputIo(scrubber.scrub(&other.to_string())),
+        })
+}
+
+/// Opens a staged source without following a symlink at the final component, so a link planted
+/// at the source path is refused instead of exposing the file it points to.
+fn open_staged_source(source: &Path) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(not(unix))]
+    if fs::symlink_metadata(source)?.file_type().is_symlink() {
+        return Err(std::io::Error::other("staged source is a symlink"));
+    }
+    options.open(source)
+}
+
+/// Scrubs `value` and returns `(scrubbed_value, serialized_bytes, inline_json)` where `inline_json`
+/// is `Some(scrubbed_value)` only if `serialized_bytes.len() <= json_inline_cap(limits)`.
+pub(super) fn scrub_and_cap_inline_json(
+    value: Value,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+) -> Result<(Value, Vec<u8>, Option<Value>), ToolError> {
+    let scrubbed = scrubber.scrub_value(&value);
+    let bytes = serde_json::to_vec_pretty(&scrubbed)
+        .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
+    let inline = ((bytes.len() as u64) <= json_inline_cap(limits)).then(|| scrubbed.clone());
+    Ok((scrubbed, bytes, inline))
+}
+
+pub(crate) fn tool_emits_json(spec: &ToolSpec, params: &Value) -> bool {
+    spec.emits_json(params)
 }
 
 fn tool_action_extracts_attachments(spec_id: &str, params: &Value) -> bool {
@@ -1448,6 +1658,8 @@ fn publish_tool_outputs(
     is_out_of_process: bool,
     emits_json: bool,
     extracts_attachments: bool,
+    has_inline_json: bool,
+    has_companion_report: bool,
     raw_artifacts: &[(PathBuf, String)],
     inputs: &[PathBuf],
     output: &OutputTarget,
@@ -1470,15 +1682,30 @@ fn publish_tool_outputs(
         .and_then(|s| s.to_str())
         .unwrap_or("document");
 
+    let is_default_beside_input = matches!(output, OutputTarget::DefaultBesideInput);
+    let is_default_compare =
+        is_default_beside_input && naming_template.is_none() && spec.id == "pdf.compare";
+    let single_primary_with_companion = has_companion_report
+        && raw_artifacts.len() == 2
+        && !raw_artifacts[0].1.eq_ignore_ascii_case("json")
+        && raw_artifacts[1].1.eq_ignore_ascii_case("json");
+
     let (dest_dir, explicit_single_filename): (PathBuf, Option<String>) = match output {
         OutputTarget::None => return Ok((Vec::new(), Vec::new())),
         OutputTarget::DefaultBesideInput => {
-            // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`, `layers list`,
-            // `pdf.text_layout`, `pdf.detect_scanned`, `pdf.compare`) without `-o` emit structured JSON inline without writing a file next to input.
-            if (spec.id == "pdf.info" || spec.id == "pdf.compare" || emits_json)
-                && naming_template.is_none()
-            {
+            // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`,
+            // `layers list`, `pdf.text_layout`, `pdf.detect_scanned`, etc.) without `-o` emit structured
+            // JSON inline without writing a file next to input unless the JSON exceeded the inline cap.
+            if emits_json && naming_template.is_none() && has_inline_json {
                 return Ok((Vec::new(), Vec::new()));
+            }
+            if emits_json
+                && (inputs.is_empty() || spec.inputs == ariad_core::tools::InputArity::None)
+            {
+                return Err(ToolError::Usage(format!(
+                    "tool '{}' result exceeds the inline JSON limit (or uses a naming template) and has no input file to publish beside; pass -o <file> or -o <dir>/",
+                    spec.id
+                )));
             }
             let parent = first_input
                 .parent()
@@ -1505,7 +1732,7 @@ fn publish_tool_outputs(
             if is_dir {
                 (path.clone(), None)
             } else {
-                if raw_artifacts.len() > 1 {
+                if raw_artifacts.len() > 1 && !single_primary_with_companion {
                     return Err(ToolError::Confinement(format!(
                         "tool '{}' produced {} artifacts and requires an output directory (-o <dir>/)",
                         spec.id,
@@ -1531,21 +1758,60 @@ fn publish_tool_outputs(
         }
     };
 
-    let multi = raw_artifacts.len() > 1;
-    let mut staged = Vec::with_capacity(raw_artifacts.len());
-    for (idx, (staged_path, format)) in raw_artifacts.iter().enumerate() {
+    let filtered_compare_artifacts: Vec<(PathBuf, String)>;
+    let artifacts_to_publish: &[(PathBuf, String)] = if is_default_compare {
+        let mut ordered = Vec::with_capacity(raw_artifacts.len());
+        for item in raw_artifacts {
+            if item.1.eq_ignore_ascii_case("pdf") {
+                ordered.push(item.clone());
+            }
+        }
+        if !has_inline_json {
+            for item in raw_artifacts {
+                if !item.1.eq_ignore_ascii_case("pdf") {
+                    ordered.push(item.clone());
+                }
+            }
+        }
+        filtered_compare_artifacts = ordered;
+        &filtered_compare_artifacts
+    } else {
+        raw_artifacts
+    };
+
+    if artifacts_to_publish.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+
+    let multi = artifacts_to_publish.len() > 1;
+    let mut staged = Vec::with_capacity(artifacts_to_publish.len());
+    for (idx, (staged_path, format)) in artifacts_to_publish.iter().enumerate() {
         let index_1_based = idx + 1;
-        let target_name = if let Some(ref single_name) = explicit_single_filename {
-            single_name.clone()
+        let is_companion =
+            single_primary_with_companion && idx == 1 && format.eq_ignore_ascii_case("json");
+        let base_target_name = if let Some(ref single_name) = explicit_single_filename {
+            if is_companion {
+                default_single_artifact_name(Path::new(single_name), spec.id, format)
+            } else {
+                single_name.clone()
+            }
         } else if let Some(template) = naming_template {
-            super::publish::render_naming_template_with_clock(
+            let template_index = if is_companion { 1 } else { index_1_based };
+            let rendered = super::publish::render_naming_template_with_clock(
                 template,
                 first_stem,
-                index_1_based,
+                template_index,
                 clock,
                 params.get("date").and_then(Value::as_str),
             )
-            .map_err(PublishError::from)?
+            .map_err(PublishError::from)?;
+            if is_companion {
+                companion_name_from_template(&rendered, &artifacts_to_publish[0].1)
+            } else {
+                rendered
+            }
+        } else if is_companion || single_primary_with_companion {
+            default_single_artifact_name(first_input, spec.id, format)
         } else if extracts_attachments || (spec.id == "pdf.forms_import" && multi) {
             staged_path
                 .file_name()
@@ -1568,6 +1834,16 @@ fn publish_tool_outputs(
                         .unwrap_or("preview.png")
                 )
             }
+        } else if is_default_compare {
+            let stem = default_input_stem(first_input);
+            if format.eq_ignore_ascii_case("pdf") {
+                format!("{stem}.diff.pdf")
+            } else if format.eq_ignore_ascii_case("json") {
+                format!("{stem}.compare.json")
+            } else {
+                let clean_ext = format.trim_start_matches('.');
+                format!("{stem}.compare.{clean_ext}")
+            }
         } else if is_out_of_process
             && let Some(engine_named) = replace_staged_input_stem(staged_path, first_input)
         {
@@ -1583,14 +1859,14 @@ fn publish_tool_outputs(
         staged.push(StagedArtifact::new(
             staged_path.clone(),
             format.clone(),
-            target_name,
+            base_target_name,
         ));
     }
 
     if extracts_attachments {
         validate_extracted_artifact_extensions(&staged)?;
     } else {
-        validate_spec_artifact_extensions(spec, params, emits_json, &staged)?;
+        validate_spec_artifact_extensions(spec, params, emits_json, has_companion_report, &staged)?;
     }
 
     let quarantine_warnings = if extracts_attachments {
@@ -1608,6 +1884,26 @@ fn publish_tool_outputs(
         fail_at_index,
     )?;
     Ok((published, quarantine_warnings))
+}
+
+fn companion_name_from_template(rendered: &str, primary_format: &str) -> String {
+    let path = Path::new(rendered);
+    let clean_primary = primary_format.trim_start_matches('.');
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if ext.eq_ignore_ascii_case("json") {
+            return rendered.to_owned();
+        }
+        if ext.eq_ignore_ascii_case(clean_primary)
+            && let Some(json_name) = path
+                .with_extension("json")
+                .file_name()
+                .and_then(|n| n.to_str())
+        {
+            return json_name.to_owned();
+        }
+    }
+    let stem = rendered.trim_end_matches('.');
+    format!("{stem}.json")
 }
 
 static COMPILED_PARAM_SCHEMAS: LazyLock<RwLock<HashMap<String, Arc<jsonschema::Validator>>>> =
@@ -1842,6 +2138,7 @@ pub(super) fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<
 mod annotation_form_routing_tests {
     use super::*;
     use serde_json::json;
+
     #[test]
     fn import_payload_and_annotation_list_are_routed_by_action() {
         let empty = json!({});
@@ -1849,24 +2146,190 @@ mod annotation_form_routing_tests {
             assert!(!tool_input_is_attachment_payload(id, &empty, 0));
             assert!(tool_input_is_attachment_payload(id, &empty, 1));
         }
-        assert!(tool_action_emits_json(
-            "pdf.annotations",
-            &json!({"action":"list"})
-        ));
-        assert!(!tool_action_emits_json(
-            "pdf.annotations",
-            &json!({"action":"add"})
-        ));
-        assert!(tool_action_emits_json("pdf.forms_export", &empty));
-        assert!(!tool_action_emits_json(
-            "pdf.forms_export",
-            &json!({"format":"csv"})
-        ));
-        assert!(tool_action_emits_json(
-            "pdf.annotations_export",
+        let annotations = ariad_core::tools::find("pdf.annotations").unwrap();
+        let forms_export = ariad_core::tools::find("pdf.forms_export").unwrap();
+        let annotations_export = ariad_core::tools::find("pdf.annotations_export").unwrap();
+        assert!(tool_emits_json(annotations, &json!({"action":"list"})));
+        assert!(!tool_emits_json(annotations, &json!({"action":"add"})));
+        assert!(tool_emits_json(forms_export, &empty));
+        assert!(!tool_emits_json(forms_export, &json!({"format":"csv"})));
+        assert!(tool_emits_json(
+            annotations_export,
             &json!({"format":"json"})
         ));
-        assert!(!tool_action_emits_json("pdf.annotations_export", &empty));
+        assert!(!tool_emits_json(annotations_export, &empty));
         assert!(validate_semantic_params("pdf.forms_import", &json!({"max_records":0})).is_err());
+    }
+
+    #[test]
+    fn tool_emits_json_covers_entire_tool_registry_exhaustively() {
+        let empty = json!({});
+        for spec in ariad_core::tools::all() {
+            let is_pure_json = spec.output_format.eq_ignore_ascii_case("json")
+                && (spec.output_formats.is_empty()
+                    || (spec.output_formats.len() == 1
+                        && spec.output_formats[0].eq_ignore_ascii_case("json")));
+            if is_pure_json {
+                assert!(
+                    tool_emits_json(spec, &empty),
+                    "pure JSON tool '{}' must return true from tool_emits_json",
+                    spec.id
+                );
+                continue;
+            }
+            let mentions_json = spec.output_format.eq_ignore_ascii_case("json")
+                || spec
+                    .output_formats
+                    .iter()
+                    .any(|f| f.eq_ignore_ascii_case("json"))
+                || matches!(
+                    spec.id,
+                    "pdf.outline" | "pdf.attachments" | "pdf.portfolio" | "pdf.layers"
+                );
+            if !mentions_json {
+                assert!(
+                    !tool_emits_json(spec, &empty),
+                    "non-JSON tool '{}' must return false from tool_emits_json",
+                    spec.id
+                );
+                continue;
+            }
+            match spec.id {
+                "pdf.compare" | "pdf.thumbnails" | "pdf.to_pdfa" | "pdf.to_pdfua" => {
+                    assert!(
+                        !tool_emits_json(spec, &empty),
+                        "{} must not use inline-only JSON routing",
+                        spec.id
+                    );
+                }
+                "ai.summarize" => {
+                    assert!(tool_emits_json(spec, &empty));
+                    assert!(tool_emits_json(spec, &json!({"format": "json"})));
+                    assert!(!tool_emits_json(spec, &json!({"format": "md"})));
+                }
+                "ai.translate" | "ai.extract_tables" | "pdf.annotations_export" => {
+                    assert!(!tool_emits_json(spec, &empty));
+                    assert!(tool_emits_json(spec, &json!({"format": "json"})));
+                }
+                "pdf.forms_export" => {
+                    assert!(tool_emits_json(spec, &empty));
+                    assert!(tool_emits_json(spec, &json!({"format": "json"})));
+                    assert!(!tool_emits_json(spec, &json!({"format": "xfdf"})));
+                }
+                "pdf.outline" => {
+                    assert!(tool_emits_json(spec, &json!({"action": "export"})));
+                    assert!(!tool_emits_json(spec, &json!({"action": "clear"})));
+                }
+                "pdf.attachments" | "pdf.portfolio" | "pdf.layers" | "pdf.annotations" => {
+                    assert!(tool_emits_json(spec, &json!({"action": "list"})));
+                    assert!(!tool_emits_json(spec, &json!({"action": "remove"})));
+                }
+                other => panic!(
+                    "multi-format JSON tool '{other}' must be explicitly handled by tool_emits_json and this test"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn scrub_and_cap_inline_json_enforces_cap_and_scrubs_secrets() {
+        let mut secrets = SecretBag::new();
+        secrets.insert("api_key", "top-secret-token").unwrap();
+        let scrubber = SecretScrubber::from_bag(&secrets);
+        let value = json!({"token": "top-secret-token", "status": "ok"});
+        let expected_scrubbed = scrubber.scrub_value(&value);
+        assert!(
+            !expected_scrubbed["token"]
+                .as_str()
+                .unwrap()
+                .contains("top-secret-token")
+        );
+        let expected_bytes =
+            serde_json::to_vec_pretty(&expected_scrubbed).expect("serialize scrubbed");
+        let exact_cap = Limits {
+            max_decompressed_bytes: expected_bytes.len() as u64,
+            ..Limits::local()
+        };
+        let (scrubbed, bytes, inline) =
+            scrub_and_cap_inline_json(value.clone(), &exact_cap, &scrubber).unwrap();
+        assert_eq!(bytes, expected_bytes);
+        assert_eq!(scrubbed, expected_scrubbed);
+        assert_eq!(inline, Some(scrubbed));
+
+        let too_small = Limits {
+            max_decompressed_bytes: (expected_bytes.len() - 1) as u64,
+            ..Limits::local()
+        };
+        let (_, bytes_over, inline_over) =
+            scrub_and_cap_inline_json(value, &too_small, &scrubber).unwrap();
+        assert_eq!(bytes_over, expected_bytes);
+        assert!(inline_over.is_none());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod staged_artifact_error_tests {
+    use super::*;
+
+    #[test]
+    fn clearing_an_unremovable_artifact_reports_output_io() {
+        let workspace = Workspace::new().unwrap();
+        std::fs::create_dir(workspace.output_dir().join("result.json")).unwrap();
+
+        let error = write_staged_artifact(&workspace, "result.json", b"{}", &SecretScrubber::new())
+            .expect_err("a directory cannot be cleared as an artifact");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+
+        let source = workspace.work_dir().join("source.json");
+        std::fs::write(&source, b"{}").unwrap();
+        let error = write_staged_artifact_from_file(
+            &workspace,
+            "result.json",
+            &source,
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect_err("a directory cannot be cleared as an artifact");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+    }
+
+    #[test]
+    fn symlink_source_is_refused_with_output_io() {
+        let workspace = Workspace::new().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("target.bin");
+        std::fs::write(&target, b"secret-bytes").unwrap();
+        let link = workspace.work_dir().join("link.bin");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let error = write_staged_artifact_from_file(
+            &workspace,
+            "final.bin",
+            &link,
+            &SecretScrubber::new(),
+            &CancellationToken::new(),
+        )
+        .expect_err("a symlink source is refused");
+        assert!(matches!(error, ToolError::OutputIo(_)), "{error:?}");
+        assert!(!workspace.output_dir().join("final.bin").exists());
+    }
+
+    #[test]
+    fn cancelled_stage_reports_interrupted() {
+        let workspace = Workspace::new().unwrap();
+        let source = workspace.work_dir().join("source.bin");
+        std::fs::write(&source, vec![7u8; 200 * 1024]).unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let error = write_staged_artifact_from_file(
+            &workspace,
+            "final.bin",
+            &source,
+            &SecretScrubber::new(),
+            &cancel,
+        )
+        .expect_err("cancelled");
+        assert!(matches!(error, ToolError::Interrupted), "{error:?}");
+        assert!(!workspace.output_dir().join("final.bin").exists());
     }
 }

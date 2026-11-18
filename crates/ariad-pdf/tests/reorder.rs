@@ -1452,16 +1452,21 @@ mod catalog_preservation {
         let out_fields = resolve(inner, acro.get(b"Fields").unwrap())
             .as_array()
             .unwrap();
-        assert_eq!(out_fields.len(), copies * top_level_count + 1);
+        // Every copy of page 1 carries its own top-level fields and its own group field.
+        assert_eq!(out_fields.len(), copies * (top_level_count + 1));
 
         let mut registered_widgets = std::collections::HashSet::new();
-        let mut parent_kids_count = 0_usize;
+        let mut field_names = std::collections::HashSet::new();
+        let mut group_fields = 0_usize;
         for entry in out_fields {
             let fid = entry.as_reference().unwrap();
             let fdict = inner.get_dictionary(fid).unwrap();
+            let name = fdict.get(b"T").unwrap().as_str().unwrap().to_vec();
+            assert!(field_names.insert(name), "field names must be unique");
             if let Ok(kids_obj) = fdict.get(b"Kids") {
                 let kids = resolve(inner, kids_obj).as_array().unwrap();
-                parent_kids_count = kids.len();
+                assert_eq!(kids.len(), child_count);
+                group_fields += 1;
                 for kid in kids {
                     registered_widgets.insert(kid.as_reference().unwrap());
                 }
@@ -1469,7 +1474,7 @@ mod catalog_preservation {
                 registered_widgets.insert(fid);
             }
         }
-        assert_eq!(parent_kids_count, copies * child_count);
+        assert_eq!(group_fields, copies);
         assert_eq!(registered_widgets, seen_widgets);
     }
 }
