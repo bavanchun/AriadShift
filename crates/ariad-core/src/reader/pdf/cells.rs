@@ -143,13 +143,13 @@ fn is_marker(text: &str) -> bool {
     {
         return false;
     }
-    lists::is_marker_only(text)
+    lists::is_cell_marker_only(text)
 }
 
 /// Whether the text begins with a bullet or a numbered or lettered label and goes on: the item of
 /// a list. A dash or asterisk does not count, because `+ 5` and `- 3` are amounts in a table.
 fn begins_with_marker(text: &str) -> bool {
-    lists::parse(text)
+    lists::parse_cell(text)
         .is_some_and(|marker| marker.ordered || marker.strength == lists::MarkerStrength::Strong)
 }
 
@@ -498,6 +498,50 @@ mod tests {
             column(&["1.5", "2.5", "3.5", "4.5"]),
         ];
         assert_eq!(recognise(&columns), None);
+    }
+
+    #[test]
+    fn bracketed_numbers_beside_text_are_a_list() {
+        // The years are a column of numbers, so only the labels tell this from a table.
+        let references = [
+            column(&["[1]", "[2]", "[3]", "[4]"]),
+            column(&["Smith", "Garcia", "Okafor", "Tanaka"]),
+            column(&["2019", "2020", "2021", "2023"]),
+            column(&[
+                "Table detection",
+                "Layout analysis",
+                "Column finding",
+                "Aligned text",
+            ]),
+        ];
+        assert_eq!(recognise(&references), Some(Layout::Enumeration));
+    }
+
+    #[test]
+    fn capital_letters_in_parentheses_label_list_items() {
+        // A column of numbers is present, so only the labels tell this from a table.
+        let parenthesised = [
+            column(&["(A) 14", "(A) 13", "(A) 12"]),
+            column(&["(B) 15", "(B) 14", "(B) 13"]),
+            column(&["3", "4", "5"]),
+        ];
+        assert_eq!(recognise(&parenthesised), Some(Layout::Enumeration));
+        let bare = [
+            column(&["A) 14", "A) 13", "A) 12"]),
+            column(&["B) 15", "B) 14", "B) 13"]),
+            column(&["3", "4", "5"]),
+        ];
+        assert_eq!(recognise(&bare), Some(Layout::Enumeration));
+    }
+
+    #[test]
+    fn initials_are_not_list_labels() {
+        let authors = [
+            column(&["A. Smith", "B. Jones", "K. Lee"]),
+            column(&["12", "15", "9"]),
+            column(&["3.5", "1.2", "7.7"]),
+        ];
+        assert_eq!(recognise(&authors), None);
     }
 
     #[test]
