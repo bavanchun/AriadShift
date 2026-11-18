@@ -2,8 +2,9 @@ name: Images
 
 # Container images for linux/amd64 and linux/arm64, each built on a native runner:
 # ariadshift-api and ariadshift-worker-core (infra/docker/server.Dockerfile),
-# ariadshift-worker-office, ariadshift-worker-docling, ariadshift-auth
-# (services/auth/Dockerfile) and ariadshift-web. A v* tag pushes them to GHCR as
+# ariadshift-worker-office, ariadshift-auth
+# (services/auth/Dockerfile) and ariadshift-web. ariadshift-worker-docling is built only by a manual
+# run until the signed Docling pack exists (#204). A v* tag pushes them to GHCR as
 # multi-platform images with SBOM and provenance attestations and signs every image
 # index by digest with keyless cosign. A manual run builds the same images and pushes
 # nothing. docs/self-hosting.md describes running the published images.
@@ -172,10 +173,14 @@ jobs:
             --metadata-file "$RUNNER_TEMP/core.json" core
 
       # The docling image installs the published signed Docling pack, so it fails
-      # until that pack exists. It reuses the office image from the builder's cache.
-      # A failure here does not stop the other images; the job fails at the end.
+      # until that pack exists (waiting on issue #204; publishing the pack is an owner
+      # action). Tag runs therefore skip it, and the publish matrix omits it; a manual
+      # run still builds it, without pushing, to check the Dockerfile. It reuses the
+      # office image from the builder's cache. A failure here does not stop the other
+      # images; the job fails at the end.
       - name: Build the docling image
         id: docling
+        if: github.event_name != 'push'
         continue-on-error: true
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -241,7 +246,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, worker-core, worker-office, worker-docling, auth, web]
+        # worker-docling is not published on tags until the signed Docling pack exists (#204).
+        image: [api, worker-core, worker-office, auth, web]
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
