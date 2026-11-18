@@ -514,6 +514,65 @@ macos-build *args:
         -onlyUsePackageVersionsFromResolvedFile \
         build "$@"
 
+# Build the Release app and install it as "AriadShift Dev" (bundle id com.ariadnev.ariadshift.dev) beside the stable
+# app, in ~/Applications or $ASHIFT_DEV_APP_DIR. The copy has Sparkle switched off, carries the checkout version, and is
+# re-signed ad hoc as a whole: the embedded Sparkle.framework keeps Sparkle's Team ID, which dyld refuses to map into an
+# ad-hoc signed process. The build output is deleted afterwards unless ASHIFT_KEEP_BUILD=1.
+[macos]
+macos-install-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dev_id="com.ariadnev.ariadshift.dev"
+    dev_name="AriadShift Dev"
+    install_dir="${ASHIFT_DEV_APP_DIR:-$HOME/Applications}"
+    sha="$(git rev-parse --short HEAD)"
+    # Highest version tag, not `git describe`: release tags live on main and are not ancestors of dev.
+    base="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+    base="${base#v}"
+    version="${base:-0.0.0}-dev+${sha}"
+    build="$(git rev-list --count HEAD)"
+    just macos-build \
+        "PRODUCT_BUNDLE_IDENTIFIER=$dev_id" \
+        "MARKETING_VERSION=$version" \
+        "CURRENT_PROJECT_VERSION=$build"
+    derived_dir="${MACOS_DERIVED_DATA:-${DERIVED_DATA_DIR:-target/derived-data}}"
+    built_app="$derived_dir/Build/Products/Release/AriadShift.app"
+    [[ -d "$built_app" ]] || { echo "build product missing: $built_app" >&2; exit 1; }
+    stage="$(mktemp -d)"
+    trap 'rm -rf "$stage"' EXIT
+    # Staged copy: a launched bundle cannot be modified in place (App Management), so the install is replaced whole.
+    ditto "$built_app" "$stage/$dev_name.app"
+    app="$stage/$dev_name.app"
+    plist="$app/Contents/Info.plist"
+    pb=/usr/libexec/PlistBuddy
+    "$pb" -c "Set :CFBundleDisplayName $dev_name" "$plist"
+    "$pb" -c "Set :CFBundleName $dev_name" "$plist" 2>/dev/null || "$pb" -c "Add :CFBundleName string $dev_name" "$plist"
+    "$pb" -c "Delete :SUFeedURL" "$plist"
+    "$pb" -c "Set :SUEnableAutomaticChecks false" "$plist"
+    "$pb" -c "Set :SUAutomaticallyUpdate false" "$plist"
+    "$pb" -c "Set :SUPublicEDKey ''" "$plist"
+    xattr -cr "$app"
+    codesign --force --deep --sign - "$app"
+    codesign --verify --deep --strict "$app"
+    mkdir -p "$install_dir"
+    rm -rf "${install_dir:?}/$dev_name.app"
+    ditto "$app" "$install_dir/$dev_name.app"
+    if [[ "${ASHIFT_KEEP_BUILD:-0}" != "1" ]]; then
+        # Only directories inside this checkout are removed; a shared target or derived-data directory is left alone.
+        target_dir="${CARGO_TARGET_DIR:-target}"
+        for dir in "$derived_dir" "$target_dir"; do
+            abs="$(cd "$dir" 2>/dev/null && pwd -P || true)"
+            if [[ -n "$abs" && "$abs" == "$(pwd -P)"/* ]]; then
+                rm -rf "$abs"
+            elif [[ -n "$abs" ]]; then
+                echo "keeping build output outside the checkout: $abs"
+            fi
+        done
+    fi
+    echo "Installed:  $install_dir/$dev_name.app"
+    echo "Bundle id:  $("$pb" -c 'Print :CFBundleIdentifier' "$install_dir/$dev_name.app/Contents/Info.plist")"
+    echo "Version:    $("$pb" -c 'Print :CFBundleShortVersionString' "$install_dir/$dev_name.app/Contents/Info.plist") ($build)"
+
 # Run tests for AriadShiftCore and the AriadShift Xcode scheme.
 [macos]
 macos-test:
