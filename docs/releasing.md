@@ -59,6 +59,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    - `[workspace.package]` -> `version = "X.Y.Z"`
    - `[workspace.dependencies]` -> `ariad-core = { path = "crates/ariad-core", version = "X.Y.Z" }`
    - `[workspace.dependencies]` -> `ariad-engine-io = { path = "crates/ariad-engine-io", version = "X.Y.Z" }`
+   - `[workspace.dependencies]` -> `ariad-ffi = { path = "crates/ariad-ffi", version = "X.Y.Z" }`
    - `[workspace.dependencies]` -> `ariad-pdf = { path = "crates/ariad-pdf", version = "X.Y.Z" }`
    - `[workspace.dependencies]` -> `ariad-host = { path = "crates/ariad-host", version = "X.Y.Z" }`
    - `[workspace.dependencies]` -> `ariad-typst = { path = "crates/ariad-typst", version = "X.Y.Z" }`
@@ -87,6 +88,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    source available for as long as that WASM build is distributed. If upstream
    stops serving it, provide an accessible copy before shipping; see
    [browser engine distribution](web.md#build-and-deploy).
+   In a fresh worktree, run `pnpm --filter @ariadshift/web build` once before `just licenses-check` or `just web-build`: the notices sync reads the Next.js bundle analysis that only `next build --analyze` writes, so both fail on a tree that has never been built.
 5. Stage the explicit paths and commit as `chore(release): prepare X.Y.Z`:
    ```bash
    git add Cargo.toml Cargo.lock THIRD_PARTY_LICENSES apps/desktop/src-tauri/tauri.conf.json fuzz/Cargo.lock crates/ariad-server/tests/snapshots/openapi_v1.json schemas/openapi.v1.json packages/sdk/generator.lock.json
@@ -104,6 +106,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    ```bash
    gh pr merge --rebase --delete-branch
    ```
+   When a pull request into `dev` is squash-merged, GitHub appends ` (#NNN)` to its title. Keep the title plus that suffix at 72 characters or fewer, or the `lint-commits` check on the next promotion fails (seen with #396 and #411; see #425).
 
 ### 2. Promote `dev` to `main` with a merge commit
 
