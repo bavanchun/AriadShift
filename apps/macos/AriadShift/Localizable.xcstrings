@@ -28387,7 +28387,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%1$@ · %2$@ ← %3$@"
+            "value" : "%1$@ · ⁦%2$@⁩ ← ⁦%3$@⁩"
           }
         },
         "en" : {
@@ -31128,7 +31128,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "هذه أداة Pro. يتطلب تشغيلها خطة Pro."
+            "value" : "هذه أداة Pro.‎ يتطلب تشغيلها خطة Pro.‎"
           }
         },
         "en" : {
@@ -32179,7 +32179,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تشغيل الأداة (⌘↩)"
+            "value" : "تشغيل الأداة (⁦⌘↩⁩)"
           }
         },
         "en" : {
@@ -32250,7 +32250,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تتطلب هذه الأداة خطة Pro. قم بالترقية لتشغيلها."
+            "value" : "تتطلب هذه الأداة خطة Pro.‎ قم بالترقية لتشغيلها."
           }
         },
         "en" : {
@@ -36361,7 +36361,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "البحث عن أداة (⌘K)"
+            "value" : "البحث عن أداة (⁦⌘K⁩)"
           }
         },
         "en" : {
@@ -36409,7 +36409,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "متوقفة"
+            "value" : "معطّلة"
           }
         },
         "en" : {
@@ -36457,7 +36457,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "متوقفة"
+            "value" : "معطّلة"
           }
         },
         "en" : {
@@ -42076,7 +42076,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "أداة Pro. يتطلب تشغيلها خطة Pro."
+            "value" : "أداة Pro.‎ يتطلب تشغيلها خطة Pro.‎"
           }
         },
         "en" : {
@@ -43109,7 +43109,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "اختر ملفات PDF لأداة %1$@."
+            "value" : "اختر ملفات PDF لأداة ⁦%1$@⁩."
           }
         },
         "en" : {
@@ -43156,7 +43156,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "كل أدوات PDF، بخصوصية تامة على جهاز Mac."
+            "value" : "كل أدوات PDF، بخصوصية تامة على جهاز Mac.‎"
           }
         },
         "en" : {
@@ -43295,7 +43295,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "الجديد في AriadShift %1$@"
+            "value" : "ما الجديد في AriadShift %1$@"
           }
         },
         "en" : {
@@ -43318,7 +43318,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "اضغط ⌘K للعثور على أي أداة وتشغيلها بجوار مستندك مباشرة."
+            "value" : "اضغط ⁦⌘K⁩ للعثور على أي أداة وتشغيلها بجوار مستندك مباشرة."
           }
         },
         "en" : {
