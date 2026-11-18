@@ -119,7 +119,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-engine-io"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "ariad-core",
  "serde",
@@ -176,7 +176,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-host"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-pdf"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "ariad-core",
  "base64 0.23.1",
@@ -252,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-pdfium-engine"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-typst"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "ariad-core",
  "jiff",
