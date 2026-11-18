@@ -215,11 +215,19 @@ test-licenses-recipes:
     node --test scripts/licenses-recipes.test.mjs
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-licenses-recipes test-winget-manifest test-ci-scope test-ci-sccache test-docling-pack-inputs test-hardening-ci-wiring
+static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-licenses-recipes test-winget-manifest test-ci-scope test-ci-sccache test-docling-pack-inputs test-macos-release-scripts test-hardening-ci-wiring
 
 test-docling-pack-inputs:
     shellcheck scripts/docling-pack-inputs.sh scripts/test-docling-pack-inputs.sh
     bash scripts/test-docling-pack-inputs.sh
+
+# The macOS release scripts that need no macOS tool: the release mode decision (Developer ID, ad-hoc, unsigned) and the
+# ad-hoc signing order and gates, the latter against a stub codesign. macos.yml runs the same tests on the macOS runner.
+test-macos-release-scripts:
+    shellcheck scripts/macos-check-secrets.sh scripts/macos-check-secrets.test.sh scripts/macos-check-secrets-workflow.test.sh scripts/macos-adhoc-sign.sh scripts/macos-adhoc-sign.test.sh
+    bash scripts/macos-check-secrets.test.sh
+    bash scripts/macos-check-secrets-workflow.test.sh
+    bash scripts/macos-adhoc-sign.test.sh
 
 test-ci-sccache:
     shellcheck -x scripts/ci-sccache.sh

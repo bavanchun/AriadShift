@@ -205,5 +205,119 @@ assert on_block['push'].get('tags') == ['v*'], (
     f"release.yml on.push.tags must be ['v*'], got {on_block['push'].get('tags')!r}"
 )
 
+# 4. macos.yml: the ad-hoc release mode keeps the signed path's gates, stays tag-only and keeps every secret scoped.
+macos = load_yaml('.github/workflows/macos.yml')
+m_on = macos.get('on') if 'on' in macos else macos.get(True)
+assert m_on['push'].get('tags') == ['v*'], (
+    f"macos.yml on.push.tags must be ['v*'], got {m_on['push'].get('tags')!r}"
+)
+APPLE_SECRETS = [
+    'APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_SIGNING_IDENTITY',
+    'APPLE_API_KEY_ID', 'APPLE_API_ISSUER', 'APPLE_API_KEY',
+]
+SPARKLE_SECRET = 'SPARKLE_ED_PRIVATE_KEY'
+
+def secrets_in(obj):
+    # Secret names referenced inside ${{ }} expressions. Any other use of the secrets context (secrets[...],
+    # toJSON(secrets)) reports as '<dynamic>', which no step is allowed.
+    found = set()
+    for text in step_strings(obj):
+        for expression in re.findall(r'\$\{\{(.*?)\}\}', text, re.DOTALL):
+            for match in re.finditer(r'\bsecrets\b(?:\s*\.\s*([A-Za-z0-9_]+))?', expression):
+                found.add(match.group(1) or '<dynamic>')
+    return found
+
+def step_named(steps, name):
+    found = [step for step in steps if step.get('name') == name]
+    assert len(found) == 1, f"macos.yml: expected exactly one step named {name!r}, found {len(found)}"
+    return found[0]
+
+m_sign = macos['jobs']['release-sign']
+assert m_sign.get('environment') == 'release', 'macos.yml release-sign must run in the release environment'
+assert "github.event_name == 'push'" in str(m_sign.get('if')) and "startsWith(github.ref, 'refs/tags/v')" in str(m_sign.get('if')), (
+    'macos.yml release-sign must stay restricted to v* tag pushes'
+)
+assert m_sign['outputs']['mode'] == '${{ steps.mode.outputs.mode }}', 'macos.yml release-sign must export the mode'
+ms = m_sign['steps']
+ms_names = [step.get('name') for step in ms if step.get('name')]
+assert len(ms_names) == len(set(ms_names)), 'macos.yml release-sign has duplicate step names'
+ms_checkout_idx, ms_checkout_with = find_checkout(ms, 'macos.yml release-sign')
+assert ms_checkout_with.get('fetch-depth') == 0, 'macos.yml release-sign must fetch full history for the ancestry guard'
+ms_guard_idx = find_ancestry_guard(ms, 'macos.yml release-sign')
+assert (ms_checkout_idx, ms_guard_idx) == (0, 1), 'macos.yml release-sign: checkout then the ancestry guard must be the first two steps'
+for step in ms[: ms_guard_idx + 1]:
+    assert not secrets_in(step), 'macos.yml release-sign: no step before or at the ancestry guard may reference a secret'
+
+mode_idx = next(idx for idx, step in enumerate(ms) if step.get('id') == 'mode')
+assert mode_idx > ms_guard_idx, 'macos.yml release-sign: the credential check must follow the ancestry guard'
+mode_step = ms[mode_idx]
+assert mode_step.get('env') == {name: '${{ secrets.%s }}' % name for name in APPLE_SECRETS + [SPARKLE_SECRET]}, (
+    'macos.yml mode step must receive exactly the six Apple secrets and the Sparkle key, each mapped to its own secret'
+)
+assert 'bash scripts/macos-check-secrets.sh' in mode_step['run']
+assert mode_step.get('if') is None and not mode_step.get('continue-on-error')
+
+# Every secret is confined to the steps that need it. Ad-hoc steps never see an Apple secret.
+allowed_secrets = {
+    mode_step['name']: set(APPLE_SECRETS + [SPARKLE_SECRET]),
+    'Sign, notarize and package release artifacts': set(APPLE_SECRETS),
+    'Generate Sparkle release appcast': {SPARKLE_SECRET},
+    'Generate Sparkle appcast (ad-hoc)': {SPARKLE_SECRET},
+}
+for step in ms:
+    extra = secrets_in(step) - allowed_secrets.get(step.get('name'), set())
+    assert not extra, f"macos.yml release-sign step {step.get('name')!r} references unexpected secrets {sorted(extra)}"
+
+# Each mode runs only its own steps; a widened condition would let one mode do another's work.
+mode_gate = lambda *modes: ' || '.join(f"steps.mode.outputs.mode == '{mode}'" for mode in modes)
+for name, condition in {
+    'Sign, notarize and package release artifacts': mode_gate('signed'),
+    'Generate Sparkle release appcast': mode_gate('signed'),
+    'Build unsigned DMG (workflow artifact only)': mode_gate('unsigned'),
+    'Upload unsigned DMG as workflow artifact': mode_gate('unsigned'),
+    'Sign the application ad-hoc and verify it': mode_gate('adhoc'),
+    'Build ad-hoc DMG': mode_gate('adhoc'),
+    'Generate Sparkle appcast (ad-hoc)': mode_gate('adhoc'),
+    'Record SHA-256 digests of the release assets': mode_gate('signed', 'adhoc'),
+    'Upload signed release assets as workflow artifact': mode_gate('signed', 'adhoc'),
+}.items():
+    assert step_named(ms, name).get('if') == condition, f"macos.yml step {name!r} must run only when {condition}"
+assert 'macos-adhoc-sign.sh app' in step_named(ms, 'Sign the application ad-hoc and verify it')['run']
+assert 'macos-dmg.sh' in step_named(ms, 'Build ad-hoc DMG')['run']
+upload = step_named(ms, 'Upload signed release assets as workflow artifact')
+upload_paths = upload['with']['path']
+assert upload['with']['name'] == 'AriadShift-release-assets' and upload['with']['if-no-files-found'] == 'error'
+assert '*' not in upload_paths and 'universal.dmg' in upload_paths and 'appcast.xml' in upload_paths, (
+    'macos.yml release asset artifact must list explicit file names'
+)
+
+# Publishing: tag-only, signed or ad-hoc only, the workflow token and nothing else.
+m_pub = macos['jobs']['release-publish']
+assert m_pub.get('needs') == ['release-sign'] and m_pub.get('permissions') == {'contents': 'write'}
+assert 'environment' not in m_pub, 'macos.yml release-publish must not use an environment with secrets'
+for needle in (
+    "github.event_name == 'push'",
+    "startsWith(github.ref, 'refs/tags/v')",
+    "needs.release-sign.outputs.mode == 'signed'",
+    "needs.release-sign.outputs.mode == 'adhoc'",
+):
+    assert needle in str(m_pub.get('if')), f"macos.yml release-publish condition must contain {needle}"
+assert 'unsigned' not in str(m_pub.get('if')), 'macos.yml release-publish must never run for an unsigned build'
+assert secrets_in(m_pub) == {'GITHUB_TOKEN'}, f"macos.yml release-publish may use only GITHUB_TOKEN, found {sorted(secrets_in(m_pub))}"
+m_pub_text = '\n'.join(step_strings(m_pub))
+assert SPARKLE_SECRET not in m_pub_text and 'APPLE_' not in m_pub_text
+m_build_text = '\n'.join(step_strings(macos['jobs']['build']))
+assert SPARKLE_SECRET not in m_build_text and 'APPLE_' not in m_build_text, 'macos.yml build job must not touch signing credentials'
+
+# The release helper tests run on the macOS job and, where they need no macOS tool, in `just static` on Linux.
+m_tests = step_named(macos['jobs']['build']['steps'], 'Test release helper scripts')['run']
+justfile_text = Path('justfile').read_text(encoding='utf-8')
+assert re.search(r'^static:.*\btest-macos-release-scripts\b', justfile_text, re.MULTILINE), 'just static must run test-macos-release-scripts'
+macos_recipe = justfile_text.split('\ntest-macos-release-scripts:\n')[1].split('\n\n')[0]
+for test_script in ('macos-check-secrets.test.sh', 'macos-check-secrets-workflow.test.sh', 'macos-adhoc-sign.test.sh'):
+    assert f'bash scripts/{test_script}' in m_tests, f"macos.yml build job must run {test_script}"
+    assert f'bash scripts/{test_script}' in macos_recipe, f"test-macos-release-scripts must run {test_script}"
+assert 'bash scripts/macos-check-release-plan.test.sh' in m_tests
+
 print('Release guard CI wiring assertions passed')
 PY

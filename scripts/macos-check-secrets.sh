@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Decide the release mode from the six Apple signing secrets in the environment.
-#   all six set   -> prints "signed"
-#   none set      -> prints "unsigned" (the unsigned DMG is a workflow artifact only, never a Release asset)
-#   1-5 set       -> prints the missing names to stderr (and GITHUB_STEP_SUMMARY when set), exits 1
-# Only presence is tested. Values are never printed.
+# Decide the release mode from the six Apple signing secrets and the Sparkle EdDSA private key in the environment.
+#
+#   six Apple secrets  SPARKLE_ED_PRIVATE_KEY  mode      what the workflow does
+#   all six            set or unset            signed    Developer ID, notarized (unchanged path)
+#   none               set                     adhoc     ad-hoc signed, Sparkle-updated, published to the Release
+#   none               unset                   unsigned  workflow artifact only, never a Release asset
+#   one to five        set or unset            (fails)   fail closed: names the missing secrets and exits 1
+#
+# The mode is printed on stdout. A partial Apple set fails whatever the Sparkle key says, so a half-configured
+# Developer ID setup can never fall through to an ad-hoc release. Only presence is tested. Values are never printed.
 
 REQUIRED_SECRETS=(
     APPLE_CERTIFICATE
@@ -29,7 +34,11 @@ done
 if [[ "${present}" -eq "${#REQUIRED_SECRETS[@]}" ]]; then
     echo "signed"
 elif [[ "${present}" -eq 0 ]]; then
-    echo "unsigned"
+    if [[ -n "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+        echo "adhoc"
+    else
+        echo "unsigned"
+    fi
 else
     echo "::error::Partial Apple signing secrets: ${present} of ${#REQUIRED_SECRETS[@]} set. Missing: ${missing[*]}" >&2
     if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then

@@ -124,6 +124,7 @@ jobs:
         run: |
           bash scripts/macos-check-secrets.test.sh
           bash scripts/macos-check-secrets-workflow.test.sh
+          bash scripts/macos-adhoc-sign.test.sh
           bash scripts/macos-check-release-plan.test.sh
       - name: Build macOS application bundle
         run: just macos-build
@@ -170,6 +171,12 @@ jobs:
           JOB_NAME: macOS build & test
         run: bash scripts/ci-sccache.sh stop
 
+  # Release modes, decided once by scripts/macos-check-secrets.sh from the credentials in the `release` environment:
+  #   signed    all six Apple secrets: Developer ID signed and notarized; DMG and appcast are published.
+  #   adhoc     no Apple secret and SPARKLE_ED_PRIVATE_KEY set: ad-hoc signed (no Apple Developer account), updated by
+  #             Sparkle with the EdDSA key; DMG and appcast are published.
+  #   unsigned  neither: a workflow artifact only, never published.
+  # One to five Apple secrets fail the run, with or without the Sparkle key. Publishing is tag-only in every mode.
   release-sign:
     name: macOS release (sign and notarize)
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -181,7 +188,7 @@ jobs:
     # Cargo universal build and Xcode build, then two notarizations of at most 20 minutes each.
     timeout-minutes: 120
     outputs:
-      signed: ${{ steps.mode.outputs.mode == 'signed' }}
+      mode: ${{ steps.mode.outputs.mode }}
       dmg_sha256: ${{ steps.digests.outputs.dmg_sha256 }}
       appcast_sha256: ${{ steps.digests.outputs.appcast_sha256 }}
     steps:
@@ -192,7 +199,7 @@ jobs:
           persist-credentials: false
       - name: Require stable branch ancestry
         run: git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
-      - name: Check Apple signing credentials
+      - name: Check release credentials
         id: mode
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -201,13 +208,15 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          # Only its presence is tested here: it decides between the adhoc and unsigned modes.
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           mode="$(bash scripts/macos-check-secrets.sh)"
           echo "mode=${mode}" >> "$GITHUB_OUTPUT"
       - name: Require a known release mode
-        if: steps.mode.outputs.mode != 'signed' && steps.mode.outputs.mode != 'unsigned'
+        if: steps.mode.outputs.mode != 'signed' && steps.mode.outputs.mode != 'adhoc' && steps.mode.outputs.mode != 'unsigned'
         run: |
-          echo "::error::The credential check produced no release mode (expected signed or unsigned)."
+          echo "::error::The credential check produced no release mode (expected signed, adhoc or unsigned)."
           exit 1
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
@@ -240,9 +249,9 @@ jobs:
             echo "::error::Release tag '$RELEASE_TAG' is not a semantic version tag (vMAJOR.MINOR.PATCH[-suffix])."
             exit 1
           fi
-          # The Sparkle public key is required only for a signed release. An unsigned build ships with the updater disabled.
-          if [[ "$RELEASE_MODE" == "signed" && ! "$SPARKLE_PUBLIC_ED_KEY" =~ ^[A-Za-z0-9+/=]{44}$ ]]; then
-            echo "::error::vars.SPARKLE_PUBLIC_ED_KEY must be the 44-character base64 Sparkle public key for a signed release."
+          # The Sparkle public key is required for a signed or an ad-hoc release. An unsigned build ships with the updater disabled.
+          if [[ ( "$RELEASE_MODE" == "signed" || "$RELEASE_MODE" == "adhoc" ) && ! "$SPARKLE_PUBLIC_ED_KEY" =~ ^[A-Za-z0-9+/=]{44}$ ]]; then
+            echo "::error::vars.SPARKLE_PUBLIC_ED_KEY must be the 44-character base64 Sparkle public key for a signed or ad-hoc release."
             exit 1
           fi
       - name: Build release macOS application bundle
@@ -261,8 +270,9 @@ jobs:
             "CURRENT_PROJECT_VERSION=${BUILD_NUMBER}"
             "CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO"
           )
-          # Only a signed release carries the Sparkle public key; the project default (empty) keeps the updater disabled.
-          if [[ "$RELEASE_MODE" == "signed" ]]; then
+          # Only a signed or an ad-hoc release carries the Sparkle public key; the project default (empty) keeps the
+          # updater disabled in an unsigned build.
+          if [[ "$RELEASE_MODE" == "signed" || "$RELEASE_MODE" == "adhoc" ]]; then
             build_args+=("SPARKLE_PUBLIC_ED_KEY=${SPARKLE_PUBLIC_ED_KEY}")
           fi
           just macos-build "${build_args[@]}"
@@ -279,7 +289,7 @@ jobs:
           plist_value() { /usr/libexec/PlistBuddy -c "Print :$1" "${PLIST_PATH}"; }
           [[ "$(plist_value CFBundleShortVersionString)" == "${RELEASE_TAG#v}" ]] || { echo "::error::CFBundleShortVersionString does not match the tag."; exit 1; }
           [[ "$(plist_value CFBundleVersion)" == "${BUILD_NUMBER}" ]] || { echo "::error::CFBundleVersion does not match the build number."; exit 1; }
-          if [[ "$RELEASE_MODE" == "signed" ]]; then
+          if [[ "$RELEASE_MODE" == "signed" || "$RELEASE_MODE" == "adhoc" ]]; then
             [[ "$(plist_value SUPublicEDKey)" == "${SPARKLE_PUBLIC_ED_KEY}" ]] || { echo "::error::SUPublicEDKey does not match vars.SPARKLE_PUBLIC_ED_KEY."; exit 1; }
             echo "Info.plist carries version ${RELEASE_TAG#v}, build ${BUILD_NUMBER} and the configured Sparkle public key."
           else
@@ -299,7 +309,7 @@ jobs:
           bash scripts/macos-dmg.sh target/derived-data/Build/Products/Release/AriadShift.app "target/release/AriadShift-${RELEASE_TAG}-universal-unsigned.dmg"
           {
             echo "### Unsigned build: not published"
-            echo "All six Apple signing credentials are absent from the release environment."
+            echo "All six Apple signing credentials and SPARKLE_ED_PRIVATE_KEY are absent from the release environment."
             echo "AriadShift-${RELEASE_TAG}-universal-unsigned.dmg has no Developer ID signature and no notarization."
             echo "It is kept only as the workflow artifact AriadShift-unsigned-dmg (7 days) and is never attached to a GitHub Release. No appcast was generated."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -363,6 +373,26 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/macos-signing.keychain-db"
           security delete-keychain "$KEYCHAIN_PATH" || true
           rm -f "$RUNNER_TEMP/certificate.p12" || true
+      # Ad-hoc mode: no Apple credential is involved in any of the next two steps.
+      - name: Sign the application ad-hoc and verify it
+        if: steps.mode.outputs.mode == 'adhoc'
+        run: |
+          # Inside-out (Sparkle's XPC services and helpers, Sparkle.framework, the ashift helper, then the app), never
+          # --deep, hardened runtime kept. The script gates on codesign --verify --deep --strict, the ad-hoc and runtime
+          # flags, and the absence of get-task-allow for every signed target, and fails before any DMG exists.
+          bash scripts/macos-adhoc-sign.sh app target/derived-data/Build/Products/Release/AriadShift.app
+      - name: Build ad-hoc DMG
+        if: steps.mode.outputs.mode == 'adhoc'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p target/release
+          bash scripts/macos-dmg.sh target/derived-data/Build/Products/Release/AriadShift.app "target/release/AriadShift-${RELEASE_TAG}-universal.dmg"
+          {
+            echo "### Ad-hoc signed build"
+            echo "AriadShift-${RELEASE_TAG}-universal.dmg is ad-hoc signed: no Developer ID signature, no notarization."
+            echo "Gatekeeper asks for approval on first launch. Updates are verified by the Sparkle EdDSA key."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Generate Sparkle release appcast
         if: steps.mode.outputs.mode == 'signed'
         env:
@@ -379,10 +409,36 @@ jobs:
           fi
           echo "==> Generating Sparkle appcast for $DMG_PATH..."
           bash scripts/macos-appcast.sh "$DMG_PATH" target/release/appcast.xml
+      - name: Generate Sparkle appcast (ad-hoc)
+        if: steps.mode.outputs.mode == 'adhoc'
+        env:
+          # Only this step and the credential check receive the key. macos-appcast.sh pipes it to generate_appcast on
+          # standard input (--ed-key-file -): it never reaches an argument list or a file.
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # An ad-hoc release without a signed feed would strand every installed copy, so a missing key is an error here.
+          if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY is empty in ad-hoc mode; refusing to publish without an appcast."
+            exit 1
+          fi
+          # The runner already masks the secret; this also masks it in any log line a tool might derive from it.
+          echo "::add-mask::${SPARKLE_ED_PRIVATE_KEY}"
+          DMG_PATH="target/release/AriadShift-${RELEASE_TAG}-universal.dmg"
+          APPCAST_PATH="target/release/appcast.xml"
+          rm -f "$APPCAST_PATH"
+          echo "==> Generating Sparkle appcast for $DMG_PATH..."
+          bash scripts/macos-appcast.sh "$DMG_PATH" "$APPCAST_PATH"
+          # The feed must carry an EdDSA signature and point at the exact DMG that release-publish attaches.
+          expected_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/AriadShift-${RELEASE_TAG}-universal.dmg"
+          [[ -s "$APPCAST_PATH" ]] || { echo "::error::appcast.xml was not produced."; exit 1; }
+          grep -q 'sparkle:edSignature="[^"][^"]*"' "$APPCAST_PATH" || { echo "::error::The appcast carries no sparkle:edSignature."; exit 1; }
+          grep -qF "url=\"${expected_url}\"" "$APPCAST_PATH" || { echo "::error::The appcast does not point at ${expected_url}."; exit 1; }
       - name: Record SHA-256 digests of the release assets
         id: digests
-        if: steps.mode.outputs.mode == 'signed'
+        if: steps.mode.outputs.mode == 'signed' || steps.mode.outputs.mode == 'adhoc'
         env:
+          RELEASE_MODE: ${{ steps.mode.outputs.mode }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           dmg_sha256="$(shasum -a 256 "target/release/AriadShift-${RELEASE_TAG}-universal.dmg" | cut -d ' ' -f 1)"
@@ -390,12 +446,17 @@ jobs:
           if [[ -f target/release/appcast.xml ]]; then
             appcast_sha256="$(shasum -a 256 target/release/appcast.xml | cut -d ' ' -f 1)"
           fi
+          # Only a signed (Developer ID) release may go without an appcast. An ad-hoc release is useless without one.
+          if [[ "$RELEASE_MODE" == "adhoc" && -z "$appcast_sha256" ]]; then
+            echo "::error::An ad-hoc release needs target/release/appcast.xml, but none was produced."
+            exit 1
+          fi
           {
             echo "dmg_sha256=${dmg_sha256}"
             echo "appcast_sha256=${appcast_sha256}"
           } >> "$GITHUB_OUTPUT"
       - name: Upload signed release assets as workflow artifact
-        if: steps.mode.outputs.mode == 'signed'
+        if: steps.mode.outputs.mode == 'signed' || steps.mode.outputs.mode == 'adhoc'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: AriadShift-release-assets
@@ -408,8 +469,9 @@ jobs:
 
   release-publish:
     name: macOS release (publish assets)
-    # Only a signed and notarized build reaches this job; the unsigned fallback never does.
-    if: needs.release-sign.outputs.signed == 'true'
+    # Tag-only, twice: release-sign runs only for a v* tag push and this job needs it, and the condition repeats it.
+    # A Developer ID signed (signed) or an ad-hoc signed (adhoc) build reaches this job; the unsigned fallback never does.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && (needs.release-sign.outputs.mode == 'signed' || needs.release-sign.outputs.mode == 'adhoc')
     needs: [release-sign]
     permissions:
       contents: write
@@ -422,11 +484,16 @@ jobs:
           path: release-assets
       - name: Verify the downloaded assets against the digests recorded by release-sign
         env:
+          RELEASE_MODE: ${{ needs.release-sign.outputs.mode }}
           RELEASE_TAG: ${{ github.ref_name }}
           DMG_SHA256: ${{ needs.release-sign.outputs.dmg_sha256 }}
           APPCAST_SHA256: ${{ needs.release-sign.outputs.appcast_sha256 }}
         run: |
           [[ "$DMG_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::release-sign did not export a valid DMG digest."; exit 1; }
+          if [[ "$RELEASE_MODE" == "adhoc" && -z "$APPCAST_SHA256" ]]; then
+            echo "::error::An ad-hoc release must carry an appcast, but release-sign recorded none."
+            exit 1
+          fi
           cd release-assets
           printf '%s  %s\n' "$DMG_SHA256" "AriadShift-${RELEASE_TAG}-universal.dmg" | sha256sum -c -
           if [[ -n "$APPCAST_SHA256" ]]; then
@@ -455,11 +522,16 @@ jobs:
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_MODE: ${{ needs.release-sign.outputs.mode }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          # Fixed asset names, no globs: only the signed DMG and the appcast can ever be attached.
+          # Fixed asset names, no globs: only the DMG (Developer ID or ad-hoc signed) and the appcast can ever be attached.
           dmg="release-assets/AriadShift-${RELEASE_TAG}-universal.dmg"
-          [[ -f "$dmg" ]] || { echo "::error::Signed DMG $dmg is missing from the artifact."; exit 1; }
+          [[ -f "$dmg" ]] || { echo "::error::The release DMG $dmg is missing from the artifact."; exit 1; }
+          if [[ "$RELEASE_MODE" == "adhoc" && ! -f release-assets/appcast.xml ]]; then
+            echo "::error::An ad-hoc release must carry an appcast, but it is missing from the artifact."
+            exit 1
+          fi
           assets=("$dmg")
           if [[ -f release-assets/appcast.xml ]]; then
             assets+=(release-assets/appcast.xml)
