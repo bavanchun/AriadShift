@@ -1,3 +1,4 @@
+import AppKit
 import AriadDesignSystem
 import AriadShiftCore
 import Observation
@@ -22,6 +23,8 @@ final class DocumentSession {
     let tools = ToolPresentation()
     /// File > Export As of this window.
     let export = ExportModel()
+    /// The window that shows this document; the save panel of Export As is a sheet of it.
+    @ObservationIgnored weak var window: NSWindow?
     /// A tool asked for before the engine catalogue was ready (the welcome window hands one over); it opens as soon
     /// as the catalogue arrives.
     private(set) var requestedToolID: String?
@@ -41,7 +44,7 @@ final class DocumentSession {
     /// Asks where to save, then exports the document in `format` without blocking the window.
     func exportDocument(as format: ExportFormat, client: EngineClient?) {
         guard let fileURL else { return }
-        export.begin(format, document: fileURL, converter: client)
+        export.begin(format, document: fileURL, converter: client, window: window)
     }
 
     /// Reads the document facts once the engine has loaded. A failed engine becomes a failed

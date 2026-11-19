@@ -6,7 +6,7 @@ public enum DSRunState: Equatable, Sendable {
     case running(fraction: Double, step: String)
     /// A finished run: the check flashes from `thread` to `success`.
     case done(message: String)
-    /// A failed run: one sentence, never truncated (at most two lines), with optional details behind a disclosure.
+    /// A failed run: a message that is never truncated, with optional details behind a disclosure.
     case failed(message: String, details: String?)
 }
 
@@ -109,7 +109,6 @@ public struct DSProgressRow: View {
                     .accessibilityHidden(true)
                 Text(message)
                     .font(DSFont.callout)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let onDismissError {

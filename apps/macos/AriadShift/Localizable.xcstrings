@@ -14121,6 +14121,42 @@
         }
       }
     },
+    "mac.export.docling_missing" : {
+      "comment" : "Error headline when the optional Docling engine pack is missing. Docling is a product name; keep it untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting this document needs the Docling engine pack, which is not installed. Install the Docling engine pack and try again."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Việc xuất tài liệu này cần gói engine Docling nhưng gói chưa được cài đặt. Hãy cài gói engine Docling rồi thử lại."
+          }
+        }
+      }
+    },
+    "mac.export.docling_tool_missing" : {
+      "comment" : "Error headline when Docling is installed but the Tesseract 5 OCR program or its models are missing. Tesseract is a product name; keep it untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting this document needs Tesseract 5 and its language models, and at least one was not found. Install Tesseract 5 and try again."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Việc xuất tài liệu này cần Tesseract 5 và dữ liệu ngôn ngữ của nó, nhưng ít nhất một thứ không tìm thấy. Hãy cài Tesseract 5 rồi thử lại."
+          }
+        }
+      }
+    },
     "mac.export.done" : {
       "comment" : "Toast after an export finished. {name} is the file name of the exported document.",
       "extractionState" : "manual",
@@ -14140,19 +14176,19 @@
       }
     },
     "mac.export.engine_required" : {
-      "comment" : "Error headline when an optional engine the conversion needs is missing. {engine} is an engine name such as docling; keep it untranslated.",
+      "comment" : "Error headline when an engine the conversion needs, other than Docling, is missing. {engine} is an engine name; keep it untranslated.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Exporting this document needs the %1$@ engine, which is not installed or cannot run."
+            "value" : "Exporting this document needs the %1$@ engine, which is not installed or cannot run. Install it and try again."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Việc xuất tài liệu này cần engine %1$@, nhưng engine chưa được cài đặt hoặc không chạy được."
+            "value" : "Việc xuất tài liệu này cần engine %1$@, nhưng engine chưa được cài đặt hoặc không chạy được. Hãy cài đặt rồi thử lại."
           }
         }
       }
@@ -14285,24 +14321,6 @@
     },
     "mac.export.panel_prompt" : {
       "comment" : "Default button of the export save panel.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Export"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Xuất"
-          }
-        }
-      }
-    },
-    "mac.export.panel_title" : {
-      "comment" : "Title of the save panel that asks where to save the exported document.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {

@@ -2702,6 +2702,11 @@ mod tests {
             "the output path cannot be the same as the input file"
         );
         assert!(
+            ConvertError::DestinationExists
+                .to_string()
+                .starts_with("the destination already exists")
+        );
+        assert!(
             ConvertError::DoclingMissing
                 .to_string()
                 .starts_with("the docling engine is not installed;")

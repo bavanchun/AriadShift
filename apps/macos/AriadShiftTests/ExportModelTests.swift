@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 
@@ -39,7 +40,7 @@ final class ExportModelTests: XCTestCase {
     private func makeModel(choosing url: URL?) -> (ExportModel, offered: () -> [String]) {
         let model = ExportModel()
         var offered: [String] = []
-        model.chooseDestination = { document, format in
+        model.chooseDestination = { document, format, _ in
             offered.append(format.suggestedName(for: document))
             return url
         }
@@ -171,14 +172,59 @@ final class ExportModelTests: XCTestCase {
         XCTAssertNil(failed.details)
     }
 
-    func testAMissingEngineNamesItInTheHeadline() async throws {
-        let model = await exportFailing(
+    func testMissingDoclingAndItsToolsEachGetAShortNextStep() async throws {
+        let missing = await exportFailing(
             .convert(message: "the docling engine is not installed; run `ashift engines install docling`"), format: .md
         )
+        let pack = try XCTUnwrap(failure(of: missing))
+        XCTAssertEqual(pack.headline, String(localized: "mac.export.docling_missing"))
+        XCTAssertTrue(pack.headline.contains("Docling"))
+        XCTAssertFalse(pack.headline.contains("ashift"), "no command line in the headline")
+        XCTAssertNil(pack.details)
+
+        let tools = await exportFailing(
+            .convert(message: "the docling engine is missing Tesseract 5 or its models for this document; x"),
+            format: .md
+        )
+        let tesseract = try XCTUnwrap(failure(of: tools))
+        XCTAssertEqual(tesseract.headline, String(localized: "mac.export.docling_tool_missing"))
+        XCTAssertTrue(tesseract.headline.contains("Tesseract"))
+        XCTAssertNotEqual(tesseract.headline, pack.headline)
+        XCTAssertNil(tesseract.details)
+    }
+
+    func testAnotherMissingEngineNamesItInTheHeadline() async throws {
+        let model = await exportFailing(
+            .convert(message: "the qpdf engine is missing or unsupported; run 'ashift engines install qpdf'"),
+            format: .md
+        )
         let failed = try XCTUnwrap(failure(of: model))
-        XCTAssertTrue(failed.headline.contains("docling"), failed.headline)
+        XCTAssertTrue(failed.headline.contains("qpdf"), failed.headline)
         XCTAssertFalse(failed.headline.contains("ashift engines"), "the raw English hint is not the headline")
         XCTAssertNil(failed.details)
+    }
+
+    func testTheSavePanelSheetGoesToTheWindowOfTheExportingDocument() async throws {
+        let window = NSWindow(
+            contentRect: .init(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered,
+            defer: true
+        )
+        window.isReleasedWhenClosed = false
+        let session = DocumentSession(fileURL: document)
+        session.window = window
+        var received: [NSWindow?] = []
+        session.export.chooseDestination = { _, _, window in
+            received.append(window)
+            return nil
+        }
+        let engine = EngineModel()
+        await engine.waitUntilLoaded()
+
+        session.exportDocument(as: .md, client: try XCTUnwrap(engine.client))
+        await session.export.waitUntilFinished()
+
+        XCTAssertEqual(received.count, 1)
+        XCTAssertTrue(received.first.flatMap { $0 } === window)
     }
 
     func testAnExistingDestinationHasItsOwnMessage() async throws {
@@ -217,7 +263,7 @@ final class ExportModelTests: XCTestCase {
         XCTAssertTrue(session.canExport(client: client))
         XCTAssertFalse(DocumentSession(fileURL: nil).canExport(client: client), "no document")
 
-        session.export.chooseDestination = { _, _ in
+        session.export.chooseDestination = { _, _, _ in
             try? await Task.sleep(for: .milliseconds(200))
             return nil
         }
