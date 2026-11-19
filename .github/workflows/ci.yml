@@ -159,8 +159,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # With the Linux Rust cache evicted the job compiles everything and takes 30 to 35 minutes
+          # (it ran 17 minutes with the cache), so 30 cancelled every pull request run.
           - os: ubuntu-26.04
-            timeout: 30
+            timeout: 45
           - os: macos-26
             timeout: 45
           - os: windows-2025
@@ -229,9 +231,14 @@ jobs:
           fi
           unshare --user --map-root-user --mount true
 
+      # A stalled connection to the Ubuntu archive made `apt-get install` hang for 18 minutes and
+      # then the 30-minute job limit cancelled the job. Abort a transfer that stops moving after 30
+      # seconds, retry it, and fail an apt step that still runs for 10 minutes so a rerun is quick.
       - name: Use the primary Ubuntu archive and update the package index
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
           for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
             if [ -f "$source" ]; then
               sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
@@ -241,6 +248,7 @@ jobs:
 
       - name: Install system LibreOffice
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
           packages=(libreoffice-writer libreoffice-calc libreoffice-impress qpdf)
           pinned=()
@@ -269,6 +277,7 @@ jobs:
 
       - name: Install Linux desktop prerequisites
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
           for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
             if [ -f "$source" ]; then
