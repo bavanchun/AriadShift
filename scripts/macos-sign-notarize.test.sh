@@ -84,7 +84,8 @@ write_fat_macho() { printf '\312\376\272\276' > "$1"; }
 
 # make_app DIR [with-extras]: a fake bundle shaped like the real one. Always: Sparkle with two XPC services, an updater
 # tool, Updater.app and the Current symlink, plus Helpers with the ashift helper and Pandoc (both Mach-O) beside a
-# note that is not code and must stay unsigned. With "with-extras": one more framework, one loose dylib, and a
+# note, an empty file and a two-byte file, none of them code, which must stay unsigned. With "with-extras": one more
+# framework, one loose dylib, and a
 # framework that holds a dylib (the case where signing order decides whether the framework's seal survives).
 make_app() {
     local app="$1"
@@ -96,6 +97,8 @@ make_app() {
     write_fat_macho "${app}/Contents/Helpers/ashift"
     write_macho "${app}/Contents/Helpers/pandoc"
     echo "not code" > "${app}/Contents/Helpers/NOTES.txt"
+    : > "${app}/Contents/Helpers/EMPTY"
+    printf '\312\376' > "${app}/Contents/Helpers/SHORT"
     : > "${app}/Contents/MacOS/AriadShift"
     : > "${sparkle}/Versions/B/Autoupdate"
     ln -s B "${sparkle}/Versions/Current"
@@ -121,6 +124,8 @@ INNER_DYLIB="${INNER}/libinner.dylib"
 HELPER="${APP}/Contents/Helpers/ashift"
 PANDOC="${APP}/Contents/Helpers/pandoc"
 NOTES="${APP}/Contents/Helpers/NOTES.txt"
+EMPTY_FILE="${APP}/Contents/Helpers/EMPTY"
+SHORT_FILE="${APP}/Contents/Helpers/SHORT"
 
 LOG="${TMP_DIR}/codesign.log"
 OUT="${TMP_DIR}/out.txt"
@@ -203,6 +208,8 @@ for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${UPDATE_TOOL}" "${UPDATER}" "$
 done
 expect "never signs the Versions/Current symlink" test -z "$(sign_index "${SPK}/Versions/Current")"
 expect "does not sign a file in Helpers that is not code" test -z "$(sign_index "${NOTES}")"
+expect "does not sign an empty file in Helpers" test -z "$(sign_index "${EMPTY_FILE}")"
+expect "does not sign a two-byte file in Helpers" test -z "$(sign_index "${SHORT_FILE}")"
 
 echo "== sign-app: order, deepest first, the app last =="
 for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${UPDATE_TOOL}" "${UPDATER}"; do
@@ -309,15 +316,29 @@ echo "== An unreadable directory in the bundle fails the run =="
 # rest of the list (later frameworks, the helpers, the app) and still printed success.
 WALK_TMP="${TMP_DIR}/walk-tmp"
 mkdir -p "${WALK_TMP}"
+# can_read PATH: true when this user can read the file or list the directory (false for a chmod 000 path, true for root).
+can_read() {
+    if [[ -d "$1" ]]; then
+        ls "$1" > /dev/null 2>&1
+    else
+        head -c 1 "$1" > /dev/null 2>&1
+    fi
+}
+
+# Frameworks/Inner.framework and Helpers/lib: find cannot list them. Helpers/h: a Mach-O that is listed but cannot be
+# read, so it cannot be told from "not code". Versions/B and its XPCServices: the tests of the names inside them
+# (-d, -f, a glob) would answer "absent" and drop the Sparkle parts without a word.
 unreadable_case=0
-for locked in Contents/Frameworks/Inner.framework Contents/Helpers/lib; do
+for locked in Contents/Frameworks/Inner.framework Contents/Helpers/lib Contents/Helpers/h \
+    Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices Contents/Frameworks/Sparkle.framework/Versions/B; do
     unreadable_case=$((unreadable_case + 1))
     APP_LOCKED="${TMP_DIR}/Locked${unreadable_case}/AriadShift.app"
     make_app "${APP_LOCKED}" with-extras
     mkdir -p "${APP_LOCKED}/Contents/Helpers/lib"
     write_macho "${APP_LOCKED}/Contents/Helpers/lib/extra"
+    write_macho "${APP_LOCKED}/Contents/Helpers/h"
     chmod 000 "${APP_LOCKED}/${locked}"
-    if ls "${APP_LOCKED}/${locked}" > /dev/null 2>&1; then
+    if can_read "${APP_LOCKED}/${locked}"; then
         echo "SKIP unreadable ${locked}: chmod 000 does not block reads here (running as root?)"
     else
         rc=0
@@ -326,6 +347,7 @@ for locked in Contents/Frameworks/Inner.framework Contents/Helpers/lib; do
         expect "and nothing is signed" test ! -s "${LOG}"
         expect "and it does not report success" lacks_file "${OUT}" "Successfully signed"
         expect "and it says the walk failed" grep -q "cannot list the code to sign" "${OUT}"
+        expect "and it names ${locked##*/}" grep -q -F "${locked}" "${OUT}"
         expect "and it leaves no temporary file" test -z "$(ls -A "${WALK_TMP}")"
         rc=0
         run_sign verify-app "${APP_LOCKED}" -- "TMPDIR=${WALK_TMP}" || rc=$?
@@ -333,6 +355,7 @@ for locked in Contents/Frameworks/Inner.framework Contents/Helpers/lib; do
         expect "and nothing is verified" test ! -s "${LOG}"
         expect "and it does not report success" lacks_file "${OUT}" "Verified application"
         expect "and it says the walk failed" grep -q "cannot list the code to sign" "${OUT}"
+        expect "and it names ${locked##*/}" grep -q -F "${locked}" "${OUT}"
         expect "and it leaves no temporary file" test -z "$(ls -A "${WALK_TMP}")"
     fi
     chmod 755 "${APP_LOCKED}/${locked}"
