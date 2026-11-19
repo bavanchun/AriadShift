@@ -6,14 +6,19 @@ repo_root=$(CDPATH= cd "$script_dir/.." && pwd)
 system=$(uname -s)
 machine=$(uname -m)
 bin_subdir='pandoc'
+mode=install
+verify_file=''
+usage="Usage: $0 [--macos-arch arm64|x86_64 | --verify-macos-binary arm64|x86_64 FILE]"
 
 # --macos-arch ARCH installs the pinned macOS binary for ARCH (arm64 or x86_64) under
 # .tools/pandoc-macos-ARCH/bin, whatever the host is. The macOS app embeds both slices, so the
 # one set of version and checksum pins below serves the app build as well as `just pandoc`.
+# --verify-macos-binary ARCH FILE installs nothing: it exits 0 only when FILE is byte for byte the
+# pinned macOS binary for ARCH. The app build uses it to refuse an unchecked binary in .tools.
 case "${1:-}" in
     '')
         ;;
-    --macos-arch)
+    --macos-arch|--verify-macos-binary)
         case "${2:-}" in
             arm64|x86_64)
                 system=Darwin
@@ -21,13 +26,24 @@ case "${1:-}" in
                 bin_subdir="pandoc-macos-$2"
                 ;;
             *)
-                printf 'Usage: %s [--macos-arch arm64|x86_64]\n' "$0" >&2
+                printf '%s\n' "$usage" >&2
                 exit 1
                 ;;
         esac
+        if [ "$1" = '--verify-macos-binary' ]; then
+            if [ "$#" -ne 3 ] || [ -z "$3" ]; then
+                printf '%s\n' "$usage" >&2
+                exit 1
+            fi
+            mode=verify
+            verify_file=$3
+        elif [ "$#" -ne 2 ]; then
+            printf '%s\n' "$usage" >&2
+            exit 1
+        fi
         ;;
     *)
-        printf 'Usage: %s [--macos-arch arm64|x86_64]\n' "$0" >&2
+        printf '%s\n' "$usage" >&2
         exit 1
         ;;
 esac
@@ -36,11 +52,13 @@ case "$system" in
     Linux)
         case "$machine" in
             x86_64|amd64)
+                binary_checksum=''
                 asset='pandoc-3.12-linux-amd64.tar.gz'
                 checksum='67d7d011fed8c8543306022b985b9b2499ab9b74818df91d8727c7e9ebc5ba06'
                 binary_name='pandoc'
                 ;;
             aarch64|arm64)
+                binary_checksum=''
                 asset='pandoc-3.12-linux-arm64.tar.gz'
                 checksum='6cefcf7100e23a99447c26f89d1ff5b253f3407fcef99a9e27ae06f3ed16cb82'
                 binary_name='pandoc'
@@ -54,11 +72,13 @@ case "$system" in
     Darwin)
         case "$machine" in
             arm64|aarch64)
+                binary_checksum='944a597887d68721af64673df44b366905f1771307bbb57615b299d0cb9245f4'
                 asset='pandoc-3.12-arm64-macOS.zip'
                 checksum='f148ca09c9f36594db527a9fc988ad736290ce428f79594c50208cd1ec58b3c0'
                 binary_name='pandoc'
                 ;;
             x86_64|amd64)
+                binary_checksum='91550181c1ff571579f44d72a542100e1b1a9e4eedcb01556c0a339acae48122'
                 asset='pandoc-3.12-x86_64-macOS.zip'
                 checksum='18577f9460c3dc5d2651ad3bab37d513bc2034a5a777fbe18fa0a5acf2e936ea'
                 binary_name='pandoc'
@@ -72,6 +92,7 @@ case "$system" in
     MINGW*|MSYS*|CYGWIN*)
         case "$machine" in
             x86_64|amd64)
+                binary_checksum=''
                 asset='pandoc-3.12-windows-x86_64.zip'
                 checksum='2a77ebc2517d13e95056e76b1cd5b574cfe958ac61aa6058117d80c22ca19b79'
                 binary_name='pandoc.exe'
@@ -108,6 +129,22 @@ verify_archive() {
     actual=$(sha256_file "$1") || return 1
     [ "$actual" = "$checksum" ]
 }
+
+# The binary pins are the SHA-256 of the extracted executable inside the archive pinned above, so a
+# binary already unpacked in .tools can be checked without trusting the unpacking.
+verify_binary() {
+    [ -n "$binary_checksum" ] || return 0
+    actual=$(sha256_file "$1") || return 1
+    [ "$actual" = "$binary_checksum" ]
+}
+
+if [ "$mode" = verify ]; then
+    if [ ! -f "$verify_file" ] || ! verify_binary "$verify_file"; then
+        printf 'Pandoc binary does not match the pinned SHA-256 for %s: %s\n' "$machine" "$verify_file" >&2
+        exit 1
+    fi
+    exit 0
+fi
 
 if [ -f "$archive" ] && ! verify_archive "$archive"; then
     printf 'Cached Pandoc archive failed SHA-256; downloading a fresh copy.\n' >&2
@@ -158,6 +195,11 @@ esac
 binary=$(find "$temp_dir" -type f -name "$binary_name" -print | sed -n '1p')
 if [ -z "$binary" ]; then
     printf 'Could not find %s in the Pandoc archive.\n' "$binary_name" >&2
+    exit 1
+fi
+
+if ! verify_binary "$binary"; then
+    printf 'Pandoc binary SHA-256 mismatch inside %s.\n' "$asset" >&2
     exit 1
 fi
 
