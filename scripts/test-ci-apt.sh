@@ -75,3 +75,22 @@ if FAIL_ON_AZURE=1 APT_STUB_RC=100 run update 2>/dev/null; then
 else
     fail "update should succeed on the primary archive in the stub"
 fi
+
+# 6. APT_ARCHIVES moves the package cache for installs, creates its partial directory, and leaves
+# `update` alone.
+: > "$log"
+rm -f "$work/marker"
+printf 'deb http://azure.archive.ubuntu.com/ubuntu resolute main\n' > "$work/sources.list"
+PATH="$work/bin:$PATH" APT_SUDO='' APT_SOURCES="$work/sources.list" APT_MARKER="$work/marker" \
+    APT_ARCHIVES="$work/archives" bash scripts/ci-apt.sh install -y foo
+grep -q -- "-o Dir::Cache::archives=$work/archives" "$log" || fail "install must use the archive directory"
+[ -d "$work/archives/partial" ] || fail "the archive directory needs a partial subdirectory"
+: > "$log"
+PATH="$work/bin:$PATH" APT_SUDO='' APT_SOURCES="$work/sources.list" APT_MARKER="$work/marker" \
+    APT_ARCHIVES="$work/archives" bash scripts/ci-apt.sh update
+grep -q "Dir::Cache" "$log" && fail "update must not change the archive directory"
+echo "PASS | APT_ARCHIVES applies to installs only"
+
+# 7. The install limit is 600 seconds unless the test overrides it.
+grep -q 'APT_FIRST_TIMEOUT:-600' scripts/ci-apt.sh || fail "the install limit should be 600 seconds"
+echo "PASS | the install limit is 600 seconds"

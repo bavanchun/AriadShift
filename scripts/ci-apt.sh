@@ -10,8 +10,11 @@
 #
 # Usage: scripts/ci-apt.sh update
 #        scripts/ci-apt.sh install --no-install-recommends -y <package>...
+# Set APT_ARCHIVES to a directory to keep the downloaded .deb files there instead of
+# /var/cache/apt/archives, so a job can cache and restore them; apt still checks every cached file
+# against the hashes in the package index before it uses it.
 # Environment (for tests): APT_SUDO (default sudo), APT_SOURCES (files to rewrite),
-# APT_FIRST_TIMEOUT (seconds for the Azure attempt, default 240 for update and 420 for install).
+# APT_FIRST_TIMEOUT (seconds for the Azure attempt, default 240 for update and 600 for install).
 set -euo pipefail
 
 sudo_cmd="${APT_SUDO-sudo}"
@@ -29,6 +32,12 @@ use_primary() {
     touch "$marker"
 }
 
+apt_args=()
+if [ -n "${APT_ARCHIVES:-}" ] && [ "${1:-}" != update ]; then
+    $sudo_cmd mkdir -p "$APT_ARCHIVES/partial"
+    apt_args=(-o "Dir::Cache::archives=$APT_ARCHIVES" -o APT::Keep-Downloaded-Packages=true)
+fi
+
 if [ "$#" -lt 1 ]; then
     echo "usage: ci-apt.sh <apt-get arguments>" >&2
     exit 2
@@ -37,15 +46,15 @@ fi
 if [ "$1" = update ]; then
     limit="${APT_FIRST_TIMEOUT:-240}"
 else
-    limit="${APT_FIRST_TIMEOUT:-420}"
+    limit="${APT_FIRST_TIMEOUT:-600}"
 fi
 
 if [ -f "$marker" ]; then
-    $sudo_cmd apt-get "$@"
+    $sudo_cmd apt-get "${apt_args[@]}" "$@"
     exit
 fi
 
-if $sudo_cmd timeout "$limit" apt-get "$@"; then
+if $sudo_cmd timeout "$limit" apt-get "${apt_args[@]}" "$@"; then
     exit 0
 fi
 
@@ -53,5 +62,5 @@ echo "apt-get $1 failed or timed out on the Azure mirror; switching to archive.u
 use_primary
 $sudo_cmd apt-get update
 if [ "$1" != update ]; then
-    $sudo_cmd apt-get "$@"
+    $sudo_cmd apt-get "${apt_args[@]}" "$@"
 fi
