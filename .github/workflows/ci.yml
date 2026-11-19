@@ -231,24 +231,20 @@ jobs:
           fi
           unshare --user --map-root-user --mount true
 
-      # A stalled connection to the Ubuntu archive made `apt-get install` hang for 18 minutes and
-      # then the 30-minute job limit cancelled the job. Abort a transfer that stops moving after 30
-      # seconds, retry it, and fail an apt step that still runs for 10 minutes so a rerun is quick.
-      - name: Use the primary Ubuntu archive and update the package index
+      # The runner's Azure mirror is tried first and archive.ubuntu.com is the fallback after a
+      # failure or a time limit (scripts/ci-apt.sh). Either mirror stalled for several minutes on
+      # some days: a LibreOffice install took 18 minutes instead of 20 seconds and the job hit its
+      # limit. apt also aborts a transfer that stops moving for 30 seconds and retries it.
+      - name: Update the package index
         if: runner.os == 'Linux'
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
-          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
-            if [ -f "$source" ]; then
-              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
-            fi
-          done
-          sudo apt-get update
+          bash scripts/ci-apt.sh update
 
       - name: Install system LibreOffice
         if: runner.os == 'Linux'
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           packages=(libreoffice-writer libreoffice-calc libreoffice-impress qpdf)
           pinned=()
@@ -258,7 +254,7 @@ jobs:
             pinned+=("$package=$version")
             printf 'Selected %s=%s\n' "$package" "$version"
           done
-          sudo apt-get install --no-install-recommends -y "${pinned[@]}"
+          bash scripts/ci-apt.sh install --no-install-recommends -y "${pinned[@]}"
           soffice --version
 
       - name: Install Pandoc
@@ -277,15 +273,10 @@ jobs:
 
       - name: Install Linux desktop prerequisites
         if: runner.os == 'Linux'
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
-          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
-            if [ -f "$source" ]; then
-              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
-            fi
-          done
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+          bash scripts/ci-apt.sh update
+          bash scripts/ci-apt.sh install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
 
       # The Windows lint job already runs Clippy there.
       - name: Run Clippy
