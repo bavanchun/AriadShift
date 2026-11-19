@@ -201,6 +201,69 @@ assert_package "crates lookalike dir" false crates-old/ariad-core/Cargo.toml
 assert_package "empty list" true
 [ "$(printf 'crates/ariad-core/src/lib.rs\n' | sh "$ci_scope" --classify-package)" = false ] || exit 1
 
+echo "=== macOS and Windows scope ==="
+# assert_os_verify <description> <expected> <path>...  (no path: an unknown change list)
+assert_os_verify() {
+  desc=$1 expected=$2
+  shift 2
+  actual=$(sh "$ci_scope" --classify-os-verify "$@" </dev/null)
+  if [ "$actual" = "$expected" ]; then
+    passed_count=$((passed_count + 1))
+    printf 'PASS | os_verify %-38s | %s\n' "$desc" "$actual"
+  else
+    failed_count=$((failed_count + 1))
+    printf 'FAIL | os_verify %-38s | expected %s, got %s\n' "$desc" "$expected" "$actual" >&2
+  fi
+}
+# Changes confined to the pure crates skip the macOS and Windows jobs.
+assert_os_verify "core source" false crates/ariad-core/src/lib.rs
+assert_os_verify "pdf source" false crates/ariad-pdf/src/lib.rs
+assert_os_verify "typst source" false crates/ariad-typst/src/lib.rs
+assert_os_verify "wasm source" false crates/ariad-wasm/src/lib.rs
+assert_os_verify "core test" false crates/ariad-core/tests/conversion.rs
+assert_os_verify "pdf fixture inside the crate" false crates/ariad-pdf/tests/fixtures/sample.pdf
+assert_os_verify "core data file" false crates/ariad-core/data/capabilities.json
+assert_os_verify "two pure crates" false crates/ariad-core/src/lib.rs crates/ariad-pdf/src/lib.rs
+assert_os_verify "pure source plus docs" false crates/ariad-core/src/lib.rs docs/ci.md
+assert_os_verify "pure source plus web app" false crates/ariad-core/src/lib.rs apps/web/src/index.ts
+assert_os_verify "pure source plus pack script" false crates/ariad-pdf/src/lib.rs engines/qpdf/pack/make.sh
+# Anything else that is heavy runs them.
+assert_os_verify "pure source plus host" true crates/ariad-core/src/lib.rs crates/ariad-host/src/main.rs
+assert_os_verify "host source" true crates/ariad-host/src/main.rs
+assert_os_verify "cli source" true crates/ariad-cli/src/main.rs
+assert_os_verify "ffi source" true crates/ariad-ffi/src/lib.rs
+assert_os_verify "engine-io source" true crates/ariad-engine-io/src/lib.rs
+assert_os_verify "server source" true crates/ariad-server/src/worker.rs
+assert_os_verify "pdfium engine source" true crates/ariad-pdfium-engine/src/main.rs
+assert_os_verify "desktop native command" true apps/desktop/src-tauri/src/lib.rs
+assert_os_verify "pure source plus desktop native" true crates/ariad-core/src/lib.rs apps/desktop/src-tauri/src/lib.rs
+assert_os_verify "root Cargo.toml" true Cargo.toml
+assert_os_verify "root Cargo.lock" true Cargo.lock
+assert_os_verify "pure source plus Cargo.lock" true crates/ariad-core/src/lib.rs Cargo.lock
+assert_os_verify "pure crate manifest" true crates/ariad-core/Cargo.toml
+assert_os_verify "pure crate build script" true crates/ariad-pdf/build.rs
+assert_os_verify "wasm crate manifest" true crates/ariad-wasm/Cargo.toml
+assert_os_verify "pure source plus its manifest" true crates/ariad-core/src/lib.rs crates/ariad-core/Cargo.toml
+assert_os_verify "rust-toolchain.toml" true rust-toolchain.toml
+assert_os_verify "cargo config" true .cargo/config.toml
+assert_os_verify "justfile" true justfile
+assert_os_verify "workflow ci.yml" true .github/workflows/ci.yml
+assert_os_verify "script" true scripts/ci-scope.sh
+assert_os_verify "install script" true scripts/install-wasm-bindgen.sh
+assert_os_verify "top-level fixture" true fixtures/scan/en-alice-p3.pdf
+assert_os_verify "engine source" true engines/docling/pack/licenses.py
+assert_os_verify "schema" true schemas/openapi.v1.json
+assert_os_verify "fuzz crate" true fuzz/fuzz_targets/docx_meta_tests.rs
+assert_os_verify "crate lookalike dir" true crates/ariad-core-extra/src/lib.rs
+assert_os_verify "crates lookalike dir" true crates-old/ariad-core/src/lib.rs
+# Nothing heavy runs, so nothing runs on macOS and Windows either.
+assert_os_verify "docs only" false docs/ci.md
+assert_os_verify "web app only" false apps/web/src/index.ts
+assert_os_verify "pack only" false scripts/pack/sign-pack.sh
+# An unknown change list runs everything.
+assert_os_verify "empty list" true
+[ "$(printf 'crates/ariad-core/src/lib.rs\n' | sh "$ci_scope" --classify-os-verify)" = false ] || exit 1
+
 echo "=== Scope outputs (event and git diff) ==="
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -225,14 +288,20 @@ parts_all='[{"part":"lint"},{"part":"test-1","shard":1,"shards":2},{"part":"test
 parts_no_package="$parts_all]"
 parts_package="$parts_all,{\"part\":\"package\"}]"
 
-# assert_outputs <description> <package> <linux_parts> <env assignment>...
-assert_outputs() {
-  desc=$1 expected_package=$2 expected_parts=$3
-  shift 3
+# run_scope <env assignment>...: run the scope script in the test repository and leave its
+# outputs in $tmp/output.
+run_scope() {
   : > "$tmp/output"
   # The variables a real run reads are cleared first, and the step summary is never written.
   (cd "$repo" && env -u GITHUB_STEP_SUMMARY -u EVENT_NAME -u PUSH_BEFORE -u REF_NAME \
     -u PR_BASE_SHA -u PR_HEAD_SHA -u PR_BASE_REF "$@" GITHUB_OUTPUT="$tmp/output" sh "$ci_scope" >/dev/null)
+}
+
+# assert_outputs <description> <package> <linux_parts> <env assignment>...
+assert_outputs() {
+  desc=$1 expected_package=$2 expected_parts=$3
+  shift 3
+  run_scope "$@"
   actual_package=$(sed -n 's/^package=//p' "$tmp/output")
   actual_parts=$(sed -n 's/^linux_parts=//p' "$tmp/output")
   if [ "$actual_package" = "$expected_package" ] && [ "$actual_parts" = "$expected_parts" ]; then
@@ -259,6 +328,39 @@ assert_pr() {
     PR_HEAD_SHA="$(git_in rev-parse HEAD)" PR_BASE_REF=dev
 }
 
+# assert_os_outputs <description> <expected os_verify> <expected package> <env assignment>...
+assert_os_outputs() {
+  desc=$1 expected_os=$2 expected_package=$3
+  shift 3
+  run_scope "$@"
+  actual_os=$(sed -n 's/^os_verify=//p' "$tmp/output")
+  actual_package=$(sed -n 's/^package=//p' "$tmp/output")
+  actual_parts=$(sed -n 's/^linux_parts=//p' "$tmp/output")
+  expected_parts=$parts_no_package
+  if [ "$expected_package" = true ]; then expected_parts=$parts_package; fi
+  if [ "$actual_os" = "$expected_os" ] && [ "$actual_package" = "$expected_package" ] && \
+     [ "$actual_parts" = "$expected_parts" ]; then
+    passed_count=$((passed_count + 1))
+    printf 'PASS | outputs %-34s | os_verify=%s package=%s\n' "$desc" "$actual_os" "$actual_package"
+  else
+    failed_count=$((failed_count + 1))
+    printf 'FAIL | outputs %-34s | expected os_verify=%s package=%s %s, got %s %s %s\n' \
+      "$desc" "$expected_os" "$expected_package" "$expected_parts" "$actual_os" "$actual_package" "$actual_parts" >&2
+  fi
+}
+
+# assert_os_pr <description> <expected os_verify> <expected package> <setup command>: like
+# assert_pr, for the macOS and Windows decision.
+assert_os_pr() {
+  desc=$1 expected_os=$2 expected_package=$3 setup=$4
+  git_in checkout -q -B change base
+  (cd "$repo" && eval "$setup")
+  git_in commit -q -a -m change
+  assert_os_outputs "$desc" "$expected_os" "$expected_package" \
+    EVENT_NAME=pull_request PR_BASE_SHA="$(git_in rev-parse base)" \
+    PR_HEAD_SHA="$(git_in rev-parse HEAD)" PR_BASE_REF=dev
+}
+
 assert_outputs "manual run" true "$parts_package" EVENT_NAME=workflow_dispatch
 assert_outputs "push without a previous commit" true "$parts_package" EVENT_NAME=push REF_NAME=dev
 git_in checkout -q -B change base
@@ -266,6 +368,10 @@ printf 'pub fn two() {}\n' >> "$repo/crates/ariad-core/src/lib.rs"
 git_in commit -q -a -m edit
 assert_outputs "push of a Rust edit to dev" true "$parts_package" \
   EVENT_NAME=push PUSH_BEFORE="$(git_in rev-parse base)" REF_NAME=dev
+assert_os_outputs "push of a pure crate edit to dev" true true \
+  EVENT_NAME=push PUSH_BEFORE="$(git_in rev-parse base)" REF_NAME=dev
+assert_os_outputs "manual run runs macOS and Windows" true true EVENT_NAME=workflow_dispatch
+assert_os_outputs "push without a previous commit" true true EVENT_NAME=push REF_NAME=dev
 assert_pr "edit of existing Rust source" false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs"
 assert_pr "edit of the docs only" false "printf 'more\n' >> docs/notes.md"
 assert_pr "Rust edit plus docs" false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; printf 'more\n' >> docs/notes.md"
@@ -282,6 +388,14 @@ assert_pr "include_bytes outside the crate" true "printf 'static B: &[u8] = incl
 assert_pr "path attribute outside the crate" true "printf '#[path = \"../../other/mod.rs\"]\nmod other;\n' >> crates/ariad-core/src/lib.rs"
 assert_pr "include_str inside the crate" false "printf 'const A: &str = include_str!(\"data.txt\");\n' >> crates/ariad-core/src/lib.rs"
 assert_pr "docs-only addition" false "printf 'new\n' > docs/new.md; git add docs/new.md"
+assert_os_pr "pure crate edit skips macOS and Windows" false false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs"
+assert_os_pr "pure crate test and asset edit" false true "printf '{\"a\":1}\n' > crates/ariad-core/assets/data.json"
+assert_os_pr "pure crate edit plus docs" false false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; printf 'more\n' >> docs/notes.md"
+assert_os_pr "pure crate manifest edited" true true "printf 'version = \"1\"\n' >> crates/ariad-core/Cargo.toml"
+assert_os_pr "pure crate edit plus host file" true true "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; mkdir -p crates/ariad-host/src; printf 'fn main() {}\n' > crates/ariad-host/src/main.rs; git add crates/ariad-host/src/main.rs"
+assert_os_pr "pure crate edit plus justfile" true true "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; printf 'default:\n' > justfile; git add justfile"
+assert_os_pr "file moved from a pure crate to the host" true true "mkdir -p crates/ariad-host/src; git mv crates/ariad-core/src/lib.rs crates/ariad-host/src/lib.rs"
+assert_os_pr "docs-only change runs nothing" false false "printf 'more\n' >> docs/notes.md"
 git_in checkout -q base
 
 echo "=== Summary ==="

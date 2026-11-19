@@ -1,12 +1,15 @@
 #!/bin/sh
 # Decides, inside GitHub Actions, which commits to lint, whether the
-# multi-OS build and test jobs must run, whether the packaging check must run,
-# and whether the web job must run. See docs/ci.md for the rules.
+# multi-OS build and test jobs must run, whether the macOS and Windows jobs
+# must run (os_verify), whether the packaging check must run, and whether the
+# web job must run. See docs/ci.md for the rules.
 #
 # Input (environment): EVENT_NAME, PR_BASE_SHA, PR_HEAD_SHA, PR_BASE_REF,
 # PUSH_BEFORE, REF_NAME, GITHUB_REPOSITORY, GH_TOKEN.
 # Arguments: --classify <path>... or --classify with paths on stdin.
-# Output (GITHUB_OUTPUT): range, heavy, web, package, linux_parts, reason.
+# Output (GITHUB_OUTPUT): range, heavy, web, package, os_verify, linux_parts, reason.
+# --classify-os-verify [paths...] prints true if a pull request with these changed paths must run
+# the macOS and Windows jobs.
 # --classify-cloud [paths...] prints true if any path needs the cloud E2E.
 # --classify-package [--rs-risk] [--added <path>]... [paths...] prints true if the change can
 # affect `cargo package`. An --added path counts as changed and as added; --rs-risk says the
@@ -51,6 +54,13 @@ cloud_paths='^(infra/|apps/web/|crates/ariad-(server|core|pdf|engine-io|host|cli
 # and finds it there.
 package_paths='^(Cargo\.(toml|lock)|rust-toolchain\.toml|justfile|README\.md)$|^\.cargo/|^crates/[^/]+/build\.rs$|^scripts/ci-scope\.sh$|^\.github/workflows/ci\.yml$'
 
+# The crates that are pure Rust and OS independent (no host process, no platform code, wasm safe).
+# Linux tests them on every pull request; a change confined to them skips the macOS and Windows
+# jobs (os_verify). A manifest or build script inside one of them can change the dependency graph
+# for every OS, so those files never count as pure.
+pure_crate_paths='^crates/ariad-(core|pdf|typst|wasm)/'
+pure_crate_graph_files='(^|/)(Cargo\.(toml|lock)|build\.rs)$'
+
 # Parts of the Linux Verify job, as JSON for its matrix. The test shards carry their own index
 # and count, so the workflow never repeats the number of shards.
 test_shards=2
@@ -69,6 +79,39 @@ package_decision() {
     elif printf '%s\n' "$1" | grep -E '^crates/' | grep -v -E '\.rs$' >/dev/null; then
         echo true
     elif printf '%s\n' "$2" | grep -E '^crates/' >/dev/null; then
+        echo true
+    else
+        echo false
+    fi
+}
+
+# Prints true or false: must the macOS and Windows jobs run?
+# $1: the heavy decision. $2: the event name. $3: every path the change touched (a rename lists
+# both sides), empty when unknown.
+# They are skipped (false) only for a pull request whose every path that makes the Rust jobs
+# heavy lies in a pure crate and is neither a manifest nor a build script. Pushes, manual runs and
+# an unknown change list always run them, and so does everything when nothing runs at all (false:
+# the jobs are skipped with the rest).
+os_verify_decision() {
+    if [ "$1" != true ]; then
+        echo false
+        return
+    fi
+    if [ "$2" != pull_request ] || [ -z "$3" ]; then
+        echo true
+        return
+    fi
+    # The paths that made the change heavy: the ones no light rule covers, and the native
+    # desktop code under apps/.
+    relevant=$({
+        printf '%s\n' "$3" | grep -v -E "$docs_paths|$js_paths|$e2e_paths|$pack_paths" || true
+        printf '%s\n' "$3" | grep -E '^apps/desktop/src-tauri/' || true
+    } | grep -v '^$' || true)
+    if [ -z "$relevant" ]; then
+        echo true
+    elif printf '%s\n' "$relevant" | grep -v -E "$pure_crate_paths" >/dev/null; then
+        echo true
+    elif printf '%s\n' "$relevant" | grep -E "$pure_crate_graph_files" >/dev/null; then
         echo true
     else
         echo false
@@ -199,6 +242,20 @@ if [ "${1:-}" = "--classify" ]; then
     exit 0
 fi
 
+if [ "${1:-}" = --classify-os-verify ]; then
+    shift
+    if [ "$#" -gt 0 ]; then
+        changed=$(printf '%s\n' "$@")
+    else
+        changed=$(cat)
+    fi
+    EVENT_NAME="pull_request"
+    target_ref="dev"
+    decision=$(decide)
+    os_verify_decision "${decision%%|*}" pull_request "$changed"
+    exit 0
+fi
+
 case "${EVENT_NAME:-}" in
     pull_request)
         range="${PR_BASE_SHA:-}..${PR_HEAD_SHA:-}"
@@ -237,12 +294,17 @@ else
 fi
 linux_parts=$(linux_parts_json "$package")
 
+# The macOS and Windows jobs. The diff is read without rename detection so that a file moved out
+# of another crate into a pure one still shows its old path.
+os_verify=$(os_verify_decision "$heavy" "${EVENT_NAME:-}" "${package_changed:-}")
+
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {
         printf 'range=%s\n' "$range"
         printf 'heavy=%s\n' "$heavy"
         printf 'web=%s\n' "$web"
         printf 'package=%s\n' "$package"
+        printf 'os_verify=%s\n' "$os_verify"
         printf 'linux_parts=%s\n' "$linux_parts"
         printf 'reason=%s\n' "$reason"
     } >> "$GITHUB_OUTPUT"
@@ -253,9 +315,10 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
         printf '### CI scope\n\n'
         printf -- '- Commits checked: `%s`\n' "${range:-none}"
         printf -- '- Build and test on three OSes: **%s** (%s)\n' "$heavy" "$reason"
+        printf -- '- macOS and Windows jobs: **%s**\n' "$os_verify"
         printf -- '- Packaging check: **%s**\n' "$package"
         printf -- '- Web checks: **%s**\n' "$web"
     } >> "$GITHUB_STEP_SUMMARY"
 fi
 
-printf 'heavy=%s web=%s package=%s (%s), range=%s\n' "$heavy" "$web" "$package" "$reason" "${range:-none}"
+printf 'heavy=%s web=%s package=%s os_verify=%s (%s), range=%s\n' "$heavy" "$web" "$package" "$os_verify" "$reason" "${range:-none}"
