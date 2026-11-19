@@ -1,0 +1,79 @@
+---
+source: crates/ariad-cli/tests/it/commands_cli.rs
+assertion_line: 694
+expression: normalize_engines_json_stdout(&output)
+---
+[
+  {
+    "id": "ariad-core",
+    "version": "[VERSION]",
+    "license": "Apache-2.0",
+    "status": "ready",
+    "routes": [
+      "ariad-ir+json -> html",
+      "ariad-ir+json -> markdown",
+      "html -> ariad-ir+json",
+      "markdown -> ariad-ir+json"
+    ]
+  },
+  {
+    "id": "pandoc",
+    "version": "[VERSION]",
+    "license": "GPL-2.0-or-later",
+    "status": "ready",
+    "routes": [
+      "ariad-ir+json -> docx",
+      "ariad-ir+json -> epub",
+      "docx -> ariad-ir+json",
+      "epub -> ariad-ir+json"
+    ]
+  },
+  {
+    "id": "pdf",
+    "version": "[VERSION]",
+    "license": "Apache-2.0",
+    "status": "ready",
+    "routes": []
+  },
+  {
+    "id": "typst",
+    "version": "[VERSION]",
+    "license": "Apache-2.0",
+    "status": "ready",
+    "routes": []
+  },
+  {
+    "id": "libreoffice",
+    "version": "-",
+    "license": "MPL-2.0",
+    "status": "missing",
+    "note": "optional",
+    "routes": []
+  },
+  {
+    "id": "docling",
+    "version": "-",
+    "license": "Apache-2.0",
+    "status": "not installed",
+    "note": "available in v0.2",
+    "routes": [
+      "docx -> ariad-ir+json"
+    ]
+  },
+  {
+    "id": "pdfium",
+    "version": "-",
+    "license": "Apache-2.0",
+    "status": "not installed",
+    "note": "run 'ashift engines install pdfium' to install the pdfium engine pack",
+    "routes": []
+  },
+  {
+    "id": "qpdf",
+    "version": "-",
+    "license": "Apache-2.0",
+    "status": "not installed",
+    "note": "run 'ashift engines install qpdf' to install the qpdf engine pack",
+    "routes": []
+  }
+]

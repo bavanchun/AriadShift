@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-cli/tests/route_golden.rs
+source: crates/ariad-cli/tests/it/route_golden.rs
 ---
 | **BỘ KHOA HỌC VÀ CÔNG NGHỆ<br />\--------** | **CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM<br />Độc lập - Tự do - Hạnh phúc<br />\----------------** |
 | :---: | --- |

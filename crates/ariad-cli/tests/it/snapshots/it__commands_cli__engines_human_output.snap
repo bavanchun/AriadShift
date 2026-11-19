@@ -1,0 +1,16 @@
+---
+source: crates/ariad-cli/tests/it/commands_cli.rs
+assertion_line: 684
+expression: normalize_engines_human_stdout(&output)
+---
+ENGINE       VERSION   LICENSE            STATUS                             ROUTES
+ariad-core  [VERSION]  Apache-2.0         ready                              ariad-ir+json -> html, ariad-ir+json -> markdown, html -> ariad-ir+json, markdown -> ariad-ir+json
+pandoc      [VERSION]  GPL-2.0-or-later   ready                              ariad-ir+json -> docx, ariad-ir+json -> epub, docx -> ariad-ir+json, epub -> ariad-ir+json
+pdf         [VERSION]  Apache-2.0         ready                              (none)
+typst       [VERSION]  Apache-2.0         ready                              (none)
+libreoffice [VERSION]  MPL-2.0            missing (optional)                 (none)
+docling      -         Apache-2.0         not installed (available in v0.2)  docx -> ariad-ir+json
+pdfium       -         Apache-2.0         not installed (run 'ashift engines install pdfium' to install the pdfium engine pack) (none)
+qpdf         -         Apache-2.0         not installed (run 'ashift engines install qpdf' to install the qpdf engine pack) (none)
+
+no engine packs installed

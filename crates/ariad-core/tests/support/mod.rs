@@ -17,7 +17,7 @@ pub const CAPABILITIES_SCHEMA_ID: &str =
     "https://ariadshift.ariadnev.com/schemas/capabilities.v0.json";
 
 #[allow(dead_code)]
-#[path = "../../../ariad-cli/tests/support/fixtures.rs"]
+#[path = "../../../ariad-cli/tests/it/support/fixtures.rs"]
 pub mod fixtures;
 
 pub fn repository_root() -> PathBuf {
