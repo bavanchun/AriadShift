@@ -1,13 +1,15 @@
 #!/bin/sh
 # Decides, inside GitHub Actions, which commits to lint, whether the
-# multi-OS build and test jobs must run, and whether the web job must run.
-# See docs/ci.md for the rules.
+# multi-OS build and test jobs must run, whether the packaging check must run,
+# and whether the web job must run. See docs/ci.md for the rules.
 #
 # Input (environment): EVENT_NAME, PR_BASE_SHA, PR_HEAD_SHA, PR_BASE_REF,
 # PUSH_BEFORE, REF_NAME, GITHUB_REPOSITORY, GH_TOKEN.
 # Arguments: --classify <path>... or --classify with paths on stdin.
-# Output (GITHUB_OUTPUT): range, heavy, web, reason.
+# Output (GITHUB_OUTPUT): range, heavy, web, package, linux_parts, reason.
 # --classify-cloud [paths...] prints true if any path needs the cloud E2E.
+# --classify-package [--added <path>]... [paths...] prints true if the change can
+# affect `cargo package`. An --added path counts as changed and as added.
 set -eu
 
 zero='0000000000000000000000000000000000000000'
@@ -33,6 +35,51 @@ web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|pdf|engine-io|wa
 # One path list for cloud push/PR scope; cloud-e2e.yml calls this classifier.
 cloud_paths='^(infra/|apps/web/|crates/ariad-(server|core|pdf|engine-io|host|cli|wasm|typst)/|services/|packages/|brand/)|^(Cargo\.(toml|lock)|rust-toolchain\.toml|pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|\.node-version|\.env\.example|justfile)$|^scripts/(ci-scope\.sh|test-ci-scope\.sh|docling-pack-inputs\.sh|install-wasm-bindgen\.sh)$|^fixtures/(pdf/vi-garden-image-only\.pdf|manifest\.toml)$|^\.github/workflows/(cloud-e2e|pack-docling)\.yml$'
 
+# What `cargo package` (just package-check) reads besides crate source: the workspace manifest,
+# lockfile and toolchain, the recipe, the scope rules and the workflow that run it, each crate's
+# build script, and the root README.md that every crate manifest names as its readme. Crate
+# manifests and every other file under crates/ that is not Rust source (package include lists,
+# bundled assets and fixtures) are matched by package_decision, as is any file added under crates/:
+# a new file can fall outside a crate's include list, or reach above the crate directory, and
+# then only a package build notices. Accepted risk: a plain edit of an existing .rs file cannot
+# break packaging by itself, and every push to dev or main runs the check anyway.
+package_paths='^(Cargo\.(toml|lock)|rust-toolchain\.toml|justfile|README\.md)$|^crates/[^/]+/build\.rs$|^scripts/ci-scope\.sh$|^\.github/workflows/ci\.yml$'
+
+# Parts of the Linux Verify job, as JSON for its matrix. The test shards carry their own index
+# and count, so the workflow never repeats the number of shards.
+test_shards=2
+
+# Prints true or false: can the change affect the packaging check?
+# $1: every path the change touched (a rename lists both sides), empty when unknown.
+# $2: the paths the change added.
+package_decision() {
+    if [ -z "$1" ]; then
+        echo true
+    elif printf '%s\n' "$1" | grep -E "$package_paths" >/dev/null; then
+        echo true
+    elif printf '%s\n' "$1" | grep -E '^crates/' | grep -v -E '\.rs$' >/dev/null; then
+        echo true
+    elif printf '%s\n' "$2" | grep -E '^crates/' >/dev/null; then
+        echo true
+    else
+        echo false
+    fi
+}
+
+# Prints the matrix of the Linux Verify job. $1: true when the packaging part must run.
+linux_parts_json() {
+    parts='{"part":"lint"}'
+    shard=1
+    while [ "$shard" -le "$test_shards" ]; do
+        parts="$parts,{\"part\":\"test-$shard\",\"shard\":$shard,\"shards\":$test_shards}"
+        shard=$((shard + 1))
+    done
+    if [ "$1" = true ]; then
+        parts="$parts,{\"part\":\"package\"}"
+    fi
+    printf '[%s]\n' "$parts"
+}
+
 if [ "${1:-}" = --classify-cloud ]; then
     shift
     if [ "$#" -gt 0 ]; then changed=$(printf '%s\n' "$@"); else changed=$(cat); fi
@@ -41,6 +88,23 @@ if [ "${1:-}" = --classify-cloud ]; then
     else
         echo false
     fi
+    exit 0
+fi
+
+if [ "${1:-}" = --classify-package ]; then
+    shift
+    added=''
+    while [ "${1:-}" = --added ]; do
+        [ "$#" -ge 2 ] || { echo "ci-scope: --added needs a path" >&2; exit 2; }
+        added=$(printf '%s\n%s' "$added" "$2")
+        shift 2
+    done
+    if [ "$#" -gt 0 ]; then
+        changed=$(printf '%s\n' "$@")
+    elif [ -z "$added" ]; then
+        changed=$(cat)
+    fi
+    package_decision "$(printf '%s\n%s' "$changed" "$added" | grep -v '^$' || true)" "$added"
     exit 0
 fi
 
@@ -114,6 +178,10 @@ case "${EVENT_NAME:-}" in
         range="${PR_BASE_SHA:-}..${PR_HEAD_SHA:-}"
         changed=$(git diff --name-only "${PR_BASE_SHA:?}"..."${PR_HEAD_SHA:?}")
         target_ref=${PR_BASE_REF:-}
+        # Without rename detection a move shows as a delete plus an add, so the packaging
+        # check sees the file that left a crate as well as the one that arrived.
+        package_changed=$(git diff --name-only --no-renames "$PR_BASE_SHA"..."$PR_HEAD_SHA")
+        added=$(git diff --name-only --no-renames --diff-filter=A "$PR_BASE_SHA"..."$PR_HEAD_SHA")
         ;;
     push)
         if [ "${PUSH_BEFORE:-$zero}" != "$zero" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
@@ -130,11 +198,25 @@ rest=${decision#*|}
 web=${rest%%|*}
 reason=${rest#*|}
 
+# The packaging check runs on every manual run and every push, where it also keeps the cache
+# warm, and on a pull request only when the change can affect it. It never runs when the heavy
+# jobs are skipped.
+if [ "$heavy" != true ]; then
+    package=false
+elif [ "${EVENT_NAME:-}" = workflow_dispatch ] || [ "${EVENT_NAME:-}" = push ]; then
+    package=true
+else
+    package=$(package_decision "${package_changed:-}" "${added:-}")
+fi
+linux_parts=$(linux_parts_json "$package")
+
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {
         printf 'range=%s\n' "$range"
         printf 'heavy=%s\n' "$heavy"
         printf 'web=%s\n' "$web"
+        printf 'package=%s\n' "$package"
+        printf 'linux_parts=%s\n' "$linux_parts"
         printf 'reason=%s\n' "$reason"
     } >> "$GITHUB_OUTPUT"
 fi
@@ -144,8 +226,9 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
         printf '### CI scope\n\n'
         printf -- '- Commits checked: `%s`\n' "${range:-none}"
         printf -- '- Build and test on three OSes: **%s** (%s)\n' "$heavy" "$reason"
+        printf -- '- Packaging check: **%s**\n' "$package"
         printf -- '- Web checks: **%s**\n' "$web"
     } >> "$GITHUB_STEP_SUMMARY"
 fi
 
-printf 'heavy=%s web=%s (%s), range=%s\n' "$heavy" "$web" "$reason" "${range:-none}"
+printf 'heavy=%s web=%s package=%s (%s), range=%s\n' "$heavy" "$web" "$package" "$reason" "${range:-none}"
