@@ -20,6 +20,12 @@ on:
     branches: [dev, main]
     types: [opened, synchronize, reopened, labeled]
 
+# Pull request runs replace each other. Scheduled, dispatched and push runs have their own
+# group per run and are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions: {}
 
 defaults:
