@@ -1,6 +1,6 @@
 //! Entitlements, quotas, rate limits, the usage ledger and retention.
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

@@ -1,6 +1,6 @@
 //! `DELETE /v1/uploads/{id}`: uploads that never became jobs.
 
-mod common;
+use crate::common;
 
 use common::{Auth, Harness, Options, TestIssuer, text};
 use serde_json::{Value, json};

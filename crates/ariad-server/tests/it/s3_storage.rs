@@ -3,7 +3,7 @@
 //! Needs `ARIAD_TEST_S3_ENDPOINT` (and a bucket, `ariad-test` by default);
 //! the job test also needs `ARIAD_TEST_DATABASE_URL`. Both skip otherwise.
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

@@ -1,5 +1,5 @@
 //! Real database completion with observable, explicitly released backend reads.
-mod common;
+use crate::common;
 
 use ariad_server::{
     api::{self, AppState, Caller, Inner, uploads::complete_upload},

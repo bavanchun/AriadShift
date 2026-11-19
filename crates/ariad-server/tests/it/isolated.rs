@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 // Exercise the real conversion helper, including native parsing, without a database.
 
@@ -447,7 +447,7 @@ fn office_namespace_failure_survives_the_worker_helper() {
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "office_namespace_failure_survives_the_worker_helper",
+                "isolated::office_namespace_failure_survives_the_worker_helper",
             ])
             .env(CHILD, "1")
             .env("ASHIFT_SOFFICE", &soffice)

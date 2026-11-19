@@ -6,7 +6,11 @@ use std::process::Command;
 #[test]
 fn same_user_children_cannot_read_protected_worker_credentials() {
     let output = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "protected_worker_procfs_probe", "--nocapture"])
+        .args([
+            "--exact",
+            "worker_credentials::protected_worker_procfs_probe",
+            "--nocapture",
+        ])
         .env("ARIAD_TEST_PROTECTED_WORKER", "1")
         .env("DATABASE_URL", "procfs-credential-sentinel")
         .output()

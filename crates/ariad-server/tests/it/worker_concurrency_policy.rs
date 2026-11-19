@@ -1,5 +1,5 @@
 //! Real worker startup must reject parallel best-effort without filesystem isolation.
-mod common;
+use crate::common;
 use std::{
     process::{Command, Stdio},
     time::{Duration, Instant},

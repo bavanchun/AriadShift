@@ -1,6 +1,6 @@
 //! Inline conversion remains available when HTTP blob transfer slots are full.
 
-mod common;
+use crate::common;
 
 use std::{convert::Infallible, time::Duration};
 

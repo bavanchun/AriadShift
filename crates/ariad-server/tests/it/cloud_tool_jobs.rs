@@ -1,11 +1,11 @@
 //! Cloud tool admission and multi-input/multi-artifact worker execution against PostgreSQL.
-mod common;
+use crate::common;
 
 use common::{Auth, Harness, Options, insert_api_key};
 use serde_json::{Value, json};
 use std::time::Duration;
 
-const PDF: &[u8] = include_bytes!("../../../fixtures/pdf/en-map-room.pdf");
+const PDF: &[u8] = include_bytes!("../../../../fixtures/pdf/en-map-room.pdf");
 
 async fn start(test: &str) -> Option<(Harness, Auth)> {
     let h = Harness::start(

@@ -1,6 +1,6 @@
 //! The full job path: upload, job, events, outputs, deletion.
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 
@@ -461,7 +461,7 @@ async fn pdf_uploads_use_deployed_readers_and_respect_pack_memory() {
             .upload(
                 &Auth::Anonymous,
                 "real.pdf",
-                include_bytes!("../../../fixtures/pdf/en-map-room.pdf"),
+                include_bytes!("../../../../fixtures/pdf/en-map-room.pdf"),
             )
             .await;
         assert_eq!(upload["format"], "pdf");
