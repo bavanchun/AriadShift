@@ -121,6 +121,9 @@ jobs:
 
   # Clippy for the two hosts whose Verify job is the slow one (macOS and Windows), in parallel with
   # their tests instead of in front of them. Linux runs Clippy in the `lint` part of verify-linux.
+  # Only the Windows entry keeps a Rust cache: the repository's 10 GB Actions cache budget is full,
+  # and a cold macOS Clippy (about 5.5 minutes) runs in parallel with the 16-minute tests, so a
+  # second 1 GB macOS entry would buy nothing on the critical path.
   lint-native:
     name: Lint (${{ matrix.os }})
     needs: scope
@@ -161,6 +164,7 @@ jobs:
       # `key` below: the key is the OS, the job, that hash and no runner-image detail. A lockfile or
       # toolchain change starts a cold cache; there is no partial restore across such a change.
       - name: Cache Rust artifacts
+        if: runner.os == 'Windows'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           cache-on-failure: true
