@@ -1,43 +1,117 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Test the Contents/Helpers handling of macos-sign-notarize.sh (the Developer ID path, unused today but kept working)
-# on any OS with a stub `codesign` that records its arguments. `sign-app` needs no notary credential. This proves what
-# gets signed and how: every Mach-O file in Helpers (the ashift helper and Pandoc) is signed with the hardened runtime
-# and a secure timestamp, before the app, never with --deep, and a file in Helpers that is not code is left alone;
-# `verify-app` then checks the same set. Real codesign, Apple identities and notarization are only reachable on a macOS
-# runner with the six Apple secrets.
+# Test the signing walk and flags of macos-sign-notarize.sh (the Developer ID path, unused today but kept working) on
+# any OS with a stub `codesign` that records its arguments. `sign-app` and `verify-app` need no notary credential.
+# This proves what gets signed, in which order and with which flags: inside-out (Sparkle parts, Sparkle, dylibs before
+# frameworks, every Mach-O file in Helpers, the app), the exact Developer ID options on every call, never --deep, a
+# file in Helpers that is not code left alone, and a verify gate that fails closed. `verify-app` checks the same list.
+# Real codesign, Apple identities and notarization are only reachable on a macOS runner with the six Apple secrets.
+#
+# The bundle shape and the order checks mirror scripts/macos-adhoc-sign.test.sh; that test also runs this script on
+# the same bundle and requires the same order. Keep the two in step.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SIGN="${SCRIPT_DIR}/macos-sign-notarize.sh"
+ENTITLEMENTS="${SCRIPT_DIR}/macos-app.entitlements"
+IDENTITY="Developer ID Application: Example"
 failures=0
 checks=0
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
+# The stub codesign logs every call as one line, then answers by the form of the call. A STUB_* pattern is a substring
+# of the target path, or the exact path when it starts with "=".
+#   --verify ...             exit 1 when the target matches STUB_FAIL_VERIFY, else 0
+#   -dvv TARGET              prints a CodeDirectory line
+#   -d --entitlements - ...  prints a plist, with get-task-allow when the target matches STUB_GTA
+#   anything else (signing)  exit 1 when the target matches STUB_FAIL_SIGN, else 0
 STUB_DIR="${TMP_DIR}/stub"
 mkdir -p "${STUB_DIR}"
 cat > "${STUB_DIR}/codesign" <<'STUB'
 #!/usr/bin/env bash
 set -u
 printf '%s\n' "$*" >> "${STUB_LOG:?}"
+target=""
+for argument in "$@"; do
+    target="${argument}"
+done
+matches() {
+    local pattern="${1:-}"
+    [[ -n "${pattern}" ]] || return 1
+    if [[ "${pattern}" == =* ]]; then
+        [[ "${target}" == "${pattern#=}" ]]
+    else
+        [[ "${target}" == *"${pattern}"* ]]
+    fi
+}
 case "${1:-}" in
-    --verify) ;;
+    --verify)
+        if matches "${STUB_FAIL_VERIFY:-}"; then
+            echo "stub: invalid signature for ${target}" >&2
+            exit 1
+        fi
+        ;;
     -dvv) echo "CodeDirectory v=20500 flags=0x10000(runtime)" >&2 ;;
-    -d) echo '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict></dict></plist>' ;;
-    *) ;;
+    -d)
+        echo '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>'
+        if matches "${STUB_GTA:-}"; then
+            echo '<key>com.apple.security.get-task-allow</key><true/>'
+        fi
+        echo '</dict></plist>'
+        ;;
+    *)
+        if matches "${STUB_FAIL_SIGN:-}"; then
+            echo "stub: cannot sign ${target}" >&2
+            exit 1
+        fi
+        ;;
 esac
 exit 0
 STUB
 chmod +x "${STUB_DIR}/codesign"
 
+# Helpers are recognised as code by their first four bytes: a fat binary and a 64-bit little-endian Mach-O.
+write_macho() { printf '\317\372\355\376' > "$1"; }
+write_fat_macho() { printf '\312\376\272\276' > "$1"; }
+
+# make_app DIR [with-extras]: a fake bundle shaped like the real one. Always: Sparkle with two XPC services, an updater
+# tool, Updater.app and the Current symlink, plus Helpers with the ashift helper and Pandoc (both Mach-O) beside a
+# note that is not code and must stay unsigned. With "with-extras": one more framework, one loose dylib, and a
+# framework that holds a dylib (the case where signing order decides whether the framework's seal survives).
+make_app() {
+    local app="$1"
+    local sparkle="${app}/Contents/Frameworks/Sparkle.framework"
+    mkdir -p "${app}/Contents/Helpers" "${app}/Contents/MacOS" \
+        "${sparkle}/Versions/B/XPCServices/Downloader.xpc" \
+        "${sparkle}/Versions/B/XPCServices/Installer.xpc" \
+        "${sparkle}/Versions/B/Updater.app"
+    write_fat_macho "${app}/Contents/Helpers/ashift"
+    write_macho "${app}/Contents/Helpers/pandoc"
+    echo "not code" > "${app}/Contents/Helpers/NOTES.txt"
+    : > "${app}/Contents/MacOS/AriadShift"
+    : > "${sparkle}/Versions/B/Autoupdate"
+    ln -s B "${sparkle}/Versions/Current"
+    if [[ "${2:-}" == "with-extras" ]]; then
+        mkdir -p "${app}/Contents/Frameworks/Other.framework" "${app}/Contents/Frameworks/Inner.framework"
+        : > "${app}/Contents/Frameworks/libextra.dylib"
+        : > "${app}/Contents/Frameworks/Inner.framework/libinner.dylib"
+    fi
+}
+
 APP="${TMP_DIR}/Fake/AriadShift.app"
-mkdir -p "${APP}/Contents/Helpers" "${APP}/Contents/MacOS"
-printf '\312\376\272\276' > "${APP}/Contents/Helpers/ashift"
-printf '\312\376\272\276' > "${APP}/Contents/Helpers/pandoc"
-echo "not code" > "${APP}/Contents/Helpers/NOTES.txt"
-: > "${APP}/Contents/MacOS/AriadShift"
+make_app "${APP}" with-extras
+FW="${APP}/Contents/Frameworks"
+SPK="${FW}/Sparkle.framework"
+XPC_DOWNLOADER="${SPK}/Versions/B/XPCServices/Downloader.xpc"
+XPC_INSTALLER="${SPK}/Versions/B/XPCServices/Installer.xpc"
+UPDATE_TOOL="${SPK}/Versions/B/Autoupdate"
+UPDATER="${SPK}/Versions/B/Updater.app"
+DYLIB="${FW}/libextra.dylib"
+OTHER="${FW}/Other.framework"
+INNER="${FW}/Inner.framework"
+INNER_DYLIB="${INNER}/libinner.dylib"
 HELPER="${APP}/Contents/Helpers/ashift"
 PANDOC="${APP}/Contents/Helpers/pandoc"
 NOTES="${APP}/Contents/Helpers/NOTES.txt"
@@ -45,11 +119,24 @@ NOTES="${APP}/Contents/Helpers/NOTES.txt"
 LOG="${TMP_DIR}/codesign.log"
 OUT="${TMP_DIR}/out.txt"
 
+# run_sign ARGS... [-- ENV=VALUE...]: runs the script with the stub first on PATH and no inherited environment but the
+# identity. The codesign log lands in LOG and the script output in OUT.
 run_sign() {
+    local -a args=() envs=()
+    local seen_sep=0 item
+    for item in "$@"; do
+        if [[ "${item}" == "--" && "${seen_sep}" -eq 0 ]]; then
+            seen_sep=1
+        elif [[ "${seen_sep}" -eq 1 ]]; then
+            envs+=("${item}")
+        else
+            args+=("${item}")
+        fi
+    done
     : > "${LOG}"
     local rc=0
-    env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" APPLE_SIGNING_IDENTITY="Developer ID Application: Example" \
-        bash "${SIGN}" "$@" > "${OUT}" 2>&1 || rc=$?
+    env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" APPLE_SIGNING_IDENTITY="${IDENTITY}" ${envs[@]+"${envs[@]}"} \
+        bash "${SIGN}" ${args[@]+"${args[@]}"} > "${OUT}" 2>&1 || rc=$?
     return "${rc}"
 }
 
@@ -70,46 +157,171 @@ expect() {
     if "$@"; then check "${label}" 0; else check "${label}" 1; fi
 }
 
-sign_targets() { grep -- '--force ' "${LOG}" | awk '{print $NF}' || true; }
+# Signing calls start with --force; the target is the last argument.
+sign_targets() { grep -- '^--force ' "${LOG}" | awk '{print $NF}' || true; }
 sign_index() { sign_targets | grep -n -x -F -- "$1" | head -n 1 | cut -d: -f1 || true; }
+sign_lines() { grep -- '^--force ' "${LOG}" || true; }
+logged_line() { grep -- '^--force ' "${LOG}" | awk -v t="$1" '$NF == t' || true; }
+first_verify_line() { grep -n -- '^--verify ' "${LOG}" | head -n 1 | cut -d: -f1 || true; }
+last_sign_line() { grep -n -- '^--force ' "${LOG}" | tail -n 1 | cut -d: -f1 || true; }
 before() {
     local a b
     a="$(sign_index "$1")"
     b="$(sign_index "$2")"
     [[ -n "${a}" && -n "${b}" && "${a}" -lt "${b}" ]]
 }
-logged_line() { grep -- '--force ' "${LOG}" | awk -v t="$1" '$NF == t' || true; }
+lacks_file() { ! grep -q -F -- "$2" "$1"; }
 
-echo "== sign-app =="
+# The exact argument list the Developer ID path passes, as the stub logs it (arguments joined by one space).
+# nested_line TARGET [KEYCHAIN]: nested code keeps the entitlements, requirements, flags and runtime it was built with.
+nested_line() {
+    local keychain=""
+    [[ -z "${2:-}" ]] || keychain=" --keychain $2"
+    printf '%s' "--force --options runtime --timestamp --preserve-metadata=entitlements,requirements,flags,runtime --sign ${IDENTITY}${keychain} $1"
+}
+# app_line TARGET [KEYCHAIN]: the app gets the explicit entitlements file and preserves nothing.
+app_line() {
+    local keychain=""
+    [[ -z "${2:-}" ]] || keychain=" --keychain $2"
+    printf '%s' "--force --options runtime --timestamp --entitlements ${ENTITLEMENTS} --sign ${IDENTITY}${keychain} $1"
+}
+
+echo "== sign-app: targets =="
 rc=0
 run_sign sign-app "${APP}" || rc=$?
 check "exits 0" "${rc}"
-expect "signs the ashift helper" test -n "$(sign_index "${HELPER}")"
-expect "signs Pandoc" test -n "$(sign_index "${PANDOC}")"
+signed="$(sign_targets | wc -l | tr -d ' ')"
+check "signs exactly 12 targets (4 Sparkle parts, Sparkle, 2 dylibs, 2 frameworks, 2 helpers, app), got ${signed}" "$((signed == 12 ? 0 : 1))"
+for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${UPDATE_TOOL}" "${UPDATER}" "${SPK}" "${DYLIB}" "${INNER_DYLIB}" "${OTHER}" "${INNER}" "${HELPER}" "${PANDOC}" "${APP}"; do
+    expect "signs ${t#"${TMP_DIR}/Fake/"}" test -n "$(sign_index "${t}")"
+done
+expect "never signs the Versions/Current symlink" test -z "$(sign_index "${SPK}/Versions/Current")"
 expect "does not sign a file in Helpers that is not code" test -z "$(sign_index "${NOTES}")"
-expect "signs the ashift helper before the app" before "${HELPER}" "${APP}"
-expect "signs Pandoc before the app" before "${PANDOC}" "${APP}"
+
+echo "== sign-app: order, deepest first, the app last =="
+for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${UPDATE_TOOL}" "${UPDATER}"; do
+    expect "${nested##*/} is signed before Sparkle.framework" before "${nested}" "${SPK}"
+done
+expect "Sparkle.framework is signed before the loose dylib" before "${SPK}" "${DYLIB}"
+expect "Sparkle.framework is signed before the dylib inside Inner.framework" before "${SPK}" "${INNER_DYLIB}"
+expect "the loose dylib is signed before Other.framework" before "${DYLIB}" "${OTHER}"
+expect "the loose dylib is signed before Inner.framework" before "${DYLIB}" "${INNER}"
+expect "the dylib inside Inner.framework is signed before Inner.framework seals it" before "${INNER_DYLIB}" "${INNER}"
+expect "the dylib inside Inner.framework is signed before Other.framework" before "${INNER_DYLIB}" "${OTHER}"
+expect "Other.framework is signed before the ashift helper" before "${OTHER}" "${HELPER}"
+expect "Inner.framework is signed before Pandoc" before "${INNER}" "${PANDOC}"
+expect "the ashift helper is signed before the app" before "${HELPER}" "${APP}"
+expect "Pandoc is signed before the app" before "${PANDOC}" "${APP}"
 expect "the app is the last target signed" test "$(sign_targets | tail -n 1)" = "${APP}"
-for helper in "${HELPER}" "${PANDOC}"; do
-    line="$(logged_line "${helper}")"
-    ok=0
-    [[ "${line}" == *"--options runtime"* && "${line}" == *"--timestamp "* && "${line}" != *"--timestamp=none"* \
-        && "${line}" == *"--sign Developer ID Application: Example"* && "${line}" != *"--deep"* \
-        && "${line}" != *"--entitlements "* ]] || ok=1
-    check "${helper##*/} is signed with the hardened runtime, a secure timestamp, the identity, no --deep, no entitlements file" "${ok}"
+
+echo "== sign-app: flags =="
+all_ok=0
+while IFS= read -r line; do
+    target="${line##* }"
+    if [[ "${target}" == "${APP}" ]]; then
+        expected="$(app_line "${target}")"
+    else
+        expected="$(nested_line "${target}")"
+    fi
+    if [[ "${line}" != "${expected}" ]]; then
+        echo "  unexpected signing call: ${line}" >&2
+        echo "          expected:        ${expected}" >&2
+        all_ok=1
+    fi
+done < <(sign_lines)
+check "every call carries exactly the Developer ID options: the hardened runtime, a secure timestamp, the identity, no --deep" "${all_ok}"
+expect "no call passes --timestamp=none or an ad-hoc identity" lacks_file "${LOG}" "--timestamp=none"
+app_signing="$(logged_line "${APP}")"
+expect "only the app is signed with the entitlements file" test "$(grep -c -F -- '--entitlements ' <<< "$(sign_lines)")" = 1
+expect "the app does not preserve nested metadata" test "${app_signing}" = "$(app_line "${APP}")"
+for t in "${XPC_DOWNLOADER}" "${UPDATE_TOOL}" "${SPK}" "${INNER_DYLIB}" "${INNER}" "${HELPER}" "${PANDOC}"; do
+    expect "${t##*/} is verified" grep -q -F -- "--verify --deep --strict --verbose=2 ${t}" "${LOG}"
 done
-for helper in "${HELPER}" "${PANDOC}"; do
-    expect "${helper##*/} is verified" grep -q -F -- "--verify --deep --strict --verbose=2 ${helper}" "${LOG}"
-done
+expect "the app is verified" grep -q -F -- "--verify --deep --strict --verbose=2 ${APP}" "${LOG}"
+check "verification starts only after the last signing call" "$(($(first_verify_line) > $(last_sign_line) ? 0 : 1))"
+
+echo "== sign-app: the keychain option =="
+rc=0
+run_sign sign-app "${APP}" -- KEYCHAIN_PATH=/tmp/example.keychain-db || rc=$?
+check "exits 0 with a keychain" "${rc}"
+keychain_ok=0
+while IFS= read -r line; do
+    target="${line##* }"
+    if [[ "${target}" == "${APP}" ]]; then
+        expected="$(app_line "${target}" /tmp/example.keychain-db)"
+    else
+        expected="$(nested_line "${target}" /tmp/example.keychain-db)"
+    fi
+    [[ "${line}" == "${expected}" ]] || { echo "  unexpected signing call: ${line}" >&2; keychain_ok=1; }
+done < <(sign_lines)
+check "every call adds --keychain after the identity and nothing else changes" "${keychain_ok}"
+
+echo "== sign-app: the layout of the current release (Sparkle only, one helper) =="
+# The sequence of signing calls for this layout is what notarized releases were built with; it must not change.
+APP_SPARKLE="${TMP_DIR}/SparkleOnly/AriadShift.app"
+make_app "${APP_SPARKLE}"
+rm "${APP_SPARKLE}/Contents/Helpers/pandoc"
+SPK2="${APP_SPARKLE}/Contents/Frameworks/Sparkle.framework"
+rc=0
+run_sign sign-app "${APP_SPARKLE}" || rc=$?
+check "exits 0" "${rc}"
+expected_sequence="$(
+    nested_line "${SPK2}/Versions/B/XPCServices/Downloader.xpc"
+    echo
+    nested_line "${SPK2}/Versions/B/XPCServices/Installer.xpc"
+    echo
+    nested_line "${SPK2}/Versions/B/Autoupdate"
+    echo
+    nested_line "${SPK2}/Versions/B/Updater.app"
+    echo
+    nested_line "${SPK2}"
+    echo
+    nested_line "${APP_SPARKLE}/Contents/Helpers/ashift"
+    echo
+    app_line "${APP_SPARKLE}"
+)"
+check "the signing calls are, in order: 2 XPC services, the updater tool, Updater.app, Sparkle.framework, the helper, the app" \
+    "$([[ "$(sign_lines)" == "${expected_sequence}" ]] && echo 0 || echo 1)"
 
 echo "== verify-app =="
 rc=0
 run_sign verify-app "${APP}" || rc=$?
 check "exits 0" "${rc}"
-for helper in "${HELPER}" "${PANDOC}"; do
+expect "nothing is signed" test -z "$(sign_targets)"
+for helper in "${HELPER}" "${PANDOC}" "${INNER_DYLIB}"; do
     expect "${helper##*/} is verified" grep -q -F -- "--verify --deep --strict --verbose=2 ${helper}" "${LOG}"
 done
-expect "nothing is signed" test -z "$(sign_targets)"
+verified_order="$(grep -- '^--verify ' "${LOG}" | awk '{print $NF}')"
+rc=0
+run_sign sign-app "${APP}" || rc=$?
+signed_order="$(sign_targets)"
+check "verify-app checks the same targets, in the same order, that sign-app signs" \
+    "$([[ -n "${signed_order}" && "${verified_order}" == "${signed_order}" ]] && echo 0 || echo 1)"
+
+echo "== Gates fail closed =="
+rc=0
+run_sign sign-app "${APP}" -- "STUB_FAIL_SIGN==${INNER}" || rc=$?
+check "a failure signing a framework fails the run" "$((rc != 0 ? 0 : 1))"
+expect "and the app is never signed" test -z "$(sign_index "${APP}")"
+expect "and nothing is verified" test -z "$(first_verify_line)"
+rc=0
+run_sign sign-app "${APP}" -- "STUB_FAIL_VERIFY==${INNER_DYLIB}" || rc=$?
+check "a failed verification of a nested dylib fails the run" "$((rc != 0 ? 0 : 1))"
+rc=0
+run_sign sign-app "${APP}" -- "STUB_GTA==${PANDOC}" || rc=$?
+check "get-task-allow on Pandoc fails the run" "$((rc != 0 ? 0 : 1))"
+rc=0
+run_sign sign-app "${APP}" -- "STUB_GTA==${APP}" || rc=$?
+check "get-task-allow on the app fails the run" "$((rc != 0 ? 0 : 1))"
+expect "it reports get-task-allow" grep -q "get-task-allow" "${OUT}"
+rc=0
+run_sign verify-app "${APP}" -- "STUB_GTA==${XPC_INSTALLER}" || rc=$?
+check "verify-app fails on get-task-allow in a nested bundle" "$((rc != 0 ? 0 : 1))"
+: > "${LOG}"
+rc=0
+env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" bash "${SIGN}" sign-app "${APP}" > "${OUT}" 2>&1 || rc=$?
+check "sign-app without an identity fails" "$((rc != 0 ? 0 : 1))"
+expect "and runs no codesign" test ! -s "${LOG}"
 
 if [[ "${failures}" -ne 0 ]]; then
     echo "${failures} of ${checks} check(s) failed" >&2

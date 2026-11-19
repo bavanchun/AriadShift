@@ -8,11 +8,13 @@ set -euo pipefail
 # Sparkle.framework, its XPC services and its helpers ship already signed by the Sparkle project. Xcode leaves them
 # alone, so the built app mixes identities and the hardened runtime's library validation refuses to load the framework.
 # This script re-signs every piece with the same ad-hoc identity ("-"), deepest first:
-#   1. Sparkle XPC services, Autoupdate and Updater.app (every Versions/* directory except the Current symlink)
+#   1. Sparkle XPC services, the updater tool and Updater.app (every Versions/* directory except the Current symlink)
 #   2. Sparkle.framework
 #   3. any other embedded dylib, then any other embedded framework
 #   4. every Mach-O file in Contents/Helpers (the ashift helper and Pandoc)
 #   5. the app, with the explicit empty entitlements file scripts/macos-app.entitlements
+# The walk and the codesign options (mode `adhoc`) come from scripts/macos-signing-lib.sh, shared with the Developer ID
+# script macos-sign-notarize.sh, so the two cannot drift apart.
 # Rules:
 #   - Never `--deep` to sign. It applies one set of options to everything in an order Apple does not recommend for
 #     signing; it is used only to verify.
@@ -28,73 +30,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 APP_ENTITLEMENTS="${SCRIPT_DIR}/macos-app.entitlements"
-# shellcheck source=scripts/macos-helpers-lib.sh
-source "${SCRIPT_DIR}/macos-helpers-lib.sh"
+# shellcheck source=scripts/macos-signing-lib.sh
+source "${SCRIPT_DIR}/macos-signing-lib.sh"
 
 # Every signed target, in signing order. Verified after signing.
 SIGNED_TARGETS=()
 
-# sign_target TARGET [EXTRA_CODESIGN_ARGS...]
-sign_target() {
-    local target="$1"
-    shift
-    echo "==> Ad-hoc signing: ${target}"
-    codesign --force --sign - --options runtime --timestamp=none "$@" "${target}"
-    SIGNED_TARGETS+=("${target}")
-}
-
-# sign_nested TARGET: nested code keeps the identifier and entitlements it was built with.
-sign_nested() {
-    sign_target "$1" --preserve-metadata=identifier,entitlements
-}
-
 sign_app_inside_out() {
-    local app_path="$1"
-    local frameworks_dir="${app_path}/Contents/Frameworks"
-    local sparkle="${frameworks_dir}/Sparkle.framework"
-    local version_dir xpc item
-
-    SIGNED_TARGETS=()
-
-    # 1-2. Sparkle: XPC services, Autoupdate and Updater.app of each version, then the framework itself.
-    if [[ -d "${sparkle}/Versions" ]]; then
-        while IFS= read -r -d '' version_dir; do
-            for xpc in "${version_dir}"/XPCServices/*.xpc; do
-                if [[ -d "${xpc}" ]]; then
-                    sign_nested "${xpc}"
-                fi
-            done
-            if [[ -f "${version_dir}/Autoupdate" ]]; then
-                sign_nested "${version_dir}/Autoupdate"
-            fi
-            if [[ -d "${version_dir}/Updater.app" ]]; then
-                sign_nested "${version_dir}/Updater.app"
-            fi
-        done < <(find "${sparkle}/Versions" -mindepth 1 -maxdepth 1 -type d ! -name 'Current' -print0)
-        sign_nested "${sparkle}"
-    fi
-
-    # 3. Any other embedded dylib, then framework (a dylib inside a framework is signed before the framework seals it).
-    if [[ -d "${frameworks_dir}" ]]; then
-        while IFS= read -r -d '' item; do
-            sign_nested "${item}"
-        done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 2 -type f -name '*.dylib' -print0)
-        while IFS= read -r -d '' item; do
-            sign_nested "${item}"
-        done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 1 -type d -name '*.framework' ! -name 'Sparkle.framework' -print0)
-    fi
-
-    # 4. Every Mach-O in Helpers: the ashift helper and Pandoc. A helper no longer needs a line here to be signed.
-    while IFS= read -r -d '' item; do
-        sign_nested "${item}"
-    done < <(list_helper_machos "${app_path}")
-
-    # 5. The app, with the explicit empty entitlements instead of whatever the build injected.
-    if [[ ! -f "${APP_ENTITLEMENTS}" ]]; then
-        echo "error: entitlements file ${APP_ENTITLEMENTS} not found." >&2
-        exit 1
-    fi
-    sign_target "${app_path}" --entitlements "${APP_ENTITLEMENTS}"
+    sign_app_targets adhoc "$1" "${APP_ENTITLEMENTS}"
 }
 
 # fail MESSAGE: print a GitHub error annotation and stop.
