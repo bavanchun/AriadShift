@@ -149,14 +149,17 @@ jobs:
       # the Rust versions of every toolchain installed on the runner into the key, which includes the
       # image's preinstalled stable: two jobs of one run on different runner images got different keys
       # and missed each other's caches, and every image update stored another copy of each entry.
-      # add-rust-environment-hash-key: false drops that hash. The key still holds the OS, the job,
-      # the optional key input and a hash of Cargo.lock, the manifests, rust-toolchain.toml and
-      # .cargo/config.toml, so the pinned toolchain and the dependency set stay in it.
+      # add-rust-environment-hash-key: false drops that hash, but the action then also drops the hash
+      # of Cargo.lock, the manifests and rust-toolchain.toml from the key (a constant key would give an
+      # exact hit forever and the cache would never be saved again). So the same hash is passed in
+      # `key` below: the key is the OS, the job, that hash and no runner-image detail. A lockfile or
+      # toolchain change starts a cold cache; there is no partial restore across such a change.
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           cache-on-failure: true
           add-rust-environment-hash-key: false
+          key: ${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml') }}
           save-if: ${{ github.event_name == 'push' }}
 
       - name: Run Clippy
@@ -201,6 +204,7 @@ jobs:
         with:
           cache-on-failure: true
           add-rust-environment-hash-key: false
+          key: ${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml') }}
           save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
@@ -325,8 +329,8 @@ jobs:
       # Only the test shards keep a target cache: they share the entry `test` (same test profile)
       # and only the first shard saves it. The lint and package parts have none: the repository's
       # 10 GB Actions cache budget is full and sccache already holds their compile units. As
-      # elsewhere, only a push saves. The cache step is Swatinem/rust-cache used directly (see the
-      # note at the first use in this file for why it is not set up by setup-rust-toolchain).
+      # elsewhere, only a push saves. The cache step is Swatinem/rust-cache used directly, with the
+      # test shards sharing the key prefix `test-` (see the note at the first use in this file).
       - name: Set up Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
@@ -339,7 +343,7 @@ jobs:
         with:
           cache-on-failure: true
           add-rust-environment-hash-key: false
-          key: test
+          key: test-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml') }}
           save-if: ${{ github.event_name == 'push' && matrix.part != 'test-2' }}
 
       - name: Install command-line tools
@@ -571,6 +575,7 @@ jobs:
         with:
           cache-on-failure: true
           add-rust-environment-hash-key: false
+          key: ${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml') }}
           save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
@@ -927,6 +932,7 @@ jobs:
         with:
           cache-on-failure: true
           add-rust-environment-hash-key: false
+          key: ${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml') }}
           save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
