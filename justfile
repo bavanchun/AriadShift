@@ -148,6 +148,7 @@ cargo_about_version := "0.9.2"
 check-release-workflow:
     sh scripts/check-release-workflow.sh
     sh scripts/test-check-release-workflow.sh
+    sh scripts/check-dist-includes.sh
 
 test-winget-manifest:
     sh scripts/test-winget-manifest.sh
