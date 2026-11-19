@@ -7,6 +7,8 @@ import SwiftUI
 struct ToolInspectorHost<DocumentInfo: View>: View {
     let session: DocumentSession
     @ObservedObject var engine: EngineModel
+    /// The flight of a chosen tool's icon into the header below; nil means the tool opens without one.
+    var flight: IconFlightCoordinator?
     @ViewBuilder let documentInfo: DocumentInfo
 
     var body: some View {
@@ -14,6 +16,7 @@ struct ToolInspectorHost<DocumentInfo: View>: View {
         ZStack {
             if let run = session.run {
                 ToolRunInspector(model: run) { session.closeTool() }
+                    .overlay(alignment: .topLeading) { landingPad }
                     .id(run.id)
                     .transition(.opacity)
             } else {
@@ -22,13 +25,29 @@ struct ToolInspectorHost<DocumentInfo: View>: View {
                     ToolGallery(
                         directory: directory,
                         suggested: directory.suggestions(for: session.report),
-                        recent: session.tools.recents.ids
+                        recent: session.tools.recents.ids,
+                        flight: flight
                     ) { tool in
                         session.begin(tool, client: engine.client)
                     }
                 }
                 .transition(.opacity)
             }
+        }
+    }
+
+    /// Where a flying icon lands: an invisible square over the header's icon well. `DSInspectorHeader` pads its content
+    /// by `DSSpacing.l` and puts the icon well first, so the well sits `DSSpacing.l` from the top and leading edges of
+    /// the panel. The pad is only measured (`IconFlightCoordinator.targetProbe`); it draws and hit-tests nothing.
+    @ViewBuilder
+    private var landingPad: some View {
+        if let flight {
+            Color.clear
+                .frame(width: DSSize.iconWell, height: DSSize.iconWell)
+                .dsWindowFrame(flight.targetProbe)
+                .padding(DSSpacing.l)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 }
@@ -39,7 +58,11 @@ struct ToolGallery: View {
     let directory: ToolDirectory
     let suggested: [String]
     let recent: [String]
+    /// Flies a chosen card's icon into the inspector header; nil leaves the choice without a flight.
+    var flight: IconFlightCoordinator?
     let onChoose: (ToolEntry) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var suggestedTools: [ToolEntry] { suggested.compactMap(directory.entry(id:)) }
 
@@ -70,10 +93,18 @@ struct ToolGallery: View {
                     ) {
                         onChoose(tool)
                     }
+                    .dsOnIconFlight(flightHandler(for: tool))
                     .help(tool.info.summary)
                     .accessibilityIdentifier("gallery.\(tool.id)")
                 }
             }
         }
+    }
+
+    /// The card reports its icon to the flight, which flies it if choosing the tool opens it.
+    private func flightHandler(for tool: ToolEntry) -> DSIconFlightHandler? {
+        guard let flight else { return nil }
+        let reduce = reduceMotion
+        return { launch in flight.fly(launch, toolID: tool.id, reduceMotion: reduce) }
     }
 }

@@ -12,6 +12,8 @@ struct DocumentWindowView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var session: DocumentSession
     @State private var viewer: ViewerModel
+    /// The icon of a chosen tool flying into the inspector header; the palette, the tool cards and the inspector share it.
+    @State private var flight: IconFlightCoordinator
     @State private var showInspector = false
 
     init(fileURL: URL?, document: PDFFileDocument) {
@@ -23,6 +25,7 @@ struct DocumentWindowView: View {
         self.document = document
         _session = State(initialValue: session)
         _viewer = State(initialValue: viewer)
+        _flight = State(initialValue: IconFlightCoordinator(session: session))
     }
 
     var body: some View {
@@ -41,7 +44,7 @@ struct DocumentWindowView: View {
                 // controller made the hosting view report a different minimum width on every layout pass
                 // until AppKit gave up with "needing another Update Constraints in Window pass".
                 .inspector(isPresented: $showInspector) {
-                    ToolInspectorHost(session: session, engine: engine) {
+                    ToolInspectorHost(session: session, engine: engine, flight: flight) {
                         InspectorView(
                             session: session,
                             canExport: session.canExport(client: engine.client),
@@ -93,7 +96,7 @@ struct DocumentWindowView: View {
                 session.requestTool(id: id)
             }
         }
-        .toolRunPresentation(session: session, engine: engine)
+        .toolRunPresentation(session: session, engine: engine, flight: flight)
         .background(WindowReader { session.window = $0 })
         .safeAreaInset(edge: .bottom, spacing: 0) { ExportProgressBar(model: session.export) }
         // Choosing a tool opens the inspector, where its parameters and progress belong.
@@ -104,7 +107,10 @@ struct DocumentWindowView: View {
             await session.loadInfo(engine: engine.state, client: engine.client)
         }
         // Closing the window ends a running tool: nothing may be placed for a closed document.
-        .onDisappear { session.cancelRun() }
+        .onDisappear {
+            session.cancelRun()
+            flight.cancel()
+        }
         .frame(minWidth: DSSize.documentWindowMinimum.width, minHeight: DSSize.documentWindowMinimum.height)
     }
 
