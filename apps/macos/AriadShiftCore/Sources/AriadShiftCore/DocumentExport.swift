@@ -17,22 +17,51 @@ public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// A failure of an export that the app explains in its own words.
 public enum ExportError: Error, Equatable, Sendable {
     /// The Word route needs Pandoc and the engine could not find a usable one.
     case pandocMissing
+    /// Another engine the route needs (such as Docling) is missing or unusable.
+    case engineRequired(engine: String)
     /// The chosen file is the document being exported.
     case destinationIsDocument
+    /// The destination exists and the engine would not replace it.
+    case destinationExists
+
+    /// Recognises the engine failures that have a clear cause. The FFI error carries no code for them, only the text
+    /// the Rust host writes for its `ConvertError` variants, so the text identifies them; the Rust test
+    /// `engine_missing_messages_stay_stable_for_the_macos_app` pins every string matched here.
+    public init?(_ error: EngineError) {
+        guard case let .convert(message) = error else { return nil }
+        if message.hasPrefix("Pandoc is missing or unsupported")
+            || message.hasPrefix("the pandoc engine is missing or unsupported")
+        {
+            self = .pandocMissing
+        } else if message.hasPrefix("the output path cannot be the same as the input file") {
+            self = .destinationIsDocument
+        } else if message.hasPrefix("the destination already exists") {
+            self = .destinationExists
+        } else if let engine = Self.engineName(inMissingEngineMessage: message) {
+            self = .engineRequired(engine: engine)
+        } else {
+            return nil
+        }
+    }
+
+    /// "the docling engine is not installed; ..." and "the {engine} engine is missing or unsupported; ..." name the
+    /// engine between "the " and " engine ".
+    private static func engineName(inMissingEngineMessage message: String) -> String? {
+        guard message.hasPrefix("the "), let end = message.range(of: " engine is ") else { return nil }
+        let rest = message[end.upperBound...]
+        guard rest.hasPrefix("not installed") || rest.hasPrefix("missing") else { return nil }
+        let name = message[message.index(message.startIndex, offsetBy: 4)..<end.lowerBound]
+        return name.isEmpty ? nil : String(name)
+    }
 }
 
 extension EngineError {
-    /// The engine reported that Pandoc is missing or unsupported. The FFI error carries no code for this, only the
-    /// message the Rust host writes (`ConvertError::ToolMissing` and the Pandoc `EngineMissing`), so the text is
-    /// what identifies it.
-    public var isPandocMissing: Bool {
-        guard case let .convert(message) = self else { return false }
-        return message.hasPrefix("Pandoc is missing or unsupported")
-            || message.hasPrefix("the pandoc engine is missing or unsupported")
-    }
+    /// The engine reported that Pandoc is missing or unsupported.
+    public var isPandocMissing: Bool { ExportError(self) == .pandocMissing }
 }
 
 /// The conversion entry point the exporter needs; `EngineClient` is the real one.
@@ -49,8 +78,11 @@ public enum DocumentExporter {
     /// Converts `document` to `format` and writes it to `destination`, which the user chose in a save panel and so
     /// may replace. The document itself is never touched.
     ///
-    /// - Throws: `ExportError` for a missing Pandoc or a destination equal to the document, and the engine's
-    ///   `EngineError` otherwise (`EngineError.cancelled` when the calling task is cancelled).
+    /// A destination that is the document itself is refused by the engine, which compares the resolved files.
+    ///
+    /// - Throws: `ExportError` for failures with a known cause, and the engine's `EngineError` otherwise
+    ///   (`EngineError.cancelled` when the task is cancelled before the file is written). A run cancelled after the
+    ///   write returns the written file.
     public static func export(
         document: URL,
         as format: ExportFormat,
@@ -58,9 +90,6 @@ public enum DocumentExporter {
         converter: any DocumentConverting,
         onProgress: (@Sendable (ProgressEvent) -> Void)? = nil
     ) async throws -> URL {
-        guard destination.standardizedFileURL != document.standardizedFileURL else {
-            throw ExportError.destinationIsDocument
-        }
         do {
             let outcome = try await converter.convert(
                 ConvertRequest(
@@ -69,8 +98,8 @@ public enum DocumentExporter {
                 onProgress: onProgress
             )
             return URL(fileURLWithPath: outcome.outputPath)
-        } catch let error as EngineError where error.isPandocMissing {
-            throw ExportError.pandocMissing
+        } catch let error as EngineError {
+            throw ExportError(error) ?? error
         }
     }
 }

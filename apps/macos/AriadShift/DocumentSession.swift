@@ -31,9 +31,11 @@ final class DocumentSession {
         export.onExported = { [weak self] file in self?.tools.announceExport(file) }
     }
 
-    /// A document is open and no export is running, so Export As can start.
+    /// A document is open and readable, the engine is there, and neither an export nor a tool run is busy, so Export As
+    /// can start.
     func canExport(client: EngineClient?) -> Bool {
-        fileURL != nil && client != nil && !export.isRunning
+        if case .failed = info { return false }
+        return fileURL != nil && client != nil && !export.isBusy && !isRunning
     }
 
     /// Asks where to save, then exports the document in `format` without blocking the window.
