@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-cli/tests/reader_golden.rs
+source: crates/ariad-cli/tests/it/reader_golden.rs
 ---
 {
   "assets": {},

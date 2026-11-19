@@ -58,14 +58,6 @@ windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 name = "ashift"
 path = "src/main.rs"
 
-[[test]]
-name = "termination"
-path = "tests/termination.rs"
-
-[[test]]
-name = "mcp_stdio"
-path = "tests/mcp_stdio.rs"
-
 [package.metadata.dist]
 dist = true
 

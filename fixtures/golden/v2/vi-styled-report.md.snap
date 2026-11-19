@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-cli/tests/route_golden.rs
+source: crates/ariad-cli/tests/it/route_golden.rs
 ---
 # Khu vườn đọc sách
 

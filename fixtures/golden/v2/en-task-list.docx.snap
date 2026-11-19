@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-cli/tests/docx_golden.rs
+source: crates/ariad-cli/tests/it/docx_golden.rs
 ---
 Package entries (sorted):
 - [Content_Types].xml

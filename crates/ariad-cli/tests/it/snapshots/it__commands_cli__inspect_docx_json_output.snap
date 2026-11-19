@@ -1,0 +1,93 @@
+---
+source: crates/ariad-cli/tests/it/commands_cli.rs
+expression: normalize_stdout(&output)
+---
+{
+  "format": "docx",
+  "bytes": 833111,
+  "meta": {
+    "title": null,
+    "authors": [],
+    "language": null,
+    "date": null,
+    "subject": null,
+    "keywords": [],
+    "source_format": "docx"
+  },
+  "counts": {
+    "headings": {
+      "1": 1,
+      "2": 1
+    },
+    "paragraphs": 4,
+    "tables": 0,
+    "images": 0,
+    "links": 0,
+    "footnotes": 0,
+    "words": 160
+  },
+  "warnings": [
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    },
+    {
+      "code": "unsupported_node",
+      "message": "Unsupported document content was omitted."
+    }
+  ],
+  "reachable": [
+    "ariad-ir+json",
+    "epub",
+    "html",
+    "markdown"
+  ]
+}
