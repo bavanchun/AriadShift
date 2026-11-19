@@ -45,11 +45,6 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'crates/*/Cargo.toml'
-      - 'about.toml'
-      - 'about.hbs'
-      - 'NOTICE'
-      - 'LICENSE'
-      - 'THIRD_PARTY_LICENSES'
   push:
     tags: ["v*"]
 
