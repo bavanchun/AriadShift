@@ -657,10 +657,10 @@ jobs:
 
       # The fuzz target directory is about 2 GB, and every lock file or toolchain change used to
       # save a fresh entry on a dev push. Together with the three Verify caches that exceeds the
-      # 10 GB repository limit, so only a manual run saves it. Pushes restore the closest entry
-      # through the restore-keys prefix above.
+      # 10 GB repository limit, so only a manual run on dev saves it. Pushes restore the closest entry
+      # through the restore-keys prefix above. Only a run on dev may write it.
       - name: Save fuzz target cache
-        if: github.event_name == 'workflow_dispatch' && steps.restore-fuzz-target.outputs.cache-hit != 'true'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev' && steps.restore-fuzz-target.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
