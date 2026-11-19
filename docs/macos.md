@@ -41,12 +41,14 @@ first-launch steps above are needed. The bundle id stays `com.ariadnev.ariadshif
 - `AriadShift/`: the app. `DocumentGroup(viewing:)` for PDF; File > Import (`DocumentImporter`) converts md, html, docx, epub and
   images to PDF and opens the result. File > Export As (also in the inspector) converts the open PDF to docx, md or html
   through `DocumentExporter` and `EngineClient.convert` after a save panel, with inline progress and Cancel. The Word route
-  needs Pandoc, which the app does not bundle; the engine reports its absence only as a `convert` error message, which
-  `EngineError.isPandocMissing` matches and the app shows as a localized "install Pandoc" message.
+  needs Pandoc, which ships inside the app (see Bundled Pandoc below), so it works on a Mac with no Pandoc installed. If
+  the bundled copy is missing or cannot run (a damaged install), the engine reports it only as a `convert` error message,
+  which `EngineError.isPandocMissing` matches and the app shows as a localized "reinstall AriadShift" message.
   Sources are grouped by feature: `Tools/` (Tools menu, run sheet, schema form), `Viewer/` (PDF viewer, toolbar, find),
   `Editor/Page/` (page grid, sidebar, page edits, thumbnails); app shell, session, settings and import files stay at the top.
 - `scripts/`: `sync-ffi.sh` copies the XCFramework and UniFFI Swift file into the package; `embed-helper.sh` is the Run Script
-  phase that embeds `Contents/Helpers/ashift`.
+  phase that embeds `Contents/Helpers/ashift`; `embed-pandoc.sh` is the one that embeds `Contents/Helpers/pandoc` and its licence notices.
+- `ThirdParty/pandoc/`: Pandoc's licence texts and the acknowledgement, copied to `Contents/Resources/ThirdParty/pandoc/` (see Bundled Pandoc).
 
 ## Build and test
 ```sh
@@ -57,6 +59,10 @@ apps/macos && xcodebuild -scheme AriadShiftUI -destination 'platform=macOS' test
 The helper phase copies `ASHIFT_HELPER_PATH` (which must contain every arch in `ARCHS`) or, without it, builds `ariad-cli` per arch with cargo and
 merges with `lipo` (a universal Release build needs `rustup target add x86_64-apple-darwin`). `swift test` needs a real helper (`ASHIFT_HELPER_PATH`,
 else `target/release/ashift`, else `target/debug/ashift`).
+
+The Pandoc phase needs the pinned Pandoc for each arch in `.tools/`. `just macos-build` and `just macos-test` fetch it first through `just macos-pandoc`
+(`bash scripts/install-pandoc.sh --macos-arch arm64|x86_64`, which checks each archive's SHA-256; the phase itself uses no network). A binary of
+your own can be embedded instead with `ASHIFT_BUNDLED_PANDOC_PATH`; like the helper it must contain every arch in `ARCHS`.
 
 UI tests (`AriadShiftUITests`, scheme `AriadShiftUI`) drive the built app on fixture copies; they need Automation Mode (`sudo DevToolsSecurity
 -enable`, approve once) and an unlocked screen, and `ASHIFT_DEFAULTS_SUITE` (Debug only, unsandboxed app) names the preferences file they seed. Last
@@ -84,6 +90,35 @@ The dev app shares the packs folder `~/Library/Application Support/com.ariadnev.
 `EngineClient()` points the engine at `<App.app>/Contents/Helpers/ashift`; it throws `EngineError.helperMissing` unless that is an executable file.
 Cancelling the calling `Task` cancels the Rust run (`EngineError.cancelled`). One client per process is the supported shape; app code never calls the
 generated free functions.
+
+It also exports the Pandoc that sits beside the helper: when `Contents/Helpers/pandoc` is an executable file and the process has no non-empty
+`ASHIFT_PANDOC`, `init` sets `ASHIFT_PANDOC` to it. The engine reads that variable first, so the bundled Pandoc wins over `PATH`, and a Pandoc chosen
+explicitly with `ASHIFT_PANDOC` wins over the bundled one. The Rust host runs inside the app process and hands the variable on to the engine processes
+it starts, so the app's own environment is where the choice is made; it is made once, in `init`, because changing the environment while other threads
+read it is not safe. Without a bundled Pandoc nothing changes and the engine looks on `PATH` as before.
+
+## Bundled Pandoc
+Export as Word needs Pandoc, so the app carries it: `Contents/Helpers/pandoc`, the official unmodified 3.12 macOS release (the version and the SHA-256 of
+each archive come from `scripts/install-pandoc.sh`, the one place they are pinned), as one universal binary. `ARCHS` is `arm64 x86_64`, so `embed-pandoc.sh`
+joins the arm64 and the x86_64 binaries with `lipo`; an arm64-only copy would leave Intel Macs with the "reinstall" message.
+
+- **Licence.** Pandoc is GPL-2.0-or-later. It stays a separate program: the app and `ashift` start it as a child process and exchange files and pipes with
+  it, and nothing links it. `Contents/Resources/ThirdParty/pandoc/` holds `COPYING.txt` (the GPL, upstream `COPYING.md`) and `COPYRIGHT`, both unchanged
+  from the 3.12 tag (the Pandoc release archives for macOS carry no licence files, so they come from the tag; `scripts/macos-embed-pandoc.test.sh` pins
+  their SHA-256), and `ACKNOWLEDGEMENTS.txt` with the exact version, the commit and the source URL (https://github.com/jgm/pandoc/tree/3.12). The root `NOTICE`
+  carries the same statement.
+- **Signing.** Every Mach-O file in `Contents/Helpers` is signed inside-out before the app, by both `scripts/macos-adhoc-sign.sh` and the Developer ID path
+  `scripts/macos-sign-notarize.sh` (the list comes from `scripts/macos-helpers-lib.sh`), with the hardened runtime and no `--deep`. Pandoc gets no
+  entitlements. A Haskell program may need a runtime exception such as `com.apple.security.cs.allow-unsigned-executable-memory` under the hardened runtime;
+  none is added because none has been shown necessary, and the first macOS CI run is what shows it: `BundleHelperTests` starts the bundled Pandoc and converts
+  with it in the signed Debug build. If that fails with a memory-protection kill, add the entitlement for that one helper, with its justification, rather
+  than for the app.
+- **Size.** The binaries are 191.8 MB (arm64) and 123.0 MB (x86_64) before `lipo`, so the app grows by about 315 MB on disk. The release archives are
+  42.3 MB and 26.4 MB (68.7 MB together); a gzip of the two binaries together is 68.5 MB, a rough guide to what the DMG adds. The built `.app` and `.dmg`
+  sizes before and after need a macOS build and are not measured here.
+- **Tests.** `BundledPandocTests` (package, `swift test`) cover the path choice and the environment rule; `BundleHelperTests` (built app) check that the
+  helper exists and is executable, that it reports Pandoc 3.12, that the notices ship, and that a Markdown file exports to `.docx` with `PATH` set to
+  `/usr/bin:/bin` and no `ASHIFT_PANDOC`. The Linux-runnable shell tests cover the fetch mode, the embed phase and the signing order.
 
 ## Engine pack notices (`ariad-ffi`)
 `pack_notices(name, version)` returns the licence notice files of installed engine packs as `FfiPackNotices` (`name`, `version`, `active`, `notices`
