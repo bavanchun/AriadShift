@@ -55,6 +55,9 @@ final class ExportModel {
                 onExported?(output)
             } catch EngineError.cancelled {
                 phase = .idle
+            } catch is CancellationError {
+                // A cancelled task can surface as either error, depending on where it was suspended.
+                phase = .idle
             } catch {
                 phase = Self.failure(for: error)
             }
