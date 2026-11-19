@@ -1,7 +1,6 @@
 //! Local blob resource budgets, without a database or external services.
 
-#[path = "common/signing_key.rs"]
-mod signing_key;
+use crate::common::signing_key;
 
 use std::{
     convert::Infallible,

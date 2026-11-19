@@ -1,6 +1,5 @@
 //! Real local blob route attachment headers and unchanged response bytes.
-#[path = "common/signing_key.rs"]
-mod signing_key;
+use crate::common::signing_key;
 
 use ariad_server::{
     api::{self, AppState, Inner, RouterOptions},

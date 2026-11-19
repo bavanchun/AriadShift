@@ -8,7 +8,7 @@
 //! `ashift` binary as their engine program, as in production.
 #![allow(dead_code)]
 
-mod signing_key;
+pub mod signing_key;
 use signing_key::random_signing_key;
 
 use std::{
@@ -108,7 +108,7 @@ impl TestDb {
             .execute(&mut *tx)
             .await
             .unwrap();
-        sqlx::raw_sql(include_str!("../../../../infra/server-roles.sql"))
+        sqlx::raw_sql(include_str!("../../../../../infra/server-roles.sql"))
             .execute(&self.pool)
             .await
             .expect("apply runtime grants");

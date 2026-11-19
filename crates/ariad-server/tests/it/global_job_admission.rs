@@ -1,5 +1,5 @@
 //! Global admission is atomic across API replicas and shared by REST and MCP.
-mod common;
+use crate::common;
 use common::{Auth, Harness, Options, TestIssuer};
 use serde_json::{Value, json};
 use std::sync::Arc;

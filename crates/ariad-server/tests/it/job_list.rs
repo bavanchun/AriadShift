@@ -1,6 +1,6 @@
 //! `GET /v1/jobs`: the caller's own jobs, newest first, in stable pages.
 
-mod common;
+use crate::common;
 
 use common::{Auth, Harness, Options, TestIssuer, create_apikey_table, insert_api_key, text};
 use serde_json::Value;

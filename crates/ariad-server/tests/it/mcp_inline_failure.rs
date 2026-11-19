@@ -1,6 +1,6 @@
 //! Inline storage and completion errors retire uploads and release admission.
 
-mod common;
+use crate::common;
 
 use common::{Auth, Harness, Options, create_apikey_table, insert_api_key};
 use serde_json::{Value, json};

@@ -11,7 +11,7 @@
 //! Blob transfer operations and components used exclusively by them are excluded.
 //!
 //! After an additive change, refresh the snapshot with
-//! `ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo nextest run -p ariad-server --test openapi_v1_snapshot`.
+//! `ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo nextest run -p ariad-server --test it openapi_v1_snapshot::`.
 //! The update refuses breaking changes; those need a new major version path.
 
 use std::{
@@ -68,7 +68,7 @@ fn snapshot_changes(old: &Value, new: &Value, refresh: bool) -> Vec<String> {
     let mut problems = breaking_changes(old, new);
     if problems.is_empty() && !refresh && frozen_projection(old) != frozen_projection(new) {
         problems.push(
-            "unfrozen change: refresh it with ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo nextest run -p ariad-server --test openapi_v1_snapshot"
+            "unfrozen change: refresh it with ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo nextest run -p ariad-server --test it openapi_v1_snapshot::"
                 .to_owned(),
         );
     }

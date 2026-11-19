@@ -1,5 +1,5 @@
 //! Real pgmq fairness across subjects, packs and independent database pools.
-mod common;
+use crate::common;
 use ariad_server::{
     db,
     packs::Pack,

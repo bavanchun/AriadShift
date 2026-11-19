@@ -1,6 +1,6 @@
 //! Migrations, the schema check, and seeded data.
 
-mod common;
+use crate::common;
 
 use ariad_core::limits::Limits;
 use ariad_server::{db, entitlements};

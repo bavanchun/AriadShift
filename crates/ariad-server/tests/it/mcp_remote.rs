@@ -1,6 +1,6 @@
 //! Remote MCP uses real auth, admission, storage and conversion workers.
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 
@@ -600,7 +600,7 @@ async fn document_tools_and_confirmed_recipes_use_cloud_admission_and_real_worke
         .upload(
             &auth,
             "recipe.pdf",
-            include_bytes!("../../../fixtures/pdf/en-map-room.pdf"),
+            include_bytes!("../../../../fixtures/pdf/en-map-room.pdf"),
         )
         .await;
     let rotated = call(

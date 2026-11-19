@@ -1,6 +1,6 @@
 //! Authentication: Better Auth JWTs and API keys, anonymous access, Turnstile.
 
-mod common;
+use crate::common;
 
 use common::{
     Auth, Harness, Options, TestIssuer, create_apikey_table, insert_api_key, start_turnstile, text,

@@ -1,6 +1,6 @@
 //! `GET /v1/limits`: plan limits, quotas and retention before an upload.
 
-mod common;
+use crate::common;
 
 use common::{Auth, Harness, Options, create_apikey_table, insert_api_key, text};
 use serde_json::{Value, json};

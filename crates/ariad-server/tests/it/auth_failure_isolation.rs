@@ -1,6 +1,6 @@
 //! Rejected credentials cannot lock out callers who can authenticate.
 
-mod common;
+use crate::common;
 
 use common::{Auth, Harness, Options, TestIssuer, create_apikey_table, insert_api_key};
 use serde_json::{Value, json};
