@@ -84,10 +84,14 @@ TEST_RUNNER_ASHIFT_RUN_SCREENSHOT_TESTS=1 xcodebuild -scheme AriadShiftUI -desti
 # Hitch metrics of the five interactions (each launches the app; a few minutes).
 TEST_RUNNER_ASHIFT_RUN_PERF_TESTS=1 xcodebuild -scheme AriadShiftUI -destination 'platform=macOS' \
   -only-testing:AriadShiftUITests/PerformanceUITests test
+# Launch budgets (400 ms, 444 ms) are judged on a Release build; add -configuration Release. Debug numbers are only a smoke check.
+TEST_RUNNER_ASHIFT_RUN_PERF_TESTS=1 xcodebuild -scheme AriadShiftUI -destination 'platform=macOS' -configuration Release \
+  -only-testing:AriadShiftUITests/PerformanceUITests test
 ```
 `ScreenshotUITests` needs `ASHIFT_RUN_SCREENSHOT_TESTS=1` and attaches each shot with the lifetime `keepAlways`; it asserts no pixels. The `ar` runs launch with
 `-AppleLanguages (ar)` and the right-to-left text direction defaults, and the shots are read by a person for Arabic text, a mirrored layout and a mark that
 is not mirrored. `PerformanceUITests` runs its five `XCTHitchMetric` tests with `ASHIFT_RUN_PERF_TESTS=1`; its launch, open-time and memory tests run without it.
+The UI tests need an unlocked, interactive login session: on a locked screen the screenshots cannot be captured and the Open panel and palette waits time out.
 
 ## Installing a dev build beside the stable app
 `just macos-install-dev` runs `macos-build` and installs the result as `~/Applications/AriadShift Dev.app` (bundle id `com.ariadnev.ariadshift.dev`),
