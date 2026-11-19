@@ -150,6 +150,11 @@ sign_app_inside_out() {
 }
 
 verify_signed_targets() {
+    # An empty list would verify nothing and still look like success.
+    if [[ -z "${SIGNED_TARGETS[0]:-}" ]]; then
+        echo "error: there is no signed target to verify; refusing to report success." >&2
+        exit 1
+    fi
     echo "==> Verifying all signatures and entitlements..."
     local target
     for target in "${SIGNED_TARGETS[@]}"; do
@@ -158,14 +163,11 @@ verify_signed_targets() {
 }
 
 # verify-app: check an already signed app without signing anything (post-hoc check of a built or downloaded app).
-# It verifies the list that signing walks, so the two cannot disagree.
+# It verifies the list that signing walks, so the two cannot disagree; a walk that fails stops here, before any check.
 verify_existing_app() {
     local app_path="$1"
-    local target
-    SIGNED_TARGETS=()
-    while IFS= read -r -d '' target; do
-        SIGNED_TARGETS+=("${target}")
-    done < <(list_sign_targets "${app_path}")
+    load_sign_targets "${app_path}"
+    SIGNED_TARGETS=("${SIGN_TARGETS[@]}")
     verify_signed_targets
 }
 

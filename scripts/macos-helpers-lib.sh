@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sourced by macos-adhoc-sign.sh and macos-sign-notarize.sh; not run on its own.
+# Sourced (through macos-signing-lib.sh) by macos-adhoc-sign.sh and macos-sign-notarize.sh; not run on its own.
 #
 # Contents/Helpers holds the programs the app starts as child processes: the ashift helper and Pandoc. Each one is
 # nested code that needs its own signature before the app is sealed, so both signing scripts take the list from here
@@ -17,12 +17,15 @@ is_macho_file() {
 }
 
 # list_helper_machos APP_PATH: the regular files under Contents/Helpers that are Mach-O, NUL separated.
+# The loop only prints, so it ends a pipe and the status is find's (the sourcing script runs with pipefail): a find that
+# fails makes the function fail instead of silently dropping the helpers after the failure.
 list_helper_machos() {
     local helpers_dir="$1/Contents/Helpers" item
     [[ -d "${helpers_dir}" ]] || return 0
-    while IFS= read -r -d '' item; do
-        if is_macho_file "${item}"; then
-            printf '%s\0' "${item}"
-        fi
-    done < <(find "${helpers_dir}" -type f -print0)
+    find "${helpers_dir}" -type f -print0 |
+        while IFS= read -r -d '' item; do
+            if is_macho_file "${item}"; then
+                printf '%s\0' "${item}"
+            fi
+        done
 }

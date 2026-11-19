@@ -8,7 +8,7 @@ set -euo pipefail
 # Sparkle.framework, its XPC services and its helpers ship already signed by the Sparkle project. Xcode leaves them
 # alone, so the built app mixes identities and the hardened runtime's library validation refuses to load the framework.
 # This script re-signs every piece with the same ad-hoc identity ("-"), deepest first:
-#   1. Sparkle XPC services, the updater tool and Updater.app (every Versions/* directory except the Current symlink)
+#   1. Sparkle XPC services, Autoupdate and Updater.app (every Versions/* directory except the Current symlink)
 #   2. Sparkle.framework
 #   3. any other embedded dylib, then any other embedded framework
 #   4. every Mach-O file in Contents/Helpers (the ashift helper and Pandoc)
@@ -75,6 +75,10 @@ verify_target() {
 }
 
 verify_signed_targets() {
+    # An empty list would verify nothing and still look like success.
+    if [[ -z "${SIGNED_TARGETS[0]:-}" ]]; then
+        fail "there is no signed target to verify; refusing to report success."
+    fi
     echo "==> Verifying all signatures, flags and entitlements..."
     local target
     for target in "${SIGNED_TARGETS[@]}"; do
