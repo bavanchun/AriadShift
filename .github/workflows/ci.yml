@@ -142,7 +142,22 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           components: clippy
-          cache-save-if: ${{ github.event_name == 'push' }}
+          cache: false
+
+      # Every cache of this file comes from Swatinem/rust-cache used directly, not through
+      # setup-rust-toolchain (cache: false there). The wrapper keeps the action's default of hashing
+      # the Rust versions of every toolchain installed on the runner into the key, which includes the
+      # image's preinstalled stable: two jobs of one run on different runner images got different keys
+      # and missed each other's caches, and every image update stored another copy of each entry.
+      # add-rust-environment-hash-key: false drops that hash. The key still holds the OS, the job,
+      # the optional key input and a hash of Cargo.lock, the manifests, rust-toolchain.toml and
+      # .cargo/config.toml, so the pinned toolchain and the dependency set stay in it.
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: true
+          add-rust-environment-hash-key: false
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --features ariad-host/test-probe
@@ -179,7 +194,14 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: wasm32-unknown-unknown
-          cache-save-if: ${{ github.event_name == 'push' }}
+          cache: false
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: true
+          add-rust-environment-hash-key: false
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
@@ -300,19 +322,25 @@ jobs:
         with:
           persist-credentials: false
 
-      # The Rust cache key is derived from the job id, so every part of this job would share one
-      # entry; cache-key tells them apart. The test shards compile the same test profile and share
-      # the entry `test`, and only the first shard saves it. The lint and package parts have no
-      # target cache: the repository's 10 GB Actions cache budget is full (the Windows, macOS and
-      # test entries alone take 5.7 GB), and sccache already holds their compile units, so the
-      # 0.9 GB lint entry bought little. As elsewhere, only a push saves.
+      # Only the test shards keep a target cache: they share the entry `test` (same test profile)
+      # and only the first shard saves it. The lint and package parts have none: the repository's
+      # 10 GB Actions cache budget is full and sccache already holds their compile units. As
+      # elsewhere, only a push saves. The cache step is Swatinem/rust-cache used directly (see the
+      # note at the first use in this file for why it is not set up by setup-rust-toolchain).
       - name: Set up Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: wasm32-unknown-unknown
-          cache: ${{ startsWith(matrix.part, 'test-') }}
-          cache-key: test
-          cache-save-if: ${{ github.event_name == 'push' && matrix.part != 'test-2' }}
+          cache: false
+
+      - name: Cache Rust artifacts
+        if: startsWith(matrix.part, 'test-')
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: true
+          add-rust-environment-hash-key: false
+          key: test
+          save-if: ${{ github.event_name == 'push' && matrix.part != 'test-2' }}
 
       - name: Install command-line tools
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
@@ -536,7 +564,14 @@ jobs:
       - name: Set up Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
-          cache-save-if: ${{ github.event_name == 'push' }}
+          cache: false
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: true
+          add-rust-environment-hash-key: false
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
@@ -885,7 +920,14 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: wasm32-unknown-unknown
-          cache-save-if: ${{ github.event_name == 'push' }}
+          cache: false
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: true
+          add-rust-environment-hash-key: false
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
