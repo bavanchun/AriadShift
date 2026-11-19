@@ -227,11 +227,12 @@ test-docling-pack-inputs:
     bash scripts/test-docling-pack-inputs.sh
 
 # The macOS release scripts that need no macOS tool: the release mode decision (Developer ID, ad-hoc, unsigned), the
-# ad-hoc and Developer ID signing order and gates against a stub codesign, the Pandoc fetch mode and embed phase
+# ad-hoc and Developer ID signing order and flags (one shared bundle walk, scripts/macos-signing-lib.sh) and gates
+# against a stub codesign, the Pandoc fetch mode and embed phase
 # against stub lipo and codesign, and the appcast script's key handling against stub child commands. macos.yml runs
 # the same tests on the macOS runner.
 test-macos-release-scripts:
-    shellcheck scripts/macos-check-secrets.sh scripts/macos-check-secrets.test.sh scripts/macos-check-secrets-workflow.test.sh scripts/macos-adhoc-sign.sh scripts/macos-adhoc-sign.test.sh scripts/macos-appcast.sh scripts/macos-appcast.test.sh scripts/macos-embed-pandoc.test.sh apps/macos/scripts/embed-pandoc.sh scripts/macos-helpers-lib.sh scripts/macos-sign-notarize.sh scripts/macos-sign-notarize.test.sh
+    shellcheck scripts/macos-check-secrets.sh scripts/macos-check-secrets.test.sh scripts/macos-check-secrets-workflow.test.sh scripts/macos-adhoc-sign.sh scripts/macos-adhoc-sign.test.sh scripts/macos-appcast.sh scripts/macos-appcast.test.sh scripts/macos-embed-pandoc.test.sh apps/macos/scripts/embed-pandoc.sh scripts/macos-helpers-lib.sh scripts/macos-signing-lib.sh scripts/macos-sign-notarize.sh scripts/macos-sign-notarize.test.sh
     shellcheck scripts/install-pandoc.test.sh
     bash scripts/install-pandoc.test.sh
     bash scripts/macos-embed-pandoc.test.sh

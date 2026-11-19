@@ -12,6 +12,9 @@ set -euo pipefail
 #
 # The app is signed with scripts/macos-app.entitlements; every signed bundle must be free of
 # com.apple.security.get-task-allow or the script fails before anything reaches the notary service.
+#
+# What is signed, in which order and with which codesign options comes from scripts/macos-signing-lib.sh (mode
+# `signed`), shared with macos-adhoc-sign.sh. Signing and verify-app walk the same list.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH='' cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -107,33 +110,8 @@ SIGNED_TARGETS=()
 # Deliberately empty entitlements for the app: it is not sandboxed and needs no hardened-runtime exceptions
 # (the runtime itself comes from --options runtime). Keep XML comments out of that file; the parser rejects them.
 APP_ENTITLEMENTS="${SCRIPT_DIR}/macos-app.entitlements"
-# shellcheck source=scripts/macos-helpers-lib.sh
-source "${SCRIPT_DIR}/macos-helpers-lib.sh"
-
-# sign_bundle TARGET [ENTITLEMENTS_FILE]
-# With an entitlements file the target gets exactly those entitlements (used for the app). Without one the
-# target keeps the entitlements it was built with, as Sparkle documents for its XPC services and tools.
-sign_bundle() {
-    local target="$1"
-    local entitlements_file="${2:-}"
-    local -a keychain_args=()
-    local -a metadata_args=()
-    if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
-        keychain_args=(--keychain "${KEYCHAIN_PATH}")
-    fi
-    if [[ -n "${entitlements_file}" ]]; then
-        metadata_args=(--entitlements "${entitlements_file}")
-    else
-        metadata_args=("--preserve-metadata=entitlements,requirements,flags,runtime")
-    fi
-    echo "==> Signing bundle: ${target}"
-    codesign --force --options runtime --timestamp \
-        "${metadata_args[@]}" \
-        --sign "${APPLE_SIGNING_IDENTITY}" \
-        ${keychain_args[@]+"${keychain_args[@]}"} \
-        "${target}"
-    SIGNED_TARGETS+=("${target}")
-}
+# shellcheck source=scripts/macos-signing-lib.sh
+source "${SCRIPT_DIR}/macos-signing-lib.sh"
 
 # Apple notarization rejects com.apple.security.get-task-allow (a debug entitlement that Xcode injects into
 # ad-hoc builds). Fail here, in seconds, instead of after a notary round trip.
@@ -164,56 +142,10 @@ sign_app_inside_out() {
     local app_path="$1"
     echo "==> Signing application components inside-out for: ${app_path}"
 
-    local frameworks_dir="${app_path}/Contents/Frameworks"
-    local version_dir xpc fw dylib helper
+    # Every nested bundle, then the app with the explicit minimal entitlements instead of whatever the build injected
+    sign_app_targets signed "${app_path}" "${APP_ENTITLEMENTS}"
 
-    SIGNED_TARGETS=()
-
-    # 1-3. Sparkle XPC services, Autoupdate and Updater.app (inside-out; Versions/Current is a symlink, skipped)
-    if [[ -d "${frameworks_dir}/Sparkle.framework/Versions" ]]; then
-        while IFS= read -r -d '' version_dir; do
-            if [[ -d "${version_dir}/XPCServices" ]]; then
-                for xpc in "${version_dir}"/XPCServices/*.xpc; do
-                    if [[ -d "${xpc}" ]]; then
-                        sign_bundle "${xpc}"
-                    fi
-                done
-            fi
-            if [[ -f "${version_dir}/Autoupdate" ]]; then
-                sign_bundle "${version_dir}/Autoupdate"
-            fi
-            if [[ -d "${version_dir}/Updater.app" ]]; then
-                sign_bundle "${version_dir}/Updater.app"
-            fi
-        done < <(find "${frameworks_dir}/Sparkle.framework/Versions" -mindepth 1 -maxdepth 1 -type d ! -name 'Current' -print0)
-
-        # 4. Sparkle.framework bundle
-        sign_bundle "${frameworks_dir}/Sparkle.framework"
-    fi
-
-    # 5. Any other embedded frameworks or dylibs
-    if [[ -d "${frameworks_dir}" ]]; then
-        while IFS= read -r -d '' fw; do
-            sign_bundle "${fw}"
-        done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 1 -type d -name '*.framework' ! -name 'Sparkle.framework' -print0)
-        while IFS= read -r -d '' dylib; do
-            sign_bundle "${dylib}"
-        done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 2 -type f -name '*.dylib' -print0)
-    fi
-
-    # 6. Every Mach-O in Helpers (the ashift helper and Pandoc), each with the hardened runtime and a secure timestamp
-    while IFS= read -r -d '' helper; do
-        sign_bundle "${helper}"
-    done < <(list_helper_machos "${app_path}")
-
-    # 7. Outer application bundle, with the explicit minimal entitlements instead of whatever the build injected
-    if [[ ! -f "${APP_ENTITLEMENTS}" ]]; then
-        echo "error: entitlements file ${APP_ENTITLEMENTS} not found." >&2
-        exit 1
-    fi
-    sign_bundle "${app_path}" "${APP_ENTITLEMENTS}"
-
-    # 8. Verify and gate every signed target, before anything is submitted to notarization
+    # Verify and gate every signed target, before anything is submitted to notarization
     verify_signed_targets
 }
 
@@ -226,33 +158,14 @@ verify_signed_targets() {
 }
 
 # verify-app: check an already signed app without signing anything (post-hoc check of a built or downloaded app).
+# It verifies the list that signing walks, so the two cannot disagree.
 verify_existing_app() {
     local app_path="$1"
-    local frameworks_dir="${app_path}/Contents/Frameworks"
-    local version_dir xpc fw dylib helper
+    local target
     SIGNED_TARGETS=()
-    if [[ -d "${frameworks_dir}/Sparkle.framework/Versions" ]]; then
-        while IFS= read -r -d '' version_dir; do
-            for xpc in "${version_dir}"/XPCServices/*.xpc; do
-                [[ -d "${xpc}" ]] && SIGNED_TARGETS+=("${xpc}")
-            done
-            [[ -f "${version_dir}/Autoupdate" ]] && SIGNED_TARGETS+=("${version_dir}/Autoupdate")
-            [[ -d "${version_dir}/Updater.app" ]] && SIGNED_TARGETS+=("${version_dir}/Updater.app")
-        done < <(find "${frameworks_dir}/Sparkle.framework/Versions" -mindepth 1 -maxdepth 1 -type d ! -name 'Current' -print0)
-        SIGNED_TARGETS+=("${frameworks_dir}/Sparkle.framework")
-    fi
-    if [[ -d "${frameworks_dir}" ]]; then
-        while IFS= read -r -d '' fw; do
-            SIGNED_TARGETS+=("${fw}")
-        done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 1 -type d -name '*.framework' ! -name 'Sparkle.framework' -print0)
-        while IFS= read -r -d '' dylib; do
-            SIGNED_TARGETS+=("${dylib}")
-        done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 2 -type f -name '*.dylib' -print0)
-    fi
-    while IFS= read -r -d '' helper; do
-        SIGNED_TARGETS+=("${helper}")
-    done < <(list_helper_machos "${app_path}")
-    SIGNED_TARGETS+=("${app_path}")
+    while IFS= read -r -d '' target; do
+        SIGNED_TARGETS+=("${target}")
+    done < <(list_sign_targets "${app_path}")
     verify_signed_targets
 }
 

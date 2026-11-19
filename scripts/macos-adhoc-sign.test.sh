@@ -6,9 +6,14 @@ set -euo pipefail
 # every gate fails closed: inside-out order, `--force --sign -` with the hardened runtime and no secure timestamp,
 # never `--deep` when signing, the explicit entitlements only on the app, and a verify gate that rejects a failed
 # verification, a leftover non-ad-hoc identity, a lost hardened runtime and a get-task-allow entitlement.
+#
+# The two signing scripts share one bundle walk (scripts/macos-signing-lib.sh). This test also runs the Developer ID
+# script on the same bundle and requires the same target order, and requires that the walk exists once.
+# macos-sign-notarize.test.sh checks the same order and the Developer ID flags; keep the two in step.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SIGN="${SCRIPT_DIR}/macos-adhoc-sign.sh"
+SIGN_DEVELOPER_ID="${SCRIPT_DIR}/macos-sign-notarize.sh"
 ENTITLEMENTS="${SCRIPT_DIR}/macos-app.entitlements"
 failures=0
 checks=0
@@ -84,8 +89,9 @@ write_macho() { printf '\317\372\355\376' > "$1"; }
 write_fat_macho() { printf '\312\376\272\276' > "$1"; }
 
 # make_app DIR [with-sparkle]: a fake bundle shaped like the real one: Sparkle with two XPC services, Autoupdate,
-# Updater.app and the Current symlink, one more framework, one loose dylib, and Helpers with the ashift helper and
-# Pandoc (both Mach-O) beside a licence note that is not code and must stay unsigned.
+# Updater.app and the Current symlink, one more framework, one loose dylib, a framework that holds a dylib (signing
+# order decides whether its seal survives), and Helpers with the ashift helper and Pandoc (both Mach-O) beside a
+# licence note that is not code and must stay unsigned.
 make_app() {
     local app="$1"
     mkdir -p "${app}/Contents/Helpers" "${app}/Contents/MacOS"
@@ -98,10 +104,12 @@ make_app() {
         mkdir -p "${sparkle}/Versions/B/XPCServices/Downloader.xpc" \
             "${sparkle}/Versions/B/XPCServices/Installer.xpc" \
             "${sparkle}/Versions/B/Updater.app" \
-            "${app}/Contents/Frameworks/Other.framework"
+            "${app}/Contents/Frameworks/Other.framework" \
+            "${app}/Contents/Frameworks/Inner.framework"
         : > "${sparkle}/Versions/B/Autoupdate"
         ln -s B "${sparkle}/Versions/Current"
         : > "${app}/Contents/Frameworks/libextra.dylib"
+        : > "${app}/Contents/Frameworks/Inner.framework/libinner.dylib"
     fi
 }
 
@@ -115,6 +123,8 @@ AUTOUPDATE="${SPK}/Versions/B/Autoupdate"
 UPDATER="${SPK}/Versions/B/Updater.app"
 DYLIB="${FW}/libextra.dylib"
 OTHER="${FW}/Other.framework"
+INNER="${FW}/Inner.framework"
+INNER_DYLIB="${INNER}/libinner.dylib"
 HELPER="${APP}/Contents/Helpers/ashift"
 PANDOC="${APP}/Contents/Helpers/pandoc"
 NOTES="${APP}/Contents/Helpers/NOTES.txt"
@@ -122,8 +132,9 @@ NOTES="${APP}/Contents/Helpers/NOTES.txt"
 LOG="${TMP_DIR}/codesign.log"
 OUT="${TMP_DIR}/out.txt"
 
-# run_sign ARGS... [-- ENV=VALUE...]: runs the script with the stub first on PATH and no inherited environment.
-# The codesign log lands in LOG and the script output in OUT.
+# run_sign ARGS... [-- ENV=VALUE...]: runs the script with the stub first on PATH and no inherited environment. It
+# runs SIGN_SCRIPT, the ad-hoc script unless a caller sets it. The codesign log lands in LOG and the script output in OUT.
+SIGN_SCRIPT="${SIGN}"
 run_sign() {
     local -a args=() envs=()
     local seen_sep=0 item
@@ -139,7 +150,7 @@ run_sign() {
     : > "${LOG}"
     local rc=0
     env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" ${envs[@]+"${envs[@]}"} \
-        bash "${SIGN}" ${args[@]+"${args[@]}"} > "${OUT}" 2>&1 || rc=$?
+        bash "${SIGN_SCRIPT}" ${args[@]+"${args[@]}"} > "${OUT}" 2>&1 || rc=$?
     return "${rc}"
 }
 
@@ -190,8 +201,8 @@ rc=0
 run_sign app "${APP}" || rc=$?
 check "exits 0" "${rc}"
 signed="$(sign_targets | count_lines)"
-check "signs exactly 10 targets (4 Sparkle parts, Sparkle, dylib, Other.framework, 2 helpers, app), got ${signed}" "$((signed == 10 ? 0 : 1))"
-for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${PANDOC}" "${APP}"; do
+check "signs exactly 12 targets (4 Sparkle parts, Sparkle, 2 dylibs, 2 frameworks, 2 helpers, app), got ${signed}" "$((signed == 12 ? 0 : 1))"
+for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${INNER_DYLIB}" "${OTHER}" "${INNER}" "${HELPER}" "${PANDOC}" "${APP}"; do
     expect "signs ${t#"${TMP_DIR}/Fake/"}" test -n "$(sign_index "${t}")"
 done
 expect "never signs the Versions/Current symlink" test -z "$(sign_index "${SPK}/Versions/Current")"
@@ -202,11 +213,17 @@ for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}
     expect "${nested##*/} is signed before Sparkle.framework" before "${nested}" "${SPK}"
 done
 expect "Sparkle.framework is signed before the app" before "${SPK}" "${APP}"
+expect "Sparkle.framework is signed before the loose dylib" before "${SPK}" "${DYLIB}"
+expect "Sparkle.framework is signed before the dylib inside Inner.framework" before "${SPK}" "${INNER_DYLIB}"
 expect "the loose dylib is signed before Other.framework" before "${DYLIB}" "${OTHER}"
+expect "the loose dylib is signed before Inner.framework" before "${DYLIB}" "${INNER}"
+expect "the dylib inside Inner.framework is signed before Inner.framework seals it" before "${INNER_DYLIB}" "${INNER}"
+expect "the dylib inside Inner.framework is signed before Other.framework" before "${INNER_DYLIB}" "${OTHER}"
 expect "Other.framework is signed before the app" before "${OTHER}" "${APP}"
 expect "the helper is signed before the app" before "${HELPER}" "${APP}"
 expect "Pandoc is signed before the app" before "${PANDOC}" "${APP}"
 expect "Pandoc is signed after the frameworks" before "${OTHER}" "${PANDOC}"
+expect "the ashift helper is signed after Inner.framework" before "${INNER}" "${HELPER}"
 expect "the app is the last target signed" test "$(sign_targets | tail -n 1)" = "${APP}"
 
 echo "== Flags on every signing call =="
@@ -238,7 +255,7 @@ app_line="$(sign_line "${APP}")"
 expect "the app is signed with the explicit entitlements file" grep -q -F -- " --entitlements ${ENTITLEMENTS} " <<< " ${app_line}"
 expect "the app does not preserve nested metadata" lacks_text "${app_line}" "--preserve-metadata"
 nested_ok=0
-for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${PANDOC}"; do
+for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${INNER_DYLIB}" "${OTHER}" "${INNER}" "${HELPER}" "${PANDOC}"; do
     line="$(sign_line "${nested}")"
     if [[ "${line}" != *"--preserve-metadata=identifier,entitlements"* || "${line}" == *"--entitlements "* \
         || "${line}" == *requirements* ]]; then
@@ -253,11 +270,34 @@ first_verify="$(first_verify_line)"
 last_sign="$(last_sign_line)"
 check "verification starts only after the last signing call" "$(( first_verify > last_sign ? 0 : 1 ))"
 verify_ok=0
-for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${PANDOC}" "${APP}"; do
+for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${INNER_DYLIB}" "${OTHER}" "${INNER}" "${HELPER}" "${PANDOC}" "${APP}"; do
     grep -q -F -- "--verify --deep --strict --verbose=2 ${t}" "${LOG}" || { echo "  not verified: ${t}" >&2; verify_ok=1; }
 done
 check "every signed target, the app included, is verified with --verify --deep --strict" "${verify_ok}"
 expect "the script says it verified the app" grep -q "Ad-hoc signed and verified" "${OUT}"
+
+echo "== One walk for both modes =="
+# The Developer ID script signs the same bundle in the same order, one dylib-before-framework rule for both.
+adhoc_order="$(sign_targets)"
+SIGN_SCRIPT="${SIGN_DEVELOPER_ID}"
+rc=0
+run_sign sign-app "${APP}" -- APPLE_SIGNING_IDENTITY="Developer ID Application: Example" || rc=$?
+SIGN_SCRIPT="${SIGN}"
+check "the Developer ID script signs the same bundle and exits 0" "${rc}"
+developer_id_order="$(sign_targets)"
+check "both modes sign the same targets in the same order" \
+    "$([[ -n "${adhoc_order}" && "${adhoc_order}" == "${developer_id_order}" ]] && echo 0 || echo 1)"
+expect "in Developer ID mode the dylib inside Inner.framework is signed before Inner.framework" before "${INNER_DYLIB}" "${INNER}"
+expect "in Developer ID mode the loose dylib is signed before Other.framework" before "${DYLIB}" "${OTHER}"
+# The bundle walk is code: it names Sparkle's per-version updater tool once, in the shared library, and no script
+# repeats it. The tests are excluded; they build fixtures.
+walk_hits="$(grep -n 'Autoupdate' "${SCRIPT_DIR}"/macos-*.sh | grep -v '\.test\.sh:' || true)"
+check "the Sparkle updater tool is named on exactly one line of the signing scripts, got: ${walk_hits:-none}" \
+    "$([[ -n "${walk_hits}" && "${walk_hits}" != *$'\n'* ]] && echo 0 || echo 1)"
+expect "and that line is in the shared walk, macos-signing-lib.sh" test "${walk_hits#"${SCRIPT_DIR}/macos-signing-lib.sh:"}" != "${walk_hits}"
+for script in macos-adhoc-sign.sh macos-sign-notarize.sh; do
+    expect "${script} takes the walk from the shared library" grep -q -F "source \"\${SCRIPT_DIR}/macos-signing-lib.sh\"" "${SCRIPT_DIR}/${script}"
+done
 
 echo "== The environment cannot change the identity =="
 rc=0
