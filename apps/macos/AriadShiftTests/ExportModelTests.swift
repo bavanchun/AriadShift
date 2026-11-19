@@ -112,7 +112,26 @@ final class ExportModelTests: XCTestCase {
         model.onExported = { exported.append($0) }
         let converter = FakeConverter { _ in
             // Behaves like the engine: a cancelled run surfaces as EngineError.cancelled and wrote nothing.
-            while !Task.isCancelled { try await Task.sleep(for: .milliseconds(5)) }
+            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            throw EngineError.cancelled
+        }
+
+        model.begin(.html, document: document, converter: converter)
+        while !model.isRunning { await Task.yield() }
+        model.cancel()
+        await model.waitUntilFinished()
+
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertTrue(exported.isEmpty)
+    }
+
+    func testATaskCancellationErrorIsAlsoAQuietCancel() async {
+        let (model, _) = makeModel(choosing: chosen)
+        var exported: [URL] = []
+        model.onExported = { exported.append($0) }
+        // A cancelled task that was suspended in Task.sleep throws CancellationError, not EngineError.cancelled.
+        let converter = FakeConverter { _ in
+            try await Task.sleep(for: .seconds(60))
             throw EngineError.cancelled
         }
 
