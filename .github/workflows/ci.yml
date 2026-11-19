@@ -302,15 +302,16 @@ jobs:
 
       # The Rust cache key is derived from the job id, so every part of this job would share one
       # entry; cache-key tells them apart. The test shards compile the same test profile and share
-      # the entry `test`, and only the first shard saves it. Lint keeps its own entry. The package
-      # part has no target cache: the repository's 10 GB Actions cache budget is almost used, and
-      # sccache already holds its compile units. As elsewhere, only a push saves.
+      # the entry `test`, and only the first shard saves it. The lint and package parts have no
+      # target cache: the repository's 10 GB Actions cache budget is full (the Windows, macOS and
+      # test entries alone take 5.7 GB), and sccache already holds their compile units, so the
+      # 0.9 GB lint entry bought little. As elsewhere, only a push saves.
       - name: Set up Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           target: wasm32-unknown-unknown
-          cache: ${{ matrix.part != 'package' }}
-          cache-key: ${{ startsWith(matrix.part, 'test-') && 'test' || matrix.part }}
+          cache: ${{ startsWith(matrix.part, 'test-') }}
+          cache-key: test
           cache-save-if: ${{ github.event_name == 'push' && matrix.part != 'test-2' }}
 
       - name: Install command-line tools
