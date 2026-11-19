@@ -17,7 +17,7 @@ const COPY_CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
-    #[error("workspace I/O failed")]
+    #[error("workspace I/O failed ({})", io_detail(.0))]
     Io(#[from] io::Error),
     #[error("workspace cleanup failed")]
     Cleanup(#[source] io::Error),
@@ -29,6 +29,15 @@ pub enum WorkspaceError {
     DestinationExists,
     #[error("atomic promotion failed")]
     Promotion(#[source] io::Error),
+}
+
+/// The part of an I/O error that is safe to show and enough to diagnose it: the error kind and the
+/// raw OS error code. The error's own text is left out because it can carry a path.
+fn io_detail(error: &io::Error) -> String {
+    match error.raw_os_error() {
+        Some(code) => format!("{:?}, os error {code}", error.kind()),
+        None => format!("{:?}", error.kind()),
+    }
 }
 
 /// A private workspace with the protocol's standard directory layout.
@@ -899,5 +908,30 @@ mod copy_tests {
             .expect_err("cancelled before the first chunk");
         assert!(matches!(&error, WorkspaceError::Io(e) if e.kind() == io::ErrorKind::Interrupted));
         assert!(!workspace.output_dir().join("none.bin").exists());
+    }
+}
+
+#[cfg(test)]
+mod error_detail_tests {
+    use super::*;
+
+    #[test]
+    fn io_error_message_keeps_the_kind_and_the_os_error_code() {
+        let with_code = WorkspaceError::Io(io::Error::from_raw_os_error(5)).to_string();
+        assert!(
+            with_code.starts_with("workspace I/O failed (") && with_code.contains("os error 5"),
+            "the raw OS error must reach the message, got {with_code:?}"
+        );
+
+        let without_code = WorkspaceError::Io(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "secret path",
+        ))
+        .to_string();
+        assert_eq!(without_code, "workspace I/O failed (PermissionDenied)");
+        assert!(
+            !without_code.contains("secret path"),
+            "free-form text can carry a path"
+        );
     }
 }
