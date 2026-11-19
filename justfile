@@ -219,7 +219,7 @@ test-licenses-recipes:
 static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-licenses-recipes test-winget-manifest test-ci-scope test-ci-sccache test-docling-pack-inputs test-macos-release-scripts test-hardening-ci-wiring
 
 test-docling-pack-inputs:
-    shellcheck scripts/docling-pack-inputs.sh scripts/test-docling-pack-inputs.sh
+    shellcheck scripts/docling-pack-inputs.sh scripts/test-docling-pack-inputs.sh scripts/docling-engine.sh
     bash scripts/test-docling-pack-inputs.sh
 
 # The macOS release scripts that need no macOS tool: the release mode decision (Developer ID, ad-hoc, unsigned), the
@@ -326,24 +326,18 @@ ci: static clippy wasm test bench-test bench-check package-check web-ci desktop-
 pandoc:
     bash scripts/install-pandoc.sh
 
-# The docling engine's development environment, models and OCR data live here.
-docling_root := justfile_directory() / ".tools" / "docling"
-docling_python := docling_root / "python-env" / if os() == "windows" { "Scripts/python.exe" } else { "bin/python" }
-
-# Sync the docling engine environment and fetch its pinned models and OCR data (about 1.6 GiB).
+# Sync the docling engine environment (.tools/docling) and fetch its pinned models and OCR data (about 1.6 GiB).
+# The three docling recipes run scripts/docling-engine.sh, which pack-docling.yml calls too.
 docling-dev:
-    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv sync --package ariad-docling --frozen
-    "{{docling_python}}" engines/docling/pack/fetch.py assets --dest "{{docling_root}}"
+    bash scripts/docling-engine.sh dev
 
 # Lint and test the docling engine (needs `just docling-dev`, or only its uv sync for pytest).
 docling-test:
-    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv run --package ariad-docling --frozen ruff check engines/docling
-    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv run --package ariad-docling --frozen ruff format --check engines/docling
-    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv run --package ariad-docling --frozen pytest engines/docling/tests
+    bash scripts/docling-engine.sh test
 
 # Run the CLI tests that drive the real docling engine (needs `just docling-dev` and Tesseract).
 docling-engine-test:
-    ASHIFT_DOCLING_ENGINE='"{{docling_python}}" -I -m ariad_docling' cargo nextest run -p ariad-cli --features ariad-host/test-probe --run-ignored ignored-only --test-threads 2 -E 'binary(docling_engine)'
+    bash scripts/docling-engine.sh engine-test
 
 # Build MKL-free CPU torch on a matching native x86_64 host (Linux uses Docker).
 docling-torch-build target out="torch-out":
