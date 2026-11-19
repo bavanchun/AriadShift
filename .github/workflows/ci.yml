@@ -36,6 +36,7 @@ jobs:
       heavy: ${{ steps.scope.outputs.heavy }}
       web: ${{ steps.scope.outputs.web }}
       package: ${{ steps.scope.outputs.package }}
+      os_verify: ${{ steps.scope.outputs.os_verify }}
       linux_parts: ${{ steps.scope.outputs.linux_parts }}
     steps:
       - name: Check out source
@@ -127,7 +128,7 @@ jobs:
   lint-native:
     name: Lint (${{ matrix.os }})
     needs: scope
-    if: needs.scope.outputs.heavy == 'true'
+    if: needs.scope.outputs.heavy == 'true' && needs.scope.outputs.os_verify == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
@@ -180,7 +181,7 @@ jobs:
   verify:
     name: Verify (${{ matrix.os }})
     needs: scope
-    if: needs.scope.outputs.heavy == 'true'
+    if: needs.scope.outputs.heavy == 'true' && needs.scope.outputs.os_verify == 'true'
     runs-on: ${{ matrix.os }}
     # Cold builds on macOS and Windows can exceed 30 min before cache warming (e.g. after a prefix bump or prune); 45 min prevents spurious cancellation.
     timeout-minutes: ${{ matrix.timeout }}
@@ -1022,6 +1023,7 @@ jobs:
       - name: Check job results
         env:
           HEAVY: ${{ needs.scope.outputs.heavy }}
+          OS_VERIFY: ${{ needs.scope.outputs.os_verify }}
           WEB_SCOPE: ${{ needs.scope.outputs.web }}
           SCOPE: ${{ needs.scope.result }}
           STATIC: ${{ needs.static.result }}
@@ -1034,11 +1036,18 @@ jobs:
           FUZZ: ${{ needs.fuzz.result }}
           WEB: ${{ needs.web.result }}
         run: |
-          printf 'scope=%s static=%s lint-native=%s verify=%s verify-linux=%s server=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
-            "$SCOPE" "$STATIC" "$LINT_NATIVE" "$VERIFY" "$VERIFY_LINUX" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
+          printf 'scope=%s static=%s lint-native=%s verify=%s verify-linux=%s server=%s fuzz=%s web=%s heavy=%s os-verify=%s web-scope=%s\n' \
+            "$SCOPE" "$STATIC" "$LINT_NATIVE" "$VERIFY" "$VERIFY_LINUX" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$OS_VERIFY" "$WEB_SCOPE"
           [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
           if [ "$HEAVY" = true ]; then
-            [ "$LINT_NATIVE" = success ] && [ "$VERIFY" = success ] && [ "$VERIFY_LINUX" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
+            [ "$VERIFY_LINUX" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
+            # The macOS and Windows jobs run unless the scope left them out for a change confined to
+            # the OS independent crates; they never fail or get cancelled in either case.
+            if [ "$OS_VERIFY" = true ]; then
+              [ "$LINT_NATIVE" = success ] && [ "$VERIFY" = success ] || exit 1
+            else
+              [ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] || exit 1
+            fi
           else
             [ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] && [ "$VERIFY_LINUX" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
           fi
