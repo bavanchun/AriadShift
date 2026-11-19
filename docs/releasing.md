@@ -73,7 +73,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    cargo update --workspace --manifest-path fuzz/Cargo.toml
    cargo check --locked --manifest-path fuzz/Cargo.toml
    just openapi
-   ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo test --locked -p ariad-server --test openapi_v1_snapshot
+   ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo test --locked -p ariad-server --test it openapi_v1_snapshot::
    pnpm --filter @ariadshift/sdk generate
    pnpm --filter @ariadshift/sdk lock
    just sdk-check
