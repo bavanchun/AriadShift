@@ -13,6 +13,11 @@ set -euo pipefail
 # - Otherwise: use the pinned binary of every arch in $ARCHS from .tools/pandoc-macos-<arch>/bin/pandoc and lipo them.
 #   That fetch needs the network, which a build phase must not use, so `just macos-pandoc` (or
 #   `scripts/install-pandoc.sh --macos-arch <arch>`) runs first; `just macos-build` and `just macos-test` do it.
+#   Each slice is checked against the SHA-256 of the pinned binary (scripts/install-pandoc.sh holds the pins) before
+#   it is joined, so a file in .tools that the installer did not put there is refused even in an IDE build.
+#
+# The result is built next to its destination and moved into place only after the architecture check passes, so a
+# failed build leaves no Contents/Helpers/pandoc: a stale one from an earlier build is removed first.
 
 REPO_ROOT="$(CDPATH='' cd -- "${SRCROOT}/../.." && pwd)"
 HELPERS_DIR="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
@@ -21,6 +26,17 @@ NOTICES_SRC="${SRCROOT}/ThirdParty/pandoc"
 NOTICES_DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ThirdParty/pandoc"
 NOTICE_FILES=(COPYING.txt COPYRIGHT ACKNOWLEDGEMENTS.txt)
 mkdir -p "${HELPERS_DIR}"
+rm -f "${DEST}"
+STAGE="$(mktemp "${HELPERS_DIR}/.pandoc.XXXXXX")"
+# Any failure from here on, including a notice or the signature, removes the helper as well.
+cleanup() {
+    local status=$?
+    rm -f "${STAGE}"
+    if [[ "${status}" -ne 0 ]]; then
+        rm -f "${DEST}"
+    fi
+}
+trap cleanup EXIT
 
 # require_archs BINARY: every arch of the build must be a slice of BINARY.
 require_archs() {
@@ -43,7 +59,7 @@ if [[ -n "${ASHIFT_BUNDLED_PANDOC_PATH:-}" ]]; then
         exit 1
     fi
     require_archs "${ASHIFT_BUNDLED_PANDOC_PATH}"
-    cp -f "${ASHIFT_BUNDLED_PANDOC_PATH}" "${DEST}"
+    cp -f "${ASHIFT_BUNDLED_PANDOC_PATH}" "${STAGE}"
 else
     SLICES=()
     for arch in ${ARCHS}; do
@@ -52,17 +68,23 @@ else
             echo "error: the pinned Pandoc for ${arch} is missing: ${slice}. Run: bash scripts/install-pandoc.sh --macos-arch ${arch}" >&2
             exit 1
         fi
+        # The pins live in install-pandoc.sh only; this asks it rather than repeating the numbers.
+        if ! sh "${REPO_ROOT}/scripts/install-pandoc.sh" --verify-macos-binary "${arch}" "${slice}"; then
+            echo "error: ${slice} is not the pinned Pandoc. Run: bash scripts/install-pandoc.sh --macos-arch ${arch}" >&2
+            exit 1
+        fi
         SLICES+=("${slice}")
     done
     if [[ ${#SLICES[@]} -eq 1 ]]; then
-        cp -f "${SLICES[0]}" "${DEST}"
+        cp -f "${SLICES[0]}" "${STAGE}"
     else
-        lipo -create "${SLICES[@]}" -output "${DEST}"
+        lipo -create "${SLICES[@]}" -output "${STAGE}"
     fi
-    require_archs "${DEST}"
+    require_archs "${STAGE}"
 fi
 
-chmod 755 "${DEST}"
+chmod 755 "${STAGE}"
+mv -f "${STAGE}" "${DEST}"
 
 # The licence notices travel with the binary. A missing one fails the build rather than shipping Pandoc without them.
 mkdir -p "${NOTICES_DEST}"

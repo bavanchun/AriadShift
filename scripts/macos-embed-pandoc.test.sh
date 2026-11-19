@@ -4,7 +4,8 @@ set -euo pipefail
 # Test apps/macos/scripts/embed-pandoc.sh on any OS with stub `lipo` and `codesign` that record their arguments. It
 # cannot prove that Xcode runs the phase or that macOS runs the binary; it proves what the phase does with its inputs:
 # the binary lands at Contents/Helpers/pandoc, executable, with a slice for every arch of the build; a binary that lacks
-# an arch, is no Mach-O or is missing fails the build (and leaves no helper behind); the three licence files land in
+# an arch, is no Mach-O or is missing fails the build and leaves no helper behind (not even a stale one from an earlier
+# build, and no temporary file); a slice that is not the pinned binary is refused before lipo runs; the three licence files land in
 # Contents/Resources/ThirdParty/pandoc and are the unchanged upstream texts (checked by SHA-256); and the hardened-runtime
 # signature is applied only when Xcode allows signing.
 
@@ -26,6 +27,15 @@ SRCROOT="${TREE}/apps/macos"
 mkdir -p "${SRCROOT}/scripts" "${TMP_DIR}/stub"
 cp "${REPO_ROOT}/apps/macos/scripts/embed-pandoc.sh" "${SRCROOT}/scripts/embed-pandoc.sh"
 cp -R "${REPO_ROOT}/apps/macos/ThirdParty" "${SRCROOT}/ThirdParty"
+# The pins live in scripts/install-pandoc.sh (its own test covers the check). Here a stub stands in: it logs the call
+# and accepts every slice except one whose content says TAMPERED.
+mkdir -p "${TREE}/scripts"
+cat > "${TREE}/scripts/install-pandoc.sh" <<'STUB'
+#!/bin/sh
+printf 'verify %s\n' "$*" >> "${STUB_LOG:?}"
+[ "$1" = --verify-macos-binary ] || exit 2
+! grep -q TAMPERED "$3"
+STUB
 
 # A fake binary is one line, "ARCHS: <names>". The stub lipo reads and writes that line.
 cat > "${TMP_DIR}/stub/lipo" <<'STUB'
@@ -146,7 +156,7 @@ pinned_slices_are_joined_with_lipo() {
     fake_binary "${TREE}/.tools/pandoc-macos-arm64/bin/pandoc" arm64
     fake_binary "${TREE}/.tools/pandoc-macos-x86_64/bin/pandoc" x86_64
     embed \
-        && log_has "lipo -create ${TREE}/.tools/pandoc-macos-arm64/bin/pandoc ${TREE}/.tools/pandoc-macos-x86_64/bin/pandoc -output ${BUILT}/Helpers/pandoc" \
+        && log_has "lipo -create ${TREE}/.tools/pandoc-macos-arm64/bin/pandoc ${TREE}/.tools/pandoc-macos-x86_64/bin/pandoc -output ${BUILT}/Helpers/.pandoc." \
         && [[ "$(head -n 1 "${BUILT}/Helpers/pandoc")" == "ARCHS: arm64 x86_64" ]] \
         && [[ -x "${BUILT}/Helpers/pandoc" ]] \
         && notices_are_embedded_unchanged
@@ -167,6 +177,43 @@ missing_pinned_slice_names_the_fetch_command() {
         && out_has "bash scripts/install-pandoc.sh --macos-arch x86_64" && helper_absent
 }
 
+every_slice_is_checked_against_the_pins_before_lipo() {
+    reset
+    fake_binary "${TREE}/.tools/pandoc-macos-arm64/bin/pandoc" arm64
+    fake_binary "${TREE}/.tools/pandoc-macos-x86_64/bin/pandoc" x86_64
+    embed \
+        && log_has "verify --verify-macos-binary arm64 ${TREE}/.tools/pandoc-macos-arm64/bin/pandoc" \
+        && log_has "verify --verify-macos-binary x86_64 ${TREE}/.tools/pandoc-macos-x86_64/bin/pandoc" \
+        && [[ "$(grep -n -m1 '^verify' "${TMP_DIR}/log" | cut -d: -f1)" -lt "$(grep -n -m1 '^lipo -create' "${TMP_DIR}/log" | cut -d: -f1)" ]]
+}
+
+tampered_slice_is_refused_before_lipo() {
+    reset
+    fake_binary "${TREE}/.tools/pandoc-macos-arm64/bin/pandoc" arm64
+    fake_binary "${TREE}/.tools/pandoc-macos-x86_64/bin/pandoc" x86_64 TAMPERED
+    ! embed \
+        && out_has "is not the pinned Pandoc" && out_has "install-pandoc.sh --macos-arch x86_64" \
+        && ! log_has "lipo -create" && helper_absent && no_temp_files
+}
+
+no_temp_files() { [[ -z "$(find "${BUILT}/Helpers" -name '.pandoc.*' 2>/dev/null)" ]]; }
+
+failed_arch_check_leaves_no_helper_and_no_temp_file() {
+    reset
+    # Both slices claim arm64, so the joined file lacks x86_64 and the check after lipo fails.
+    fake_binary "${TREE}/.tools/pandoc-macos-arm64/bin/pandoc" arm64
+    fake_binary "${TREE}/.tools/pandoc-macos-x86_64/bin/pandoc" arm64
+    ! embed \
+        && log_has "lipo -create" && out_has "needs 'arm64 x86_64'" && helper_absent && no_temp_files
+}
+
+stale_helper_from_an_earlier_build_does_not_survive_a_failure() {
+    reset
+    fake_binary "${BUILT}/Helpers/pandoc" arm64 x86_64
+    fake_binary "${TMP_DIR}/given/pandoc" arm64
+    ! embed ASHIFT_BUNDLED_PANDOC_PATH="${TMP_DIR}/given/pandoc" && helper_absent && no_temp_files
+}
+
 missing_notice_fails_the_build() {
     reset
     fake_binary "${TMP_DIR}/given/pandoc" arm64 x86_64
@@ -174,7 +221,7 @@ missing_notice_fails_the_build() {
     local status=0
     embed ASHIFT_BUNDLED_PANDOC_PATH="${TMP_DIR}/given/pandoc" || status=$?
     mv "${TMP_DIR}/COPYRIGHT.kept" "${SRCROOT}/ThirdParty/pandoc/COPYRIGHT"
-    [[ "${status}" -ne 0 ]] && out_has "notice file missing or empty"
+    [[ "${status}" -ne 0 ]] && out_has "notice file missing or empty" && helper_absent && no_temp_files
 }
 
 signed_with_the_hardened_runtime_when_xcode_allows_signing() {
@@ -219,7 +266,11 @@ check "an override that is not executable fails" override_that_is_not_executable
 check "the pinned slices are joined with lipo in ARCHS order" pinned_slices_are_joined_with_lipo
 check "a one-arch build copies the slice without lipo" one_arch_build_copies_without_lipo
 check "a missing pinned slice names the command that fetches it" missing_pinned_slice_names_the_fetch_command
-check "a missing notice file fails the build" missing_notice_fails_the_build
+check "every slice is checked against the pins before lipo" every_slice_is_checked_against_the_pins_before_lipo
+check "a slice that is not the pinned binary is refused before lipo" tampered_slice_is_refused_before_lipo
+check "a failed arch check after lipo leaves no helper and no temporary file" failed_arch_check_leaves_no_helper_and_no_temp_file
+check "a stale helper from an earlier build does not survive a failure" stale_helper_from_an_earlier_build_does_not_survive_a_failure
+check "a missing notice file fails the build and leaves no helper" missing_notice_fails_the_build
 check "the helper is signed ad hoc with the hardened runtime and no entitlements" signed_with_the_hardened_runtime_when_xcode_allows_signing
 check "a real identity gets a secure timestamp" real_identity_gets_a_secure_timestamp
 check "nothing is signed when Xcode disallows signing" not_signed_when_xcode_disallows_signing

@@ -79,9 +79,13 @@ targets:
       # Pandoc runs as a separate process (GPL, never linked); its licence texts ship in Resources/ThirdParty/pandoc.
       - name: Embed Pandoc helper
         script: '"${SRCROOT}/scripts/embed-pandoc.sh"'
-        basedOnDependencyAnalysis: false
+        # Dependency analysis stays on: with every input listed, an incremental build skips the re-lipo and re-sign of
+        # the 315 MB binary unless a slice, a notice or the script changed. (ASHIFT_BUNDLED_PANDOC_PATH is not an input:
+        # after changing it, touch embed-pandoc.sh or clean the product.)
         inputFiles:
           - $(SRCROOT)/scripts/embed-pandoc.sh
+          - $(SRCROOT)/../../.tools/pandoc-macos-arm64/bin/pandoc
+          - $(SRCROOT)/../../.tools/pandoc-macos-x86_64/bin/pandoc
           - $(SRCROOT)/ThirdParty/pandoc/ACKNOWLEDGEMENTS.txt
           - $(SRCROOT)/ThirdParty/pandoc/COPYING.txt
           - $(SRCROOT)/ThirdParty/pandoc/COPYRIGHT
