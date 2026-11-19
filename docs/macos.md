@@ -73,6 +73,22 @@ run (macOS 27.2, Xcode 27.2): 15 tests, 13 pass, 2 skip, 0 fail, twice in a row.
 1,000 pages in about 0.1 s and no engine pack is installed. The accessibility audit test skips because the audit service times out (error -56), even
 on Calculator; it stays strict and fails on any reported issue. `PerformanceUITests` hold the metrics and assert no budget.
 
+Two kinds of UI test are slow and only produce evidence, so they skip unless an environment variable is set; a plain run of the scheme is unchanged, and
+CI runs the `AriadShift` scheme, which has no UI tests. `xcodebuild` passes only variables prefixed `TEST_RUNNER_` to the test process, so set them
+with that prefix:
+```sh
+cd apps/macos
+# 24 screenshots: en, vi, ar x light, dark x welcome, document, palette, tool run. Attached to the result bundle as <language>-<appearance>-<screen>.
+TEST_RUNNER_ASHIFT_RUN_SCREENSHOT_TESTS=1 xcodebuild -scheme AriadShiftUI -destination 'platform=macOS' \
+  -only-testing:AriadShiftUITests/ScreenshotUITests -resultBundlePath ../../target/derived-data/screens.xcresult test
+# Hitch metrics of the five interactions (each launches the app; a few minutes).
+TEST_RUNNER_ASHIFT_RUN_PERF_TESTS=1 xcodebuild -scheme AriadShiftUI -destination 'platform=macOS' \
+  -only-testing:AriadShiftUITests/PerformanceUITests test
+```
+`ScreenshotUITests` needs `ASHIFT_RUN_SCREENSHOT_TESTS=1` and attaches each shot with the lifetime `keepAlways`; it asserts no pixels. The `ar` runs launch with
+`-AppleLanguages (ar)` and the right-to-left text direction defaults, and the shots are read by a person for Arabic text, a mirrored layout and a mark that
+is not mirrored. `PerformanceUITests` runs its five `XCTHitchMetric` tests with `ASHIFT_RUN_PERF_TESTS=1`; its launch, open-time and memory tests run without it.
+
 ## Installing a dev build beside the stable app
 `just macos-install-dev` runs `macos-build` and installs the result as `~/Applications/AriadShift Dev.app` (bundle id `com.ariadnev.ariadshift.dev`),
 so it runs next to the stable app with its own preferences. The version is `<latest tag>-dev+<short sha>` and the build number is the commit count.
@@ -182,6 +198,23 @@ launched app with XCTest metrics. Launch times vary 30% or more between iteratio
 | Open 1,000 pages to page 1: 300 ms | median 159 ms, passes |
 | Scroll hitches over 16 ms (`XCTHitchMetric`) | 0 |
 | Idle memory, 100-page document: 150 MB | 103-115 MB, passes |
+
+### Hitch and launch results of the final UI (to be filled by the Mac run)
+`XCTHitchMetric` of the launched app, from `PerformanceUITests` with `ASHIFT_RUN_PERF_TESTS=1`. Fill the machine, macOS and Xcode versions with the numbers;
+nothing below is measured yet.
+
+| Interaction (test) | Hitch time ratio | Hitches (ms/s) | Acceptance |
+|---|---|---|---|
+| Open a document (`testOpenDocumentHitchMetric`) | to be filled by the Mac run | to be filled by the Mac run | to be filled by the Mac run |
+| Toggle the inspector, ⌥⌘I (`testToggleInspectorHitchMetric`) | to be filled by the Mac run | to be filled by the Mac run | to be filled by the Mac run |
+| Open the palette, ⌘K (`testOpenPaletteHitchMetric`) | to be filled by the Mac run | to be filled by the Mac run | to be filled by the Mac run |
+| Run a tool (`testRunToolHitchMetric`) | to be filled by the Mac run | to be filled by the Mac run | to be filled by the Mac run |
+| Scroll 200 thumbnails, page grid (`testScrollingTwoHundredThumbnailsHitchMetric`) | to be filled by the Mac run | to be filled by the Mac run | to be filled by the Mac run |
+
+| Launch (test) | Median | Acceptance |
+|---|---|---|
+| Cold launch, `XCTApplicationLaunchMetric` (`testColdLaunchToFirstWindow`) | to be filled by the Mac run | median at most 400 ms |
+| Responsive first frame, `waitUntilResponsive` (`testColdLaunchToResponsiveFirstFrame`) | to be filled by the Mac run | no worse than 444 ms (#341) |
 
 ## Design system (`AriadDesignSystem`)
 The package holds every visual decision of the app, taken from the approved redesign spec
