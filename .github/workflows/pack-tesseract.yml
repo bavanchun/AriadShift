@@ -13,6 +13,16 @@ on:
       - scripts/test-pack-tesseract.sh
       - .github/workflows/pack-tesseract.yml
   push:
+    branches: [dev]
+    paths:
+      - engines/tesseract/**
+      - engines/docling/pack/pins.toml
+      - engines/pdfium/pack/**
+      - crates/ariad-host/**
+      - crates/ariad-pdfium-engine/**
+      - scripts/pack/**
+      - scripts/test-pack-tesseract.sh
+      - .github/workflows/pack-tesseract.yml
     tags: ['pack-tesseract-v*']
 
 concurrency:
