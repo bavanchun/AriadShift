@@ -30,32 +30,50 @@ fi
 # shellcheck source=scripts/macos-helpers-lib.sh
 source "$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/macos-helpers-lib.sh"
 
+# require_listable DIR: fail, with a message naming DIR, when DIR cannot be entered and listed. A test of a name inside
+# a directory (-d, -f, a glob) answers "absent" when the directory itself cannot be read, which would drop that code
+# from the list without a word.
+require_listable() {
+    if [[ ! -r "$1" || ! -x "$1" ]]; then
+        echo "error: cannot read the directory $1; the code inside it cannot be listed." >&2
+        return 1
+    fi
+}
+
 # list_sign_targets APP_PATH: every code item to sign, in signing order, NUL separated. The last one is APP_PATH itself.
-# Fail closed: a find that fails (an unreadable directory) or a write that fails makes the function return non-zero,
-# and nothing printed after that point. Callers must not run it in a process substitution, which would lose the status;
-# load_sign_targets runs it in the main shell.
+# Fail closed: a find that fails, a directory or helper that cannot be read, or a write that fails makes the function
+# return non-zero, and nothing printed after that point. Callers must not run it in a process substitution, which would
+# lose the status; load_sign_targets runs it in the main shell.
 list_sign_targets() {
     local app_path="$1"
     local frameworks_dir="${app_path}/Contents/Frameworks"
     local sparkle="${frameworks_dir}/Sparkle.framework"
-    local version_dir xpc updater_tool
+    local version_dir xpc xpc_dir updater_tool
 
     # 1-2. Sparkle: the parts of each version, then the framework that holds them. The loop only prints, so it can end a
     # pipe, and pipefail turns a failing find into a failing walk.
+    if [[ -d "${sparkle}" ]]; then
+        require_listable "${sparkle}" || return 1
+    fi
     if [[ -d "${sparkle}/Versions" ]]; then
         find "${sparkle}/Versions" -mindepth 1 -maxdepth 1 -type d ! -name 'Current' -print0 |
             while IFS= read -r -d '' version_dir; do
-                for xpc in "${version_dir}"/XPCServices/*.xpc; do
+                require_listable "${version_dir}" || exit 1
+                xpc_dir="${version_dir}/XPCServices"
+                if [[ -d "${xpc_dir}" ]]; then
+                    require_listable "${xpc_dir}" || exit 1
+                fi
+                for xpc in "${xpc_dir}"/*.xpc; do
                     if [[ -d "${xpc}" ]]; then
-                        printf '%s\0' "${xpc}"
+                        printf '%s\0' "${xpc}" || exit 1
                     fi
                 done
                 updater_tool="${version_dir}/Autoupdate"
                 if [[ -f "${updater_tool}" ]]; then
-                    printf '%s\0' "${updater_tool}"
+                    printf '%s\0' "${updater_tool}" || exit 1
                 fi
                 if [[ -d "${version_dir}/Updater.app" ]]; then
-                    printf '%s\0' "${version_dir}/Updater.app"
+                    printf '%s\0' "${version_dir}/Updater.app" || exit 1
                 fi
             done || return 1
         printf '%s\0' "${sparkle}" || return 1
