@@ -128,7 +128,7 @@ public actor EngineClient {
 
     /// The environment variable the Rust host reads to find Pandoc. When it is set it is the only place the
     /// host looks, so it outranks `PATH`.
-    static let pandocEnvironmentName = "ASHIFT_PANDOC"
+    public static let pandocEnvironmentName = "ASHIFT_PANDOC"
 
     /// The Pandoc that ships with the helper: `pandoc` in the same folder, `Contents/Helpers/pandoc` in the app.
     public static func bundledPandocURL(beside helper: URL) -> URL {
