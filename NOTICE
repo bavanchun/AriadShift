@@ -13,10 +13,16 @@ fixtures/manifest.toml.
 This software may invoke Pandoc (https://pandoc.org) as an external,
 out-of-process executable. Pandoc is licensed under the GNU General Public
 License, version 2 or later (GPL-2.0-or-later). The other native distributions do not bundle or link Pandoc.
-The macOS application bundles the unmodified official Pandoc 3.12 macOS binary at
-Contents/Helpers/pandoc, started only as a separate child process and never linked into
-AriadShift code; its GPL and copyright notices accompany it in
+The macOS application bundles the official Pandoc 3.12 macOS binary at
+Contents/Helpers/pandoc, unmodified apart from joining the arm64 and x86_64 slices
+with lipo and re-signing, started only as a separate child process and never linked
+into AriadShift code; its GPL and copyright notices accompany it in
 Contents/Resources/ThirdParty/pandoc/ (COPYING.txt, COPYRIGHT, ACKNOWLEDGEMENTS.txt).
+Written offer (GPL-2.0 section 3(b)): for at least three years after the last time the
+macOS application is distributed with it, anyone may ask for the complete corresponding
+source code of that Pandoc 3.12 binary, including the Haskell libraries it is built
+from, for no more than the cost of physically performing the distribution, by opening an
+issue at https://github.com/bavanchun/AriadShift/issues.
 The website aggregates the unmodified official Pandoc 3.12 WASM reactor as a
 separate file at /wasm/pandoc/pandoc.wasm, loaded lazily in a Web Worker and
 invoked through WASI; it is never linked into AriadShift code. Its GPL licence

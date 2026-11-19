@@ -44,9 +44,12 @@ The next stage ([plans/261031-1422-next-stage-pdf-suite/plan.md](plans/261031-14
 - GPL tools such as Pandoc are invoked as separate processes, never linked.
   In the browser, only the unmodified official Pandoc WASM may be aggregated as a
   separate file, with licence notices and corresponding-source links, never linked.
-  In the macOS app, only the unmodified official Pandoc macOS binary may be aggregated
-  at `Contents/Helpers/pandoc`, with its notices in `Contents/Resources/ThirdParty/pandoc/`
-  and the exact version and source URL, started as a child process, never linked.
+  In the macOS app, only the official Pandoc macOS binary, unmodified apart from joining
+  the arm64 and x86_64 slices with lipo and re-signing, may be aggregated at
+  `Contents/Helpers/pandoc`, with its notices in `Contents/Resources/ThirdParty/pandoc/`,
+  the exact version, the source URL and a written source offer (GPL-2.0 section 3(b),
+  at least three years, through the project's GitHub issues), started as a child
+  process, never linked.
 - The veraPDF opt-in engine pack permits unmodified veraPDF 1.30.3 Java components under its MPL-2.0 option with full third-party notices, invoked strictly out of process as a separate engine subprocess using the system Java runtime (Java >= 11), never linked into host or surface processes.
 - Fixtures exclude CC-BY-SA documents, GPL test suites, and research-only or non-commercial datasets. Record each fixture's source and license in `fixtures/manifest.toml`.
 - Model weights follow the same licensing rules as code, with CDLA-Permissive-2.0 accepted specifically for the Docling TableFormer weights (a permissive data licence, not an OSI code licence); exclude OpenRAIL-M, custom or missing licenses.

@@ -62,7 +62,10 @@ else `target/release/ashift`, else `target/debug/ashift`).
 
 The Pandoc phase needs the pinned Pandoc for each arch in `.tools/`. `just macos-build` and `just macos-test` fetch it first through `just macos-pandoc`
 (`bash scripts/install-pandoc.sh --macos-arch arm64|x86_64`, which checks each archive's SHA-256; the phase itself uses no network). A binary of
-your own can be embedded instead with `ASHIFT_BUNDLED_PANDOC_PATH`; like the helper it must contain every arch in `ARCHS`.
+your own can be embedded instead with `ASHIFT_BUNDLED_PANDOC_PATH`; like the helper it must contain every arch in `ARCHS`. Without it the phase checks each
+slice in `.tools` against the pinned SHA-256 of the extracted binary (`install-pandoc.sh --verify-macos-binary`) before joining them, builds the result beside
+`Contents/Helpers/pandoc` and moves it into place only after the architecture check, so a failure leaves no helper. Dependency analysis is on: both slices are
+inputs, so an incremental build does not redo the join and the signature.
 
 UI tests (`AriadShiftUITests`, scheme `AriadShiftUI`) drive the built app on fixture copies; they need Automation Mode (`sudo DevToolsSecurity
 -enable`, approve once) and an unlocked screen, and `ASHIFT_DEFAULTS_SUITE` (Debug only, unsandboxed app) names the preferences file they seed. Last
@@ -91,22 +94,25 @@ The dev app shares the packs folder `~/Library/Application Support/com.ariadnev.
 Cancelling the calling `Task` cancels the Rust run (`EngineError.cancelled`). One client per process is the supported shape; app code never calls the
 generated free functions.
 
-It also exports the Pandoc that sits beside the helper: when `Contents/Helpers/pandoc` is an executable file and the process has no non-empty
-`ASHIFT_PANDOC`, `init` sets `ASHIFT_PANDOC` to it. The engine reads that variable first, so the bundled Pandoc wins over `PATH`, and a Pandoc chosen
-explicitly with `ASHIFT_PANDOC` wins over the bundled one. The Rust host runs inside the app process and hands the variable on to the engine processes
-it starts, so the app's own environment is where the choice is made; it is made once, in `init`, because changing the environment while other threads
-read it is not safe. Without a bundled Pandoc nothing changes and the engine looks on `PATH` as before.
+The client does not touch the process environment. `EngineClient.exportBundledPandoc()` makes the Pandoc that sits beside the helper known: when
+`Contents/Helpers/pandoc` is an executable file and the process has no non-empty `ASHIFT_PANDOC`, it sets `ASHIFT_PANDOC` to it. The engine reads that
+variable first, so the bundled Pandoc wins over `PATH`, and a Pandoc chosen explicitly with `ASHIFT_PANDOC` wins over the bundled one. The Rust host runs
+inside the app process and hands the variable on to the engine processes it starts, so the app's own environment is where the choice is made.
+`AriadShiftApp.init` calls it first, once, on the main thread, before `EngineModel` starts its engine task, because `setenv` must not race with threads
+that read the environment. It is idempotent. Anything else that builds a client and wants the bundled Pandoc (a test host, a command-line tool) calls it
+itself before it starts engine work; `BundleHelperTests` does. Without a bundled Pandoc nothing changes and the engine looks on `PATH` as before.
 
 ## Bundled Pandoc
-Export as Word needs Pandoc, so the app carries it: `Contents/Helpers/pandoc`, the official unmodified 3.12 macOS release (the version and the SHA-256 of
-each archive come from `scripts/install-pandoc.sh`, the one place they are pinned), as one universal binary. `ARCHS` is `arm64 x86_64`, so `embed-pandoc.sh`
+Export as Word needs Pandoc, so the app carries it: `Contents/Helpers/pandoc`, the official 3.12 macOS release, unmodified apart from joining the slices with `lipo` and re-signing (the version, the SHA-256
+of each archive and the SHA-256 of each extracted binary come from `scripts/install-pandoc.sh`, the one place they are pinned), as one universal binary. `ARCHS` is `arm64 x86_64`, so `embed-pandoc.sh`
 joins the arm64 and the x86_64 binaries with `lipo`; an arm64-only copy would leave Intel Macs with the "reinstall" message.
 
 - **Licence.** Pandoc is GPL-2.0-or-later. It stays a separate program: the app and `ashift` start it as a child process and exchange files and pipes with
   it, and nothing links it. `Contents/Resources/ThirdParty/pandoc/` holds `COPYING.txt` (the GPL, upstream `COPYING.md`) and `COPYRIGHT`, both unchanged
   from the 3.12 tag (the Pandoc release archives for macOS carry no licence files, so they come from the tag; `scripts/macos-embed-pandoc.test.sh` pins
-  their SHA-256), and `ACKNOWLEDGEMENTS.txt` with the exact version, the commit and the source URL (https://github.com/jgm/pandoc/tree/3.12). The root `NOTICE`
-  carries the same statement.
+  their SHA-256), and `ACKNOWLEDGEMENTS.txt` with the exact version, the commit, the source URL (https://github.com/jgm/pandoc/tree/3.12) and a written
+  offer of the complete corresponding source of the binary, Haskell dependencies included (GPL-2.0 section 3(b): at least three years after the last
+  distribution, at no more than the cost of distribution, requested through the project's GitHub issues). The root `NOTICE` carries the same statement.
 - **Signing.** Every Mach-O file in `Contents/Helpers` is signed inside-out before the app, by both `scripts/macos-adhoc-sign.sh` and the Developer ID path
   `scripts/macos-sign-notarize.sh` (the list comes from `scripts/macos-helpers-lib.sh`), with the hardened runtime and no `--deep`. Pandoc gets no
   entitlements. A Haskell program may need a runtime exception such as `com.apple.security.cs.allow-unsigned-executable-memory` under the hardened runtime;
