@@ -9,7 +9,8 @@ set -euo pipefail
 # Real codesign, Apple identities and notarization are only reachable on a macOS runner with the six Apple secrets.
 #
 # The bundle shape and the order checks mirror scripts/macos-adhoc-sign.test.sh; that test also runs this script on
-# the same bundle and requires the same order. Keep the two in step.
+# the same bundle and requires the same order, and checks that the walk fails closed with a fake walk. Keep the two in
+# step. The script runs under the interpreter this test runs under ("${BASH}"), so a run under /bin/bash 3.2 exercises 3.2.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SIGN="${SCRIPT_DIR}/macos-sign-notarize.sh"
@@ -19,7 +20,12 @@ failures=0
 checks=0
 
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "${TMP_DIR}"' EXIT
+cleanup() {
+    # A directory a check made unreadable would stop rm; give the owner access back first.
+    chmod -R u+rwx "${TMP_DIR}" 2> /dev/null || true
+    rm -rf "${TMP_DIR}"
+}
+trap cleanup EXIT
 
 # The stub codesign logs every call as one line, then answers by the form of the call. A STUB_* pattern is a substring
 # of the target path, or the exact path when it starts with "=".
@@ -136,7 +142,7 @@ run_sign() {
     : > "${LOG}"
     local rc=0
     env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" APPLE_SIGNING_IDENTITY="${IDENTITY}" ${envs[@]+"${envs[@]}"} \
-        bash "${SIGN}" ${args[@]+"${args[@]}"} > "${OUT}" 2>&1 || rc=$?
+        "${BASH}" "${SIGN}" ${args[@]+"${args[@]}"} > "${OUT}" 2>&1 || rc=$?
     return "${rc}"
 }
 
@@ -298,6 +304,99 @@ signed_order="$(sign_targets)"
 check "verify-app checks the same targets, in the same order, that sign-app signs" \
     "$([[ -n "${signed_order}" && "${verified_order}" == "${signed_order}" ]] && echo 0 || echo 1)"
 
+echo "== An unreadable directory in the bundle fails the run =="
+# find cannot list a directory it cannot read. Before the walk was checked, sign-app and verify-app went on without the
+# rest of the list (later frameworks, the helpers, the app) and still printed success.
+WALK_TMP="${TMP_DIR}/walk-tmp"
+mkdir -p "${WALK_TMP}"
+unreadable_case=0
+for locked in Contents/Frameworks/Inner.framework Contents/Helpers/lib; do
+    unreadable_case=$((unreadable_case + 1))
+    APP_LOCKED="${TMP_DIR}/Locked${unreadable_case}/AriadShift.app"
+    make_app "${APP_LOCKED}" with-extras
+    mkdir -p "${APP_LOCKED}/Contents/Helpers/lib"
+    write_macho "${APP_LOCKED}/Contents/Helpers/lib/extra"
+    chmod 000 "${APP_LOCKED}/${locked}"
+    if ls "${APP_LOCKED}/${locked}" > /dev/null 2>&1; then
+        echo "SKIP unreadable ${locked}: chmod 000 does not block reads here (running as root?)"
+    else
+        rc=0
+        run_sign sign-app "${APP_LOCKED}" -- "TMPDIR=${WALK_TMP}" || rc=$?
+        check "sign-app fails when ${locked} is unreadable" "$((rc != 0 ? 0 : 1))"
+        expect "and nothing is signed" test ! -s "${LOG}"
+        expect "and it does not report success" lacks_file "${OUT}" "Successfully signed"
+        expect "and it says the walk failed" grep -q "cannot list the code to sign" "${OUT}"
+        expect "and it leaves no temporary file" test -z "$(ls -A "${WALK_TMP}")"
+        rc=0
+        run_sign verify-app "${APP_LOCKED}" -- "TMPDIR=${WALK_TMP}" || rc=$?
+        check "verify-app fails when ${locked} is unreadable" "$((rc != 0 ? 0 : 1))"
+        expect "and nothing is verified" test ! -s "${LOG}"
+        expect "and it does not report success" lacks_file "${OUT}" "Verified application"
+        expect "and it says the walk failed" grep -q "cannot list the code to sign" "${OUT}"
+        expect "and it leaves no temporary file" test -z "$(ls -A "${WALK_TMP}")"
+    fi
+    chmod 755 "${APP_LOCKED}/${locked}"
+done
+rc=0
+run_sign sign-app "${APP}" -- "TMPDIR=${WALK_TMP}" || rc=$?
+check "the same bundle with readable directories signs and exits 0" "${rc}"
+expect "and leaves no temporary file" test -z "$(ls -A "${WALK_TMP}")"
+
+echo "== A walk with no targets, or one that does not end at the app, fails closed =="
+# The signing library with its walk replaced by a fake one, run in the same interpreter. verify-app takes its list from
+# load_sign_targets and sign-app signs what it loads, so both entries are exercised. "real" is the control.
+HARNESS="${TMP_DIR}/walk-harness.sh"
+cat > "${HARNESS}" <<'HARNESS_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+# walk-harness.sh LIB APP ENTITLEMENTS ENTRY WALK
+source "$1"
+app="$2"
+entitlements="$3"
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Example"
+case "$5" in
+    real) ;;
+    empty) list_sign_targets() { return 0; } ;;
+    not-the-app) list_sign_targets() { printf '%s\0' "${app}/Contents/Helpers/ashift"; } ;;
+    app-not-last) list_sign_targets() { printf '%s\0' "${app}" "${app}/Contents/Helpers/ashift"; } ;;
+    cut-short) list_sign_targets() { printf '%s\0' "${app}/Contents/Helpers/ashift"; return 1; } ;;
+esac
+SIGNED_TARGETS=()
+case "$4" in
+    sign) sign_app_targets signed "${app}" "${entitlements}" ;;
+    load) load_sign_targets "${app}" ;;
+esac
+echo "HARNESS-SUCCESS"
+HARNESS_SCRIPT
+run_harness() {
+    : > "${LOG}"
+    local rc=0
+    env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" \
+        "${BASH}" "${HARNESS}" "${SCRIPT_DIR}/macos-signing-lib.sh" "${APP}" "${ENTITLEMENTS}" "$1" "$2" > "${OUT}" 2>&1 || rc=$?
+    return "${rc}"
+}
+for entry in sign load; do
+    rc=0
+    run_harness "${entry}" real || rc=$?
+    check "${entry}: the real walk succeeds through the harness" "${rc}"
+    expect "${entry}: and the harness reports success" grep -q "HARNESS-SUCCESS" "${OUT}"
+    for walk in empty not-the-app app-not-last cut-short; do
+        rc=0
+        run_harness "${entry}" "${walk}" || rc=$?
+        check "${entry}: a walk that is ${walk} fails" "$((rc != 0 ? 0 : 1))"
+        expect "${entry}: ${walk} does not reach success" lacks_file "${OUT}" "HARNESS-SUCCESS"
+        expect "${entry}: ${walk} signs nothing" test ! -s "${LOG}"
+    done
+    run_harness "${entry}" empty || true
+    expect "${entry}: an empty walk says no code was found" grep -q "no code to sign was found" "${OUT}"
+    run_harness "${entry}" not-the-app || true
+    expect "${entry}: a list that stops short of the app says so" grep -q "does not end at the app" "${OUT}"
+    run_harness "${entry}" app-not-last || true
+    expect "${entry}: a list with the app in the middle says so" grep -q "does not end at the app" "${OUT}"
+    run_harness "${entry}" cut-short || true
+    expect "${entry}: a walk that fails says so" grep -q "cannot list the code to sign" "${OUT}"
+done
+
 echo "== Gates fail closed =="
 rc=0
 run_sign sign-app "${APP}" -- "STUB_FAIL_SIGN==${INNER}" || rc=$?
@@ -319,7 +418,7 @@ run_sign verify-app "${APP}" -- "STUB_GTA==${XPC_INSTALLER}" || rc=$?
 check "verify-app fails on get-task-allow in a nested bundle" "$((rc != 0 ? 0 : 1))"
 : > "${LOG}"
 rc=0
-env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" bash "${SIGN}" sign-app "${APP}" > "${OUT}" 2>&1 || rc=$?
+env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" "${BASH}" "${SIGN}" sign-app "${APP}" > "${OUT}" 2>&1 || rc=$?
 check "sign-app without an identity fails" "$((rc != 0 ? 0 : 1))"
 expect "and runs no codesign" test ! -s "${LOG}"
 

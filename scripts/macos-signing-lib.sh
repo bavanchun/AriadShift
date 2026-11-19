@@ -6,7 +6,7 @@
 # so signing and verifying cannot disagree about what is code or in which order it is sealed.
 #
 # The walk, inside-out (a container seals what it holds, so everything inside is signed before the container):
-#   1. Sparkle XPC services, the updater tool and Updater.app of each Versions/* directory (the Current symlink is skipped)
+#   1. Sparkle XPC services, Autoupdate and Updater.app of each Versions/* directory (the Current symlink is skipped)
 #   2. Sparkle.framework
 #   3. any other embedded dylib, down to one level inside a framework (signed before the framework seals it)
 #   4. any other embedded framework
@@ -21,46 +21,91 @@
 #
 # Everything here must stay compatible with the bash 3.2 that macOS ships: no mapfile, no associative arrays.
 
+# The walk reports a failing find only through a pipeline's status, so every caller must run with pipefail.
+if [[ ! -o pipefail ]]; then
+    echo "error: macos-signing-lib.sh needs 'set -o pipefail' in the sourcing script." >&2
+    exit 1
+fi
+
 # shellcheck source=scripts/macos-helpers-lib.sh
 source "$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/macos-helpers-lib.sh"
 
 # list_sign_targets APP_PATH: every code item to sign, in signing order, NUL separated. The last one is APP_PATH itself.
+# Fail closed: a find that fails (an unreadable directory) or a write that fails makes the function return non-zero,
+# and nothing printed after that point. Callers must not run it in a process substitution, which would lose the status;
+# load_sign_targets runs it in the main shell.
 list_sign_targets() {
     local app_path="$1"
     local frameworks_dir="${app_path}/Contents/Frameworks"
     local sparkle="${frameworks_dir}/Sparkle.framework"
     local version_dir xpc updater_tool
 
-    # 1-2. Sparkle: the parts of each version, then the framework that holds them.
+    # 1-2. Sparkle: the parts of each version, then the framework that holds them. The loop only prints, so it can end a
+    # pipe, and pipefail turns a failing find into a failing walk.
     if [[ -d "${sparkle}/Versions" ]]; then
-        while IFS= read -r -d '' version_dir; do
-            for xpc in "${version_dir}"/XPCServices/*.xpc; do
-                if [[ -d "${xpc}" ]]; then
-                    printf '%s\0' "${xpc}"
+        find "${sparkle}/Versions" -mindepth 1 -maxdepth 1 -type d ! -name 'Current' -print0 |
+            while IFS= read -r -d '' version_dir; do
+                for xpc in "${version_dir}"/XPCServices/*.xpc; do
+                    if [[ -d "${xpc}" ]]; then
+                        printf '%s\0' "${xpc}"
+                    fi
+                done
+                updater_tool="${version_dir}/Autoupdate"
+                if [[ -f "${updater_tool}" ]]; then
+                    printf '%s\0' "${updater_tool}"
                 fi
-            done
-            updater_tool="${version_dir}/Autoupdate"
-            if [[ -f "${updater_tool}" ]]; then
-                printf '%s\0' "${updater_tool}"
-            fi
-            if [[ -d "${version_dir}/Updater.app" ]]; then
-                printf '%s\0' "${version_dir}/Updater.app"
-            fi
-        done < <(find "${sparkle}/Versions" -mindepth 1 -maxdepth 1 -type d ! -name 'Current' -print0)
-        printf '%s\0' "${sparkle}"
+                if [[ -d "${version_dir}/Updater.app" ]]; then
+                    printf '%s\0' "${version_dir}/Updater.app"
+                fi
+            done || return 1
+        printf '%s\0' "${sparkle}" || return 1
     fi
 
     # 3-4. Any other embedded dylib, then framework: a dylib inside a framework is signed before the framework seals it.
     if [[ -d "${frameworks_dir}" ]]; then
-        find "${frameworks_dir}" -mindepth 1 -maxdepth 2 -type f -name '*.dylib' -print0
-        find "${frameworks_dir}" -mindepth 1 -maxdepth 1 -type d -name '*.framework' ! -name 'Sparkle.framework' -print0
+        find "${frameworks_dir}" -mindepth 1 -maxdepth 2 -type f -name '*.dylib' -print0 || return 1
+        find "${frameworks_dir}" -mindepth 1 -maxdepth 1 -type d -name '*.framework' ! -name 'Sparkle.framework' -print0 || return 1
     fi
 
     # 5. Every Mach-O in Helpers. A helper needs no line here to be signed.
-    list_helper_machos "${app_path}"
+    list_helper_machos "${app_path}" || return 1
 
     # 6. The app.
-    printf '%s\0' "${app_path}"
+    printf '%s\0' "${app_path}" || return 1
+}
+
+# load_sign_targets APP_PATH
+# Runs the walk in the main shell, into a temporary file, so that a failing walk stops the script before anything is
+# signed or verified, and fills SIGN_TARGETS with the list. Exits 1 when the walk fails, finds nothing, or does not end
+# at APP_PATH (a list cut short must never pass for a complete one). The temporary file lives only while the walk runs and
+# is removed on every path, so no EXIT trap is needed (the callers have their own and a second one would replace it).
+load_sign_targets() {
+    local app_path="$1"
+    local tmp target last="" count=0
+    SIGN_TARGETS=()
+    if ! tmp="$(mktemp "${TMPDIR:-/tmp}/ariad-sign-walk.XXXXXX")"; then
+        echo "error: cannot create a temporary file to list the code to sign." >&2
+        exit 1
+    fi
+    if ! list_sign_targets "${app_path}" > "${tmp}"; then
+        rm -f "${tmp}"
+        echo "error: cannot list the code to sign in ${app_path} (is a directory unreadable?); nothing was signed or verified." >&2
+        exit 1
+    fi
+    while IFS= read -r -d '' target; do
+        SIGN_TARGETS+=("${target}")
+        last="${target}"
+        count=$((count + 1))
+    done < "${tmp}"
+    rm -f "${tmp}"
+    if [[ "${count}" -eq 0 ]]; then
+        echo "error: no code to sign was found in ${app_path}." >&2
+        exit 1
+    fi
+    if [[ "${last}" != "${app_path}" ]]; then
+        echo "error: the list of code to sign in ${app_path} does not end at the app (last: ${last}); refusing to use a partial list." >&2
+        exit 1
+    fi
 }
 
 # build_codesign_args MODE TARGET [ENTITLEMENTS_FILE]
@@ -100,17 +145,19 @@ build_codesign_args() {
 }
 
 # sign_app_targets MODE APP_PATH ENTITLEMENTS_FILE
-# Signs every target of list_sign_targets in order and records each in SIGNED_TARGETS (set by the caller's script and
-# verified there). The app gets ENTITLEMENTS_FILE, the explicit entitlements instead of whatever the build injected;
-# the file is required before the app is signed, after everything inside it. Any codesign failure stops the script.
+# Signs every target of the walk in order and records each in SIGNED_TARGETS (set by the caller's script and verified
+# there). The whole list is built first (load_sign_targets), so a failing walk signs nothing. The app gets
+# ENTITLEMENTS_FILE, the explicit entitlements instead of whatever the build injected; the file is required before the
+# app is signed, after everything inside it. Any codesign failure stops the script.
 sign_app_targets() {
     local mode="$1" app_path="$2" entitlements_file="$3"
     local label="Signing bundle" target
     if [[ "${mode}" == "adhoc" ]]; then
         label="Ad-hoc signing"
     fi
+    load_sign_targets "${app_path}"
     SIGNED_TARGETS=()
-    while IFS= read -r -d '' target; do
+    for target in "${SIGN_TARGETS[@]}"; do
         if [[ "${target}" == "${app_path}" ]]; then
             if [[ ! -f "${entitlements_file}" ]]; then
                 echo "error: entitlements file ${entitlements_file} not found." >&2
@@ -123,5 +170,5 @@ sign_app_targets() {
         echo "==> ${label}: ${target}"
         codesign "${CODESIGN_ARGS[@]}"
         SIGNED_TARGETS+=("${target}")
-    done < <(list_sign_targets "${app_path}")
+    done
 }

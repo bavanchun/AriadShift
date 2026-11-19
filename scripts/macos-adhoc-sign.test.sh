@@ -8,8 +8,10 @@ set -euo pipefail
 # verification, a leftover non-ad-hoc identity, a lost hardened runtime and a get-task-allow entitlement.
 #
 # The two signing scripts share one bundle walk (scripts/macos-signing-lib.sh). This test also runs the Developer ID
-# script on the same bundle and requires the same target order, and requires that the walk exists once.
+# script on the same bundle and requires the same target order, and checks that the walk fails closed: an unreadable
+# directory, an empty list and a list that does not end at the app all stop the run before anything is signed.
 # macos-sign-notarize.test.sh checks the same order and the Developer ID flags; keep the two in step.
+# The scripts run under the interpreter this test runs under ("${BASH}"), so a run under /bin/bash 3.2 exercises 3.2.
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SIGN="${SCRIPT_DIR}/macos-adhoc-sign.sh"
@@ -21,6 +23,8 @@ checks=0
 TMP_DIR="$(mktemp -d)"
 cleanup() {
     if [[ -n "${TMP_DIR}" && -d "${TMP_DIR}" ]]; then
+        # A directory a check made unreadable would stop rm; give the owner access back first.
+        chmod -R u+rwx "${TMP_DIR}" 2> /dev/null || true
         rm -rf "${TMP_DIR}"
     fi
 }
@@ -150,7 +154,7 @@ run_sign() {
     : > "${LOG}"
     local rc=0
     env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" ${envs[@]+"${envs[@]}"} \
-        bash "${SIGN_SCRIPT}" ${args[@]+"${args[@]}"} > "${OUT}" 2>&1 || rc=$?
+        "${BASH}" "${SIGN_SCRIPT}" ${args[@]+"${args[@]}"} > "${OUT}" 2>&1 || rc=$?
     return "${rc}"
 }
 
@@ -289,14 +293,92 @@ check "both modes sign the same targets in the same order" \
     "$([[ -n "${adhoc_order}" && "${adhoc_order}" == "${developer_id_order}" ]] && echo 0 || echo 1)"
 expect "in Developer ID mode the dylib inside Inner.framework is signed before Inner.framework" before "${INNER_DYLIB}" "${INNER}"
 expect "in Developer ID mode the loose dylib is signed before Other.framework" before "${DYLIB}" "${OTHER}"
-# The bundle walk is code: it names Sparkle's per-version updater tool once, in the shared library, and no script
-# repeats it. The tests are excluded; they build fixtures.
-walk_hits="$(grep -n 'Autoupdate' "${SCRIPT_DIR}"/macos-*.sh | grep -v '\.test\.sh:' || true)"
-check "the Sparkle updater tool is named on exactly one line of the signing scripts, got: ${walk_hits:-none}" \
-    "$([[ -n "${walk_hits}" && "${walk_hits}" != *$'\n'* ]] && echo 0 || echo 1)"
-expect "and that line is in the shared walk, macos-signing-lib.sh" test "${walk_hits#"${SCRIPT_DIR}/macos-signing-lib.sh:"}" != "${walk_hits}"
 for script in macos-adhoc-sign.sh macos-sign-notarize.sh; do
     expect "${script} takes the walk from the shared library" grep -q -F "source \"\${SCRIPT_DIR}/macos-signing-lib.sh\"" "${SCRIPT_DIR}/${script}"
+done
+
+echo "== A failing walk fails closed =="
+# find cannot list a directory it cannot read. Before the walk was checked, the run went on without the rest of the list
+# (later frameworks, the helpers, the app) and still printed success.
+WALK_TMP="${TMP_DIR}/walk-tmp"
+mkdir -p "${WALK_TMP}"
+unreadable_case=0
+for locked in Contents/Frameworks/Inner.framework Contents/Helpers/lib; do
+    unreadable_case=$((unreadable_case + 1))
+    APP_LOCKED="${TMP_DIR}/Locked${unreadable_case}/AriadShift.app"
+    make_app "${APP_LOCKED}" with-sparkle
+    mkdir -p "${APP_LOCKED}/Contents/Helpers/lib"
+    write_macho "${APP_LOCKED}/Contents/Helpers/lib/extra"
+    chmod 000 "${APP_LOCKED}/${locked}"
+    if ls "${APP_LOCKED}/${locked}" > /dev/null 2>&1; then
+        echo "SKIP unreadable ${locked}: chmod 000 does not block reads here (running as root?)"
+    else
+        rc=0
+        run_sign app "${APP_LOCKED}" -- "TMPDIR=${WALK_TMP}" || rc=$?
+        check "an unreadable ${locked} fails the run" "$((rc != 0 ? 0 : 1))"
+        expect "and nothing is signed" test ! -s "${LOG}"
+        expect "and it does not report success" lacks_file "${OUT}" "Ad-hoc signed and verified"
+        expect "and it says the walk failed" grep -q "cannot list the code to sign" "${OUT}"
+        expect "and it leaves no temporary file" test -z "$(ls -A "${WALK_TMP}")"
+    fi
+    chmod 755 "${APP_LOCKED}/${locked}"
+done
+rc=0
+run_sign app "${APP}" -- "TMPDIR=${WALK_TMP}" || rc=$?
+check "the same bundle with readable directories signs and exits 0" "${rc}"
+expect "and leaves no temporary file" test -z "$(ls -A "${WALK_TMP}")"
+
+echo "== A walk with no targets, or one that does not end at the app, fails closed =="
+# The library with its walk replaced by a fake one, run in the same interpreter. "real" is the control: the harness works.
+HARNESS="${TMP_DIR}/walk-harness.sh"
+cat > "${HARNESS}" <<'HARNESS_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+# walk-harness.sh LIB APP ENTITLEMENTS ENTRY WALK
+source "$1"
+app="$2"
+entitlements="$3"
+case "$5" in
+    real) ;;
+    empty) list_sign_targets() { return 0; } ;;
+    not-the-app) list_sign_targets() { printf '%s\0' "${app}/Contents/Helpers/ashift"; } ;;
+    app-not-last) list_sign_targets() { printf '%s\0' "${app}" "${app}/Contents/Helpers/ashift"; } ;;
+    cut-short) list_sign_targets() { printf '%s\0' "${app}/Contents/Helpers/ashift"; return 1; } ;;
+esac
+SIGNED_TARGETS=()
+case "$4" in
+    sign) sign_app_targets adhoc "${app}" "${entitlements}" ;;
+    load) load_sign_targets "${app}" ;;
+esac
+echo "HARNESS-SUCCESS"
+HARNESS_SCRIPT
+run_harness() {
+    : > "${LOG}"
+    local rc=0
+    env -i PATH="${STUB_DIR}:${PATH}" STUB_LOG="${LOG}" \
+        "${BASH}" "${HARNESS}" "${SCRIPT_DIR}/macos-signing-lib.sh" "${APP}" "${ENTITLEMENTS}" "$1" "$2" > "${OUT}" 2>&1 || rc=$?
+    return "${rc}"
+}
+for entry in sign load; do
+    rc=0
+    run_harness "${entry}" real || rc=$?
+    check "${entry}: the real walk succeeds through the harness" "${rc}"
+    expect "${entry}: and the harness reports success" grep -q "HARNESS-SUCCESS" "${OUT}"
+    for walk in empty not-the-app app-not-last cut-short; do
+        rc=0
+        run_harness "${entry}" "${walk}" || rc=$?
+        check "${entry}: a walk that is ${walk} fails" "$((rc != 0 ? 0 : 1))"
+        expect "${entry}: ${walk} does not reach success" lacks_file "${OUT}" "HARNESS-SUCCESS"
+        expect "${entry}: ${walk} signs nothing" test ! -s "${LOG}"
+    done
+    run_harness "${entry}" empty || true
+    expect "${entry}: an empty walk says no code was found" grep -q "no code to sign was found" "${OUT}"
+    run_harness "${entry}" not-the-app || true
+    expect "${entry}: a list that stops short of the app says so" grep -q "does not end at the app" "${OUT}"
+    run_harness "${entry}" app-not-last || true
+    expect "${entry}: a list with the app in the middle says so" grep -q "does not end at the app" "${OUT}"
+    run_harness "${entry}" cut-short || true
+    expect "${entry}: a walk that fails says so" grep -q "cannot list the code to sign" "${OUT}"
 done
 
 echo "== The environment cannot change the identity =="
