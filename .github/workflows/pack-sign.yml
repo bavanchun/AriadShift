@@ -12,6 +12,14 @@ on:
       - crates/ariad-host/tests/sign_adapter.rs
       - .github/workflows/pack-sign.yml
   push:
+    branches: [dev]
+    paths:
+      - engines/sign/**
+      - engines/common/**
+      - crates/ariad-host/src/engines/sign.rs
+      - crates/ariad-host/src/tools/sign.rs
+      - crates/ariad-host/tests/sign_adapter.rs
+      - .github/workflows/pack-sign.yml
     tags: ['pack-sign-v*']
 
 concurrency:

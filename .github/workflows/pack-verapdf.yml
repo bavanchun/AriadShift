@@ -9,6 +9,12 @@ on:
       - scripts/test-pack-verapdf.sh
       - .github/workflows/pack-verapdf.yml
   push:
+    branches: [dev]
+    paths:
+      - engines/verapdf/**
+      - scripts/pack/**
+      - scripts/test-pack-verapdf.sh
+      - .github/workflows/pack-verapdf.yml
     tags: ['pack-verapdf-v*']
 
 concurrency:

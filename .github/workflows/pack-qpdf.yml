@@ -9,6 +9,12 @@ on:
       - scripts/test-pack-qpdf.sh
       - .github/workflows/pack-qpdf.yml
   push:
+    branches: [dev]
+    paths:
+      - engines/qpdf/**
+      - scripts/pack/**
+      - scripts/test-pack-qpdf.sh
+      - .github/workflows/pack-qpdf.yml
     tags: ['pack-qpdf-v*']
 
 concurrency:
