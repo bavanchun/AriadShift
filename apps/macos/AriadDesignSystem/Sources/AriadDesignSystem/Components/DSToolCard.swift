@@ -11,6 +11,9 @@ public struct DSToolCard: View {
     let badge: Text?
     let action: () -> Void
 
+    @State private var iconProbe = DSWindowFrameProbe()
+    @Environment(\.dsIconFlightHandler) private var flightHandler
+
     public init(
         systemImage: String,
         tint: DSIconWell.Tint = .accent,
@@ -28,9 +31,10 @@ public struct DSToolCard: View {
     }
 
     public var body: some View {
-        Button(action: action) {
+        Button(action: choose) {
             HStack(alignment: .top, spacing: DSSpacing.m) {
                 DSIconWell(systemImage: systemImage, tint: tint)
+                    .dsWindowFrame(iconProbe)
                 VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     HStack(spacing: DSSpacing.s) {
                         title
@@ -52,6 +56,14 @@ public struct DSToolCard: View {
         }
         .buttonStyle(CardButtonStyle())
         .accessibilityElement(children: .combine)
+    }
+
+    /// Reports the icon first (the card may be gone once the action has run), then runs the action.
+    private func choose() {
+        if let flightHandler, let frame = iconProbe.windowFrame {
+            flightHandler(DSIconFlightLaunch(itemID: nil, systemImage: systemImage, tint: tint, windowFrame: frame))
+        }
+        action()
     }
 }
 
