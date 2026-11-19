@@ -11,7 +11,7 @@ set -euo pipefail
 #   1. Sparkle XPC services, Autoupdate and Updater.app (every Versions/* directory except the Current symlink)
 #   2. Sparkle.framework
 #   3. any other embedded dylib, then any other embedded framework
-#   4. the ashift helper at Contents/Helpers/ashift
+#   4. every Mach-O file in Contents/Helpers (the ashift helper and Pandoc)
 #   5. the app, with the explicit empty entitlements file scripts/macos-app.entitlements
 # Rules:
 #   - Never `--deep` to sign. It applies one set of options to everything in an order Apple does not recommend for
@@ -28,6 +28,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 APP_ENTITLEMENTS="${SCRIPT_DIR}/macos-app.entitlements"
+# shellcheck source=scripts/macos-helpers-lib.sh
+source "${SCRIPT_DIR}/macos-helpers-lib.sh"
 
 # Every signed target, in signing order. Verified after signing.
 SIGNED_TARGETS=()
@@ -82,10 +84,10 @@ sign_app_inside_out() {
         done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 1 -type d -name '*.framework' ! -name 'Sparkle.framework' -print0)
     fi
 
-    # 4. The ashift helper.
-    if [[ -f "${app_path}/Contents/Helpers/ashift" ]]; then
-        sign_nested "${app_path}/Contents/Helpers/ashift"
-    fi
+    # 4. Every Mach-O in Helpers: the ashift helper and Pandoc. A helper no longer needs a line here to be signed.
+    while IFS= read -r -d '' item; do
+        sign_nested "${item}"
+    done < <(list_helper_machos "${app_path}")
 
     # 5. The app, with the explicit empty entitlements instead of whatever the build injected.
     if [[ ! -f "${APP_ENTITLEMENTS}" ]]; then

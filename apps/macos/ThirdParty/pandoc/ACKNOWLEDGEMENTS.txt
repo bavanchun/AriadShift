@@ -1,0 +1,24 @@
+Pandoc 3.12
+===========
+
+AriadShift includes Pandoc, John MacFarlane's document converter (https://pandoc.org),
+to export documents as Word (.docx) and to read and write other formats.
+
+Version:   3.12 (git tag 3.12, commit 381230ee36d8fa871c28f8982e22579f1a8f723b)
+Licence:   GNU General Public License, version 2 or later (GPL-2.0-or-later)
+Binary:    the unmodified official macOS release, pandoc-3.12-arm64-macOS.zip and
+           pandoc-3.12-x86_64-macOS.zip from
+           https://github.com/jgm/pandoc/releases/tag/3.12, joined into one universal
+           file at Contents/Helpers/pandoc
+Source:    https://github.com/jgm/pandoc/tree/3.12
+           https://github.com/jgm/pandoc/archive/refs/tags/3.12.tar.gz
+
+Pandoc is a separate program. AriadShift starts it as a child process and exchanges
+documents with it through files and pipes; it is not linked into AriadShift or into the
+ashift helper. AriadShift's own code stays under its own licence (see NOTICE).
+
+The licence texts that come with this release sit beside this file, unchanged from the
+3.12 tag:
+  COPYING.txt   the GNU General Public License (upstream file COPYING.md)
+  COPYRIGHT     Pandoc's copyright and licence notice, including code it carries under
+                other licences

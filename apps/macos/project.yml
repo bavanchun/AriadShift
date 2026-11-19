@@ -76,6 +76,20 @@ targets:
           - $(SRCROOT)/scripts/embed-helper.sh
         outputFiles:
           - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/ashift
+      # Pandoc runs as a separate process (GPL, never linked); its licence texts ship in Resources/ThirdParty/pandoc.
+      - name: Embed Pandoc helper
+        script: '"${SRCROOT}/scripts/embed-pandoc.sh"'
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/scripts/embed-pandoc.sh
+          - $(SRCROOT)/ThirdParty/pandoc/ACKNOWLEDGEMENTS.txt
+          - $(SRCROOT)/ThirdParty/pandoc/COPYING.txt
+          - $(SRCROOT)/ThirdParty/pandoc/COPYRIGHT
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/pandoc
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdParty/pandoc/ACKNOWLEDGEMENTS.txt
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdParty/pandoc/COPYING.txt
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdParty/pandoc/COPYRIGHT
   AriadShiftTests:
     type: bundle.unit-test
     platform: macOS

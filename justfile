@@ -222,13 +222,18 @@ test-docling-pack-inputs:
     bash scripts/test-docling-pack-inputs.sh
 
 # The macOS release scripts that need no macOS tool: the release mode decision (Developer ID, ad-hoc, unsigned), the
-# ad-hoc signing order and gates against a stub codesign, and the appcast script's key handling against stub child
-# commands. macos.yml runs the same tests on the macOS runner.
+# ad-hoc and Developer ID signing order and gates against a stub codesign, the Pandoc fetch mode and embed phase
+# against stub lipo and codesign, and the appcast script's key handling against stub child commands. macos.yml runs
+# the same tests on the macOS runner.
 test-macos-release-scripts:
-    shellcheck scripts/macos-check-secrets.sh scripts/macos-check-secrets.test.sh scripts/macos-check-secrets-workflow.test.sh scripts/macos-adhoc-sign.sh scripts/macos-adhoc-sign.test.sh scripts/macos-appcast.sh scripts/macos-appcast.test.sh
+    shellcheck scripts/macos-check-secrets.sh scripts/macos-check-secrets.test.sh scripts/macos-check-secrets-workflow.test.sh scripts/macos-adhoc-sign.sh scripts/macos-adhoc-sign.test.sh scripts/macos-appcast.sh scripts/macos-appcast.test.sh scripts/macos-embed-pandoc.test.sh apps/macos/scripts/embed-pandoc.sh scripts/macos-helpers-lib.sh scripts/macos-sign-notarize.sh scripts/macos-sign-notarize.test.sh
+    shellcheck scripts/install-pandoc.test.sh
+    bash scripts/install-pandoc.test.sh
+    bash scripts/macos-embed-pandoc.test.sh
     bash scripts/macos-check-secrets.test.sh
     bash scripts/macos-check-secrets-workflow.test.sh
     bash scripts/macos-adhoc-sign.test.sh
+    bash scripts/macos-sign-notarize.test.sh
     bash scripts/macos-appcast.test.sh
 
 test-ci-sccache:
@@ -489,10 +494,24 @@ macos-project:
     mkdir -p apps/macos/AriadShift.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
     cp apps/macos/Package.resolved apps/macos/AriadShift.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
+# Fetch the pinned Pandoc (version and SHA-256 from scripts/install-pandoc.sh) for both app architectures into .tools/.
+# The Xcode phase apps/macos/scripts/embed-pandoc.sh joins them into Contents/Helpers/pandoc and uses no network itself.
+# Skipped when ASHIFT_BUNDLED_PANDOC_PATH names a binary to embed instead.
+[macos]
+macos-pandoc:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -n "${ASHIFT_BUNDLED_PANDOC_PATH:-}" ]]; then
+        echo "ASHIFT_BUNDLED_PANDOC_PATH is set; not fetching Pandoc."
+        exit 0
+    fi
+    bash scripts/install-pandoc.sh --macos-arch arm64
+    bash scripts/install-pandoc.sh --macos-arch x86_64
+
 # Build the universal Release macOS application bundle. Extra xcodebuild settings may be passed as arguments
 # (each stays one argument: the global `set positional-arguments` forwards them with "$@" instead of textual substitution).
 [macos]
-macos-build *args:
+macos-build *args: macos-pandoc
     #!/usr/bin/env bash
     set -euo pipefail
     # The ashift helper is built in the same cargo invocation as the XCFramework slices and handed to the Xcode helper
@@ -584,7 +603,7 @@ macos-install-dev:
 
 # Run tests for AriadShiftCore and the AriadShift Xcode scheme.
 [macos]
-macos-test:
+macos-test: macos-pandoc
     #!/usr/bin/env bash
     set -euo pipefail
     REPO_ROOT="$(pwd)"

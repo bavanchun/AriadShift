@@ -79,12 +79,19 @@ exit 0
 STUB
 chmod +x "${STUB_DIR}/codesign"
 
+# Helpers are recognised as code by their first four bytes: a 64-bit little-endian Mach-O and a fat binary.
+write_macho() { printf '\317\372\355\376' > "$1"; }
+write_fat_macho() { printf '\312\376\272\276' > "$1"; }
+
 # make_app DIR [with-sparkle]: a fake bundle shaped like the real one: Sparkle with two XPC services, Autoupdate,
-# Updater.app and the Current symlink, one more framework, one loose dylib and the ashift helper.
+# Updater.app and the Current symlink, one more framework, one loose dylib, and Helpers with the ashift helper and
+# Pandoc (both Mach-O) beside a licence note that is not code and must stay unsigned.
 make_app() {
     local app="$1"
     mkdir -p "${app}/Contents/Helpers" "${app}/Contents/MacOS"
-    : > "${app}/Contents/Helpers/ashift"
+    write_fat_macho "${app}/Contents/Helpers/ashift"
+    write_macho "${app}/Contents/Helpers/pandoc"
+    echo "not code" > "${app}/Contents/Helpers/NOTES.txt"
     : > "${app}/Contents/MacOS/AriadShift"
     if [[ "${2:-}" == "with-sparkle" ]]; then
         local sparkle="${app}/Contents/Frameworks/Sparkle.framework"
@@ -109,6 +116,8 @@ UPDATER="${SPK}/Versions/B/Updater.app"
 DYLIB="${FW}/libextra.dylib"
 OTHER="${FW}/Other.framework"
 HELPER="${APP}/Contents/Helpers/ashift"
+PANDOC="${APP}/Contents/Helpers/pandoc"
+NOTES="${APP}/Contents/Helpers/NOTES.txt"
 
 LOG="${TMP_DIR}/codesign.log"
 OUT="${TMP_DIR}/out.txt"
@@ -181,11 +190,12 @@ rc=0
 run_sign app "${APP}" || rc=$?
 check "exits 0" "${rc}"
 signed="$(sign_targets | count_lines)"
-check "signs exactly 9 targets (4 Sparkle parts, Sparkle, dylib, Other.framework, helper, app), got ${signed}" "$((signed == 9 ? 0 : 1))"
-for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${APP}"; do
+check "signs exactly 10 targets (4 Sparkle parts, Sparkle, dylib, Other.framework, 2 helpers, app), got ${signed}" "$((signed == 10 ? 0 : 1))"
+for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${PANDOC}" "${APP}"; do
     expect "signs ${t#"${TMP_DIR}/Fake/"}" test -n "$(sign_index "${t}")"
 done
 expect "never signs the Versions/Current symlink" test -z "$(sign_index "${SPK}/Versions/Current")"
+expect "never signs a Helpers file that is not code" test -z "$(sign_index "${NOTES}")"
 
 echo "== Order: deepest first, the app last =="
 for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}"; do
@@ -195,6 +205,8 @@ expect "Sparkle.framework is signed before the app" before "${SPK}" "${APP}"
 expect "the loose dylib is signed before Other.framework" before "${DYLIB}" "${OTHER}"
 expect "Other.framework is signed before the app" before "${OTHER}" "${APP}"
 expect "the helper is signed before the app" before "${HELPER}" "${APP}"
+expect "Pandoc is signed before the app" before "${PANDOC}" "${APP}"
+expect "Pandoc is signed after the frameworks" before "${OTHER}" "${PANDOC}"
 expect "the app is the last target signed" test "$(sign_targets | tail -n 1)" = "${APP}"
 
 echo "== Flags on every signing call =="
@@ -226,7 +238,7 @@ app_line="$(sign_line "${APP}")"
 expect "the app is signed with the explicit entitlements file" grep -q -F -- " --entitlements ${ENTITLEMENTS} " <<< " ${app_line}"
 expect "the app does not preserve nested metadata" lacks_text "${app_line}" "--preserve-metadata"
 nested_ok=0
-for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}"; do
+for nested in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${PANDOC}"; do
     line="$(sign_line "${nested}")"
     if [[ "${line}" != *"--preserve-metadata=identifier,entitlements"* || "${line}" == *"--entitlements "* \
         || "${line}" == *requirements* ]]; then
@@ -241,7 +253,7 @@ first_verify="$(first_verify_line)"
 last_sign="$(last_sign_line)"
 check "verification starts only after the last signing call" "$(( first_verify > last_sign ? 0 : 1 ))"
 verify_ok=0
-for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${APP}"; do
+for t in "${XPC_DOWNLOADER}" "${XPC_INSTALLER}" "${AUTOUPDATE}" "${UPDATER}" "${SPK}" "${DYLIB}" "${OTHER}" "${HELPER}" "${PANDOC}" "${APP}"; do
     grep -q -F -- "--verify --deep --strict --verbose=2 ${t}" "${LOG}" || { echo "  not verified: ${t}" >&2; verify_ok=1; }
 done
 check "every signed target, the app included, is verified with --verify --deep --strict" "${verify_ok}"
@@ -270,6 +282,16 @@ rc=0
 run_sign app "${APP}" -- "STUB_FLAGS_FOR==${HELPER}" STUB_FLAGS=adhoc || rc=$?
 check "a lost hardened runtime fails the run" "$((rc != 0 ? 0 : 1))"
 expect "it reports the runtime flag" grep -q "hardened runtime" "${OUT}"
+rc=0
+run_sign app "${APP}" -- "STUB_FLAGS_FOR==${PANDOC}" STUB_FLAGS=adhoc || rc=$?
+check "a Pandoc that lost the hardened runtime fails the run" "$((rc != 0 ? 0 : 1))"
+rc=0
+run_sign app "${APP}" -- "STUB_GTA==${PANDOC}" || rc=$?
+check "get-task-allow on Pandoc fails the run" "$((rc != 0 ? 0 : 1))"
+rc=0
+run_sign app "${APP}" -- "STUB_FAIL_SIGN==${PANDOC}" || rc=$?
+check "a failure signing Pandoc fails the run before the app is signed" "$((rc != 0 ? 0 : 1))"
+expect "and the app is never signed" test -z "$(sign_index "${APP}")"
 
 rc=0
 run_sign app "${APP}" -- "STUB_FLAGS_FOR==${UPDATER}" STUB_FLAGS=runtime || rc=$?
@@ -300,7 +322,16 @@ make_app "${APP2}"
 rc=0
 run_sign app "${APP2}" || rc=$?
 check "a bundle without Sparkle or Frameworks signs and exits 0" "${rc}"
-expect "it signs only the helper and the app, in that order" test "$(sign_targets | tr '\n' ' ')" = "${APP2}/Contents/Helpers/ashift ${APP2} "
+expect "it signs only the two helpers and the app" test "$(sign_targets | wc -l | tr -d ' ')" = 3
+expect "both helpers are signed before the app" test "$(sign_targets | tail -n 1)" = "${APP2}"
+expect "and Pandoc is one of them" test -n "$(sign_index "${APP2}/Contents/Helpers/pandoc")"
+APP3="${TMP_DIR}/NoPandoc/AriadShift.app"
+make_app "${APP3}"
+rm "${APP3}/Contents/Helpers/pandoc"
+rc=0
+run_sign app "${APP3}" || rc=$?
+check "a bundle without Pandoc still signs and exits 0" "${rc}"
+expect "it signs only the ashift helper and the app" test "$(sign_targets | wc -l | tr -d ' ')" = 2
 
 rc=0
 run_sign app || rc=$?

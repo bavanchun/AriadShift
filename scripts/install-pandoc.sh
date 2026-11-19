@@ -5,6 +5,32 @@ script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd "$script_dir/.." && pwd)
 system=$(uname -s)
 machine=$(uname -m)
+bin_subdir='pandoc'
+
+# --macos-arch ARCH installs the pinned macOS binary for ARCH (arm64 or x86_64) under
+# .tools/pandoc-macos-ARCH/bin, whatever the host is. The macOS app embeds both slices, so the
+# one set of version and checksum pins below serves the app build as well as `just pandoc`.
+case "${1:-}" in
+    '')
+        ;;
+    --macos-arch)
+        case "${2:-}" in
+            arm64|x86_64)
+                system=Darwin
+                machine=$2
+                bin_subdir="pandoc-macos-$2"
+                ;;
+            *)
+                printf 'Usage: %s [--macos-arch arm64|x86_64]\n' "$0" >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    *)
+        printf 'Usage: %s [--macos-arch arm64|x86_64]\n' "$0" >&2
+        exit 1
+        ;;
+esac
 
 case "$system" in
     Linux)
@@ -135,7 +161,7 @@ if [ -z "$binary" ]; then
     exit 1
 fi
 
-bin_dir="$tools_dir/pandoc/bin"
+bin_dir="$tools_dir/$bin_subdir/bin"
 destination="$bin_dir/$binary_name"
 mkdir -p "$bin_dir"
 mv -f "$binary" "$destination"
