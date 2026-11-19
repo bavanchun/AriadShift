@@ -6,7 +6,7 @@ import XCTest
 /// `EngineClient.exportBundledPandoc` makes the Pandoc that ships beside the helper known to the engine, so Export
 /// as Word works on a Mac with no Pandoc installed. The app bundle is not needed: the folder that plays `Contents/Helpers` is a temporary one.
 final class BundledPandocTests: XCTestCase {
-    private let name = EngineClient.pandocEnvironmentName
+    private let envName = EngineClient.pandocEnvironmentName
 
     /// A folder shaped like `Contents/Helpers`, with an executable `ashift` and, when asked, `pandoc`.
     private func makeHelpers(pandoc: Bool = true, pandocMode: Int = 0o755) throws -> (helper: URL, pandoc: URL) {
@@ -24,7 +24,7 @@ final class BundledPandocTests: XCTestCase {
 
     /// Sets `ASHIFT_PANDOC` in this process to `value` (unset for nil) and puts it back as it was when the test ends.
     private func setProcessPandoc(_ value: String?) {
-        let variable = name
+        let variable = envName
         let original = getenv(variable).map { String(cString: $0) }
         if let value { setenv(variable, value, 1) } else { unsetenv(variable) }
         addTeardownBlock {
@@ -59,12 +59,12 @@ final class BundledPandocTests: XCTestCase {
 
     func testOverrideTreatsAnEmptyValueAsUnset() throws {
         let (helper, pandoc) = try makeHelpers()
-        XCTAssertEqual(EngineClient.pandocOverride(beside: helper, environment: [name: ""]), pandoc.path)
+        XCTAssertEqual(EngineClient.pandocOverride(beside: helper, environment: [envName: ""]), pandoc.path)
     }
 
     func testAnExplicitPandocIsNeverOverridden() throws {
         let (helper, _) = try makeHelpers()
-        XCTAssertNil(EngineClient.pandocOverride(beside: helper, environment: [name: "/opt/custom/pandoc"]))
+        XCTAssertNil(EngineClient.pandocOverride(beside: helper, environment: [envName: "/opt/custom/pandoc"]))
     }
 
     func testNoOverrideWithoutAnExecutableFileBesideTheHelper() throws {
@@ -85,28 +85,28 @@ final class BundledPandocTests: XCTestCase {
         let (helper, pandoc) = try makeHelpers()
         setProcessPandoc(nil)
         EngineClient.exportBundledPandoc(beside: helper)
-        XCTAssertEqual(getenv(name).map { String(cString: $0) }, pandoc.path)
+        XCTAssertEqual(getenv(envName).map { String(cString: $0) }, pandoc.path)
     }
 
     func testExportReplacesAnEmptyChoice() throws {
         let (helper, pandoc) = try makeHelpers()
         setProcessPandoc("")
         EngineClient.exportBundledPandoc(beside: helper)
-        XCTAssertEqual(getenv(name).map { String(cString: $0) }, pandoc.path)
+        XCTAssertEqual(getenv(envName).map { String(cString: $0) }, pandoc.path)
     }
 
     func testExportKeepsAnExplicitChoice() throws {
         let (helper, _) = try makeHelpers()
         setProcessPandoc("/opt/custom/pandoc")
         EngineClient.exportBundledPandoc(beside: helper)
-        XCTAssertEqual(getenv(name).map { String(cString: $0) }, "/opt/custom/pandoc")
+        XCTAssertEqual(getenv(envName).map { String(cString: $0) }, "/opt/custom/pandoc")
     }
 
     func testExportWithoutABundledPandocLeavesTheEnvironmentAlone() throws {
         let (helper, _) = try makeHelpers(pandoc: false)
         setProcessPandoc(nil)
         EngineClient.exportBundledPandoc(beside: helper)
-        XCTAssertNil(getenv(name), "nothing to export, so PATH lookup stays the fallback")
+        XCTAssertNil(getenv(envName), "nothing to export, so PATH lookup stays the fallback")
     }
 
     func testExportIsIdempotent() throws {
@@ -114,7 +114,7 @@ final class BundledPandocTests: XCTestCase {
         setProcessPandoc(nil)
         EngineClient.exportBundledPandoc(beside: helper)
         EngineClient.exportBundledPandoc(beside: helper)
-        XCTAssertEqual(getenv(name).map { String(cString: $0) }, pandoc.path)
+        XCTAssertEqual(getenv(envName).map { String(cString: $0) }, pandoc.path)
     }
 
     func testCreatingAClientDoesNotTouchTheEnvironment() throws {
@@ -123,6 +123,6 @@ final class BundledPandocTests: XCTestCase {
         let (helper, _) = try makeHelpers()
         setProcessPandoc(nil)
         _ = try EngineClient(helperURL: helper)
-        XCTAssertNil(getenv(name))
+        XCTAssertNil(getenv(envName))
     }
 }
