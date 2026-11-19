@@ -114,6 +114,10 @@ The Rust cache is written only by pushes to `dev` and `main` (the web job shares
   - To purge the cache after a suspected poisoning event or when clearing stale objects, bump the prefix string (e.g. `ariadshift-sccache-v3/`) across `.github/workflows/ci.yml`, `scripts/ci-sccache.sh`, `scripts/r2-cache-prune.py`, and `scripts/test-r2-cache-prune.py` (`EXPECTED_PREFIX` constant, which enforces prefix consistency across the codebase).
   - Stale objects under older prefixes (such as the initial `ariadshift-sccache/` prefix) can be pruned directly by repository maintainers via the Cloudflare dashboard or AWS S3 CLI.
 
+## Ubuntu package mirror
+
+The Linux Verify job installs LibreOffice and the desktop libraries through [`scripts/ci-apt.sh`](../scripts/ci-apt.sh). It tries the runner's Azure mirror first under a time limit (240 s for `update`, 420 s for `install`). On a failure or a timeout it points apt at `archive.ubuntu.com`, refreshes the index and runs the command again; later calls in the same job stay on the primary archive. Either mirror was slow on some days (a LibreOffice install took 9 to 18 minutes instead of 20 seconds), which is why neither is used alone. `scripts/test-ci-apt.sh` tests the fallback with stub commands and runs in `just static`. The Dockerfiles under `infra/docker` and the Playwright job still use the default archive: the Azure mirror is reachable only from GitHub-hosted runners, so a published image must not depend on it.
+
 ## Pull request scope
 
 A pull request should get its `CI passed` result without waiting behind engine builds, so the engine workflows are narrow on pull requests and wide on `dev` and tags.
