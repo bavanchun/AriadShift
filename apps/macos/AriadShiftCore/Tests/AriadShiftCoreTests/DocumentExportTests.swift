@@ -66,9 +66,9 @@ final class DocumentExportTests: XCTestCase {
             ("the destination already exists; pass --overwrite to replace it", .destinationExists),
             (
                 "the docling engine is not installed; run `ashift engines install docling`",
-                .engineRequired(engine: "docling")
+                .doclingMissing
             ),
-            ("the docling engine is missing Tesseract 5 or its models", .engineRequired(engine: "docling")),
+            ("the docling engine is missing Tesseract 5 or its models for this document; x", .doclingToolMissing),
             ("the qpdf engine is missing or unsupported; install it", .engineRequired(engine: "qpdf")),
         ]
         for (message, expected) in cases {

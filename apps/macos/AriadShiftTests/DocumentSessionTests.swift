@@ -153,6 +153,24 @@ final class DocumentSessionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["doc.pdf"], "nothing was placed")
     }
 
+    func testExportIsOffWhileAToolRuns() async throws {
+        let engine = try await readyEngine()
+        let (url, _) = try copyOfFixture()
+        let session = DocumentSession(fileURL: url)
+        XCTAssertTrue(session.canExport(client: engine.client))
+
+        session.begin(try tool("pdf.rotate", in: engine), client: engine.client)
+        let run = try XCTUnwrap(session.run)
+        run.values["angle"] = .index(0)
+        run.start()
+        XCTAssertTrue(session.isRunning)
+        XCTAssertFalse(session.canExport(client: engine.client), "a tool run owns the window")
+
+        run.cancel()
+        await run.waitUntilFinished()
+        XCTAssertTrue(session.canExport(client: engine.client))
+    }
+
     func testARequestedToolOpensOnceTheCatalogueIsReady() async throws {
         let engine = try await readyEngine()
         let (url, _) = try copyOfFixture()

@@ -94,6 +94,7 @@ struct DocumentWindowView: View {
             }
         }
         .toolRunPresentation(session: session, engine: engine)
+        .background(WindowReader { session.window = $0 })
         .safeAreaInset(edge: .bottom, spacing: 0) { ExportProgressBar(model: session.export) }
         // Choosing a tool opens the inspector, where its parameters and progress belong.
         .onChange(of: session.run != nil) { _, running in

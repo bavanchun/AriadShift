@@ -21,7 +21,11 @@ public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
 public enum ExportError: Error, Equatable, Sendable {
     /// The Word route needs Pandoc and the engine could not find a usable one.
     case pandocMissing
-    /// Another engine the route needs (such as Docling) is missing or unusable.
+    /// The Docling engine pack is not installed.
+    case doclingMissing
+    /// Docling is installed but Tesseract 5 or its models are missing.
+    case doclingToolMissing
+    /// Another engine the route needs is missing or unusable.
     case engineRequired(engine: String)
     /// The chosen file is the document being exported.
     case destinationIsDocument
@@ -41,6 +45,10 @@ public enum ExportError: Error, Equatable, Sendable {
             self = .destinationIsDocument
         } else if message.hasPrefix("the destination already exists") {
             self = .destinationExists
+        } else if message.hasPrefix("the docling engine is not installed") {
+            self = .doclingMissing
+        } else if message.hasPrefix("the docling engine is missing") {
+            self = .doclingToolMissing
         } else if let engine = Self.engineName(inMissingEngineMessage: message) {
             self = .engineRequired(engine: engine)
         } else {

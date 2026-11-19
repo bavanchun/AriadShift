@@ -19,8 +19,9 @@ final class ExportModel {
     private(set) var phase = Phase.idle
     private(set) var isChoosing = false
     /// Where the save panel puts the file; tests replace it. Returns nil when the user cancels.
-    @ObservationIgnored var chooseDestination: @MainActor (_ document: URL, _ format: ExportFormat) async -> URL? =
-        ExportModel.presentSavePanel
+    @ObservationIgnored var chooseDestination:
+        @MainActor (_ document: URL, _ format: ExportFormat, _ window: NSWindow?) async -> URL? =
+            ExportModel.presentSavePanel
     /// Called on the main actor with the exported file.
     @ObservationIgnored var onExported: ((URL) -> Void)?
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -32,14 +33,17 @@ final class ExportModel {
     /// The save panel is open or an export runs.
     var isBusy: Bool { isChoosing || isRunning }
 
-    /// Asks for a destination, then exports. Does nothing while another export is busy or without an engine.
-    func begin(_ format: ExportFormat, document: URL, converter: (any DocumentConverting)?) {
+    /// Asks for a destination, as a sheet of `window` (the exporting document's window), then exports. Does nothing
+    /// while another export is busy or without an engine.
+    func begin(
+        _ format: ExportFormat, document: URL, converter: (any DocumentConverting)?, window: NSWindow? = nil
+    ) {
         guard !isBusy, let converter else { return }
         phase = .idle
         isChoosing = true
         task = Task { [weak self] in
             guard let self else { return }
-            let destination = await chooseDestination(document, format)
+            let destination = await chooseDestination(document, format, window)
             isChoosing = false
             guard let destination, !Task.isCancelled else { return }
             phase = .running(format)
@@ -81,11 +85,15 @@ final class ExportModel {
             return .failed(headline: String(localized: "mac.export.same_file"), details: nil)
         case .destinationExists:
             return .failed(headline: String(localized: "mac.export.destination_exists"), details: nil)
+        case .doclingMissing:
+            return .failed(headline: String(localized: "mac.export.docling_missing"), details: nil)
+        case .doclingToolMissing:
+            return .failed(headline: String(localized: "mac.export.docling_tool_missing"), details: nil)
         case let .engineRequired(engine):
             return .failed(
                 headline: String(
                     localized: "mac.export.engine_required",
-                    defaultValue: "Exporting this document needs the \(engine) engine, which is not installed or cannot run."
+                    defaultValue: "Exporting this document needs the \(engine) engine, which is not installed or cannot run. Install it and try again."
                 ),
                 details: nil
             )
@@ -94,10 +102,10 @@ final class ExportModel {
         }
     }
 
-    /// The save panel as a sheet of the key window, so it blocks only that window; without a window it is modal.
-    private static func presentSavePanel(document: URL, format: ExportFormat) async -> URL? {
+    /// The save panel as a sheet of the document's window, so it blocks only that window; without a window (tests) it
+    /// is modal.
+    private static func presentSavePanel(document: URL, format: ExportFormat, window: NSWindow?) async -> URL? {
         let panel = NSSavePanel()
-        panel.title = String(localized: "mac.export.panel_title")
         panel.message = String(localized: "mac.export.panel_message")
         panel.prompt = String(localized: "mac.export.panel_prompt")
         panel.canCreateDirectories = true
@@ -106,7 +114,7 @@ final class ExportModel {
         if let type = UTType(filenameExtension: format.fileExtension) {
             panel.allowedContentTypes = [type]
         }
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
+        guard let window else {
             return panel.runModal() == .OK ? panel.url : nil
         }
         return await withCheckedContinuation { continuation in
