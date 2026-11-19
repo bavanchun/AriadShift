@@ -47,6 +47,15 @@ test:
     cargo nextest run --workspace --features ariad-host/test-probe
     cargo test --workspace --doc
 
+# One slice of the nextest run in `test`, split by test count (index counts from 1); the Linux
+# Verify parts in ci.yml run the slices in parallel jobs. Keep the arguments in step with `test`.
+test-shard index count:
+    cargo nextest run --workspace --features ariad-host/test-probe --partition count:{{index}}/{{count}}
+
+# The doc tests in `test`; CI runs them next to the last shard.
+test-doc:
+    cargo test --workspace --doc
+
 deny:
     node --test scripts/check-crypto-bigint.test.mjs
     node scripts/check-crypto-bigint.mjs
