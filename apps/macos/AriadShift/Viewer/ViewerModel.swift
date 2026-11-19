@@ -112,10 +112,10 @@ final class ViewerModel {
         let signposter = ViewerSignpost.signposter
         let interval = signposter.beginInterval(ViewerSignpost.openToFirstPage, id: signposter.makeSignpostID())
         defer { signposter.endInterval(ViewerSignpost.openToFirstPage, interval) }
-        loadState = .loading
+        withDSBulkReload { loadState = .loading }
         let loaded = await Self.parse(data)
         guard let document = loaded else {
-            loadState = .failed
+            withDSBulkReload { loadState = .failed }
             return
         }
         install(document, source: data)
@@ -124,8 +124,14 @@ final class ViewerModel {
     }
 
     /// Opens an already parsed document (tests and callers that hold one). With its `source` bytes the
-    /// thumbnails render off the main actor.
+    /// thumbnails render off the main actor. Replacing a document changes the page count, the selection, the
+    /// thumbnails and the load state at once, so it runs as a bulk reload: no animation, however many views
+    /// above it carry one.
     func install(_ document: PDFDocument, source: Data? = nil) {
+        withDSBulkReload { replaceDocument(document, source: source) }
+    }
+
+    private func replaceDocument(_ document: PDFDocument, source: Data?) {
         guard document.pageCount > 0 else {
             // A document without pages is not shown: drop whatever an earlier one left in the view.
             find.cancel()

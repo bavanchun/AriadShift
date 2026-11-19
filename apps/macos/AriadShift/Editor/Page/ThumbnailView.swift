@@ -39,17 +39,21 @@ struct ThumbnailView: View {
         // `width` is the widest the page is drawn: a narrower column (a grid cell) shrinks it, keeping the page's shape.
         .aspectRatio(size.width / max(size.height, 1), contentMode: .fit)
         .frame(maxWidth: size.width)
-        // Only the arrival of an image animates; a cached image set before the first frame shows at once.
-        .animation(.easeOut(duration: DSMotion.fadeDuration), value: image != nil)
+        // Only the arrival of a freshly rendered image animates, and not at all under Reduce Motion. An image served
+        // from the cache and a cache swap are bulk reloads: they apply inside a no-animation transaction below.
+        .animation(DSMotion.thumbnailFade(reduceMotion: reduceMotion), value: image != nil)
         .task(id: Request(cache: ObjectIdentifier(cache), index: index, pixels: Int(width * displayScale))) {
             let pixels = Int(width * displayScale)
             let identity = ObjectIdentifier(cache)
             if renderedBy != identity {
-                image = nil
-                renderedBy = identity
+                withDSBulkReload {
+                    image = nil
+                    renderedBy = identity
+                }
             }
-            image = cache.cachedImage(page: index, width: pixels)
-            if image == nil {
+            let cached = cache.cachedImage(page: index, width: pixels)
+            withDSBulkReload { image = cached }
+            if cached == nil {
                 let rendered = await cache.image(page: index, width: pixels)
                 // A task that was replaced meanwhile must not put its image over the newer one.
                 if !Task.isCancelled { image = rendered }
