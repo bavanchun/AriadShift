@@ -373,7 +373,13 @@ ci_jobs = load_yaml('.github/workflows/ci.yml')['jobs']
 ci_passed = ci_jobs['ci-passed']
 assert set(ci_passed['needs']) == set(ci_jobs) - {'ci-passed'}, 'ci.yml: CI passed must wait for every other job'
 linux = ci_jobs['verify-linux']
-assert linux['needs'] == 'scope' and linux['if'] == ci_jobs['verify']['if'], 'ci.yml: verify-linux must follow the heavy scope'
+heavy_if = "needs.scope.outputs.heavy == 'true'"
+os_if = f"{heavy_if} && needs.scope.outputs.os_verify == 'true'"
+assert linux['needs'] == 'scope' and linux['if'] == heavy_if, 'ci.yml: verify-linux must follow the heavy scope alone'
+for name in ('verify', 'lint-native'):
+    assert ci_jobs[name]['needs'] == 'scope' and ci_jobs[name]['if'] == os_if, (
+        f'ci.yml: {name} must follow the heavy scope and the os_verify decision'
+    )
 assert linux['strategy']['matrix']['include'] == '${{ fromJSON(needs.scope.outputs.linux_parts) }}', (
     'ci.yml: verify-linux must take its parts from the scope job'
 )
@@ -383,11 +389,36 @@ for key in ('environment', 'permissions'):
 assert all(entry['os'] != 'ubuntu-26.04' for entry in ci_jobs['verify']['strategy']['matrix']['include']), (
     'ci.yml: Linux runs in verify-linux, not in the verify matrix'
 )
-assert {'package', 'linux_parts'} <= set(ci_jobs['scope']['outputs']), 'ci.yml: scope must export package and linux_parts'
+assert {'package', 'linux_parts', 'os_verify'} <= set(ci_jobs['scope']['outputs']), (
+    'ci.yml: scope must export package, linux_parts and os_verify'
+)
 gate = ci_passed['steps'][0]
 assert gate['env']['VERIFY_LINUX'] == '${{ needs.verify-linux.result }}'
 assert gate['run'].count('[ "$VERIFY_LINUX" = success ]') == 1 and gate['run'].count('[ "$VERIFY_LINUX" = skipped ]') == 1, (
     'ci.yml: CI passed must require verify-linux to succeed, or to be skipped when the heavy jobs are'
+)
+assert gate['env']['OS_VERIFY'] == '${{ needs.scope.outputs.os_verify }}'
+assert gate['env']['LINT_NATIVE'] == '${{ needs.lint-native.result }}' and gate['env']['VERIFY'] == '${{ needs.verify.result }}'
+assert 'os-verify=%s' in gate['run'] and '"$OS_VERIFY"' in gate['run'], 'ci.yml: CI passed must print the os_verify decision'
+gate_lines = [line.strip() for line in gate['run'].split('\n') if line.strip() and not line.strip().startswith('#')]
+gate_logic = '\n'.join(gate_lines)
+heavy_gate = '\n'.join([
+    'if [ "$HEAVY" = true ]; then',
+    '[ "$VERIFY_LINUX" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1',
+    'if [ "$OS_VERIFY" = true ]; then',
+    '[ "$LINT_NATIVE" = success ] && [ "$VERIFY" = success ] || exit 1',
+    'else',
+    '[ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] || exit 1',
+    'fi',
+    'else',
+    '[ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] && [ "$VERIFY_LINUX" = skipped ] && '
+    '[ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1',
+    'fi',
+])
+assert heavy_gate in gate_logic, (
+    'ci.yml: with heavy jobs CI passed must require verify-linux, server and fuzz, require lint-native and '
+    'verify to succeed when os_verify is true and to be skipped when it is false, and require every heavy '
+    'job to be skipped otherwise'
 )
 windows_packaging = step_named(ci_jobs['verify']['steps'], 'Check packaging')
 assert "needs.scope.outputs.package == 'true'" in windows_packaging['if'], 'ci.yml: Windows packaging must follow the scope decision'
