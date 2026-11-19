@@ -142,6 +142,9 @@ describe("<PdfViewer />", () => {
     const onPageChange = vi.fn();
     render(<PdfViewer source={source()} loadBackend={fake.load} onPageChange={onPageChange} />);
     await screen.findByTestId("engine");
+    // The engine's own first report arrives in an effect; emit only after it, or it can land
+    // after page 3 and replace it.
+    await waitFor(() => expect(fake.log.mounts).toBe(1));
     // A layout settling on page 3 before anyone scrolled is not the reader's position.
     act(() => fake.controls.emit(readySnapshot({ page: 3 })));
     expect(onPageChange).not.toHaveBeenCalled();
