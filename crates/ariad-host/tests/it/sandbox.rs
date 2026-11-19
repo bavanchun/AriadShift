@@ -65,16 +65,25 @@ fn namespace_launcher_failure_is_typed_for_describe_and_conversion() {
     // Isolate discovery overrides from the other sandbox tests in this process.
     const CHILD: &str = "ARIAD_TEST_INSTALLED_LIBREOFFICE";
     if std::env::var_os(CHILD).is_none() {
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "namespace_launcher_failure_is_typed_for_describe_and_conversion",
+                "sandbox::namespace_launcher_failure_is_typed_for_describe_and_conversion",
             ])
             .env(CHILD, "1")
             .env("ASHIFT_SOFFICE", probe())
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout} {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        crate::support::assert_ran_one_test(
+            &stdout,
+            "sandbox::namespace_launcher_failure_is_typed_for_describe_and_conversion",
+        );
         return;
     }
     let workspace = Workspace::new().unwrap();

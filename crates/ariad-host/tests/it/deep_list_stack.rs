@@ -19,7 +19,7 @@ fn deep_list_pandoc_engine_fits_a_one_mib_stack() {
             let input = workspace.input_dir().join("document.ir.json");
             let limits = Limits::local();
             let document = markdown::read(
-                include_str!("../../../fixtures/md/en-deep-list.md"),
+                include_str!("../../../../fixtures/md/en-deep-list.md"),
                 &limits,
             )
             .unwrap()

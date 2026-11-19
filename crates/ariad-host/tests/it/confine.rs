@@ -1173,11 +1173,11 @@ fn fifo_artifacts_preserve_type_errors_without_blocking() {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "fifo_artifacts_preserve_type_errors_without_blocking",
+            "confine::fifo_artifacts_preserve_type_errors_without_blocking",
             "--nocapture",
         ])
         .env("ARIAD_FIFO_ARTIFACT_CHILD", "1")
-        .stdout(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .spawn()
         .unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
@@ -1186,6 +1186,12 @@ fn fifo_artifacts_preserve_type_errors_without_blocking() {
             assert!(
                 status.success(),
                 "FIFO type classification failed: {status}"
+            );
+            let mut stdout = String::new();
+            std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut stdout).unwrap();
+            crate::support::assert_ran_one_test(
+                &stdout,
+                "confine::fifo_artifacts_preserve_type_errors_without_blocking",
             );
             break;
         }
@@ -1225,7 +1231,8 @@ mod staging_privacy {
             .env("TMPDIR", base.path())
             .env("TMP", base.path())
             .env("TEMP", base.path())
-            .stdin(Stdio::null());
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped());
         let mut child = command.spawn().expect("spawn isolated staging regression");
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
@@ -1234,6 +1241,10 @@ mod staging_privacy {
                     status.success(),
                     "isolated staging regression failed: {status}"
                 );
+                let mut stdout = String::new();
+                std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut stdout)
+                    .unwrap();
+                crate::support::assert_ran_one_test(&stdout, name);
                 return;
             }
             if Instant::now() >= deadline {
@@ -1257,7 +1268,7 @@ mod staging_privacy {
     fn process_directory_is_owner_only_under_umask_zero() {
         if std::env::var_os(CHILD).is_none() {
             return permission_child(
-                "staging_privacy::process_directory_is_owner_only_under_umask_zero",
+                "confine::staging_privacy::process_directory_is_owner_only_under_umask_zero",
             );
         }
         let directory = Cleanup(ProcessStagingDirectory::new().unwrap());
@@ -1310,7 +1321,7 @@ mod staging_privacy {
     fn copy_directories_are_owner_only_under_umask_zero() {
         if std::env::var_os(CHILD).is_none() {
             return permission_child(
-                "staging_privacy::copy_directories_are_owner_only_under_umask_zero",
+                "confine::staging_privacy::copy_directories_are_owner_only_under_umask_zero",
             );
         }
         inspect_copies(false);
@@ -1320,7 +1331,7 @@ mod staging_privacy {
     fn staged_files_are_owner_only_under_umask_zero() {
         if std::env::var_os(CHILD).is_none() {
             return permission_child(
-                "staging_privacy::staged_files_are_owner_only_under_umask_zero",
+                "confine::staging_privacy::staged_files_are_owner_only_under_umask_zero",
             );
         }
         inspect_copies(true);
@@ -1369,7 +1380,7 @@ mod staging_privacy {
             };
             return run_child(
                 command,
-                "staging_privacy::stale_directories_owned_by_another_user_are_not_followed_or_swept",
+                "confine::staging_privacy::stale_directories_owned_by_another_user_are_not_followed_or_swept",
             );
         }
         assert!(

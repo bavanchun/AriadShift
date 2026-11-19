@@ -1330,7 +1330,7 @@ fn default_beside_input_oversized_inputless_tool_requires_explicit_output() {
             .env(CHILD_ENV, "1")
             .args([
                 "--exact",
-                "default_beside_input_oversized_inputless_tool_requires_explicit_output",
+                "tool_publish_atomic::default_beside_input_oversized_inputless_tool_requires_explicit_output",
                 "--nocapture",
             ])
             .output()
@@ -1340,6 +1340,10 @@ fn default_beside_input_oversized_inputless_tool_requires_explicit_output() {
             "child test failed: stdout={}, stderr={}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+        crate::support::assert_ran_one_test(
+            &String::from_utf8_lossy(&output.stdout),
+            "tool_publish_atomic::default_beside_input_oversized_inputless_tool_requires_explicit_output",
         );
         assert_eq!(
             fs::read_dir(cwd.path()).unwrap().count(),
@@ -1959,7 +1963,7 @@ printf '%s\n' '{"type":"result","ok":true}'
         .env("ASHIFT_TEST_ALLOW_LOOPBACK_AI", "1")
         .args([
             "--exact",
-            "ai_recipe_from_text_bounds_ingestion_and_writes_wrapped_artifact",
+            "tool_publish_atomic::ai_recipe_from_text_bounds_ingestion_and_writes_wrapped_artifact",
             "--nocapture",
         ])
         .output()
@@ -1969,6 +1973,10 @@ printf '%s\n' '{"type":"result","ok":true}'
         "cloud child failed: stdout={}, stderr={}",
         String::from_utf8_lossy(&child_out.stdout),
         String::from_utf8_lossy(&child_out.stderr)
+    );
+    crate::support::assert_ran_one_test(
+        &String::from_utf8_lossy(&child_out.stdout),
+        "tool_publish_atomic::ai_recipe_from_text_bounds_ingestion_and_writes_wrapped_artifact",
     );
     server.join().unwrap();
 }

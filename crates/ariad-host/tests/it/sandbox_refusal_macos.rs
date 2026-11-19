@@ -17,17 +17,26 @@ use tokio_util::sync::CancellationToken;
 fn refused_seatbelt_prevents_execution_in_both_modes() {
     const CHILD: &str = "ARIAD_TEST_REFUSAL_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        let status = Command::new(std::env::current_exe().unwrap())
+        let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "refused_seatbelt_prevents_execution_in_both_modes",
+                "sandbox_refusal_macos::refused_seatbelt_prevents_execution_in_both_modes",
             ])
             .env(CHILD, "1")
             .env("ARIAD_TEST_SANDBOX_SUPPORT", "seatbelt-refused")
             .env_remove("ASHIFT_SANDBOX")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout} {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        crate::support::assert_ran_one_test(
+            &stdout,
+            "sandbox_refusal_macos::refused_seatbelt_prevents_execution_in_both_modes",
+        );
         return;
     }
     let support = sandbox::support();

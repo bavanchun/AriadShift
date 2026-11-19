@@ -1,5 +1,4 @@
-#[path = "support/qpdf.rs"]
-mod qpdf;
+use crate::support::{self, qpdf};
 use ariad_core::tools::specs::security;
 use ariad_host::tools::{InputRef, OutputTarget, SecretBag, ToolRequest, run_tool};
 use serde_json::json;
@@ -8,7 +7,9 @@ use std::path::Path;
 #[test]
 fn secrets_are_absent_from_outcomes_and_invalid_passwords_fail() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("secrets_are_absent_from_outcomes_and_invalid_passwords_fail");
+        let _pack = qpdf::in_child(
+            "qpdf_secrets::secrets_are_absent_from_outcomes_and_invalid_passwords_fail",
+        );
         return;
     }
     let secret = "@secret space é";
@@ -89,7 +90,7 @@ fn adapter_refuses_a_program_not_declared_by_the_pack() {
 fn qpdf_errors_scrub_raw_json_and_url_forms() {
     use std::{os::unix::fs::PermissionsExt, path::PathBuf};
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("qpdf_errors_scrub_raw_json_and_url_forms");
+        let _pack = qpdf::in_child("qpdf_secrets::qpdf_errors_scrub_raw_json_and_url_forms");
         return;
     }
     let pack = PathBuf::from(std::env::var_os("ASHIFT_PACK_QPDF").unwrap());
@@ -137,7 +138,7 @@ fn cancellation_kills_the_qpdf_child() {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "cancellation_kills_the_qpdf_child",
+                "qpdf_secrets::cancellation_kills_the_qpdf_child",
                 "--nocapture",
             ])
             .envs([
@@ -152,6 +153,10 @@ fn cancellation_kills_the_qpdf_child() {
             "{} {}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+        support::assert_ran_one_test(
+            &String::from_utf8_lossy(&output.stdout),
+            "qpdf_secrets::cancellation_kills_the_qpdf_child",
         );
         return;
     }
@@ -222,7 +227,7 @@ fn parameter_file_is_removed_after_qpdf_failure() {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "parameter_file_is_removed_after_qpdf_failure",
+                "qpdf_secrets::parameter_file_is_removed_after_qpdf_failure",
                 "--nocapture",
             ])
             .envs([
@@ -237,6 +242,10 @@ fn parameter_file_is_removed_after_qpdf_failure() {
             "{} {}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+        support::assert_ran_one_test(
+            &String::from_utf8_lossy(&output.stdout),
+            "qpdf_secrets::parameter_file_is_removed_after_qpdf_failure",
         );
         return;
     }

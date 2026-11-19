@@ -1,5 +1,4 @@
-#[path = "support/qpdf.rs"]
-mod qpdf;
+use crate::support::{self, qpdf};
 use ariad_core::tools::{
     ToolSpec,
     specs::{optimize, security},
@@ -43,7 +42,7 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn encrypt_decrypt_and_wrong_password() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("encrypt_decrypt_and_wrong_password");
+        let _pack = qpdf::in_child("qpdf_adapter::encrypt_decrypt_and_wrong_password");
         return;
     }
     let tmp = tempfile::tempdir().unwrap();
@@ -118,7 +117,7 @@ fn encrypt_decrypt_and_wrong_password() {
 #[test]
 fn repair_and_linearize() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("repair_and_linearize");
+        let _pack = qpdf::in_child("qpdf_adapter::repair_and_linearize");
         return;
     }
     let tmp = tempfile::tempdir().unwrap();
@@ -172,7 +171,7 @@ fn repair_and_linearize() {
 fn qpdf_child_inherits_sandbox() {
     use std::os::unix::fs::PermissionsExt;
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("qpdf_child_inherits_sandbox");
+        let _pack = qpdf::in_child("qpdf_adapter::qpdf_child_inherits_sandbox");
         return;
     }
     let support = ariad_host::sandbox::support();
@@ -218,7 +217,7 @@ fn qpdf_child_inherits_sandbox() {
 #[test]
 fn permissions_and_owner_only_operations() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("permissions_and_owner_only_operations");
+        let _pack = qpdf::in_child("qpdf_adapter::permissions_and_owner_only_operations");
         return;
     }
     let temp = tempfile::tempdir().unwrap();
@@ -277,7 +276,8 @@ fn permissions_and_owner_only_operations() {
 #[test]
 fn user_password_is_required_when_rewriting_permissions() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("user_password_is_required_when_rewriting_permissions");
+        let _pack =
+            qpdf::in_child("qpdf_adapter::user_password_is_required_when_rewriting_permissions");
         return;
     }
     let temp = tempfile::tempdir().unwrap();
@@ -325,7 +325,7 @@ fn user_password_is_required_when_rewriting_permissions() {
 #[test]
 fn legacy_rc4_is_upgraded_on_permission_change() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("legacy_rc4_is_upgraded_on_permission_change");
+        let _pack = qpdf::in_child("qpdf_adapter::legacy_rc4_is_upgraded_on_permission_change");
         return;
     }
     let temp = tempfile::tempdir().unwrap();
@@ -375,7 +375,7 @@ fn legacy_rc4_is_upgraded_on_permission_change() {
 #[test]
 fn missing_qpdf_pack_program_reports_install_hint() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("missing_qpdf_pack_program_reports_install_hint");
+        let _pack = qpdf::in_child("qpdf_adapter::missing_qpdf_pack_program_reports_install_hint");
         return;
     }
     let pack = PathBuf::from(std::env::var_os("ASHIFT_PACK_QPDF").unwrap());
@@ -396,7 +396,7 @@ fn missing_qpdf_pack_program_reports_install_hint() {
 #[test]
 fn doctor_and_engines_report_qpdf() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("doctor_and_engines_report_qpdf");
+        let _pack = qpdf::in_child("qpdf_adapter::doctor_and_engines_report_qpdf");
         return;
     }
     let launcher = Path::new(env!("CARGO_BIN_EXE_engine-probe"));
@@ -427,7 +427,7 @@ fn absent_pack_is_listed_with_install_hint() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "absent_pack_is_listed_with_install_hint",
+                "qpdf_adapter::absent_pack_is_listed_with_install_hint",
                 "--nocapture",
             ])
             .envs([
@@ -442,6 +442,10 @@ fn absent_pack_is_listed_with_install_hint() {
             "{} {}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+        support::assert_ran_one_test(
+            &String::from_utf8_lossy(&output.stdout),
+            "qpdf_adapter::absent_pack_is_listed_with_install_hint",
         );
         return;
     }
@@ -473,7 +477,7 @@ fn absent_pack_is_listed_with_install_hint() {
 #[test]
 fn empty_and_non_pdf_inputs_are_rejected() {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_none() {
-        let _pack = qpdf::in_child("empty_and_non_pdf_inputs_are_rejected");
+        let _pack = qpdf::in_child("qpdf_adapter::empty_and_non_pdf_inputs_are_rejected");
         return;
     }
     let temp = tempfile::tempdir().unwrap();

@@ -252,16 +252,25 @@ fn launcher_disables_core_dumps_and_reports_profile_setup_errors() {
 fn missing_seatbelt_degrades_best_effort_and_refuses_required_mode() {
     const CHILD: &str = "ARIAD_TEST_MACOS_MISSING_SEATBELT";
     if std::env::var_os(CHILD).is_none() {
-        let status = Command::new(std::env::current_exe().unwrap())
+        let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "missing_seatbelt_degrades_best_effort_and_refuses_required_mode",
+                "sandbox_macos::missing_seatbelt_degrades_best_effort_and_refuses_required_mode",
             ])
             .env(CHILD, "1")
             .env("ARIAD_TEST_SANDBOX_SUPPORT", "none")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout} {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        crate::support::assert_ran_one_test(
+            &stdout,
+            "sandbox_macos::missing_seatbelt_degrades_best_effort_and_refuses_required_mode",
+        );
         return;
     }
     let workspace = Workspace::new().unwrap();
@@ -373,17 +382,26 @@ fn readable_file_under(dir: &std::path::Path, depth: usize) -> Option<PathBuf> {
 fn libreoffice_ipc_stays_in_a_private_directory_and_is_cleaned_up() {
     const CHILD: &str = "ARIAD_TEST_MACOS_IPC_PERMISSIONS";
     if std::env::var_os(CHILD).is_none() {
-        let status = Command::new("/bin/sh")
+        let output = Command::new("/bin/sh")
             .args(["-c", "umask 000; exec \"$@\"", "sh"])
             .arg(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "libreoffice_ipc_stays_in_a_private_directory_and_is_cleaned_up",
+                "sandbox_macos::libreoffice_ipc_stays_in_a_private_directory_and_is_cleaned_up",
             ])
             .env(CHILD, "1")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout} {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        crate::support::assert_ran_one_test(
+            &stdout,
+            "sandbox_macos::libreoffice_ipc_stays_in_a_private_directory_and_is_cleaned_up",
+        );
         return;
     }
     if !seatbelt_available() {
@@ -536,7 +554,7 @@ fn libreoffice_ipc_creation_failure_has_a_path_free_diagnostic() {
             eprintln!("skipping: install LibreOffice to exercise its IPC setup");
             return;
         }
-        let status = Command::new("/usr/bin/sandbox-exec")
+        let output = Command::new("/usr/bin/sandbox-exec")
             .args([
                 "-p",
                 "(version 1)(allow default)(deny file-write-create (subpath \"/private/tmp\"))",
@@ -544,12 +562,21 @@ fn libreoffice_ipc_creation_failure_has_a_path_free_diagnostic() {
             .arg(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "libreoffice_ipc_creation_failure_has_a_path_free_diagnostic",
+                "sandbox_macos::libreoffice_ipc_creation_failure_has_a_path_free_diagnostic",
             ])
             .env(CHILD, "1")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout} {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        crate::support::assert_ran_one_test(
+            &stdout,
+            "sandbox_macos::libreoffice_ipc_creation_failure_has_a_path_free_diagnostic",
+        );
         return;
     }
     assert!(ariad_host::engines::sandbox::paths_for("libreoffice").private_tmp);
@@ -596,17 +623,21 @@ fn relative_builtin_tool_overrides_survive_the_cwd_change() {
         for (id, key, program) in tools {
             let program = program.canonicalize().unwrap();
             let relative = program.file_name().unwrap();
-            let status = Command::new(std::env::current_exe().unwrap())
+            let output = Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "relative_builtin_tool_overrides_survive_the_cwd_change",
+                    "sandbox_macos::relative_builtin_tool_overrides_survive_the_cwd_change",
                 ])
                 .current_dir(program.parent().unwrap())
                 .env(CHILD, id)
                 .env(key, relative)
-                .status()
+                .output()
                 .unwrap();
-            success &= status.success();
+            crate::support::assert_ran_one_test(
+                &String::from_utf8_lossy(&output.stdout),
+                "sandbox_macos::relative_builtin_tool_overrides_survive_the_cwd_change",
+            );
+            success &= output.status.success();
         }
         assert!(success);
         return;
@@ -642,17 +673,26 @@ fn relative_docling_virtualenv_keeps_its_runtime_grant() {
             eprintln!("skipping: install the development Docling environment");
             return;
         };
-        let status = Command::new(std::env::current_exe().unwrap())
+        let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "relative_docling_virtualenv_keeps_its_runtime_grant",
+                "sandbox_macos::relative_docling_virtualenv_keeps_its_runtime_grant",
             ])
             .current_dir(venv)
             .env(CHILD, "1")
             .env("ASHIFT_DOCLING_ENGINE", "bin/python -I -m ariad_docling")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout} {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        crate::support::assert_ran_one_test(
+            &stdout,
+            "sandbox_macos::relative_docling_virtualenv_keeps_its_runtime_grant",
+        );
         return;
     }
     if !seatbelt_available() {
