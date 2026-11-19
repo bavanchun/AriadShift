@@ -279,10 +279,11 @@ jobs:
     needs: scope
     if: needs.scope.outputs.heavy == 'true'
     runs-on: ubuntu-26.04
-    # A warm part takes 5 to 10 minutes. With the Rust cache evicted the old single job compiled
-    # everything in 30 to 35 minutes; the parts split that work, and the sccache bucket still holds
-    # the compile units.
-    timeout-minutes: 25
+    # A warm part takes 5 to 10 minutes. Every test shard compiles the whole test graph (the
+    # partition splits only the execution of the tests), about 4.5 minutes warm and much more
+    # with a cold Rust cache, and the apt steps may use up to 25 minutes on a bad mirror day
+    # (5 + 12 + 8), so the limit leaves room for a cold compile on top of them.
+    timeout-minutes: 35
     environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && 'ci-cache-write' || '' }}
     permissions:
       contents: read
@@ -397,8 +398,9 @@ jobs:
           printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
           bash scripts/ci-apt.sh update
 
-      # The three apt steps are limited to 25 minutes together, which is the whole job limit: the
-      # limits only bound a stalled mirror, and a normal run needs well under a minute.
+      # The three apt steps are limited to 25 minutes together (5 + 12 + 8), inside the 35-minute
+      # job limit: the limits only bound a stalled mirror, and a normal run needs well under a
+      # minute.
       - name: Install system LibreOffice
         if: startsWith(matrix.part, 'test-')
         timeout-minutes: 12
@@ -467,6 +469,9 @@ jobs:
           SHARDS: ${{ matrix.shards }}
         run: just test-shard "$SHARD" "$SHARDS"
 
+      # Doc tests build separately from the nextest run, in the last shard. Only the first shard
+      # saves the Rust cache, so this build is not part of that entry; it is a small compile next
+      # to the test build and sccache serves its dependencies.
       - name: Run doc tests
         if: startsWith(matrix.part, 'test-') && matrix.shard == matrix.shards
         env:

@@ -43,12 +43,10 @@ wasm-build: wasm-bindgen-tool
     .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm"
     .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm"
 
-test:
-    cargo nextest run --workspace --features ariad-host/test-probe
-    cargo test --workspace --doc
+test: (test-shard "1" "1") test-doc
 
 # One slice of the nextest run in `test`, split by test count (index counts from 1); the Linux
-# Verify parts in ci.yml run the slices in parallel jobs. Keep the arguments in step with `test`.
+# Verify parts in ci.yml run the slices in parallel jobs. `test` is the single slice 1/1, so the arguments cannot drift apart.
 test-shard index count:
     cargo nextest run --workspace --features ariad-host/test-probe --partition count:{{index}}/{{count}}
 
