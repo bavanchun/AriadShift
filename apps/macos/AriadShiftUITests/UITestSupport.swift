@@ -45,6 +45,15 @@ class UITestCase: XCTestCase {
         return target
     }
 
+    /// Skips the test unless the environment variable `name` is `1`. The slower evidence tests (screenshots, hitch metrics)
+    /// use it so a plain `xcodebuild test` of the UI scheme stays as it was. `xcodebuild` hands the test process only
+    /// variables with the `TEST_RUNNER_` prefix (stripped on the way), so run with `TEST_RUNNER_<name>=1`.
+    func requireEnvironment(_ name: String, for what: String) throws {
+        guard ProcessInfo.processInfo.environment[name] == "1" else {
+            throw XCTSkip("\(what) runs only with \(name)=1 (xcodebuild: TEST_RUNNER_\(name)=1)")
+        }
+    }
+
     /// Seeds the preferences suite before the app starts. The welcome window is marked as seen unless
     /// the test is about it.
     func seedDefaults(onboardingCompleted: Bool = true, openResultAfterRun: Bool? = nil) {
