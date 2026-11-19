@@ -273,10 +273,16 @@ jobs:
       - name: Verify Pandoc installation
         run: '"$ASHIFT_PANDOC" --version'
 
-      # Clippy runs in the lint-native job, and the slim CLI check, the benchmark harness tests and
-      # the capabilities registry check run in the Linux Verify parts (they do not depend on the host).
+      # Clippy runs in the lint-native job, and the slim CLI check and the capabilities registry check
+      # run in the Linux Verify parts (they do not depend on the host).
       - name: Run tests
         run: just test
+
+      # The benchmark harness tests depend on the host (the .exe suffix on Windows, the memory
+      # measurement off Linux, process-group handling, tests that branch on os.name), so they stay on
+      # every OS; they take about 25 seconds.
+      - name: Run benchmark harness tests
+        run: just bench-test
 
       # Packaging is the same on every host, and on macOS it recompiles the dependency graph from
       # cold (6 to 14 minutes there, 3 to 5 on Linux and Windows), which pushed cold macOS runs past
