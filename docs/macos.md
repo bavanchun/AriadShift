@@ -114,7 +114,7 @@ joins the arm64 and the x86_64 binaries with `lipo`; an arm64-only copy would le
   offer of the complete corresponding source of the binary, Haskell dependencies included (GPL-2.0 section 3(b): at least three years after the last
   distribution, at no more than the cost of distribution, requested through the project's GitHub issues). The root `NOTICE` carries the same statement.
 - **Signing.** Every Mach-O file in `Contents/Helpers` is signed inside-out before the app, by both `scripts/macos-adhoc-sign.sh` and the Developer ID path
-  `scripts/macos-sign-notarize.sh` (the list comes from `scripts/macos-helpers-lib.sh`), with the hardened runtime and no `--deep`. Pandoc gets no
+  `scripts/macos-sign-notarize.sh` (both walk the one list in `scripts/macos-signing-lib.sh`, which takes the Helpers files from `scripts/macos-helpers-lib.sh`), with the hardened runtime and no `--deep`. Pandoc gets no
   entitlements. A Haskell program may need a runtime exception such as `com.apple.security.cs.allow-unsigned-executable-memory` under the hardened runtime;
   none is added because none has been shown necessary, and the first macOS CI run is what shows it: `BundleHelperTests` starts the bundled Pandoc and converts
   with it in the signed Debug build. If that fails with a memory-protection kill, add the entitlement for that one helper, with its justification, rather
