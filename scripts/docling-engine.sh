@@ -7,7 +7,7 @@
 #   engine-test  CLI tests that drive the real engine (needs `dev` and Tesseract)
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname "$0")/.."
 root=$PWD/.tools/docling
 export UV_PROJECT_ENVIRONMENT=$root/python-env
 

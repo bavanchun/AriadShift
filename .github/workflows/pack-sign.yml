@@ -30,8 +30,8 @@ permissions:
   contents: read
 
 jobs:
-  # Pull requests build the Linux targets only; the macOS and Windows legs run on tags and
-  # manual dispatch (docs/ci.md, "Pull request scope").
+  # Pull requests build the Linux targets only; the macOS and Windows legs run on pushes to dev,
+  # tags and manual dispatch (docs/ci.md, "Pull request scope").
   targets:
     name: Build targets
     runs-on: ubuntu-26.04
