@@ -407,8 +407,11 @@ heavy_gate = '\n'.join([
     '[ "$VERIFY_LINUX" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1',
     'if [ "$OS_VERIFY" = true ]; then',
     '[ "$LINT_NATIVE" = success ] && [ "$VERIFY" = success ] || exit 1',
-    'else',
+    'elif [ "$OS_VERIFY" = false ]; then',
     '[ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] || exit 1',
+    'else',
+    'echo "os_verify is neither true nor false: \'$OS_VERIFY\'" >&2',
+    'exit 1',
     'fi',
     'else',
     '[ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] && [ "$VERIFY_LINUX" = skipped ] && '

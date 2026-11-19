@@ -74,11 +74,12 @@ The web job runs when a change touches `apps/`, `packages/`, `services/`, `brand
 
 ### When the macOS and Windows jobs run
 
-The macOS and Windows jobs (`lint-native` and `verify`) are the slow path of a pull request, and the macOS runner pool is the scarce one. The scope job's `os_verify` output decides whether they run; Linux (`verify-linux`), Server integration and Fuzz are unaffected and run whenever the heavy jobs run. The OS independent crates are `ariad-core`, `ariad-pdf`, `ariad-typst` and `ariad-wasm`: pure Rust, wasm safe, with no host process or platform code, and tested on Linux in every pull request.
+The macOS and Windows jobs (`lint-native` and `verify`) are the slow path of a pull request, and the macOS runner pool is the scarce one. The scope job's `os_verify` output decides whether they run; Linux (`verify-linux`), Server integration and Fuzz are unaffected and run whenever the heavy jobs run. The mostly OS independent crates are `ariad-core`, `ariad-pdf`, `ariad-typst` and `ariad-wasm`: wasm safe Rust that Linux tests in every pull request. They are not free of platform sensitive tests (see the accepted risk below).
 
 | Event | macOS and Windows jobs | Why |
 |---|---|---|
 | Manual run, push to `dev` or `main`, or a change list that is unknown | Run | A push is where an OS-specific break must be caught |
+| Pull request into `main` (a promotion or a hotfix) | Run | The tree that is promoted has to be verified on every OS, whatever it changes |
 | Pull request whose heavy paths all lie inside `crates/ariad-core/`, `crates/ariad-pdf/`, `crates/ariad-typst/` or `crates/ariad-wasm/` (their source, tests, data and fixtures that live inside the crate directory), with documentation, JavaScript, e2e and pack changes allowed alongside | Skipped | Nothing that depends on the host changed |
 | Pull request that touches a manifest (`Cargo.toml`, `Cargo.lock`) or a `build.rs` inside one of those crates | Run | It can change the dependency graph for every OS |
 | Pull request that touches anything else that makes the heavy jobs run: `ariad-host`, `ariad-cli`, `ariad-ffi`, `ariad-engine-io`, `ariad-server`, `ariad-pdfium-engine`, `apps/desktop/src-tauri/`, the root `Cargo.toml` and `Cargo.lock`, `justfile`, `rust-toolchain.toml`, `.cargo/`, top-level `fixtures/`, `engines/`, `schemas/`, `fuzz/`, any workflow or any script | Run | Host, platform or shared build inputs |
@@ -86,7 +87,7 @@ The macOS and Windows jobs (`lint-native` and `verify`) are the slow path of a p
 
 The scope reads the diff without rename detection, so a file moved from another crate into a pure crate still counts as a change to the other crate. A pull request that adds a pure-crate change next to any host-dependent path runs the jobs.
 
-Accepted risk: an OS-specific difference in a pure crate (paths, line endings, floating point, fonts) is not seen on the pull request that introduces it. The push to `dev` after the merge runs the macOS and Windows jobs and finds it there. The crates that depend on the pure ones (`ariad-host`, `ariad-cli`) still run on Linux in the pull request. `scripts/test-ci-scope.sh` covers the path rule (`--classify-os-verify`) and the outputs for manual runs, pushes and pull requests, with real commits.
+Accepted risk: an OS-specific difference in these crates is not seen on the pull request that introduces it. The platform sensitive classes that exist today: `ariad-core` tests that spawn `ashift` (with a `.exe` branch for Windows) or `qpdf`, `ariad-pdf` tests that use a unix-only `sh`, and snapshot tests that canonicalize paths (which gives a `\\?\` prefix on Windows); line endings, floating point formatting and fonts are the other classes to expect. Callers of these crates that are compiled on one OS only (for example `ariad-host`'s macOS sandbox code, which uses `ariad_core::protocol`) are covered on macOS by `macos.yml`, whose path filter keeps `ariad-core`, `ariad-pdf` and `ariad-typst` for exactly that reason; do not narrow it. Windows has no `cfg(windows)` caller of these crates' symbols today. The push to `dev` after the merge runs the macOS and Windows jobs and finds it there. The crates that depend on the pure ones (`ariad-host`, `ariad-cli`) still run on Linux in the pull request. `scripts/test-ci-scope.sh` covers the path rule (`--classify-os-verify`) and the outputs for manual runs, pushes and pull requests, with real commits.
 
 ### When the packaging check runs
 

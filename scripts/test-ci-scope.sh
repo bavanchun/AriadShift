@@ -262,6 +262,15 @@ assert_os_verify "web app only" false apps/web/src/index.ts
 assert_os_verify "pack only" false scripts/pack/sign-pack.sh
 # An unknown change list runs everything.
 assert_os_verify "empty list" true
+# A pull request into main (promotion or hotfix) always runs them.
+actual=$(sh "$ci_scope" --classify-os-verify --target main crates/ariad-core/src/lib.rs </dev/null)
+if [ "$actual" = true ]; then
+  passed_count=$((passed_count + 1))
+  printf 'PASS | os_verify %-38s | %s\n' "pure edit into main" "$actual"
+else
+  failed_count=$((failed_count + 1))
+  printf 'FAIL | os_verify %-38s | expected true, got %s\n' "pure edit into main" "$actual" >&2
+fi
 [ "$(printf 'crates/ariad-core/src/lib.rs\n' | sh "$ci_scope" --classify-os-verify)" = false ] || exit 1
 
 echo "=== Scope outputs (event and git diff) ==="
@@ -280,6 +289,9 @@ printf 'pub fn one() {}\n' > "$repo/crates/ariad-core/src/lib.rs"
 printf '{}\n' > "$repo/crates/ariad-core/assets/data.json"
 printf '# readme\n' > "$repo/README.md"
 printf 'notes\n' > "$repo/docs/notes.md"
+mkdir -p "$repo/crates/ariad-core/tests" "$repo/crates/ariad-host/src"
+printf '#[test]\nfn smoke() {}\n' > "$repo/crates/ariad-core/tests/smoke.rs"
+printf 'pub fn host() {}\n' > "$repo/crates/ariad-host/src/host.rs"
 git_in add crates README.md docs
 git_in commit -q -m base
 git_in tag base
@@ -389,12 +401,26 @@ assert_pr "path attribute outside the crate" true "printf '#[path = \"../../othe
 assert_pr "include_str inside the crate" false "printf 'const A: &str = include_str!(\"data.txt\");\n' >> crates/ariad-core/src/lib.rs"
 assert_pr "docs-only addition" false "printf 'new\n' > docs/new.md; git add docs/new.md"
 assert_os_pr "pure crate edit skips macOS and Windows" false false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs"
-assert_os_pr "pure crate test and asset edit" false true "printf '{\"a\":1}\n' > crates/ariad-core/assets/data.json"
+assert_os_pr "pure crate asset edit" false true "printf '{\"a\":1}\n' > crates/ariad-core/assets/data.json"
+assert_os_pr "pure crate test edit" false false "printf '#[test]\nfn more() {}\n' >> crates/ariad-core/tests/smoke.rs"
+assert_os_pr "pure crate file deleted" false true "git rm -q crates/ariad-core/assets/data.json"
+assert_os_pr "host file moved into a pure crate" true true "git mv crates/ariad-host/src/host.rs crates/ariad-core/src/host.rs"
 assert_os_pr "pure crate edit plus docs" false false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; printf 'more\n' >> docs/notes.md"
 assert_os_pr "pure crate manifest edited" true true "printf 'version = \"1\"\n' >> crates/ariad-core/Cargo.toml"
 assert_os_pr "pure crate edit plus host file" true true "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; mkdir -p crates/ariad-host/src; printf 'fn main() {}\n' > crates/ariad-host/src/main.rs; git add crates/ariad-host/src/main.rs"
 assert_os_pr "pure crate edit plus justfile" true true "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; printf 'default:\n' > justfile; git add justfile"
 assert_os_pr "file moved from a pure crate to the host" true true "mkdir -p crates/ariad-host/src; git mv crates/ariad-core/src/lib.rs crates/ariad-host/src/lib.rs"
+# A pull request into main runs them even for a pure edit; gh fails here, as when the dev runs
+# cannot be listed.
+mkdir -p "$tmp/stubbin"
+printf '#!/bin/sh\nexit 1\n' > "$tmp/stubbin/gh"
+chmod +x "$tmp/stubbin/gh"
+git_in checkout -q -B change base
+printf 'pub fn two() {}\n' >> "$repo/crates/ariad-core/src/lib.rs"
+git_in commit -q -a -m change
+assert_os_outputs "pure edit in a pull request into main" true false \
+  EVENT_NAME=pull_request PR_BASE_SHA="$(git_in rev-parse base)" PR_HEAD_SHA="$(git_in rev-parse HEAD)" \
+  PR_BASE_REF=main GITHUB_REPOSITORY=owner/repo PATH="$tmp/stubbin:$PATH"
 assert_os_pr "docs-only change runs nothing" false false "printf 'more\n' >> docs/notes.md"
 git_in checkout -q base
 

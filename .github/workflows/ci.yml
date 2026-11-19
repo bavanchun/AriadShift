@@ -1045,8 +1045,11 @@ jobs:
             # the OS independent crates; they never fail or get cancelled in either case.
             if [ "$OS_VERIFY" = true ]; then
               [ "$LINT_NATIVE" = success ] && [ "$VERIFY" = success ] || exit 1
-            else
+            elif [ "$OS_VERIFY" = false ]; then
               [ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] || exit 1
+            else
+              echo "os_verify is neither true nor false: '$OS_VERIFY'" >&2
+              exit 1
             fi
           else
             [ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] && [ "$VERIFY_LINUX" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1

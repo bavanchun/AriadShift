@@ -8,8 +8,8 @@
 # PUSH_BEFORE, REF_NAME, GITHUB_REPOSITORY, GH_TOKEN.
 # Arguments: --classify <path>... or --classify with paths on stdin.
 # Output (GITHUB_OUTPUT): range, heavy, web, package, os_verify, linux_parts, reason.
-# --classify-os-verify [paths...] prints true if a pull request with these changed paths must run
-# the macOS and Windows jobs.
+# --classify-os-verify [--target <branch>] [paths...] prints true if a pull request into that
+# branch (default dev) with these changed paths must run the macOS and Windows jobs.
 # --classify-cloud [paths...] prints true if any path needs the cloud E2E.
 # --classify-package [--rs-risk] [--added <path>]... [paths...] prints true if the change can
 # affect `cargo package`. An --added path counts as changed and as added; --rs-risk says the
@@ -54,10 +54,14 @@ cloud_paths='^(infra/|apps/web/|crates/ariad-(server|core|pdf|engine-io|host|cli
 # and finds it there.
 package_paths='^(Cargo\.(toml|lock)|rust-toolchain\.toml|justfile|README\.md)$|^\.cargo/|^crates/[^/]+/build\.rs$|^scripts/ci-scope\.sh$|^\.github/workflows/ci\.yml$'
 
-# The crates that are pure Rust and OS independent (no host process, no platform code, wasm safe).
-# Linux tests them on every pull request; a change confined to them skips the macOS and Windows
-# jobs (os_verify). A manifest or build script inside one of them can change the dependency graph
-# for every OS, so those files never count as pure.
+# The crates that are mostly OS independent Rust (wasm safe core, PDF and Typst code, the wasm
+# bindings): Linux tests them on every pull request, and a change confined to them skips the
+# macOS and Windows jobs (os_verify). They do have a few platform sensitive tests (ariad-core spawns
+# `ashift` and `qpdf` with a `.exe` branch, ariad-pdf has a unix-only `sh` test, snapshot tests
+# canonicalize paths, which gives `\\?\` on Windows); the push to dev after the merge catches those,
+# and macos.yml keeps these crates in its own path filter for the macOS callers. A manifest or build
+# script inside one of them can change the dependency graph for every OS, so those files never
+# count as pure.
 pure_crate_paths='^crates/ariad-(core|pdf|typst|wasm)/'
 pure_crate_graph_files='(^|/)(Cargo\.(toml|lock)|build\.rs)$'
 
@@ -85,28 +89,34 @@ package_decision() {
     fi
 }
 
+# Prints the paths that make a change heavy (the Rust jobs run): the ones no light rule covers, and
+# the native desktop code under apps/. $1: every path the change touched. decide() and
+# os_verify_decision() both read the rule from here, so they cannot disagree.
+heavy_paths() {
+    {
+        printf '%s\n' "$1" | grep -v -E "$docs_paths|$js_paths|$e2e_paths|$pack_paths" || true
+        printf '%s\n' "$1" | grep -E '^apps/desktop/src-tauri/' || true
+    } | grep -v '^$' || true
+}
+
 # Prints true or false: must the macOS and Windows jobs run?
 # $1: the heavy decision. $2: the event name. $3: every path the change touched (a rename lists
-# both sides), empty when unknown.
+# both sides), empty when unknown. $4: the branch a pull request targets.
 # They are skipped (false) only for a pull request whose every path that makes the Rust jobs
 # heavy lies in a pure crate and is neither a manifest nor a build script. Pushes, manual runs and
-# an unknown change list always run them, and so does everything when nothing runs at all (false:
-# the jobs are skipped with the rest).
+# an unknown change list always run them, and so does every pull request into main (a promotion
+# or a hotfix: the tree has to be verified on every OS), and everything is skipped (false) when
+# nothing runs at all.
 os_verify_decision() {
     if [ "$1" != true ]; then
         echo false
         return
     fi
-    if [ "$2" != pull_request ] || [ -z "$3" ]; then
+    if [ "$2" != pull_request ] || [ -z "$3" ] || [ "${4:-}" = main ]; then
         echo true
         return
     fi
-    # The paths that made the change heavy: the ones no light rule covers, and the native
-    # desktop code under apps/.
-    relevant=$({
-        printf '%s\n' "$3" | grep -v -E "$docs_paths|$js_paths|$e2e_paths|$pack_paths" || true
-        printf '%s\n' "$3" | grep -E '^apps/desktop/src-tauri/' || true
-    } | grep -v '^$' || true)
+    relevant=$(heavy_paths "$3")
     if [ -z "$relevant" ]; then
         echo true
     elif printf '%s\n' "$relevant" | grep -v -E "$pure_crate_paths" >/dev/null; then
@@ -210,10 +220,7 @@ decide() {
     fi
 
     heavy=false
-    if printf '%s\n' "$changed" | grep -E '^apps/desktop/src-tauri/' >/dev/null; then
-        heavy=true
-    fi
-    if printf '%s\n' "$changed" | grep -v -E "$docs_paths|$js_paths|$e2e_paths|$pack_paths" >/dev/null; then
+    if [ -n "$(heavy_paths "$changed")" ]; then
         heavy=true
     fi
     web=false
@@ -244,15 +251,21 @@ fi
 
 if [ "${1:-}" = --classify-os-verify ]; then
     shift
+    target=dev
+    if [ "${1:-}" = --target ]; then
+        [ "$#" -ge 2 ] || { echo "ci-scope: --target needs a branch" >&2; exit 2; }
+        target=$2
+        shift 2
+    fi
     if [ "$#" -gt 0 ]; then
         changed=$(printf '%s\n' "$@")
     else
         changed=$(cat)
     fi
-    EVENT_NAME="pull_request"
-    target_ref="dev"
-    decision=$(decide)
-    os_verify_decision "${decision%%|*}" pull_request "$changed"
+    # The classifier looks at the paths only (a tree already verified on dev is not looked up).
+    # An empty list is an unknown diff, which runs everything.
+    if [ -n "$changed" ] && [ -z "$(heavy_paths "$changed")" ]; then heavy=false; else heavy=true; fi
+    os_verify_decision "$heavy" pull_request "$changed" "$target"
     exit 0
 fi
 
@@ -296,7 +309,7 @@ linux_parts=$(linux_parts_json "$package")
 
 # The macOS and Windows jobs. The diff is read without rename detection so that a file moved out
 # of another crate into a pure one still shows its old path.
-os_verify=$(os_verify_decision "$heavy" "${EVENT_NAME:-}" "${package_changed:-}")
+os_verify=$(os_verify_decision "$heavy" "${EVENT_NAME:-}" "${package_changed:-}" "${target_ref:-}")
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {
