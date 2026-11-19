@@ -97,10 +97,10 @@ public actor EngineClient {
 
     /// Points the engine at the helper and returns a client.
     ///
-    /// Pandoc is found the same way: an executable `pandoc` in the helper's folder
-    /// (`Contents/Helpers/pandoc` in the app) is exported as `ASHIFT_PANDOC` unless the process
-    /// already has a non-empty `ASHIFT_PANDOC`, so a bundled Pandoc wins over `PATH` and an explicit
-    /// choice wins over the bundled one. A missing bundled Pandoc changes nothing.
+    /// It does not touch the process environment. The bundled Pandoc is made known by
+    /// `exportBundledPandoc(beside:)`, which the app calls once at launch on the main thread; a caller that
+    /// builds a client outside the app and wants the bundled Pandoc (a test host, a command-line tool) calls it
+    /// first, before any thread of its own is running engine calls.
     /// - Parameter helperURL: Override for tests and command-line use. Defaults to
     ///   `<App.app>/Contents/Helpers/ashift`.
     /// - Throws: `EngineError.helperMissing` when the helper is not an executable
@@ -108,7 +108,6 @@ public actor EngineClient {
     public init(helperURL: URL? = nil, planProvider: any PlanProvider = makeDefaultPlanProvider()) throws {
         let url = helperURL ?? Self.bundledHelperURL()
         try Self.configureEngine(helper: url)
-        Self.exportBundledPandoc(beside: url)
         self.helperURL = url
         self.planProvider = planProvider
     }
@@ -157,14 +156,23 @@ public actor EngineClient {
         return pandoc.path
     }
 
-    /// Exports the bundled Pandoc for the engine. The Rust host runs in this process and passes
-    /// `ASHIFT_PANDOC` on to the engine processes it starts, so the process environment is where the
-    /// choice has to be made. It is made once, in `init`: changing the environment while other threads
-    /// read it is not safe, so the calls that re-assert the helper never do it.
-    static func exportBundledPandoc(
-        beside helper: URL,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) {
+    /// Exports the Pandoc that ships beside the helper (`Contents/Helpers/pandoc` in the app) as `ASHIFT_PANDOC`,
+    /// unless the process already has a non-empty `ASHIFT_PANDOC`: the bundled Pandoc wins over `PATH`, and an
+    /// explicit choice wins over the bundled one. Without a bundled Pandoc nothing changes.
+    ///
+    /// The Rust host runs in this process and passes `ASHIFT_PANDOC` on to the engine processes it starts, so the
+    /// process environment is where the choice has to be made. `setenv` is not safe while another thread reads the
+    /// environment, so call this once, early, on the main thread, before any engine or FFI call and before a
+    /// `Task` that makes one starts (`AriadShiftApp.init` does). It is idempotent: a second call finds the value
+    /// set and does nothing.
+    /// - Parameter helper: the helper whose folder holds `pandoc`; the app bundle's by default.
+    public static func exportBundledPandoc(beside helper: URL? = nil) {
+        let helper = helper ?? bundledHelperURL()
+        // Read the live environment with getenv, not a Foundation snapshot that may predate a setenv.
+        var environment: [String: String] = [:]
+        if let current = getenv(pandocEnvironmentName) {
+            environment[pandocEnvironmentName] = String(cString: current)
+        }
         guard let path = pandocOverride(beside: helper, environment: environment) else { return }
         setenv(pandocEnvironmentName, path, 1)
     }

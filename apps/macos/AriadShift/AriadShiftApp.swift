@@ -9,6 +9,9 @@ struct AriadShiftApp: App {
     @State private var imports = ImportModel()
 
     init() {
+        // First, on the main thread, before EngineModel starts the engine on another thread: setenv must not race
+        // with Rust reading the environment. The bundled Pandoc wins over PATH; an explicit ASHIFT_PANDOC wins over it.
+        EngineClient.exportBundledPandoc()
         #if DEBUG
         // UI tests name a preferences suite of their own; a Release build never reads the variable.
         if let defaults = AppSettings.suiteDefaults(in: ProcessInfo.processInfo.environment) {
