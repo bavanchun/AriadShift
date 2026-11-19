@@ -9,7 +9,9 @@ on:
       - engines/common/**
       - crates/ariad-host/src/engines/sign.rs
       - crates/ariad-host/src/tools/sign.rs
-      - crates/ariad-host/tests/sign_adapter.rs
+      - crates/ariad-host/tests/it/sign_adapter.rs
+      - crates/ariad-host/tests/it/main.rs
+      - crates/ariad-host/tests/it/support/**
       - .github/workflows/pack-sign.yml
   push:
     branches: [dev]
@@ -18,7 +20,9 @@ on:
       - engines/common/**
       - crates/ariad-host/src/engines/sign.rs
       - crates/ariad-host/src/tools/sign.rs
-      - crates/ariad-host/tests/sign_adapter.rs
+      - crates/ariad-host/tests/it/sign_adapter.rs
+      - crates/ariad-host/tests/it/main.rs
+      - crates/ariad-host/tests/it/support/**
       - .github/workflows/pack-sign.yml
     tags: ['pack-sign-v*']
 
@@ -106,7 +110,7 @@ jobs:
         env:
           ARIAD_REQUIRE_SIGN_PACK: "1"
         run: |
-          cargo test -p ariad-host --test sign_adapter
+          cargo test -p ariad-host --test it sign_adapter::
           cargo test -p ariad-cli --test it -- secrets_surfaces:: mcp_secrets::
           cargo test -p ariad-cli --features ariad-host/test-probe --test it engine_conformance_v2::real_sign_engine_conformance
 
