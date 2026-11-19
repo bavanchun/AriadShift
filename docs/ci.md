@@ -448,8 +448,8 @@ The Server job and `just test-server` set `ARIAD_TEST_REQUIRE_DATABASE=1`.
 The shared Rust database harness fails if `ARIAD_TEST_DATABASE_URL` is missing
 or blank in that mode; an unreachable configured database also fails. Ordinary
 Verify runs leave both variables unset and skip database-backed tests.
-To probe this contract, run `cargo nextest run -p ariad-server --test mcp_remote
--E 'test(=inline_fleet_refusal_preserves_upload_allowance_for_recovery)' --no-capture`
+To probe this contract, run `cargo nextest run -p ariad-server --test it
+-E 'test(=mcp_remote::inline_fleet_refusal_preserves_upload_allowance_for_recovery)' --no-capture`
 with both variables unset (success with a skip diagnostic), then with only
 `ARIAD_TEST_REQUIRE_DATABASE=1` (failure). `just test-server` must show a PASS
 for that test with its real throwaway database and no skip diagnostic.
