@@ -116,6 +116,7 @@
   "mac": {
     "menu": {
       "import": "Nhập…",
+      "export": "Xuất thành…",
       "print": "In…",
       "tools": "Công cụ",
       "zoom": "{action, select, in {Phóng to} out {Thu nhỏ} actual {Kích thước thực} other {Thu phóng}}",
@@ -246,6 +247,19 @@
       "message": "Chọn một tài liệu để chuyển sang PDF",
       "running": "Đang nhập {name}…",
       "failed": "Không thể nhập {name}"
+    },
+    "export": {
+      "format": "{format, select, docx {Tài liệu Word (.docx)} md {Markdown (.md)} html {HTML (.html)} other {Tài liệu}}",
+      "short": "{format, select, docx {Word} md {Markdown} html {HTML} other {Tài liệu}}",
+      "section": "Xuất",
+      "panel_title": "Xuất",
+      "panel_message": "Chọn nơi lưu tài liệu đã xuất",
+      "panel_prompt": "Xuất",
+      "running": "Đang xuất thành {format}…",
+      "done": "Đã xuất {name}",
+      "failed": "Không thể hoàn tất việc xuất.",
+      "pandoc_missing": "Xuất sang Word cần Pandoc 3.12 trở lên nhưng không tìm thấy. Hãy cài Pandoc rồi thử lại, hoặc xuất sang Markdown hay HTML, hai định dạng này không cần thêm gì.",
+      "same_file": "Hãy chọn tên tệp khác: bản xuất không thể thay thế tài liệu gốc."
     },
     "document": {
       "invalid": "Tệp này không phải PDF hợp lệ."

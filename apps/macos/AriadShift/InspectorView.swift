@@ -5,6 +5,9 @@ import SwiftUI
 /// Document facts from `EngineClient.inspect`, shown in the inspector while no tool is open in it.
 struct InspectorView: View {
     let session: DocumentSession
+    /// Whether Export As can start, and how it starts; the window owns the engine client.
+    var canExport = false
+    var onExport: (ExportFormat) -> Void = { _ in }
 
     var body: some View {
         ScrollView {
@@ -29,6 +32,7 @@ struct InspectorView: View {
                 case let .loaded(report):
                     details(report)
                 }
+                exportSection
             }
         }
         .accessibilityElement(children: .contain)
@@ -68,6 +72,21 @@ struct InspectorView: View {
                     Text(verbatim: warning.message)
                         .font(DSFont.callout)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// The same Export As as the File menu: one button per format.
+    private var exportSection: some View {
+        DSInspectorSection(Text("mac.export.section")) {
+            HStack(spacing: DSSpacing.s) {
+                ForEach(ExportFormat.allCases) { format in
+                    Button(L10n.branch("mac.export.short", format.rawValue)) { onExport(format) }
+                        .buttonStyle(.dsSecondary)
+                        .disabled(!canExport)
+                        .help(L10n.branch("mac.export.format", format.rawValue))
+                        .accessibilityIdentifier("inspector.export.\(format.rawValue)")
                 }
             }
         }
