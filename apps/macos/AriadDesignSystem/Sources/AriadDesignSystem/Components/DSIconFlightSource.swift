@@ -57,9 +57,15 @@ public final class DSWindowFrameProbe {
 
     public init() {}
 
-    /// Points the probe at `view`; the probe never keeps the view alive.
+    /// Points the probe at `view`; the probe never keeps the view alive. The latest view to attach wins.
     public func attach(_ view: NSView?) {
         self.view = view
+    }
+
+    /// Lets go of `view`, but only if the probe still points at it. A view that leaves the window after its
+    /// replacement attached (one tool swapped for another) must not clear the replacement.
+    public func detach(_ view: NSView) {
+        if self.view === view { self.view = nil }
     }
 
     /// The view's frame in window base coordinates (origin at the lower left), or nil while the view is not in a window.
@@ -69,23 +75,46 @@ public final class DSWindowFrameProbe {
     }
 }
 
-/// An invisible view behind a SwiftUI view that gives a `DSWindowFrameProbe` something to measure. It never takes a
-/// click and is not an accessibility element.
+/// An invisible view behind a SwiftUI view that gives a `DSWindowFrameProbe` something to measure. It attaches to the
+/// probe when it enters a window and lets go when it leaves. It never takes a click and is not an accessibility
+/// element.
 struct DSWindowFrameReader: NSViewRepresentable {
     let probe: DSWindowFrameProbe
 
     func makeNSView(context: Context) -> NSView {
-        let view = ProbeView()
-        probe.attach(view)
-        return view
+        ProbeView(probe: probe)
     }
 
     func updateNSView(_ view: NSView, context: Context) {
-        probe.attach(view)
+        // Only a probe that changed under a view already in a window needs moving: the view attaches itself on entry.
+        guard let probeView = view as? ProbeView, probeView.probe !== probe else { return }
+        probeView.probe.detach(probeView)
+        probeView.probe = probe
+        if probeView.window != nil { probe.attach(probeView) }
     }
 
     private final class ProbeView: NSView {
+        var probe: DSWindowFrameProbe
+
+        init(probe: DSWindowFrameProbe) {
+            self.probe = probe
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) {
+            return nil
+        }
+
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil {
+                probe.attach(self)
+            } else {
+                probe.detach(self)
+            }
+        }
     }
 }
 
