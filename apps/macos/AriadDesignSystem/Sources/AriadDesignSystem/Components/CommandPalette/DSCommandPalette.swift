@@ -18,6 +18,9 @@ public struct DSCommandPalette: View {
     @State private var hasMoreBelow = false
     @FocusState private var isFieldFocused: Bool
     @Namespace private var highlightNamespace
+    /// One probe per row icon, read when a row is chosen so the icon can fly into the inspector.
+    @State private var iconProbes = DSWindowFrameProbes()
+    @Environment(\.dsIconFlightHandler) private var flightHandler
 
     public init(
         query: Binding<String>,
@@ -113,10 +116,11 @@ public struct DSCommandPalette: View {
                             DSPaletteRow(
                                 row: row,
                                 isSelected: row.id == selectedRowID,
-                                highlightNamespace: highlightNamespace
+                                highlightNamespace: highlightNamespace,
+                                iconProbe: iconProbes.probe(for: row.id)
                             )
                             .id(row.id)
-                            .onTapGesture { onChoose(row.item) }
+                            .onTapGesture { choose(row) }
                             .onHover { if $0 { selectedRowID = row.id } }
                         }
                     }
@@ -155,6 +159,18 @@ public struct DSCommandPalette: View {
 
     private func choose(in rows: [DSPaletteRowModel]) {
         guard let row = rows.first(where: { $0.id == selectedRowID }) ?? rows.first else { return }
+        choose(row)
+    }
+
+    /// Reports the row's icon first, while the palette is still on screen, then hands the item over.
+    private func choose(_ row: DSPaletteRowModel) {
+        if let flightHandler, let frame = iconProbes.probe(for: row.id).windowFrame {
+            flightHandler(
+                DSIconFlightLaunch(
+                    itemID: row.item.id, systemImage: row.item.systemImage, tint: row.item.tint, windowFrame: frame
+                )
+            )
+        }
         onChoose(row.item)
     }
 }
@@ -164,16 +180,24 @@ public struct DSPaletteRow: View {
     let row: DSPaletteRowModel
     let isSelected: Bool
     let highlightNamespace: Namespace.ID?
+    let iconProbe: DSWindowFrameProbe?
 
-    public init(row: DSPaletteRowModel, isSelected: Bool, highlightNamespace: Namespace.ID? = nil) {
+    public init(
+        row: DSPaletteRowModel,
+        isSelected: Bool,
+        highlightNamespace: Namespace.ID? = nil,
+        iconProbe: DSWindowFrameProbe? = nil
+    ) {
         self.row = row
         self.isSelected = isSelected
         self.highlightNamespace = highlightNamespace
+        self.iconProbe = iconProbe
     }
 
     public var body: some View {
         HStack(spacing: DSSpacing.m) {
             DSIconWell(systemImage: row.item.systemImage, tint: row.item.tint)
+                .dsWindowFrame(iconProbe)
             VStack(alignment: .leading, spacing: 0) {
                 Text(highlightedTitle)
                     .font(DSFont.headline)
