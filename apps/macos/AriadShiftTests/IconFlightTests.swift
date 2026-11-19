@@ -1,17 +1,20 @@
 import AppKit
 import AriadDesignSystem
+import AriadShiftCore
 import XCTest
 
 @testable import AriadShift
 
-/// When a chosen tool's icon flies, and when it only crossfades.
+/// When a chosen tool's icon flies, and when it only crossfades. Every guard of `DocumentSession.begin` is a row of the
+/// table: from a choice that opens the tool, turning one condition off must stop the flight.
 final class IconFlightPolicyTests: XCTestCase {
     private func shouldFly(
-        tool: String = "pdf.split", open: String? = nil, running: Bool = false, canOpen: Bool = true,
-        reduceMotion: Bool = false
+        tool: String = "pdf.split", open: String? = nil, running: Bool = false, document: Bool = true,
+        engine: Bool = true, reduceMotion: Bool = false
     ) -> Bool {
         IconFlightPolicy.shouldFly(
-            toolID: tool, openToolID: open, isRunning: running, canOpen: canOpen, reduceMotion: reduceMotion
+            toolID: tool, openToolID: open, isRunning: running, hasDocument: document, hasEngine: engine,
+            reduceMotion: reduceMotion
         )
     }
 
@@ -24,10 +27,28 @@ final class IconFlightPolicyTests: XCTestCase {
         XCTAssertFalse(shouldFly(reduceMotion: true))
     }
 
-    func testAChoiceThatOpensNothingDoesNotFly() {
-        XCTAssertFalse(shouldFly(open: "pdf.split"), "the tool is already open")
+    func testEveryGuardOfBeginStopsTheFlight() {
         XCTAssertFalse(shouldFly(running: true), "a running tool keeps the inspector")
-        XCTAssertFalse(shouldFly(canOpen: false), "no document or engine to open it on")
+        XCTAssertFalse(shouldFly(document: false), "there is no document to open the tool on")
+        XCTAssertFalse(shouldFly(engine: false), "there is no engine client, so begin returns early")
+        XCTAssertFalse(shouldFly(open: "pdf.split"), "the tool is already open")
+    }
+
+    func testNoCombinationOfGuardsFliesWhenAnyOfThemHolds() {
+        for running in [false, true] {
+            for document in [false, true] {
+                for engine in [false, true] {
+                    for same in [false, true] {
+                        let opens = !running && document && engine && !same
+                        XCTAssertEqual(
+                            shouldFly(open: same ? "pdf.split" : "pdf.compress", running: running, document: document, engine: engine),
+                            opens,
+                            "running \(running), document \(document), engine \(engine), same tool \(same)"
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -159,6 +180,7 @@ final class IconFlightCoordinatorTests: XCTestCase {
         let session = DocumentSession(fileURL: URL(fileURLWithPath: "/tmp/flight-test.pdf"))
         let coordinator = IconFlightCoordinator(session: session, sampleInterval: 0.001)
         coordinator.layerProbe.attach(rig.layer)
+        coordinator.hasEngine = true
         defer { coordinator.cancel() }
 
         coordinator.fly(rig.launch, toolID: "pdf.split", reduceMotion: true)
@@ -166,10 +188,33 @@ final class IconFlightCoordinatorTests: XCTestCase {
 
         let withoutDocument = IconFlightCoordinator(session: DocumentSession(fileURL: nil), sampleInterval: 0.001)
         withoutDocument.layerProbe.attach(rig.layer)
+        withoutDocument.hasEngine = true
         withoutDocument.fly(rig.launch, toolID: "pdf.split", reduceMotion: false)
         XCTAssertNil(withoutDocument.flight, "there is no document to open the tool on")
 
         coordinator.fly(rig.launch, toolID: "pdf.split", reduceMotion: false)
         XCTAssertNotNil(coordinator.flight, "a choice that opens the tool flies")
+    }
+
+    /// `DocumentSession.begin` returns early without an engine client: the window then opens nothing, and the flight
+    /// must not start for it (the copy would hang at the dismissed row until its pad timeout).
+    func testChoosingWithoutAnEngineOpensNothingAndFliesNothing() throws {
+        let rig = makeRig()
+        let session = DocumentSession(fileURL: URL(fileURLWithPath: "/tmp/flight-test.pdf"))
+        let coordinator = IconFlightCoordinator(session: session, sampleInterval: 0.001)
+        coordinator.layerProbe.attach(rig.layer)
+        defer { coordinator.cancel() }
+        let tool = ToolFixtures.entry("pdf.compress")
+
+        XCTAssertFalse(coordinator.hasEngine, "no flight until the window knows the engine is there")
+        coordinator.fly(rig.launch, toolID: tool.id, reduceMotion: false)
+        session.begin(tool, client: nil)
+
+        XCTAssertNil(session.run, "begin opens nothing without a client")
+        XCTAssertNil(coordinator.flight, "so nothing flies")
+
+        coordinator.hasEngine = true
+        coordinator.fly(rig.launch, toolID: tool.id, reduceMotion: false)
+        XCTAssertNotNil(coordinator.flight, "once the engine is there the same choice flies")
     }
 }

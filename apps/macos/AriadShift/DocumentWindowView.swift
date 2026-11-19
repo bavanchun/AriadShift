@@ -103,6 +103,10 @@ struct DocumentWindowView: View {
         .onChange(of: session.run != nil) { _, running in
             if running { setInspector(true) }
         }
+        // `DocumentSession.begin` opens nothing without an engine client, so no icon flies without one either.
+        .onChange(of: engine.client != nil, initial: true) { _, ready in
+            flight.hasEngine = ready
+        }
         .task(id: engine.state) {
             await session.loadInfo(engine: engine.state, client: engine.client)
         }

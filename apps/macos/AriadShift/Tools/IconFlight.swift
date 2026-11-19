@@ -4,12 +4,15 @@ import SwiftUI
 
 /// Whether choosing a tool should fly its icon into the inspector. Pure, so the rule is testable without a window.
 enum IconFlightPolicy {
-    /// An icon flies only when the choice really opens the tool: nothing runs, the tool is not already open, there is
-    /// a document to open it on, and Reduce Motion is off (it crossfades instead: the chosen row fades out and the
-    /// inspector fades in, which the palette and `DocumentSession.begin` already do).
-    static func shouldFly(toolID: String, openToolID: String?, isRunning: Bool, canOpen: Bool, reduceMotion: Bool) -> Bool {
+    /// An icon flies only when the choice really opens the tool, so every guard of `DocumentSession.begin` appears here:
+    /// a tool is not running, there is a document, there is an engine client, and the tool is not the one already
+    /// open. Reduce Motion adds one more: it crossfades instead (the chosen row fades out and the inspector fades in,
+    /// which the palette and `DocumentSession.begin` already do).
+    static func shouldFly(
+        toolID: String, openToolID: String?, isRunning: Bool, hasDocument: Bool, hasEngine: Bool, reduceMotion: Bool
+    ) -> Bool {
         guard DSIconFlightPlan.style(reduceMotion: reduceMotion) == .travel else { return false }
-        return canOpen && !isRunning && openToolID != toolID
+        return !isRunning && hasDocument && hasEngine && openToolID != toolID
     }
 }
 
@@ -17,10 +20,10 @@ enum IconFlightPolicy {
 ///
 /// The palette and the inspector are different hosting views (the inspector is a split column of its own), so
 /// `matchedGeometryEffect` cannot join them. The flight is one overlay layer over the whole window: it measures the
-/// chosen icon, its own frame and the header's landing pad in window coordinates (`DSWindowFrameProbe`), draws a copy
-/// of the icon in layer coordinates and moves it under `smooth`. The pad is looked up again every frame while the icon
-/// is in the air, because the inspector may still be sliding open; the icon follows it and lands when the pad has stood
-/// still long enough for the spring to arrive.
+/// chosen icon, its own frame and the header's icon well in window coordinates (`DSWindowFrameProbe`), draws a copy
+/// of the icon in layer coordinates and moves it under `smooth`. The icon well (the landing pad) is looked up again
+/// every frame while the icon is in the air, because the inspector may still be sliding open; the icon follows it and
+/// lands when it has stood still long enough for the spring to arrive.
 @MainActor
 @Observable
 final class IconFlightCoordinator {
@@ -39,9 +42,14 @@ final class IconFlightCoordinator {
     /// flights keeps hidden until the copy lands.
     private(set) var hidesTarget = false
 
-    /// The layer the icon is drawn in, and the pad it flies to, measured in window coordinates when asked.
+    /// The layer the icon is drawn in, and the header's icon well it flies to (attached by `DSInspectorHeader` through
+    /// `dsFlightLandingProbe`), measured in window coordinates when asked.
     let layerProbe = DSWindowFrameProbe()
     let targetProbe = DSWindowFrameProbe()
+
+    /// Whether the window's engine client exists; `DocumentSession.begin` opens nothing without one. The window sets it
+    /// as the engine loads. False until then, so no icon flies for a tool that cannot open.
+    @ObservationIgnored var hasEngine = false
 
     @ObservationIgnored private weak var session: DocumentSession?
     private let settler: DSFlightSettler
@@ -64,7 +72,8 @@ final class IconFlightCoordinator {
             toolID: toolID,
             openToolID: session?.run?.tool.id,
             isRunning: session?.isRunning ?? false,
-            canOpen: session?.fileURL != nil,
+            hasDocument: session?.fileURL != nil,
+            hasEngine: hasEngine,
             reduceMotion: reduceMotion
         ) else { return }
         start(launch, reduceMotion: reduceMotion)
@@ -124,8 +133,8 @@ final class IconFlightCoordinator {
         flight = nil
     }
 
-    /// The pad in the layer's coordinates. A pad that is in the window but not laid out yet has no size; it does not
-    /// count, so the icon never swerves towards the window's corner.
+    /// The pad (the header's icon well) in the layer's coordinates. A well that is in the window but not laid out yet
+    /// has no size; it does not count, so the icon never swerves towards the window's corner.
     private func padFrameInLayer() -> CGRect? {
         guard let layer = layerProbe.windowFrame, let pad = targetProbe.windowFrame, !pad.isEmpty else { return nil }
         return DSIconFlightGeometry.localFrame(of: pad, in: layer)
