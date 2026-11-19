@@ -80,7 +80,12 @@ case ${1:-} in
             --target-env 'TESSDATA_PREFIX={root}/tessdata' \
             --entrypoint bin/tesseract --engine "$runtime/bin/tesseract" \
             --notices "$here/notices" --unpack-dir "$dest"
-        zstd -q -d -c "$data_file" | tar -xf - -C "$dest"
+        # Decompress to a file first. `zstd | tar -x` fails under pipefail: tar stops at the end-of-archive
+        # marker without draining the tail padding, so zstd can take SIGPIPE ("Broken pipe", status 141).
+        tar_file=$(mktemp "${TMPDIR:-/tmp}/tessdata.XXXXXX")
+        trap 'rm -f "$tar_file"' EXIT
+        zstd -q -d -f "$data_file" -o "$tar_file"
+        tar -xf "$tar_file" -C "$dest"
         ;;
     merge)
         [ "$#" -eq 4 ] || die 'usage: make.sh merge DIST TESSDATA_DIR ASHIFT'
