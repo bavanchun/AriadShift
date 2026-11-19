@@ -14103,6 +14103,24 @@
         }
       }
     },
+    "mac.export.destination_exists" : {
+      "comment" : "Error headline when the export destination exists and the engine refused to replace it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file with that name already exists and could not be replaced. Choose another name."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã có tệp trùng tên và không thể thay thế. Hãy chọn tên khác."
+          }
+        }
+      }
+    },
     "mac.export.done" : {
       "comment" : "Toast after an export finished. {name} is the file name of the exported document.",
       "extractionState" : "manual",
@@ -14117,6 +14135,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Đã xuất %1$@"
+          }
+        }
+      }
+    },
+    "mac.export.engine_required" : {
+      "comment" : "Error headline when an optional engine the conversion needs is missing. {engine} is an engine name such as docling; keep it untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting this document needs the %1$@ engine, which is not installed or cannot run."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Việc xuất tài liệu này cần engine %1$@, nhưng engine chưa được cài đặt hoặc không chạy được."
           }
         }
       }
@@ -14230,6 +14266,7 @@
       }
     },
     "mac.export.panel_message" : {
+      "comment" : "Message line of the save panel that opens when the user exports the PDF as Word, Markdown or HTML.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {

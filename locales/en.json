@@ -293,6 +293,7 @@
       "panel_title": "Export",
       "panel_title@note": "Title of the save panel that asks where to save the exported document.",
       "panel_message": "Choose where to save the exported document",
+      "panel_message@note": "Message line of the save panel that opens when the user exports the PDF as Word, Markdown or HTML.",
       "panel_prompt": "Export",
       "panel_prompt@note": "Default button of the export save panel.",
       "running": "Exporting as {format}…",
@@ -303,6 +304,10 @@
       "failed@note": "Error title in the progress bar when the export failed; the engine message follows under Details.",
       "pandoc_missing": "Exporting to Word needs Pandoc 3.12 or later, and it was not found. Install Pandoc and try again, or export as Markdown or HTML, which need nothing extra.",
       "pandoc_missing@note": "Error shown when the user exports to a Word document and the Pandoc tool is not installed. Pandoc is a product name; keep it untranslated.",
+      "engine_required": "Exporting this document needs the {engine} engine, which is not installed or cannot run.",
+      "engine_required@note": "Error headline when an optional engine the conversion needs is missing. {engine} is an engine name such as docling; keep it untranslated.",
+      "destination_exists": "A file with that name already exists and could not be replaced. Choose another name.",
+      "destination_exists@note": "Error headline when the export destination exists and the engine refused to replace it.",
       "same_file": "Choose a different file name: the export cannot replace the document it comes from.",
       "same_file@note": "Error when the chosen export file is the PDF that is being exported."
     },

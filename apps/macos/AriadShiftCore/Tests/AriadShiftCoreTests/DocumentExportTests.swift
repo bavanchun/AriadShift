@@ -60,15 +60,28 @@ final class DocumentExportTests: XCTestCase {
         XCTAssertEqual(request.overwrite, true, "the save panel already confirmed replacing the file")
     }
 
-    func testExportRefusesToReplaceTheDocumentItself() async {
-        let converter = FakeConverter.succeeding
-        do {
-            _ = try await DocumentExporter.export(document: document, as: .md, to: document, converter: converter)
-            XCTFail("expected an error")
-        } catch {
-            XCTAssertEqual(error as? ExportError, .destinationIsDocument)
+    func testKnownEngineFailuresBecomeTypedErrors() async {
+        let cases: [(String, ExportError)] = [
+            ("the output path cannot be the same as the input file", .destinationIsDocument),
+            ("the destination already exists; pass --overwrite to replace it", .destinationExists),
+            (
+                "the docling engine is not installed; run `ashift engines install docling`",
+                .engineRequired(engine: "docling")
+            ),
+            ("the docling engine is missing Tesseract 5 or its models", .engineRequired(engine: "docling")),
+            ("the qpdf engine is missing or unsupported; install it", .engineRequired(engine: "qpdf")),
+        ]
+        for (message, expected) in cases {
+            let converter = FakeConverter.failing(.convert(message: message))
+            do {
+                _ = try await DocumentExporter.export(
+                    document: document, as: .md, to: URL(fileURLWithPath: "/tmp/exports/out.md"), converter: converter
+                )
+                XCTFail("expected an error for \(message)")
+            } catch {
+                XCTAssertEqual(error as? ExportError, expected, message)
+            }
         }
-        XCTAssertTrue(converter.received.isEmpty)
     }
 
     func testMissingPandocBecomesATypedError() async {
@@ -123,7 +136,9 @@ final class DocumentExportTests: XCTestCase {
         XCTAssertTrue(
             EngineError.convert(message: "the pandoc engine is missing or unsupported; install it").isPandocMissing
         )
-        XCTAssertFalse(EngineError.convert(message: "the docling engine is not installed").isPandocMissing)
+        XCTAssertFalse(EngineError.convert(message: "the docling engine is not installed; x").isPandocMissing)
+        XCTAssertNil(ExportError(.convert(message: "conversion failed")))
+        XCTAssertNil(ExportError(.cancelled))
         XCTAssertFalse(EngineError.cancelled.isPandocMissing)
     }
 }

@@ -4,21 +4,23 @@ import Observation
 import UniformTypeIdentifiers
 
 /// File > Export As of one document window: asks where to save, converts off the main thread through the engine and
-/// reports progress, failure and the exported file. Cancelling cancels the Rust run, and a file that lands after
-/// Cancel is removed again.
+/// reports progress, failure and the exported file. The engine writes the file in one final step, so Cancel before
+/// that leaves nothing behind, and a cancel that arrives after it leaves the finished export in place and reports it.
 @MainActor
 @Observable
 final class ExportModel {
     enum Phase: Equatable {
         case idle
         case running(ExportFormat)
-        case failed(String)
+        /// `headline` is a sentence in the app's words; `details` is the engine's own text, when there is any.
+        case failed(headline: String, details: String?)
     }
 
     private(set) var phase = Phase.idle
+    private(set) var isChoosing = false
     /// Where the save panel puts the file; tests replace it. Returns nil when the user cancels.
-    @ObservationIgnored var chooseDestination: @MainActor (_ document: URL, _ format: ExportFormat) -> URL? =
-        ExportModel.runSavePanel
+    @ObservationIgnored var chooseDestination: @MainActor (_ document: URL, _ format: ExportFormat) async -> URL? =
+        ExportModel.presentSavePanel
     /// Called on the main actor with the exported file.
     @ObservationIgnored var onExported: ((URL) -> Void)?
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -27,38 +29,31 @@ final class ExportModel {
         if case .running = phase { true } else { false }
     }
 
-    /// Asks for a destination, then exports. Does nothing while an export runs or without an engine.
+    /// The save panel is open or an export runs.
+    var isBusy: Bool { isChoosing || isRunning }
+
+    /// Asks for a destination, then exports. Does nothing while another export is busy or without an engine.
     func begin(_ format: ExportFormat, document: URL, converter: (any DocumentConverting)?) {
-        guard !isRunning, let converter, let destination = chooseDestination(document, format) else { return }
-        phase = .running(format)
+        guard !isBusy, let converter else { return }
+        phase = .idle
+        isChoosing = true
         task = Task { [weak self] in
+            guard let self else { return }
+            let destination = await chooseDestination(document, format)
+            isChoosing = false
+            guard let destination, !Task.isCancelled else { return }
+            phase = .running(format)
             do {
                 let output = try await DocumentExporter.export(
                     document: document, as: format, to: destination, converter: converter
                 )
-                guard let self else { return }
-                if Task.isCancelled {
-                    try? FileManager.default.removeItem(at: output)
-                    phase = .idle
-                    return
-                }
                 phase = .idle
                 onExported?(output)
             } catch EngineError.cancelled {
-                self?.phase = .idle
+                phase = .idle
             } catch {
-                self?.phase = .failed(Self.message(for: error))
+                phase = Self.failure(for: error)
             }
-        }
-    }
-
-    /// The user-facing text of a failure. The messages of `ExportError` live in the app's String Catalog, which the
-    /// core package does not own; engine errors describe themselves.
-    static func message(for error: Error) -> String {
-        switch error as? ExportError {
-        case .pandocMissing: String(localized: "mac.export.pandoc_missing")
-        case .destinationIsDocument: String(localized: "mac.export.same_file")
-        case nil: error.localizedDescription
         }
     }
 
@@ -70,12 +65,37 @@ final class ExportModel {
         if case .failed = phase { phase = .idle }
     }
 
-    /// Waits until the running export has ended.
+    /// Waits until the panel is closed and the running export has ended.
     func waitUntilFinished() async {
         await task?.value
     }
 
-    private static func runSavePanel(document: URL, format: ExportFormat) -> URL? {
+    /// The failure text: a known cause gets its own localized sentence as the headline; anything else gets the generic
+    /// headline with the engine's text under Details.
+    static func failure(for error: Error) -> Phase {
+        let known = (error as? ExportError) ?? (error as? EngineError).flatMap { ExportError($0) }
+        switch known {
+        case .pandocMissing:
+            return .failed(headline: String(localized: "mac.export.pandoc_missing"), details: nil)
+        case .destinationIsDocument:
+            return .failed(headline: String(localized: "mac.export.same_file"), details: nil)
+        case .destinationExists:
+            return .failed(headline: String(localized: "mac.export.destination_exists"), details: nil)
+        case let .engineRequired(engine):
+            return .failed(
+                headline: String(
+                    localized: "mac.export.engine_required",
+                    defaultValue: "Exporting this document needs the \(engine) engine, which is not installed or cannot run."
+                ),
+                details: nil
+            )
+        case nil:
+            return .failed(headline: String(localized: "mac.export.failed"), details: error.localizedDescription)
+        }
+    }
+
+    /// The save panel as a sheet of the key window, so it blocks only that window; without a window it is modal.
+    private static func presentSavePanel(document: URL, format: ExportFormat) async -> URL? {
         let panel = NSSavePanel()
         panel.title = String(localized: "mac.export.panel_title")
         panel.message = String(localized: "mac.export.panel_message")
@@ -86,6 +106,13 @@ final class ExportModel {
         if let type = UTType(filenameExtension: format.fileExtension) {
             panel.allowedContentTypes = [type]
         }
-        return panel.runModal() == .OK ? panel.url : nil
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
+            return panel.runModal() == .OK ? panel.url : nil
+        }
+        return await withCheckedContinuation { continuation in
+            panel.beginSheetModal(for: window) { response in
+                continuation.resume(returning: response == .OK ? panel.url : nil)
+            }
+        }
     }
 }

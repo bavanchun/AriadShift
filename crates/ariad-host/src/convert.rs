@@ -2680,6 +2680,39 @@ mod tests {
         );
     }
 
+    /// The macOS app cannot read the error code through the FFI (`FfiError::Convert` carries only this text), so
+    /// `isPandocMissing` and the export error mapping in apps/macos/AriadShiftCore/.../DocumentExport.swift match
+    /// these exact strings. Change them together with that file.
+    #[test]
+    fn engine_missing_messages_stay_stable_for_the_macos_app() {
+        assert_eq!(
+            ConvertError::ToolMissing.to_string(),
+            "Pandoc is missing or unsupported. Run `just pandoc` or set ASHIFT_PANDOC."
+        );
+        assert_eq!(
+            ConvertError::EngineMissing {
+                engine: "pandoc".to_owned(),
+                hint: "install it".to_owned(),
+            }
+            .to_string(),
+            "the pandoc engine is missing or unsupported; install it"
+        );
+        assert_eq!(
+            ConvertError::DestinationSameAsInput.to_string(),
+            "the output path cannot be the same as the input file"
+        );
+        assert!(
+            ConvertError::DoclingMissing
+                .to_string()
+                .starts_with("the docling engine is not installed;")
+        );
+        assert!(
+            ConvertError::DoclingToolMissing
+                .to_string()
+                .starts_with("the docling engine is missing ")
+        );
+    }
+
     #[test]
     fn maps_conversion_errors_to_the_documented_exit_codes() {
         let cases = [

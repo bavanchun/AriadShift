@@ -259,6 +259,8 @@
       "done": "Đã xuất {name}",
       "failed": "Không thể hoàn tất việc xuất.",
       "pandoc_missing": "Xuất sang Word cần Pandoc 3.12 trở lên nhưng không tìm thấy. Hãy cài Pandoc rồi thử lại, hoặc xuất sang Markdown hay HTML, hai định dạng này không cần thêm gì.",
+      "engine_required": "Việc xuất tài liệu này cần engine {engine}, nhưng engine chưa được cài đặt hoặc không chạy được.",
+      "destination_exists": "Đã có tệp trùng tên và không thể thay thế. Hãy chọn tên khác.",
       "same_file": "Hãy chọn tên tệp khác: bản xuất không thể thay thế tài liệu gốc."
     },
     "document": {
