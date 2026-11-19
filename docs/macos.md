@@ -192,6 +192,16 @@ The package holds every visual decision of the app, taken from the approved rede
   Reduce Motion through `dsAnimation(_:value:)`, `withDSAnimation` and the `dsSettle`/`dsEnter` transitions) and `DSColor`.
 - `adaptiveGlass(_:in:)` is the only `#available(macOS 26, *)` branch in the app: Liquid Glass on 26 and later, `.regularMaterial`
   with the frost, tint, highlight and rim colors before that, and a solid fill under Reduce Transparency.
+- Icon flight (`Tools/IconFlight.swift`): choosing a tool in ⌘K or on an inspector tool card flies its icon into the inspector header
+  under `smooth`. The palette, the detail pane and the inspector are separate hosting views, so `matchedGeometryEffect` cannot join them.
+  One overlay layer over the window draws the icon, and `DSWindowFrameProbe` (AppKit frame conversion, which does cross hosting views)
+  measures the chosen icon, the layer and a landing pad over the header icon in window coordinates. The icon follows the pad while the
+  inspector slides open and lands once the pad has stood still for the spring's settle time (`DSFlightSettler`), then fades out over the
+  real header icon. Under Reduce Motion nothing flies: the chosen row and the inspector crossfade. A choice that opens nothing (the tool
+  is already open, a tool is running) does not fly.
+- Bulk reloads (`ViewerModel.install`, the thumbnail cache swap) run through `withDSBulkReload`, a `Transaction` with
+  `disablesAnimations`. The thumbnail fade is the `fade` curve, and nothing under Reduce Motion (`DSMotion.thumbnailFade`). No view adds
+  a container-wide `.animation`; every animation is `withDSAnimation` or value-scoped.
 - Components, each with a `#Preview`: `DSEmptyState`, `DSDropZone`, `DSToolCard`, `DSProgressRow`, `DSInspectorHeader`/`Section`/`Row`/
   `Footer`, `DSCommandPalette` (panel, `DSPaletteRow`, `DSFuzzyMatcher`, `DSPaletteFilter`, `DSPaletteLayout`; no app wiring),
   `DSToast` with the `dsToast(_:onAction:)` presenter, `DSToolbarPageField`, `DSIconWell`, `DSBadge` and the `dsPrimary`/`dsSecondary`
