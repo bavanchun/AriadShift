@@ -30,8 +30,8 @@ permissions:
   contents: read
 
 jobs:
-  # Pull requests build Linux (and Windows) targets only; the macOS legs fill the shared macOS
-  # runner pool and run on tags and manual dispatch (docs/ci.md, "Pull request scope").
+  # Pull requests build the Linux targets only; the macOS and Windows legs run on tags and
+  # manual dispatch (docs/ci.md, "Pull request scope").
   targets:
     name: Build targets
     runs-on: ubuntu-26.04
@@ -52,7 +52,7 @@ jobs:
             ]
         run: |
           if [ "$EVENT" = pull_request ]; then
-            include=$(jq -c 'map(select(.os | startswith("macos") | not))' <<<"$ALL")
+            include=$(jq -c 'map(select(.os | startswith("ubuntu")))' <<<"$ALL")
           else
             include=$(jq -c . <<<"$ALL")
           fi
