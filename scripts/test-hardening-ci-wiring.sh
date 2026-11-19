@@ -367,5 +367,30 @@ for test_script in ('macos-check-secrets.test.sh', 'macos-check-secrets-workflow
     assert f'bash scripts/{test_script}' in macos_recipe, f"test-macos-release-scripts must run {test_script}"
 assert 'bash scripts/macos-check-release-plan.test.sh' in m_tests
 
+# 5. ci.yml: the Linux Verify parts take their matrix from the scope job, and every job feeds the
+# CI passed result, so a failed part can never leave the gate green.
+ci_jobs = load_yaml('.github/workflows/ci.yml')['jobs']
+ci_passed = ci_jobs['ci-passed']
+assert set(ci_passed['needs']) == set(ci_jobs) - {'ci-passed'}, 'ci.yml: CI passed must wait for every other job'
+linux = ci_jobs['verify-linux']
+assert linux['needs'] == 'scope' and linux['if'] == ci_jobs['verify']['if'], 'ci.yml: verify-linux must follow the heavy scope'
+assert linux['strategy']['matrix']['include'] == '${{ fromJSON(needs.scope.outputs.linux_parts) }}', (
+    'ci.yml: verify-linux must take its parts from the scope job'
+)
+assert linux['strategy']['fail-fast'] is False
+for key in ('environment', 'permissions'):
+    assert linux.get(key) == ci_jobs['verify'].get(key), f"ci.yml: verify-linux must keep the {key} of verify"
+assert all(entry['os'] != 'ubuntu-26.04' for entry in ci_jobs['verify']['strategy']['matrix']['include']), (
+    'ci.yml: Linux runs in verify-linux, not in the verify matrix'
+)
+assert {'package', 'linux_parts'} <= set(ci_jobs['scope']['outputs']), 'ci.yml: scope must export package and linux_parts'
+gate = ci_passed['steps'][0]
+assert gate['env']['VERIFY_LINUX'] == '${{ needs.verify-linux.result }}'
+assert gate['run'].count('[ "$VERIFY_LINUX" = success ]') == 1 and gate['run'].count('[ "$VERIFY_LINUX" = skipped ]') == 1, (
+    'ci.yml: CI passed must require verify-linux to succeed, or to be skipped when the heavy jobs are'
+)
+windows_packaging = step_named(ci_jobs['verify']['steps'], 'Check packaging')
+assert "needs.scope.outputs.package == 'true'" in windows_packaging['if'], 'ci.yml: Windows packaging must follow the scope decision'
+
 print('Release guard CI wiring assertions passed')
 PY

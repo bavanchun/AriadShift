@@ -355,7 +355,7 @@ class TestR2CachePrune(unittest.TestCase):
         expected_report_ro_if = f"if: always() && !({base_rw_cond})"
 
         # Verify job-level environment declarations:
-        # Exactly verify, server, and fuzz declare environment: ci-cache-write conditionally.
+        # Exactly verify, verify-linux, server, and fuzz declare environment: ci-cache-write conditionally.
         # Other jobs (scope, static, lint-windows, web, ci-passed) must NOT declare environment:.
         jobs_section = content.split("\njobs:\n", 1)[1]
         jobs_raw = re.split(r"\n  ([a-zA-Z0-9_-]+):\n", "\n" + jobs_section)
@@ -363,7 +363,7 @@ class TestR2CachePrune(unittest.TestCase):
         for i in range(1, len(jobs_raw), 2):
             jobs[jobs_raw[i]] = jobs_raw[i + 1]
 
-        expected_env_jobs = {"verify", "server", "fuzz"}
+        expected_env_jobs = {"verify", "verify-linux", "server", "fuzz"}
         rw_steps_count = 0
         ro_steps_count = 0
 
@@ -451,8 +451,12 @@ class TestR2CachePrune(unittest.TestCase):
                         f"RO step if condition did not match exact negation:\n{step_if_lines[0]}",
                     )
 
-        self.assertEqual(rw_steps_count, 4, "Expected exactly 4 read-write steps (verify, server, prune, fuzz)")
-        self.assertEqual(ro_steps_count, 4, "Expected exactly 4 read-only steps (verify, server, report, fuzz)")
+        self.assertEqual(
+            rw_steps_count, 5, "Expected exactly 5 read-write steps (verify, verify-linux, server, prune, fuzz)"
+        )
+        self.assertEqual(
+            ro_steps_count, 5, "Expected exactly 5 read-only steps (verify, verify-linux, server, report, fuzz)"
+        )
 
     def test_default_prefix_matches_expected(self):
         self.assertEqual(prune_mod.DEFAULT_PREFIX, EXPECTED_PREFIX)
