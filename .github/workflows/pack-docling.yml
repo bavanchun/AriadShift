@@ -21,6 +21,8 @@ on:
       - crates/ariad-host/src/engines/docling.rs
       - crates/ariad-cli/tests/it/docling_engine.rs
       - crates/ariad-cli/tests/it/docling_pack.rs
+      - crates/ariad-cli/tests/it/main.rs
+      - crates/ariad-cli/tests/it/support/**
       - uv.lock
       - pyproject.toml
       - scripts/docling-engine.sh
