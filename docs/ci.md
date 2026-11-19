@@ -121,15 +121,15 @@ A pull request should get its `CI passed` result without waiting behind engine b
 | Workflow | Pull request | `dev` push, tag, manual |
 |---|---|---|
 | `ci.yml`, `macos.yml`, `desktop.yml`, `codeql.yml` | Path-scoped as described above | Same, plus tag jobs |
-| `pack-qpdf.yml`, `pack-tesseract.yml`, `pack-verapdf.yml`, `pack-pdfium.yml` | Only when an engine, `scripts/pack/**` or the workflow changes. Linux legs only, no merged manifest | Every target including macOS, then the merged manifest, on tags and manual runs |
-| `pack-sign.yml` | Only when the sign engine or the workflow changes. Linux and Windows legs, no macOS, no merged manifest | Every target, then the merged manifest, on tags and manual runs |
+| `pack-qpdf.yml`, `pack-tesseract.yml`, `pack-verapdf.yml`, `pack-pdfium.yml` | Only when an engine, `scripts/pack/**` or the workflow changes. Linux legs only, no merged manifest | Pushes to `dev` that touch the same paths, tags and manual runs: every target including macOS. The merged manifest runs on tags and manual runs |
+| `pack-sign.yml` | Only when the sign engine or the workflow changes. Linux and Windows legs, no macOS, no merged manifest | Pushes to `dev` that touch the same paths, tags and manual runs: every target. The merged manifest runs on tags and manual runs |
 | `pack-docling.yml` | Docling inputs and the `justfile`; macOS is added only once its OpenCV pin exists | Pushes to `dev` that touch a pack input, tags, manual |
 | `release.yml` | Release configuration, `Cargo.*` and the workflow only | Tags |
 | `cloud-e2e.yml` | Path match or the `cloud-e2e` label | Pushes, nightly, manual |
 
-The `justfile` is not a trigger for the qpdf, tesseract, verapdf, pdfium or release workflows: those workflows call no `just` recipe. Licence text (`NOTICE`, `LICENSE`, `THIRD_PARTY_LICENSES`, `about.*`) is checked by `licenses-check` and `cargo deny` inside the `ci.yml` static job, so it does not start the six-platform release rehearsal. The pack workflows pick their targets in a small `targets` job so the full list lives in one place and macOS is filtered out for `pull_request` events.
+The `justfile` is not a trigger for the qpdf, tesseract, verapdf, pdfium or release workflows: those workflows call no `just` recipe. Licence text (`NOTICE`, `LICENSE`, `THIRD_PARTY_LICENSES`, `about.*`) is checked by `licenses-check` and `cargo deny` inside the `ci.yml` static job, so it does not start the six-platform release rehearsal; `scripts/check-dist-includes.sh` (in `check-release-workflow`) fails the static job when a file listed in `include` of `dist-workspace.toml` does not exist. The pack workflows pick their targets in a small `targets` job so the full list lives in one place and macOS is filtered out for `pull_request` events.
 
-Every workflow that runs on pull requests has a concurrency group per pull request and cancels the older run when a new push arrives. Runs on `dev` and tags are never cancelled. `torch-docling.yml` keeps its per-target group without cancellation because a cancelled multi-hour build wastes its compiler cache.
+Every workflow that runs on pull requests has a concurrency group per pull request and cancels the older run when a new push arrives. Runs on `dev` and tags are never cancelled; pack workflows on `dev` pushes are grouped by ref and queue instead. `torch-docling.yml` keeps its per-target group without cancellation because a cancelled multi-hour build wastes its compiler cache.
 
 ## Docling pack native caches
 
