@@ -7,6 +7,7 @@ public struct DSInspectorHeader: View {
     let title: Text
     let subtitle: Text?
     @Environment(\.dsFlightHidesHeaderIcon) private var iconHidden
+    @Environment(\.dsFlightLandingProbe) private var landingProbe
 
     public init(systemImage: String, tint: DSIconWell.Tint = .accent, title: Text, subtitle: Text? = nil) {
         self.systemImage = systemImage
@@ -20,6 +21,8 @@ public struct DSInspectorHeader: View {
             HStack(spacing: DSSpacing.m) {
                 DSIconWell(systemImage: systemImage, tint: tint)
                     .opacity(iconHidden ? 0 : 1)
+                    // After the opacity, so the probe measures the well even while it is hidden.
+                    .dsWindowFrame(landingProbe)
                 title
                     .font(DSFont.title2)
                     .lineLimit(1)

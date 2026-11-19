@@ -16,9 +16,10 @@ struct ToolInspectorHost<DocumentInfo: View>: View {
         ZStack {
             if let run = session.run {
                 ToolRunInspector(model: run) { session.closeTool() }
-                    // The header keeps its icon hidden while the flying copy stands in for it.
+                    // The header keeps its icon hidden while the flying copy stands in for it, and tells the flight
+                    // where its icon well is.
                     .environment(\.dsFlightHidesHeaderIcon, flight?.hidesTarget ?? false)
-                    .overlay(alignment: .topLeading) { landingPad }
+                    .environment(\.dsFlightLandingProbe, flight?.targetProbe)
                     .id(run.id)
                     .transition(.opacity)
             } else {
@@ -35,21 +36,6 @@ struct ToolInspectorHost<DocumentInfo: View>: View {
                 }
                 .transition(.opacity)
             }
-        }
-    }
-
-    /// Where a flying icon lands: an invisible square over the header's icon well. `DSInspectorHeader` pads its content
-    /// by `DSSpacing.l` and puts the icon well first, so the well sits `DSSpacing.l` from the top and leading edges of
-    /// the panel. The pad is only measured (`IconFlightCoordinator.targetProbe`); it draws and hit-tests nothing.
-    @ViewBuilder
-    private var landingPad: some View {
-        if let flight {
-            Color.clear
-                .frame(width: DSSize.iconWell, height: DSSize.iconWell)
-                .dsWindowFrame(flight.targetProbe)
-                .padding(DSSpacing.l)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
         }
     }
 }
