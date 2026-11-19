@@ -19,7 +19,6 @@ on:
       - crates/ariad-host/tests/redact_pipeline.rs
       - crates/ariad-pdf/src/redact/**
       - crates/ariad-core/src/tools/params/redact*
-      - justfile
       - .github/workflows/pack-pdfium.yml
   push:
     tags: ["pack-pdfium-v*"]
@@ -36,6 +35,39 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # Pull requests build Linux (and Windows) targets only; the macOS legs fill the shared macOS
+  # runner pool and run on tags and manual dispatch (docs/ci.md, "Pull request scope").
+  targets:
+    name: Build targets
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.targets.outputs.include }}
+    steps:
+      # linux-musl-x64 and linux-musl-arm64 are deferred until musl libpdfium comes from a
+      # Clang/libc++ build or hash-pinned toolchain sources (upstream statically links GNU
+      # libstdc++ and libgcc from an unpinned musl.cc GCC 11.2.1 toolchain):
+      # https://github.com/bavanchun/AriadShift/issues/132
+      # Cross-built on the arm64 runner; the smoke test needs Rosetta and is skipped without it.
+      - name: Select the targets for this event
+        id: targets
+        env:
+          EVENT: ${{ github.event_name }}
+          ALL: |
+            [
+            {"slug": "linux-x64", "triple": "x86_64-unknown-linux-gnu", "os": "ubuntu-26.04", "musl": false},
+            {"slug": "linux-arm64", "triple": "aarch64-unknown-linux-gnu", "os": "ubuntu-26.04-arm", "musl": false},
+            {"slug": "mac-arm64", "triple": "aarch64-apple-darwin", "os": "macos-26", "musl": false},
+            {"slug": "mac-x64", "triple": "x86_64-apple-darwin", "os": "macos-26", "musl": false}
+            ]
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            include=$(jq -c 'map(select(.os | startswith("macos") | not))' <<<"$ALL")
+          else
+            include=$(jq -c . <<<"$ALL")
+          fi
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
   tooling:
     name: Pack tooling tests
     runs-on: ubuntu-26.04
@@ -59,22 +91,13 @@ jobs:
 
   pack:
     name: Pack (${{ matrix.slug }})
-    needs: tooling
+    needs: [tooling, targets]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {slug: linux-x64, triple: x86_64-unknown-linux-gnu, os: ubuntu-26.04, musl: false}
-          - {slug: linux-arm64, triple: aarch64-unknown-linux-gnu, os: ubuntu-26.04-arm, musl: false}
-          # linux-musl-x64 and linux-musl-arm64 are deferred until musl libpdfium comes from a
-          # Clang/libc++ build or hash-pinned toolchain sources (upstream statically links GNU
-          # libstdc++ and libgcc from an unpinned musl.cc GCC 11.2.1 toolchain):
-          # https://github.com/bavanchun/AriadShift/issues/132
-          - {slug: mac-arm64, triple: aarch64-apple-darwin, os: macos-26, musl: false}
-          # Cross-built on the arm64 runner; the smoke test needs Rosetta and is skipped without it.
-          - {slug: mac-x64, triple: x86_64-apple-darwin, os: macos-26, musl: false}
+        include: ${{ fromJSON(needs.targets.outputs.include) }}
     defaults:
       run:
         shell: bash
@@ -221,6 +244,7 @@ jobs:
   manifest:
     name: Merged manifest
     needs: pack
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
