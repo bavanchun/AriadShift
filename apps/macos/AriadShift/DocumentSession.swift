@@ -20,12 +20,26 @@ final class DocumentSession {
     var run: ToolRunModel?
     /// The ⌘K palette and the result toast of this window.
     let tools = ToolPresentation()
+    /// File > Export As of this window.
+    let export = ExportModel()
     /// A tool asked for before the engine catalogue was ready (the welcome window hands one over); it opens as soon
     /// as the catalogue arrives.
     private(set) var requestedToolID: String?
 
     init(fileURL: URL?) {
         self.fileURL = fileURL
+        export.onExported = { [weak self] file in self?.tools.announceExport(file) }
+    }
+
+    /// A document is open and no export is running, so Export As can start.
+    func canExport(client: EngineClient?) -> Bool {
+        fileURL != nil && client != nil && !export.isRunning
+    }
+
+    /// Asks where to save, then exports the document in `format` without blocking the window.
+    func exportDocument(as format: ExportFormat, client: EngineClient?) {
+        guard let fileURL else { return }
+        export.begin(format, document: fileURL, converter: client)
     }
 
     /// Reads the document facts once the engine has loaded. A failed engine becomes a failed
@@ -118,6 +132,7 @@ final class DocumentSession {
     /// for a document the user has closed, and the run's model is dropped.
     func cancelRun() {
         run?.cancel()
+        export.cancel()
         run = nil
     }
 

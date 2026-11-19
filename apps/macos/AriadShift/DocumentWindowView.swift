@@ -41,7 +41,13 @@ struct DocumentWindowView: View {
                 // controller made the hosting view report a different minimum width on every layout pass
                 // until AppKit gave up with "needing another Update Constraints in Window pass".
                 .inspector(isPresented: $showInspector) {
-                    ToolInspectorHost(session: session, engine: engine) { InspectorView(session: session) }
+                    ToolInspectorHost(session: session, engine: engine) {
+                        InspectorView(
+                            session: session,
+                            canExport: session.canExport(client: engine.client),
+                            onExport: { session.exportDocument(as: $0, client: engine.client) }
+                        )
+                    }
                         .inspectorColumnWidth(
                             min: DSSize.inspectorWidthRange.lowerBound,
                             ideal: DSSize.inspectorWidth,
@@ -88,6 +94,7 @@ struct DocumentWindowView: View {
             }
         }
         .toolRunPresentation(session: session, engine: engine)
+        .safeAreaInset(edge: .bottom, spacing: 0) { ExportProgressBar(model: session.export) }
         // Choosing a tool opens the inspector, where its parameters and progress belong.
         .onChange(of: session.run != nil) { _, running in
             if running { setInspector(true) }

@@ -2,7 +2,7 @@ import AriadShiftCore
 import SwiftUI
 
 /// Menu bar commands. Standard commands (open, close, window, undo, copy) come from the
-/// system; this adds Import, zoom, page display, Go, Find, Tools, Check for Updates and Show Welcome.
+/// system; this adds Import, Export As, zoom, page display, Go, Find, Tools, Check for Updates and Show Welcome.
 ///
 /// The state that shapes the menus arrives as plain values read in `App.body`: that makes the
 /// commands value itself change, which is what rebuilds the menu bar.
@@ -30,6 +30,14 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
             .disabled(client == nil)
+            Menu(String(localized: "mac.menu.export")) {
+                ForEach(ExportFormat.allCases) { format in
+                    Button(L10n.branch("mac.export.format", format.rawValue)) {
+                        session?.exportDocument(as: format, client: client)
+                    }
+                }
+            }
+            .disabled(session?.canExport(client: client) != true)
         }
 
         // Printing belongs to the viewer; the shortcut is reserved and the item stays disabled.

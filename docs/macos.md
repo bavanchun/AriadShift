@@ -35,11 +35,14 @@ first-launch steps above are needed. The bundle id stays `com.ariadnev.ariadshif
 ## Layout
 - `project.yml`: XcodeGen spec; `AriadShift.xcodeproj` is generated and gitignored.
 - `AriadShiftCore/`: Swift package wrapping the XCFramework: the `EngineClient` actor, the Tools menu model (`ToolCatalog`,
-  `ParamForm`), `OutputPlacer`, `DocumentImporter`, `AppSettings`, and the viewer's page edit requests (`PageEdit`), `ZoomLevel`
+  `ParamForm`), `OutputPlacer`, `DocumentImporter`, `DocumentExporter`, `AppSettings`, and the viewer's page edit requests (`PageEdit`), `ZoomLevel`
   and `ThumbnailCache`.
 - `AriadDesignSystem/`: Swift package with the design tokens, `adaptiveGlass()` and the shared components (see Design system below).
 - `AriadShift/`: the app. `DocumentGroup(viewing:)` for PDF; File > Import (`DocumentImporter`) converts md, html, docx, epub and
-  images to PDF and opens the result.
+  images to PDF and opens the result. File > Export As (also in the inspector) converts the open PDF to docx, md or html
+  through `DocumentExporter` and `EngineClient.convert` after a save panel, with inline progress and Cancel. The Word route
+  needs Pandoc, which the app does not bundle; the engine reports its absence only as a `convert` error message, which
+  `EngineError.isPandocMissing` matches and the app shows as a localized "install Pandoc" message.
   Sources are grouped by feature: `Tools/` (Tools menu, run sheet, schema form), `Viewer/` (PDF viewer, toolbar, find),
   `Editor/Page/` (page grid, sidebar, page edits, thumbnails); app shell, session, settings and import files stay at the top.
 - `scripts/`: `sync-ffi.sh` copies the XCFramework and UniFFI Swift file into the package; `embed-helper.sh` is the Run Script

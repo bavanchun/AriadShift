@@ -116,6 +116,8 @@
   "mac": {
     "menu": {
       "import": "Import…",
+      "export": "Export As…",
+      "export@note": "File menu submenu that converts the open PDF to Word, Markdown or HTML. Opens a list of formats; the ellipsis means a save panel follows.",
       "print": "Print…",
       "tools": "Tools",
       "zoom": "{action, select, in {Zoom In} out {Zoom Out} actual {Actual Size} other {Zoom}}",
@@ -280,6 +282,29 @@
       "running@note": "{name} is a file name.",
       "failed": "Could not import {name}",
       "failed@note": "Alert title. {name} is a file name."
+    },
+    "export": {
+      "format": "{format, select, docx {Word Document (.docx)} md {Markdown (.md)} html {HTML (.html)} other {Document}}",
+      "format@note": "File menu items and tooltips that name the format to export the PDF to. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "short": "{format, select, docx {Word} md {Markdown} html {HTML} other {Document}}",
+      "short@note": "Short format name on an inspector button, and in the progress text. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "section": "Export",
+      "section@note": "Inspector section title above the buttons that export the PDF as Word, Markdown or HTML.",
+      "panel_title": "Export",
+      "panel_title@note": "Title of the save panel that asks where to save the exported document.",
+      "panel_message": "Choose where to save the exported document",
+      "panel_prompt": "Export",
+      "panel_prompt@note": "Default button of the export save panel.",
+      "running": "Exporting as {format}…",
+      "running@note": "Progress text while the PDF is converted. {format} is a short format name such as Word, Markdown or HTML.",
+      "done": "Exported {name}",
+      "done@note": "Toast after an export finished. {name} is the file name of the exported document.",
+      "failed": "The export did not finish.",
+      "failed@note": "Error title in the progress bar when the export failed; the engine message follows under Details.",
+      "pandoc_missing": "Exporting to Word needs Pandoc 3.12 or later, and it was not found. Install Pandoc and try again, or export as Markdown or HTML, which need nothing extra.",
+      "pandoc_missing@note": "Error shown when the user exports to a Word document and the Pandoc tool is not installed. Pandoc is a product name; keep it untranslated.",
+      "same_file": "Choose a different file name: the export cannot replace the document it comes from.",
+      "same_file@note": "Error when the chosen export file is the PDF that is being exported."
     },
     "document": {
       "invalid": "This file is not a valid PDF."

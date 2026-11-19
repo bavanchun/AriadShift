@@ -14103,6 +14103,311 @@
         }
       }
     },
+    "mac.export.done" : {
+      "comment" : "Toast after an export finished. {name} is the file name of the exported document.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported %1$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã xuất %1$@"
+          }
+        }
+      }
+    },
+    "mac.export.failed" : {
+      "comment" : "Error title in the progress bar when the export failed; the engine message follows under Details.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The export did not finish."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không thể hoàn tất việc xuất."
+          }
+        }
+      }
+    },
+    "mac.export.format.docx" : {
+      "comment" : "File menu items and tooltips that name the format to export the PDF to. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Word Document (.docx)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tài liệu Word (.docx)"
+          }
+        }
+      }
+    },
+    "mac.export.format.html" : {
+      "comment" : "File menu items and tooltips that name the format to export the PDF to. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HTML (.html)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HTML (.html)"
+          }
+        }
+      }
+    },
+    "mac.export.format.md" : {
+      "comment" : "File menu items and tooltips that name the format to export the PDF to. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown (.md)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown (.md)"
+          }
+        }
+      }
+    },
+    "mac.export.format.other" : {
+      "comment" : "File menu items and tooltips that name the format to export the PDF to. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tài liệu"
+          }
+        }
+      }
+    },
+    "mac.export.pandoc_missing" : {
+      "comment" : "Error shown when the user exports to a Word document and the Pandoc tool is not installed. Pandoc is a product name; keep it untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting to Word needs Pandoc 3.12 or later, and it was not found. Install Pandoc and try again, or export as Markdown or HTML, which need nothing extra."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xuất sang Word cần Pandoc 3.12 trở lên nhưng không tìm thấy. Hãy cài Pandoc rồi thử lại, hoặc xuất sang Markdown hay HTML, hai định dạng này không cần thêm gì."
+          }
+        }
+      }
+    },
+    "mac.export.panel_message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose where to save the exported document"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chọn nơi lưu tài liệu đã xuất"
+          }
+        }
+      }
+    },
+    "mac.export.panel_prompt" : {
+      "comment" : "Default button of the export save panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xuất"
+          }
+        }
+      }
+    },
+    "mac.export.panel_title" : {
+      "comment" : "Title of the save panel that asks where to save the exported document.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xuất"
+          }
+        }
+      }
+    },
+    "mac.export.running" : {
+      "comment" : "Progress text while the PDF is converted. {format} is a short format name such as Word, Markdown or HTML.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting as %1$@…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang xuất thành %1$@…"
+          }
+        }
+      }
+    },
+    "mac.export.same_file" : {
+      "comment" : "Error when the chosen export file is the PDF that is being exported.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a different file name: the export cannot replace the document it comes from."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy chọn tên tệp khác: bản xuất không thể thay thế tài liệu gốc."
+          }
+        }
+      }
+    },
+    "mac.export.section" : {
+      "comment" : "Inspector section title above the buttons that export the PDF as Word, Markdown or HTML.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xuất"
+          }
+        }
+      }
+    },
+    "mac.export.short.docx" : {
+      "comment" : "Short format name on an inspector button, and in the progress text. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Word"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Word"
+          }
+        }
+      }
+    },
+    "mac.export.short.html" : {
+      "comment" : "Short format name on an inspector button, and in the progress text. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HTML"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HTML"
+          }
+        }
+      }
+    },
+    "mac.export.short.md" : {
+      "comment" : "Short format name on an inspector button, and in the progress text. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown"
+          }
+        }
+      }
+    },
+    "mac.export.short.other" : {
+      "comment" : "Short format name on an inspector button, and in the progress text. {format} is the keyword docx, md or html. Keep the keywords untranslated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tài liệu"
+          }
+        }
+      }
+    },
     "mac.find.count" : {
       "comment" : "Position of the current match among all matches, for example \"3 of 17\". types: current=int, total=int",
       "extractionState" : "manual",
@@ -22783,6 +23088,24 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "雙頁"
+          }
+        }
+      }
+    },
+    "mac.menu.export" : {
+      "comment" : "File menu submenu that converts the open PDF to Word, Markdown or HTML. Opens a list of formats; the ellipsis means a save panel follows.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export As…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xuất thành…"
           }
         }
       }

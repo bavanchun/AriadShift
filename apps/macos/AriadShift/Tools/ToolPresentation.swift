@@ -56,6 +56,18 @@ final class ToolPresentation {
         }
     }
 
+    /// Announces an exported file: "Exported report.docx" with Show in Finder. There is no Undo: the user chose the
+    /// destination and may have replaced a file there.
+    func announceExport(_ file: URL) {
+        toastFiles = [file]
+        withDSAnimation(.smooth) {
+            toast = DSToastContent(
+                message: String(localized: "mac.export.done", defaultValue: "Exported \(file.lastPathComponent)"),
+                actions: [.init(id: Self.revealAction, title: String(localized: "mac.run.reveal"))]
+            )
+        }
+    }
+
     /// Show in Finder selects the result files; Undo removes them. They are new files the run placed next to the
     /// document under names that never replace an existing file, so Undo never touches the user's original.
     func perform(_ action: DSToastContent.Action) {
