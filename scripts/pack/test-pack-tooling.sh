@@ -14,6 +14,16 @@ builder=$here/build-pack.sh
 
 passed=0
 failed=0
+# Run tar on a .tar.zst through a temp file. `zstd | tar` fails under pipefail when tar stops at the
+# end-of-archive marker and zstd takes SIGPIPE (status 141).
+tar_zst() {
+    local flags=$1 archive=$2 plain rc=0
+    plain=$(mktemp "${TMPDIR:-/tmp}/tar-zst.XXXXXX")
+    zstd -q -d -f "$archive" -o "$plain" && tar "$flags" "$plain" || rc=$?
+    rm -f "$plain"
+    return "$rc"
+}
+
 pass() {
     passed=$((passed + 1))
     printf 'PASS | %s\n' "$1"
@@ -119,7 +129,7 @@ run_build() {
 }
 
 archive_list() {
-    zstd -q -d -c "$1" | tar -tf -
+    tar_zst -tf "$1"
 }
 
 echo "=== shared pack builder ==="
@@ -143,7 +153,21 @@ check "pack.toml lists target executables" grep -q '^executables = \[.*"bin/aria
 check "ashift got --engine-protocol ariad-engine/2" grep -q -- '--engine-protocol ariad-engine/2' "$tmp/ashift.log"
 check "ashift got the entrypoint" grep -q -- '--entrypoint bin/ariad-pdfium-engine' "$tmp/ashift.log"
 check "ashift got the engine component" grep -q -- ' engine=.*-engine.tar.zst$' "$tmp/ashift.log"
-check "engine is executable inside the archive" test "$(zstd -q -d -c "$archive" | tar -tvf - | grep ' bin/ariad-pdfium-engine$' | cut -c4)" = x
+check "engine is executable inside the archive" test "$(tar_zst -tvf "$archive" | grep ' bin/ariad-pdfium-engine$' | cut -c4)" = x
+
+# 2b. zstd into tar must not depend on tar draining the stream. GNU tar stops at the end-of-archive
+# marker; zstd then takes SIGPIPE (status 141), which fails under pipefail. Trailing zero padding makes the
+# old `zstd | tar` shape fail every time, so this is a deterministic stand-in for the CI flake.
+mkdir -p "$tmp/pad/src"
+echo data >"$tmp/pad/src/a"
+tar -cf "$tmp/pad/a.tar" -C "$tmp/pad" src
+head -c 16000000 /dev/zero >>"$tmp/pad/a.tar"
+zstd -q -f "$tmp/pad/a.tar" -o "$tmp/pad/a.tar.zst"
+# shellcheck disable=SC2016
+check "zstd | tar on a padded archive fails under pipefail (the bug)" bash -c 'set -o pipefail; ! { zstd -q -d -c "$1" | tar -tf - >/dev/null; }' _ "$tmp/pad/a.tar.zst"
+check "tar_zst reads a padded .tar.zst without SIGPIPE" tar_zst -tf "$tmp/pad/a.tar.zst"
+# shellcheck disable=SC2016
+check "no pack script pipes zstd into tar" bash -c '! grep -nE "zstd[^|]*-d[^|]*\|.*tar" "$1/engines/tesseract/pack/make.sh" "$1/scripts/pack/build-pack.sh"' _ "$repo"
 
 # 2. Reproducible archive bytes.
 run_build "$tmp/out1b" "${layout[@]}" --archive-sha256 "$good_sha" >/dev/null 2>&1 || true

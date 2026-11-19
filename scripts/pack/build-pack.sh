@@ -575,8 +575,10 @@ cmd_merge() {
     local tar_bin
     tar_bin=$(pick_tar)
     local notice_list=$workdir/notices.list
-    zstd -q -d -c "$first_pair" | "$tar_bin" -tf - | grep '^notices/' | grep -v '/$' |
-        LC_ALL=C sort >"$notice_list" || true
+    # Decompress to a file: `zstd | tar -t` can fail with SIGPIPE when tar stops at the end-of-archive marker.
+    zstd -q -d -f "$first_pair" -o "$workdir/first.tar"
+    { "$tar_bin" -tf "$workdir/first.tar" | grep '^notices/' | grep -v '/$' |
+        LC_ALL=C sort >"$notice_list"; } || true
     [ -s "$notice_list" ] || die "'$first_pair' lists no notices/ files"
 
     local base=$workdir/base.toml current=$workdir/current.toml pair
