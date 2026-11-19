@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # The engine and pack scripts, the shared licence code the pack scripts execute, the lock and
-# project files that pin the wheels, the justfile and Pandoc installer the pack job runs, the
+# project files that pin the wheels, the engine and Pandoc scripts the pack jobs run, the
 # licence files copied into the pack notices, the fixtures the pack job converts, the pack
 # workflow, and this script (so changing the set forces a rebuild).
 inputs=(
@@ -17,7 +17,7 @@ inputs=(
     engines/common/licenses
     uv.lock
     pyproject.toml
-    justfile
+    scripts/docling-engine.sh
     scripts/install-pandoc.sh
     LICENSE
     NOTICE
