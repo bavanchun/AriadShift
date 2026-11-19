@@ -107,6 +107,8 @@ SIGNED_TARGETS=()
 # Deliberately empty entitlements for the app: it is not sandboxed and needs no hardened-runtime exceptions
 # (the runtime itself comes from --options runtime). Keep XML comments out of that file; the parser rejects them.
 APP_ENTITLEMENTS="${SCRIPT_DIR}/macos-app.entitlements"
+# shellcheck source=scripts/macos-helpers-lib.sh
+source "${SCRIPT_DIR}/macos-helpers-lib.sh"
 
 # sign_bundle TARGET [ENTITLEMENTS_FILE]
 # With an entitlements file the target gets exactly those entitlements (used for the app). Without one the
@@ -163,7 +165,7 @@ sign_app_inside_out() {
     echo "==> Signing application components inside-out for: ${app_path}"
 
     local frameworks_dir="${app_path}/Contents/Frameworks"
-    local version_dir xpc fw dylib
+    local version_dir xpc fw dylib helper
 
     SIGNED_TARGETS=()
 
@@ -199,11 +201,10 @@ sign_app_inside_out() {
         done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 2 -type f -name '*.dylib' -print0)
     fi
 
-    # 6. Helper executable
-    local helper="${app_path}/Contents/Helpers/ashift"
-    if [[ -f "${helper}" ]]; then
+    # 6. Every Mach-O in Helpers (the ashift helper and Pandoc), each with the hardened runtime and a secure timestamp
+    while IFS= read -r -d '' helper; do
         sign_bundle "${helper}"
-    fi
+    done < <(list_helper_machos "${app_path}")
 
     # 7. Outer application bundle, with the explicit minimal entitlements instead of whatever the build injected
     if [[ ! -f "${APP_ENTITLEMENTS}" ]]; then
@@ -228,7 +229,7 @@ verify_signed_targets() {
 verify_existing_app() {
     local app_path="$1"
     local frameworks_dir="${app_path}/Contents/Frameworks"
-    local version_dir xpc fw dylib
+    local version_dir xpc fw dylib helper
     SIGNED_TARGETS=()
     if [[ -d "${frameworks_dir}/Sparkle.framework/Versions" ]]; then
         while IFS= read -r -d '' version_dir; do
@@ -248,7 +249,9 @@ verify_existing_app() {
             SIGNED_TARGETS+=("${dylib}")
         done < <(find "${frameworks_dir}" -mindepth 1 -maxdepth 2 -type f -name '*.dylib' -print0)
     fi
-    [[ -f "${app_path}/Contents/Helpers/ashift" ]] && SIGNED_TARGETS+=("${app_path}/Contents/Helpers/ashift")
+    while IFS= read -r -d '' helper; do
+        SIGNED_TARGETS+=("${helper}")
+    done < <(list_helper_machos "${app_path}")
     SIGNED_TARGETS+=("${app_path}")
     verify_signed_targets
 }

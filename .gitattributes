@@ -18,3 +18,5 @@ fixtures/manifest.toml text eol=lf
 *.ttf binary
 *.otf binary
 *.woff2 binary
+# Pandoc's licence texts ship unchanged; their SHA-256 is checked by scripts/macos-embed-pandoc.test.sh.
+apps/macos/ThirdParty/** -text

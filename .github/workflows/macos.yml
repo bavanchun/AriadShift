@@ -18,6 +18,7 @@ on:
       - "rust-toolchain.toml"
       - "justfile"
       - "scripts/*xcframework*"
+      - "scripts/install-pandoc.*"
       - "scripts/macos-*"
       - "locales/**"
       - ".github/workflows/macos.yml"
@@ -38,6 +39,7 @@ on:
       - "rust-toolchain.toml"
       - "justfile"
       - "scripts/*xcframework*"
+      - "scripts/install-pandoc.*"
       - "scripts/macos-*"
       - "locales/**"
       - ".github/workflows/macos.yml"
@@ -125,8 +127,17 @@ jobs:
           bash scripts/macos-check-secrets.test.sh
           bash scripts/macos-check-secrets-workflow.test.sh
           bash scripts/macos-adhoc-sign.test.sh
+          bash scripts/macos-sign-notarize.test.sh
           bash scripts/macos-appcast.test.sh
           bash scripts/macos-check-release-plan.test.sh
+          bash scripts/install-pandoc.test.sh
+          bash scripts/macos-embed-pandoc.test.sh
+      # Pandoc ships inside the app (Contents/Helpers/pandoc). The version and SHA-256 of each archive are the ones in
+      # scripts/install-pandoc.sh, which fails the step on a mismatch. The Xcode phase only copies what this step fetched.
+      - name: Fetch the pinned Pandoc for both app architectures
+        run: |
+          bash scripts/install-pandoc.sh --macos-arch arm64
+          bash scripts/install-pandoc.sh --macos-arch x86_64
       - name: Build macOS application bundle
         run: just macos-build
       - name: Verify Release app omits debug plan override
@@ -269,6 +280,11 @@ jobs:
             echo "::error::vars.SPARKLE_PUBLIC_ED_KEY must be the 44-character base64 Sparkle public key for a signed or ad-hoc release."
             exit 1
           fi
+      # The same pinned, checksum-verified Pandoc as the build job, fetched before the build embeds it.
+      - name: Fetch the pinned Pandoc for both app architectures
+        run: |
+          bash scripts/install-pandoc.sh --macos-arch arm64
+          bash scripts/install-pandoc.sh --macos-arch x86_64
       - name: Build release macOS application bundle
         env:
           RELEASE_MODE: ${{ steps.mode.outputs.mode }}
@@ -392,9 +408,10 @@ jobs:
       - name: Sign the application ad-hoc and verify it
         if: steps.mode.outputs.mode == 'adhoc'
         run: |
-          # Inside-out (Sparkle's XPC services and helpers, Sparkle.framework, the ashift helper, then the app), never
-          # --deep, hardened runtime kept. The script gates on codesign --verify --deep --strict, the ad-hoc and runtime
-          # flags, and the absence of get-task-allow for every signed target, and fails before any DMG exists.
+          # Inside-out (Sparkle's XPC services and helpers, Sparkle.framework, every Mach-O in Contents/Helpers (the
+          # ashift helper and Pandoc), then the app), never --deep, hardened runtime kept. The script gates on
+          # codesign --verify --deep --strict, the ad-hoc and runtime flags, and the absence of get-task-allow for
+          # every signed target, and fails before any DMG exists.
           bash scripts/macos-adhoc-sign.sh app target/derived-data/Build/Products/Release/AriadShift.app
       - name: Build ad-hoc DMG
         if: steps.mode.outputs.mode == 'adhoc'
