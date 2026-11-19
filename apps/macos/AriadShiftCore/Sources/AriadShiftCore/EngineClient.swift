@@ -96,6 +96,11 @@ public actor EngineClient {
     private nonisolated let planProvider: any PlanProvider
 
     /// Points the engine at the helper and returns a client.
+    ///
+    /// Pandoc is found the same way: an executable `pandoc` in the helper's folder
+    /// (`Contents/Helpers/pandoc` in the app) is exported as `ASHIFT_PANDOC` unless the process
+    /// already has a non-empty `ASHIFT_PANDOC`, so a bundled Pandoc wins over `PATH` and an explicit
+    /// choice wins over the bundled one. A missing bundled Pandoc changes nothing.
     /// - Parameter helperURL: Override for tests and command-line use. Defaults to
     ///   `<App.app>/Contents/Helpers/ashift`.
     /// - Throws: `EngineError.helperMissing` when the helper is not an executable
@@ -103,6 +108,7 @@ public actor EngineClient {
     public init(helperURL: URL? = nil, planProvider: any PlanProvider = makeDefaultPlanProvider()) throws {
         let url = helperURL ?? Self.bundledHelperURL()
         try Self.configureEngine(helper: url)
+        Self.exportBundledPandoc(beside: url)
         self.helperURL = url
         self.planProvider = planProvider
     }
@@ -119,6 +125,48 @@ public actor EngineClient {
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Helpers", isDirectory: true)
             .appendingPathComponent("ashift")
+    }
+
+    /// The environment variable the Rust host reads to find Pandoc. When it is set it is the only place the
+    /// host looks, so it outranks `PATH`.
+    static let pandocEnvironmentName = "ASHIFT_PANDOC"
+
+    /// The Pandoc that ships with the helper: `pandoc` in the same folder, `Contents/Helpers/pandoc` in the app.
+    public static func bundledPandocURL(beside helper: URL) -> URL {
+        helper.deletingLastPathComponent().appendingPathComponent("pandoc")
+    }
+
+    /// The path to export as `ASHIFT_PANDOC`, or nil to leave the environment alone: when the caller already
+    /// chose a Pandoc (the host treats an empty value as unset), or when no executable file sits beside the helper.
+    static func pandocOverride(
+        beside helper: URL,
+        environment: [String: String],
+        fileManager: FileManager = .default
+    ) -> String? {
+        if let chosen = environment[pandocEnvironmentName], !chosen.isEmpty {
+            return nil
+        }
+        let pandoc = bundledPandocURL(beside: helper)
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: pandoc.path, isDirectory: &isDirectory),
+            !isDirectory.boolValue,
+            fileManager.isExecutableFile(atPath: pandoc.path)
+        else {
+            return nil
+        }
+        return pandoc.path
+    }
+
+    /// Exports the bundled Pandoc for the engine. The Rust host runs in this process and passes
+    /// `ASHIFT_PANDOC` on to the engine processes it starts, so the process environment is where the
+    /// choice has to be made. It is made once, in `init`: changing the environment while other threads
+    /// read it is not safe, so the calls that re-assert the helper never do it.
+    static func exportBundledPandoc(
+        beside helper: URL,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        guard let path = pandocOverride(beside: helper, environment: environment) else { return }
+        setenv(pandocEnvironmentName, path, 1)
     }
 
     /// Validates the helper and points the engine at it. Idempotent and cheap.

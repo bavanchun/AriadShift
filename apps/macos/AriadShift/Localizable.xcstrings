@@ -14284,19 +14284,19 @@
       }
     },
     "mac.export.pandoc_missing" : {
-      "comment" : "Error shown when the user exports to a Word document and the Pandoc tool is not installed. Pandoc is a product name; keep it untranslated.",
+      "comment" : "Error shown when the user exports to a Word document and the Pandoc tool that ships inside the app is missing or unusable (a damaged install). Pandoc is a product name; keep it untranslated.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Exporting to Word needs Pandoc 3.12 or later, and it was not found. Install Pandoc and try again, or export as Markdown or HTML, which need nothing extra."
+            "value" : "Exporting to Word needs the Pandoc that comes with AriadShift, and it was not found or cannot run. Reinstall AriadShift and try again, or export as Markdown or HTML, which need nothing extra."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Xuất sang Word cần Pandoc 3.12 trở lên nhưng không tìm thấy. Hãy cài Pandoc rồi thử lại, hoặc xuất sang Markdown hay HTML, hai định dạng này không cần thêm gì."
+            "value" : "Xuất sang Word cần Pandoc đi kèm AriadShift nhưng không tìm thấy hoặc không chạy được. Hãy cài lại AriadShift rồi thử lại, hoặc xuất sang Markdown hay HTML, hai định dạng này không cần thêm gì."
           }
         }
       }
