@@ -151,6 +151,133 @@ assert_cloud "$(printf 'docs/ci.md\nREADME.md')" false
 assert_cloud "" true
 [ "$(sh "$ci_scope" --classify-cloud Cargo.lock)" = true ] || exit 1
 
+echo "=== Packaging scope ==="
+# assert_package <description> <expected> <path>...  ("--added <path>" marks an added file)
+assert_package() {
+  desc=$1 expected=$2
+  shift 2
+  actual=$(sh "$ci_scope" --classify-package "$@" </dev/null)
+  if [ "$actual" = "$expected" ]; then
+    passed_count=$((passed_count + 1))
+    printf 'PASS | package %-38s | %s\n' "$desc" "$actual"
+  else
+    failed_count=$((failed_count + 1))
+    printf 'FAIL | package %-38s | expected %s, got %s\n' "$desc" "$expected" "$actual" >&2
+  fi
+}
+# Inputs of `cargo package`.
+assert_package "root Cargo.toml" true Cargo.toml
+assert_package "Cargo.lock" true Cargo.lock
+assert_package "rust-toolchain.toml" true rust-toolchain.toml
+assert_package "justfile" true justfile
+assert_package "root README.md (crate readme)" true README.md
+assert_package "workflow ci.yml" true .github/workflows/ci.yml
+assert_package "scope script" true scripts/ci-scope.sh
+assert_package "crate manifest" true crates/ariad-core/Cargo.toml
+assert_package "crate build script" true crates/ariad-host/build.rs
+assert_package "crate data file" true crates/ariad-core/data/capabilities.json
+assert_package "crate test fixture" true crates/ariad-cli/tests/fixtures/sample.md
+assert_package "crate license file" true crates/ariad-core/LICENSE
+assert_package "added crate source file" true --added crates/ariad-pdf/src/new_module.rs
+assert_package "added crate test file" true --added crates/ariad-core/tests/new_case.rs
+assert_package "added file among edits" true --added crates/ariad-core/src/new.rs crates/ariad-core/src/lib.rs
+# A plain edit of existing Rust source, and files the package never reads.
+assert_package "edited crate source" false crates/ariad-core/src/lib.rs
+assert_package "edited nested crate source" false crates/ariad-host/src/engine/mod.rs
+assert_package "edited crate test source" false crates/ariad-cli/tests/cli.rs
+assert_package "two edited sources" false crates/ariad-core/src/lib.rs crates/ariad-pdf/src/lib.rs
+assert_package "docs" false docs/ci.md
+assert_package "web app" false apps/web/src/converter/worker.ts
+assert_package "other workflow" false .github/workflows/cloud-e2e.yml
+assert_package "other script" false scripts/test-ci-scope.sh
+assert_package "added file outside crates" false --added docs/new.md
+assert_package "added web file" false --added apps/web/src/new.ts
+assert_package "Cargo.lock lookalike" false Cargo.lock.bak
+assert_package "nested build.rs lookalike" false crates/ariad-core/src/build.rs
+assert_package "crates lookalike dir" false crates-old/ariad-core/Cargo.toml
+# An unknown change list runs everything.
+assert_package "empty list" true
+[ "$(printf 'crates/ariad-core/src/lib.rs\n' | sh "$ci_scope" --classify-package)" = false ] || exit 1
+
+echo "=== Scope outputs (event and git diff) ==="
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+repo="$tmp/repo"
+git init -q "$repo"
+git_in() {
+  git -C "$repo" -c user.name=scope-test -c user.email=scope-test@example.invalid \
+    -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"
+}
+mkdir -p "$repo/crates/ariad-core/src" "$repo/crates/ariad-core/assets" "$repo/docs"
+printf '[package]\nname = "ariad-core"\n' > "$repo/crates/ariad-core/Cargo.toml"
+printf 'pub fn one() {}\n' > "$repo/crates/ariad-core/src/lib.rs"
+printf '{}\n' > "$repo/crates/ariad-core/assets/data.json"
+printf '# readme\n' > "$repo/README.md"
+printf 'notes\n' > "$repo/docs/notes.md"
+git_in add crates README.md docs
+git_in commit -q -m base
+git_in tag base
+
+parts_all='[{"part":"lint"},{"part":"test-1","shard":1,"shards":2},{"part":"test-2","shard":2,"shards":2}'
+parts_no_package="$parts_all]"
+parts_package="$parts_all,{\"part\":\"package\"}]"
+
+# assert_outputs <description> <package> <linux_parts> <env assignment>...
+assert_outputs() {
+  desc=$1 expected_package=$2 expected_parts=$3
+  shift 3
+  : > "$tmp/output"
+  # The variables a real run reads are cleared first, and the step summary is never written.
+  (cd "$repo" && env -u GITHUB_STEP_SUMMARY -u EVENT_NAME -u PUSH_BEFORE -u REF_NAME \
+    -u PR_BASE_SHA -u PR_HEAD_SHA -u PR_BASE_REF "$@" GITHUB_OUTPUT="$tmp/output" sh "$ci_scope" >/dev/null)
+  actual_package=$(sed -n 's/^package=//p' "$tmp/output")
+  actual_parts=$(sed -n 's/^linux_parts=//p' "$tmp/output")
+  if [ "$actual_package" = "$expected_package" ] && [ "$actual_parts" = "$expected_parts" ]; then
+    passed_count=$((passed_count + 1))
+    printf 'PASS | outputs %-34s | package=%s\n' "$desc" "$actual_package"
+  else
+    failed_count=$((failed_count + 1))
+    printf 'FAIL | outputs %-34s | expected %s %s, got %s %s\n' \
+      "$desc" "$expected_package" "$expected_parts" "$actual_package" "$actual_parts" >&2
+  fi
+}
+
+# assert_pr <description> <package> <setup command>: commit the setup on top of base, then run
+# the scope for a pull request into dev. The setup stages the files it creates.
+assert_pr() {
+  desc=$1 expected_package=$2 setup=$3
+  git_in checkout -q -B change base
+  (cd "$repo" && eval "$setup")
+  git_in commit -q -a -m change
+  expected_parts=$parts_no_package
+  if [ "$expected_package" = true ]; then expected_parts=$parts_package; fi
+  assert_outputs "$desc" "$expected_package" "$expected_parts" \
+    EVENT_NAME=pull_request PR_BASE_SHA="$(git_in rev-parse base)" \
+    PR_HEAD_SHA="$(git_in rev-parse HEAD)" PR_BASE_REF=dev
+}
+
+assert_outputs "manual run" true "$parts_package" EVENT_NAME=workflow_dispatch
+assert_outputs "push without a previous commit" true "$parts_package" EVENT_NAME=push REF_NAME=dev
+git_in checkout -q -B change base
+printf 'pub fn two() {}\n' >> "$repo/crates/ariad-core/src/lib.rs"
+git_in commit -q -a -m edit
+assert_outputs "push of a Rust edit to dev" true "$parts_package" \
+  EVENT_NAME=push PUSH_BEFORE="$(git_in rev-parse base)" REF_NAME=dev
+assert_pr "edit of existing Rust source" false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs"
+assert_pr "edit of the docs only" false "printf 'more\n' >> docs/notes.md"
+assert_pr "Rust edit plus docs" false "printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs; printf 'more\n' >> docs/notes.md"
+assert_pr "new Rust file in a crate" true "printf 'pub fn two() {}\n' > crates/ariad-core/src/two.rs; git add crates/ariad-core/src/two.rs"
+assert_pr "Rust file renamed in a crate" true "git mv crates/ariad-core/src/lib.rs crates/ariad-core/src/lib_old.rs"
+assert_pr "asset moved out of the crate" true "mkdir -p data; git mv crates/ariad-core/assets/data.json data/data.json"
+assert_pr "crate asset edited" true "printf '{\"a\":1}\n' > crates/ariad-core/assets/data.json"
+assert_pr "crate manifest edited" true "printf 'version = \"1\"\n' >> crates/ariad-core/Cargo.toml"
+assert_pr "root README edited with code" true "printf 'x\n' >> README.md; printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs"
+assert_pr "justfile added" true "printf 'default:\n' > justfile; git add justfile"
+# Documentation-only changes skip the heavy jobs, so nothing packages.
+assert_pr "docs-only addition" false "printf 'new\n' > docs/new.md; git add docs/new.md"
+git_in checkout -q base
+
 echo "=== Summary ==="
 echo "Passed: $passed_count, Failed: $failed_count"
 if [ "$failed_count" -gt 0 ]; then
