@@ -182,6 +182,8 @@ assert_package "added crate source file" true --added crates/ariad-pdf/src/new_m
 assert_package "added crate test file" true --added crates/ariad-core/tests/new_case.rs
 assert_package "added file among edits" true --added crates/ariad-core/src/new.rs crates/ariad-core/src/lib.rs
 # A plain edit of existing Rust source, and files the package never reads.
+assert_package "cargo config" true .cargo/config.toml
+assert_package "Rust edit reaching outside" true --rs-risk crates/ariad-core/src/lib.rs
 assert_package "edited crate source" false crates/ariad-core/src/lib.rs
 assert_package "edited nested crate source" false crates/ariad-host/src/engine/mod.rs
 assert_package "edited crate test source" false crates/ariad-cli/tests/cli.rs
@@ -275,6 +277,10 @@ assert_pr "crate manifest edited" true "printf 'version = \"1\"\n' >> crates/ari
 assert_pr "root README edited with code" true "printf 'x\n' >> README.md; printf 'pub fn two() {}\n' >> crates/ariad-core/src/lib.rs"
 assert_pr "justfile added" true "printf 'default:\n' > justfile; git add justfile"
 # Documentation-only changes skip the heavy jobs, so nothing packages.
+assert_pr "include_str outside the crate" true "printf 'const A: &str = include_str!(\"../../../docs/notes.md\");\n' >> crates/ariad-core/src/lib.rs"
+assert_pr "include_bytes outside the crate" true "printf 'static B: &[u8] = include_bytes!(\"../../../README.md\");\n' >> crates/ariad-core/src/lib.rs"
+assert_pr "path attribute outside the crate" true "printf '#[path = \"../../other/mod.rs\"]\nmod other;\n' >> crates/ariad-core/src/lib.rs"
+assert_pr "include_str inside the crate" false "printf 'const A: &str = include_str!(\"data.txt\");\n' >> crates/ariad-core/src/lib.rs"
 assert_pr "docs-only addition" false "printf 'new\n' > docs/new.md; git add docs/new.md"
 git_in checkout -q base
 

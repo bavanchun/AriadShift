@@ -8,8 +8,9 @@
 # Arguments: --classify <path>... or --classify with paths on stdin.
 # Output (GITHUB_OUTPUT): range, heavy, web, package, linux_parts, reason.
 # --classify-cloud [paths...] prints true if any path needs the cloud E2E.
-# --classify-package [--added <path>]... [paths...] prints true if the change can
-# affect `cargo package`. An --added path counts as changed and as added.
+# --classify-package [--rs-risk] [--added <path>]... [paths...] prints true if the change can
+# affect `cargo package`. An --added path counts as changed and as added; --rs-risk says the
+# added Rust lines reach outside their crate (see rs_reaches_out).
 set -eu
 
 zero='0000000000000000000000000000000000000000'
@@ -36,14 +37,19 @@ web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|pdf|engine-io|wa
 cloud_paths='^(infra/|apps/web/|crates/ariad-(server|core|pdf|engine-io|host|cli|wasm|typst)/|services/|packages/|brand/)|^(Cargo\.(toml|lock)|rust-toolchain\.toml|pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|\.node-version|\.env\.example|justfile)$|^scripts/(ci-scope\.sh|test-ci-scope\.sh|docling-pack-inputs\.sh|install-wasm-bindgen\.sh)$|^fixtures/(pdf/vi-garden-image-only\.pdf|manifest\.toml)$|^\.github/workflows/(cloud-e2e|pack-docling)\.yml$'
 
 # What `cargo package` (just package-check) reads besides crate source: the workspace manifest,
-# lockfile and toolchain, the recipe, the scope rules and the workflow that run it, each crate's
-# build script, and the root README.md that every crate manifest names as its readme. Crate
-# manifests and every other file under crates/ that is not Rust source (package include lists,
-# bundled assets and fixtures) are matched by package_decision, as is any file added under crates/:
-# a new file can fall outside a crate's include list, or reach above the crate directory, and
-# then only a package build notices. Accepted risk: a plain edit of an existing .rs file cannot
-# break packaging by itself, and every push to dev or main runs the check anyway.
-package_paths='^(Cargo\.(toml|lock)|rust-toolchain\.toml|justfile|README\.md)$|^crates/[^/]+/build\.rs$|^scripts/ci-scope\.sh$|^\.github/workflows/ci\.yml$'
+# lockfile and toolchain, cargo's own configuration, the recipe, the scope rules and the workflow
+# that run it, each crate's build script, and the root README.md that every crate manifest names as
+# its readme. Crate manifests and every other file under crates/ that is not Rust source (package
+# include lists, bundled assets and fixtures) are matched by package_decision, as is any file added
+# under crates/: a new file can fall outside a crate's include list, or reach above the crate
+# directory, and then only a package build notices.
+# A plain edit of an existing .rs file is left out on purpose, except when its added lines reach
+# outside the crate (include_bytes!, include_str! or #[path] with "../", see rs_reaches_out):
+# that is the way a Rust edit breaks packaging. Residual risk, stated honestly: the guard only
+# reads added lines, so such a reference built in another way (a macro, a path from an
+# environment variable) is not seen on the pull request; every push to dev or main runs the check
+# and finds it there.
+package_paths='^(Cargo\.(toml|lock)|rust-toolchain\.toml|justfile|README\.md)$|^\.cargo/|^crates/[^/]+/build\.rs$|^scripts/ci-scope\.sh$|^\.github/workflows/ci\.yml$'
 
 # Parts of the Linux Verify job, as JSON for its matrix. The test shards carry their own index
 # and count, so the workflow never repeats the number of shards.
@@ -52,14 +58,28 @@ test_shards=2
 # Prints true or false: can the change affect the packaging check?
 # $1: every path the change touched (a rename lists both sides), empty when unknown.
 # $2: the paths the change added.
+# $3: true when the added Rust lines reach outside their crate.
 package_decision() {
     if [ -z "$1" ]; then
+        echo true
+    elif [ "${3:-false}" = true ]; then
         echo true
     elif printf '%s\n' "$1" | grep -E "$package_paths" >/dev/null; then
         echo true
     elif printf '%s\n' "$1" | grep -E '^crates/' | grep -v -E '\.rs$' >/dev/null; then
         echo true
     elif printf '%s\n' "$2" | grep -E '^crates/' >/dev/null; then
+        echo true
+    else
+        echo false
+    fi
+}
+
+# Prints true if the Rust lines a pull request added include a file from outside the crate
+# (include_bytes!, include_str!) or point a module at one (#[path]) with "../". $1: base, $2: head.
+rs_reaches_out() {
+    if git diff -U0 --no-renames "$1"..."$2" -- '*.rs' | grep -E '^\+' |
+        grep -E 'include_(bytes|str)!.*\.\./|#\[path[^]]*\.\./' >/dev/null; then
         echo true
     else
         echo false
@@ -94,7 +114,13 @@ fi
 if [ "${1:-}" = --classify-package ]; then
     shift
     added=''
-    while [ "${1:-}" = --added ]; do
+    risk=false
+    while [ "${1:-}" = --added ] || [ "${1:-}" = --rs-risk ]; do
+        if [ "$1" = --rs-risk ]; then
+            risk=true
+            shift
+            continue
+        fi
         [ "$#" -ge 2 ] || { echo "ci-scope: --added needs a path" >&2; exit 2; }
         added=$(printf '%s\n%s' "$added" "$2")
         shift 2
@@ -104,7 +130,7 @@ if [ "${1:-}" = --classify-package ]; then
     elif [ -z "$added" ]; then
         changed=$(cat)
     fi
-    package_decision "$(printf '%s\n%s' "$changed" "$added" | grep -v '^$' || true)" "$added"
+    package_decision "$(printf '%s\n%s' "$changed" "$added" | grep -v '^$' || true)" "$added" "$risk"
     exit 0
 fi
 
@@ -182,6 +208,7 @@ case "${EVENT_NAME:-}" in
         # check sees the file that left a crate as well as the one that arrived.
         package_changed=$(git diff --name-only --no-renames "$PR_BASE_SHA"..."$PR_HEAD_SHA")
         added=$(git diff --name-only --no-renames --diff-filter=A "$PR_BASE_SHA"..."$PR_HEAD_SHA")
+        rs_risk=$(rs_reaches_out "$PR_BASE_SHA" "$PR_HEAD_SHA")
         ;;
     push)
         if [ "${PUSH_BEFORE:-$zero}" != "$zero" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
@@ -206,7 +233,7 @@ if [ "$heavy" != true ]; then
 elif [ "${EVENT_NAME:-}" = workflow_dispatch ] || [ "${EVENT_NAME:-}" = push ]; then
     package=true
 else
-    package=$(package_decision "${package_changed:-}" "${added:-}")
+    package=$(package_decision "${package_changed:-}" "${added:-}" "${rs_risk:-false}")
 fi
 linux_parts=$(linux_parts_json "$package")
 
