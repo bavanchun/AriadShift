@@ -325,15 +325,15 @@ The conversion routes, compare, veraPDF validators, `web.to_pdf`,
 veraPDF pack and system Java >=11; failed validation prevents publication.
 
 Conversion verification lives in
-[`route_golden.rs`](../crates/ariad-cli/tests/route_golden.rs),
-[`office_routes.rs`](../crates/ariad-cli/tests/office_routes.rs) and
-[`pdf_routes.rs`](../crates/ariad-cli/tests/pdf_routes.rs).
-[`convert_cli.rs`](../crates/ariad-cli/tests/convert_cli.rs) covers the
+[`route_golden.rs`](../crates/ariad-cli/tests/it/route_golden.rs),
+[`office_routes.rs`](../crates/ariad-cli/tests/it/office_routes.rs) and
+[`pdf_routes.rs`](../crates/ariad-cli/tests/it/pdf_routes.rs).
+[`convert_cli.rs`](../crates/ariad-cli/tests/it/convert_cli.rs) covers the
 new readers and CBZ tool.
-[`compare_cli.rs`](../crates/ariad-cli/tests/compare_cli.rs) checks compare;
-[`verapdf_pack.rs`](../crates/ariad-cli/tests/verapdf_pack.rs) checks the validators.
-[`web_to_pdf_cli.rs`](../crates/ariad-cli/tests/web_to_pdf_cli.rs) checks URL
-conversion, and [`compliance_cli.rs`](../crates/ariad-cli/tests/compliance_cli.rs)
+[`compare_cli.rs`](../crates/ariad-cli/tests/it/compare_cli.rs) checks compare;
+[`verapdf_pack.rs`](../crates/ariad-cli/tests/it/verapdf_pack.rs) checks the validators.
+[`web_to_pdf_cli.rs`](../crates/ariad-cli/tests/it/web_to_pdf_cli.rs) checks URL
+conversion, and [`compliance_cli.rs`](../crates/ariad-cli/tests/it/compliance_cli.rs)
 checks PDF/A, PDF/UA and `--pdf-standard` publication gates.
 External engines must be installed for conversion gates; planning alone does not
 establish fidelity. Edge metrics come from the benchmark harness; edges without

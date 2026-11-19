@@ -116,7 +116,7 @@ jobs:
           ASHIFT_PACK_VERAPDF: ${{ runner.temp }}/verapdf-pack
         run: |
           cargo test --locked -p ariad-host engines::verapdf
-          cargo test --locked -p ariad-cli --test verapdf_pack
+          cargo test --locked -p ariad-cli --test it verapdf_pack::
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verapdf-pack-${{ matrix.slug }}

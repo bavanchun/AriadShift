@@ -242,7 +242,7 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           fi
           cargo test -p ariad-host --test redact_pipeline
-          cargo test -p ariad-cli --test pdfium_tools_cli
+          cargo test -p ariad-cli --test it pdfium_tools_cli::
           cargo test --locked -p ariad-pdfium-engine --test extract_images
 
       - name: Upload the component

@@ -33,7 +33,7 @@ case "${1:-}" in
     engine-test)
         ASHIFT_DOCLING_ENGINE="\"$(env_python)\" -I -m ariad_docling" \
             cargo nextest run -p ariad-cli --features ariad-host/test-probe --run-ignored ignored-only \
-            --test-threads 2 -E 'binary(docling_engine)'
+            --test-threads 2 -E 'binary(it) & test(/^docling_engine::/)'
         ;;
     *)
         echo "usage: docling-engine.sh dev|test|engine-test" >&2

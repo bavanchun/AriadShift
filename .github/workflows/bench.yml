@@ -86,7 +86,7 @@ jobs:
           ASHIFT_PANDOC: ${{ github.workspace }}/.tools/pandoc/bin/pandoc
         run: >-
           cargo nextest run --release -p ariad-cli --features ariad-host/test-probe
-          --run-ignored ignored-only --test-threads 2 -E 'binary(docling_engine)'
+          --run-ignored ignored-only --test-threads 2 -E 'binary(it) & test(/^docling_engine::/)'
 
       - name: Run benchmark harness
         run: |

@@ -913,7 +913,7 @@ The PDF reader caps indirect objects (2,000,000), page/form nesting, operators a
 | Golden | `fixtures/` | Route outputs against reference standards |
 | Structural metrics | `bench/` | Text CER, heading tree distance (APTED), TEDS for tables, editability (see [docs/bench.md](docs/bench.md)) |
 | Visual regression | Typst/LibreOffice → PDF → PDFium raster → SSIM | "faithful" profile routes |
-| Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines; the Docling engine runs it, with the scanned-Vietnamese, table and cancellation acceptance checks, through `docling_engine.rs` in the `Docling pack` workflow |
+| Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines; the Docling engine runs it, with the scanned-Vietnamese, table and cancellation acceptance checks, through `crates/ariad-cli/tests/it/docling_engine.rs` in the `Docling pack` workflow |
 | Fuzzing | cargo-fuzz 0.13.2 | Untrusted readers, mappers, IR/limit validation, Typst output and host trust boundaries: archives, package metadata, pack signatures/extraction, engine events, assets and URIs (stable Rust with `-s none` in CI, date-pinned nightly ASan) |
 | E2E | Playwright (web), WebDriver (Tauri) | Primary user journeys |
 
