@@ -6,12 +6,21 @@ to export documents as Word (.docx) and to read and write other formats.
 
 Version:   3.12 (git tag 3.12, commit 381230ee36d8fa871c28f8982e22579f1a8f723b)
 Licence:   GNU General Public License, version 2 or later (GPL-2.0-or-later)
-Binary:    the unmodified official macOS release, pandoc-3.12-arm64-macOS.zip and
+Binary:    the official macOS release, pandoc-3.12-arm64-macOS.zip and
            pandoc-3.12-x86_64-macOS.zip from
-           https://github.com/jgm/pandoc/releases/tag/3.12, joined into one universal
-           file at Contents/Helpers/pandoc
+           https://github.com/jgm/pandoc/releases/tag/3.12, unmodified apart from
+           joining the arm64 and x86_64 slices into one universal file with lipo and
+           re-signing it; the file is at Contents/Helpers/pandoc
 Source:    https://github.com/jgm/pandoc/tree/3.12
            https://github.com/jgm/pandoc/archive/refs/tags/3.12.tar.gz
+           (a convenience; the written offer below is what covers the binary)
+
+Written offer (GNU General Public License, version 2, section 3(b)):
+For at least three years after the last time AriadShift is distributed with this
+Pandoc 3.12 binary, anyone may ask for the complete corresponding source code of that
+binary, including the Haskell libraries it is built from, in machine-readable form.
+It is provided for a charge of no more than the cost of physically performing the
+distribution. To ask, open an issue at https://github.com/bavanchun/AriadShift/issues.
 
 Pandoc is a separate program. AriadShift starts it as a child process and exchanges
 documents with it through files and pipes; it is not linked into AriadShift or into the

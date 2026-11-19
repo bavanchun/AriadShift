@@ -256,7 +256,12 @@ acknowledgement_names_the_exact_version_and_source() {
     local file="${REPO_ROOT}/apps/macos/ThirdParty/pandoc/ACKNOWLEDGEMENTS.txt"
     grep -q 'Version:   3.12 ' "${file}" \
         && grep -q 'https://github.com/jgm/pandoc/tree/3.12' "${file}" \
-        && grep -q 'GPL-2.0-or-later' "${file}"
+        && grep -q 'GPL-2.0-or-later' "${file}" \
+        && grep -q 'unmodified apart from' "${file}" \
+        && grep -q 'section 3(b)' "${file}" \
+        && grep -q 'at least three years' "${file}" \
+        && grep -q 'Haskell libraries' "${file}" \
+        && grep -q 'https://github.com/bavanchun/AriadShift/issues' "${file}"
 }
 
 check "an override binary is copied to Helpers/pandoc, executable, with the notices" override_is_copied_as_an_executable_helper
@@ -275,7 +280,7 @@ check "the helper is signed ad hoc with the hardened runtime and no entitlements
 check "a real identity gets a secure timestamp" real_identity_gets_a_secure_timestamp
 check "nothing is signed when Xcode disallows signing" not_signed_when_xcode_disallows_signing
 check "the shipped COPYING.txt and COPYRIGHT are the unchanged 3.12 texts" shipped_notices_are_the_unchanged_upstream_texts
-check "the acknowledgement names version 3.12, its source and its licence" acknowledgement_names_the_exact_version_and_source
+check "the acknowledgement names version 3.12, its source, its licence and the written source offer" acknowledgement_names_the_exact_version_and_source
 
 echo "${checks} checks, ${failures} failed"
 [[ "${failures}" -eq 0 ]]
