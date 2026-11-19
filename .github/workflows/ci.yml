@@ -235,6 +235,24 @@ jobs:
       # failure or a time limit (scripts/ci-apt.sh). Either mirror stalled for several minutes on
       # some days: a LibreOffice install took 18 minutes instead of 20 seconds and the job hit its
       # limit. apt also aborts a transfer that stops moving for 30 seconds and retries it.
+      # The LibreOffice and desktop library .deb files (about 500 MB) are cached per runner image
+      # and restored on every run; only a push to dev saves them, so pull requests cannot add
+      # entries. apt checks each cached file against the hashes in the package index, so a
+      # poisoned entry cannot change what gets installed.
+      - name: Select the apt package cache key
+        id: apt-key
+        if: runner.os == 'Linux'
+        run: echo "key=apt-debs-v1-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the apt package cache
+        id: apt-cache
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ci-apt-archives/*.deb
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: apt-debs-v1-
+
       - name: Update the package index
         if: runner.os == 'Linux'
         timeout-minutes: 15
@@ -244,8 +262,9 @@ jobs:
 
       - name: Install system LibreOffice
         if: runner.os == 'Linux'
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
+          export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
           packages=(libreoffice-writer libreoffice-calc libreoffice-impress qpdf)
           pinned=()
           for package in "${packages[@]}"; do
@@ -273,10 +292,22 @@ jobs:
 
       - name: Install Linux desktop prerequisites
         if: runner.os == 'Linux'
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
+          export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
           bash scripts/ci-apt.sh update
           bash scripts/ci-apt.sh install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
+      - name: Make the apt package files readable for caching
+        if: runner.os == 'Linux' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
+        run: sudo chown -R "$USER" "$HOME/.cache/ci-apt-archives"
+
+      - name: Store the apt package cache
+        if: runner.os == 'Linux' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ci-apt-archives/*.deb
+          key: ${{ steps.apt-key.outputs.key }}
 
       # The Windows lint job already runs Clippy there.
       - name: Run Clippy
