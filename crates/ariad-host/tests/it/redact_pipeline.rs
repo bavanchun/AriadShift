@@ -23,6 +23,7 @@ fn root_fixture(relative: &str) -> PathBuf {
 }
 
 fn child(name: &str) -> bool {
+    let name = format!("redact_pipeline::{name}");
     if std::env::var_os("ARIAD_REDACT_PIPELINE_CHILD").is_some() {
         return true;
     }
@@ -60,7 +61,7 @@ fn child(name: &str) -> bool {
         return false;
     };
     let output = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", name, "--nocapture", "--test-threads=1"])
+        .args(["--exact", &name, "--nocapture", "--test-threads=1"])
         .env("ARIAD_REDACT_PIPELINE_CHILD", "1")
         .env("ASHIFT_PACK_PDFIUM", pdfium)
         .output()
@@ -71,6 +72,7 @@ fn child(name: &str) -> bool {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    crate::support::assert_ran_one_test(&String::from_utf8_lossy(&output.stdout), &name);
     false
 }
 

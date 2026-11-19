@@ -6,7 +6,7 @@
 //! under the `pdfium` engine id, so they run only with the `test-probe` feature. Tests that
 //! depend on process environment variables re-run themselves in a child process with a
 //! controlled environment.
-mod support;
+use crate::support;
 
 use std::{fs, path::Path, process::Command};
 
@@ -41,12 +41,13 @@ const PDFIUM_TOOLS: &[&str] = &[
 /// pack and sandbox variables cleared (`configure` then sets what the test needs), asserts the
 /// child passed and returns `false`.
 fn in_child(test: &str, configure: impl FnOnce(&mut Command)) -> bool {
+    let test = format!("pdfium_pack::{test}");
     if std::env::var_os(CHILD).is_some() {
         return true;
     }
     let mut command = Command::new(std::env::current_exe().expect("test executable"));
     command
-        .args(["--exact", test, "--nocapture", "--test-threads=1"])
+        .args(["--exact", &test, "--nocapture", "--test-threads=1"])
         .env(CHILD, "1")
         .env_remove("ASHIFT_PACK_PDFIUM")
         .env_remove("ASHIFT_SANDBOX");

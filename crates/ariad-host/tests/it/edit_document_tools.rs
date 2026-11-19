@@ -559,7 +559,7 @@ fn docx_open_recovers_embedded_assets() {
     use sha2::{Digest, Sha256};
     let directory = TempDir::new().unwrap();
     let mut document = styled_document();
-    let bytes = include_bytes!("../../../fixtures/md/assets/vietnamese-route.png").to_vec();
+    let bytes = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png").to_vec();
     let id = hex::encode(Sha256::digest(&bytes));
     document.assets.insert(
         id.clone(),

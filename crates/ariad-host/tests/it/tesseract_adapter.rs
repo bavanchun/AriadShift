@@ -12,6 +12,7 @@ fn spec(id: &str) -> ToolSpec {
 }
 
 fn child(name: &str) -> bool {
+    let name = format!("tesseract_adapter::{name}");
     if std::env::var_os("ARIAD_TESSERACT_TEST_CHILD").is_some() {
         return true;
     }
@@ -25,7 +26,7 @@ fn child(name: &str) -> bool {
     };
     let mut command = Command::new(std::env::current_exe().unwrap());
     let data = tempfile::tempdir().unwrap();
-    command.args(["--exact", name, "--nocapture", "--test-threads=1"]);
+    command.args(["--exact", &name, "--nocapture", "--test-threads=1"]);
     Command::env(&mut command, "ARIAD_TESSERACT_TEST_CHILD", "1");
     Command::env(&mut command, "ASHIFT_PACK_TESSERACT", pack);
     Command::env(&mut command, "ASHIFT_DATA_DIR", data.path());
@@ -36,6 +37,7 @@ fn child(name: &str) -> bool {
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
+    crate::support::assert_ran_one_test(&String::from_utf8_lossy(&result.stdout), &name);
     false
 }
 

@@ -19,6 +19,18 @@ use std::{
 
 use ariad_host::packs::{self, FetchPolicy, ManifestRequest, PackContext, TrustedKey, TrustedKeys};
 
+pub mod qpdf;
+
+/// Requires that a child run of this test binary (`--exact <module>::<test>`) executed exactly
+/// one test. A name without its module path matches nothing in the merged binary, and a child
+/// that matches nothing exits 0 and would pass silently.
+pub fn assert_ran_one_test(stdout: &str, name: &str) {
+    assert!(
+        stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
+        "the child must run exactly the one test {name}, got: {stdout}"
+    );
+}
+
 /// How the server answers one path.
 #[derive(Clone)]
 pub enum Route {

@@ -545,10 +545,10 @@ fn fifo_failure_cleanup_is_bounded_without_a_reader() {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "fifo_failure_cleanup_is_bounded_without_a_reader",
+            "assets::fifo_failure_cleanup_is_bounded_without_a_reader",
         ])
         .env("ARIAD_FIFO_CLEANUP_CHILD", "1")
-        .stdout(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
@@ -556,6 +556,12 @@ fn fifo_failure_cleanup_is_bounded_without_a_reader() {
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             assert!(status.success());
+            let mut stdout = String::new();
+            std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut stdout).unwrap();
+            crate::support::assert_ran_one_test(
+                &stdout,
+                "assets::fifo_failure_cleanup_is_bounded_without_a_reader",
+            );
             break;
         }
         if std::time::Instant::now() >= deadline {

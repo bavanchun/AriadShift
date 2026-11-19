@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use ariad_host::packs::{self, PackError, Stats, Unpack};
 use std::{fs, path::Path};

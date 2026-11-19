@@ -279,7 +279,7 @@ fn run_parent_test() {
     let marker_path = tmp.path().join("completed.marker");
 
     let status = std::process::Command::new(&fake_gui_host)
-        .arg("fake_gui_host_fails_closed_when_reexecuted_as_engine")
+        .arg("engine_program_resolver::fake_gui_host_fails_closed_when_reexecuted_as_engine")
         .arg("--exact")
         .env("ARIAD_TEST_EMBEDDED_HOST_CHILD", "1")
         .env("ARIAD_TEST_SENTINEL_PATH", &sentinel_path)

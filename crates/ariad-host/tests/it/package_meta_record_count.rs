@@ -5,7 +5,7 @@ use tempfile::tempdir;
 
 #[test]
 fn aliases_return_the_typed_error_without_modifying_files_or_leaving_temporaries() {
-    let bytes = include_bytes!("../../../fuzz/seeds/docx_meta/unicode-alias.zip");
+    let bytes = include_bytes!("../../../../fuzz/seeds/docx_meta/unicode-alias.zip");
     for stamp in [stamp_docx, stamp_epub] {
         let directory = tempdir().unwrap();
         let path = directory.path().join("package.zip");

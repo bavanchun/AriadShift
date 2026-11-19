@@ -9,7 +9,7 @@ fn corpus_size_and_similarity_against_stirling() {
         return;
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let reference = include_str!("../../ariad-pdf/tests/data/stirling-level6.tsv");
+    let reference = include_str!("../../../ariad-pdf/tests/data/stirling-level6.tsv");
     let temporary = tempfile::tempdir().unwrap();
     let spec = ariad_core::tools::specs::optimize::specs()
         .into_iter()

@@ -58,6 +58,7 @@ fn copy_tree(source: &Path, dest: &Path) {
         }
     }
 }
+/// Re-runs the test `name` (module path included) in a child process with the pack configured.
 pub fn in_child(name: &str) -> Option<tempfile::TempDir> {
     if std::env::var_os("ARIAD_QPDF_TEST_CHILD").is_some() {
         return None;
@@ -77,5 +78,6 @@ pub fn in_child(name: &str) -> Option<tempfile::TempDir> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    super::assert_ran_one_test(&String::from_utf8_lossy(&output.stdout), name);
     Some(pack)
 }
