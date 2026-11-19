@@ -257,7 +257,7 @@
       "running": "Đang xuất thành {format}…",
       "done": "Đã xuất {name}",
       "failed": "Không thể hoàn tất việc xuất.",
-      "pandoc_missing": "Xuất sang Word cần Pandoc 3.12 trở lên nhưng không tìm thấy. Hãy cài Pandoc rồi thử lại, hoặc xuất sang Markdown hay HTML, hai định dạng này không cần thêm gì.",
+      "pandoc_missing": "Xuất sang Word cần Pandoc đi kèm AriadShift nhưng không tìm thấy hoặc không chạy được. Hãy cài lại AriadShift rồi thử lại, hoặc xuất sang Markdown hay HTML, hai định dạng này không cần thêm gì.",
       "engine_required": "Việc xuất tài liệu này cần engine {engine}, nhưng engine chưa được cài đặt hoặc không chạy được. Hãy cài đặt rồi thử lại.",
       "docling_missing": "Việc xuất tài liệu này cần gói engine Docling nhưng gói chưa được cài đặt. Hãy cài gói engine Docling rồi thử lại.",
       "docling_tool_missing": "Việc xuất tài liệu này cần Tesseract 5 và dữ liệu ngôn ngữ của nó, nhưng ít nhất một thứ không tìm thấy. Hãy cài Tesseract 5 rồi thử lại.",
