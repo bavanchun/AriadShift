@@ -277,6 +277,18 @@ jobs:
       # Clippy runs in the lint-native job, and the slim CLI check and the capabilities registry check
       # run in the Linux Verify parts (they do not depend on the host).
       - name: Run tests
+        if: runner.os != 'Windows'
+        run: just test
+
+      # The Windows test compile links 251 test binaries, about a third of its time with link.exe.
+      # rust-lld ships with the toolchain and cut a cold compile from 974 s to 817 s on this
+      # workspace (about 16 percent), so the Windows tests use it. The flags apply to this step only:
+      # they change cargo's fingerprints, so the first run after the change recompiles once, and the
+      # packaging check below keeps the default linker.
+      - name: Run tests (rust-lld)
+        if: runner.os == 'Windows'
+        env:
+          RUSTFLAGS: -Clinker=rust-lld.exe -Clinker-flavor=lld-link
         run: just test
 
       # The benchmark harness tests depend on the host (the .exe suffix on Windows, the memory
