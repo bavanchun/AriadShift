@@ -193,8 +193,9 @@ jobs:
 
       # fetch.py checks the size and SHA-256 of every cached blob before it uses it, so a
       # poisoned cache entry cannot change what goes into a pack.
-      - name: Cache models and OCR data
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+      - name: Restore models and OCR data
+        id: assets
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/blobs
           key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
@@ -207,6 +208,16 @@ jobs:
 
       - name: Run the conformance and acceptance tests against the real engine
         run: just docling-engine-test
+
+      # Only dev pushes save the blobs (412 MB). A pull request cannot share an entry with
+      # another pull request, so each one saved its own copy and crowded the Verify caches out
+      # of the 10 GB repository limit.
+      - name: Save models and OCR data
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.assets.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling/blobs
+          key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
 
   pack:
     name: Pack (${{ matrix.target }})
@@ -254,8 +265,9 @@ jobs:
 
       # fetch.py checks the size and SHA-256 of every cached blob before it uses it, so a
       # poisoned cache entry cannot change what goes into a pack.
-      - name: Cache models and OCR data
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+      - name: Restore models and OCR data
+        id: assets
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/blobs
           key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
@@ -372,6 +384,16 @@ jobs:
         with:
           path: .tools/sccache
           key: pack-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Only dev pushes save the blobs (412 MB). A pull request cannot share an entry with
+      # another pull request, so each one saved its own copy and crowded the Verify caches out
+      # of the 10 GB repository limit.
+      - name: Save models and OCR data
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.assets.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling/blobs
+          key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
 
       - name: Rebuild and compare component hashes
         if: matrix.primary
