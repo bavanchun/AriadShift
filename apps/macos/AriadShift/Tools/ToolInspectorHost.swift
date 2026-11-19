@@ -16,6 +16,8 @@ struct ToolInspectorHost<DocumentInfo: View>: View {
         ZStack {
             if let run = session.run {
                 ToolRunInspector(model: run) { session.closeTool() }
+                    // The header keeps its icon hidden while the flying copy stands in for it.
+                    .environment(\.dsFlightHidesHeaderIcon, flight?.hidesTarget ?? false)
                     .overlay(alignment: .topLeading) { landingPad }
                     .id(run.id)
                     .transition(.opacity)

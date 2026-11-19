@@ -197,7 +197,8 @@ The package holds every visual decision of the app, taken from the approved rede
   One overlay layer over the window draws the icon, and `DSWindowFrameProbe` (AppKit frame conversion, which does cross hosting views)
   measures the chosen icon, the layer and a landing pad over the header icon in window coordinates. The icon follows the pad while the
   inspector slides open and lands once the pad has stood still for the spring's settle time (`DSFlightSettler`), then fades out over the
-  real header icon. Under Reduce Motion nothing flies: the chosen row and the inspector crossfade. A choice that opens nothing (the tool
+  real header icon (`DSInspectorHeader` hides its own icon well while the copy is in the air, through `dsFlightHidesHeaderIcon`). Under
+  Reduce Motion nothing flies: the chosen row and the inspector crossfade. A choice that opens nothing (the tool
   is already open, a tool is running) does not fly.
 - Bulk reloads (`ViewerModel.install`, the thumbnail cache swap) run through `withDSBulkReload`, a `Transaction` with
   `disablesAnimations`. The thumbnail fade is the `fade` curve, and nothing under Reduce Motion (`DSMotion.thumbnailFade`). No view adds

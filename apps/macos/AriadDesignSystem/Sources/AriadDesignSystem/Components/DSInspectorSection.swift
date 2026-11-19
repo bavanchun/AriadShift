@@ -6,6 +6,7 @@ public struct DSInspectorHeader: View {
     let tint: DSIconWell.Tint
     let title: Text
     let subtitle: Text?
+    @Environment(\.dsFlightHidesHeaderIcon) private var iconHidden
 
     public init(systemImage: String, tint: DSIconWell.Tint = .accent, title: Text, subtitle: Text? = nil) {
         self.systemImage = systemImage
@@ -18,6 +19,7 @@ public struct DSInspectorHeader: View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
             HStack(spacing: DSSpacing.m) {
                 DSIconWell(systemImage: systemImage, tint: tint)
+                    .opacity(iconHidden ? 0 : 1)
                 title
                     .font(DSFont.title2)
                     .lineLimit(1)
