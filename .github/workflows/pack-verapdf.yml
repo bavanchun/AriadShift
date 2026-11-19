@@ -7,15 +7,46 @@ on:
       - engines/verapdf/**
       - scripts/pack/**
       - scripts/test-pack-verapdf.sh
-      - justfile
       - .github/workflows/pack-verapdf.yml
   push:
     tags: ['pack-verapdf-v*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  # Pull requests build Linux (and Windows) targets only; the macOS legs fill the shared macOS
+  # runner pool and run on tags and manual dispatch (docs/ci.md, "Pull request scope").
+  targets:
+    name: Build targets
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.targets.outputs.include }}
+    steps:
+      - name: Select the targets for this event
+        id: targets
+        env:
+          EVENT: ${{ github.event_name }}
+          ALL: |
+            [
+            {"slug": "linux-x64", "os": "ubuntu-26.04"},
+            {"slug": "linux-arm64", "os": "ubuntu-26.04-arm"},
+            {"slug": "mac-arm64", "os": "macos-26"},
+            {"slug": "mac-x64", "os": "macos-26-intel"}
+            ]
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            include=$(jq -c 'map(select(.os | startswith("macos") | not))' <<<"$ALL")
+          else
+            include=$(jq -c . <<<"$ALL")
+          fi
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
   tooling:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -28,17 +59,13 @@ jobs:
 
   source-build:
     name: Build (${{ matrix.slug }})
-    needs: tooling
+    needs: [tooling, targets]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {slug: linux-x64, os: ubuntu-26.04}
-          - {slug: linux-arm64, os: ubuntu-26.04-arm}
-          - {slug: mac-arm64, os: macos-26}
-          - {slug: mac-x64, os: macos-26-intel}
+        include: ${{ fromJSON(needs.targets.outputs.include) }}
     env:
       SLUG: ${{ matrix.slug }}
       APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
@@ -93,6 +120,7 @@ jobs:
 
   manifest:
     needs: source-build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:

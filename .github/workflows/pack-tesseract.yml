@@ -11,15 +11,46 @@ on:
       - crates/ariad-pdfium-engine/**
       - scripts/pack/**
       - scripts/test-pack-tesseract.sh
-      - justfile
       - .github/workflows/pack-tesseract.yml
   push:
     tags: ['pack-tesseract-v*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  # Pull requests build Linux (and Windows) targets only; the macOS legs fill the shared macOS
+  # runner pool and run on tags and manual dispatch (docs/ci.md, "Pull request scope").
+  targets:
+    name: Build targets
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.targets.outputs.include }}
+    steps:
+      - name: Select the targets for this event
+        id: targets
+        env:
+          EVENT: ${{ github.event_name }}
+          ALL: |
+            [
+            {"slug": "linux-x64", "os": "ubuntu-26.04", "image": "quay.io/pypa/manylinux_2_28_x86_64@sha256:f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f"},
+            {"slug": "linux-arm64", "os": "ubuntu-26.04-arm", "image": "quay.io/pypa/manylinux_2_28_aarch64@sha256:54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676"},
+            {"slug": "mac-arm64", "os": "macos-26", "image": ""},
+            {"slug": "mac-x64", "os": "macos-26-intel", "image": ""}
+            ]
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            include=$(jq -c 'map(select(.os | startswith("macos") | not))' <<<"$ALL")
+          else
+            include=$(jq -c . <<<"$ALL")
+          fi
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
   tooling:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -32,17 +63,13 @@ jobs:
       - run: bash scripts/test-ci-scope.sh
 
   source-build:
-    needs: tooling
+    needs: [tooling, targets]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {slug: linux-x64, os: ubuntu-26.04, image: 'quay.io/pypa/manylinux_2_28_x86_64@sha256:f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f'}
-          - {slug: linux-arm64, os: ubuntu-26.04-arm, image: 'quay.io/pypa/manylinux_2_28_aarch64@sha256:54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676'}
-          - {slug: mac-arm64, os: macos-26, image: ''}
-          - {slug: mac-x64, os: macos-26-intel, image: ''}
+        include: ${{ fromJSON(needs.targets.outputs.include) }}
     env:
       SLUG: ${{ matrix.slug }}
       IMAGE: ${{ matrix.image }}
@@ -125,6 +152,7 @@ jobs:
 
   manifest:
     needs: source-build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:

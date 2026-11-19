@@ -22,6 +22,34 @@ permissions:
   contents: read
 
 jobs:
+  # Pull requests build Linux (and Windows) targets only; the macOS legs fill the shared macOS
+  # runner pool and run on tags and manual dispatch (docs/ci.md, "Pull request scope").
+  targets:
+    name: Build targets
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.targets.outputs.include }}
+    steps:
+      - name: Select the targets for this event
+        id: targets
+        env:
+          EVENT: ${{ github.event_name }}
+          ALL: |
+            [
+            {"target": "x86_64-unknown-linux-gnu", "os": "ubuntu-26.04"},
+            {"target": "aarch64-unknown-linux-gnu", "os": "ubuntu-26.04-arm"},
+            {"target": "aarch64-apple-darwin", "os": "macos-26"},
+            {"target": "x86_64-pc-windows-msvc", "os": "windows-2025"}
+            ]
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            include=$(jq -c 'map(select(.os | startswith("macos") | not))' <<<"$ALL")
+          else
+            include=$(jq -c . <<<"$ALL")
+          fi
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
   engine:
     name: Sign engine tests and verification (ubuntu-26.04)
     runs-on: ubuntu-26.04
@@ -76,21 +104,13 @@ jobs:
 
   pack-build:
     name: Build sign pack (${{ matrix.target }})
-    needs: engine
+    needs: [engine, targets]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-26.04
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-26.04-arm
-          - target: aarch64-apple-darwin
-            os: macos-26
-          - target: x86_64-pc-windows-msvc
-            os: windows-2025
+        include: ${{ fromJSON(needs.targets.outputs.include) }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -120,6 +140,7 @@ jobs:
   manifest:
     name: Assemble multi-target sign manifest
     needs: pack-build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
