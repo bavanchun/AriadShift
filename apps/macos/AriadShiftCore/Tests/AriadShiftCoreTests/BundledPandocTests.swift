@@ -3,8 +3,8 @@ import XCTest
 
 @testable import AriadShiftCore
 
-/// `EngineClient` exports the Pandoc that ships beside the helper, so Export as Word works on a Mac with no
-/// Pandoc installed. The app bundle is not needed: the folder that plays `Contents/Helpers` is a temporary one.
+/// `EngineClient.exportBundledPandoc` makes the Pandoc that ships beside the helper known to the engine, so Export
+/// as Word works on a Mac with no Pandoc installed. The app bundle is not needed: the folder that plays `Contents/Helpers` is a temporary one.
 final class BundledPandocTests: XCTestCase {
     private let name = EngineClient.pandocEnvironmentName
 
@@ -81,39 +81,48 @@ final class BundledPandocTests: XCTestCase {
 
     // MARK: - The process environment the Rust host reads
 
-    func testInitExportsTheBundledPandocWhenNoneIsChosen() throws {
+    func testExportSetsTheBundledPandocWhenNoneIsChosen() throws {
         let (helper, pandoc) = try makeHelpers()
         setProcessPandoc(nil)
-        _ = try EngineClient(helperURL: helper)
+        EngineClient.exportBundledPandoc(beside: helper)
         XCTAssertEqual(getenv(name).map { String(cString: $0) }, pandoc.path)
     }
 
-    func testInitReplacesAnEmptyChoice() throws {
+    func testExportReplacesAnEmptyChoice() throws {
         let (helper, pandoc) = try makeHelpers()
         setProcessPandoc("")
-        _ = try EngineClient(helperURL: helper)
+        EngineClient.exportBundledPandoc(beside: helper)
         XCTAssertEqual(getenv(name).map { String(cString: $0) }, pandoc.path)
     }
 
-    func testInitKeepsAnExplicitChoice() throws {
+    func testExportKeepsAnExplicitChoice() throws {
         let (helper, _) = try makeHelpers()
         setProcessPandoc("/opt/custom/pandoc")
-        _ = try EngineClient(helperURL: helper)
+        EngineClient.exportBundledPandoc(beside: helper)
         XCTAssertEqual(getenv(name).map { String(cString: $0) }, "/opt/custom/pandoc")
     }
 
-    func testInitWithoutABundledPandocLeavesTheEnvironmentAlone() throws {
+    func testExportWithoutABundledPandocLeavesTheEnvironmentAlone() throws {
         let (helper, _) = try makeHelpers(pandoc: false)
         setProcessPandoc(nil)
-        _ = try EngineClient(helperURL: helper)
+        EngineClient.exportBundledPandoc(beside: helper)
         XCTAssertNil(getenv(name), "nothing to export, so PATH lookup stays the fallback")
     }
 
-    func testAFailedInitExportsNothing() throws {
-        let (helper, _) = try makeHelpers()
-        try FileManager.default.removeItem(at: helper)
+    func testExportIsIdempotent() throws {
+        let (helper, pandoc) = try makeHelpers()
         setProcessPandoc(nil)
-        XCTAssertThrowsError(try EngineClient(helperURL: helper))
-        XCTAssertNil(getenv(name), "a client that cannot start must not change the environment")
+        EngineClient.exportBundledPandoc(beside: helper)
+        EngineClient.exportBundledPandoc(beside: helper)
+        XCTAssertEqual(getenv(name).map { String(cString: $0) }, pandoc.path)
+    }
+
+    func testCreatingAClientDoesNotTouchTheEnvironment() throws {
+        // The export is the app's job at launch, on the main thread; a client built later on another thread must
+        // never call setenv.
+        let (helper, _) = try makeHelpers()
+        setProcessPandoc(nil)
+        _ = try EngineClient(helperURL: helper)
+        XCTAssertNil(getenv(name))
     }
 }

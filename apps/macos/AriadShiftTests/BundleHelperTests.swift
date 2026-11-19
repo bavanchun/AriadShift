@@ -110,11 +110,13 @@ final class BundleHelperTests: XCTestCase {
             to: input, atomically: true, encoding: .utf8)
         let output = directory.appendingPathComponent("note.docx")
 
+        // What AriadShiftApp.init does at launch; this test host builds the client itself and the PATH was changed above.
+        EngineClient.exportBundledPandoc()
         let client = try EngineClient()
         XCTAssertEqual(
             getenv(EngineClient.pandocEnvironmentName).map { String(cString: $0) },
             bundledPandoc.path,
-            "the client must export the bundled Pandoc"
+            "the launch export must name the bundled Pandoc"
         )
         let outcome = try await client.convert(
             ConvertRequest(input: input.path, output: output.path, targetFormat: "docx", overwrite: true)
