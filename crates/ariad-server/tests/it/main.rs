@@ -1,7 +1,8 @@
 //! The integration tests of `ariad-server`, linked as one test binary.
 //!
 //! Each former test target is a module here; run one with, for example,
-//! `cargo nextest run -p ariad-server --test it auth::`.
+//! `cargo nextest run -p ariad-server --test it -E 'test(/^jobs::/)'` (anchored: a plain `jobs::`
+//! substring would also select `cloud_tool_jobs::`).
 
 mod auth;
 mod auth_failure_isolation;

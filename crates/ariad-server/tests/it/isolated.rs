@@ -444,7 +444,7 @@ fn office_namespace_failure_survives_the_worker_helper() {
         let soffice = directory.path().join("soffice");
         std::fs::write(&soffice, "#!/bin/sh\nexit 1\n").unwrap();
         std::fs::set_permissions(&soffice, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "isolated::office_namespace_failure_survives_the_worker_helper",
@@ -453,9 +453,19 @@ fn office_namespace_failure_survives_the_worker_helper() {
             .env("ASHIFT_SOFFICE", &soffice)
             .env("ARIAD_TEST_SANDBOX_SUPPORT", "namespace-denied")
             .env("ASHIFT_SANDBOX", "off")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout} {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // A renamed test would match nothing in the child and still exit 0: require exactly one run.
+        assert!(
+            stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
+            "the helper child must run exactly this one test, got: {stdout}"
+        );
         return;
     }
     let directory = tempfile::tempdir().unwrap();

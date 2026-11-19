@@ -15,11 +15,16 @@ fn same_user_children_cannot_read_protected_worker_credentials() {
         .env("DATABASE_URL", "procfs-credential-sentinel")
         .output()
         .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success(),
-        "{} {}",
-        String::from_utf8_lossy(&output.stdout),
+        "{stdout} {}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    // A renamed probe would match nothing in the child and still exit 0: require exactly one run.
+    assert!(
+        stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
+        "the probe child must run exactly the one probe test, got: {stdout}"
     );
 }
 
