@@ -430,7 +430,7 @@ pack-tesseract-verify out="target/packs/tesseract":
     export XDG_DATA_HOME="$work"
     export ASHIFT_PACK_TESSERACT="$(cd "{{out}}" && pwd -P)"
     export ARIAD_TEST_TESSERACT_PACK="$ASHIFT_PACK_TESSERACT"
-    cargo test -p ariad-host --features test-probe --test tesseract_adapter
+    cargo test -p ariad-host --features test-probe --test it tesseract_adapter::
 
 # Build a host veraPDF development pack from verified installer inputs.
 pack-verapdf out="target/packs/verapdf":
