@@ -12,7 +12,7 @@ def read(path):
 recipes = read('justfile')
 assert re.search(r'test-auth-db:\n\s+ARIAD_TEST_DATABASE_URL="\$\{ARIAD_TEST_DATABASE_URL:\?[^}]+\}" ARIAD_TEST_REQUIRE_DATABASE=1 pnpm .*oauth-postgres.test.ts', recipes), 'database recipe must require execution'
 ci = read('.github/workflows/ci.yml')
-static = ci.split('\n  static:\n')[1].split('\n  lint-windows:\n')[0]
+static = ci.split('\n  static:\n')[1].split('\n  lint-native:\n')[0]
 assert 'cargo check --locked -p ariad-pdf --no-default-features\n' in static
 assert 'cargo check --locked -p ariad-pdf --no-default-features --features codecs' in static
 fuzz_targets = re.search(r'targets="([^"]+)"', ci)

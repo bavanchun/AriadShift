@@ -119,14 +119,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: just static
 
-  lint-windows:
-    name: Lint (windows-2025)
+  # Clippy for the two hosts whose Verify job is the slow one (macOS and Windows), in parallel with
+  # their tests instead of in front of them. Linux runs Clippy in the `lint` part of verify-linux.
+  lint-native:
+    name: Lint (${{ matrix.os }})
     needs: scope
     if: needs.scope.outputs.heavy == 'true'
-    runs-on: windows-2025
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, windows-2025]
     defaults:
       run:
         shell: bash
@@ -165,7 +171,8 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --features ariad-host/test-probe
 
-  # The macOS and Windows half of Verify. Linux has its own job below, split into parallel parts.
+  # The macOS and Windows half of Verify: the tests, and the packaging check on Windows. Clippy has its
+  # own parallel job above, Linux has its own job below, split into parallel parts.
   verify:
     name: Verify (${{ matrix.os }})
     needs: scope
@@ -262,22 +269,10 @@ jobs:
       - name: Verify Pandoc installation
         run: '"$ASHIFT_PANDOC" --version'
 
-      # The Windows lint job already runs Clippy there.
-      - name: Run Clippy
-        if: runner.os != 'Windows'
-        run: just clippy
-
+      # Clippy runs in the lint-native job, and the slim CLI check, the benchmark harness tests and
+      # the capabilities registry check run in the Linux Verify parts (they do not depend on the host).
       - name: Run tests
         run: just test
-
-      - name: Check the CLI without default features
-        run: cargo check -p ariad-cli --no-default-features
-
-      - name: Run benchmark harness tests
-        run: just bench-test
-
-      - name: Check capabilities registry
-        run: just bench-check
 
       # Packaging is the same on every host, and on macOS it recompiles the dependency graph from
       # cold (6 to 14 minutes there, 3 to 5 on Linux and Windows), which pushed cold macOS runs past
@@ -1008,7 +1003,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [scope, static, lint-windows, verify, verify-linux, server, fuzz, web]
+    needs: [scope, static, lint-native, verify, verify-linux, server, fuzz, web]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -1020,7 +1015,7 @@ jobs:
           WEB_SCOPE: ${{ needs.scope.outputs.web }}
           SCOPE: ${{ needs.scope.result }}
           STATIC: ${{ needs.static.result }}
-          WINDOWS: ${{ needs.lint-windows.result }}
+          LINT_NATIVE: ${{ needs.lint-native.result }}
           VERIFY: ${{ needs.verify.result }}
           # One result for the whole matrix: success only when every part that ran succeeded, so a
           # packaging part the scope left out cannot fail it.
@@ -1029,13 +1024,13 @@ jobs:
           FUZZ: ${{ needs.fuzz.result }}
           WEB: ${{ needs.web.result }}
         run: |
-          printf 'scope=%s static=%s lint-windows=%s verify=%s verify-linux=%s server=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
-            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$VERIFY_LINUX" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
+          printf 'scope=%s static=%s lint-native=%s verify=%s verify-linux=%s server=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
+            "$SCOPE" "$STATIC" "$LINT_NATIVE" "$VERIFY" "$VERIFY_LINUX" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
           [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
           if [ "$HEAVY" = true ]; then
-            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$VERIFY_LINUX" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
+            [ "$LINT_NATIVE" = success ] && [ "$VERIFY" = success ] && [ "$VERIFY_LINUX" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
           else
-            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$VERIFY_LINUX" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
+            [ "$LINT_NATIVE" = skipped ] && [ "$VERIFY" = skipped ] && [ "$VERIFY_LINUX" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
           fi
           if [ "$WEB_SCOPE" = true ]; then
             [ "$WEB" = success ] || exit 1

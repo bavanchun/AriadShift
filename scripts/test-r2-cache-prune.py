@@ -356,7 +356,7 @@ class TestR2CachePrune(unittest.TestCase):
 
         # Verify job-level environment declarations:
         # Exactly verify, verify-linux, server, and fuzz declare environment: ci-cache-write conditionally.
-        # Other jobs (scope, static, lint-windows, web, ci-passed) must NOT declare environment:.
+        # Other jobs (scope, static, lint-native, web, ci-passed) must NOT declare environment:.
         jobs_section = content.split("\njobs:\n", 1)[1]
         jobs_raw = re.split(r"\n  ([a-zA-Z0-9_-]+):\n", "\n" + jobs_section)
         jobs = {}
