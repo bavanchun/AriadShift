@@ -15,5 +15,5 @@ trap 'rm -rf "$bundle_dir"' EXIT
 export APPDIR="$bundle_dir/squashfs-root"
 export ARIAD_TEST_APPIMAGE_BINARY="$APPDIR/AppRun"
 cargo nextest run -p ariad-cli --features ariad-host/test-probe \
-    --test builtin_engine_contracts --run-ignored ignored-only --success-output immediate \
+    --test it --run-ignored ignored-only --success-output immediate \
     -E 'test(appimage_office_conversion_preserves_the_bundle_in_private_tmp)'

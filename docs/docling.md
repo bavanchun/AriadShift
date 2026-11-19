@@ -54,7 +54,7 @@ cargo run -p ariad-cli --bin ashift -- convert fixtures/scan/vi-garden-300dpi.pn
 |---|---|
 | `just docling-dev` | Sets up the environment, models and OCR data. |
 | `just docling-test` | `ruff check`, `ruff format --check` and `pytest` over `engines/docling`. The tests need only the environment, not the models. |
-| `just docling-engine-test` | Runs `crates/ariad-cli/tests/docling_engine.rs` against the real engine: protocol schema conformance (describe, convert, progress, warning, result last, clean stdout), scanned Vietnamese PNG and PDF to Markdown and DOCX, a digital PDF table, PPTX and XLSX, and cancellation stopping the engine and Tesseract. These tests are ignored by default and need Tesseract. |
+| `just docling-engine-test` | Runs `crates/ariad-cli/tests/it/docling_engine.rs` against the real engine: protocol schema conformance (describe, convert, progress, warning, result last, clean stdout), scanned Vietnamese PNG and PDF to Markdown and DOCX, a digital PDF table, PPTX and XLSX, and cancellation stopping the engine and Tesseract. These tests are ignored by default and need Tesseract. |
 | `just pack-docling` | Builds the unsigned pack for this host into `target/pack-docling`. |
 | `just pack-docling-test` | Runs the real engine conformance and acceptance suite against that pack; needs Pandoc and Tesseract. |
 

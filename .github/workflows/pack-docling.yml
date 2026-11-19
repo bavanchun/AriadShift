@@ -19,8 +19,8 @@ on:
       - engines/common/licenses/**
       - crates/ariad-core/src/docling/**
       - crates/ariad-host/src/engines/docling.rs
-      - crates/ariad-cli/tests/docling_engine.rs
-      - crates/ariad-cli/tests/docling_pack.rs
+      - crates/ariad-cli/tests/it/docling_engine.rs
+      - crates/ariad-cli/tests/it/docling_pack.rs
       - uv.lock
       - pyproject.toml
       - scripts/docling-engine.sh
@@ -426,7 +426,8 @@ jobs:
         env:
           ASHIFT_DOCLING_PACK_TEST_DIR: ${{ env.PACK_OUT }}
         run: >-
-          cargo test -p ariad-cli --features test-probe --test docling_pack
+          cargo test -p ariad-cli --features test-probe --test it
+          docling_pack::
           -- --ignored --nocapture
 
       - name: Run engine conformance with the packaged runtime
