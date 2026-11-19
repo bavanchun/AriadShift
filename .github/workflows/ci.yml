@@ -35,6 +35,8 @@ jobs:
       range: ${{ steps.scope.outputs.range }}
       heavy: ${{ steps.scope.outputs.heavy }}
       web: ${{ steps.scope.outputs.web }}
+      package: ${{ steps.scope.outputs.package }}
+      linux_parts: ${{ steps.scope.outputs.linux_parts }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -145,6 +147,7 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --features ariad-host/test-probe
 
+  # The macOS and Windows half of Verify. Linux has its own job below, split into parallel parts.
   verify:
     name: Verify (${{ matrix.os }})
     needs: scope
@@ -159,10 +162,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # With the Linux Rust cache evicted the job compiles everything and takes 30 to 35 minutes
-          # (it ran 17 minutes with the cache), so 30 cancelled every pull request run.
-          - os: ubuntu-26.04
-            timeout: 45
           - os: macos-26
             timeout: 45
           - os: windows-2025
@@ -223,53 +222,6 @@ jobs:
           path: .tools/
           key: pandoc-${{ runner.os }}-${{ hashFiles('scripts/install-pandoc.sh') }}
 
-      - name: Enable namespaces for LibreOffice sandbox tests
-        if: runner.os == 'Linux'
-        run: |
-          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-          unshare --user --map-root-user --mount true
-
-      # The runner's Azure mirror is tried first and archive.ubuntu.com is the fallback after a
-      # failure or a time limit (scripts/ci-apt.sh). Either mirror stalled for several minutes on
-      # some days: a LibreOffice install took 18 minutes instead of 20 seconds and the job hit its
-      # limit. apt also aborts a transfer that stops moving for 30 seconds and retries it.
-      # The LibreOffice and desktop library .deb files (about 500 MB) are cached per runner image
-      # and restored on every run; only a push to dev saves them, so pull requests cannot add
-      # entries. apt checks each cached file against the hashes in the package index, so a
-      # poisoned entry cannot change what gets installed.
-      - name: Select the apt package cache key
-        id: apt-key
-        if: runner.os == 'Linux'
-        run: echo "key=apt-debs-v1-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore the apt package cache
-        id: apt-cache
-        if: runner.os == 'Linux'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ci-apt-archives/*.deb
-          key: ${{ steps.apt-key.outputs.key }}
-          restore-keys: apt-debs-v1-
-
-      - name: Update the package index
-        if: runner.os == 'Linux'
-        timeout-minutes: 5
-        run: |
-          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
-          bash scripts/ci-apt.sh update
-
-      # The three apt steps are limited to 25 minutes together, which leaves the rest of the
-      # 45-minute job limit for the build and the tests.
-      - name: Install system LibreOffice
-        if: runner.os == 'Linux'
-        timeout-minutes: 12
-        run: |
-          export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
-          bash scripts/ci-apt.sh install --no-install-recommends -y libreoffice-writer libreoffice-calc libreoffice-impress qpdf
-          soffice --version
-
       - name: Install Pandoc
         run: just pandoc
 
@@ -284,40 +236,13 @@ jobs:
       - name: Verify Pandoc installation
         run: '"$ASHIFT_PANDOC" --version'
 
-      - name: Install Linux desktop prerequisites
-        if: runner.os == 'Linux'
-        timeout-minutes: 8
-        run: |
-          export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
-          bash scripts/ci-apt.sh install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
-
-      # Drop the .deb files of versions the index no longer offers, so that restoring the newest
-      # older entry does not carry old packages forward forever.
-      - name: Prune the apt package cache
-        if: runner.os == 'Linux' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
-        run: sudo apt-get -o "Dir::Cache::archives=$HOME/.cache/ci-apt-archives" autoclean
-
-      - name: Store the apt package cache
-        if: runner.os == 'Linux' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ci-apt-archives/*.deb
-          key: ${{ steps.apt-key.outputs.key }}
-
       # The Windows lint job already runs Clippy there.
       - name: Run Clippy
         if: runner.os != 'Windows'
         run: just clippy
 
-      # ariad-core must stay WASM-safe; the check does not depend on the host OS.
-      - name: Check the WASM build
-        if: runner.os == 'Linux'
-        run: just wasm
-
       - name: Run tests
-        run: |
-          if [[ "$RUNNER_OS" == Linux ]]; then export ARIAD_REQUIRE_OFFICE=1; fi
-          just test
+        run: just test
 
       - name: Check the CLI without default features
         run: cargo check -p ariad-cli --no-default-features
@@ -330,15 +255,237 @@ jobs:
 
       # Packaging is the same on every host, and on macOS it recompiles the dependency graph from
       # cold (6 to 14 minutes there, 3 to 5 on Linux and Windows), which pushed cold macOS runs past
-      # the timeout and kept the macOS cache from ever being saved.
+      # the timeout and kept the macOS cache from ever being saved. Linux runs it in its own part
+      # (verify-linux); on a pull request the scope job asks for it only when a change can affect it.
       - name: Check packaging
-        if: runner.os != 'macOS'
+        if: runner.os != 'macOS' && needs.scope.outputs.package == 'true'
         run: just package-check
 
       - name: Stop sccache and report stats
         if: always()
         env:
           JOB_NAME: Verify (${{ matrix.os }})
+        run: bash scripts/ci-sccache.sh stop
+
+  # The Linux half of Verify. One job with four parts, so that each step is written once. The scope
+  # job lists the parts (linux_parts in scripts/ci-scope.sh) and they run in parallel, which makes
+  # the wall time the slowest part and not the sum. What each part runs: docs/ci.md.
+  #   lint     Clippy, the WASM check, the slim CLI check, the capabilities registry
+  #   test-N   one nextest shard each; the last also runs the doc tests, the first the benchmark
+  #            harness tests (they drive the ashift binary that the test compile leaves behind)
+  #   package  `cargo package` verification; present only when the scope asks for it
+  verify-linux:
+    name: Verify (ubuntu-26.04, ${{ matrix.part }})
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
+    runs-on: ubuntu-26.04
+    # A warm part takes 5 to 10 minutes. With the Rust cache evicted the old single job compiled
+    # everything in 30 to 35 minutes; the parts split that work, and the sccache bucket still holds
+    # the compile units.
+    timeout-minutes: 25
+    environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && 'ci-cache-write' || '' }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.linux_parts) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Rust cache key is derived from the job id, so every part of this job would share one
+      # entry; cache-key tells them apart. The test shards compile the same test profile and share
+      # the entry `test`, and only the first shard saves it. Lint keeps its own entry. The package
+      # part has no target cache: the repository's 10 GB Actions cache budget is almost used, and
+      # sccache already holds its compile units. As elsewhere, only a push saves.
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
+        with:
+          target: wasm32-unknown-unknown
+          cache: ${{ matrix.part != 'package' }}
+          cache-key: ${{ startsWith(matrix.part, 'test-') && 'test' || matrix.part }}
+          cache-save-if: ${{ github.event_name == 'push' && matrix.part != 'test-2' }}
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: just@1.58.0,cargo-nextest@0.9.146,sccache@0.19.0
+
+      - name: Start sccache (read-write)
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_WRITE
+        run: bash scripts/ci-sccache.sh start
+
+      - name: Start sccache (read-only)
+        if: ${{ !((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')) }}
+        env:
+          SCCACHE_BUCKET: ${{ vars.R2_CACHE_BUCKET }}
+          SCCACHE_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
+          SCCACHE_S3_KEY_PREFIX: ariadshift-sccache-v2/
+          SCCACHE_S3_RW_MODE: READ_ONLY
+        run: bash scripts/ci-sccache.sh start
+
+      # bench-check (lint part), the benchmark harness tests and the pack step in the CLI tests
+      # (test parts) run through uv.
+      - name: Set up uv
+        if: matrix.part != 'package'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Cache Pandoc archive
+        if: startsWith(matrix.part, 'test-')
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/
+          key: pandoc-${{ runner.os }}-${{ hashFiles('scripts/install-pandoc.sh') }}
+
+      - name: Enable namespaces for LibreOffice sandbox tests
+        if: startsWith(matrix.part, 'test-')
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user --mount true
+
+      # The runner's Azure mirror is tried first and archive.ubuntu.com is the fallback after a
+      # failure or a time limit (scripts/ci-apt.sh). Either mirror stalled for several minutes on
+      # some days: a LibreOffice install took 18 minutes instead of 20 seconds and the job hit its
+      # limit. apt also aborts a transfer that stops moving for 30 seconds and retries it.
+      # The LibreOffice and desktop library .deb files (about 500 MB) are cached per runner image
+      # and restored on every run of the lint and test parts (the package part installs nothing).
+      # Only the first test shard saves them, and only on a push to dev, so pull requests cannot
+      # add entries, and the lint part, which installs the desktop libraries alone, can never
+      # save an incomplete set under the key the test parts look up. apt checks each cached file
+      # against the hashes in the package index, so a poisoned entry cannot change what gets
+      # installed.
+      - name: Select the apt package cache key
+        id: apt-key
+        if: matrix.part != 'package'
+        run: echo "key=apt-debs-v1-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the apt package cache
+        id: apt-cache
+        if: matrix.part != 'package'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ci-apt-archives/*.deb
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: apt-debs-v1-
+
+      - name: Update the package index
+        if: matrix.part != 'package'
+        timeout-minutes: 5
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
+          bash scripts/ci-apt.sh update
+
+      # The three apt steps are limited to 25 minutes together, which is the whole job limit: the
+      # limits only bound a stalled mirror, and a normal run needs well under a minute.
+      - name: Install system LibreOffice
+        if: startsWith(matrix.part, 'test-')
+        timeout-minutes: 12
+        run: |
+          export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
+          bash scripts/ci-apt.sh install --no-install-recommends -y libreoffice-writer libreoffice-calc libreoffice-impress qpdf
+          soffice --version
+
+      - name: Install Pandoc
+        if: startsWith(matrix.part, 'test-')
+        run: just pandoc
+
+      - name: Set native Pandoc path
+        if: startsWith(matrix.part, 'test-')
+        run: printf 'ASHIFT_PANDOC=%s\n' "${GITHUB_WORKSPACE}/.tools/pandoc/bin/pandoc" >> "$GITHUB_ENV"
+
+      - name: Verify Pandoc installation
+        if: startsWith(matrix.part, 'test-')
+        run: '"$ASHIFT_PANDOC" --version'
+
+      # Clippy and the test compile both include the desktop crate, which needs these libraries.
+      - name: Install Linux desktop prerequisites
+        if: matrix.part != 'package'
+        timeout-minutes: 8
+        run: |
+          export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
+          bash scripts/ci-apt.sh install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
+      # Drop the .deb files of versions the index no longer offers, so that restoring the newest
+      # older entry does not carry old packages forward forever.
+      - name: Prune the apt package cache
+        if: matrix.part == 'test-1' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
+        run: sudo apt-get -o "Dir::Cache::archives=$HOME/.cache/ci-apt-archives" autoclean
+
+      - name: Store the apt package cache
+        if: matrix.part == 'test-1' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ci-apt-archives/*.deb
+          key: ${{ steps.apt-key.outputs.key }}
+
+      - name: Run Clippy
+        if: matrix.part == 'lint'
+        run: just clippy
+
+      # ariad-core must stay WASM-safe.
+      - name: Check the WASM build
+        if: matrix.part == 'lint'
+        run: just wasm
+
+      - name: Check the CLI without default features
+        if: matrix.part == 'lint'
+        run: cargo check -p ariad-cli --no-default-features
+
+      - name: Check capabilities registry
+        if: matrix.part == 'lint'
+        run: just bench-check
+
+      # One slice of `just test`. The shard index and count come from the matrix, so the scope job
+      # is the only place that knows how many shards exist.
+      - name: Run tests (shard)
+        if: startsWith(matrix.part, 'test-')
+        env:
+          ARIAD_REQUIRE_OFFICE: "1"
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ matrix.shards }}
+        run: just test-shard "$SHARD" "$SHARDS"
+
+      - name: Run doc tests
+        if: startsWith(matrix.part, 'test-') && matrix.shard == matrix.shards
+        env:
+          ARIAD_REQUIRE_OFFICE: "1"
+        run: just test-doc
+
+      # The harness tests run the ashift binary that the test compile leaves in target/debug.
+      - name: Run benchmark harness tests
+        if: matrix.part == 'test-1'
+        run: just bench-test
+
+      - name: Check packaging
+        if: matrix.part == 'package'
+        run: just package-check
+
+      - name: Stop sccache and report stats
+        if: always()
+        env:
+          JOB_NAME: Verify (ubuntu-26.04, ${{ matrix.part }})
         run: bash scripts/ci-sccache.sh stop
 
   server:
@@ -807,7 +954,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [scope, static, lint-windows, verify, server, fuzz, web]
+    needs: [scope, static, lint-windows, verify, verify-linux, server, fuzz, web]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -821,17 +968,20 @@ jobs:
           STATIC: ${{ needs.static.result }}
           WINDOWS: ${{ needs.lint-windows.result }}
           VERIFY: ${{ needs.verify.result }}
+          # One result for the whole matrix: success only when every part that ran succeeded, so a
+          # packaging part the scope left out cannot fail it.
+          VERIFY_LINUX: ${{ needs.verify-linux.result }}
           SERVER: ${{ needs.server.result }}
           FUZZ: ${{ needs.fuzz.result }}
           WEB: ${{ needs.web.result }}
         run: |
-          printf 'scope=%s static=%s lint-windows=%s verify=%s server=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
-            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
+          printf 'scope=%s static=%s lint-windows=%s verify=%s verify-linux=%s server=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
+            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$VERIFY_LINUX" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
           [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
           if [ "$HEAVY" = true ]; then
-            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
+            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$VERIFY_LINUX" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
           else
-            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
+            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$VERIFY_LINUX" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
           fi
           if [ "$WEB_SCOPE" = true ]; then
             [ "$WEB" = success ] || exit 1
