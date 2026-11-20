@@ -26,6 +26,7 @@ on:
       - uv.lock
       - pyproject.toml
       - scripts/docling-engine.sh
+      - scripts/idle-timeout.py
       - scripts/install-pandoc.sh
       - LICENSE
       - NOTICE
@@ -44,6 +45,7 @@ on:
       - uv.lock
       - pyproject.toml
       - scripts/docling-engine.sh
+      - scripts/idle-timeout.py
       - scripts/install-pandoc.sh
       - LICENSE
       - NOTICE
@@ -210,7 +212,7 @@ jobs:
       # another pull request, so each one saved its own copy and crowded the Verify caches out
       # of the 10 GB repository limit.
       - name: Save models and OCR data
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.assets.outputs.cache-hit != 'true'
+        if: success() && (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) && steps.assets.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/blobs
@@ -339,7 +341,11 @@ jobs:
         timeout-minutes: 310
         env:
           TARGET: ${{ matrix.target }}
+        # A hung compile prints nothing: stop the step after 45 minutes of silence instead of after
+        # 310 minutes (scripts/idle-timeout.py). The marker it writes keeps the compiler snapshot
+        # of a hung build from being saved and restored by the next run.
         run: >-
+          uv run --no-project --python 3.14 python scripts/idle-timeout.py --idle 2700 --
           uv run --no-project --python 3.14 python engines/docling/pack/build.py build
           --target "$TARGET" --out "$PACK_OUT"
 
@@ -366,17 +372,24 @@ jobs:
           subprocess.run(["sccache", "--stop-server"], check=False, timeout=30)
 
       # Persist finished wheels before later checks; warm builds need no compiler snapshot.
+      # Pull requests restore this cache but never save it: an entry saved under a pull request ref
+      # or a branch ref cannot be restored by any other run, and each copy crowded the 10 GB
+      # repository cache. dev pushes, manual runs on dev and tags save the one shared entry.
       - name: Save native source builds
-        if: always() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome == 'success' && steps.cleanup.outcome == 'success'
+        if: always() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome == 'success' && steps.cleanup.outcome == 'success' && (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/'))
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/native
           key: ${{ steps.native.outputs.cache-primary-key }}
 
+      # A cancelled run (every force-push to a pull request cancels the one in flight) and a hung
+      # build (idle_killed) never save their compiler work: the next run restored such a half
+      # written snapshot and hung at the same OpenBLAS step twice. Only a build that failed or
+      # timed out by itself leaves a snapshot to resume from.
       # Only interrupted cold builds need resumable compiler work. Archiving a warm
       # cache under a new run ID every time needlessly competes with finished wheels.
       - name: Save native compiler work
-        if: always() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome != 'success' && steps.build.outcome != 'skipped' && steps.build.outcome != '' && steps.cleanup.outcome == 'success'
+        if: ${{ !cancelled() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome != 'success' && steps.build.outcome != 'skipped' && steps.build.outcome != '' && steps.cleanup.outcome == 'success' && steps.build.outputs.idle_killed != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: .tools/sccache
@@ -386,7 +399,7 @@ jobs:
       # another pull request, so each one saved its own copy and crowded the Verify caches out
       # of the 10 GB repository limit.
       - name: Save models and OCR data
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.assets.outputs.cache-hit != 'true'
+        if: success() && (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) && steps.assets.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/blobs
