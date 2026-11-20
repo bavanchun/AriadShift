@@ -920,7 +920,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.web == 'true'
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
     defaults:
@@ -974,14 +974,37 @@ jobs:
       - name: Install JavaScript dependencies
         run: just js
 
+      # The runner's Azure mirror is tried first and archive.ubuntu.com is the fallback after a
+      # failure or a time limit (scripts/ci-apt.sh). Browser libraries took 19 minutes at
+      # 124 kB/s from the primary archive and the job hit its limit, so every apt step has its own
+      # limit (5 + 5 + 10 minutes) and the .deb files are cached per runner image: restored on every
+      # run, saved only by a push to dev, so pull requests cannot add entries. apt checks each
+      # cached file against the package index hashes, so a poisoned entry cannot change what is
+      # installed.
+      - name: Select the apt package cache key
+        id: apt-key
+        run: echo "key=apt-debs-web-v1-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the apt package cache
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ci-apt-archives/*.deb
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: apt-debs-web-v1-
+
+      - name: Update the package index
+        timeout-minutes: 5
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
+          bash scripts/ci-apt.sh update
+
       # The existing suite uses pg_dump with the service's major version.
       - name: Install the PostgreSQL 18 client
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          version="$(apt-cache policy postgresql-client-18 | awk '/Candidate:/ {print $2}')"
-          [[ -n "$version" && "$version" != '(none)' ]]
-          printf 'Selected postgresql-client-18=%s\n' "$version"
-          sudo apt-get install --no-install-recommends -y "postgresql-client-18=$version"
+          export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
+          bash scripts/ci-apt.sh install --no-install-recommends -y postgresql-client-18
           pg_dump --version | grep -q ' 18\.'
 
       # Builds the wasm module, then typechecks, runs Vitest and builds the site.
@@ -995,16 +1018,28 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Use the primary Ubuntu archive for browser libraries
-        run: |
-          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
-            if [ -f "$source" ]; then
-              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
-            fi
-          done
+      # The system libraries come from the packages Playwright reports as missing, installed
+      # through scripts/ci-apt.sh; the browsers themselves are downloaded by Playwright.
+      - name: Install the Playwright system libraries
+        timeout-minutes: 10
+        run: bash scripts/ci-playwright-deps.sh chromium firefox webkit
 
-      - name: Install Playwright browsers and their system packages
-        run: just web-browsers --with-deps
+      - name: Install Playwright browsers
+        timeout-minutes: 10
+        run: just web-browsers
+
+      # Drop the .deb files of versions the index no longer offers, so that restoring the newest
+      # older entry does not carry old packages forward forever.
+      - name: Prune the apt package cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
+        run: sudo apt-get -o "Dir::Cache::archives=$HOME/.cache/ci-apt-archives" autoclean
+
+      - name: Store the apt package cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ci-apt-archives/*.deb
+          key: ${{ steps.apt-key.outputs.key }}
 
       - name: Save Playwright browsers
         if: github.event_name == 'push' && steps.restore-playwright.outputs.cache-hit != 'true'
