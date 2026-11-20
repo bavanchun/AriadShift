@@ -10,7 +10,7 @@ fn deep_list_conversion_fits_a_one_mib_stack() {
         .spawn(|| {
             let limits = Limits::local();
             let read = markdown::read(
-                include_str!("../../../fixtures/md/en-deep-list.md"),
+                include_str!("../../../../fixtures/md/en-deep-list.md"),
                 &limits,
             )
             .unwrap();

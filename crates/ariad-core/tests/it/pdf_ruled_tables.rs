@@ -1,9 +1,7 @@
 //! Ruled-table detection on real and generated PDFs.
 #![cfg(feature = "pdf")]
 
-#[path = "support/pdf_tables.rs"]
-mod pdf_tables;
-
+use crate::support::pdf_tables::{DETECT, fixture, paragraph_text, read, rows, tables};
 use ariad_core::writer::csv::find_tables;
 use ariad_core::{
     ir::{Block, Document, TableCell},
@@ -11,7 +9,6 @@ use ariad_core::{
     reader::pdf::{self, ReadError, ReadOptions},
     writer::{csv, xlsx},
 };
-use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, tables};
 
 const PROSE: [&str; 4] = [
     "pd-en-gao-08-35-highlights.pdf",

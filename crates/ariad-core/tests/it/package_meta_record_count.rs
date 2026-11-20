@@ -3,7 +3,7 @@ use std::io::Cursor;
 use ariad_core::package_meta::{PackageMetaError, stamp_bytes, stamp_into};
 
 const TIMESTAMP: &str = "2025-10-09T08:53:20Z";
-const ALIASES: &[u8] = include_bytes!("../../../fuzz/seeds/docx_meta/unicode-alias.zip");
+const ALIASES: &[u8] = include_bytes!("../../../../fuzz/seeds/docx_meta/unicode-alias.zip");
 
 #[test]
 fn unicode_path_alias_count_mismatch_is_typed_and_does_not_write_output() {

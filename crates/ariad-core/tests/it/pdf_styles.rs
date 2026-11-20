@@ -345,7 +345,7 @@ fn pdf_styles_keep_unsupported_resource_and_default_spaces_unknown() {
 
 #[test]
 fn pdf_styles_recover_authored_srgb_profile_colour_without_inventing_other_profiles() {
-    let bytes = include_bytes!("../../../fixtures/editor/vi-styled-pair.pdf");
+    let bytes = include_bytes!("../../../../fixtures/editor/vi-styled-pair.pdf");
     let output = pdf::read(bytes, &Limits::local()).unwrap();
     let values = runs(&output.document);
     let heading = style_for(&values, "Sổ khảo sát ven sông");

@@ -20,7 +20,7 @@ fn assert_subset(actual: &Value, expected: &Value) {
 #[test]
 fn fidelity_python_rust_vectors_agree() {
     let vectors: Value = serde_json::from_str(include_str!(
-        "../../../bench/results/fidelity-v2/conformance.json"
+        "../../../../bench/results/fidelity-v2/conformance.json"
     ))
     .unwrap();
     for vector in vectors["vectors"].as_array().unwrap() {

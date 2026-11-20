@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-core/tests/ir_snapshots.rs
+source: crates/ariad-core/tests/it/ir_snapshots.rs
 input_file: fixtures/md/en-task-list.md
 ---
 {

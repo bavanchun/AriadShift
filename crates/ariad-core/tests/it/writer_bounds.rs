@@ -1,6 +1,4 @@
-mod support;
-
-use support::assert_semantic_blocks_eq;
+use crate::support::assert_semantic_blocks_eq;
 
 use ariad_core::{
     ir::{Alignment, Asset, AssetRef, Block, ColumnSpec, Document, Inline, TableCell},

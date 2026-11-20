@@ -203,7 +203,7 @@ fn normalize_document(doc: &Document) -> Document {
 #[test]
 fn all_markdown_fixtures_roundtrip_through_markdown_writer() {
     let mut fixture_count = 0;
-    insta::glob!("../../../fixtures", "md/*.md", |path| {
+    insta::glob!("../../../../fixtures", "md/*.md", |path| {
         fixture_count += 1;
         let original_text = fs::read_to_string(path).expect("read Markdown fixture");
         let read1 = markdown::read(&original_text, &Limits::local())
@@ -856,7 +856,7 @@ fn every_markdown_fixture_preserves_structure_through_html_writer_and_reader() {
     use ariad_core::reader::html;
 
     let mut fixture_count = 0;
-    insta::glob!("../../../fixtures", "md/*.md", |path| {
+    insta::glob!("../../../../fixtures", "md/*.md", |path| {
         fixture_count += 1;
         let original_text = fs::read_to_string(path).expect("read Markdown fixture");
         let read1 = markdown::read(&original_text, &Limits::local())

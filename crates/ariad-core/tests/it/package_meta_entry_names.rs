@@ -3,8 +3,9 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 use ariad_core::package_meta::stamp_bytes;
 
 const TIMESTAMP: &str = "2025-10-09T08:53:20Z";
-const UTF8_OVERLAP: &[u8] = include_bytes!("../../../fuzz/seeds/docx_meta/cp437-utf8-overlap.zip");
-const CP437_FF: &[u8] = include_bytes!("../../../fuzz/seeds/docx_meta/cp437-ff.zip");
+const UTF8_OVERLAP: &[u8] =
+    include_bytes!("../../../../fuzz/seeds/docx_meta/cp437-utf8-overlap.zip");
+const CP437_FF: &[u8] = include_bytes!("../../../../fuzz/seeds/docx_meta/cp437-ff.zip");
 
 /// Reads raw wire records without the ZIP library's name decoder or index.
 fn central_names(bytes: &[u8]) -> Vec<(u16, Vec<u8>)> {
