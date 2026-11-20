@@ -1,4 +1,4 @@
-use crate::support::{self, qpdf};
+use crate::support::qpdf;
 use ariad_core::tools::specs::security;
 use ariad_host::tools::{InputRef, OutputTarget, SecretBag, ToolRequest, run_tool};
 use serde_json::json;
@@ -154,7 +154,7 @@ fn cancellation_kills_the_qpdf_child() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        support::assert_ran_one_test(
+        crate::support::assert_ran_one_test(
             &String::from_utf8_lossy(&output.stdout),
             "qpdf_secrets::cancellation_kills_the_qpdf_child",
         );
@@ -243,7 +243,7 @@ fn parameter_file_is_removed_after_qpdf_failure() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        support::assert_ran_one_test(
+        crate::support::assert_ran_one_test(
             &String::from_utf8_lossy(&output.stdout),
             "qpdf_secrets::parameter_file_is_removed_after_qpdf_failure",
         );
