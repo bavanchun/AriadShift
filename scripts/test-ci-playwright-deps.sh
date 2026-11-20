@@ -36,6 +36,23 @@ grep -qx 'install --no-install-recommends -y fonts-freefont-ttf libgbm1 libxkbco
 grep -qx "archives=$work/archives" "$work/log" || fail "APT_ARCHIVES must reach the installer"
 echo "PASS | the reported packages are installed through the installer"
 
+# 1b. Error lines that pnpm prints after the report (indented too) are not packages.
+cat >"$work/pnpm-tail" <<'EOT'
+Missing system dependencies (2):
+  libgbm1
+  libxkbcommon0
+ ELIFECYCLE  Command failed with exit code 1.
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /home/runner/work/x/x/
+  │ apps/web
+EOT
+report "$work/pnpm-tail"
+bash scripts/ci-playwright-deps.sh chromium >/dev/null 2>&1 || fail "pnpm error lines after the report must not break the parse"
+grep -qx 'install --no-install-recommends -y libgbm1 libxkbcommon0' "$work/log" \
+    || fail "only the reported packages may be installed, got: $(head -n1 "$work/log")"
+echo "PASS | pnpm error lines after the report are ignored"
+
 # 2. Nothing missing: nothing installed, success.
 printf 'All system dependencies are installed.\n' >"$work/none"
 report "$work/none"

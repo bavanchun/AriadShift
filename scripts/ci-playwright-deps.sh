@@ -32,10 +32,12 @@ if printf '%s\n' "$report" | grep -q '^All system dependencies are installed\.';
 fi
 
 # Lines under "Missing system dependencies (N):" are the package names, indented by two spaces.
+# The list ends at the first line that is not a package name: pnpm adds indented error lines
+# ("  × ...", "  │ apps/web") after the report because Playwright exits with code 1.
 packages=()
 while IFS= read -r name; do
     packages+=("$name")
-done < <(printf '%s\n' "$report" | awk '/^Missing system dependencies \([0-9]+\):/ {on = 1; next} on && /^  [^ ]/ {print $1}')
+done < <(printf '%s\n' "$report" | awk '/^Missing system dependencies \([0-9]+\):/ {on = 1; next} on && /^  [a-z0-9][a-z0-9.+-]*$/ {print $1; next} on {exit}')
 
 expected="$(printf '%s\n' "$report" | sed -n 's/^Missing system dependencies (\([0-9]*\)):.*/\1/p' | head -n1)"
 if [ -z "$expected" ] || [ "${#packages[@]}" -eq 0 ] || [ "${#packages[@]}" -ne "$expected" ]; then
