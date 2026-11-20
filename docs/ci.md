@@ -187,11 +187,20 @@ The pack's native wheel cache uses source pins, build scripts, the tool lock and
 target in its key. Restored wheels still pass hash, native-library and execution
 checks. Successful cold builds save these wheels immediately after packaging,
 before reproducibility and conformance checks. Warm wheel-cache hits neither
-restore nor save compiler checkpoints. Failed or cancelled cold builds save
-compiler work only after cleanup succeeds, so warm runs do not create duplicate
-compiler archives competing with the completed wheels for Actions cache space.
+restore nor save compiler checkpoints. Cold builds that failed or timed out
+by themselves save compiler work after cleanup succeeds, so warm runs do not
+create duplicate compiler archives competing with the completed wheels for
+Actions cache space. Cancelled runs and builds stopped by the idle guard never
+save it: a snapshot written while the compilers were being killed was restored
+by the next run of the same pull request, which then hung at the same OpenBLAS
+step twice. The wheel cache and the models and OCR data are restored by every
+run but saved only on `dev` (pushes and manual runs) and tags: an entry saved
+under a pull request or a branch ref cannot be restored by another run.
 
-The initial build step allows 310 minutes within the 350-minute pack job. Cleanup
+The initial build step allows 310 minutes within the 350-minute pack job, and
+`scripts/idle-timeout.py` stops it after 45 minutes without any output (a
+healthy build prints every few seconds; exit code 124, `idle_killed` step
+output). `just test-idle-timeout` tests the guard. Cleanup
 stops only that job's named Linux torch container, then its local sccache server,
 before cache archiving. Superseded PR runs and manual feature-branch runs cancel
 older runs in their concurrency group; manual `dev`, `main` and tag builds are
