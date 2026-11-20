@@ -11,6 +11,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import runpy
 import shlex
 import subprocess
@@ -44,11 +45,17 @@ def workflow_condition(expression, **context):
     """Evaluate the workflow's boolean conditions with explicit Actions contexts."""
     expression = expression.removeprefix("${{").removesuffix("}}").strip()
     expression = expression.replace("&&", " and ").replace("||", " or ")
+    expression = re.sub(r"!(?!=)", " not ", expression)
     # The only input is the checked-in workflow, already executable repository code.
     return eval(  # noqa: S307
         f"({expression})",
         {"__builtins__": {}},
-        {"always": lambda: True, "startsWith": str.startswith, **context},
+        {
+            "always": lambda: True,
+            "cancelled": lambda: False,
+            "startsWith": str.startswith,
+            **context,
+        },
     )
 
 
@@ -168,9 +175,10 @@ def test_pack_caches_wheels_or_stopped_compiler_checkpoints(
     steps = {step["name"]: step for step in pack_workflow["jobs"]["pack"]["steps"]}
     context = {
         "matrix": SimpleNamespace(target=target),
+        "github": SimpleNamespace(ref="refs/heads/dev"),
         "steps": SimpleNamespace(
             native=SimpleNamespace(outputs={"cache-hit": hit}),
-            build=SimpleNamespace(outcome=outcome),
+            build=SimpleNamespace(outcome=outcome, outputs=SimpleNamespace(idle_killed="")),
             cleanup=SimpleNamespace(outcome=cleanup),
         ),
     }
@@ -184,6 +192,47 @@ def test_pack_caches_wheels_or_stopped_compiler_checkpoints(
         assert bool(workflow_condition(condition, **context)) is (
             expected and target.startswith("x86_64-")
         ), name
+
+
+@pytest.mark.parametrize(
+    "ref,cancelled,idle_killed,save_compiler",
+    [
+        # A run on dev that failed its build saves compiler work; the wheels only after success.
+        ("refs/heads/dev", False, "", True),
+        # A stopped hang never saves a snapshot that would be restored by the next run.
+        ("refs/heads/dev", False, "true", False),
+        # Neither does a cancelled run: its compilers were killed while writing the snapshot.
+        ("refs/heads/dev", True, "", False),
+        # Pull request and tag refs restore the dev entries but never save the wheel cache.
+        ("refs/pull/466/merge", False, "", True),
+        ("refs/tags/pack-docling-v0.2.0", False, "", True),
+    ],
+)
+def test_pack_save_rules_for_cancellation_idle_kill_and_refs(
+    pack_workflow, ref, cancelled, idle_killed, save_compiler
+):
+    steps = {step["name"]: step for step in pack_workflow["jobs"]["pack"]["steps"]}
+    context = {
+        "matrix": SimpleNamespace(target=LINUX[0]),
+        "github": SimpleNamespace(ref=ref),
+        "steps": SimpleNamespace(
+            native=SimpleNamespace(outputs={"cache-hit": "false"}),
+            build=SimpleNamespace(
+                outcome="failure", outputs=SimpleNamespace(idle_killed=idle_killed)
+            ),
+            cleanup=SimpleNamespace(outcome="success"),
+        ),
+    }
+
+    def holds(name, **overrides):
+        condition = steps[name]["if"].replace("outputs.cache-hit", "outputs['cache-hit']")
+        functions = {"cancelled": lambda: cancelled}
+        return bool(workflow_condition(condition, **{**context, **functions, **overrides}))
+
+    assert holds("Save native compiler work") is save_compiler
+    # The wheel cache needs a successful build and is saved only on dev.
+    context["steps"].build.outcome = "success"
+    assert holds("Save native source builds") is (ref == "refs/heads/dev")
 
 
 def test_pack_checkpoints_follow_bounded_build_and_cleanup(pack_workflow):
