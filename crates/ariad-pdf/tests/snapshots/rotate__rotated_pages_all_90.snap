@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/rotate.rs
+source: crates/ariad-pdf/tests/it/rotate.rs
 expression: info_json
 ---
 {

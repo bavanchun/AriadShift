@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/portfolio.rs
+source: crates/ariad-pdf/tests/it/portfolio.rs
 expression: value
 ---
 [

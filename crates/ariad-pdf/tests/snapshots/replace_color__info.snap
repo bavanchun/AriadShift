@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/replace_color.rs
+source: crates/ariad-pdf/tests/it/replace_color.rs
 expression: info_json
 ---
 {

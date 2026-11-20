@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/split.rs
+source: crates/ariad-pdf/tests/it/split.rs
 expression: report
 ---
 {

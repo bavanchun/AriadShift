@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/metadata.rs
+source: crates/ariad-pdf/tests/it/metadata.rs
 expression: value
 ---
 {

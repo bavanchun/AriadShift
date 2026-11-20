@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/decompress.rs
+source: crates/ariad-pdf/tests/it/decompress.rs
 expression: info_json
 ---
 {

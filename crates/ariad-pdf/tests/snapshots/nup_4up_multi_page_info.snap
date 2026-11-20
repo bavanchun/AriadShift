@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/nup.rs
+source: crates/ariad-pdf/tests/it/nup.rs
 expression: info_json
 ---
 {

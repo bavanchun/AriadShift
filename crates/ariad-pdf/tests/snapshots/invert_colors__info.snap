@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/invert_colors.rs
+source: crates/ariad-pdf/tests/it/invert_colors.rs
 expression: info_json
 ---
 {

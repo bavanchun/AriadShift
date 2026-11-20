@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/watermark_detect.rs
+source: crates/ariad-pdf/tests/it/watermark_detect.rs
 expression: detection
 ---
 {

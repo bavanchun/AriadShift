@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/reorder.rs
+source: crates/ariad-pdf/tests/it/reorder.rs
 expression: rot_info
 ---
 {

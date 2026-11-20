@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/overlay.rs
+source: crates/ariad-pdf/tests/it/overlay.rs
 expression: info_json
 ---
 {

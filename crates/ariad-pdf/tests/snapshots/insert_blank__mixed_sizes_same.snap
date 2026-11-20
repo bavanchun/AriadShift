@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/insert_blank.rs
+source: crates/ariad-pdf/tests/it/insert_blank.rs
 expression: mix_info
 ---
 {

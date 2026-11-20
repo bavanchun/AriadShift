@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/stamp.rs
+source: crates/ariad-pdf/tests/it/stamp.rs
 expression: info_json
 ---
 {

@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/page_labels.rs
+source: crates/ariad-pdf/tests/it/page_labels.rs
 expression: value
 ---
 [

@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/divide_pages.rs
+source: crates/ariad-pdf/tests/it/divide_pages.rs
 expression: info_json
 ---
 {

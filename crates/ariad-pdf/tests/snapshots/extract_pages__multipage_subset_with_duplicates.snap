@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/extract_pages.rs
+source: crates/ariad-pdf/tests/it/extract_pages.rs
 expression: report
 ---
 {

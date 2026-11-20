@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/merge.rs
+source: crates/ariad-pdf/tests/it/merge.rs
 expression: report
 ---
 {
