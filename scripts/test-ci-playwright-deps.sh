@@ -68,7 +68,19 @@ if bash scripts/ci-playwright-deps.sh chromium >/dev/null 2>&1; then fail "an un
 printf 'Missing system dependencies (2):\n  libgbm1\n' >"$work/short"
 report "$work/short"
 if bash scripts/ci-playwright-deps.sh chromium >/dev/null 2>&1; then fail "a report with a wrong package count must fail"; fi
-echo "PASS | an unreadable report fails"
+# Lines that look like list entries but are not package names end the list, so the count check fails.
+rm -f "$work/log"
+for odd in '  -o foo' '  libfoo:i386' '  pkg=1.0'; do
+    printf 'Missing system dependencies (2):\n  libgbm1\n%s\n' "$odd" >"$work/odd"
+    report "$work/odd"
+    if bash scripts/ci-playwright-deps.sh chromium >/dev/null 2>&1; then fail "a non-name list line ($odd) must fail the count check"; fi
+done
+# More package-like lines than the reported count also fails.
+printf 'Missing system dependencies (1):\n  libgbm1\n  libxkbcommon0\n' >"$work/many"
+report "$work/many"
+if bash scripts/ci-playwright-deps.sh chromium >/dev/null 2>&1; then fail "more packages than the reported count must fail"; fi
+[ ! -e "$work/log" ] || fail "the installer must never run for an unreadable report"
+echo "PASS | an unreadable report fails and never installs"
 
 # 4. A failing installer fails the script.
 printf '#!/usr/bin/env bash\nexit 7\n' >"$work/installer"
