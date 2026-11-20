@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use std::fs;
 
@@ -199,7 +199,7 @@ fn embedded_capabilities_validates_against_committed_schema() {
     let validator =
         jsonschema::validator_for(&schema_val).expect("compile capabilities schema validator");
 
-    let embedded_json = include_str!("../data/capabilities.json");
+    let embedded_json = include_str!("../../data/capabilities.json");
     let embedded_val: serde_json::Value =
         serde_json::from_str(embedded_json).expect("parse embedded capabilities.json");
 
@@ -222,7 +222,7 @@ fn capabilities_schema_rejects_out_of_range_values_and_unknown_fields() {
     let validator =
         jsonschema::validator_for(&schema_val).expect("compile capabilities schema validator");
 
-    let valid_json = include_str!("../data/capabilities.json");
+    let valid_json = include_str!("../../data/capabilities.json");
     let base_val: serde_json::Value =
         serde_json::from_str(valid_json).expect("parse embedded capabilities.json");
 
@@ -356,11 +356,11 @@ fn frozen_engine_v1_and_pack_schema_match_committed_bytes() {
     use sha2::{Digest, Sha256};
     for (bytes, digest) in [
         (
-            include_bytes!("../../../schemas/engine-protocol.v1.json").as_slice(),
+            include_bytes!("../../../../schemas/engine-protocol.v1.json").as_slice(),
             "16ff4281449ffb5a5be298b965a4fd9d44014ad5694309d2e8cdb699d568c654",
         ),
         (
-            include_bytes!("../../../schemas/pack.v1.json").as_slice(),
+            include_bytes!("../../../../schemas/pack.v1.json").as_slice(),
             "b1d4e5068ad56784b6ad2845ee12076ba05fc093b95727932105a1c579458fac",
         ),
     ] {

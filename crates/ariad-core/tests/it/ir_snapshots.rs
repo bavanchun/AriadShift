@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use std::{collections::BTreeMap, fs};
 
@@ -39,7 +39,7 @@ fn markdown_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
     let mut matched = 0;
 
     // The three-argument form is required because this glob walks above tests/.
-    insta::glob!("../../../fixtures", "md/*.md", |path| {
+    insta::glob!("../../../../fixtures", "md/*.md", |path| {
         matched += 1;
         let canonical_path = path.canonicalize().expect("canonicalize Markdown fixture");
         let fixture = fixture_by_path.get(&canonical_path).unwrap_or_else(|| {
@@ -70,7 +70,7 @@ fn markdown_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
         );
         let snapshot_name = format!("{}.ir", path.file_stem().unwrap().to_string_lossy());
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../../fixtures/golden",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -129,7 +129,7 @@ fn html_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
         assert_v2_snapshot(&result.document, &format!("{}.ir", fixture.id));
         let snapshot_name = format!("{}.ir", fixture.id);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../../fixtures/golden",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -192,7 +192,7 @@ fn docling_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
         assert_v2_snapshot(&result.document, &format!("{}.ir", fixture.id));
         let snapshot_name = format!("{}.ir", fixture.id);
         insta::with_settings!({
-            snapshot_path => "../../../fixtures/golden",
+            snapshot_path => "../../../../fixtures/golden",
             prepend_module_to_snapshot => false,
             omit_expression => true,
             snapshot_suffix => "",
@@ -217,13 +217,13 @@ fn assert_v2_snapshot(document: &ariad_core::ir::Document, name: &str) {
         fs::write(
             directory.join(format!("{name}.snap")),
             format!(
-                "---\nsource: crates/ariad-core/tests/ir_snapshots.rs\n---\n{}\n",
+                "---\nsource: crates/ariad-core/tests/it/ir_snapshots.rs\n---\n{}\n",
                 serde_json::to_string_pretty(&value).unwrap()
             ),
         )
         .unwrap();
     }
-    insta::with_settings!({snapshot_path => "../../../fixtures/golden/v2", prepend_module_to_snapshot => false, omit_expression => true, snapshot_suffix => ""}, {
+    insta::with_settings!({snapshot_path => "../../../../fixtures/golden/v2", prepend_module_to_snapshot => false, omit_expression => true, snapshot_suffix => ""}, {
         insta::assert_json_snapshot!(name, value);
     });
 }

@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use ariad_core::{
     format::Format,

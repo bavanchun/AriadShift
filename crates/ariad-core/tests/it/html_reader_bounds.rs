@@ -1,6 +1,4 @@
-mod support;
-
-use support::assert_semantic_blocks_eq;
+use crate::support::assert_semantic_blocks_eq;
 
 use std::{
     fmt::Write,

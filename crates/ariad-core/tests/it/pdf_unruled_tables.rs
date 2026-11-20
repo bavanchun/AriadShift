@@ -1,16 +1,15 @@
 //! Whitespace-aligned table detection on generated and real PDFs.
 #![cfg(feature = "pdf")]
 
-#[path = "support/pdf_tables.rs"]
-mod pdf_tables;
-
+use crate::support::pdf_tables::{
+    DETECT, cell_text, fixture, paragraph_text, read, rows, table_pages, tables,
+};
 use ariad_core::writer::csv::find_tables;
 use ariad_core::{
     ir::Block,
     limits::Limits,
     reader::pdf::{self, ReadError, ReadOptions},
 };
-use pdf_tables::{DETECT, fixture, paragraph_text, read, rows, table_pages, tables};
 
 /// The pages of `unruled-negatives.pdf`: prose and layouts that look tabular, none of which may
 /// yield a table.
@@ -232,7 +231,7 @@ fn a_table_beside_prose_in_a_column_does_not_pull_the_prose_in() {
             .iter()
             .chain(body)
             .flatten()
-            .map(|cell| pdf_tables::cell_text(cell).chars().count())
+            .map(|cell| cell_text(cell).chars().count())
             .max()
             .unwrap();
         assert!(longest <= 14, "{longest}");

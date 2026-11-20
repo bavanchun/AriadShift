@@ -653,7 +653,7 @@ fn inflated_page_tree_counts_do_not_overflow_iteration_hints() {
 
     for input in [
         bytes.as_slice(),
-        include_bytes!("../../../fuzz/seeds/pdf_reader/inflated-page-counts.pdf").as_slice(),
+        include_bytes!("../../../../fuzz/seeds/pdf_reader/inflated-page-counts.pdf").as_slice(),
     ] {
         let output = pdf::read(input, &Limits::local()).unwrap();
         assert_eq!(stats(&output).pages, 1);
@@ -722,7 +722,7 @@ fn unmapped_pages_emit_both_mapping_and_ocr_warnings() {
 
 #[test]
 fn encrypted_seed_is_checked_on_every_platform() {
-    let bytes = include_bytes!("../../../fuzz/seeds/pdf_reader/encrypted-empty-password.pdf");
+    let bytes = include_bytes!("../../../../fuzz/seeds/pdf_reader/encrypted-empty-password.pdf");
     let output = pdf::read(bytes, &Limits::local()).unwrap();
     assert!(stats(&output).encrypted);
     assert_well_formed(&output);
@@ -751,7 +751,7 @@ fn deterministic_mutations_of_generated_pdf_return_typed_results() {
 
 #[test]
 fn font_transform_geometry_survives_json_round_trips() {
-    let bytes = include_bytes!("../../../fuzz/seeds/pdf_reader/type3-running-header.pdf");
+    let bytes = include_bytes!("../../../../fuzz/seeds/pdf_reader/type3-running-header.pdf");
     let output = pdf::read(bytes, &Limits::local()).unwrap();
     assert_well_formed(&output);
 }
