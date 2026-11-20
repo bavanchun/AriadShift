@@ -62,8 +62,10 @@ public struct DSCommandPalette: View {
         .adaptiveGlass(.floating, cornerRadius: DSRadius.panel)
         .dsElevation(.e3)
         .onAppear {
-            isFieldFocused = true
             selectedRowID = rows.first?.id
+            // SwiftUI drops a focus request made in the same update that inserts the view, and AppKit then hands
+            // first responder to the PDF view; ask one run-loop pass later, once the field is in the window.
+            DispatchQueue.main.async { isFieldFocused = true }
         }
         .onChange(of: query) {
             selectedRowID = DSPaletteFilter.filter(sections, query: query).first?.rows.first?.id
