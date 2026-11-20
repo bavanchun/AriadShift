@@ -31,6 +31,18 @@ pub fn assert_ran_one_test(stdout: &str, name: &str) {
     );
 }
 
+/// Drains a child's standard output on a thread, so the child never blocks on a full pipe while the
+/// parent polls it with `try_wait`; join the handle for the text once the child has exited.
+#[allow(dead_code)] // only the unix-only re-exec tests call it
+pub fn drain_stdout(child: &mut std::process::Child) -> std::thread::JoinHandle<String> {
+    let mut stdout = child.stdout.take().expect("the child's stdout is piped");
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = std::io::Read::read_to_end(&mut stdout, &mut bytes);
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
+}
+
 /// How the server answers one path.
 #[derive(Clone)]
 pub enum Route {
