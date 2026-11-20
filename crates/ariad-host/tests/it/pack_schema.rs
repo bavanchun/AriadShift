@@ -34,14 +34,14 @@ fn pack_schema_matches_the_generated_manifest_schema() {
 
     let actual = fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
-            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-host --test pack_schema",
+            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-host --test it pack_schema::",
             path.display()
         )
     });
     assert_eq!(
         actual.replace("\r\n", "\n"),
         expected,
-        "pack schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-host --test pack_schema to update it."
+        "pack schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-host --test it pack_schema:: to update it."
     );
 }
 
