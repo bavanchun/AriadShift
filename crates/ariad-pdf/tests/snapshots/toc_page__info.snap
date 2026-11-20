@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/toc_page.rs
+source: crates/ariad-pdf/tests/it/toc_page.rs
 expression: info_json
 ---
 {

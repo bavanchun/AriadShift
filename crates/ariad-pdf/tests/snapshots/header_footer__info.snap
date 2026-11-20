@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/header_footer.rs
+source: crates/ariad-pdf/tests/it/header_footer.rs
 expression: info_json
 ---
 {

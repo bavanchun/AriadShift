@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/watermark.rs
+source: crates/ariad-pdf/tests/it/watermark.rs
 expression: info_json
 ---
 {

@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/delete_pages.rs
+source: crates/ariad-pdf/tests/it/delete_pages.rs
 expression: report
 ---
 {

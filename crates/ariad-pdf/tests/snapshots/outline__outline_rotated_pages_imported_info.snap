@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/outline.rs
+source: crates/ariad-pdf/tests/it/outline.rs
 expression: value
 ---
 {

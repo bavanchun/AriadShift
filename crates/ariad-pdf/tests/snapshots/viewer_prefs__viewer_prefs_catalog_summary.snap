@@ -1,5 +1,5 @@
 ---
-source: crates/ariad-pdf/tests/viewer_prefs.rs
+source: crates/ariad-pdf/tests/it/viewer_prefs.rs
 expression: value
 ---
 {
