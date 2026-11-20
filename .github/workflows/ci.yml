@@ -297,13 +297,10 @@ jobs:
       - name: Run benchmark harness tests
         run: just bench-test
 
-      # Packaging is the same on every host, and on macOS it recompiles the dependency graph from
-      # cold (6 to 14 minutes there, 3 to 5 on Linux and Windows), which pushed cold macOS runs past
-      # the timeout and kept the macOS cache from ever being saved. Linux runs it in its own part
-      # (verify-linux); on a pull request the scope job asks for it only when a change can affect it.
-      - name: Check packaging
-        if: runner.os != 'macOS' && needs.scope.outputs.package == 'true'
-        run: just package-check
+      # Packaging is the same on every host, so the macOS and Windows jobs do not run it: on macOS
+      # it recompiled the dependency graph from cold (6 to 14 minutes) and on Windows it added 8 to
+      # 16 minutes to the slowest job. Linux runs it in its own part (verify-linux); on a pull
+      # request the scope job asks for it only when a change can affect it.
 
       - name: Stop sccache and report stats
         if: always()

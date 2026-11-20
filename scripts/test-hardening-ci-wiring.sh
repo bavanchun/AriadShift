@@ -423,8 +423,11 @@ assert heavy_gate in gate_logic, (
     'verify to succeed when os_verify is true and to be skipped when it is false, and require every heavy '
     'job to be skipped otherwise'
 )
-windows_packaging = step_named(ci_jobs['verify']['steps'], 'Check packaging')
-assert "needs.scope.outputs.package == 'true'" in windows_packaging['if'], 'ci.yml: Windows packaging must follow the scope decision'
+assert not any(step.get('name') == 'Check packaging' for step in ci_jobs['verify']['steps']), (
+    'ci.yml: the macOS and Windows verify job must not run the packaging check; the Linux package part does'
+)
+linux_packaging = step_named(ci_jobs['verify-linux']['steps'], 'Check packaging')
+assert linux_packaging['if'] == "matrix.part == 'package'", 'ci.yml: the Linux package part runs the packaging check'
 
 print('Release guard CI wiring assertions passed')
 PY

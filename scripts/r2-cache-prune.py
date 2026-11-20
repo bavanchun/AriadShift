@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Manage Cloudflare R2 build cache storage: report size, enforce lifecycle, and prune oldest-written objects to stay under 8 GB.
+"""Manage Cloudflare R2 build cache storage: report size, enforce lifecycle, and prune oldest-written objects to stay under 9.5 GB.
 
 This script communicates only with the dedicated sccache bucket via the S3 API.
 It never prints or logs secret credentials and guarantees the bucket stays strictly
-under the 8 GB budget (well within the Cloudflare R2 10 GB free tier).
+under the 9.5 GB budget (inside the Cloudflare R2 10 GB free tier).
 """
 
 from __future__ import annotations
@@ -14,10 +14,10 @@ import re
 import sys
 from typing import Any
 
-# Default cost-capping budget: 8.0 GB max (8,000,000,000 bytes).
-# Target size after pruning: 6.5 GB (6,500,000,000 bytes) to prevent constant re-pruning.
-DEFAULT_MAX_BYTES = 8_000_000_000
-DEFAULT_TARGET_BYTES = 6_500_000_000
+# Default cost-capping budget: 9.5 GB max (9,500,000,000 bytes), decimal gigabytes like the free tier.
+# Target size after pruning: 8.0 GB (8,000,000,000 bytes) to prevent constant re-pruning.
+DEFAULT_MAX_BYTES = 9_500_000_000
+DEFAULT_TARGET_BYTES = 8_000_000_000
 DEFAULT_PREFIX = "ariadshift-sccache-v2/"
 ALLOWED_BUCKET = "ariadshift-ci-cache"
 REQUIRED_PREFIX_START = "ariadshift-sccache"
@@ -277,7 +277,7 @@ def write_summary(
     if not summary_path or not os.path.exists(os.path.dirname(summary_path)):
         return
 
-    status = "OK (under 8 GB budget)" if total_bytes <= max_bytes else "EXCEEDED"
+    status = "OK (under 9.5 GB budget)" if total_bytes <= max_bytes else "EXCEEDED"
     lines = [
         "### Cloudflare R2 Build Cache Storage Report",
         "",
