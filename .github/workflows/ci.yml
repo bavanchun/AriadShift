@@ -850,9 +850,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: fuzz-target-${{ runner.os }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock', 'rust-toolchain.toml') }}
+          key: fuzz-target-${{ runner.os }}-shard${{ matrix.shard }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            fuzz-target-${{ runner.os }}-
+            fuzz-target-${{ runner.os }}-shard${{ matrix.shard }}-
 
       - name: Restore fuzz corpus
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -905,7 +905,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/target
-          key: fuzz-target-${{ runner.os }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock', 'rust-toolchain.toml') }}
+          key: fuzz-target-${{ runner.os }}-shard${{ matrix.shard }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock', 'rust-toolchain.toml') }}
 
       # Also after a failed or cancelled run, so the corpus found so far is not lost.
       - name: Save fuzz corpus
