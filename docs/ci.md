@@ -194,13 +194,19 @@ Actions cache space. Cancelled runs and builds stopped by the idle guard never
 save it: a snapshot written while the compilers were being killed was restored
 by the next run of the same pull request, which then hung at the same OpenBLAS
 step twice. The wheel cache and the models and OCR data are restored by every
-run but saved only on `dev` (pushes and manual runs) and tags: an entry saved
-under a pull request or a branch ref cannot be restored by another run.
+run but saved only on `dev` (pushes and manual runs): a pull request restores
+its own ref's entries, those of its base branch `dev` and of the default branch,
+so one entry on `dev` warms every pull request, while an entry saved under a pull
+request ref serves only that pull request and crowds the 10 GB limit. Tag runs
+cannot read `dev`'s entries and `main` never saves them, so they save nothing
+either. The compiler work of a pull request ref is restored by later runs of
+that same pull request, which is how a bad snapshot came back.
 
 The initial build step allows 310 minutes within the 350-minute pack job, and
 `scripts/idle-timeout.py` stops it after 45 minutes without any output (a
 healthy build prints every few seconds; exit code 124, `idle_killed` step
-output). `just test-idle-timeout` tests the guard. Cleanup
+output; SIGTERM, then SIGKILL for the whole process group, including members
+that ignore SIGTERM). `just test-idle-timeout` tests the guard. Cleanup
 stops only that job's named Linux torch container, then its local sccache server,
 before cache archiving. Superseded PR runs and manual feature-branch runs cancel
 older runs in their concurrency group; manual `dev`, `main` and tag builds are
