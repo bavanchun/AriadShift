@@ -9,6 +9,15 @@ use ariad_host::confine::{
 };
 use tempfile::tempdir;
 
+/// The `engine_program` of the requests below. They are HTML or IR conversions that run in process
+/// (native reader and writer), so no engine process is started. If a route here ever did start
+/// one, libtest would read the engine arguments (`__engine <id>`) as name filters of this merged
+/// binary and run unrelated tests: keep these routes native or give the request a real engine.
+#[allow(dead_code)] // the unix-only tests use it
+fn unused_engine_program() -> std::path::PathBuf {
+    std::env::current_exe().unwrap()
+}
+
 #[test]
 fn test_empty_allowed_set() {
     let temp = tempdir().unwrap();
@@ -855,7 +864,7 @@ fn test_convert_confined_parent_swap_race() {
                 target_format: "md".to_owned(),
                 profile: ariad_core::planner::Profile::Editable,
                 overwrite: out_confined.overwrite,
-                engine_program: std::env::current_exe().unwrap(),
+                engine_program: unused_engine_program(),
                 title_fallback: None,
                 asset_base_dir: None,
                 reader_engine: None,
@@ -966,7 +975,7 @@ fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
         target_format: "json".to_owned(),
         profile: ariad_core::planner::Profile::Editable,
         overwrite: false,
-        engine_program: std::env::current_exe().unwrap(),
+        engine_program: unused_engine_program(),
         title_fallback: None,
         asset_base_dir: None,
         reader_engine: None,
@@ -1052,7 +1061,7 @@ fn confined_conversions_resolve_assets_only_within_explicit_asset_base() {
             target_format: "json".into(),
             profile: ariad_core::planner::Profile::Editable,
             overwrite: false,
-            engine_program: std::env::current_exe().unwrap(),
+            engine_program: unused_engine_program(),
             title_fallback: None,
             asset_base_dir: Some(outside_dir.clone()),
             reader_engine: None,
@@ -1102,7 +1111,7 @@ fn confined_conversions_resolve_assets_only_within_explicit_asset_base() {
             target_format: "json".into(),
             profile: ariad_core::planner::Profile::Editable,
             overwrite: false,
-            engine_program: std::env::current_exe().unwrap(),
+            engine_program: unused_engine_program(),
             title_fallback: None,
             asset_base_dir: Some(outside_dir.clone()),
             reader_engine: None,
@@ -1180,6 +1189,7 @@ fn fifo_artifacts_preserve_type_errors_without_blocking() {
         .stdout(std::process::Stdio::piped())
         .spawn()
         .unwrap();
+    let output = crate::support::drain_stdout(&mut child);
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     loop {
         if let Some(status) = child.try_wait().unwrap() {
@@ -1187,8 +1197,7 @@ fn fifo_artifacts_preserve_type_errors_without_blocking() {
                 status.success(),
                 "FIFO type classification failed: {status}"
             );
-            let mut stdout = String::new();
-            std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut stdout).unwrap();
+            let stdout = output.join().unwrap();
             crate::support::assert_ran_one_test(
                 &stdout,
                 "confine::fifo_artifacts_preserve_type_errors_without_blocking",
@@ -1234,6 +1243,7 @@ mod staging_privacy {
             .stdin(Stdio::null())
             .stdout(Stdio::piped());
         let mut child = command.spawn().expect("spawn isolated staging regression");
+        let output = crate::support::drain_stdout(&mut child);
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if let Some(status) = child.try_wait().unwrap() {
@@ -1241,9 +1251,7 @@ mod staging_privacy {
                     status.success(),
                     "isolated staging regression failed: {status}"
                 );
-                let mut stdout = String::new();
-                std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut stdout)
-                    .unwrap();
+                let stdout = output.join().unwrap();
                 crate::support::assert_ran_one_test(&stdout, name);
                 return;
             }

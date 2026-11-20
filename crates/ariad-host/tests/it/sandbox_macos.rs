@@ -633,11 +633,20 @@ fn relative_builtin_tool_overrides_survive_the_cwd_change() {
                 .env(key, relative)
                 .output()
                 .unwrap();
-            crate::support::assert_ran_one_test(
-                &String::from_utf8_lossy(&output.stdout),
-                "sandbox_macos::relative_builtin_tool_overrides_survive_the_cwd_change",
-            );
-            success &= output.status.success();
+            if output.status.success() {
+                crate::support::assert_ran_one_test(
+                    &String::from_utf8_lossy(&output.stdout),
+                    "sandbox_macos::relative_builtin_tool_overrides_survive_the_cwd_change",
+                );
+            } else {
+                // Report the child's own failure and go on to the other tools.
+                eprintln!(
+                    "{id} child failed: {} {}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                success = false;
+            }
         }
         assert!(success);
         return;
