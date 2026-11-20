@@ -26,7 +26,6 @@ public struct DSInspectorHeader: View {
                 subtitle
                     .font(DSFont.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(DSSpacing.l)
