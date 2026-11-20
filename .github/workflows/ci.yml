@@ -478,6 +478,8 @@ jobs:
         timeout-minutes: 8
         run: |
           export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
+          # Azure gets 240 s, so the primary-archive fallback fits inside the 8-minute step limit.
+          export APT_FIRST_TIMEOUT=240
           bash scripts/ci-apt.sh install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
 
       # Drop the .deb files of versions the index no longer offers, so that restoring the newest
@@ -980,7 +982,10 @@ jobs:
       # limit (5 + 5 + 10 minutes) and the .deb files are cached per runner image: restored on every
       # run, saved only by a push to dev, so pull requests cannot add entries. apt checks each
       # cached file against the package index hashes, so a poisoned entry cannot change what is
-      # installed.
+      # installed. APT_FIRST_TIMEOUT per step (120 s, 120 s, 240 s) keeps the Azure wait plus the
+      # primary-archive fallback inside each step limit. The step limits (30 minutes) plus the
+      # steps without a limit (about 17 minutes) can exceed the 40-minute job limit when several
+      # mirrors stall; the job limit wins and cancels the run.
       - name: Select the apt package cache key
         id: apt-key
         run: echo "key=apt-debs-web-v1-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
@@ -997,13 +1002,14 @@ jobs:
         timeout-minutes: 5
         run: |
           printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
-          bash scripts/ci-apt.sh update
+          APT_FIRST_TIMEOUT=120 bash scripts/ci-apt.sh update
 
       # The existing suite uses pg_dump with the service's major version.
       - name: Install the PostgreSQL 18 client
         timeout-minutes: 5
         run: |
           export APT_ARCHIVES="$HOME/.cache/ci-apt-archives"
+          export APT_FIRST_TIMEOUT=120
           bash scripts/ci-apt.sh install --no-install-recommends -y postgresql-client-18
           pg_dump --version | grep -q ' 18\.'
 
@@ -1022,6 +1028,8 @@ jobs:
       # through scripts/ci-apt.sh; the browsers themselves are downloaded by Playwright.
       - name: Install the Playwright system libraries
         timeout-minutes: 10
+        env:
+          APT_FIRST_TIMEOUT: "240"
         run: bash scripts/ci-playwright-deps.sh chromium firefox webkit
 
       - name: Install Playwright browsers

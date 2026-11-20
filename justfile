@@ -103,7 +103,7 @@ web-start:
 web-export: wasm-build
     pnpm --filter @ariadshift/web export
 
-# Installs the browsers the end-to-end tests use; CI adds --with-deps for system packages.
+# Installs the browsers the end-to-end tests use; CI installs the system packages first through scripts/ci-playwright-deps.sh.
 web-browsers *flags:
     pnpm --filter @ariadshift/web exec playwright install {{flags}} chromium firefox webkit
 
