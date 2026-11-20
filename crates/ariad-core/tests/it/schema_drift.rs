@@ -25,13 +25,13 @@ fn ir_v2_schema_matches_the_generated_document_schema() {
 
     let actual = fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
-            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift",
+            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift::",
             path.display()
         )
     });
     assert_eq!(
         actual, expected,
-        "IR schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift to update it."
+        "IR schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift:: to update it."
     );
 }
 
@@ -49,13 +49,13 @@ fn engine_protocol_schema_matches_the_generated_request_schema() {
 
     let actual = fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
-            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift",
+            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift::",
             path.display()
         )
     });
     assert_eq!(
         actual, expected,
-        "engine protocol schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift to update it."
+        "engine protocol schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift:: to update it."
     );
 }
 
@@ -83,13 +83,13 @@ fn engine_protocol_v2_schema_matches_the_generated_request_schema() {
 
     let actual = fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
-            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift",
+            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift::",
             path.display()
         )
     });
     assert_eq!(
         actual, expected,
-        "engine protocol v2 schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift to update it."
+        "engine protocol v2 schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift:: to update it."
     );
 }
 
@@ -165,13 +165,13 @@ fn capabilities_schema_matches_the_generated_capabilities_schema() {
 
     let actual = fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
-            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift",
+            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift::",
             path.display()
         )
     });
     assert_eq!(
         actual, expected,
-        "capabilities schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift to update it."
+        "capabilities schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test it schema_drift:: to update it."
     );
 }
 

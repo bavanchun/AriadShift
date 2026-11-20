@@ -119,11 +119,11 @@ uv run --package ariad-fixture-gen python -m ariad_fixture_gen --only editor-rou
 uv run --package ariad-fixture-gen python -m ariad_fixture_gen --only editor-roundtrip --check
 uv run --package ariad-bench pytest fixtures/gen/tests/test_editor_roundtrip.py
 cargo build -p ariad-cli
-cargo test -p ariad-core --test editor_roundtrip
+cargo test -p ariad-core --test it editor_roundtrip::
 cargo test -p ariad-cli --test it fixture_manifest::
 uv run --directory bench pytest tests/test_editor_roundtrip_corpus.py -v
 uv run --directory bench python -m ariad_bench.editor_roundtrip --check
-ARIAD_EDITOR_REQUIRE_STYLES=1 cargo test -p ariad-core --test editor_roundtrip
+ARIAD_EDITOR_REQUIRE_STYLES=1 cargo test -p ariad-core --test it editor_roundtrip::
 ```
 
 During coordinated runs wrap heavy commands in the coordinator's existing build
