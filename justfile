@@ -223,8 +223,7 @@ test-licenses-recipes:
     node --test scripts/licenses-recipes.test.mjs
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-licenses-recipes test-winget-manifest test-ci-scope test-ci-sccache test-docling-pack-inputs test-idle-timeout test-ci-apt test-macos-release-scripts test-hardening-ci-wiring
-
+static: fmt-check spell lint-workflows deny js js-licenses i18n-check web-lint sdk-check py check-release-workflow licenses-check test-licenses-recipes test-winget-manifest test-ci-scope test-ci-sccache test-docling-pack-inputs test-idle-timeout test-ci-apt test-ci-playwright-deps test-macos-release-scripts test-hardening-ci-wiring
 test-ci-apt:
     shellcheck scripts/ci-apt.sh scripts/test-ci-apt.sh
     bash scripts/test-ci-apt.sh
@@ -232,6 +231,10 @@ test-ci-apt:
 test-idle-timeout:
     shellcheck scripts/test-idle-timeout.sh
     bash scripts/test-idle-timeout.sh
+
+test-ci-playwright-deps:
+    shellcheck scripts/ci-playwright-deps.sh scripts/test-ci-playwright-deps.sh
+    bash scripts/test-ci-playwright-deps.sh
 
 test-docling-pack-inputs:
     shellcheck scripts/docling-pack-inputs.sh scripts/test-docling-pack-inputs.sh scripts/docling-engine.sh
