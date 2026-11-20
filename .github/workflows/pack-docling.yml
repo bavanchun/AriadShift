@@ -208,11 +208,11 @@ jobs:
       - name: Run the conformance and acceptance tests against the real engine
         run: bash scripts/docling-engine.sh engine-test
 
-      # Only dev pushes save the blobs (412 MB). A pull request cannot share an entry with
-      # another pull request, so each one saved its own copy and crowded the Verify caches out
-      # of the 10 GB repository limit.
+      # Only runs on dev save the blobs (412 MB). A pull request entry serves only that pull
+      # request (pull requests restore dev's entry), so each one saved its own copy and crowded the
+      # Verify caches out of the 10 GB repository limit.
       - name: Save models and OCR data
-        if: success() && (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) && steps.assets.outputs.cache-hit != 'true'
+        if: success() && github.ref == 'refs/heads/dev' && steps.assets.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/blobs
@@ -372,11 +372,13 @@ jobs:
           subprocess.run(["sccache", "--stop-server"], check=False, timeout=30)
 
       # Persist finished wheels before later checks; warm builds need no compiler snapshot.
-      # Pull requests restore this cache but never save it: an entry saved under a pull request ref
-      # or a branch ref cannot be restored by any other run, and each copy crowded the 10 GB
-      # repository cache. dev pushes, manual runs on dev and tags save the one shared entry.
+      # Pull requests restore this cache (their own ref's entries, the base branch dev and the
+      # default branch) but never save it: an entry saved under a pull request ref serves only that
+      # pull request, and each copy crowded the 10 GB repository cache. Pushes and manual runs on
+      # dev save the one shared entry. Tag runs cannot read dev's entries and main never saves
+      # them, so they would only use up quota and do not save either.
       - name: Save native source builds
-        if: always() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome == 'success' && steps.cleanup.outcome == 'success' && (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/'))
+        if: always() && startsWith(matrix.target, 'x86_64-') && steps.native.outputs.cache-hit != 'true' && steps.build.outcome == 'success' && steps.cleanup.outcome == 'success' && github.ref == 'refs/heads/dev'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/native
@@ -395,11 +397,11 @@ jobs:
           path: .tools/sccache
           key: pack-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      # Only dev pushes save the blobs (412 MB). A pull request cannot share an entry with
-      # another pull request, so each one saved its own copy and crowded the Verify caches out
-      # of the 10 GB repository limit.
+      # Only runs on dev save the blobs (412 MB). A pull request entry serves only that pull
+      # request (pull requests restore dev's entry), so each one saved its own copy and crowded the
+      # Verify caches out of the 10 GB repository limit.
       - name: Save models and OCR data
-        if: success() && (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) && steps.assets.outputs.cache-hit != 'true'
+        if: success() && github.ref == 'refs/heads/dev' && steps.assets.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.cache/ariadshift/docling/blobs
