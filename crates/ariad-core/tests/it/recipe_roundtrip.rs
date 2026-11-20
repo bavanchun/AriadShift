@@ -30,7 +30,7 @@ fn recipe_schema_matches_generated_schema() {
     assert_eq!(
         committed,
         generated_recipe_schema(),
-        "schemas/recipe.v1.json drifted from ariad-core::tools::Recipe; run `cargo test -p ariad-core --test recipe_roundtrip -- --ignored regenerate`"
+        "schemas/recipe.v1.json drifted from ariad-core::tools::Recipe; run `cargo test -p ariad-core --test it -- --ignored recipe_roundtrip::regenerate`"
     );
 
     let schema_json: serde_json::Value =

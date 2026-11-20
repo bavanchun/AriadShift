@@ -375,7 +375,7 @@ fn tools_schema_matches_generated_schema() {
     assert_eq!(
         committed,
         generated_tools_schema(),
-        "schemas/tools.v1.json drifted from ariad-core::tools types; run `cargo test -p ariad-core --test tools_registry -- --ignored regenerate`"
+        "schemas/tools.v1.json drifted from ariad-core::tools types; run `cargo test -p ariad-core --test it -- --ignored tools_registry::regenerate`"
     );
 
     let schema_json: serde_json::Value =
