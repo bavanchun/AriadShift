@@ -770,9 +770,15 @@ jobs:
     if: needs.scope.outputs.heavy == 'true'
     runs-on: ubuntu-26.04
     # Pull requests run a 5-minute smoke across all targets (10 s per target, 280 s fuzzing budget).
-    # Pushes to dev/main run the full 60 s per target (1680 s / 28 min total fuzzing).
+    # Pushes to dev/main run the full 60 s per target (about 28 min of fuzzing in total), split over
+    # two parallel shards (every second target each) because one job came within a few minutes of
+    # its limit with a warm compile cache and went over it with a cold one.
     # Nightly AddressSanitizer fuzzing (fuzz-nightly.yml) covers all targets for 600 s each.
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     environment: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && 'ci-cache-write' || '' }}
     permissions:
       contents: read
@@ -852,14 +858,16 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/corpus/
-          key: fuzz-corpus-${{ runner.os }}-${{ github.sha }}
+          key: fuzz-corpus-${{ runner.os }}-shard${{ matrix.shard }}-${{ github.sha }}
           restore-keys: |
-            fuzz-corpus-${{ runner.os }}-
+            fuzz-corpus-${{ runner.os }}-shard${{ matrix.shard }}-
 
       - name: Test package metadata fuzz oracle
         run: cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta
 
       - name: Run fuzz targets
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           # Pull requests run a fast smoke with a 5-minute maximum total fuzzing
           # budget across all targets (10 s per target = 280 s total fuzzing time).
@@ -874,8 +882,11 @@ jobs:
           fi
           echo "Running fuzz targets with max_total_time=${fuzz_seconds}s per target"
           targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader pdf_draw_params pdf_form_interchange pdf_form_structure pdf_redact_params type1_to_cff typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned reader_text reader_csv reader_eml reader_msg reader_svg reader_cbz"
+          index=-1
           for t in $targets; do
-            echo "=== Running fuzz target: $t (${fuzz_seconds}s) ==="
+            index=$((index + 1))
+            [ $((index % 2)) -eq "$SHARD" ] || continue
+            echo "=== Running fuzz target: $t (${fuzz_seconds}s, shard $SHARD) ==="
             mkdir -p "fuzz/corpus/$t"
             build_options=()
             case "$t" in
@@ -896,18 +907,19 @@ jobs:
           path: fuzz/target
           key: fuzz-target-${{ runner.os }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock', 'rust-toolchain.toml') }}
 
+      # Also after a failed or cancelled run, so the corpus found so far is not lost.
       - name: Save fuzz corpus
-        if: github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/corpus/
-          key: fuzz-corpus-${{ runner.os }}-${{ github.sha }}
+          key: fuzz-corpus-${{ runner.os }}-shard${{ matrix.shard }}-${{ github.sha }}
 
       - name: Upload crash artifacts on failure
         if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: fuzz-artifacts
+          name: fuzz-artifacts-${{ matrix.shard }}
           path: fuzz/artifacts/
           retention-days: 14
 
