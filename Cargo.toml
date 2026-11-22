@@ -38,17 +38,17 @@ hex = "0.4.3"
 hmac = "0.13.0"
 html5ever = "0.40.1"
 insta = { version = "1.49.0", features = ["json", "glob"] }
-jiff = "0.2"
+jiff = "1.0"
 js-sys = "0.3.106"
 landlock = "0.4.7"
-jsonschema = { version = "0.60.2", default-features = false, features = ["resolve-file", "idna"] }
+jsonschema = { version = "0.61.2", default-features = false, features = ["resolve-file", "idna"] }
 jsonwebtoken = { version = "11.1.0", default-features = false }
 libc = "0.2"
-lopdf = { version = "0.46.0", default-features = false }
+lopdf = { version = "0.47.0", default-features = false }
 mail-parser = "=1.0.1"
 minisign = "0.10.0"
 minisign-verify = "0.3.0"
-nix = { version = "0.31.3", default-features = false }
+nix = { version = "0.32.0", default-features = false }
 object_store = { version = "0.14.2", default-features = false }
 opentelemetry = { version = "0.33.1", default-features = false }
 opentelemetry-otlp = { version = "0.33.1", default-features = false }
